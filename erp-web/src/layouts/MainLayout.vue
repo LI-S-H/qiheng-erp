@@ -239,7 +239,7 @@ watch(
           </button>
           <el-dropdown trigger="click">
             <button class="login-mark" type="button" :title="userLabel">
-              <el-avatar :size="34" class="user-avatar">{{ userLabel.slice(0, 1) }}</el-avatar>
+              <el-avatar :size="30" class="user-avatar">{{ userLabel.slice(0, 1) }}</el-avatar>
               <span class="login-mark__text">{{ userLabel }}</span>
             </button>
             <template #dropdown>
@@ -294,29 +294,29 @@ watch(
 
 .brand {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  height: 72px;
-  padding: 0 18px;
+  height: 60px;
+  padding: 0 16px;
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .brand__mark {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   border-radius: 8px;
 }
 
 .brand__title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 800;
-  line-height: 1.3;
+  line-height: 1.18;
 }
 
 .brand__subtitle {
-  margin-top: 3px;
-  font-size: 13px;
+  margin-top: 2px;
+  font-size: 12px;
   color: #9ba9bd;
 }
 
@@ -417,8 +417,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 72px;
-  padding: 0 26px;
+  height: 60px;
+  padding: 0 22px;
   color: #c9d4e5;
   background: #141b2d;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -430,7 +430,7 @@ watch(
 
 .main-header__actions {
   display: flex;
-  gap: 18px;
+  gap: 14px;
   align-items: center;
 }
 
@@ -454,29 +454,29 @@ watch(
 }
 
 .icon-trigger {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   justify-content: center;
   padding: 0;
   color: #dce6f5;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .notify-dot {
   position: absolute;
-  top: 9px;
-  right: 10px;
-  width: 7px;
-  height: 7px;
+  top: 7px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
   background: #4f8cff;
   border: 2px solid #141b2d;
   border-radius: 999px;
 }
 
 .login-mark {
-  gap: 10px;
-  height: 44px;
-  padding: 0 8px;
+  gap: 9px;
+  height: 38px;
+  padding: 0 6px;
   color: #ffffff;
 }
 
@@ -489,7 +489,7 @@ watch(
 .login-mark__text {
   max-width: 96px;
   overflow: hidden;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #ffffff;
   text-overflow: ellipsis;
@@ -498,7 +498,7 @@ watch(
 
 .main-content {
   position: relative;
-  height: calc(100vh - 72px);
+  height: calc(100vh - 60px);
   padding: 0;
   overflow: auto;
 }

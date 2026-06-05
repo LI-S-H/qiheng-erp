@@ -1,0 +1,182 @@
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { useAuthStore } from '@/modules/auth/stores/authStore';
+import LoginView from '@/modules/auth/views/LoginView.vue';
+import MainLayout from '@/layouts/MainLayout.vue';
+import DashboardView from '@/modules/dashboard/views/DashboardView.vue';
+import NotFoundView from '@/modules/system/views/NotFoundView.vue';
+import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
+
+function placeholder(title: string, module: string, description: string) {
+  return {
+    component: ModulePlaceholderView,
+    meta: {
+      title,
+      module,
+      description,
+    },
+  };
+}
+
+const routes: RouteRecordRaw[] = [
+  {
+    path: '/login',
+    name: 'login',
+    component: LoginView,
+    meta: {
+      public: true,
+      title: '登录',
+    },
+  },
+  {
+    path: '/',
+    component: MainLayout,
+    redirect: '/dashboard',
+    children: [
+      {
+        path: 'dashboard',
+        name: 'dashboard',
+        component: DashboardView,
+        meta: {
+          title: '工作台',
+        },
+      },
+      { path: 'system', redirect: '/system/users' },
+      {
+        path: 'system/users',
+        name: 'system-users',
+        ...placeholder('用户管理', '系统权限', '维护登录账号 用户姓名 所属部门 启用状态和角色绑定'),
+      },
+      {
+        path: 'system/roles',
+        name: 'system-roles',
+        ...placeholder('角色管理', '系统权限', '维护角色编码 角色名称 粗粒度权限码和备注'),
+      },
+      {
+        path: 'system/depts',
+        name: 'system-depts',
+        ...placeholder('部门管理', '系统权限', '维护部门层级 部门名称和启用状态'),
+      },
+      {
+        path: 'system/permissions',
+        name: 'system-permissions',
+        ...placeholder('权限码配置', '系统权限', '展示 MVP 阶段固定权限码 后续可扩展为独立权限表'),
+      },
+      { path: 'product', redirect: '/product/categories' },
+      {
+        path: 'product/categories',
+        name: 'product-categories',
+        ...placeholder('产品分类', '产品中心', '维护产品分类树和分类启用状态'),
+      },
+      {
+        path: 'product/products',
+        name: 'product-products',
+        ...placeholder('产品档案', '产品中心', '维护产品编码 名称 分类 品牌 规格 单位 条码 参考价格和安全库存'),
+      },
+      { path: 'warehouse', redirect: '/warehouse/warehouses' },
+      {
+        path: 'warehouse/warehouses',
+        name: 'warehouse-list',
+        ...placeholder('仓库管理', '仓储库存', '维护仓库编码 名称 联系人 联系电话 地址和启用状态'),
+      },
+      {
+        path: 'warehouse/stocks',
+        name: 'warehouse-stocks',
+        ...placeholder('库存管理', '仓储库存', '查询仓库和产品维度的当前库存 锁定库存和可用库存'),
+      },
+      {
+        path: 'warehouse/stock-bills',
+        name: 'warehouse-stock-bills',
+        ...placeholder('出入库记录', '仓储库存', '追溯采购入库 销售出库 退货和库存调整形成的库存变动凭证'),
+      },
+      {
+        path: 'warehouse/stock-adjustments',
+        name: 'warehouse-stock-adjustments',
+        ...placeholder('库存调整', '仓储库存', '处理盘盈 盘亏和其他人工库存调整动作'),
+      },
+      { path: 'purchase', redirect: '/purchase/suppliers' },
+      {
+        path: 'purchase/suppliers',
+        name: 'purchase-suppliers',
+        ...placeholder('供应商管理', '采购业务', '维护供应商编码 名称 联系方式 付款条件 状态和评分信息'),
+      },
+      {
+        path: 'purchase/supplier-products',
+        name: 'purchase-supplier-products',
+        ...placeholder('供货产品', '采购业务', '维护供应商可供产品 采购价 起订量 交期和推荐分'),
+      },
+      {
+        path: 'purchase/orders',
+        name: 'purchase-orders',
+        ...placeholder('采购订单', '采购业务', '创建和跟踪采购订单 提交 审核 入库进度和订单状态'),
+      },
+      { path: 'sales', redirect: '/sales/customers' },
+      {
+        path: 'sales/customers',
+        name: 'sales-customers',
+        ...placeholder('客户管理', '销售业务', '维护客户编码 名称 联系方式 地址 信用额度和启用状态'),
+      },
+      {
+        path: 'sales/orders',
+        name: 'sales-orders',
+        ...placeholder('销售订单', '销售业务', '创建和跟踪销售订单 库存锁定 出库进度和订单状态'),
+      },
+      { path: 'ai', redirect: '/ai/rag' },
+      {
+        path: 'ai/rag',
+        name: 'ai-rag',
+        ...placeholder('知识库问答', '智能助手', '管理企业文档和 RAG 问答入口'),
+      },
+      {
+        path: 'ai/assistant',
+        name: 'ai-assistant',
+        ...placeholder('智能经营助手', '智能助手', '承载自然语言业务查询 业务建议 运维建议 决策辅助和后续标准 Workflow 入口'),
+      },
+      {
+        path: 'ai/audit-logs',
+        name: 'ai-audit-logs',
+        ...placeholder('AI 调用审计', '智能助手', '查看用户问题 Tool 参数 权限结果和返回摘要'),
+      },
+    ],
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: NotFoundView,
+    meta: {
+      public: true,
+      title: '页面不存在',
+    },
+  },
+];
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes,
+});
+
+router.beforeEach(async to => {
+  const authStore = useAuthStore();
+
+  if (!to.meta.public && authStore.token && !authStore.initialized) {
+    await authStore.loadCurrentUser().catch(() => {
+      authStore.clearSession();
+    });
+  }
+
+  if (!to.meta.public && !authStore.isLoggedIn) {
+    return {
+      path: '/login',
+      query: {
+        redirect: to.fullPath,
+      },
+    };
+  }
+
+  if (to.name === 'login' && authStore.isLoggedIn) {
+    return '/dashboard';
+  }
+
+  document.title = `${String(to.meta.title || '管理系统')} - 启衡 ERP`;
+
+  return true;
+});

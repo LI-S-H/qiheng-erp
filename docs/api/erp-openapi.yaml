@@ -1,0 +1,295 @@
+openapi: 3.0.3
+info:
+  title: ERP + AI 智能体系统接口文档
+  version: 0.1.0
+  description: |
+    本文档用于 ERP + AI 智能体系统前后端接口约定，可导入 Apifox 使用。
+
+    当前版本包含第一个前端模块：基础框架 + 登录模块。
+
+    MVP 阶段认证使用 Sa-Token 原始 token，前端登录成功后通过 `satoken` 请求头传递 token。
+servers:
+  - url: http://localhost:8080/api
+    description: 本地开发环境
+tags:
+  - name: Auth
+    description: 登录、退出和当前用户接口
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      summary: 用户登录
+      description: |
+        使用账号密码登录。登录成功后，后端通过 Sa-Token 生成原始 UUID token，
+        并把用户基础信息、角色编码和权限码集合写入 Redis session。
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: admin
+              password: "123456"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponse'
+              example:
+                code: 0
+                message: success
+                data:
+                  token: 5f4dcc3b-0000-4000-9000-000000000001
+                  tokenName: satoken
+                  user:
+                    userId: "1900000000000000001"
+                    username: admin
+                    realName: 系统管理员
+                    deptId: "1900000000000000100"
+                    deptName: 总部
+                    isAdmin: true
+                    roleCodes:
+                      - SUPER_ADMIN
+                    permissionCodes:
+                      - "*"
+                    lastLoginAt: "2026-06-05 21:30:00"
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags:
+        - Auth
+      summary: 获取当前登录用户
+      description: |
+        根据请求头中的 Sa-Token token 获取当前 Redis session 中的用户上下文。
+        前端刷新页面后用该接口恢复登录态。
+      operationId: authMe
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CurrentUser'
+              example:
+                code: 0
+                message: success
+                data:
+                  userId: "1900000000000000001"
+                  username: admin
+                  realName: 系统管理员
+                  deptId: "1900000000000000100"
+                  deptName: 总部
+                  isAdmin: true
+                  roleCodes:
+                    - SUPER_ADMIN
+                  permissionCodes:
+                    - product:query
+                    - warehouse:query
+                    - purchase:query
+                    - sales:query
+                    - ai:query:stock
+                  lastLoginAt: "2026-06-05 21:30:00"
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: 退出登录
+      description: 清理当前用户 Sa-Token 登录态和 Redis session。
+      operationId: authLogout
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 退出成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        nullable: true
+              example:
+                code: 0
+                message: success
+                data: null
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    SaTokenAuth:
+      type: apiKey
+      in: header
+      name: satoken
+      description: Sa-Token 原始 token。前端登录后通过 satoken 请求头传递。
+
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+          example:
+            code: 400
+            message: 请求参数错误
+            data: null
+    Unauthorized:
+      description: 未登录或登录态已失效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+          example:
+            code: 401
+            message: 未登录或登录已失效
+            data: null
+
+  schemas:
+    Result:
+      type: object
+      required:
+        - code
+        - message
+        - data
+      properties:
+        code:
+          type: integer
+          description: 业务状态码，0 表示成功。
+          example: 0
+        message:
+          type: string
+          description: 响应消息。
+          example: success
+        data:
+          description: 响应数据。
+          nullable: true
+
+    ErrorResult:
+      allOf:
+        - $ref: '#/components/schemas/Result'
+        - type: object
+          properties:
+            data:
+              nullable: true
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: 登录账号，对应 `sys_user.username`。
+          maxLength: 64
+          example: admin
+        password:
+          type: string
+          format: password
+          description: 登录密码。后端校验时与 `sys_user.password_hash` 比对。
+          example: "123456"
+
+    LoginResponse:
+      type: object
+      required:
+        - token
+        - tokenName
+        - user
+      properties:
+        token:
+          type: string
+          description: Sa-Token 原始 UUID token。
+          example: 5f4dcc3b-0000-4000-9000-000000000001
+        tokenName:
+          type: string
+          description: token 请求头名称，默认 `satoken`。
+          example: satoken
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+
+    CurrentUser:
+      type: object
+      required:
+        - userId
+        - username
+        - realName
+        - isAdmin
+        - roleCodes
+        - permissionCodes
+      properties:
+        userId:
+          type: string
+          description: 用户 ID，对应 `sys_user.id`。后端 bigint 使用字符串返回，避免前端精度丢失。
+          example: "1900000000000000001"
+        username:
+          type: string
+          description: 登录账号，对应 `sys_user.username`。
+          example: admin
+        realName:
+          type: string
+          description: 用户姓名，对应 `sys_user.real_name`。
+          example: 系统管理员
+        deptId:
+          type: string
+          nullable: true
+          description: 部门 ID，对应 `sys_user.dept_id`。
+          example: "1900000000000000100"
+        deptName:
+          type: string
+          nullable: true
+          description: 部门名称，对应 `sys_dept.dept_name`。
+          example: 总部
+        isAdmin:
+          type: boolean
+          description: 是否超级管理员，对应 `sys_user.is_admin`。
+          example: true
+        roleCodes:
+          type: array
+          description: 角色编码列表，对应用户绑定角色的 `sys_role.role_code`。
+          items:
+            type: string
+          example:
+            - SUPER_ADMIN
+        permissionCodes:
+          type: array
+          description: 权限码列表，来自用户所有角色 `sys_role.permission_codes` 的并集。
+          items:
+            type: string
+          example:
+            - product:query
+            - warehouse:query
+            - purchase:query
+            - sales:query
+            - ai:query:stock
+        lastLoginAt:
+          type: string
+          nullable: true
+          description: 最近登录时间，对应 `sys_user.last_login_at`。
+          example: "2026-06-05 21:30:00"

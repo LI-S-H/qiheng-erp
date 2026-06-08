@@ -1,12 +1,10 @@
 openapi: 3.0.3
 info:
-  title: ERP + AI 智能体系统接口文档
-  version: 0.1.0
+  title: 启衡 ERP 接口文档
+  version: 0.2.0
   description: |
-    本文档用于 ERP + AI 智能体系统前后端接口约定，可导入 Apifox 使用。
-
-    当前版本包含第一个前端模块：基础框架 + 登录模块。
-
+    本文档用于启衡 ERP 前后端接口约定，可直接导入 Apifox 使用。
+    当前版本包含登录模块和系统权限下的用户管理模块。
     MVP 阶段认证使用 Sa-Token 原始 token，前端登录成功后通过 `satoken` 请求头传递 token。
 servers:
   - url: http://localhost:8080/api
@@ -14,15 +12,16 @@ servers:
 tags:
   - name: Auth
     description: 登录、退出和当前用户接口
+  - name: SystemUser
+    description: 系统权限 - 用户管理
+  - name: SystemOption
+    description: 系统权限 - 页面下拉选项
 paths:
   /auth/login:
     post:
       tags:
         - Auth
       summary: 用户登录
-      description: |
-        使用账号密码登录。登录成功后，后端通过 Sa-Token 生成原始 UUID token，
-        并把用户基础信息、角色编码和权限码集合写入 Redis session。
       operationId: authLogin
       requestBody:
         required: true
@@ -62,7 +61,7 @@ paths:
                       - SUPER_ADMIN
                     permissionCodes:
                       - "*"
-                    lastLoginAt: "2026-06-05 21:30:00"
+                    lastLoginAt: "2026-06-08 09:12:30"
         "400":
           $ref: '#/components/responses/BadRequest'
         "401":
@@ -73,9 +72,6 @@ paths:
       tags:
         - Auth
       summary: 获取当前登录用户
-      description: |
-        根据请求头中的 Sa-Token token 获取当前 Redis session 中的用户上下文。
-        前端刷新页面后用该接口恢复登录态。
       operationId: authMe
       security:
         - SaTokenAuth: []
@@ -91,25 +87,6 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/CurrentUser'
-              example:
-                code: 0
-                message: success
-                data:
-                  userId: "1900000000000000001"
-                  username: admin
-                  realName: 系统管理员
-                  deptId: "1900000000000000100"
-                  deptName: 总部
-                  isAdmin: true
-                  roleCodes:
-                    - SUPER_ADMIN
-                  permissionCodes:
-                    - product:query
-                    - warehouse:query
-                    - purchase:query
-                    - sales:query
-                    - ai:query:stock
-                  lastLoginAt: "2026-06-05 21:30:00"
         "401":
           $ref: '#/components/responses/Unauthorized'
 
@@ -118,7 +95,6 @@ paths:
       tags:
         - Auth
       summary: 退出登录
-      description: 清理当前用户 Sa-Token 登录态和 Redis session。
       operationId: authLogout
       security:
         - SaTokenAuth: []
@@ -128,18 +104,404 @@ paths:
           content:
             application/json:
               schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /system/users:
+    get:
+      tags:
+        - SystemUser
+      summary: 分页查询用户
+      operationId: systemUserPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 账号、姓名或部门关键词
+        - name: deptId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 所属部门 ID，对应 `sys_user.dept_id`
+        - name: roleId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 绑定角色 ID，对应 `sys_user_role.role_id`
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        - name: pageNum
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: 页码
+        - name: pageSize
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: 每页条数
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
                 allOf:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
                       data:
-                        nullable: true
+                        $ref: '#/components/schemas/SystemUserPage'
               example:
                 code: 0
                 message: success
-                data: null
+                data:
+                  records:
+                    - userId: "1900000000000000001"
+                      username: admin
+                      realName: 系统管理员
+                      deptId: "1900000000000000100"
+                      deptName: 总部
+                      isAdmin: true
+                      status: 1
+                      roleIds:
+                        - "1900000000000001001"
+                      roleNames:
+                        - 超级管理员
+                      lastLoginAt: "2026-06-08 09:12:30"
+                      createdAt: "2026-06-05 20:30:00"
+                      updatedAt: "2026-06-08 09:12:30"
+                  total: 1
+                  pageNum: 1
+                  pageSize: 10
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+        - SystemUser
+      summary: 新增用户
+      operationId: systemUserCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserCreateRequest'
+      responses:
+        "200":
+          description: 新增成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemUser'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/users/batch/status:
+    patch:
+      tags:
+        - SystemUser
+      summary: 批量修改用户状态
+      description: 根据用户 ID 列表批量启用或停用账号
+      operationId: systemUserBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserBatchStatusRequest'
+      responses:
+        "200":
+          description: 批量修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/users/batch/password:
+    patch:
+      tags:
+        - SystemUser
+      summary: 批量重置用户密码
+      description: 根据用户 ID 列表批量设置新密码
+      operationId: systemUserBatchPassword
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserBatchPasswordResetRequest'
+      responses:
+        "200":
+          description: 批量重置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/users/batch/delete:
+    post:
+      tags:
+        - SystemUser
+      summary: 批量删除用户
+      description: 根据用户 ID 列表批量逻辑删除账号，对应 `sys_user.deleted = 1`
+      operationId: systemUserBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserBatchDeleteRequest'
+      responses:
+        "200":
+          description: 批量删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/users/{userId}:
+    get:
+      tags:
+        - SystemUser
+      summary: 获取用户详情
+      operationId: systemUserDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemUser'
+        "404":
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - SystemUser
+      summary: 编辑用户
+      operationId: systemUserUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserUpdateRequest'
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemUser'
+    delete:
+      tags:
+        - SystemUser
+      summary: 删除用户
+      description: 逻辑删除用户，对应 `sys_user.deleted = 1`
+      operationId: systemUserDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+
+  /system/users/{userId}/status:
+    patch:
+      tags:
+        - SystemUser
+      summary: 修改用户状态
+      operationId: systemUserStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserStatusRequest'
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+
+  /system/users/{userId}/password:
+    patch:
+      tags:
+        - SystemUser
+      summary: 重置用户密码
+      operationId: systemUserPassword
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserPasswordResetRequest'
+      responses:
+        "200":
+          description: 重置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+
+  /system/users/{userId}/roles:
+    put:
+      tags:
+        - SystemUser
+      summary: 绑定用户角色
+      operationId: systemUserBindRoles
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserRoleBindRequest'
+      responses:
+        "200":
+          description: 绑定成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+
+  /system/roles/options:
+    get:
+      tags:
+        - SystemOption
+      summary: 获取角色下拉选项
+      operationId: systemRoleOptions
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/RoleOption'
+
+  /system/depts/options:
+    get:
+      tags:
+        - SystemOption
+      summary: 获取部门下拉选项
+      operationId: systemDeptOptions
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DeptOption'
 
 components:
   securitySchemes:
@@ -147,8 +509,15 @@ components:
       type: apiKey
       in: header
       name: satoken
-      description: Sa-Token 原始 token。前端登录后通过 satoken 请求头传递。
-
+      description: Sa-Token 原始 token，前端登录后通过 satoken 请求头传递
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 用户 ID，对应 `sys_user.id`
   responses:
     BadRequest:
       description: 请求参数错误
@@ -156,21 +525,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResult'
-          example:
-            code: 400
-            message: 请求参数错误
-            data: null
     Unauthorized:
       description: 未登录或登录态已失效
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResult'
-          example:
-            code: 401
-            message: 未登录或登录已失效
-            data: null
-
+    Forbidden:
+      description: 没有访问权限
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+    NotFound:
+      description: 数据不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
   schemas:
     Result:
       type: object
@@ -181,15 +553,24 @@ components:
       properties:
         code:
           type: integer
-          description: 业务状态码，0 表示成功。
+          description: 业务状态码，0 表示成功
           example: 0
         message:
           type: string
-          description: 响应消息。
+          description: 响应消息
           example: success
         data:
-          description: 响应数据。
           nullable: true
+          description: 响应数据
+
+    EmptyResult:
+      allOf:
+        - $ref: '#/components/schemas/Result'
+        - type: object
+          properties:
+            data:
+              nullable: true
+              example: null
 
     ErrorResult:
       allOf:
@@ -198,6 +579,7 @@ components:
           properties:
             data:
               nullable: true
+              example: null
 
     LoginRequest:
       type: object
@@ -207,13 +589,13 @@ components:
       properties:
         username:
           type: string
-          description: 登录账号，对应 `sys_user.username`。
           maxLength: 64
+          description: 登录账号，对应 `sys_user.username`
           example: admin
         password:
           type: string
           format: password
-          description: 登录密码。后端校验时与 `sys_user.password_hash` 比对。
+          description: 登录密码，后端与 `sys_user.password_hash` 比对
           example: "123456"
 
     LoginResponse:
@@ -225,11 +607,9 @@ components:
       properties:
         token:
           type: string
-          description: Sa-Token 原始 UUID token。
-          example: 5f4dcc3b-0000-4000-9000-000000000001
+          description: Sa-Token 原始 token
         tokenName:
           type: string
-          description: token 请求头名称，默认 `satoken`。
           example: satoken
         user:
           $ref: '#/components/schemas/CurrentUser'
@@ -246,50 +626,325 @@ components:
       properties:
         userId:
           type: string
-          description: 用户 ID，对应 `sys_user.id`。后端 bigint 使用字符串返回，避免前端精度丢失。
-          example: "1900000000000000001"
+          description: 用户 ID，对应 `sys_user.id`
         username:
           type: string
-          description: 登录账号，对应 `sys_user.username`。
-          example: admin
+          description: 登录账号
         realName:
           type: string
-          description: 用户姓名，对应 `sys_user.real_name`。
-          example: 系统管理员
+          description: 用户姓名
         deptId:
           type: string
           nullable: true
-          description: 部门 ID，对应 `sys_user.dept_id`。
-          example: "1900000000000000100"
+          description: 部门 ID
         deptName:
           type: string
           nullable: true
-          description: 部门名称，对应 `sys_dept.dept_name`。
-          example: 总部
+          description: 部门名称
         isAdmin:
           type: boolean
-          description: 是否超级管理员，对应 `sys_user.is_admin`。
-          example: true
+          description: 是否超级管理员
         roleCodes:
           type: array
-          description: 角色编码列表，对应用户绑定角色的 `sys_role.role_code`。
           items:
             type: string
-          example:
-            - SUPER_ADMIN
+          description: 角色编码列表
         permissionCodes:
           type: array
-          description: 权限码列表，来自用户所有角色 `sys_role.permission_codes` 的并集。
           items:
             type: string
-          example:
-            - product:query
-            - warehouse:query
-            - purchase:query
-            - sales:query
-            - ai:query:stock
+          description: 权限码列表
         lastLoginAt:
           type: string
           nullable: true
-          description: 最近登录时间，对应 `sys_user.last_login_at`。
-          example: "2026-06-05 21:30:00"
+          example: "2026-06-08 09:12:30"
+
+    SystemUserPage:
+      type: object
+      required:
+        - records
+        - total
+        - pageNum
+        - pageSize
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemUser'
+        total:
+          type: integer
+          example: 1
+        pageNum:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+
+    SystemUser:
+      type: object
+      required:
+        - userId
+        - username
+        - realName
+        - isAdmin
+        - status
+        - roleIds
+        - roleNames
+        - createdAt
+        - updatedAt
+      properties:
+        userId:
+          type: string
+          description: 用户 ID，对应 `sys_user.id`
+        username:
+          type: string
+          description: 登录账号，对应 `sys_user.username`
+        realName:
+          type: string
+          description: 用户姓名，对应 `sys_user.real_name`
+        deptId:
+          type: string
+          nullable: true
+          description: 部门 ID，对应 `sys_user.dept_id`
+        deptName:
+          type: string
+          nullable: true
+          description: 部门名称，对应 `sys_dept.dept_name`
+        isAdmin:
+          type: boolean
+          description: 是否超级管理员，对应 `sys_user.is_admin`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        roleIds:
+          type: array
+          items:
+            type: string
+          description: 用户绑定角色 ID 列表
+        roleNames:
+          type: array
+          items:
+            type: string
+          description: 用户绑定角色名称列表
+        lastLoginAt:
+          type: string
+          nullable: true
+          description: 最近登录时间
+        createdAt:
+          type: string
+          description: 创建时间
+        updatedAt:
+          type: string
+          description: 更新时间
+
+    SystemUserCreateRequest:
+      type: object
+      required:
+        - username
+        - realName
+        - password
+        - deptId
+        - isAdmin
+        - status
+        - roleIds
+      properties:
+        username:
+          type: string
+          maxLength: 64
+          description: 登录账号
+        realName:
+          type: string
+          maxLength: 100
+          description: 用户姓名
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 32
+          description: 初始密码
+        deptId:
+          type: string
+          nullable: true
+          description: 部门 ID
+        isAdmin:
+          type: boolean
+          description: 是否超级管理员
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        roleIds:
+          type: array
+          items:
+            type: string
+          description: 绑定角色 ID 列表
+
+    SystemUserUpdateRequest:
+      type: object
+      required:
+        - username
+        - realName
+        - deptId
+        - isAdmin
+        - status
+        - roleIds
+      properties:
+        username:
+          type: string
+          maxLength: 64
+          description: 登录账号
+        realName:
+          type: string
+          maxLength: 100
+          description: 用户姓名
+        password:
+          type: string
+          format: password
+          nullable: true
+          minLength: 6
+          maxLength: 32
+          description: 新密码，不传或为空表示不修改密码
+        deptId:
+          type: string
+          nullable: true
+          description: 部门 ID
+        isAdmin:
+          type: boolean
+          description: 是否超级管理员
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        roleIds:
+          type: array
+          items:
+            type: string
+          description: 绑定角色 ID 列表
+
+    SystemUserStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemUserPasswordResetRequest:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 32
+          description: 新密码
+
+    SystemUserBatchStatusRequest:
+      type: object
+      required:
+        - userIds
+        - status
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          description: 用户 ID 列表，对应 `sys_user.id`
+          items:
+            type: string
+          example:
+            - "1900000000000000001"
+            - "1900000000000000002"
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemUserBatchPasswordResetRequest:
+      type: object
+      required:
+        - userIds
+        - password
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          description: 用户 ID 列表，对应 `sys_user.id`
+          items:
+            type: string
+          example:
+            - "1900000000000000001"
+            - "1900000000000000002"
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 32
+          description: 新密码
+
+    SystemUserBatchDeleteRequest:
+      type: object
+      required:
+        - userIds
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          description: 用户 ID 列表，对应 `sys_user.id`
+          items:
+            type: string
+          example:
+            - "1900000000000000001"
+            - "1900000000000000002"
+
+    SystemUserRoleBindRequest:
+      type: object
+      required:
+        - roleIds
+      properties:
+        roleIds:
+          type: array
+          items:
+            type: string
+          description: 角色 ID 列表
+
+    RoleOption:
+      type: object
+      required:
+        - roleId
+        - roleCode
+        - roleName
+        - status
+      properties:
+        roleId:
+          type: string
+        roleCode:
+          type: string
+        roleName:
+          type: string
+        status:
+          type: integer
+          enum: [0, 1]
+
+    DeptOption:
+      type: object
+      required:
+        - deptId
+        - deptName
+        - parentId
+        - status
+      properties:
+        deptId:
+          type: string
+        deptName:
+          type: string
+        parentId:
+          type: string
+        status:
+          type: integer
+          enum: [0, 1]

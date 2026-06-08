@@ -2,17 +2,17 @@
 
 ## 1. 前端架构选择
 
-前端软件名暂定为 **启衡 ERP**。
+前端软件名为 **启衡 ERP**。
 
 前端采用 `Vue 3 + TypeScript + Vite + Element Plus + Pinia + Vue Router + Axios`。
 
-选择这个技术栈的原因：
+选择这套技术栈的原因：
 
-- 项目是企业内部 ERP 管理系统，核心页面以表格、筛选、表单、详情、状态流转和操作确认为主，Element Plus 的组件形态与这类场景匹配度高。
-- Vue 3 + TypeScript 能保证页面开发效率，同时让接口字段、登录态和业务 DTO 有明确类型约束。
-- Vite 启动和构建速度快，适合模块逐步生成、逐步审核的开发节奏。
-- Pinia 用于保存登录态、当前用户和后续模块级缓存，状态结构比传统 Vuex 更轻。
-- Axios 统一处理 `satoken` 请求头、响应错误和登录失效跳转，避免每个模块重复处理鉴权逻辑。
+- 项目是企业内部 ERP 管理系统，核心页面以表格、筛选、表单、弹窗、状态流转和操作确认为主，Element Plus 与这类场景匹配度高
+- Vue 3 + TypeScript 能保证开发效率，同时让接口字段、登录态和业务 DTO 有明确类型约束
+- Vite 启动和构建速度快，适合按模块逐步生成、逐步审核的开发节奏
+- Pinia 用于保存登录态、当前用户和后续模块级缓存，状态结构清晰
+- Axios 统一处理 `satoken` 请求头、响应错误和登录失效跳转，避免每个模块重复处理鉴权逻辑
 
 ## 2. 目录组织思路
 
@@ -34,19 +34,19 @@ erp-web
 
 ## 3. 整体页面风格
 
-本系统面向企业内部采购、销售、仓库、管理人员和系统管理员，页面风格以“稳定、清晰、可长时间使用”为主。
+启衡 ERP 面向企业内部采购、销售、仓储、管理人员和系统管理员，页面风格以“稳定、清晰、可长时间使用”为主。
 
 设计原则：
 
-- 后台主布局采用左侧菜单 + 顶部用户区 + 主内容区，符合 ERP 用户的日常操作习惯。
-- 页面优先使用列表页、筛选区、表单弹窗、详情抽屉、状态标签和确认弹窗，服务高频业务处理。
-- 视觉上避免营销页式大面积装饰，重点突出信息密度、可读性和操作确定性。
-- 菜单先固定展示，权限以后端接口校验为准，符合 MVP 阶段“页面入口统一展示、进入页面或查询时校验权限码”的数据库设计。
-- 前端不展示接口文档入口，接口文档只维护在 `docs/api/erp-openapi.yaml`，用于导入 Apifox。
+- 后台主布局采用左侧菜单 + 顶部用户区 + 主内容区，符合 ERP 用户的日常操作习惯
+- 页面优先使用列表页、筛选区、表单弹窗、详情抽屉、状态标签和确认弹窗，服务高频业务处理
+- 视觉上避免营销页式大面积装饰，重点突出信息密度、可读性和操作确定性
+- 菜单先固定展示，权限以后端接口校验为准，符合 MVP 阶段“页面入口统一展示、进入页面或查询时校验权限码”的数据库设计
+- 前端不展示接口文档入口，接口文档只维护在 `docs/api/erp-openapi.yaml`，用于导入 Apifox
 
 ## 4. 权限与登录态设计
 
-系统权限库表设计中，MVP 阶段只保留：
+系统权限库表设计中，MVP 阶段保留：
 
 ```text
 sys_dept
@@ -57,102 +57,25 @@ sys_user_role
 
 角色权限码直接保存在 `sys_role.permission_codes`，登录后由服务端把用户基础信息、角色编码和权限码放入 Redis session。前端不自行推导权限，只保存服务端返回的当前用户上下文。
 
-前端当前登录态字段：
-
-| 前端字段 | 来源 / 对应含义 |
-|---|---|
-| `userId` | `sys_user.id` |
-| `username` | `sys_user.username` |
-| `realName` | `sys_user.real_name` |
-| `deptId` | `sys_user.dept_id` |
-| `deptName` | 部门展示名称，来自后端查询结果 |
-| `isAdmin` | `sys_user.is_admin` |
-| `roleCodes` | 用户绑定角色的 `role_code` 列表 |
-| `permissionCodes` | 用户所有角色 `permission_codes` 的并集 |
-| `lastLoginAt` | `sys_user.last_login_at` |
-
 请求鉴权采用 Sa-Token 原始 token。前端登录成功后保存 token，并在 Axios 请求拦截器中通过 `satoken` 请求头传给后端。
 
-## 5. 首模块：基础框架 + 登录模块
+## 5. 基础框架 + 登录模块
 
-### 5.1 页面范围
-
-本模块包含：
+首个基础模块包含：
 
 - 登录页 `/login`
 - 后台主布局
-- 工作台占位页 `/dashboard`
+- 工作台 `/dashboard`
 - 路由守卫
 - 当前用户状态
 - 退出登录
-- 404 占位页
+- 404 页面
 
-暂不包含用户管理、角色管理、产品、仓库、采购、销售或 AI 业务页面，这些会在后续模块逐个生成。
+登录页默认在开发环境填入 `admin / 123456`，方便前端审核。后端接入后，可通过环境变量关闭 mock 登录并切换到真实接口。
 
-### 5.2 登录页设计
+后台主布局采用固定左侧菜单。MVP 阶段不设计 `sys_menu` 和动态路由表，权限由后端接口和页面进入后的权限码校验控制。后续如果拆出菜单权限表，可以把当前静态菜单迁移为后端菜单数据。
 
-登录页左侧展示启衡 ERP 的软件标识和定位，右侧是账号密码登录表单。
-
-这样设计的原因：
-
-- 登录页是用户进入系统的第一屏，需要明确软件名称和产品气质，而不是普通后台模板。
-- 左侧文案保持简洁，强调采购、销售、库存和智能查询使用同一套业务口径。
-- 表单区域保持简洁，只放账号、密码和登录按钮，减少无关干扰。
-- 开发环境默认填入 `admin / 123456`，并且 mock 登录只允许该账号密码通过。
-
-### 5.3 后台主布局设计
-
-后台主布局使用固定左侧菜单，顶部展示系统名称、部门和当前用户。
-
-菜单当前先固定为多级目录：
-
-```text
-工作台
-系统权限
-  用户管理
-  角色管理
-  部门管理
-  权限码配置
-产品中心
-  产品分类
-  产品档案
-仓储库存
-  仓库管理
-  库存管理
-  出入库记录
-  库存调整
-采购业务
-  供应商管理
-  供货产品
-  采购订单
-销售业务
-  客户管理
-  销售订单
-智能助手
-  知识库问答
-  智能经营助手
-  AI 调用审计
-```
-
-固定菜单符合 MVP 权限设计：第一版不维护 `sys_menu` 和动态路由表，权限由后端接口和页面进入后的权限码校验控制。后续如果拆出菜单权限表，可以把当前静态菜单迁移为后端菜单数据。
-
-### 5.4 接口设计考虑
-
-登录模块接口包括：
-
-- `POST /auth/login`
-- `GET /auth/me`
-- `POST /auth/logout`
-
-登录成功后，后端返回 token 和当前用户上下文；刷新页面时，前端通过本地 token 调用 `/auth/me` 恢复当前用户信息。退出登录时，前端调用 `/auth/logout`，后端清理 Sa-Token / Redis session，前端再清理本地 token。
-
-这种设计适合 Sa-Token + Redis session：
-
-- token 只是客户端凭证，不承载业务权限信息。
-- 当前权限上下文以后端 session 为准。
-- 用户禁用、角色变更或权限码变更后，后端可以清理 session，让旧权限尽快失效。
-
-## 6. 后续模块生成规则
+## 6. 模块生成规则
 
 每生成一个模块，需要同步更新：
 
@@ -174,3 +97,202 @@ docs/api/erp-openapi.yaml
 ```
 
 每个模块完成后暂停，由用户审核页面代码和接口文档，再继续下一个模块。
+
+## 7. 系统权限模块：用户管理
+
+### 7.1 页面范围
+
+本次生成系统权限模块中的第一个页面：`/system/users` 用户管理。
+
+页面包含：
+
+- 用户指标概览
+- 账号关键词、部门、角色、状态筛选
+- 用户分页表格
+- 新增用户
+- 编辑用户
+- 单独绑定角色
+- 批量启用 / 停用账号
+- 批量重置密码
+- 批量删除用户
+
+对应库表：
+
+```text
+sys_user
+sys_dept
+sys_role
+sys_user_role
+```
+
+### 7.2 设计考虑
+
+用户管理属于系统基础能力，操作频率不一定最高，但影响权限边界和账号安全，所以页面优先保证清晰、克制、可确认。
+
+页面采用上方指标、筛选区、表格区、弹窗表单的后台标准结构。这样做的好处是：
+
+- 管理员进入页面后能快速知道账号总量、启用数量、超级管理员数量和角色绑定覆盖情况
+- 筛选条件和表格保持在同一视线范围内，适合日常查找账号
+- 新增、编辑和角色绑定使用弹窗，避免频繁跳转
+- 行内操作只保留“编辑”和“角色绑定”两个高频动作，减少固定操作列拥挤和悬停裁切风险
+- 停用、删除、重置密码放在表格工具栏中作为批量操作，必须先勾选账号再执行，降低误操作风险，也便于后端统一实现批量接口
+- 表格字段严格贴合库表和关联关系，后端接入时不需要重新调整页面结构
+
+### 7.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 用户ID | `sys_user.id` |
+| 登录账号 | `sys_user.username` |
+| 用户姓名 | `sys_user.real_name` |
+| 所属部门 | `sys_user.dept_id` 关联 `sys_dept.dept_name` |
+| 超级管理员 | `sys_user.is_admin` |
+| 状态 | `sys_user.status` |
+| 最近登录 | `sys_user.last_login_at` |
+| 创建时间 | `sys_user.created_at` |
+| 更新时间 | `sys_user.updated_at` |
+| 绑定角色 | `sys_user_role` 关联 `sys_role` |
+
+### 7.4 接口设计考虑
+
+用户管理接口维护在 `docs/api/erp-openapi.yaml` 中，可导入 Apifox。
+
+本页面使用的接口包括：
+
+```text
+GET    /system/users
+POST   /system/users
+GET    /system/users/{userId}
+PUT    /system/users/{userId}
+PATCH  /system/users/{userId}/status
+PATCH  /system/users/{userId}/password
+PUT    /system/users/{userId}/roles
+DELETE /system/users/{userId}
+PATCH  /system/users/batch/status
+PATCH  /system/users/batch/password
+POST   /system/users/batch/delete
+GET    /system/roles/options
+GET    /system/depts/options
+```
+
+接口字段采用前端友好的 camelCase，后端落库时映射到 snake_case 字段。`bigint` 主键统一用字符串返回，避免前端数字精度丢失。
+
+### 7.5 后端接入方式
+
+当前页面为了便于审核，先使用页面内置的临时数据展示交互效果。
+
+后端接口完成后，只需要把页面中的临时数据加载替换为：
+
+```text
+listSystemUsers
+createSystemUser
+updateSystemUser
+updateSystemUserStatus
+resetSystemUserPassword
+bindSystemUserRoles
+deleteSystemUser
+batchUpdateSystemUserStatus
+batchResetSystemUserPassword
+batchDeleteSystemUsers
+listRoleOptions
+listDeptOptions
+```
+
+这些函数已经在 `erp-web/src/modules/system/users/api.ts` 中预留，接口路径与 OpenAPI 文档保持一致。
+
+## 8. 系统权限模块：角色管理
+
+### 8.1 页面范围
+
+本次继续生成系统权限模块中的第二个页面：`/system/roles` 角色管理。
+
+页面包含：
+
+- 角色指标概览
+- 角色编码、角色名称、状态筛选
+- 角色状态筛选
+- 角色分页表格
+- 新增角色
+- 编辑角色
+- 单独配置权限码
+- 批量启用 / 停用角色
+- 批量删除角色
+
+对应库表：
+
+```text
+sys_role
+sys_user_role
+```
+
+### 8.2 设计考虑
+
+角色管理直接决定用户能访问哪些业务能力，因此页面设计重点是让“角色本身”和“权限码集合”都能被快速看清。
+
+页面沿用用户管理页确认过的后台列表结构：上方指标、筛选区、表格工具栏、数据表格和弹窗表单。这样做的好处是：
+
+- 系统权限模块内的页面交互保持一致，管理员切换用户管理和角色管理时不需要重新学习
+- 行内只保留“编辑”和“权限配置”，避免操作列拥挤，也避免悬停浮层被固定列裁切
+- 权限码配置单独弹窗处理，符合角色维护的高风险特征，后续接后端时也能独立调用权限更新接口
+- 批量启用、批量停用、删除放到表格工具栏，和用户管理页保持一致，便于后端统一实现批量状态和批量删除接口
+- 表格中的权限码改为摘要展示，点击“查看明细”打开只读弹窗按权限组展示完整权限码，避免表格被权限码标签撑高
+
+### 8.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 角色ID | `sys_role.id` |
+| 角色编码 | `sys_role.role_code` |
+| 角色名称 | `sys_role.role_name` |
+| 权限码 | `sys_role.permission_codes` |
+| 状态 | `sys_role.status` |
+| 备注 | `sys_role.remark` |
+| 创建时间 | `sys_role.created_at` |
+| 更新时间 | `sys_role.updated_at` |
+| 绑定用户数 | `sys_user_role` 按 `role_id` 聚合 |
+
+### 8.4 接口设计考虑
+
+角色管理接口维护在 `docs/api/erp-openapi.yaml` 中，可导入 Apifox。
+
+本页面使用的接口包括：
+
+```text
+GET    /system/roles
+POST   /system/roles
+GET    /system/roles/{roleId}
+PUT    /system/roles/{roleId}
+PATCH  /system/roles/{roleId}/status
+PATCH  /system/roles/{roleId}/permissions
+DELETE /system/roles/{roleId}
+PATCH  /system/roles/batch/status
+POST   /system/roles/batch/delete
+```
+
+接口字段继续采用 camelCase，后端落库时映射到 snake_case 字段。角色查询条件按库表字段拆为 `roleCode`、`roleName`、`status`，不使用跨字段关键词混搜，避免后端在 `role_code`、`role_name`、`remark` 上写过宽的查询逻辑。`permissionCodes` 对应数据库 JSON 字段，前端以字符串数组维护；`userCount` 不落库，由后端根据 `sys_user_role` 聚合返回。
+
+### 8.5 后端接入方式
+
+当前页面为了便于审核，先使用页面内置的临时数据展示交互效果。
+
+后端接口完成后，只需要把页面中的临时数据加载替换为：
+
+```text
+listSystemRoles
+getSystemRole
+createSystemRole
+updateSystemRole
+updateSystemRoleStatus
+updateSystemRolePermissions
+deleteSystemRole
+batchUpdateSystemRoleStatus
+batchDeleteSystemRoles
+```
+
+这些函数已经在 `erp-web/src/modules/system/roles/api.ts` 中预留，接口路径与 OpenAPI 文档保持一致。
+
+## 9. 前端风格规范
+
+后续页面的视觉和交互细节统一参考 `docs/frontend-style-guide.md`。
+
+当前确认的风格方向是：整体保持简洁克制；列表页操作按钮优先使用浅色底色和轻量边框；危险操作参考用户管理页删除按钮的浅红搭配；表格行内只保留少量高频操作；批量操作放在表格工具栏；表格标签需要宽度跟随内容并让文字居中；分页区域总数偏左，页码和跳页控件居中。

@@ -4,6 +4,8 @@ import LoginView from '@/modules/auth/views/LoginView.vue';
 import MainLayout from '@/layouts/MainLayout.vue';
 import DashboardView from '@/modules/dashboard/views/DashboardView.vue';
 import NotFoundView from '@/modules/system/views/NotFoundView.vue';
+import UserManageView from '@/modules/system/users/views/UserManageView.vue';
+import RoleManageView from '@/modules/system/roles/views/RoleManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -44,12 +46,18 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'system/users',
         name: 'system-users',
-        ...placeholder('用户管理', '系统权限', '维护登录账号 用户姓名 所属部门 启用状态和角色绑定'),
+        component: UserManageView,
+        meta: {
+          title: '用户管理',
+        },
       },
       {
         path: 'system/roles',
         name: 'system-roles',
-        ...placeholder('角色管理', '系统权限', '维护角色编码 角色名称 粗粒度权限码和备注'),
+        component: RoleManageView,
+        meta: {
+          title: '角色管理',
+        },
       },
       {
         path: 'system/depts',
@@ -86,7 +94,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'warehouse/stock-bills',
         name: 'warehouse-stock-bills',
-        ...placeholder('出入库记录', '仓储库存', '追溯采购入库 销售出库 退货和库存调整形成的库存变动凭证'),
+        ...placeholder('出入库记录', '仓储库存', '追踪采购入库 销售出库 退货和库存调整形成的库存变动凭证'),
       },
       {
         path: 'warehouse/stock-adjustments',

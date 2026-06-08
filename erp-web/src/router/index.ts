@@ -5,6 +5,7 @@ import MainLayout from '@/layouts/MainLayout.vue';
 import DashboardView from '@/modules/dashboard/views/DashboardView.vue';
 import NotFoundView from '@/modules/system/views/NotFoundView.vue';
 import UserManageView from '@/modules/system/users/views/UserManageView.vue';
+import RoleManageView from '@/modules/system/roles/views/RoleManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -53,7 +54,10 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'system/roles',
         name: 'system-roles',
-        ...placeholder('角色管理', '系统权限', '维护角色编码 角色名称 粗粒度权限码和备注'),
+        component: RoleManageView,
+        meta: {
+          title: '角色管理',
+        },
       },
       {
         path: 'system/depts',

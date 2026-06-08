@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
     "smoke:system-users": "node scripts/smoke-system-users.cjs",
+    "smoke:system-roles": "node scripts/smoke-system-roles.cjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

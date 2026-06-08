@@ -200,7 +200,98 @@ listDeptOptions
 
 这些函数已经在 `erp-web/src/modules/system/users/api.ts` 中预留，接口路径与 OpenAPI 文档保持一致。
 
-## 8. 前端风格规范
+## 8. 系统权限模块：角色管理
+
+### 8.1 页面范围
+
+本次继续生成系统权限模块中的第二个页面：`/system/roles` 角色管理。
+
+页面包含：
+
+- 角色指标概览
+- 角色编码、角色名称、状态筛选
+- 角色状态筛选
+- 角色分页表格
+- 新增角色
+- 编辑角色
+- 单独配置权限码
+- 批量启用 / 停用角色
+- 批量删除角色
+
+对应库表：
+
+```text
+sys_role
+sys_user_role
+```
+
+### 8.2 设计考虑
+
+角色管理直接决定用户能访问哪些业务能力，因此页面设计重点是让“角色本身”和“权限码集合”都能被快速看清。
+
+页面沿用用户管理页确认过的后台列表结构：上方指标、筛选区、表格工具栏、数据表格和弹窗表单。这样做的好处是：
+
+- 系统权限模块内的页面交互保持一致，管理员切换用户管理和角色管理时不需要重新学习
+- 行内只保留“编辑”和“权限配置”，避免操作列拥挤，也避免悬停浮层被固定列裁切
+- 权限码配置单独弹窗处理，符合角色维护的高风险特征，后续接后端时也能独立调用权限更新接口
+- 批量启用、批量停用、删除放到表格工具栏，和用户管理页保持一致，便于后端统一实现批量状态和批量删除接口
+- 表格中的权限码改为摘要展示，点击“查看明细”打开只读弹窗按权限组展示完整权限码，避免表格被权限码标签撑高
+
+### 8.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 角色ID | `sys_role.id` |
+| 角色编码 | `sys_role.role_code` |
+| 角色名称 | `sys_role.role_name` |
+| 权限码 | `sys_role.permission_codes` |
+| 状态 | `sys_role.status` |
+| 备注 | `sys_role.remark` |
+| 创建时间 | `sys_role.created_at` |
+| 更新时间 | `sys_role.updated_at` |
+| 绑定用户数 | `sys_user_role` 按 `role_id` 聚合 |
+
+### 8.4 接口设计考虑
+
+角色管理接口维护在 `docs/api/erp-openapi.yaml` 中，可导入 Apifox。
+
+本页面使用的接口包括：
+
+```text
+GET    /system/roles
+POST   /system/roles
+GET    /system/roles/{roleId}
+PUT    /system/roles/{roleId}
+PATCH  /system/roles/{roleId}/status
+PATCH  /system/roles/{roleId}/permissions
+DELETE /system/roles/{roleId}
+PATCH  /system/roles/batch/status
+POST   /system/roles/batch/delete
+```
+
+接口字段继续采用 camelCase，后端落库时映射到 snake_case 字段。角色查询条件按库表字段拆为 `roleCode`、`roleName`、`status`，不使用跨字段关键词混搜，避免后端在 `role_code`、`role_name`、`remark` 上写过宽的查询逻辑。`permissionCodes` 对应数据库 JSON 字段，前端以字符串数组维护；`userCount` 不落库，由后端根据 `sys_user_role` 聚合返回。
+
+### 8.5 后端接入方式
+
+当前页面为了便于审核，先使用页面内置的临时数据展示交互效果。
+
+后端接口完成后，只需要把页面中的临时数据加载替换为：
+
+```text
+listSystemRoles
+getSystemRole
+createSystemRole
+updateSystemRole
+updateSystemRoleStatus
+updateSystemRolePermissions
+deleteSystemRole
+batchUpdateSystemRoleStatus
+batchDeleteSystemRoles
+```
+
+这些函数已经在 `erp-web/src/modules/system/roles/api.ts` 中预留，接口路径与 OpenAPI 文档保持一致。
+
+## 9. 前端风格规范
 
 后续页面的视觉和交互细节统一参考 `docs/frontend-style-guide.md`。
 

@@ -953,6 +953,10 @@ function handleSelectionChange(rows: SystemUserListItem[]) {
 .role-tags :deep(.el-tag) {
   min-width: 102px;
   height: 32px;
+  color: #1458d4;
+  background: #e7f0ff;
+  border-color: #5b95ff;
+  font-weight: 700;
 }
 
 .time-cell {
@@ -1003,15 +1007,15 @@ function handleSelectionChange(rows: SystemUserListItem[]) {
 }
 
 .action-button.is-role {
-  color: #d3cd17;
-  background: #ecf1cb;
-  border-color: #d9e27a;
+  color: #dbd400;
+  background: #f0f7c5;
+  border-color: #dfe875;
 }
 
 .action-button.is-role:hover {
-  color: #b9b410;
-  background: #e5ebb9;
-  border-color: #cbd45d;
+  color: #c3bd00;
+  background: #eaf2ad;
+  border-color: #d3dd56;
 }
 
 .pagination-bar {

@@ -137,6 +137,9 @@ async function main() {
         display: style.display,
         alignItems: style.alignItems,
         justifyContent: style.justifyContent,
+        color: style.color,
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderTopColor,
         width: element.getBoundingClientRect().width,
         height: element.getBoundingClientRect().height,
         fontSize: style.fontSize,
@@ -150,9 +153,12 @@ async function main() {
       roleTagStyle.width > 112 ||
       roleTagStyle.height < 31 ||
       roleTagStyle.height > 34 ||
-      roleTagStyle.fontSize !== '13px'
+      roleTagStyle.fontSize !== '13px' ||
+      roleTagStyle.color !== 'rgb(20, 88, 212)' ||
+      roleTagStyle.backgroundColor !== 'rgb(231, 240, 255)' ||
+      roleTagStyle.borderColor !== 'rgb(91, 149, 255)'
     ) {
-      throw new Error('表格标签需要保持内容自适应并居中');
+      throw new Error('表格角色标签需要保持内容自适应、居中并使用更明显的蓝色框');
     }
 
     const roleButtonStyle = await firstRowActions.getByRole('button', { name: '角色绑定' }).evaluate(element => {
@@ -164,8 +170,8 @@ async function main() {
       };
     });
     if (
-      roleButtonStyle.color !== 'rgb(211, 205, 23)' ||
-      roleButtonStyle.backgroundColor !== 'rgb(236, 241, 203)'
+      roleButtonStyle.color !== 'rgb(219, 212, 0)' ||
+      roleButtonStyle.backgroundColor !== 'rgb(240, 247, 197)'
     ) {
       throw new Error('角色绑定按钮需要使用黄色浅底风格');
     }

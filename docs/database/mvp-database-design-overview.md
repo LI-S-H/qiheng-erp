@@ -14,13 +14,14 @@
 
 ## 当前表清单
 
-MVP 阶段共设计 20 张表。
+MVP 阶段共设计 21 张表。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
 | 系统权限 | `sys_dept` | 部门基础信息 |
 | 系统权限 | `sys_user` | 用户账号和所属部门 |
-| 系统权限 | `sys_role` | 角色和粗粒度权限码 |
+| 系统权限 | `sys_role` | 角色和已授权权限码集合 |
+| 系统权限 | `sys_permission` | 可授权权限码目录 |
 | 系统权限 | `sys_user_role` | 用户角色关系 |
 | 产品 | `product_category` | 产品分类 |
 | 产品 | `product` | 产品主数据 |
@@ -210,16 +211,17 @@ DRAFT -> CONFIRMED
 - 状态字段足够表达当前业务进度。
 - 后续如果要接入审批流，可以在状态流转前增加审批节点，不需要推翻订单表。
 
-### 7. 权限先做粗粒度控制
+### 7. 权限目录与角色授权分离
 
-权限模块没有设计 `sys_menu`、`sys_permission`、`sys_role_permission`，第一版只保留：
+权限模块不设计动态菜单表和角色权限关系表，第一版保留：
 
 - 用户。
 - 部门。
 - 角色。
+- 权限码目录。
 - 用户角色关系。
 
-权限码直接放在 `sys_role.permission_codes` 里，使用 JSON 保存。
+`sys_permission` 维护可授权权限码的名称、模块、操作类型、状态和排序；角色实际获得的权限码继续放在 `sys_role.permission_codes` JSON 中。这样既能独立维护权限目录，又避免 MVP 阶段增加 `sys_role_permission` 关系表和高频关联查询。
 
 这样设计是因为当前需求是“页面大家都能看到，但没有权限的人进不去，或者不能查大表”。所以第一版只需要判断用户是否拥有模块级和大表查询权限，例如：
 
@@ -232,12 +234,11 @@ sales:query
 ai:query:stock
 ```
 
-后续如果需要动态菜单、按钮权限、字段权限，再拆：
+后续如果需要动态菜单、复杂角色授权关系或字段权限，再扩展：
 
 ```text
 sys_role.permission_codes
   -> sys_menu
-  -> sys_permission
   -> sys_role_permission
   -> 数据权限 / 字段权限
 ```
@@ -633,7 +634,8 @@ flowchart LR
 flowchart LR
     dept["sys_dept<br/>部门表<br/>id 主键<br/>parent_id 上级部门ID"]
     user["sys_user<br/>用户表<br/>id 主键<br/>dept_id 所属部门ID<br/>is_admin 是否超级管理员"]
-    role["sys_role<br/>角色表<br/>id 主键<br/>permission_codes 粗粒度权限码"]
+    role["sys_role<br/>角色表<br/>id 主键<br/>permission_codes 已授权权限码"]
+    permission["sys_permission<br/>权限码目录表<br/>id 主键<br/>permission_code 权限码<br/>status 启用状态"]
     userRole["sys_user_role<br/>用户角色关系表<br/>user_id 用户ID<br/>role_id 角色ID"]
     doc["ai_document<br/>AI文档表<br/>id 主键<br/>title 文档标题<br/>status 处理状态"]
     chunk["ai_document_chunk<br/>AI文档切片表<br/>document_id 文档ID<br/>vector_key Redis向量键"]
@@ -643,6 +645,7 @@ flowchart LR
     dept -->|"dept_id"| user
     user -->|"user_id"| userRole
     role -->|"role_id"| userRole
+    permission -.->|"permission_code 由业务层校验"| role
     doc -->|"document_id"| chunk
     chunk -.->|"vector_key 指向 RedisStack"| redis
     log -.->|"cited_chunk_ids 引用切片ID列表"| chunk
@@ -665,13 +668,15 @@ AI 关系里需要特别说明两点：
 flowchart LR
     dept["sys_dept 部门表<br/>id 主键<br/>parent_id 上级部门ID<br/>ancestors 祖级路径<br/>dept_name 部门名称<br/>status 启用状态<br/>created_at 创建时间<br/>updated_at 更新时间<br/>deleted 逻辑删除"]
     user["sys_user 用户表<br/>id 主键<br/>username 登录账号<br/>password_hash 密码哈希<br/>real_name 用户姓名<br/>dept_id 所属部门ID<br/>is_admin 是否超级管理员<br/>status 启用状态<br/>last_login_at 最近登录时间<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除"]
-    role["sys_role 角色表<br/>id 主键<br/>role_code 角色编码<br/>role_name 角色名称<br/>permission_codes 粗粒度权限码<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
+    role["sys_role 角色表<br/>id 主键<br/>role_code 角色编码<br/>role_name 角色名称<br/>permission_codes 已授权权限码<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
+    permission["sys_permission 权限码目录表<br/>id 主键<br/>permission_code 权限码<br/>permission_name 权限名称<br/>module_code 所属模块<br/>action_type 操作类型<br/>status 启用状态<br/>sort_order 排序<br/>description 权限说明<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除"]
     userRole["sys_user_role 用户角色关系表<br/>id 主键<br/>user_id 用户ID<br/>role_id 角色ID<br/>created_at / updated_at 审计时间"]
 
     dept -->|"上级部门：parent_id -> id"| dept
-    dept -->|"用户所属部门：dept_id -> id，可空"| user
+    dept -->|"用户所属部门：dept_id -> id，必填"| user
     user -->|"用户角色：user_id -> id"| userRole
     role -->|"角色授权：role_id -> id"| userRole
+    permission -.->|"权限码目录：permission_code 由业务层校验"| role
 ```
 
 ### 产品与库存余额 ER 关系图
@@ -795,8 +800,9 @@ AI 关系里有两个特殊点：
 
 | 暂不设计 | 当前替代方案 | 后续扩展 |
 |---|---|---|
-| 菜单权限表 | `sys_role.permission_codes` | 拆 `sys_menu`、`sys_permission` |
-| 按钮权限 | 模块级和大表查询权限 | 增加按钮和接口权限码 |
+| 动态菜单表 | 前端静态路由 + 接口权限码 | 增加 `sys_menu` 并关联权限码 |
+| 独立角色权限关系表 | `sys_role.permission_codes` JSON | 权限规模扩大后拆 `sys_role_permission` |
+| 动态按钮元数据 | 核心写操作使用接口权限码 | 增加按钮资源与权限码映射 |
 | 字段权限 | 暂不控制 | 增加敏感字段权限 |
 | 仓库级数据权限 | 暂不控制 | 增加角色仓库范围 |
 | 品牌表、单位表 | 存在 `product` 字段 | 主数据复杂后拆表 |

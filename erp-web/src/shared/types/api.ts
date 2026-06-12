@@ -7,7 +7,7 @@ export interface Result<T> {
 export interface PageResult<T> {
   records: T[];
   total: number;
-  pageNo: number;
+  pageNum: number;
   pageSize: number;
 }
 

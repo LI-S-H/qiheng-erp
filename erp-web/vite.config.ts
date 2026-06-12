@@ -1,15 +1,15 @@
-import { fileURLToPath, URL } from 'node:url';
+import path from 'node:path';
 import vue from '@vitejs/plugin-vue';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), tailwindcss()],
   build: {
     rollupOptions: {
       output: {
         manualChunks: {
           'vendor-vue': ['vue', 'vue-router', 'pinia'],
-          'vendor-element': ['element-plus', '@element-plus/icons-vue'],
           'vendor-axios': ['axios'],
         },
       },
@@ -17,7 +17,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@': path.resolve(__dirname, './src'),
     },
   },
   server: {

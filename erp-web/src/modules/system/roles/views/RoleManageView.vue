@@ -1,205 +1,126 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useDebounceFn } from '@vueuse/core';
+import { getApiErrorMessage } from '@/api/http';
+import { toast } from 'vue-sonner';
+import { Eye } from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Textarea } from '@/components/ui/textarea';
 import {
-  CircleCheck,
-  CircleClose,
-  CirclePlus,
-  Delete,
-  EditPen,
-  RefreshRight,
-  Search,
-  Setting,
-} from '@element-plus/icons-vue';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type { RoleStatus, SystemRoleFormPayload, SystemRoleListItem, SystemRoleQuery } from '../types';
+import { listSystemRoles, createSystemRole, updateSystemRole, updateSystemRolePermissions, deleteSystemRole, batchUpdateSystemRoleStatus, batchDeleteSystemRoles } from '../api';
+import { listPermissionOptions } from '../../permissions/api';
+import type { PermissionOptionGroup } from '../../permissions/types';
 
-interface PermissionGroup {
-  group: string;
-  codes: Array<{
-    code: string;
-    label: string;
-  }>;
-}
+type PermissionGroup = PermissionOptionGroup;
 
-const permissionGroups: PermissionGroup[] = [
-  {
-    group: '系统权限',
-    codes: [
-      { code: 'system:user:query', label: '用户查询' },
-      { code: 'system:user:manage', label: '用户维护' },
-      { code: 'system:role:query', label: '角色查询' },
-      { code: 'system:role:manage', label: '角色维护' },
-    ],
-  },
-  {
-    group: '商品与库存',
-    codes: [
-      { code: 'product:query', label: '产品查询' },
-      { code: 'product:manage', label: '产品维护' },
-      { code: 'warehouse:query', label: '库存查询' },
-      { code: 'warehouse:manage', label: '库存维护' },
-    ],
-  },
-  {
-    group: '采购销售',
-    codes: [
-      { code: 'supplier:query', label: '供应商查询' },
-      { code: 'purchase:query', label: '采购查询' },
-      { code: 'purchase:create', label: '采购创建' },
-      { code: 'customer:query', label: '客户查询' },
-      { code: 'sales:query', label: '销售查询' },
-      { code: 'sales:create', label: '销售创建' },
-    ],
-  },
-  {
-    group: '智能助手',
-    codes: [
-      { code: 'ai:query:stock', label: '库存问答' },
-      { code: 'ai:query:sales', label: '销售问答' },
-      { code: 'ai:query:purchase', label: '采购问答' },
-      { code: 'ai:ops:suggest', label: '运维建议' },
-      { code: 'ai:decision:suggest', label: '决策建议' },
-    ],
-  },
+const statusFilterOptions = [
+  { value: 'all', label: '全部状态' },
+  { value: 1, label: '启用' },
+  { value: 0, label: '停用' },
 ];
 
-const initialRoles: SystemRoleListItem[] = [
-  {
-    roleId: '1900000000000001001',
-    roleCode: 'SUPER_ADMIN',
-    roleName: '超级管理员',
-    permissionCodes: ['*'],
-    status: 1,
-    remark: '拥有系统全部访问和维护权限',
-    userCount: 1,
-    createdAt: '2026-06-05 20:30:00',
-    updatedAt: '2026-06-08 09:12:30',
-  },
-  {
-    roleId: '1900000000000001002',
-    roleCode: 'SYSTEM_ADMIN',
-    roleName: '系统管理员',
-    permissionCodes: ['system:user:query', 'system:user:manage', 'system:role:query', 'system:role:manage'],
-    status: 1,
-    remark: '维护账号、角色和基础权限配置',
-    userCount: 0,
-    createdAt: '2026-06-05 21:00:00',
-    updatedAt: '2026-06-07 16:20:00',
-  },
-  {
-    roleId: '1900000000000001003',
-    roleCode: 'BUSINESS_MANAGER',
-    roleName: '业务主管',
-    permissionCodes: ['product:query', 'supplier:query', 'purchase:query', 'customer:query', 'sales:query'],
-    status: 1,
-    remark: '查看产品、采购和销售主线数据',
-    userCount: 2,
-    createdAt: '2026-06-06 10:18:22',
-    updatedAt: '2026-06-07 13:00:00',
-  },
-  {
-    roleId: '1900000000000001004',
-    roleCode: 'WAREHOUSE_OPERATOR',
-    roleName: '仓库操作员',
-    permissionCodes: ['product:query', 'warehouse:query', 'warehouse:manage', 'ai:query:stock'],
-    status: 1,
-    remark: '处理仓储库存查询和出入库相关操作',
-    userCount: 1,
-    createdAt: '2026-06-06 11:05:19',
-    updatedAt: '2026-06-06 11:05:19',
-  },
-  {
-    roleId: '1900000000000001005',
-    roleCode: 'AI_ANALYST',
-    roleName: '智能分析员',
-    permissionCodes: ['ai:query:stock', 'ai:query:sales', 'ai:query:purchase', 'ai:decision:suggest'],
-    status: 0,
-    remark: '用于后续智能经营分析试点',
-    userCount: 0,
-    createdAt: '2026-06-07 09:40:00',
-    updatedAt: '2026-06-07 09:40:00',
-  },
-];
+const permissionGroups = ref<PermissionGroup[]>([]);
+const allPermissionCodes = computed(() => permissionGroups.value.flatMap(group => group.codes));
 
-const roles = ref<SystemRoleListItem[]>([...initialRoles]);
+const roles = ref<SystemRoleListItem[]>([]);
+const total = ref(0);
 const loading = ref(false);
-const selectedRows = ref<SystemRoleListItem[]>([]);
+const formSubmitting = ref(false);
+const permissionSubmitting = ref(false);
+const actionSubmitting = ref(false);
+const selectedIds = ref<Set<string>>(new Set());
 const roleDialogVisible = ref(false);
 const permissionPreviewVisible = ref(false);
 const permissionDialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingRoleId = ref('');
-const roleFormRef = ref<FormInstance>();
-const permissionFormRef = ref<FormInstance>();
 const permissionPreviewRole = ref<SystemRoleListItem | null>(null);
 const permissionEditingRole = ref<SystemRoleListItem | null>(null);
 
 const query = reactive<SystemRoleQuery>({
-  roleCode: '',
-  roleName: '',
-  status: '',
-  pageNum: 1,
-  pageSize: 10,
+  roleCode: '', roleName: '', status: 'all', pageNum: 1, pageSize: 10,
 });
 
 const roleForm = reactive<SystemRoleFormPayload>({
-  roleCode: '',
-  roleName: '',
-  permissionCodes: [],
-  status: 1,
-  remark: '',
+  roleCode: '', roleName: '', permissionCodes: [], status: 1, remark: '',
 });
 
-const permissionForm = reactive({
-  permissionCodes: [] as string[],
+const permissionForm = reactive({ permissionCodes: [] as string[] });
+
+const formErrors = reactive<Record<string, string>>({});
+const permFormErrors = reactive<Record<string, string>>({});
+let fetchSequence = 0;
+
+const confirmState = reactive({
+  open: false, title: '', description: '', confirmText: '',
+  variant: 'default' as 'default' | 'destructive' | 'warning',
+  onConfirm: (() => {}) as (() => void | Promise<void>),
 });
 
-const roleRules: FormRules<SystemRoleFormPayload> = {
-  roleCode: [
-    { required: true, message: '请输入角色编码', trigger: 'blur' },
-    { pattern: /^[A-Z][A-Z0-9_]{2,63}$/, message: '角色编码需为大写字母、数字或下划线', trigger: 'blur' },
-  ],
-  roleName: [{ required: true, message: '请输入角色名称', trigger: 'blur' }],
-  permissionCodes: [{ required: true, message: '请选择权限码', trigger: 'change' }],
-  status: [{ required: true, message: '请选择启用状态', trigger: 'change' }],
-};
+const enabledCount = computed(() => roles.value.filter(r => r.status === 1).length);
+const permissionTotal = computed(() => new Set(roles.value.flatMap(r => r.permissionCodes)).size);
+const boundUserTotal = computed(() => roles.value.reduce((t, r) => t + r.userCount, 0));
 
-const permissionRules: FormRules<{ permissionCodes: string[] }> = {
-  permissionCodes: [{ required: true, message: '请选择权限码', trigger: 'change' }],
-};
+const allSelected = computed(() => roles.value.length > 0 && roles.value.every(r => selectedIds.value.has(r.roleId)));
+const selectedRows = computed(() => roles.value.filter(r => selectedIds.value.has(r.roleId)));
 
-const filteredRoles = computed(() => {
-  const roleCode = query.roleCode?.trim().toLowerCase();
-  const roleName = query.roleName?.trim().toLowerCase();
-
-  return roles.value.filter(role => {
-    const matchRoleCode = !roleCode || role.roleCode.toLowerCase().includes(roleCode);
-    const matchRoleName = !roleName || role.roleName.toLowerCase().includes(roleName);
-    const matchStatus = query.status === '' || role.status === Number(query.status);
-
-    return matchRoleCode && matchRoleName && matchStatus;
-  });
-});
-
-const pagedRoles = computed(() => {
-  const start = (query.pageNum - 1) * query.pageSize;
-  return filteredRoles.value.slice(start, start + query.pageSize);
-});
-
-const enabledCount = computed(() => roles.value.filter(role => role.status === 1).length);
-const permissionTotal = computed(() => new Set(roles.value.flatMap(role => role.permissionCodes)).size);
-const boundUserTotal = computed(() => roles.value.reduce((total, role) => total + role.userCount, 0));
-
-function formatTableTime(value: string) {
-  return value.slice(5, 16);
+async function fetchRoles() {
+  const sequence = ++fetchSequence;
+  loading.value = true;
+  try {
+    const result = await listSystemRoles({ ...query });
+    if (sequence !== fetchSequence) return;
+    roles.value = result.records;
+    total.value = result.total;
+  } catch {
+    // http.ts 统一处理接口错误提示。
+  } finally {
+    if (sequence === fetchSequence) loading.value = false;
+  }
 }
 
-function getPermissionLabel(code: string) {
-  if (code === '*') {
-    return '全部权限';
+async function fetchPermissionOptions() {
+  try {
+    permissionGroups.value = await listPermissionOptions();
+  } catch {
+    permissionGroups.value = [];
   }
+}
 
-  return permissionGroups.flatMap(group => group.codes).find(item => item.code === code)?.label || code;
+onMounted(() => { fetchRoles(); fetchPermissionOptions(); });
+
+function formatTableTime(value: string) { return value.slice(5, 16); }
+
+function getPermissionLabel(code: string) {
+  if (code === '*') return '全部权限';
+  return allPermissionCodes.value.find(item => item.code === code)?.label || code;
 }
 
 function hasAllPermissions(row: SystemRoleListItem | null) {
@@ -207,57 +128,136 @@ function hasAllPermissions(row: SystemRoleListItem | null) {
 }
 
 function getPermissionSummary(row: SystemRoleListItem) {
-  if (hasAllPermissions(row)) {
-    return '全部权限';
-  }
-
+  if (hasAllPermissions(row)) return '全部权限';
   return `${row.permissionCodes.length} 项权限码`;
 }
 
-function getPermissionGroups(row: SystemRoleListItem | null) {
-  if (!row) {
-    return [];
-  }
-
-  if (hasAllPermissions(row)) {
-    return permissionGroups;
-  }
-
+function getPermissionGroupsForRole(row: SystemRoleListItem | null) {
+  if (!row) return [];
+  if (hasAllPermissions(row)) return permissionGroups.value;
   const selectedCodes = new Set(row.permissionCodes);
-  return permissionGroups
-    .map(group => ({
-      group: group.group,
-      codes: group.codes.filter(item => selectedCodes.has(item.code)),
-    }))
-    .filter(group => group.codes.length > 0);
+  return permissionGroups.value
+    .map(g => ({ group: g.group, codes: g.codes.filter(item => selectedCodes.has(item.code)) }))
+    .filter(g => g.codes.length > 0);
+}
+
+const debouncedSearch = useDebounceFn(() => {
+  query.pageNum = 1;
+  fetchRoles();
+}, 250);
+
+function handleSearch() { debouncedSearch(); }
+
+function handleReset() {
+  if (loading.value) return;
+  query.roleCode = ''; query.roleName = ''; query.status = 'all'; query.pageNum = 1;
+  fetchRoles();
+}
+
+function refreshList() { if (!loading.value) fetchRoles(); }
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    roles.value.forEach(r => selectedIds.value.delete(r.roleId));
+  } else {
+    roles.value.forEach(r => selectedIds.value.add(r.roleId));
+  }
+  selectedIds.value = new Set(selectedIds.value);
+}
+
+function toggleSelectRow(roleId: string) {
+  const next = new Set(selectedIds.value);
+  if (next.has(roleId)) next.delete(roleId); else next.add(roleId);
+  selectedIds.value = next;
+}
+
+function ensureSelectedRows(actionName: string) {
+  if (selectedIds.value.size > 0) return true;
+  toast.warning(`请先选择需要${actionName}的角色`);
+  return false;
+}
+
+function showConfirm(title: string, description: string, confirmText: string, variant: 'default' | 'destructive' | 'warning', onConfirm: () => Promise<void> | void) {
+  confirmState.title = title;
+  confirmState.description = description;
+  confirmState.confirmText = confirmText;
+  confirmState.variant = variant;
+  confirmState.onConfirm = onConfirm;
+  confirmState.open = true;
+}
+
+async function runConfirmAction() {
+  if (actionSubmitting.value) return;
+  actionSubmitting.value = true;
+  try {
+    await confirmState.onConfirm();
+    confirmState.open = false;
+  } finally {
+    actionSubmitting.value = false;
+  }
+}
+
+async function handleBatchStatus(status: RoleStatus) {
+  const action = status === 1 ? '启用' : '停用';
+  if (!ensureSelectedRows(action)) return;
+  showConfirm(
+    `批量${action}`,
+    `确认${action}已选择的 ${selectedIds.value.size} 个角色吗`,
+    action,
+    status === 1 ? 'default' : 'warning',
+    async () => {
+      try {
+        await batchUpdateSystemRoleStatus({ roleIds: [...selectedIds.value], status });
+        selectedIds.value = new Set();
+        toast.success(`已批量${action}`);
+        fetchRoles();
+      } catch {}
+    },
+  );
+}
+
+function handleBatchDelete() {
+  if (!ensureSelectedRows('删除')) return;
+  const inUseRoles = selectedRows.value.filter(r => r.userCount > 0);
+  if (inUseRoles.length > 0) {
+    toast.warning('存在已绑定用户的角色，请先解绑后再删除');
+    return;
+  }
+  showConfirm(
+    '批量删除角色',
+    `确认删除已选择的 ${selectedIds.value.size} 个角色吗`,
+    '删除',
+    'destructive',
+    async () => {
+      try {
+        await batchDeleteSystemRoles({ roleIds: [...selectedIds.value] });
+        selectedIds.value = new Set();
+        toast.success('已批量删除角色');
+        fetchRoles();
+      } catch {}
+    },
+  );
 }
 
 function resetRoleForm() {
   editingRoleId.value = '';
-  roleForm.roleCode = '';
-  roleForm.roleName = '';
-  roleForm.permissionCodes = [];
-  roleForm.status = 1;
-  roleForm.remark = '';
+  roleForm.roleCode = ''; roleForm.roleName = '';
+  roleForm.permissionCodes = []; roleForm.status = 1; roleForm.remark = '';
+  Object.keys(formErrors).forEach(k => delete formErrors[k]);
 }
 
-function handleSearch() {
-  query.pageNum = 1;
-}
-
-function handleReset() {
-  query.roleCode = '';
-  query.roleName = '';
-  query.status = '';
-  query.pageNum = 1;
-}
-
-function refreshList() {
-  loading.value = true;
-  window.setTimeout(() => {
-    loading.value = false;
-    ElMessage.success('列表已刷新');
-  }, 260);
+function validateRoleForm(): boolean {
+  Object.keys(formErrors).forEach(k => delete formErrors[k]);
+  const roleCode = roleForm.roleCode.trim();
+  const roleName = roleForm.roleName.trim();
+  const remark = roleForm.remark.trim();
+  if (!roleCode) formErrors.roleCode = '请输入角色编码';
+  else if (!/^[A-Z][A-Z0-9_]{2,63}$/.test(roleCode)) formErrors.roleCode = '角色编码须以大写字母开头，仅可使用大写字母、数字和下划线，长度 3-64 位';
+  if (!roleName) formErrors.roleName = '请输入角色名称';
+  else if (roleName.length > 100) formErrors.roleName = '角色名称不能超过 100 个字符';
+  if (!roleForm.permissionCodes.length) formErrors.permissionCodes = '请选择权限码';
+  if (remark.length > 500) formErrors.remark = '备注不能超过 500 个字符';
+  return Object.keys(formErrors).length === 0;
 }
 
 function openCreateDialog() {
@@ -269,58 +269,47 @@ function openCreateDialog() {
 function openEditDialog(row: SystemRoleListItem) {
   dialogMode.value = 'edit';
   editingRoleId.value = row.roleId;
-  roleForm.roleCode = row.roleCode;
-  roleForm.roleName = row.roleName;
+  roleForm.roleCode = row.roleCode; roleForm.roleName = row.roleName;
   roleForm.permissionCodes = [...row.permissionCodes];
-  roleForm.status = row.status;
-  roleForm.remark = row.remark;
+  roleForm.status = row.status; roleForm.remark = row.remark;
+  Object.keys(formErrors).forEach(k => delete formErrors[k]);
   roleDialogVisible.value = true;
 }
 
 async function submitRoleForm() {
-  await roleFormRef.value?.validate();
-
-  const now = '2026-06-08 10:00:00';
-
-  if (dialogMode.value === 'create') {
-    roles.value = [
-      {
-        roleId: String(1900000000000001100 + roles.value.length),
-        roleCode: roleForm.roleCode,
-        roleName: roleForm.roleName,
-        permissionCodes: [...roleForm.permissionCodes],
-        status: roleForm.status,
-        remark: roleForm.remark,
-        userCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      },
-      ...roles.value,
-    ];
-    ElMessage.success('角色已创建');
-  } else {
-    roles.value = roles.value.map(role =>
-      role.roleId === editingRoleId.value
-        ? {
-            ...role,
-            roleCode: roleForm.roleCode,
-            roleName: roleForm.roleName,
-            permissionCodes: [...roleForm.permissionCodes],
-            status: roleForm.status,
-            remark: roleForm.remark,
-            updatedAt: now,
-          }
-        : role,
-    );
-    ElMessage.success('角色已更新');
+  if (formSubmitting.value || !validateRoleForm()) return;
+  formSubmitting.value = true;
+  const payload: SystemRoleFormPayload = {
+    ...roleForm,
+    roleCode: roleForm.roleCode.trim(),
+    roleName: roleForm.roleName.trim(),
+    permissionCodes: [...new Set(roleForm.permissionCodes)],
+    remark: roleForm.remark.trim(),
+  };
+  try {
+    if (dialogMode.value === 'create') {
+      await createSystemRole(payload);
+      toast.success('角色已创建');
+    } else {
+      await updateSystemRole(editingRoleId.value, payload);
+      toast.success('角色已更新');
+    }
+    roleDialogVisible.value = false;
+    fetchRoles();
+  } catch (error) {
+    const message = getApiErrorMessage(error);
+    if (message === '角色编码已存在') {
+      formErrors.roleCode = message;
+    }
+  } finally {
+    formSubmitting.value = false;
   }
-
-  roleDialogVisible.value = false;
 }
 
 function openPermissionDialog(row: SystemRoleListItem) {
   permissionEditingRole.value = row;
   permissionForm.permissionCodes = [...row.permissionCodes];
+  Object.keys(permFormErrors).forEach(k => delete permFormErrors[k]);
   permissionDialogVisible.value = true;
 }
 
@@ -330,912 +319,417 @@ function openPermissionPreview(row: SystemRoleListItem) {
 }
 
 async function submitPermissionForm() {
-  await permissionFormRef.value?.validate();
-
+  Object.keys(permFormErrors).forEach(k => delete permFormErrors[k]);
+  if (!permissionForm.permissionCodes.length) { permFormErrors.permissionCodes = '请选择权限码'; return; }
+  if (permissionSubmitting.value) return;
   const current = permissionEditingRole.value;
-  if (!current) {
-    return;
-  }
-
-  roles.value = roles.value.map(role =>
-    role.roleId === current.roleId
-      ? {
-          ...role,
-          permissionCodes: [...permissionForm.permissionCodes],
-          updatedAt: '2026-06-08 10:00:00',
-        }
-      : role,
-  );
-  permissionDialogVisible.value = false;
-  ElMessage.success('权限码已更新');
-}
-
-function handleSelectionChange(rows: SystemRoleListItem[]) {
-  selectedRows.value = rows;
-}
-
-function ensureSelectedRows(actionName: string) {
-  if (selectedRows.value.length > 0) {
-    return true;
-  }
-
-  ElMessage.warning(`请先选择需要${actionName}的角色`);
-  return false;
-}
-
-async function handleBatchStatus(status: RoleStatus) {
-  const action = status === 1 ? '启用' : '停用';
-
-  if (!ensureSelectedRows(action)) {
-    return;
-  }
-
+  if (!current) return;
+  permissionSubmitting.value = true;
   try {
-    await ElMessageBox.confirm(`确认${action}已选择的 ${selectedRows.value.length} 个角色吗`, `批量${action}`, {
-      confirmButtonText: action,
-      cancelButtonText: '取消',
-      type: status === 1 ? 'success' : 'warning',
-    });
-  } catch {
-    return;
+    await updateSystemRolePermissions(current.roleId, { permissionCodes: [...new Set(permissionForm.permissionCodes)] });
+    permissionDialogVisible.value = false;
+    toast.success('权限码已更新');
+    fetchRoles();
+  } catch {} finally {
+    permissionSubmitting.value = false;
   }
-
-  const selectedIds = new Set(selectedRows.value.map(role => role.roleId));
-  roles.value = roles.value.map(role =>
-    selectedIds.has(role.roleId) ? { ...role, status, updatedAt: '2026-06-08 10:00:00' } : role,
-  );
-  selectedRows.value = [];
-  ElMessage.success(`已批量${action}`);
 }
 
-async function handleBatchDelete() {
-  if (!ensureSelectedRows('删除')) {
-    return;
-  }
+// Permission checkbox helpers for create/edit dialog
+function isRolePermChecked(code: string): boolean {
+  if (code === '*') return roleForm.permissionCodes.includes('*');
+  return roleForm.permissionCodes.includes(code);
+}
 
-  const inUseRoles = selectedRows.value.filter(role => role.userCount > 0);
-  if (inUseRoles.length > 0) {
-    ElMessage.warning('存在已绑定用户的角色，请先解绑后再删除');
-    return;
+function toggleRolePerm(code: string, checked: boolean) {
+  if (code === '*') {
+    if (checked) {
+      roleForm.permissionCodes = ['*'];
+    } else {
+      roleForm.permissionCodes = [];
+    }
+  } else {
+    // Remove wildcard if selecting individual codes
+    const idx = roleForm.permissionCodes.indexOf('*');
+    if (idx !== -1) roleForm.permissionCodes.splice(idx, 1);
+    if (checked) {
+      if (!roleForm.permissionCodes.includes(code)) roleForm.permissionCodes.push(code);
+    } else {
+      const ci = roleForm.permissionCodes.indexOf(code);
+      if (ci !== -1) roleForm.permissionCodes.splice(ci, 1);
+    }
   }
+}
 
-  try {
-    await ElMessageBox.confirm(`确认删除已选择的 ${selectedRows.value.length} 个角色吗`, '批量删除角色', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
+// Permission checkbox helpers for permission config dialog
+function isPermFormChecked(code: string): boolean {
+  if (code === '*') return permissionForm.permissionCodes.includes('*');
+  return permissionForm.permissionCodes.includes(code);
+}
+
+function togglePermForm(code: string, checked: boolean) {
+  if (code === '*') {
+    if (checked) {
+      permissionForm.permissionCodes = ['*'];
+    } else {
+      permissionForm.permissionCodes = [];
+    }
+  } else {
+    const idx = permissionForm.permissionCodes.indexOf('*');
+    if (idx !== -1) permissionForm.permissionCodes.splice(idx, 1);
+    if (checked) {
+      if (!permissionForm.permissionCodes.includes(code)) permissionForm.permissionCodes.push(code);
+    } else {
+      const ci = permissionForm.permissionCodes.indexOf(code);
+      if (ci !== -1) permissionForm.permissionCodes.splice(ci, 1);
+    }
   }
-
-  const selectedIds = new Set(selectedRows.value.map(role => role.roleId));
-  roles.value = roles.value.filter(role => !selectedIds.has(role.roleId));
-  selectedRows.value = [];
-  ElMessage.success('已批量删除角色');
 }
 </script>
 
 <template>
-  <section class="page-shell role-page">
-    <div class="page-head">
+  <section class="page-shell space-y-4">
+    <div class="page-heading">
       <div>
         <h1 class="page-title">角色管理</h1>
-        <p class="page-subtitle">维护角色编码、权限码集合、启用状态和使用情况</p>
+        <p class="page-description">维护角色编码、权限码集合、启用状态和使用情况</p>
       </div>
     </div>
 
-    <div class="metric-grid">
-      <div class="metric-item">
-        <span>角色总数</span>
-        <strong>{{ roles.length }}</strong>
+    <!-- Metrics -->
+    <div class="summary-strip">
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">角色总数</span>
+        <strong class="text-2xl mt-1">{{ total }}</strong>
       </div>
-      <div class="metric-item">
-        <span>启用角色</span>
-        <strong>{{ enabledCount }}</strong>
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">启用角色</span>
+        <strong class="text-2xl mt-1">{{ enabledCount }}</strong>
       </div>
-      <div class="metric-item">
-        <span>权限码覆盖</span>
-        <strong>{{ permissionTotal }}</strong>
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">权限码覆盖</span>
+        <strong class="text-2xl mt-1">{{ permissionTotal }}</strong>
       </div>
-      <div class="metric-item">
-        <span>绑定用户数</span>
-        <strong>{{ boundUserTotal }}</strong>
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">绑定用户数</span>
+        <strong class="text-2xl mt-1">{{ boundUserTotal }}</strong>
       </div>
     </div>
 
-    <section class="module-panel filter-panel">
-      <el-form class="filter-form" :model="query" label-width="72px">
-        <el-form-item label="角色编码">
-          <el-input v-model="query.roleCode" clearable placeholder="如 SUPER_ADMIN" @keyup.enter="handleSearch" />
-        </el-form-item>
-        <el-form-item label="角色名称">
-          <el-input v-model="query.roleName" clearable placeholder="如 超级管理员" @keyup.enter="handleSearch" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" clearable value-on-clear="" placeholder="全部状态">
-            <el-option label="启用" :value="1" />
-            <el-option label="停用" :value="0" />
-          </el-select>
-        </el-form-item>
-        <div class="filter-actions">
-          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
-          <el-button :icon="RefreshRight" @click="handleReset">重置</el-button>
+    <!-- Filter -->
+    <div class="filter-panel">
+      <div class="filter-grid filter-grid--roles">
+        <div class="space-y-1">
+          <Label class="text-xs">角色编码</Label>
+          <Input v-model="query.roleCode" placeholder="如 SUPER_ADMIN" @keyup.enter="handleSearch" />
         </div>
-      </el-form>
-    </section>
+        <div class="space-y-1">
+          <Label class="text-xs">角色名称</Label>
+          <Input v-model="query.roleName" placeholder="如 超级管理员" @keyup.enter="handleSearch" />
+        </div>
+        <div class="space-y-1">
+          <Label class="text-xs">状态</Label>
+          <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
+        </div>
+        <div class="filter-actions">
+          <Button size="sm" :disabled="loading" @click="handleSearch">{{ loading ? '查询中...' : '查询' }}</Button>
+          <Button size="sm" variant="outline" :disabled="loading" @click="handleReset">重置</Button>
+        </div>
+      </div>
+    </div>
 
-    <section class="module-panel table-panel">
+    <!-- Table -->
+    <div class="data-panel">
+      <!-- Toolbar -->
       <div class="table-toolbar">
-        <div class="table-toolbar__left">
-          <strong>角色列表</strong>
-          <span :class="{ 'is-active': selectedRows.length > 0 }">已选 {{ selectedRows.length }} 项</span>
+        <div class="table-toolbar__title">
+          <strong class="text-sm">角色列表</strong>
+          <span class="text-xs" :class="selectedIds.size > 0 ? 'text-primary' : 'text-muted-foreground'">
+            已选 {{ selectedIds.size }} 项
+          </span>
         </div>
         <div class="table-toolbar__actions">
-          <el-button class="toolbar-create" type="primary" :icon="CirclePlus" @click="openCreateDialog">
-            新增角色
-          </el-button>
-          <el-button
-            class="toolbar-action"
-            :disabled="selectedRows.length === 0"
-            :icon="CircleCheck"
-            @click="handleBatchStatus(1)"
-          >
-            批量启用
-          </el-button>
-          <el-button
-            class="toolbar-action"
-            :disabled="selectedRows.length === 0"
-            :icon="CircleClose"
-            @click="handleBatchStatus(0)"
-          >
-            批量停用
-          </el-button>
-          <el-button
-            class="toolbar-danger"
-            :disabled="selectedRows.length === 0"
-            :icon="Delete"
-            @click="handleBatchDelete"
-          >
-            删除
-          </el-button>
-          <el-button class="toolbar-action" :icon="RefreshRight" @click="refreshList">刷新</el-button>
+          <Tooltip>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" :disabled="formSubmitting || actionSubmitting" @click="openCreateDialog">新增角色</Button></span></TooltipTrigger>
+            <TooltipContent>创建新的系统角色</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchStatus(1)">批量启用</Button></span></TooltipTrigger>
+            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择角色' : '启用已选角色' }}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchStatus(0)">批量停用</Button></span></TooltipTrigger>
+            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择角色' : '停用已选角色' }}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="destructive" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchDelete">删除</Button></span></TooltipTrigger>
+            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择角色' : '删除已选角色' }}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="loading" @click="refreshList">刷新</Button></span></TooltipTrigger>
+            <TooltipContent>重新加载角色列表</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
-      <el-table
-        v-loading="loading"
-        :data="pagedRoles"
-        row-key="roleId"
-        border
-        class="role-table"
-        @selection-change="handleSelectionChange"
-      >
-        <el-table-column type="selection" width="44" />
-        <el-table-column label="角色" min-width="190">
-          <template #default="{ row }">
-            <div class="role-name-cell">
-              <strong>{{ row.roleName }}</strong>
-              <span>{{ row.roleCode }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="权限码" min-width="330" align="center">
-          <template #default="{ row }">
-            <div class="permission-summary">
-              <el-tag class="permission-summary__tag" effect="plain">
-                {{ getPermissionSummary(row) }}
-              </el-tag>
-              <el-button class="permission-summary__link" link type="primary" @click="openPermissionPreview(row)">
-                查看明细
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="绑定用户数" width="120" align="center">
-          <template #default="{ row }">
-            <el-tag
-              class="user-count-tag"
-              :class="{ 'is-empty': row.userCount === 0 }"
-              effect="plain"
-            >
-              {{ row.userCount }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="96" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'" effect="plain">
-              {{ row.status === 1 ? '启用' : '停用' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="备注" min-width="190">
-          <template #default="{ row }">
-            <span class="remark-text">{{ row.remark || '未填写' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="时间" min-width="140">
-          <template #default="{ row }">
-            <div class="time-cell">
-              <span>创建 {{ formatTableTime(row.createdAt) }}</span>
-              <span>更新 {{ formatTableTime(row.updatedAt) }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="176" fixed="right">
-          <template #default="{ row }">
-            <div class="row-actions">
-              <el-button class="action-button" @click="openEditDialog(row)">编辑</el-button>
-              <el-button class="action-button is-role" @click="openPermissionDialog(row)">权限配置</el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
+      <ScrollArea class="w-full">
+        <Table class="min-w-[1216px] table-fixed">
+          <colgroup>
+            <col class="w-[44px]" />
+            <col class="w-[180px]" />
+            <col class="w-[220px]" />
+            <col class="w-[120px]" />
+            <col class="w-[96px]" />
+            <col class="w-[220px]" />
+            <col class="w-[160px]" />
+            <col class="w-[176px]" />
+          </colgroup>
+          <TableHeader>
+            <TableRow>
+              <TableHead class="w-[44px]">
+                <Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" />
+              </TableHead>
+              <TableHead>角色</TableHead>
+              <TableHead class="text-center">权限码</TableHead>
+              <TableHead class="text-center w-[120px]">绑定用户数</TableHead>
+              <TableHead class="text-center w-[96px]">状态</TableHead>
+              <TableHead>备注</TableHead>
+              <TableHead>时间</TableHead>
+              <TableHead class="text-center w-[176px]">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-if="loading">
+              <TableCell colspan="8" class="text-center text-muted-foreground py-8">加载中...</TableCell>
+            </TableRow>
+            <TableRow v-else-if="roles.length === 0">
+              <TableCell colspan="8" class="text-center text-muted-foreground py-8">暂无数据</TableCell>
+            </TableRow>
+            <TableRow v-for="row in roles" :key="row.roleId" :class="{ 'bg-muted/50': selectedIds.has(row.roleId) }">
+              <TableCell>
+                <Checkbox :model-value="selectedIds.has(row.roleId)" @update:model-value="toggleSelectRow(row.roleId)" />
+              </TableCell>
+              <TableCell>
+                <div class="flex flex-col">
+                  <strong class="text-sm">{{ row.roleName }}</strong>
+                  <span class="text-xs text-muted-foreground">{{ row.roleCode }}</span>
+                </div>
+              </TableCell>
+              <TableCell class="text-center">
+                <div class="flex items-center justify-center gap-2">
+                  <Badge variant="outline" class="min-w-[102px] justify-center border-blue-200 bg-blue-50 font-semibold text-blue-700">
+                    {{ getPermissionSummary(row) }}
+                  </Badge>
+                  <Button variant="link" size="sm" class="h-7 p-0" :disabled="actionSubmitting" @click="openPermissionPreview(row)">
+                    <Eye class="mr-1 h-3.5 w-3.5" />查看明细
+                  </Button>
+                </div>
+              </TableCell>
+              <TableCell class="text-center">
+                <Badge
+                  variant="outline"
+                  class="min-w-[38px] justify-center font-semibold"
+                  :class="row.userCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'"
+                >
+                  {{ row.userCount }}
+                </Badge>
+              </TableCell>
+              <TableCell class="text-center">
+                <Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">
+                  {{ row.status === 1 ? '启用' : '停用' }}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <span class="text-xs text-muted-foreground">{{ row.remark || '未填写' }}</span>
+              </TableCell>
+              <TableCell>
+                <div class="flex flex-col text-xs">
+                  <span>创建 {{ formatTableTime(row.createdAt) }}</span>
+                  <span class="text-muted-foreground">更新 {{ formatTableTime(row.updatedAt) }}</span>
+                </div>
+              </TableCell>
+              <TableCell class="text-center">
+                <div class="flex items-center justify-center gap-1">
+                  <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
+                  <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openPermissionDialog(row)">权限配置</Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </ScrollArea>
 
-      <div class="pagination-bar">
-        <div class="pagination-total">共 {{ filteredRoles.length }} 条</div>
-        <el-pagination
-          class="pagination-sizes"
-          v-model:page-size="query.pageSize"
-          :page-sizes="[10, 20, 50]"
-          :total="filteredRoles.length"
-          layout="sizes"
-        />
-        <el-pagination
-          class="pagination-pager"
-          v-model:current-page="query.pageNum"
-          :page-size="query.pageSize"
-          :total="filteredRoles.length"
-          layout="prev, pager, next"
-        />
-        <el-pagination
-          class="pagination-jumper"
-          v-model:current-page="query.pageNum"
-          :page-size="query.pageSize"
-          :total="filteredRoles.length"
-          layout="jumper"
-        />
-      </div>
-    </section>
+      <DataTablePagination
+        :total="total"
+        :page-num="query.pageNum"
+        :page-size="query.pageSize"
+        @update:page-num="query.pageNum = $event; fetchRoles()"
+        @update:page-size="query.pageSize = $event; query.pageNum = 1; fetchRoles()"
+      />
+    </div>
 
-    <el-dialog
-      v-model="roleDialogVisible"
-      :title="dialogMode === 'create' ? '新增角色' : '编辑角色'"
-      width="640px"
-      destroy-on-close
-    >
-      <el-form ref="roleFormRef" :model="roleForm" :rules="roleRules" label-width="88px">
-        <el-form-item label="角色编码" prop="roleCode">
-          <el-input v-model="roleForm.roleCode" :disabled="dialogMode === 'edit'" maxlength="64" />
-        </el-form-item>
-        <el-form-item label="角色名称" prop="roleName">
-          <el-input v-model="roleForm.roleName" maxlength="100" />
-        </el-form-item>
-        <el-form-item label="启用状态" prop="status">
-          <el-radio-group v-model="roleForm.status">
-            <el-radio-button :value="1">启用</el-radio-button>
-            <el-radio-button :value="0">停用</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="权限码" prop="permissionCodes">
-          <div class="permission-picker">
-            <el-checkbox-group v-model="roleForm.permissionCodes" class="permission-checks">
-              <el-checkbox value="*">全部权限</el-checkbox>
-              <div v-for="group in permissionGroups" :key="group.group" class="permission-group">
-                <div class="permission-group__title">{{ group.group }}</div>
-                <div class="permission-group__options">
-                  <el-checkbox v-for="item in group.codes" :key="item.code" :value="item.code">
-                    {{ item.label }}
-                  </el-checkbox>
+    <!-- Create/Edit Role Dialog -->
+    <Dialog v-model:open="roleDialogVisible">
+      <DialogContent class="flex h-[760px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[620px]">
+        <DialogHeader>
+          <DialogTitle>{{ dialogMode === 'create' ? '新增角色' : '编辑角色' }}</DialogTitle>
+          <DialogDescription>填写角色信息和权限码</DialogDescription>
+        </DialogHeader>
+        <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-3">
+          <div class="space-y-4 py-2">
+            <div class="space-y-1">
+              <Label>角色编码 <span class="text-destructive">*</span></Label>
+              <Input v-model="roleForm.roleCode" :disabled="dialogMode === 'edit'" maxlength="64" />
+              <p v-if="formErrors.roleCode" class="text-xs text-destructive">{{ formErrors.roleCode }}</p>
+            </div>
+            <div class="space-y-1">
+              <Label>角色名称 <span class="text-destructive">*</span></Label>
+              <Input v-model="roleForm.roleName" maxlength="100" />
+              <p v-if="formErrors.roleName" class="text-xs text-destructive">{{ formErrors.roleName }}</p>
+            </div>
+            <div class="space-y-1">
+              <Label>启用状态 <span class="text-destructive">*</span></Label>
+              <RadioGroup :model-value="String(roleForm.status)" @update:model-value="roleForm.status = Number($event) as 0 | 1" class="flex gap-4">
+                <div class="flex items-center gap-2">
+                  <RadioGroupItem value="1" id="role-status-1" />
+                  <Label for="role-status-1" class="cursor-pointer">启用</Label>
+                </div>
+                <div class="flex items-center gap-2">
+                  <RadioGroupItem value="0" id="role-status-0" />
+                  <Label for="role-status-0" class="cursor-pointer">停用</Label>
+                </div>
+              </RadioGroup>
+            </div>
+            <div class="space-y-1">
+              <Label>权限码 <span class="text-destructive">*</span></Label>
+              <div class="w-full p-3 bg-muted/50 border border-border rounded-lg space-y-3">
+                <!-- Wildcard -->
+                <div class="flex items-center gap-2">
+                  <Checkbox id="role-perm-all" :model-value="isRolePermChecked('*')" @update:model-value="toggleRolePerm('*', $event === true)" />
+                  <Label for="role-perm-all" class="cursor-pointer font-semibold">全部权限</Label>
+                </div>
+                <!-- Groups -->
+                <div v-for="group in permissionGroups" :key="group.group" class="pt-3 border-t border-border">
+                  <div class="text-xs font-bold text-foreground mb-2">{{ group.group }}</div>
+                  <div class="grid grid-cols-3 gap-1">
+                    <div v-for="item in group.codes" :key="item.code" class="flex items-center gap-2">
+                      <Checkbox :id="'role-perm-' + item.code" :model-value="isRolePermChecked(item.code)" @update:model-value="toggleRolePerm(item.code, $event === true)" />
+                      <Label :for="'role-perm-' + item.code" class="cursor-pointer text-xs">{{ item.label }}</Label>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </el-checkbox-group>
-          </div>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="roleForm.remark" type="textarea" :rows="3" maxlength="500" show-word-limit />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="roleDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitRoleForm">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="permissionPreviewVisible" title="权限码明细" width="660px" destroy-on-close>
-      <div v-if="permissionPreviewRole" class="permission-preview">
-        <div class="permission-preview__head">
-          <div>
-            <strong>{{ permissionPreviewRole.roleName }}</strong>
-            <span>{{ permissionPreviewRole.roleCode }}</span>
-          </div>
-          <el-tag effect="plain" class="permission-summary__tag">
-            {{ getPermissionSummary(permissionPreviewRole) }}
-          </el-tag>
-        </div>
-
-        <el-alert
-          v-if="hasAllPermissions(permissionPreviewRole)"
-          class="permission-preview__alert"
-          title="该角色使用全部权限通配符，后端会按系统全部权限码处理"
-          type="info"
-          :closable="false"
-          show-icon
-        />
-
-        <div class="permission-preview__groups">
-          <div v-for="group in getPermissionGroups(permissionPreviewRole)" :key="group.group" class="permission-preview-group">
-            <div class="permission-preview-group__title">{{ group.group }}</div>
-            <div class="permission-preview-group__codes">
-              <el-tag v-for="item in group.codes" :key="item.code" effect="plain" class="permission-code-tag">
-                <span>{{ item.label }}</span>
-                <small>{{ item.code }}</small>
-              </el-tag>
+              <p v-if="formErrors.permissionCodes" class="text-xs text-destructive">{{ formErrors.permissionCodes }}</p>
+            </div>
+            <div class="space-y-1">
+              <Label>备注</Label>
+              <Textarea v-model="roleForm.remark" :rows="3" maxlength="500" placeholder="请输入备注" />
+              <p v-if="formErrors.remark" class="text-xs text-destructive">{{ formErrors.remark }}</p>
             </div>
           </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="permissionPreviewVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
+        </ScrollArea>
+        <DialogFooter>
+          <Button variant="outline" :disabled="formSubmitting" @click="roleDialogVisible = false">取消</Button>
+          <Button :disabled="formSubmitting" @click="submitRoleForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-    <el-dialog v-model="permissionDialogVisible" title="权限配置" width="620px" destroy-on-close>
-      <el-form ref="permissionFormRef" :model="permissionForm" :rules="permissionRules" label-width="88px">
-        <el-form-item label="当前角色">
-          <el-input :model-value="permissionEditingRole?.roleName" disabled />
-        </el-form-item>
-        <el-form-item label="权限码" prop="permissionCodes">
-          <div class="permission-picker">
-            <el-checkbox-group v-model="permissionForm.permissionCodes" class="permission-checks">
-              <el-checkbox value="*">全部权限</el-checkbox>
-              <div v-for="group in permissionGroups" :key="group.group" class="permission-group">
-                <div class="permission-group__title">{{ group.group }}</div>
-                <div class="permission-group__options">
-                  <el-checkbox v-for="item in group.codes" :key="item.code" :value="item.code">
-                    {{ item.label }}
-                  </el-checkbox>
+    <!-- Permission Preview Dialog -->
+    <Dialog v-model:open="permissionPreviewVisible">
+      <DialogContent class="flex h-[680px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[640px]">
+        <DialogHeader>
+          <DialogTitle>权限码明细</DialogTitle>
+          <DialogDescription>查看角色的权限码详情</DialogDescription>
+        </DialogHeader>
+        <div v-if="permissionPreviewRole" class="flex min-h-0 flex-1 flex-col gap-4">
+          <div class="flex items-center justify-between pb-3 border-b border-border">
+            <div>
+              <strong class="text-sm">{{ permissionPreviewRole.roleName }}</strong>
+              <span class="block text-xs text-muted-foreground mt-0.5">{{ permissionPreviewRole.roleCode }}</span>
+            </div>
+            <Badge variant="outline" class="min-w-[102px] justify-center border-blue-200 bg-blue-50 font-semibold text-blue-700">
+              {{ getPermissionSummary(permissionPreviewRole) }}
+            </Badge>
+          </div>
+
+          <Alert v-if="hasAllPermissions(permissionPreviewRole)">
+            <AlertDescription>
+              该角色使用全部权限通配符，后端会按系统全部权限码处理
+            </AlertDescription>
+          </Alert>
+
+          <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-2">
+            <div class="space-y-3">
+              <div v-for="group in getPermissionGroupsForRole(permissionPreviewRole)" :key="group.group" class="p-3 bg-muted/30 border border-border rounded-lg">
+                <div class="text-xs font-bold mb-2">{{ group.group }}</div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div v-for="item in group.codes" :key="item.code" class="flex flex-col p-2 bg-primary/5 border border-primary/20 rounded-md">
+                    <span class="text-xs font-semibold">{{ item.label }}</span>
+                    <small class="text-[11px] text-muted-foreground font-mono mt-0.5">{{ item.code }}</small>
+                  </div>
                 </div>
               </div>
-            </el-checkbox-group>
+            </div>
+          </ScrollArea>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="permissionPreviewVisible = false">关闭</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Permission Config Dialog -->
+    <Dialog v-model:open="permissionDialogVisible">
+      <DialogContent class="flex h-[720px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>权限配置</DialogTitle>
+          <DialogDescription>为角色配置权限码</DialogDescription>
+        </DialogHeader>
+        <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-3">
+          <div class="space-y-4 py-2">
+            <div class="space-y-1">
+              <Label>当前角色</Label>
+              <Input :model-value="permissionEditingRole?.roleName" disabled />
+            </div>
+            <div class="space-y-1">
+              <Label>权限码 <span class="text-destructive">*</span></Label>
+              <div class="w-full p-3 bg-muted/50 border border-border rounded-lg space-y-3">
+                <div class="flex items-center gap-2">
+                  <Checkbox id="perm-form-all" :model-value="isPermFormChecked('*')" @update:model-value="togglePermForm('*', $event === true)" />
+                  <Label for="perm-form-all" class="cursor-pointer font-semibold">全部权限</Label>
+                </div>
+                <div v-for="group in permissionGroups" :key="group.group" class="pt-3 border-t border-border">
+                  <div class="text-xs font-bold text-foreground mb-2">{{ group.group }}</div>
+                  <div class="grid grid-cols-3 gap-1">
+                    <div v-for="item in group.codes" :key="item.code" class="flex items-center gap-2">
+                      <Checkbox :id="'perm-form-' + item.code" :model-value="isPermFormChecked(item.code)" @update:model-value="togglePermForm(item.code, $event === true)" />
+                      <Label :for="'perm-form-' + item.code" class="cursor-pointer text-xs">{{ item.label }}</Label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p v-if="permFormErrors.permissionCodes" class="text-xs text-destructive">{{ permFormErrors.permissionCodes }}</p>
+            </div>
           </div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="permissionDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitPermissionForm">保存</el-button>
-      </template>
-    </el-dialog>
+        </ScrollArea>
+        <DialogFooter>
+          <Button variant="outline" :disabled="permissionSubmitting" @click="permissionDialogVisible = false">取消</Button>
+          <Button :disabled="permissionSubmitting" @click="submitPermissionForm">{{ permissionSubmitting ? '保存中...' : '保存' }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Confirm Dialog -->
+    <ConfirmDialog
+      :open="confirmState.open"
+      :title="confirmState.title"
+      :description="confirmState.description"
+      :confirm-text="confirmState.confirmText"
+      :variant="confirmState.variant"
+      :loading="actionSubmitting"
+      @update:open="confirmState.open = $event"
+      @confirm="runConfirmAction"
+    />
   </section>
 </template>
-
-<style scoped>
-.role-page {
-  min-height: 100%;
-}
-
-.page-head {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.page-title {
-  margin-bottom: 6px;
-}
-
-.page-subtitle {
-  margin: 0;
-  font-size: 14px;
-  color: #6b7280;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.metric-item {
-  display: flex;
-  min-height: 72px;
-  padding: 14px 16px;
-  background: #fff;
-  border: 1px solid #dfe5ee;
-  border-radius: 8px;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.metric-item span {
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.metric-item strong {
-  margin-top: 6px;
-  font-size: 24px;
-  line-height: 1;
-  color: #172033;
-}
-
-.module-panel {
-  background: #fff;
-  border: 1px solid #dfe5ee;
-  border-radius: 8px;
-}
-
-.filter-panel {
-  padding: 16px 16px 0;
-  margin-bottom: 14px;
-}
-
-.filter-form {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) minmax(180px, 240px) auto;
-  gap: 0 12px;
-  align-items: flex-start;
-}
-
-.filter-form :deep(.el-select),
-.filter-form :deep(.el-input) {
-  width: 100%;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 18px;
-  justify-self: end;
-}
-
-.table-panel {
-  overflow: hidden;
-}
-
-.table-toolbar {
-  display: flex;
-  min-height: 58px;
-  padding: 12px 16px;
-  gap: 12px;
-  border-bottom: 1px solid #e5eaf2;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-}
-
-.table-toolbar__left {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.table-toolbar__left strong {
-  color: #172033;
-}
-
-.table-toolbar__left span {
-  font-size: 13px;
-  color: #7b8495;
-}
-
-.table-toolbar__left span.is-active {
-  color: #2f6fed;
-}
-
-.table-toolbar__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  margin-left: auto;
-}
-
-.table-toolbar__actions :deep(.el-button + .el-button),
-.row-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-.table-toolbar__actions :deep(.el-button) {
-  height: 32px;
-  border-radius: 6px;
-}
-
-.toolbar-create {
-  margin-right: 4px;
-}
-
-.toolbar-action:not(.is-disabled) {
-  color: #4e5b70;
-  background: #f8fafc;
-  border-color: #d8e0eb;
-}
-
-.toolbar-action:not(.is-disabled):hover {
-  color: #2f6fed;
-  background: #f4f8ff;
-  border-color: #b9d2ff;
-}
-
-.toolbar-danger:not(.is-disabled) {
-  color: #cf3f3f;
-  background: #fff7f7;
-  border-color: #f0c9c9;
-}
-
-.toolbar-danger:not(.is-disabled):hover {
-  color: #b62929;
-  background: #fff0f0;
-  border-color: #e7aaaa;
-}
-
-.role-table {
-  width: 100%;
-}
-
-.role-table :deep(.el-table__body td.el-table__cell) {
-  padding: 6px 0;
-  vertical-align: middle;
-}
-
-.role-table :deep(.el-table__body td.el-table__cell > .cell) {
-  display: flex;
-  min-height: 46px;
-  align-items: center;
-}
-
-.role-table :deep(.el-table__cell.is-center > .cell) {
-  justify-content: center;
-}
-
-.role-table :deep(.el-tag) {
-  display: inline-flex;
-  width: auto;
-  min-width: 34px;
-  height: 32px;
-  padding: 0 10px;
-  font-size: 13px;
-  border-radius: 6px;
-  align-items: center;
-  flex: 0 0 auto;
-  justify-content: center;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.role-name-cell {
-  display: flex;
-  flex-direction: column;
-}
-
-.role-name-cell strong,
-.role-name-cell span {
-  display: block;
-}
-
-.role-name-cell strong {
-  font-size: 14px;
-  color: #172033;
-}
-
-.role-name-cell span {
-  margin-top: 2px;
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.permission-summary {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  align-items: center;
-  justify-content: center;
-}
-
-.permission-summary :deep(.permission-summary__tag.el-tag),
-.permission-preview :deep(.permission-summary__tag.el-tag) {
-  display: inline-flex;
-  min-width: 102px;
-  height: 32px;
-  padding: 0 12px;
-  color: #1458d4;
-  background: #e7f0ff;
-  border-color: #5b95ff;
-  font-size: 13px;
-  font-weight: 700;
-  align-items: center;
-  justify-content: center;
-}
-
-.permission-summary__link {
-  height: 30px;
-  padding: 0 2px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.permission-preview__head {
-  display: flex;
-  gap: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #e5eaf2;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.permission-preview__head strong,
-.permission-preview__head span {
-  display: block;
-}
-
-.permission-preview__head strong {
-  color: #172033;
-  font-size: 15px;
-}
-
-.permission-preview__head span {
-  margin-top: 3px;
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.permission-preview__alert {
-  margin-top: 14px;
-}
-
-.permission-preview__groups {
-  display: grid;
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.permission-preview-group {
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-}
-
-.permission-preview-group__title {
-  margin-bottom: 10px;
-  color: #172033;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.permission-preview-group__codes {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.permission-code-tag {
-  display: flex;
-  width: 100%;
-  height: auto;
-  min-height: 42px;
-  padding: 7px 10px;
-  color: #1458d4;
-  background: #e7f0ff;
-  border-color: #5b95ff;
-  align-items: flex-start;
-  flex-direction: column;
-}
-
-.permission-code-tag span,
-.permission-code-tag small {
-  display: block;
-}
-
-.permission-code-tag span {
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.permission-code-tag small {
-  margin-top: 4px;
-  color: #5875a8;
-  font-size: 11px;
-  font-family: Consolas, 'Courier New', monospace;
-  line-height: 1.2;
-}
-
-.user-count-tag {
-  min-width: 38px;
-  height: 30px;
-  color: #2f6fed;
-  background: #f4f8ff;
-  border-color: #b9d2ff;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  justify-content: center;
-}
-
-.user-count-tag.is-empty {
-  color: #8b95a5;
-  background: #ffffff;
-  border-color: #d7dde7;
-}
-
-.remark-text {
-  color: #4e5b70;
-  font-size: 13px;
-}
-
-.time-cell {
-  display: flex;
-  gap: 3px;
-  color: #5f6b7c;
-  font-size: 12px;
-  line-height: 1.45;
-  flex-direction: column;
-}
-
-.time-cell span:first-child {
-  color: #172033;
-}
-
-.row-actions {
-  display: flex;
-  gap: 8px;
-  min-width: 148px;
-  align-items: center;
-  justify-content: center;
-}
-
-.action-button {
-  min-width: 54px;
-  height: 30px;
-  padding: 0 11px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #2f6fed;
-  background: #f4f8ff;
-  border: 1px solid #b9d2ff;
-  border-radius: 6px;
-  transition:
-    background-color 0.16s ease,
-    border-color 0.16s ease,
-    color 0.16s ease;
-}
-
-.action-button:hover {
-  color: #225fd0;
-  background: #edf4ff;
-  border-color: #8fbaff;
-}
-
-.action-button.is-role {
-  color: #d94a4a;
-  background: #fff2f2;
-  border-color: #f1b8b8;
-}
-
-.action-button.is-role:hover {
-  color: #bd3030;
-  background: #ffe7e7;
-  border-color: #e89393;
-}
-
-.pagination-bar {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto auto 1fr auto;
-  min-height: 58px;
-  padding: 0 16px;
-  border-top: 1px solid #e5eaf2;
-  align-items: center;
-  column-gap: 48px;
-}
-
-.pagination-total {
-  color: #647084;
-  font-size: 13px;
-  justify-self: start;
-}
-
-.pagination-bar :deep(.el-pagination) {
-  gap: 8px;
-  color: #4b5563;
-  font-size: 13px;
-}
-
-.pagination-sizes {
-  position: absolute;
-  right: calc(50% + 68px);
-}
-
-.pagination-pager {
-  position: absolute;
-  left: 50%;
-  justify-self: center;
-  transform: translateX(-50%);
-}
-
-.pagination-jumper {
-  grid-column: 4;
-  justify-self: end;
-}
-
-.pagination-bar :deep(.el-pagination__jump) {
-  color: #647084;
-}
-
-.pagination-bar :deep(.el-select__wrapper),
-.pagination-bar :deep(.el-input__wrapper),
-.pagination-bar :deep(.btn-prev),
-.pagination-bar :deep(.btn-next),
-.pagination-bar :deep(.el-pager li) {
-  min-width: 32px;
-  height: 32px;
-  border-radius: 6px;
-}
-
-.pagination-bar :deep(.el-pager li.is-active) {
-  color: #2f6fed;
-  background: #eef4ff;
-}
-
-.permission-picker {
-  width: 100%;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border: 1px solid #dfe5ee;
-  border-radius: 8px;
-}
-
-.permission-group {
-  padding-top: 10px;
-  margin-top: 10px;
-  border-top: 1px solid #e5eaf2;
-}
-
-.permission-group__title {
-  margin-bottom: 6px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #172033;
-}
-
-.permission-group__options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px 10px;
-}
-
-.permission-checks :deep(.el-checkbox) {
-  margin-right: 0;
-}
-
-@media (max-width: 1180px) {
-  .metric-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filter-form {
-    grid-template-columns: repeat(2, minmax(180px, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .page-head {
-    flex-direction: column;
-  }
-
-  .metric-grid,
-  .filter-form {
-    grid-template-columns: 1fr;
-  }
-
-  .permission-group__options {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

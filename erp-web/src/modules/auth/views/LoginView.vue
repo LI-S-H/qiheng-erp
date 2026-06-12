@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { Lock, User } from '@element-plus/icons-vue';
-import type { FormInstance, FormRules } from 'element-plus';
-import { ElMessage } from 'element-plus';
 import { reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { toast } from 'vue-sonner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { User, Lock, Loader2 } from 'lucide-vue-next';
 import logoUrl from '@/assets/brand/qiheng-logo.svg';
 import visualUrl from '@/assets/brand/login-operations.svg';
 import { useAuthStore } from '../stores/authStore';
@@ -13,21 +16,22 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 
-const formRef = ref<FormInstance>();
 const submitting = ref(false);
+const errors = reactive({ username: '', password: '' });
 
 const form = reactive<LoginRequest>({
   username: 'admin',
   password: '123456',
 });
 
-const rules: FormRules<LoginRequest> = {
-  username: [{ required: true, message: '请输入登录账号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入登录密码', trigger: 'blur' }],
-};
+function validate(): boolean {
+  errors.username = form.username ? '' : '请输入登录账号';
+  errors.password = form.password ? '' : '请输入登录密码';
+  return !errors.username && !errors.password;
+}
 
 async function handleSubmit() {
-  await formRef.value?.validate();
+  if (!validate()) return;
 
   submitting.value = true;
 
@@ -36,7 +40,7 @@ async function handleSubmit() {
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard';
     router.replace(redirect);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '登录失败');
+    toast.error(error instanceof Error ? error.message : '登录失败');
   } finally {
     submitting.value = false;
   }
@@ -44,209 +48,80 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <main class="login-page">
-    <section class="login-visual">
-      <div class="login-visual__content">
-        <div class="login-visual__brand">
-          <img class="login-visual__logo" :src="logoUrl" alt="启衡 ERP" />
-          <span>启衡 ERP</span>
+  <main class="min-h-screen grid grid-cols-1 lg:grid-cols-[1fr_500px]">
+    <!-- Left visual panel -->
+    <section class="relative flex items-center p-12 lg:p-16 overflow-hidden bg-gradient-to-br from-white via-blue-50 to-slate-100">
+      <div class="relative z-10 w-full max-w-[760px]">
+        <div class="flex items-center gap-3 mb-8">
+          <img class="w-14 h-14 rounded-xl" :src="logoUrl" alt="启衡 ERP" />
+          <span class="text-2xl font-extrabold text-slate-900">启衡 ERP</span>
         </div>
-        <h1>清晰可靠的进销存智能管理台</h1>
-        <p class="login-visual__text">围绕产品 采购 销售 仓储构建稳定业务闭环 让数据查询和智能分析遵循统一权限与业务规则</p>
-        <img class="login-visual__image" :src="visualUrl" alt="业务数据看板" />
+        <h1 class="text-4xl lg:text-[44px] font-bold leading-tight text-slate-900">
+          清晰可靠的进销存智能管理台
+        </h1>
+        <p class="mt-5 text-lg text-slate-600 leading-relaxed max-w-[640px]">
+          围绕产品 采购 销售 仓储构建稳定业务闭环 让数据查询和智能分析遵循统一权限与业务规则
+        </p>
+        <img
+          class="block w-full max-w-[680px] mt-6 rounded-2xl shadow-xl"
+          :src="visualUrl"
+          alt="业务数据看板"
+        />
       </div>
+      <div class="absolute right-12 bottom-12 w-60 h-60 bg-white/40 border border-blue-200/30 rounded-full" />
     </section>
 
-    <section class="login-panel">
-      <div class="login-card">
-        <div class="login-card__header">
-          <h2>登录启衡 ERP</h2>
-          <p>使用管理员账号进入开发环境</p>
-        </div>
+    <!-- Right login form -->
+    <section class="flex items-center justify-center p-12 bg-white">
+      <Card class="w-full max-w-[380px] border-0 shadow-none">
+        <CardHeader class="space-y-1 pb-6">
+          <CardTitle class="text-3xl">登录启衡 ERP</CardTitle>
+          <CardDescription>使用管理员账号进入开发环境</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form class="space-y-4" @submit.prevent="handleSubmit" @keydown.enter="handleSubmit">
+            <div class="space-y-2">
+              <Label for="username">登录账号</Label>
+              <div class="relative">
+                <User class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="username"
+                  v-model="form.username"
+                  placeholder="登录账号"
+                  autocomplete="username"
+                  class="pl-10 h-12 text-base"
+                />
+              </div>
+              <p v-if="errors.username" class="text-sm text-destructive">{{ errors.username }}</p>
+            </div>
 
-        <el-form ref="formRef" :model="form" :rules="rules" size="large" @keyup.enter="handleSubmit">
-          <el-form-item prop="username">
-            <el-input v-model.trim="form.username" placeholder="登录账号" autocomplete="username">
-              <template #prefix>
-                <el-icon><User /></el-icon>
-              </template>
-            </el-input>
-          </el-form-item>
+            <div class="space-y-2">
+              <Label for="password">登录密码</Label>
+              <div class="relative">
+                <Lock class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="password"
+                  v-model="form.password"
+                  type="password"
+                  placeholder="登录密码"
+                  autocomplete="current-password"
+                  class="pl-10 h-12 text-base"
+                />
+              </div>
+              <p v-if="errors.password" class="text-sm text-destructive">{{ errors.password }}</p>
+            </div>
 
-          <el-form-item prop="password">
-            <el-input
-              v-model="form.password"
-              type="password"
-              placeholder="登录密码"
-              autocomplete="current-password"
-              show-password
+            <Button
+              type="submit"
+              class="w-full h-12 text-base font-bold mt-2"
+              :disabled="submitting"
             >
-              <template #prefix>
-                <el-icon><Lock /></el-icon>
-              </template>
-            </el-input>
-          </el-form-item>
-
-          <el-button class="login-card__submit" type="primary" size="large" :loading="submitting" @click="handleSubmit">
-            登录
-          </el-button>
-        </el-form>
-      </div>
+              <Loader2 v-if="submitting" class="mr-2 h-4 w-4 animate-spin" />
+              登录
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   </main>
 </template>
-
-<style scoped>
-.login-page {
-  display: grid;
-  grid-template-columns: minmax(620px, 1fr) 500px;
-  min-height: 100vh;
-  background: #f6f8fb;
-}
-
-.login-visual {
-  position: relative;
-  display: flex;
-  align-items: center;
-  padding: 54px 72px;
-  overflow: hidden;
-  color: #172033;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(238, 244, 255, 0.88)),
-    radial-gradient(circle at 16% 18%, rgba(79, 140, 255, 0.18), transparent 34%),
-    radial-gradient(circle at 76% 66%, rgba(20, 27, 45, 0.12), transparent 30%);
-}
-
-.login-visual::after {
-  position: absolute;
-  right: 54px;
-  bottom: 52px;
-  width: 240px;
-  height: 240px;
-  content: "";
-  background: rgba(255, 255, 255, 0.42);
-  border: 1px solid rgba(79, 140, 255, 0.16);
-  border-radius: 50%;
-}
-
-.login-visual__content {
-  position: relative;
-  z-index: 1;
-  width: min(760px, 100%);
-}
-
-.login-visual__brand {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  margin-bottom: 34px;
-  font-size: 23px;
-  font-weight: 800;
-  color: #172033;
-}
-
-.login-visual__logo {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-}
-
-.login-visual h1 {
-  max-width: 760px;
-  margin: 0;
-  font-size: 44px;
-  line-height: 1.2;
-  letter-spacing: 0;
-}
-
-.login-visual__text {
-  max-width: 640px;
-  margin: 22px 0 30px;
-  font-size: 18px;
-  line-height: 1.85;
-  color: #516074;
-}
-
-.login-visual__image {
-  display: block;
-  width: min(680px, 96%);
-  margin-top: 10px;
-  border-radius: 24px;
-  box-shadow: 0 28px 80px rgba(32, 48, 72, 0.14);
-}
-
-.login-panel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px;
-  background: #ffffff;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 380px;
-}
-
-.login-card__header {
-  margin-bottom: 30px;
-}
-
-.login-card h2 {
-  margin: 0;
-  font-size: 32px;
-  color: #172033;
-}
-
-.login-card p {
-  margin: 10px 0 0;
-  font-size: 16px;
-  color: #6b7280;
-}
-
-.login-card :deep(.el-form-item) {
-  margin-bottom: 20px;
-}
-
-.login-card :deep(.el-input__wrapper) {
-  min-height: 48px;
-  border-radius: 8px;
-}
-
-.login-card :deep(.el-input__inner) {
-  font-size: 16px;
-}
-
-.login-card__submit {
-  width: 100%;
-  height: 48px;
-  margin-top: 6px;
-  font-size: 16px;
-  font-weight: 700;
-  border-radius: 8px;
-}
-
-@media (max-width: 900px) {
-  .login-page {
-    grid-template-columns: 1fr;
-  }
-
-  .login-visual {
-    min-height: 34vh;
-    padding: 36px 28px;
-  }
-
-  .login-visual h1 {
-    font-size: 32px;
-  }
-
-  .login-visual__image {
-    display: none;
-  }
-
-  .login-panel {
-    align-items: flex-start;
-    padding: 32px 24px;
-  }
-}
-</style>

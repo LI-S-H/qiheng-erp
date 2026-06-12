@@ -8,7 +8,7 @@ const mockUser: CurrentUser = {
   username: 'admin',
   realName: '系统管理员',
   deptId: '1900000000000000100',
-  deptName: '总部',
+  deptName: '行政部',
   isAdmin: true,
   roleCodes: ['SUPER_ADMIN'],
   permissionCodes: [

@@ -2,15 +2,15 @@
 
 ## 设计目标
 
-本设计用于第一版 ERP MVP，优先保证系统能尽快开发出来。权限先做粗粒度控制：页面可以统一展示，用户点击进入或查询大表数据时，再根据当前用户角色里的权限码判断是否允许访问。
+本设计用于第一版 ERP MVP，优先保证系统能尽快开发出来。权限目录独立维护，页面入口统一展示；用户进入页面、调用接口或执行核心写操作时，根据当前用户角色里的有效权限码判断是否允许访问。
 
 ## 简化原则
 
 - 暂不设计菜单权限表，不维护前端路由、组件路径、图标、显示隐藏等字段。
-- 暂不设计按钮级权限，先控制模块入口和核心大表查询权限。
-- 暂不设计独立权限表，权限码直接保存在 `sys_role.permission_codes`。
+- 暂不设计动态按钮资源表；核心查询和写操作可以直接使用接口权限码校验。
+- 权限目录独立维护在 `sys_permission`，角色授权结果继续保存在 `sys_role.permission_codes`，避免增加高频关联表查询。
 - 暂不设计部门级、仓库级、自定义数据范围、字段级权限，后续功能稳定后再补。
-- MVP 系统权限模块只保留 4 张表：`sys_dept`、`sys_user`、`sys_role`、`sys_user_role`。
+- MVP 系统权限模块保留 5 张表：`sys_dept`、`sys_user`、`sys_role`、`sys_permission`、`sys_user_role`。
 
 ## 全局约定
 
@@ -45,7 +45,7 @@
 | username | varchar(64) | 登录账号，唯一 |
 | password_hash | varchar(255) | 密码哈希 |
 | real_name | varchar(100) | 用户姓名 |
-| dept_id | bigint | 所属部门ID |
+| dept_id | bigint NOT NULL | 所属部门ID，用户必须归属一个部门 |
 | is_admin | tinyint | 是否超级管理员 |
 | status | tinyint | 状态 |
 | last_login_at | datetime | 最近登录时间 |
@@ -53,7 +53,7 @@
 | updated_at | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 
-关系说明：用户通过 `sys_user_role` 绑定角色。超级管理员 `is_admin = 1` 默认拥有全部权限。
+关系说明：用户通过 `sys_user_role` 绑定角色。新增或编辑用户时至少绑定一个角色；超级管理员 `is_admin = 1` 默认拥有全部权限。
 
 ## 表：sys_role（角色表）
 
@@ -62,7 +62,7 @@
 | id | bigint PK | 角色ID |
 | role_code | varchar(64) | 角色编码，唯一 |
 | role_name | varchar(100) | 角色名称 |
-| permission_codes | json | 粗粒度权限码列表 |
+| permission_codes | json | 角色已授权权限码列表 |
 | status | tinyint | 状态 |
 | created_at | datetime | 创建时间 |
 | updated_at | datetime | 更新时间 |
@@ -87,7 +87,32 @@
 ]
 ```
 
-关系说明：普通用户的权限来自所有角色 `permission_codes` 的并集。MVP 阶段先判断模块和大表查询权限，不做按钮级、字段级权限。
+关系说明：普通用户的候选权限来自所有启用角色 `permission_codes` 的并集，再与 `sys_permission` 中启用且未删除的权限码取交集。MVP 不设计动态按钮资源和字段级权限。
+
+## 表：sys_permission（权限码目录表）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | bigint PK | 权限ID |
+| permission_code | varchar(100) | 权限码，唯一，使用小写字母、数字和冒号分段 |
+| permission_name | varchar(100) | 权限名称 |
+| module_code | varchar(64) | 所属模块编码 |
+| action_type | varchar(32) | 操作类型：query/create/update/delete/manage/execute |
+| status | tinyint | 状态 |
+| sort_order | int | 排序值，0-9999 |
+| description | varchar(500) | 权限说明 |
+| created_at | datetime | 创建时间 |
+| updated_at | datetime | 更新时间 |
+| deleted | tinyint | 逻辑删除 |
+
+关系说明：`sys_permission.permission_code` 是可授权权限码的目录，`sys_role.permission_codes` 保存角色实际获得的权限码数组。由于角色字段为 JSON，MVP 不建立物理外键；新增或修改角色时必须校验权限码存在且已启用，删除权限码前必须检查是否仍被任一未删除角色引用。超级管理员使用保留值 `*`，不作为普通目录数据新增或编辑。
+
+约束与查询说明：
+
+- `permission_code` 创建后不可修改，并使用全局唯一索引；逻辑删除后也不允许复用旧权限码，避免历史审计和旧 Session 产生歧义。
+- 常规列表查询使用 `(deleted, status, sort_order)` 和 `(module_code, action_type)` 索引。
+- `roleCount` 通过 `JSON_CONTAINS(sys_role.permission_codes, JSON_QUOTE(permission_code))` 聚合；MVP 角色数量较少，不额外维护角色权限关系表。角色规模明显增长后再迁移到 `sys_role_permission`。
+- `module_code`、`action_type` 和状态枚举由应用层与 OpenAPI 共同校验；数据库保留 `varchar` 以支持后续模块扩展。
 
 ## 表：sys_user_role（用户角色关系表）
 
@@ -106,11 +131,14 @@
 - `sys_user.dept_id` -> `sys_dept.id`
 - `sys_user_role.user_id` -> `sys_user.id`
 - `sys_user_role.role_id` -> `sys_role.id`
+- `sys_role.permission_codes` 中的普通权限码 -> `sys_permission.permission_code`（业务层校验，无物理外键）
 
 ## MVP 权限规则
 
 - 页面菜单先统一展示，不从数据库动态生成。
 - 用户进入页面或调用接口时校验权限码。
+- 角色授权选项只读取 `sys_permission.status = 1 AND deleted = 0` 的权限码。
+- 权限码停用后不再允许新授权，并从普通用户有效权限集合中排除；状态变化后必须清理受影响用户 session 或重新加载权限上下文。
 - 大表查询优先校验粗粒度查询权限，例如：
   - 产品：`product:query`
   - 库存：`warehouse:query`
@@ -136,7 +164,7 @@ Redis session 建议保存：
 - `permission_codes`
 - 后续扩展的数据权限上下文，例如部门范围、仓库范围、字段权限标记
 
-接口或 AI Tool 鉴权时，先由 Sa-Token 根据 token 找到 Redis session，再读取当前用户和权限上下文。权限码来源仍以数据库角色为准，`sys_role.permission_codes` 是最终授权配置；Redis session 只是登录态和权限上下文缓存。
+接口或 AI Tool 鉴权时，先由 Sa-Token 根据 token 找到 Redis session，再读取当前用户和权限上下文。`sys_permission` 定义有效权限目录，`sys_role.permission_codes` 保存角色授权结果；Redis session 只是登录态和权限上下文缓存。
 
 用户禁用、重置密码、角色变更或权限码变更后，需要主动清理对应用户 session，或让权限上下文重新加载，避免旧权限继续生效。这样比 JWT 更适合 ERP 场景，因为服务端可以立即踢人下线、撤销权限和控制敏感 AI Tool 调用。
 

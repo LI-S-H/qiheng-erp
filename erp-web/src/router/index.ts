@@ -6,6 +6,8 @@ import DashboardView from '@/modules/dashboard/views/DashboardView.vue';
 import NotFoundView from '@/modules/system/views/NotFoundView.vue';
 import UserManageView from '@/modules/system/users/views/UserManageView.vue';
 import RoleManageView from '@/modules/system/roles/views/RoleManageView.vue';
+import DeptManageView from '@/modules/system/depts/views/DeptManageView.vue';
+import PermissionManageView from '@/modules/system/permissions/views/PermissionManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -62,12 +64,18 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'system/depts',
         name: 'system-depts',
-        ...placeholder('部门管理', '系统权限', '维护部门层级 部门名称和启用状态'),
+        component: DeptManageView,
+        meta: {
+          title: '部门管理',
+        },
       },
       {
         path: 'system/permissions',
         name: 'system-permissions',
-        ...placeholder('权限码配置', '系统权限', '展示 MVP 阶段固定权限码 后续可扩展为独立权限表'),
+        component: PermissionManageView,
+        meta: {
+          title: '权限码配置',
+        },
       },
       { path: 'product', redirect: '/product/categories' },
       {

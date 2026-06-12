@@ -1,20 +1,29 @@
 <script setup lang="ts">
 import {
-  Box,
-  ChatDotRound,
-  Goods,
-  HomeFilled,
+  Home,
   Lock,
-  Bell,
-  Sell,
+  Package,
+  Warehouse,
   ShoppingCart,
-  SwitchButton,
-} from '@element-plus/icons-vue';
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+  Tag,
+  MessageCircle,
+  Bell,
+  LogOut,
+} from 'lucide-vue-next';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessageBox } from 'element-plus';
 import logoUrl from '@/assets/brand/qiheng-logo.svg';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 
 interface MenuItem {
   index: string;
@@ -30,11 +39,13 @@ const authStore = useAuthStore();
 
 const activeMenu = computed(() => route.path);
 const openedMenus = reactive(new Set<string>());
+const logoutConfirmOpen = ref(false);
 const pageLoading = ref(false);
 let pageLoadingTimer: number | undefined;
+let pageLoadingFrame: number | undefined;
 
 const menus: MenuItem[] = [
-  { index: '/dashboard', title: '工作台', icon: HomeFilled },
+  { index: '/dashboard', title: '工作台', icon: Home },
   {
     index: '/system',
     title: '系统权限',
@@ -49,7 +60,7 @@ const menus: MenuItem[] = [
   {
     index: '/product',
     title: '产品中心',
-    icon: Goods,
+    icon: Package,
     permission: 'product:query',
     children: [
       { index: '/product/categories', title: '产品分类' },
@@ -59,7 +70,7 @@ const menus: MenuItem[] = [
   {
     index: '/warehouse',
     title: '仓储库存',
-    icon: Box,
+    icon: Warehouse,
     permission: 'warehouse:query',
     children: [
       { index: '/warehouse/warehouses', title: '仓库管理' },
@@ -82,7 +93,7 @@ const menus: MenuItem[] = [
   {
     index: '/sales',
     title: '销售业务',
-    icon: Sell,
+    icon: Tag,
     permission: 'sales:query',
     children: [
       { index: '/sales/customers', title: '客户管理' },
@@ -92,7 +103,7 @@ const menus: MenuItem[] = [
   {
     index: '/ai',
     title: '智能助手',
-    icon: ChatDotRound,
+    icon: MessageCircle,
     permission: 'ai:query:stock',
     children: [
       { index: '/ai/rag', title: '知识库问答' },
@@ -102,20 +113,27 @@ const menus: MenuItem[] = [
   },
 ];
 
+const visibleMenus = computed(() => {
+  return menus.filter(item => {
+    if (!item.permission) return true;
+    return authStore.hasPermission(item.permission);
+  });
+});
+
 const userLabel = computed(() => {
   const user = authStore.user;
-  if (!user) {
-    return '未登录';
-  }
-
+  if (!user) return '未登录';
   return authStore.displayName;
 });
 
-function isMenuActive(item: MenuItem) {
-  if (item.index === activeMenu.value) {
-    return true;
-  }
+const currentSection = computed(() => {
+  return visibleMenus.value.find(item => item.index === route.path || item.children?.some(child => child.index === route.path));
+});
 
+const currentPageTitle = computed(() => String(route.meta.title || currentSection.value?.title || '启衡 ERP'));
+
+function isMenuActive(item: MenuItem) {
+  if (item.index === activeMenu.value) return true;
   return Boolean(item.children?.some(child => child.index === activeMenu.value));
 }
 
@@ -128,7 +146,6 @@ function toggleMenu(item: MenuItem) {
     navigateTo(item.index);
     return;
   }
-
   if (openedMenus.has(item.index)) {
     openedMenus.delete(item.index);
   } else {
@@ -143,403 +160,182 @@ function navigateTo(path: string) {
 }
 
 function openCurrentParent(path: string) {
-  const parent = menus.find(item => item.children?.some(child => child.index === path));
-
-  if (parent) {
-    openedMenus.add(parent.index);
-  }
+  const parent = visibleMenus.value.find(item => item.children?.some(child => child.index === path));
+  if (parent) openedMenus.add(parent.index);
 }
 
-async function handleLogout() {
-  await ElMessageBox.confirm('确认退出当前登录吗？', '退出登录', {
-    confirmButtonText: '退出',
-    cancelButtonText: '取消',
-    type: 'warning',
-  });
+function showPageLoading() {
+  pageLoading.value = true;
+  window.clearTimeout(pageLoadingTimer);
+  if (pageLoadingFrame !== undefined) window.cancelAnimationFrame(pageLoadingFrame);
 
+  nextTick(() => {
+    pageLoadingFrame = window.requestAnimationFrame(() => {
+      pageLoadingTimer = window.setTimeout(() => {
+        pageLoading.value = false;
+      }, 220);
+    });
+  });
+}
+
+function handleLogout() {
+  logoutConfirmOpen.value = true;
+}
+
+async function confirmLogout() {
+  logoutConfirmOpen.value = false;
   await authStore.logout();
   router.replace('/login');
 }
 
 watch(
   () => route.path,
-  async path => {
+  (path, previousPath) => {
     openCurrentParent(path);
-    pageLoading.value = true;
-
-    if (pageLoadingTimer) {
-      window.clearTimeout(pageLoadingTimer);
-    }
-
-    await nextTick();
-    pageLoadingTimer = window.setTimeout(() => {
-      pageLoading.value = false;
-      pageLoadingTimer = undefined;
-    }, 260);
+    if (previousPath !== undefined && previousPath !== path) showPageLoading();
   },
   { immediate: true },
 );
+
+onBeforeUnmount(() => {
+  window.clearTimeout(pageLoadingTimer);
+  if (pageLoadingFrame !== undefined) window.cancelAnimationFrame(pageLoadingFrame);
+});
 </script>
 
 <template>
-  <el-container class="main-layout">
-    <el-aside width="232px" class="main-layout__aside">
-      <div class="brand">
-        <img class="brand__mark" :src="logoUrl" alt="启衡 ERP" />
-        <div>
-          <div class="brand__title">启衡 ERP</div>
-          <div class="brand__subtitle">进销存智能管理台</div>
+  <div class="flex h-screen bg-background text-foreground">
+    <!-- Sidebar -->
+    <aside class="flex w-[224px] shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
+      <!-- Brand -->
+      <div class="flex h-16 items-center gap-3 px-4 text-sidebar-foreground border-b border-sidebar-border">
+        <img class="h-9 w-9 rounded-lg" :src="logoUrl" alt="启衡 ERP" />
+        <div class="min-w-0">
+          <div class="text-[18px] font-bold leading-tight tracking-tight">启衡 ERP</div>
+          <div class="mt-1 truncate text-[13px] font-medium text-sidebar-foreground/55">进销存智能管理台</div>
         </div>
       </div>
 
-      <nav class="side-nav" aria-label="主导航">
-        <div v-for="item in menus" :key="item.index" class="side-nav__group">
+      <!-- Navigation -->
+      <nav class="flex-1 overflow-y-auto px-2.5 py-3" aria-label="主导航">
+        <div v-for="item in visibleMenus" :key="item.index" class="mb-1">
           <button
-            class="side-nav__item"
-            :class="{ 'is-active': isMenuActive(item), 'is-open': isMenuOpen(item.index) }"
+            class="relative flex h-11 w-full items-center gap-3 rounded-md px-3 text-[15px] font-semibold text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer"
+            :class="{
+              'bg-sidebar-accent text-sidebar-foreground': isMenuActive(item) || isMenuOpen(item.index),
+            }"
             type="button"
             @click="toggleMenu(item)"
           >
-            <el-icon>
-              <component :is="item.icon" />
-            </el-icon>
-            <span>{{ item.title }}</span>
-            <span v-if="item.children?.length" class="side-nav__arrow"></span>
+            <span
+              v-if="isMenuActive(item) && !item.children?.length"
+              class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sidebar-primary"
+            />
+            <component :is="item.icon" class="h-4 w-4 shrink-0" />
+            <span class="flex-1 text-left">{{ item.title }}</span>
+            <span
+              v-if="item.children?.length"
+              class="ml-auto h-1.5 w-1.5 rotate-45 border-r border-b border-current transition-transform"
+              :class="{ 'rotate-[225deg]': isMenuOpen(item.index) }"
+            />
           </button>
 
+          <!-- Children -->
           <div
             v-if="item.children?.length"
-            class="side-nav__children"
+            class="submenu-collapse"
             :class="{ 'is-open': isMenuOpen(item.index) }"
-            :style="{ '--child-count': item.children.length }"
           >
-            <button
-              v-for="child in item.children"
-              :key="child.index"
-              class="side-nav__child"
-              :class="{ 'is-active': activeMenu === child.index }"
-              type="button"
-              @click="navigateTo(child.index)"
-            >
-              {{ child.title }}
-            </button>
+            <div class="submenu-collapse__inner">
+              <div class="py-1">
+                <button
+                  v-for="child in item.children"
+                  :key="child.index"
+                  class="relative flex h-10 w-full items-center rounded-md pl-10 pr-3 text-[15px] font-medium text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer"
+                  :class="{
+                    'bg-sidebar-accent text-sidebar-foreground font-semibold': activeMenu === child.index,
+                  }"
+                  type="button"
+                  @click="navigateTo(child.index)"
+                >
+                  <span
+                    v-if="activeMenu === child.index"
+                    class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sidebar-primary"
+                  />
+                  {{ child.title }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </nav>
-    </el-aside>
+    </aside>
 
-    <el-container>
-      <el-header class="main-header">
-        <div class="main-header__spacer"></div>
-
-        <div class="main-header__actions">
-          <button class="icon-trigger" type="button" aria-label="通知">
-            <el-icon><Bell /></el-icon>
-            <span class="notify-dot"></span>
-          </button>
-          <el-dropdown trigger="click">
-            <button class="login-mark" type="button" :title="userLabel">
-              <el-avatar :size="30" class="user-avatar">{{ userLabel.slice(0, 1) }}</el-avatar>
-              <span class="login-mark__text">{{ userLabel }}</span>
-            </button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item disabled>{{ authStore.user?.username }}</el-dropdown-item>
-                <el-dropdown-item divided @click="handleLogout">
-                  <el-icon><SwitchButton /></el-icon>
-                  退出登录
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+    <!-- Main content -->
+    <div class="flex flex-col flex-1 min-w-0">
+      <!-- Header -->
+      <header class="flex h-16 items-center justify-between bg-sidebar px-5 text-sidebar-foreground border-b border-sidebar-border">
+        <div class="min-w-0">
+          <div class="text-[13px] font-medium text-sidebar-foreground/55">{{ currentSection?.title || '工作台' }}</div>
+          <div class="mt-0.5 truncate text-[16px] font-semibold">{{ currentPageTitle }}</div>
         </div>
-      </el-header>
+        <div class="flex items-center gap-3">
+          <!-- Notification bell -->
+          <button class="relative flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer" type="button" aria-label="通知">
+            <Bell class="h-4 w-4" />
+            <span class="absolute right-[9px] top-[8px] h-1.5 w-1.5 rounded-full bg-sidebar-primary ring-2 ring-sidebar" />
+          </button>
 
-      <el-main class="main-content">
-        <div class="route-progress" :class="{ 'is-loading': pageLoading }"></div>
-        <RouterView v-slot="{ Component }">
-          <Transition name="page-fade" mode="out-in">
-            <component :is="Component" />
+          <!-- User dropdown -->
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <button class="flex h-10 items-center gap-2 rounded-md px-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent cursor-pointer" type="button" :title="userLabel">
+                <Avatar class="h-7 w-7 bg-sidebar-primary">
+                  <AvatarFallback class="bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground">{{ userLabel.slice(0, 1) }}</AvatarFallback>
+                </Avatar>
+                <span class="max-w-[132px] overflow-hidden text-ellipsis whitespace-nowrap text-[15px] font-semibold">{{ userLabel }}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-48">
+              <DropdownMenuLabel>{{ authStore.user?.username }}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem @click="handleLogout" class="cursor-pointer text-destructive focus:text-destructive">
+                <LogOut class="mr-2 h-4 w-4" />
+                退出登录
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      <!-- Page content -->
+      <main class="relative flex-1 overflow-auto bg-background">
+        <RouterView v-slot="{ Component, route: viewRoute }">
+          <Transition name="page-view" mode="out-in">
+            <component :is="Component" :key="viewRoute.fullPath" />
           </Transition>
         </RouterView>
-      </el-main>
-    </el-container>
-  </el-container>
+        <Transition name="page-loading">
+          <div v-if="pageLoading" class="page-loading-mask" data-page-loading aria-live="polite" aria-label="页面加载中">
+            <div class="page-loading-indicator">
+              <span class="page-loading-spinner" aria-hidden="true" />
+              页面加载中
+            </div>
+          </div>
+        </Transition>
+      </main>
+    </div>
+
+    <!-- Logout confirm dialog -->
+    <ConfirmDialog
+      :open="logoutConfirmOpen"
+      title="退出登录"
+      description="确认退出当前登录吗？"
+      confirm-text="退出"
+      cancel-text="取消"
+      variant="warning"
+      @update:open="logoutConfirmOpen = $event"
+      @confirm="confirmLogout"
+    />
+  </div>
 </template>
-
-<style scoped>
-.main-layout {
-  width: 100%;
-  height: 100vh;
-  background: #f6f8fb;
-}
-
-.main-layout__aside {
-  display: flex;
-  flex-direction: column;
-  background: #141b2d;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.main-layout__aside :deep(*::-webkit-scrollbar-thumb) {
-  background: rgba(255, 255, 255, 0.28);
-  background-clip: content-box;
-  border: 3px solid transparent;
-}
-
-.main-layout__aside :deep(*::-webkit-scrollbar-thumb:hover) {
-  background: rgba(255, 255, 255, 0.42);
-  background-clip: content-box;
-}
-
-.brand {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  height: 60px;
-  padding: 0 16px;
-  color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.brand__mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-}
-
-.brand__title {
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.18;
-}
-
-.brand__subtitle {
-  margin-top: 2px;
-  font-size: 12px;
-  color: #9ba9bd;
-}
-
-.side-nav {
-  flex: 1;
-  padding: 10px 0 16px;
-  overflow-y: auto;
-}
-
-.side-nav__group {
-  margin: 3px 12px;
-}
-
-.side-nav__item,
-.side-nav__child {
-  display: flex;
-  width: 100%;
-  height: 46px;
-  padding: 0 18px;
-  font-size: 15px;
-  font-weight: 650;
-  color: #c9d4e5;
-  align-items: center;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-  outline: none;
-  transition:
-    background-color 0.16s ease,
-    color 0.16s ease,
-    transform 0.16s ease;
-}
-
-.side-nav__item {
-  gap: 12px;
-  justify-content: flex-start;
-}
-
-.side-nav__item:hover,
-.side-nav__child:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.side-nav__item.is-active:not(.is-open),
-.side-nav__child.is-active {
-  color: #fff;
-  background: #2f6fed;
-  box-shadow: 0 8px 18px rgba(47, 111, 237, 0.25);
-}
-
-.side-nav__item.is-open {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.side-nav__arrow {
-  width: 8px;
-  height: 8px;
-  margin-left: auto;
-  border-right: 1.5px solid currentcolor;
-  border-bottom: 1.5px solid currentcolor;
-  transform: rotate(45deg);
-  transition: transform 0.2s ease;
-}
-
-.side-nav__item.is-open .side-nav__arrow {
-  transform: rotate(225deg);
-}
-
-.side-nav__children {
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transform: translateY(-4px);
-  transition:
-    max-height 0.26s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.18s ease-out,
-    transform 0.22s ease-out,
-    padding 0.2s ease-out;
-}
-
-.side-nav__children.is-open {
-  max-height: calc(var(--child-count) * 46px + 12px);
-  padding: 3px 0 6px;
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.side-nav__child {
-  height: 42px;
-  padding-left: 50px;
-  font-weight: 650;
-}
-
-.main-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 60px;
-  padding: 0 22px;
-  color: #c9d4e5;
-  background: #141b2d;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.main-header__spacer {
-  flex: 1;
-}
-
-.main-header__actions {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-}
-
-.icon-trigger,
-.login-mark {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  transition:
-    background 0.18s ease,
-    opacity 0.18s ease;
-}
-
-.icon-trigger:hover,
-.login-mark:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.icon-trigger {
-  width: 34px;
-  height: 34px;
-  justify-content: center;
-  padding: 0;
-  color: #dce6f5;
-  font-size: 18px;
-}
-
-.notify-dot {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  background: #4f8cff;
-  border: 2px solid #141b2d;
-  border-radius: 999px;
-}
-
-.login-mark {
-  gap: 9px;
-  height: 38px;
-  padding: 0 6px;
-  color: #ffffff;
-}
-
-.user-avatar {
-  font-weight: 700;
-  color: #ffffff;
-  background: #2f6fed;
-}
-
-.login-mark__text {
-  max-width: 96px;
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 700;
-  color: #ffffff;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.main-content {
-  position: relative;
-  height: calc(100vh - 60px);
-  padding: 0;
-  overflow: auto;
-}
-
-.route-progress {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  width: 100%;
-  height: 2px;
-  pointer-events: none;
-  background: transparent;
-}
-
-.route-progress::after {
-  display: block;
-  width: 0;
-  height: 100%;
-  content: "";
-  background: #2f6fed;
-  opacity: 0;
-  transition:
-    width 0.26s ease,
-    opacity 0.18s ease;
-}
-
-.route-progress.is-loading::after {
-  width: 100%;
-  opacity: 1;
-}
-
-.page-fade-enter-active,
-.page-fade-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.2s ease;
-}
-
-.page-fade-enter-from,
-.page-fade-leave-to {
-  opacity: 0;
-  transform: translateY(6px);
-}
-</style>

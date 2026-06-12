@@ -197,18 +197,19 @@ flowchart TD
 
 MVP 阶段不引入 Sa-Token JWT 插件。登录后由 Sa-Token 生成原始 UUID token，并把登录态、用户基础信息、角色编码、权限码集合和后续数据权限上下文存入 Redis session。接口鉴权时通过 token 定位 Redis session，再从 session 或权限服务中读取当前用户权限。
 
-权限数据仍以数据库为准：`sys_role.permission_codes` 是角色权限码来源，Redis session 只作为登录态和权限上下文缓存。用户被禁用、角色或权限变更时，需要清理对应用户 session 或重新加载权限上下文，确保权限调整能尽快生效。
+权限数据仍以数据库为准：`sys_permission` 是可授权权限码目录，`sys_role.permission_codes` 是角色授权结果。普通用户有效权限取角色权限码与启用权限目录的交集；Redis session 只作为登录态和权限上下文缓存。用户被禁用、角色或权限状态变更时，需要清理对应用户 session 或重新加载权限上下文，确保权限调整能尽快生效。
 
 核心表：
 
 ```text
 sys_user
 sys_role
+sys_permission
 sys_user_role
 sys_dept
 ```
 
-MVP 阶段为减少表数量，暂不设计菜单权限表、独立权限表和细粒度数据权限；页面入口先统一展示，进入页面或调用接口时再校验角色中的粗粒度权限码。权限码直接保存在 `sys_role.permission_codes`，后续权限复杂度提升后，再拆分菜单、按钮、独立权限表或数据范围表。
+MVP 阶段暂不设计菜单权限表、角色权限关系表和细粒度数据权限；页面入口先统一展示，进入页面或调用接口时再校验权限码。权限目录保存在 `sys_permission`，角色授权结果保存在 `sys_role.permission_codes`；后续权限规模提升后，再拆分动态菜单、角色权限关系或数据范围表。
 
 权限码示例：
 
@@ -733,7 +734,8 @@ AI 相关审计先使用 `ai_interaction_log`，记录：
 - Redis session 存储登录态和权限上下文。
 - 用户表。
 - 角色表。
-- 角色粗粒度权限码。
+- 权限码目录。
+- 角色权限码配置。
 - 用户角色关系。
 - 接口权限校验。
 - 当前用户上下文。

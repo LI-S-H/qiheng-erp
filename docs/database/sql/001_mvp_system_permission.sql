@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     username VARCHAR(64) NOT NULL COMMENT '登录账号',
     password_hash VARCHAR(255) NOT NULL COMMENT '密码哈希',
     real_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '用户姓名',
-    dept_id BIGINT DEFAULT NULL COMMENT '所属部门ID',
+    dept_id BIGINT NOT NULL COMMENT '所属部门ID',
     is_admin TINYINT NOT NULL DEFAULT 0 COMMENT '是否超级管理员：1是，0否',
     status TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1启用，0禁用',
     last_login_at DATETIME DEFAULT NULL COMMENT '最近登录时间',
@@ -48,6 +48,24 @@ CREATE TABLE IF NOT EXISTS sys_role (
     UNIQUE KEY uk_sys_role_code (role_code),
     KEY idx_sys_role_deleted_status (deleted, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色表';
+
+CREATE TABLE IF NOT EXISTS sys_permission (
+    id BIGINT NOT NULL COMMENT '权限ID',
+    permission_code VARCHAR(100) NOT NULL COMMENT '权限码，例如 system:user:query',
+    permission_name VARCHAR(100) NOT NULL COMMENT '权限名称',
+    module_code VARCHAR(64) NOT NULL COMMENT '所属模块编码',
+    action_type VARCHAR(32) NOT NULL COMMENT '操作类型：query/create/update/delete/manage/execute',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1启用，0禁用',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT '排序值，越小越靠前',
+    description VARCHAR(500) NOT NULL DEFAULT '' COMMENT '权限说明',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sys_permission_code (permission_code),
+    KEY idx_sys_permission_module_action (module_code, action_type),
+    KEY idx_sys_permission_deleted_status_sort (deleted, status, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='权限码目录表';
 
 CREATE TABLE IF NOT EXISTS sys_user_role (
     id BIGINT NOT NULL COMMENT '关系ID',

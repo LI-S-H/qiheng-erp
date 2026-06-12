@@ -7,8 +7,8 @@ export interface CurrentUser {
   userId: string;
   username: string;
   realName: string;
-  deptId: string | null;
-  deptName?: string | null;
+  deptId: string;
+  deptName: string;
   isAdmin: boolean;
   roleCodes: string[];
   permissionCodes: string[];

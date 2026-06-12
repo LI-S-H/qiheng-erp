@@ -1,311 +1,347 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useDebounceFn } from '@vueuse/core';
+import { getApiErrorMessage } from '@/api/http';
+import { toast } from 'vue-sonner';
+import { User } from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
-  CircleCheck,
-  CircleClose,
-  CirclePlus,
-  Delete,
-  Key,
-  RefreshRight,
-  Search,
-  UserFilled,
-} from '@element-plus/icons-vue';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import PromptDialog from '@/components/common/PromptDialog.vue';
+import MultiSelect from '@/components/common/MultiSelect.vue';
+import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type {
   DeptOption,
   RoleOption,
   SystemUserFormPayload,
+  SystemUserFormModel,
   SystemUserListItem,
   SystemUserQuery,
   UserStatus,
 } from '../types';
-
-const roleOptions: RoleOption[] = [
-  { roleId: '1900000000000001001', roleCode: 'SUPER_ADMIN', roleName: '超级管理员', status: 1 },
-  { roleId: '1900000000000001002', roleCode: 'SYSTEM_ADMIN', roleName: '系统管理员', status: 1 },
-  { roleId: '1900000000000001003', roleCode: 'BUSINESS_MANAGER', roleName: '业务主管', status: 1 },
-  { roleId: '1900000000000001004', roleCode: 'WAREHOUSE_OPERATOR', roleName: '仓库操作员', status: 1 },
-];
-
-const deptOptions: DeptOption[] = [
-  { deptId: '1900000000000000100', deptName: '总部', parentId: '0', status: 1 },
-  { deptId: '1900000000000000101', deptName: '财务部', parentId: '1900000000000000100', status: 1 },
-  { deptId: '1900000000000000102', deptName: '采购部', parentId: '1900000000000000100', status: 1 },
-  { deptId: '1900000000000000103', deptName: '销售部', parentId: '1900000000000000100', status: 1 },
-  { deptId: '1900000000000000104', deptName: '仓储部', parentId: '1900000000000000100', status: 1 },
-];
-
-const initialUsers: SystemUserListItem[] = [
-  {
-    userId: '1900000000000000001',
-    username: 'admin',
-    realName: '系统管理员',
-    deptId: '1900000000000000100',
-    deptName: '总部',
-    isAdmin: true,
-    status: 1,
-    roleIds: ['1900000000000001001'],
-    roleNames: ['超级管理员'],
-    lastLoginAt: '2026-06-08 09:12:30',
-    createdAt: '2026-06-05 20:30:00',
-    updatedAt: '2026-06-08 09:12:30',
-  },
-  {
-    userId: '1900000000000000002',
-    username: 'purchase01',
-    realName: '采购主管',
-    deptId: '1900000000000000102',
-    deptName: '采购部',
-    isAdmin: false,
-    status: 1,
-    roleIds: ['1900000000000001003'],
-    roleNames: ['业务主管'],
-    lastLoginAt: '2026-06-07 17:24:11',
-    createdAt: '2026-06-06 10:18:22',
-    updatedAt: '2026-06-07 17:24:11',
-  },
-  {
-    userId: '1900000000000000003',
-    username: 'warehouse01',
-    realName: '仓库操作员',
-    deptId: '1900000000000000104',
-    deptName: '仓储部',
-    isAdmin: false,
-    status: 1,
-    roleIds: ['1900000000000001004'],
-    roleNames: ['仓库操作员'],
-    lastLoginAt: null,
-    createdAt: '2026-06-06 11:05:19',
-    updatedAt: '2026-06-06 11:05:19',
-  },
-  {
-    userId: '1900000000000000004',
-    username: 'sales_stop',
-    realName: '停用销售账号',
-    deptId: '1900000000000000103',
-    deptName: '销售部',
-    isAdmin: false,
-    status: 0,
-    roleIds: ['1900000000000001003'],
-    roleNames: ['业务主管'],
-    lastLoginAt: '2026-06-06 14:42:02',
-    createdAt: '2026-06-05 22:10:00',
-    updatedAt: '2026-06-07 13:00:00',
-  },
-];
+import {
+  listSystemUsers,
+  createSystemUser,
+  updateSystemUser,
+  updateSystemUserStatus,
+  resetSystemUserPassword,
+  deleteSystemUser,
+  batchUpdateSystemUserStatus,
+  batchResetSystemUserPassword,
+  batchDeleteSystemUsers,
+  listRoleOptions,
+  listDeptOptions,
+  bindSystemUserRoles,
+} from '../api';
 
 const loading = ref(false);
-const users = ref<SystemUserListItem[]>(initialUsers);
-const selectedRows = ref<SystemUserListItem[]>([]);
+const formSubmitting = ref(false);
+const roleSubmitting = ref(false);
+const actionSubmitting = ref(false);
+const users = ref<SystemUserListItem[]>([]);
+const total = ref(0);
+const roleOptions = ref<RoleOption[]>([]);
+const deptOptions = ref<DeptOption[]>([]);
+const roleMultiOptions = computed(() => roleOptions.value.map(r => ({ value: r.roleId, label: r.roleName })));
+const deptFilterOptions = computed(() => [
+  { value: 'all', label: '全部部门' },
+  ...deptOptions.value.map(dept => ({ value: dept.deptId, label: dept.deptName })),
+]);
+const roleFilterOptions = computed(() => [
+  { value: 'all', label: '全部角色' },
+  ...roleOptions.value.map(role => ({ value: role.roleId, label: role.roleName })),
+]);
+const statusFilterOptions = [
+  { value: 'all', label: '全部状态' },
+  { value: 1, label: '启用' },
+  { value: 0, label: '停用' },
+];
+const selectedIds = ref<Set<string>>(new Set());
 const userDialogVisible = ref(false);
 const roleDialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingUserId = ref('');
 const roleEditingUser = ref<SystemUserListItem | null>(null);
-const userFormRef = ref<FormInstance>();
-const roleFormRef = ref<FormInstance>();
 
 const query = reactive<SystemUserQuery>({
-  keyword: '',
-  deptId: '',
-  roleId: '',
-  status: '',
-  pageNum: 1,
-  pageSize: 10,
+  keyword: '', deptId: 'all', roleId: 'all', status: 'all', pageNum: 1, pageSize: 10,
 });
 
-const userForm = reactive<SystemUserFormPayload>({
-  username: '',
-  realName: '',
-  password: '',
-  deptId: null,
-  isAdmin: false,
-  status: 1,
-  roleIds: [],
+const userForm = reactive<SystemUserFormModel>({
+  username: '', realName: '', password: '', deptId: null, isAdmin: false, status: 1, roleIds: [],
 });
 
-const roleForm = reactive({
-  roleIds: [] as string[],
+const roleForm = reactive({ roleIds: [] as string[] });
+
+const formErrors = reactive<Record<string, string>>({});
+const roleFormErrors = reactive<Record<string, string>>({});
+let fetchSequence = 0;
+
+// Confirm dialog state
+const confirmState = reactive({
+  open: false,
+  title: '',
+  description: '',
+  confirmText: '',
+  variant: 'default' as 'default' | 'destructive' | 'warning',
+  onConfirm: (() => {}) as (() => void | Promise<void>),
 });
 
-const userRules = computed<FormRules<SystemUserFormPayload>>(() => ({
-  username: [
-    { required: true, message: '请输入登录账号', trigger: 'blur' },
-    { min: 3, max: 64, message: '账号长度为 3-64 个字符', trigger: 'blur' },
-  ],
-  realName: [
-    { required: true, message: '请输入用户姓名', trigger: 'blur' },
-    { max: 100, message: '姓名不能超过 100 个字符', trigger: 'blur' },
-  ],
-  password:
-    dialogMode.value === 'create'
-      ? [
-          { required: true, message: '请输入初始密码', trigger: 'blur' },
-          { min: 6, max: 32, message: '密码长度为 6-32 个字符', trigger: 'blur' },
-        ]
-      : [{ min: 6, max: 32, message: '密码长度为 6-32 个字符', trigger: 'blur' }],
-  deptId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
-  roleIds: [{ required: true, message: '请选择用户角色', trigger: 'change' }],
-}));
-
-const roleRules: FormRules = {
-  roleIds: [{ required: true, message: '请选择用户角色', trigger: 'change' }],
-};
-
-const filteredUsers = computed(() => {
-  const keyword = query.keyword?.trim().toLowerCase();
-
-  return users.value.filter(user => {
-    const matchKeyword =
-      !keyword ||
-      user.username.toLowerCase().includes(keyword) ||
-      user.realName.toLowerCase().includes(keyword) ||
-      user.deptName.toLowerCase().includes(keyword);
-    const matchDept = isEmptyFilter(query.deptId) || user.deptId === query.deptId;
-    const matchRole = isEmptyFilter(query.roleId) || user.roleIds.includes(String(query.roleId));
-    const matchStatus = isEmptyFilter(query.status) || user.status === Number(query.status);
-
-    return matchKeyword && matchDept && matchRole && matchStatus;
-  });
+// Prompt dialog state
+const promptState = reactive({
+  open: false,
+  title: '',
+  description: '',
+  inputType: 'text',
+  inputPattern: undefined as RegExp | undefined,
+  inputErrorMessage: '',
+  inputPlaceholder: '',
+  confirmText: '',
+  onConfirm: ((_value: string) => {}) as ((value: string) => void | Promise<void>),
 });
 
-const pagedUsers = computed(() => {
-  const start = (query.pageNum - 1) * query.pageSize;
-  return filteredUsers.value.slice(start, start + query.pageSize);
-});
+const enabledCount = computed(() => users.value.filter(u => u.status === 1).length);
+const adminCount = computed(() => users.value.filter(u => u.isAdmin).length);
+const roleBoundCount = computed(() => users.value.filter(u => u.roleIds.length > 0).length);
 
-const enabledCount = computed(() => users.value.filter(user => user.status === 1).length);
-const adminCount = computed(() => users.value.filter(user => user.isAdmin).length);
-const roleBoundCount = computed(() => users.value.filter(user => user.roleIds.length > 0).length);
+const allSelected = computed(() => users.value.length > 0 && users.value.every(u => selectedIds.value.has(u.userId)));
+const selectedRows = computed(() => users.value.filter(u => selectedIds.value.has(u.userId)));
 
-function isEmptyFilter(value: unknown) {
-  return value === '' || value === null || value === undefined;
+async function fetchUsers() {
+  const sequence = ++fetchSequence;
+  loading.value = true;
+  try {
+    const result = await listSystemUsers({ ...query });
+    if (sequence !== fetchSequence) return;
+    users.value = result.records;
+    total.value = result.total;
+  } catch {
+    // http.ts 统一处理接口错误提示。
+  } finally {
+    if (sequence === fetchSequence) loading.value = false;
+  }
 }
 
-function getDeptName(deptId: string | null) {
-  return deptOptions.find(item => item.deptId === deptId)?.deptName || '';
+async function fetchOptions() {
+  try {
+    const [roles, depts] = await Promise.all([listRoleOptions(), listDeptOptions()]);
+    roleOptions.value = roles;
+    deptOptions.value = depts;
+  } catch {
+    // silent
+  }
 }
 
-function getRoleNames(roleIds: string[]) {
-  return roleIds.map(roleId => roleOptions.find(item => item.roleId === roleId)?.roleName).filter(Boolean) as string[];
-}
+onMounted(() => {
+  fetchOptions();
+  fetchUsers();
+});
 
 function formatTableTime(value: string | null) {
-  if (!value) {
-    return '未登录';
-  }
-
+  if (!value) return '未登录';
   return value.slice(5, 16);
 }
 
 function refreshList() {
-  loading.value = true;
-  window.setTimeout(() => {
-    loading.value = false;
-    ElMessage.success('列表已刷新');
-  }, 260);
+  if (loading.value) return;
+  fetchUsers();
 }
 
-function handleSearch() {
+const debouncedSearch = useDebounceFn(() => {
   query.pageNum = 1;
+  fetchUsers();
+}, 250);
+
+function handleSearch() {
+  debouncedSearch();
 }
 
 function handleReset() {
-  query.keyword = '';
-  query.deptId = '';
-  query.roleId = '';
-  query.status = '';
-  query.pageNum = 1;
+  if (loading.value) return;
+  query.keyword = ''; query.deptId = 'all'; query.roleId = 'all'; query.status = 'all'; query.pageNum = 1;
+  fetchUsers();
+}
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    users.value.forEach(u => selectedIds.value.delete(u.userId));
+  } else {
+    users.value.forEach(u => selectedIds.value.add(u.userId));
+  }
+  selectedIds.value = new Set(selectedIds.value);
+}
+
+function toggleSelectRow(userId: string) {
+  const next = new Set(selectedIds.value);
+  if (next.has(userId)) next.delete(userId); else next.add(userId);
+  selectedIds.value = next;
 }
 
 function ensureSelectedRows(actionName: string) {
-  if (selectedRows.value.length > 0) {
-    return true;
-  }
-
-  ElMessage.warning(`请先选择需要${actionName}的用户`);
+  if (selectedIds.value.size > 0) return true;
+  toast.warning(`请先选择需要${actionName}的用户`);
   return false;
 }
 
-async function handleBatchStatus(status: UserStatus) {
+function showConfirm(title: string, description: string, confirmText: string, variant: 'default' | 'destructive' | 'warning', onConfirm: () => void | Promise<void>) {
+  confirmState.title = title;
+  confirmState.description = description;
+  confirmState.confirmText = confirmText;
+  confirmState.variant = variant;
+  confirmState.onConfirm = onConfirm;
+  confirmState.open = true;
+}
+
+function showPrompt(title: string, description: string, inputType: string, inputPattern: RegExp | undefined, inputErrorMessage: string, inputPlaceholder: string, confirmText: string, onConfirm: (v: string) => void | Promise<void>) {
+  promptState.title = title;
+  promptState.description = description;
+  promptState.inputType = inputType;
+  promptState.inputPattern = inputPattern;
+  promptState.inputErrorMessage = inputErrorMessage;
+  promptState.inputPlaceholder = inputPlaceholder;
+  promptState.confirmText = confirmText;
+  promptState.onConfirm = onConfirm;
+  promptState.open = true;
+}
+
+async function runConfirmAction() {
+  if (actionSubmitting.value) return;
+  actionSubmitting.value = true;
+  try {
+    await confirmState.onConfirm();
+    confirmState.open = false;
+  } finally {
+    actionSubmitting.value = false;
+  }
+}
+
+async function runPromptAction(value: string) {
+  if (actionSubmitting.value) return;
+  actionSubmitting.value = true;
+  try {
+    await promptState.onConfirm(value);
+    promptState.open = false;
+  } finally {
+    actionSubmitting.value = false;
+  }
+}
+
+function handleBatchStatus(status: UserStatus) {
   const action = status === 1 ? '启用' : '停用';
-
-  if (!ensureSelectedRows(action)) {
-    return;
-  }
-
-  try {
-    await ElMessageBox.confirm(`确认${action}已选择的 ${selectedRows.value.length} 个账号吗`, `批量${action}`, {
-      confirmButtonText: action,
-      cancelButtonText: '取消',
-      type: status === 1 ? 'success' : 'warning',
-    });
-  } catch {
-    return;
-  }
-
-  const selectedIds = new Set(selectedRows.value.map(user => user.userId));
-  users.value = users.value.map(user =>
-    selectedIds.has(user.userId) ? { ...user, status, updatedAt: '2026-06-08 10:00:00' } : user,
+  if (!ensureSelectedRows(action)) return;
+  showConfirm(
+    `批量${action}`,
+    `确认${action}已选择的 ${selectedIds.value.size} 个账号吗`,
+    action,
+    status === 1 ? 'default' : 'warning',
+    async () => {
+      try {
+        await batchUpdateSystemUserStatus({ userIds: [...selectedIds.value], status });
+        selectedIds.value = new Set();
+        toast.success(`已批量${action}`);
+        fetchUsers();
+      } catch {}
+    },
   );
-  selectedRows.value = [];
-  ElMessage.success(`已批量${action}`);
 }
 
-async function handleBatchResetPassword() {
-  if (!ensureSelectedRows('重置密码')) {
-    return;
-  }
-
-  let value = '';
-  try {
-    const result = await ElMessageBox.prompt(`为已选择的 ${selectedRows.value.length} 个账号设置新密码`, '批量重置密码', {
-      confirmButtonText: '确认重置',
-      cancelButtonText: '取消',
-      inputType: 'password',
-      inputPattern: /^.{6,32}$/,
-      inputErrorMessage: '密码长度为 6-32 个字符',
-    });
-    value = result.value;
-  } catch {
-    return;
-  }
-
-  if (value) {
-    ElMessage.success('已批量重置密码');
-  }
+function handleBatchResetPassword() {
+  if (!ensureSelectedRows('重置密码')) return;
+  showPrompt(
+    '批量重置密码',
+    `为已选择的 ${selectedIds.value.size} 个账号设置新密码`,
+    'password',
+    /^(?=.*\S).{6,32}$/,
+    '密码长度为 6-32 个字符且不能全为空格',
+    '请输入新密码',
+    '确认重置',
+    async (value) => {
+      if (value) {
+        try {
+          await batchResetSystemUserPassword({ userIds: [...selectedIds.value], password: value });
+          toast.success('已批量重置密码');
+        } catch {}
+      }
+    },
+  );
 }
 
-async function handleBatchDelete() {
-  if (!ensureSelectedRows('删除')) {
-    return;
-  }
-
-  try {
-    await ElMessageBox.confirm(`确认删除已选择的 ${selectedRows.value.length} 个账号吗`, '批量删除用户', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
-  }
-
-  const selectedIds = new Set(selectedRows.value.map(user => user.userId));
-  users.value = users.value.filter(user => !selectedIds.has(user.userId));
-  selectedRows.value = [];
-  ElMessage.success('已批量删除用户');
+function handleBatchDelete() {
+  if (!ensureSelectedRows('删除')) return;
+  showConfirm(
+    '批量删除用户',
+    `确认删除已选择的 ${selectedIds.value.size} 个账号吗`,
+    '删除',
+    'destructive',
+    async () => {
+      try {
+        await batchDeleteSystemUsers({ userIds: [...selectedIds.value] });
+        selectedIds.value = new Set();
+        toast.success('已批量删除用户');
+        fetchUsers();
+      } catch {}
+    },
+  );
 }
 
 function resetUserForm() {
   editingUserId.value = '';
-  userForm.username = '';
-  userForm.realName = '';
-  userForm.password = '';
-  userForm.deptId = null;
-  userForm.isAdmin = false;
-  userForm.status = 1;
-  userForm.roleIds = [];
+  userForm.username = ''; userForm.realName = ''; userForm.password = '';
+  userForm.deptId = null; userForm.isAdmin = false; userForm.status = 1; userForm.roleIds = [];
+  Object.keys(formErrors).forEach(k => delete formErrors[k]);
+}
+
+function validateUserForm(): boolean {
+  Object.keys(formErrors).forEach(k => delete formErrors[k]);
+  const username = userForm.username.trim();
+  const realName = userForm.realName.trim();
+  const password = userForm.password ?? '';
+  if (!username) formErrors.username = '请输入登录账号';
+  else if (!/^[A-Za-z][A-Za-z0-9_]{2,63}$/.test(username)) formErrors.username = '账号须以字母开头，仅可使用字母、数字和下划线，长度 3-64 位';
+  if (!realName) formErrors.realName = '请输入用户姓名';
+  else if (realName.length > 100) formErrors.realName = '姓名不能超过 100 个字符';
+  if (dialogMode.value === 'create') {
+    if (!password.trim()) formErrors.password = '请输入初始密码';
+    else if (password.length < 6 || password.length > 32) formErrors.password = '密码长度为 6-32 个字符';
+  } else {
+    if (password && !password.trim()) formErrors.password = '密码不能全为空格';
+    else if (password && (password.length < 6 || password.length > 32)) formErrors.password = '密码长度为 6-32 个字符';
+  }
+  if (!userForm.deptId) formErrors.deptId = '请选择所属部门';
+  if (!userForm.roleIds.length) formErrors.roleIds = '请选择用户角色';
+  return Object.keys(formErrors).length === 0;
 }
 
 function openCreateDialog() {
@@ -324,777 +360,421 @@ function openEditDialog(row: SystemUserListItem) {
   userForm.isAdmin = row.isAdmin;
   userForm.status = row.status;
   userForm.roleIds = [...row.roleIds];
+  Object.keys(formErrors).forEach(k => delete formErrors[k]);
   userDialogVisible.value = true;
 }
 
 async function submitUserForm() {
-  await userFormRef.value?.validate();
-
-  const now = '2026-06-08 10:00:00';
-  const deptName = getDeptName(userForm.deptId);
-  const roleNames = getRoleNames(userForm.roleIds);
-
-  if (dialogMode.value === 'create') {
-    const nextUser: SystemUserListItem = {
-      userId: String(1900000000000000100 + users.value.length),
-      username: userForm.username,
-      realName: userForm.realName,
-      deptId: userForm.deptId,
-      deptName,
-      isAdmin: userForm.isAdmin,
-      status: userForm.status,
-      roleIds: [...userForm.roleIds],
-      roleNames,
-      lastLoginAt: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    users.value = [nextUser, ...users.value];
-    ElMessage.success('用户已创建');
-  } else {
-    users.value = users.value.map(user =>
-      user.userId === editingUserId.value
-        ? {
-            ...user,
-            username: userForm.username,
-            realName: userForm.realName,
-            deptId: userForm.deptId,
-            deptName,
-            isAdmin: userForm.isAdmin,
-            status: userForm.status,
-            roleIds: [...userForm.roleIds],
-            roleNames,
-            updatedAt: now,
-          }
-        : user,
-    );
-    ElMessage.success('用户已更新');
+  if (formSubmitting.value || !validateUserForm()) return;
+  formSubmitting.value = true;
+  const password = userForm.password ?? '';
+  const payload: SystemUserFormPayload = {
+    username: userForm.username.trim(),
+    realName: userForm.realName.trim(),
+    deptId: userForm.deptId!,
+    isAdmin: userForm.isAdmin,
+    status: userForm.status,
+    roleIds: [...new Set(userForm.roleIds)],
+    ...((dialogMode.value === 'create' || password) ? { password } : {}),
+  };
+  try {
+    if (dialogMode.value === 'create') {
+      await createSystemUser(payload);
+      toast.success('用户已创建');
+    } else {
+      await updateSystemUser(editingUserId.value, payload);
+      toast.success('用户已更新');
+    }
+    userDialogVisible.value = false;
+    fetchUsers();
+  } catch (error) {
+    const message = getApiErrorMessage(error);
+    if (message === '登录账号已存在') {
+      formErrors.username = message;
+    }
+  } finally {
+    formSubmitting.value = false;
   }
-
-  userDialogVisible.value = false;
 }
 
 function openRoleDialog(row: SystemUserListItem) {
   roleEditingUser.value = row;
   roleForm.roleIds = [...row.roleIds];
+  Object.keys(roleFormErrors).forEach(k => delete roleFormErrors[k]);
   roleDialogVisible.value = true;
 }
 
 async function submitRoleForm() {
-  await roleFormRef.value?.validate();
-
+  Object.keys(roleFormErrors).forEach(k => delete roleFormErrors[k]);
+  if (!roleForm.roleIds.length) { roleFormErrors.roleIds = '请选择用户角色'; return; }
+  if (roleSubmitting.value) return;
   const current = roleEditingUser.value;
-  if (!current) {
-    return;
+  if (!current) return;
+  roleSubmitting.value = true;
+  try {
+    await bindSystemUserRoles(current.userId, { roleIds: [...new Set(roleForm.roleIds)] });
+    roleDialogVisible.value = false;
+    toast.success('角色绑定已更新');
+    fetchUsers();
+  } catch {
+    // http.ts handles toast
+  } finally {
+    roleSubmitting.value = false;
   }
-
-  users.value = users.value.map(user =>
-    user.userId === current.userId
-      ? {
-          ...user,
-          roleIds: [...roleForm.roleIds],
-          roleNames: getRoleNames(roleForm.roleIds),
-          updatedAt: '2026-06-08 10:00:00',
-        }
-      : user,
-  );
-  roleDialogVisible.value = false;
-  ElMessage.success('角色绑定已更新');
 }
 
 async function handleStatusChange(row: SystemUserListItem, status: UserStatus) {
   const action = status === 1 ? '启用' : '停用';
-  try {
-    await ElMessageBox.confirm(`确认${action}账号「${row.username}」吗`, `${action}账号`, {
-      confirmButtonText: action,
-      cancelButtonText: '取消',
-      type: status === 1 ? 'success' : 'warning',
-    });
-  } catch {
-    return;
-  }
+  showConfirm(`${action}账号`, `确认${action}账号「${row.username}」吗`, action, status === 1 ? 'default' : 'warning', async () => {
+    try {
+      await updateSystemUserStatus(row.userId, status);
+      toast.success(`账号已${action}`);
+      fetchUsers();
+    } catch {}
+  });
+}
 
-  users.value = users.value.map(user =>
-    user.userId === row.userId ? { ...user, status, updatedAt: '2026-06-08 10:00:00' } : user,
+function handleResetPassword(row: SystemUserListItem) {
+  showPrompt(
+    '重置密码', `为「${row.realName}」设置新密码`, 'password',
+    /^(?=.*\S).{6,32}$/, '密码长度为 6-32 个字符且不能全为空格', '请输入新密码', '确认重置',
+    async (value) => {
+      if (value) {
+        try {
+          await resetSystemUserPassword(row.userId, { password: value });
+          toast.success('密码已重置');
+        } catch {}
+      }
+    },
   );
-  ElMessage.success(`账号已${action}`);
 }
 
-async function handleResetPassword(row: SystemUserListItem) {
-  let value = '';
-  try {
-    const result = await ElMessageBox.prompt(`为「${row.realName}」设置新密码`, '重置密码', {
-      confirmButtonText: '确认重置',
-      cancelButtonText: '取消',
-      inputType: 'password',
-      inputPattern: /^.{6,32}$/,
-      inputErrorMessage: '密码长度为 6-32 个字符',
-    });
-    value = result.value;
-  } catch {
-    return;
-  }
-
-  if (value) {
-    ElMessage.success('密码已重置');
-  }
-}
-
-async function handleDelete(row: SystemUserListItem) {
-  try {
-    await ElMessageBox.confirm(`确认删除账号「${row.username}」吗`, '删除用户', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
-  }
-
-  users.value = users.value.filter(user => user.userId !== row.userId);
-  ElMessage.success('用户已删除');
-}
-
-function handleSelectionChange(rows: SystemUserListItem[]) {
-  selectedRows.value = rows;
+function handleDelete(row: SystemUserListItem) {
+  showConfirm('删除用户', `确认删除账号「${row.username}」吗`, '删除', 'destructive', async () => {
+    try {
+      await deleteSystemUser(row.userId);
+      toast.success('用户已删除');
+      fetchUsers();
+    } catch {}
+  });
 }
 </script>
 
 <template>
-  <section class="page-shell user-page">
-    <div class="page-head">
+  <section class="page-shell space-y-4">
+    <div class="page-heading">
       <div>
         <h1 class="page-title">用户管理</h1>
-        <p class="page-subtitle">登录账号、部门归属、角色绑定与启用状态</p>
+        <p class="page-description">维护登录账号、部门归属、角色绑定与启用状态</p>
       </div>
     </div>
 
-    <div class="metric-grid">
-      <div class="metric-item">
-        <span>用户总数</span>
-        <strong>{{ users.length }}</strong>
+    <!-- Metrics -->
+    <div class="summary-strip">
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">用户总数</span>
+        <strong class="text-2xl mt-1">{{ total }}</strong>
       </div>
-      <div class="metric-item">
-        <span>启用账号</span>
-        <strong>{{ enabledCount }}</strong>
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">启用账号</span>
+        <strong class="text-2xl mt-1">{{ enabledCount }}</strong>
       </div>
-      <div class="metric-item">
-        <span>超级管理员</span>
-        <strong>{{ adminCount }}</strong>
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">超级管理员</span>
+        <strong class="text-2xl mt-1">{{ adminCount }}</strong>
       </div>
-      <div class="metric-item">
-        <span>已绑定角色</span>
-        <strong>{{ roleBoundCount }}</strong>
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">已绑定角色</span>
+        <strong class="text-2xl mt-1">{{ roleBoundCount }}</strong>
       </div>
     </div>
 
-    <section class="module-panel filter-panel">
-      <el-form class="filter-form" :model="query" label-width="72px">
-        <el-form-item label="关键词">
-          <el-input v-model="query.keyword" clearable placeholder="账号 姓名 部门" @keyup.enter="handleSearch" />
-        </el-form-item>
-        <el-form-item label="部门">
-          <el-select v-model="query.deptId" clearable value-on-clear="" placeholder="全部部门">
-            <el-option v-for="dept in deptOptions" :key="dept.deptId" :label="dept.deptName" :value="dept.deptId" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="角色">
-          <el-select v-model="query.roleId" clearable value-on-clear="" placeholder="全部角色">
-            <el-option v-for="role in roleOptions" :key="role.roleId" :label="role.roleName" :value="role.roleId" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" clearable value-on-clear="" placeholder="全部状态">
-            <el-option label="启用" :value="1" />
-            <el-option label="停用" :value="0" />
-          </el-select>
-        </el-form-item>
-        <div class="filter-actions">
-          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
-          <el-button :icon="RefreshRight" @click="handleReset">重置</el-button>
+    <!-- Filter -->
+    <div class="filter-panel">
+      <div class="filter-grid filter-grid--users">
+        <div class="space-y-1">
+          <Label class="text-xs">关键词</Label>
+          <Input v-model="query.keyword" placeholder="账号 姓名 部门" @keyup.enter="handleSearch" />
         </div>
-      </el-form>
-    </section>
+        <div class="space-y-1">
+          <Label class="text-xs">部门</Label>
+          <AnchoredSelect v-model="query.deptId" :options="deptFilterOptions" placeholder="全部部门" />
+        </div>
+        <div class="space-y-1">
+          <Label class="text-xs">角色</Label>
+          <AnchoredSelect v-model="query.roleId" :options="roleFilterOptions" placeholder="全部角色" />
+        </div>
+        <div class="space-y-1">
+          <Label class="text-xs">状态</Label>
+          <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
+        </div>
+        <div class="filter-actions">
+          <Button size="sm" :disabled="loading" @click="handleSearch">{{ loading ? '查询中...' : '查询' }}</Button>
+          <Button size="sm" variant="outline" :disabled="loading" @click="handleReset">重置</Button>
+        </div>
+      </div>
+    </div>
 
-    <section class="module-panel table-panel">
+    <!-- Table -->
+    <div class="data-panel">
+      <!-- Toolbar -->
       <div class="table-toolbar">
-        <div class="table-toolbar__left">
-          <strong>账号列表</strong>
-          <span :class="{ 'is-active': selectedRows.length > 0 }">已选 {{ selectedRows.length }} 项</span>
+        <div class="table-toolbar__title">
+          <strong class="text-sm">账号列表</strong>
+          <span class="text-xs" :class="selectedIds.size > 0 ? 'text-primary' : 'text-muted-foreground'">
+            已选 {{ selectedIds.size }} 项
+          </span>
         </div>
         <div class="table-toolbar__actions">
-          <el-button class="toolbar-create" type="primary" :icon="CirclePlus" @click="openCreateDialog">
-            新增用户
-          </el-button>
-          <el-button
-            class="toolbar-action"
-            :disabled="selectedRows.length === 0"
-            :icon="CircleCheck"
-            @click="handleBatchStatus(1)"
-          >
-            批量启用
-          </el-button>
-          <el-button
-            class="toolbar-action"
-            :disabled="selectedRows.length === 0"
-            :icon="CircleClose"
-            @click="handleBatchStatus(0)"
-          >
-            批量停用
-          </el-button>
-          <el-button
-            class="toolbar-action"
-            :disabled="selectedRows.length === 0"
-            :icon="Key"
-            @click="handleBatchResetPassword"
-          >
-            重置密码
-          </el-button>
-          <el-button
-            class="toolbar-danger"
-            :disabled="selectedRows.length === 0"
-            :icon="Delete"
-            @click="handleBatchDelete"
-          >
-            删除
-          </el-button>
-          <el-button class="toolbar-action" :icon="RefreshRight" @click="refreshList">刷新</el-button>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <span class="inline-flex"><Button size="sm" :disabled="formSubmitting || actionSubmitting" @click="openCreateDialog">新增用户</Button></span>
+            </TooltipTrigger>
+            <TooltipContent>创建新的登录账号</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <span class="inline-flex">
+                <Button size="sm" variant="outline" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchStatus(1)">批量启用</Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择账号' : '启用已选账号' }}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <span class="inline-flex">
+                <Button size="sm" variant="outline" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchStatus(0)">批量停用</Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择账号' : '停用已选账号' }}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <span class="inline-flex">
+                <Button size="sm" variant="outline" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchResetPassword">重置密码</Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择账号' : '重置已选账号密码' }}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <span class="inline-flex">
+                <Button size="sm" variant="destructive" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchDelete">删除</Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择账号' : '删除已选账号' }}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <span class="inline-flex"><Button size="sm" variant="outline" :disabled="loading" @click="refreshList">刷新</Button></span>
+            </TooltipTrigger>
+            <TooltipContent>重新加载账号列表</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
-      <el-table
-        v-loading="loading"
-        :data="pagedUsers"
-        row-key="userId"
-        border
-        class="user-table"
-        @selection-change="handleSelectionChange"
-      >
-        <el-table-column type="selection" width="44" />
-        <el-table-column label="账号" min-width="170">
-          <template #default="{ row }">
-            <div class="account-cell">
-              <el-avatar :size="32" class="account-cell__avatar">
-                <el-icon><UserFilled /></el-icon>
-              </el-avatar>
-              <div>
-                <strong>{{ row.username }}</strong>
-                <span>{{ row.realName }}</span>
+      <ScrollArea class="w-full">
+        <Table class="min-w-[1050px] table-fixed">
+          <colgroup>
+            <col class="w-[44px]" />
+            <col class="w-[190px]" />
+            <col class="w-[110px]" />
+            <col class="w-[210px]" />
+            <col class="w-[90px]" />
+            <col class="w-[80px]" />
+            <col class="w-[150px]" />
+            <col class="w-[176px]" />
+          </colgroup>
+          <TableHeader>
+            <TableRow>
+              <TableHead class="w-[44px]">
+                <Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" />
+              </TableHead>
+              <TableHead>账号</TableHead>
+              <TableHead class="text-center">部门</TableHead>
+              <TableHead class="text-center">角色</TableHead>
+              <TableHead class="text-center w-[108px]">管理员</TableHead>
+              <TableHead class="text-center w-[96px]">状态</TableHead>
+              <TableHead>时间</TableHead>
+              <TableHead class="text-center w-[176px]">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-if="loading">
+              <TableCell colspan="8" class="text-center text-muted-foreground py-8">加载中...</TableCell>
+            </TableRow>
+            <TableRow v-else-if="users.length === 0">
+              <TableCell colspan="8" class="text-center text-muted-foreground py-8">暂无数据</TableCell>
+            </TableRow>
+            <TableRow v-for="row in users" :key="row.userId" :class="{ 'bg-muted/50': selectedIds.has(row.userId) }">
+              <TableCell>
+                <Checkbox :model-value="selectedIds.has(row.userId)" @update:model-value="toggleSelectRow(row.userId)" />
+              </TableCell>
+              <TableCell>
+                <div class="flex items-center gap-2">
+                  <Avatar class="h-8 w-8 bg-primary">
+                    <AvatarFallback class="text-primary-foreground text-xs bg-primary"><User class="h-4 w-4" /></AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div class="text-sm font-medium">{{ row.username }}</div>
+                    <div class="text-xs text-muted-foreground">{{ row.realName }}</div>
+                  </div>
+                </div>
+              </TableCell>
+              <TableCell class="text-center">{{ row.deptName }}</TableCell>
+              <TableCell class="text-center">
+                <div class="flex flex-wrap gap-1 justify-center">
+                  <Badge v-for="rn in row.roleNames" :key="rn" variant="outline" class="border-blue-200 bg-blue-50 text-blue-700">{{ rn }}</Badge>
+                </div>
+              </TableCell>
+              <TableCell class="text-center">
+                <Badge variant="outline" :class="row.isAdmin ? 'border-blue-200 bg-blue-50 text-blue-700' : 'text-muted-foreground'">{{ row.isAdmin ? '是' : '否' }}</Badge>
+              </TableCell>
+              <TableCell class="text-center">
+                <Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">
+                  {{ row.status === 1 ? '启用' : '停用' }}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <div class="flex flex-col text-xs">
+                  <span>登录 {{ formatTableTime(row.lastLoginAt) }}</span>
+                  <span class="text-muted-foreground">更新 {{ formatTableTime(row.updatedAt) }}</span>
+                </div>
+              </TableCell>
+              <TableCell class="text-center">
+                <div class="flex items-center justify-center gap-1">
+                  <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
+                  <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openRoleDialog(row)">角色</Button>
+                  <Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="handleDelete(row)">删除</Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </ScrollArea>
+
+      <DataTablePagination
+        :total="total"
+        :page-num="query.pageNum"
+        :page-size="query.pageSize"
+        @update:page-num="query.pageNum = $event; fetchUsers()"
+        @update:page-size="query.pageSize = $event; query.pageNum = 1; fetchUsers()"
+      />
+    </div>
+
+    <!-- Create/Edit User Dialog -->
+    <Dialog v-model:open="userDialogVisible">
+      <DialogContent class="sm:max-w-[560px]">
+        <DialogHeader>
+          <DialogTitle>{{ dialogMode === 'create' ? '新增用户' : '编辑用户' }}</DialogTitle>
+          <DialogDescription>填写用户基本信息</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4 py-2">
+          <div class="space-y-1">
+            <Label>登录账号 <span class="text-destructive">*</span></Label>
+            <Input v-model="userForm.username" :disabled="dialogMode === 'edit'" maxlength="64" />
+            <p v-if="formErrors.username" class="text-xs text-destructive">{{ formErrors.username }}</p>
+          </div>
+          <div class="space-y-1">
+            <Label>用户姓名 <span class="text-destructive">*</span></Label>
+            <Input v-model="userForm.realName" maxlength="100" />
+            <p v-if="formErrors.realName" class="text-xs text-destructive">{{ formErrors.realName }}</p>
+          </div>
+          <div class="space-y-1">
+            <Label>{{ dialogMode === 'create' ? '初始密码' : '新密码' }} <span v-if="dialogMode === 'create'" class="text-destructive">*</span></Label>
+            <Input v-model="userForm.password" type="password" :placeholder="dialogMode === 'create' ? '请输入初始密码' : '不修改请留空'" />
+            <p v-if="formErrors.password" class="text-xs text-destructive">{{ formErrors.password }}</p>
+          </div>
+          <div class="space-y-1">
+            <Label>所属部门 <span class="text-destructive">*</span></Label>
+            <Select v-model="userForm.deptId">
+              <SelectTrigger><SelectValue placeholder="请选择部门" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="d in deptOptions" :key="d.deptId" :value="d.deptId">{{ d.deptName }}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p v-if="formErrors.deptId" class="text-xs text-destructive">{{ formErrors.deptId }}</p>
+          </div>
+          <div class="space-y-1">
+            <Label>绑定角色 <span class="text-destructive">*</span></Label>
+            <MultiSelect v-model="userForm.roleIds" :options="roleMultiOptions" placeholder="请选择角色" />
+            <p v-if="formErrors.roleIds" class="text-xs text-destructive">{{ formErrors.roleIds }}</p>
+          </div>
+          <div class="flex items-center justify-between">
+            <Label>超级管理员</Label>
+            <Switch :model-value="userForm.isAdmin" @update:model-value="userForm.isAdmin = $event === true" />
+          </div>
+          <div class="space-y-1">
+            <Label>启用状态 <span class="text-destructive">*</span></Label>
+            <RadioGroup :model-value="String(userForm.status)" @update:model-value="userForm.status = Number($event) as 0 | 1" class="flex gap-4">
+              <div class="flex items-center gap-2">
+                <RadioGroupItem value="1" id="user-status-1" />
+                <Label for="user-status-1" class="cursor-pointer">启用</Label>
               </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="deptName" label="部门" min-width="120" align="center" />
-        <el-table-column label="角色" min-width="250" align="center">
-          <template #default="{ row }">
-            <div class="role-tags">
-              <el-tag v-for="role in row.roleNames" :key="role" effect="plain">{{ role }}</el-tag>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="超级管理员" width="108" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.isAdmin ? 'primary' : 'info'" effect="plain">
-              {{ row.isAdmin ? '是' : '否' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="96" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'" effect="plain">
-              {{ row.status === 1 ? '启用' : '停用' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="时间" min-width="156">
-          <template #default="{ row }">
-            <div class="time-cell">
-              <span>登录 {{ formatTableTime(row.lastLoginAt) }}</span>
-              <span>更新 {{ formatTableTime(row.updatedAt) }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="176" fixed="right">
-          <template #default="{ row }">
-            <div class="row-actions">
-              <el-button class="action-button" @click="openEditDialog(row)">编辑</el-button>
-              <el-button class="action-button is-role" @click="openRoleDialog(row)">角色绑定</el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
+              <div class="flex items-center gap-2">
+                <RadioGroupItem value="0" id="user-status-0" />
+                <Label for="user-status-0" class="cursor-pointer">停用</Label>
+              </div>
+            </RadioGroup>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" :disabled="formSubmitting" @click="userDialogVisible = false">取消</Button>
+          <Button :disabled="formSubmitting" @click="submitUserForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-      <div class="pagination-bar">
-        <div class="pagination-total">共 {{ filteredUsers.length }} 条</div>
-        <el-pagination
-          class="pagination-sizes"
-          v-model:page-size="query.pageSize"
-          :page-sizes="[10, 20, 50]"
-          :total="filteredUsers.length"
-          layout="sizes"
-        />
-        <el-pagination
-          class="pagination-pager"
-          v-model:current-page="query.pageNum"
-          :page-size="query.pageSize"
-          :total="filteredUsers.length"
-          layout="prev, pager, next"
-        />
-        <el-pagination
-          class="pagination-jumper"
-          v-model:current-page="query.pageNum"
-          :page-size="query.pageSize"
-          :total="filteredUsers.length"
-          layout="jumper"
-        />
-      </div>
-    </section>
+    <!-- Role Binding Dialog -->
+    <Dialog v-model:open="roleDialogVisible">
+      <DialogContent class="sm:max-w-[460px]">
+        <DialogHeader>
+          <DialogTitle>角色绑定</DialogTitle>
+          <DialogDescription>为用户「{{ roleEditingUser?.realName }}」配置角色</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4 py-2">
+          <div class="space-y-1">
+            <Label>当前用户</Label>
+            <Input :model-value="roleEditingUser?.realName" disabled />
+          </div>
+          <div class="space-y-1">
+            <Label>绑定角色 <span class="text-destructive">*</span></Label>
+            <MultiSelect v-model="roleForm.roleIds" :options="roleMultiOptions" placeholder="请选择角色" />
+            <p v-if="roleFormErrors.roleIds" class="text-xs text-destructive">{{ roleFormErrors.roleIds }}</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" :disabled="roleSubmitting" @click="roleDialogVisible = false">取消</Button>
+          <Button :disabled="roleSubmitting" @click="submitRoleForm">{{ roleSubmitting ? '保存中...' : '保存' }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-    <el-dialog
-      v-model="userDialogVisible"
-      :title="dialogMode === 'create' ? '新增用户' : '编辑用户'"
-      width="560px"
-      destroy-on-close
-    >
-      <el-form ref="userFormRef" :model="userForm" :rules="userRules" label-width="88px">
-        <el-form-item label="登录账号" prop="username">
-          <el-input v-model="userForm.username" :disabled="dialogMode === 'edit'" maxlength="64" />
-        </el-form-item>
-        <el-form-item label="用户姓名" prop="realName">
-          <el-input v-model="userForm.realName" maxlength="100" />
-        </el-form-item>
-        <el-form-item :label="dialogMode === 'create' ? '初始密码' : '新密码'" prop="password">
-          <el-input
-            v-model="userForm.password"
-            type="password"
-            show-password
-            :placeholder="dialogMode === 'create' ? '请输入初始密码' : '不修改请留空'"
-          />
-        </el-form-item>
-        <el-form-item label="所属部门" prop="deptId">
-          <el-select v-model="userForm.deptId" placeholder="请选择部门">
-            <el-option v-for="dept in deptOptions" :key="dept.deptId" :label="dept.deptName" :value="dept.deptId" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="绑定角色" prop="roleIds">
-          <el-select v-model="userForm.roleIds" multiple placeholder="请选择角色">
-            <el-option v-for="role in roleOptions" :key="role.roleId" :label="role.roleName" :value="role.roleId" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="超级管理员">
-          <el-switch v-model="userForm.isAdmin" />
-        </el-form-item>
-        <el-form-item label="启用状态">
-          <el-radio-group v-model="userForm.status">
-            <el-radio-button :value="1">启用</el-radio-button>
-            <el-radio-button :value="0">停用</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="userDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitUserForm">保存</el-button>
-      </template>
-    </el-dialog>
+    <!-- Confirm Dialog -->
+    <ConfirmDialog
+      :open="confirmState.open"
+      :title="confirmState.title"
+      :description="confirmState.description"
+      :confirm-text="confirmState.confirmText"
+      :variant="confirmState.variant"
+      :loading="actionSubmitting"
+      @update:open="confirmState.open = $event"
+      @confirm="runConfirmAction"
+    />
 
-    <el-dialog v-model="roleDialogVisible" title="角色绑定" width="460px" destroy-on-close>
-      <el-form ref="roleFormRef" :model="roleForm" :rules="roleRules" label-width="88px">
-        <el-form-item label="当前用户">
-          <el-input :model-value="roleEditingUser?.realName" disabled />
-        </el-form-item>
-        <el-form-item label="绑定角色" prop="roleIds">
-          <el-select v-model="roleForm.roleIds" multiple placeholder="请选择角色">
-            <el-option v-for="role in roleOptions" :key="role.roleId" :label="role.roleName" :value="role.roleId" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="roleDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitRoleForm">保存</el-button>
-      </template>
-    </el-dialog>
+    <!-- Prompt Dialog -->
+    <PromptDialog
+      :open="promptState.open"
+      :title="promptState.title"
+      :description="promptState.description"
+      :input-type="promptState.inputType"
+      :input-pattern="promptState.inputPattern"
+      :input-error-message="promptState.inputErrorMessage"
+      :input-placeholder="promptState.inputPlaceholder"
+      :confirm-text="promptState.confirmText"
+      :loading="actionSubmitting"
+      @update:open="promptState.open = $event"
+      @confirm="runPromptAction"
+    />
   </section>
 </template>
-
-<style scoped>
-.user-page {
-  min-height: 100%;
-}
-
-.page-head {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.page-title {
-  margin-bottom: 6px;
-}
-
-.page-subtitle {
-  margin: 0;
-  font-size: 14px;
-  color: #6b7280;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.metric-item {
-  display: flex;
-  min-height: 72px;
-  padding: 14px 16px;
-  background: #fff;
-  border: 1px solid #dfe5ee;
-  border-radius: 8px;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.metric-item span {
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.metric-item strong {
-  margin-top: 6px;
-  font-size: 24px;
-  line-height: 1;
-  color: #172033;
-}
-
-.module-panel {
-  background: #fff;
-  border: 1px solid #dfe5ee;
-  border-radius: 8px;
-}
-
-.filter-panel {
-  padding: 16px 16px 0;
-  margin-bottom: 14px;
-}
-
-.filter-form {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr)) auto;
-  gap: 0 12px;
-  align-items: flex-start;
-}
-
-.filter-form :deep(.el-select),
-.filter-form :deep(.el-input) {
-  width: 100%;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 18px;
-}
-
-.table-panel {
-  overflow: hidden;
-}
-
-.table-toolbar {
-  display: flex;
-  min-height: 58px;
-  padding: 12px 16px;
-  gap: 12px;
-  border-bottom: 1px solid #e5eaf2;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-}
-
-.table-toolbar__left {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex: 0 0 auto;
-}
-
-.table-toolbar__left strong {
-  color: #172033;
-}
-
-.table-toolbar__left span {
-  font-size: 13px;
-  color: #7b8495;
-}
-
-.table-toolbar__left span.is-active {
-  color: #2f6fed;
-}
-
-.table-toolbar__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  margin-left: auto;
-}
-
-.table-toolbar__actions :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-.table-toolbar__actions :deep(.el-button) {
-  height: 32px;
-  border-radius: 6px;
-}
-
-.toolbar-create {
-  margin-right: 4px;
-}
-
-.toolbar-action:not(.is-disabled) {
-  color: #4e5b70;
-  background: #f8fafc;
-  border-color: #d8e0eb;
-}
-
-.toolbar-action:not(.is-disabled):hover {
-  color: #2f6fed;
-  background: #f4f8ff;
-  border-color: #b9d2ff;
-}
-
-.toolbar-danger:not(.is-disabled) {
-  color: #cf3f3f;
-  background: #fff7f7;
-  border-color: #f0c9c9;
-}
-
-.toolbar-danger:not(.is-disabled):hover {
-  color: #b62929;
-  background: #fff0f0;
-  border-color: #e7aaaa;
-}
-
-.user-table {
-  width: 100%;
-}
-
-.user-table :deep(.el-table__body td.el-table__cell) {
-  padding: 6px 0;
-  vertical-align: middle;
-}
-
-.user-table :deep(.el-table__body td.el-table__cell > .cell) {
-  display: flex;
-  min-height: 46px;
-  align-items: center;
-}
-
-.user-table :deep(.el-table__cell.is-center > .cell) {
-  justify-content: center;
-}
-
-.user-table :deep(.el-tag) {
-  display: inline-flex;
-  width: auto;
-  min-width: 34px;
-  height: 32px;
-  padding: 0 10px;
-  font-size: 13px;
-  border-radius: 6px;
-  align-items: center;
-  flex: 0 0 auto;
-  justify-content: center;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.account-cell {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.account-cell__avatar {
-  color: #fff;
-  background: #2f6fed;
-}
-
-.account-cell strong,
-.account-cell span {
-  display: block;
-}
-
-.account-cell strong {
-  font-size: 14px;
-  color: #172033;
-}
-
-.account-cell span {
-  margin-top: 2px;
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.role-tags {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  width: 100%;
-}
-
-.role-tags :deep(.el-tag) {
-  min-width: 102px;
-  height: 32px;
-  color: #1458d4;
-  background: #e7f0ff;
-  border-color: #5b95ff;
-  font-weight: 700;
-}
-
-.time-cell {
-  display: flex;
-  gap: 3px;
-  color: #5f6b7c;
-  font-size: 12px;
-  line-height: 1.45;
-  flex-direction: column;
-}
-
-.time-cell span:first-child {
-  color: #172033;
-}
-
-.row-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-  min-width: 148px;
-}
-
-.row-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-.action-button {
-  min-width: 54px;
-  height: 30px;
-  padding: 0 11px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #2f6fed;
-  background: #f4f8ff;
-  border: 1px solid #b9d2ff;
-  border-radius: 6px;
-  transition:
-    background-color 0.16s ease,
-    border-color 0.16s ease,
-    color 0.16s ease;
-}
-
-.action-button:hover {
-  color: #225fd0;
-  background: #edf4ff;
-  border-color: #8fbaff;
-}
-
-.action-button.is-role {
-  color: #dbd400;
-  background: #f0f7c5;
-  border-color: #dfe875;
-}
-
-.action-button.is-role:hover {
-  color: #c3bd00;
-  background: #eaf2ad;
-  border-color: #d3dd56;
-}
-
-.pagination-bar {
-  display: grid;
-  position: relative;
-  grid-template-columns: auto auto 1fr auto;
-  min-height: 58px;
-  padding: 0 16px;
-  border-top: 1px solid #e5eaf2;
-  align-items: center;
-  column-gap: 48px;
-}
-
-.pagination-total {
-  color: #647084;
-  font-size: 13px;
-  justify-self: start;
-}
-
-.pagination-bar :deep(.el-pagination) {
-  gap: 8px;
-  color: #4b5563;
-  font-size: 13px;
-}
-
-.pagination-sizes {
-  position: absolute;
-  right: calc(50% + 68px);
-}
-
-.pagination-pager {
-  position: absolute;
-  left: 50%;
-  justify-self: center;
-  transform: translateX(-50%);
-}
-
-.pagination-jumper {
-  grid-column: 4;
-  justify-self: end;
-}
-
-.pagination-bar :deep(.el-pagination__jump) {
-  color: #647084;
-}
-
-.pagination-bar :deep(.el-select__wrapper),
-.pagination-bar :deep(.el-input__wrapper),
-.pagination-bar :deep(.btn-prev),
-.pagination-bar :deep(.btn-next),
-.pagination-bar :deep(.el-pager li) {
-  min-width: 32px;
-  height: 32px;
-  border-radius: 6px;
-}
-
-.pagination-bar :deep(.el-pager li.is-active) {
-  color: #2f6fed;
-  background: #eef4ff;
-}
-
-@media (max-width: 1180px) {
-  .metric-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filter-form {
-    grid-template-columns: repeat(2, minmax(180px, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .page-head {
-    flex-direction: column;
-  }
-
-  .metric-grid,
-  .filter-form {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

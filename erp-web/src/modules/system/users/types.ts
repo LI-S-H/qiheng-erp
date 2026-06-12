@@ -4,7 +4,7 @@ export interface SystemUserListItem {
   userId: string;
   username: string;
   realName: string;
-  deptId: string | null;
+  deptId: string;
   deptName: string;
   isAdmin: boolean;
   status: UserStatus;
@@ -19,7 +19,7 @@ export interface SystemUserQuery {
   keyword?: string;
   deptId?: string;
   roleId?: string;
-  status?: UserStatus | '';
+  status?: UserStatus | '' | 'all';
   pageNum: number;
   pageSize: number;
 }
@@ -28,10 +28,14 @@ export interface SystemUserFormPayload {
   username: string;
   realName: string;
   password?: string;
-  deptId: string | null;
+  deptId: string;
   isAdmin: boolean;
   status: UserStatus;
   roleIds: string[];
+}
+
+export interface SystemUserFormModel extends Omit<SystemUserFormPayload, 'deptId'> {
+  deptId: string | null;
 }
 
 export interface UserRoleBindPayload {
@@ -66,11 +70,4 @@ export interface DeptOption {
   deptName: string;
   parentId: string;
   status: UserStatus;
-}
-
-export interface PageResult<T> {
-  records: T[];
-  total: number;
-  pageNum: number;
-  pageSize: number;
 }

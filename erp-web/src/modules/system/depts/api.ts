@@ -52,23 +52,30 @@ function hasDisabledParent(deptId: string, enabledIds: Set<string>): boolean {
   return false;
 }
 
+function ensureValidParent(deptId: string, parentId: string) {
+  if (deptId === parentId || getDescendantIds(deptId).includes(parentId)) {
+    throw new Error('上级部门不能选择当前部门或其下级部门');
+  }
+}
+
 // ── API functions ──
 
 export function listSystemDepts(params: SystemDeptQuery) {
   if (useMockApi) {
     let result = mockFlatDepts.map(item => ({ ...item, children: undefined }));
     if (params.deptName || params.status !== '' && params.status !== 'all' && params.status !== undefined) {
-      if (params.deptName) {
-        const kw = params.deptName.toLowerCase();
+      if (params.deptName?.trim()) {
+        const kw = params.deptName.trim().toLowerCase();
         result = result.filter(d => d.deptName.toLowerCase().includes(kw));
       }
       if (params.status !== '' && params.status !== 'all' && params.status !== undefined) result = result.filter(d => d.status === params.status);
     }
     return Promise.resolve(result);
   }
-  const { status, ...rest } = params;
+  const { deptName, status, ...rest } = params;
   return getResult<SystemDeptListItem[]>('/system/depts', {
     ...rest,
+    ...(deptName?.trim() ? { deptName: deptName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
   });
 }
@@ -80,6 +87,10 @@ export function getSystemDept(deptId: string) {
 
 export function createSystemDept(payload: SystemDeptFormPayload) {
   if (useMockApi) {
+    if (payload.status === 1 && payload.parentId !== '0') {
+      const parent = mockFlatDepts.find(item => item.deptId === payload.parentId);
+      if (parent?.status === 0) return Promise.reject(new Error('上级部门停用时不能新增启用的下级部门'));
+    }
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const newDept: SystemDeptListItem = {
       deptId: `${Date.now()}`, parentId: payload.parentId,
@@ -95,6 +106,11 @@ export function createSystemDept(payload: SystemDeptFormPayload) {
 
 export async function updateSystemDept(deptId: string, payload: SystemDeptFormPayload) {
   if (useMockApi) {
+    ensureValidParent(deptId, payload.parentId);
+    if (payload.status === 1 && payload.parentId !== '0') {
+      const parent = mockFlatDepts.find(item => item.deptId === payload.parentId);
+      if (parent?.status === 0) throw new Error('上级部门停用时不能启用当前部门');
+    }
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const idx = mockFlatDepts.findIndex(d => d.deptId === deptId);
     if (idx !== -1) {
@@ -106,6 +122,12 @@ export async function updateSystemDept(deptId: string, payload: SystemDeptFormPa
         status: payload.status,
         updatedAt: now,
       };
+      if (payload.status === 0) {
+        const descendantIds = new Set(getDescendantIds(deptId));
+        mockFlatDepts.forEach((dept, index) => {
+          if (descendantIds.has(dept.deptId)) mockFlatDepts[index] = { ...dept, status: 0, updatedAt: now };
+        });
+      }
       return mockFlatDepts[idx];
     }
     return null;
@@ -133,7 +155,10 @@ export async function updateSystemDeptStatus(deptId: string, status: DeptStatus)
 export async function deleteSystemDept(deptId: string) {
   if (useMockApi) {
     const idx = mockFlatDepts.findIndex(d => d.deptId === deptId);
-    if (idx !== -1) mockFlatDepts.splice(idx, 1);
+    if (idx === -1) return null;
+    if (getDescendantIds(deptId).length > 0) throw new Error('该部门存在下级部门');
+    if (mockFlatDepts[idx].userCount > 0) throw new Error('该部门已有员工归属');
+    mockFlatDepts.splice(idx, 1);
     return null;
   }
   const response = await http.delete(`/system/depts/${deptId}`);
@@ -164,6 +189,10 @@ export async function batchUpdateSystemDeptStatus(payload: DeptBatchStatusPayloa
 
 export function batchDeleteSystemDepts(payload: DeptBatchIdsPayload) {
   if (useMockApi) {
+    const targetRows = mockFlatDepts.filter(item => payload.deptIds.includes(item.deptId));
+    if (targetRows.some(item => getDescendantIds(item.deptId).length > 0 || item.userCount > 0)) {
+      return Promise.reject(new Error('已选部门中存在下级部门或员工归属'));
+    }
     const ids = new Set(payload.deptIds);
     for (let i = mockFlatDepts.length - 1; i >= 0; i--) {
       if (ids.has(mockFlatDepts[i].deptId)) mockFlatDepts.splice(i, 1);

@@ -42,4 +42,4 @@ Thumbs.db
 
 # 本地 Agent 配置
 AGENT.md
-AGENTS.md
+.codex/frontend-preflight.json

@@ -96,8 +96,8 @@
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 *::-webkit-scrollbar-track {
@@ -108,7 +108,7 @@
   min-height: 42px;
   background: #aeb8c8;
   background-clip: content-box;
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
 }
 
@@ -241,6 +241,7 @@ a {
 }
 
 [data-slot="input"]:focus-visible,
+[data-slot="textarea"]:focus-visible,
 [data-slot="select-trigger"]:focus-visible {
   border-color: color-mix(in srgb, var(--ring) 58%, var(--border));
   box-shadow:
@@ -379,7 +380,7 @@ a {
 
 @media (min-width: 1280px) {
   .filter-grid--users {
-    grid-template-columns: minmax(240px, 1.4fr) repeat(3, minmax(150px, 1fr)) auto;
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
   }
 
   .filter-grid--roles {
@@ -391,14 +392,22 @@ a {
   }
 
   .filter-grid--permissions {
-    grid-template-columns: minmax(240px, 1.35fr) repeat(3, minmax(150px, 1fr)) auto;
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+  }
+
+  .filter-grid--products {
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+  }
+
+  .filter-grid--roles .filter-actions,
+  .filter-grid--depts .filter-actions {
+    grid-column: auto;
   }
 
   .filter-grid--users .filter-actions,
-  .filter-grid--roles .filter-actions,
-  .filter-grid--depts .filter-actions,
-  .filter-grid--permissions .filter-actions {
-    grid-column: auto;
+  .filter-grid--permissions .filter-actions,
+  .filter-grid--products .filter-actions {
+    grid-column: 4;
   }
 }
 

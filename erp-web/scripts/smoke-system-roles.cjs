@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/roles',
@@ -11,7 +11,7 @@ runSmoke({
     await page.getByText('业务主管').waitFor();
 
     await page.getByPlaceholder('如 SUPER_ADMIN').fill('BUSINESS_MANAGER');
-    await page.getByRole('button', { name: '查询', exact: true }).click();
+    await clickQueryAndAssertLoading(page);
     await tableRow(page, 'SUPER_ADMIN').waitFor({ state: 'detached' });
     await tableRow(page, 'BUSINESS_MANAGER').waitFor();
     if (await tableRow(page, 'SUPER_ADMIN').count()) throw new Error('角色编码筛选未生效');

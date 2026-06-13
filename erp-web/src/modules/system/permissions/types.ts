@@ -16,7 +16,8 @@ export interface SystemPermissionListItem {
 }
 
 export interface SystemPermissionQuery {
-  keyword?: string;
+  permissionCode?: string;
+  permissionName?: string;
   moduleCode?: string | 'all';
   actionType?: PermissionAction | 'all';
   status?: PermissionStatus | '' | 'all';

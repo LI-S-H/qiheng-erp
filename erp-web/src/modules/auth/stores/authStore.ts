@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia';
-import { AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
+import { AUTH_TOKEN_NAME_STORAGE_KEY, AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
 import { getCurrentUserApi, loginApi, logoutApi } from '../api';
 import type { CurrentUser, LoginRequest } from '../types';
 
 interface AuthState {
   token: string;
+  tokenName: string;
   user: CurrentUser | null;
   initialized: boolean;
 }
@@ -12,6 +13,7 @@ interface AuthState {
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     token: localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || '',
+    tokenName: localStorage.getItem(AUTH_TOKEN_NAME_STORAGE_KEY) || 'satoken',
     user: null,
     initialized: false,
   }),
@@ -26,9 +28,11 @@ export const useAuthStore = defineStore('auth', {
     async login(payload: LoginRequest) {
       const loginResult = await loginApi(payload);
       this.token = loginResult.token;
+      this.tokenName = loginResult.tokenName || 'satoken';
       this.user = loginResult.user;
       this.initialized = true;
       localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, loginResult.token);
+      localStorage.setItem(AUTH_TOKEN_NAME_STORAGE_KEY, this.tokenName);
     },
 
     async loadCurrentUser() {
@@ -51,9 +55,11 @@ export const useAuthStore = defineStore('auth', {
 
     clearSession() {
       this.token = '';
+      this.tokenName = 'satoken';
       this.user = null;
       this.initialized = true;
       localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      localStorage.removeItem(AUTH_TOKEN_NAME_STORAGE_KEY);
     },
 
     hasPermission(permissionCode: string) {

@@ -37,6 +37,14 @@
 
 关系说明：`sys_user.dept_id` 关联本表。MVP 阶段部门只作为用户归属信息，不参与权限过滤。
 
+部门业务约束：
+
+- 上级部门不能设置为当前部门或当前部门的任意下级，避免形成循环层级。
+- 停用父级部门时必须在同一事务内级联停用全部下级；启用下级前，全部上级必须已启用或包含在同一次批量启用请求中。
+- 停用部门不会自动停用员工账号，但停用部门不能继续作为新增或调整员工归属。
+- 存在下级部门或仍有未删除用户通过 `sys_user.dept_id` 归属时禁止删除，接口返回 `409 Conflict`。
+- 编辑接口修改部门状态时必须复用状态接口的级联规则，不能成为绕过入口。
+
 ## 表：sys_user（用户表）
 
 | 字段 | 类型 | 说明 |
@@ -54,6 +62,13 @@
 | deleted | tinyint | 逻辑删除 |
 
 关系说明：用户通过 `sys_user_role` 绑定角色。新增或编辑用户时至少绑定一个角色；超级管理员 `is_admin = 1` 默认拥有全部权限。
+
+用户列表查询约束：
+
+- 登录账号使用 `username` 参数，对应 `sys_user.username` 包含匹配。
+- 用户姓名使用 `realName` 参数，对应 `sys_user.real_name` 包含匹配。
+- 部门、角色和状态分别使用 `deptId`、`roleId`、`status` 精确筛选；多个条件按 AND 组合。
+- 不使用跨账号、姓名和部门名称的通用 `keyword` 参数。
 
 ## 表：sys_role（角色表）
 
@@ -113,6 +128,7 @@
 - 常规列表查询使用 `(deleted, status, sort_order)` 和 `(module_code, action_type)` 索引。
 - `roleCount` 通过 `JSON_CONTAINS(sys_role.permission_codes, JSON_QUOTE(permission_code))` 聚合；MVP 角色数量较少，不额外维护角色权限关系表。角色规模明显增长后再迁移到 `sys_role_permission`。
 - `module_code`、`action_type` 和状态枚举由应用层与 OpenAPI 共同校验；数据库保留 `varchar` 以支持后续模块扩展。
+- 权限列表使用 `permissionCode` 和 `permissionName` 分别查询 `permission_code`、`permission_name`，不使用跨字段 `keyword`；多个条件按 AND 组合。
 
 ## 表：sys_user_role（用户角色关系表）
 

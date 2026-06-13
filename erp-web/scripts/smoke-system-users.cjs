@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/users',
@@ -91,7 +91,7 @@ runSmoke({
     };
 
     await selectFilter(statusTrigger, '停用');
-    await page.getByRole('button', { name: '查询', exact: true }).click();
+    await clickQueryAndAssertLoading(page);
     await tableRow(page, 'admin').waitFor({ state: 'detached' });
     await tableRow(page, 'sales_stop').waitFor();
     if (await tableRow(page, 'admin').count()) throw new Error('用户停用状态筛选未生效');
@@ -157,10 +157,10 @@ runSmoke({
     const refreshHoverBackground = await refreshButton.evaluate(element => getComputedStyle(element).backgroundColor);
     if (refreshBackground === refreshHoverBackground) throw new Error('工具栏按钮悬停状态未产生视觉变化');
 
-    const keywordInput = page.getByPlaceholder('账号 姓名 部门');
-    await keywordInput.click();
+    const usernameInput = page.getByPlaceholder('请输入登录账号');
+    await usernameInput.click();
     await page.waitForTimeout(250);
-    const focusShadow = await keywordInput.evaluate(element => getComputedStyle(element).boxShadow);
+    const focusShadow = await usernameInput.evaluate(element => getComputedStyle(element).boxShadow);
     if (!focusShadow.includes('10px')) throw new Error(`输入框焦点态未使用柔和模糊辉光：${focusShadow}`);
 
     const productMenu = page.getByRole('button', { name: '产品中心', exact: true });
@@ -174,11 +174,21 @@ runSmoke({
     const collapsedHeight = await productSubmenu.evaluate(element => element.getBoundingClientRect().height);
     if (collapsedHeight > 1) throw new Error(`侧栏子菜单未平滑收回：${collapsedHeight}px`);
 
-    await page.getByPlaceholder('账号 姓名 部门').fill('admin');
+    await usernameInput.fill('admin');
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'purchase01').waitFor({ state: 'detached' });
     await tableRow(page, 'admin').waitFor();
-    if (await tableRow(page, 'purchase01').count()) throw new Error('用户关键词筛选未生效');
+    if (await tableRow(page, 'purchase01').count()) throw new Error('用户账号筛选未生效');
+    await page.getByRole('button', { name: '重置', exact: true }).click();
+
+    await page.getByPlaceholder('请输入用户姓名').fill('采购主管');
+    await page.getByRole('button', { name: '查询', exact: true }).click();
+    await tableRow(page, 'purchase01').waitFor();
+    await tableRow(page, 'admin').waitFor({ state: 'detached' });
+    await page.getByPlaceholder('请输入登录账号').fill('purchase');
+    await page.getByRole('button', { name: '查询', exact: true }).click();
+    await tableRow(page, 'purchase01').waitFor();
+    if (await tableRow(page, 'admin').count()) throw new Error('用户账号与姓名筛选未按 AND 条件生效');
     await page.getByRole('button', { name: '重置', exact: true }).click();
 
     await page.setViewportSize({ width: 933, height: 460 });

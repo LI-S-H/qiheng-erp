@@ -69,7 +69,7 @@ sys_user_role
 
 角色权限码直接保存在 `sys_role.permission_codes`，登录后由服务端把用户基础信息、角色编码和权限码放入 Redis session。前端不自行推导权限，只保存服务端返回的当前用户上下文。
 
-请求鉴权采用 Sa-Token 原始 token。前端登录成功后保存 token，并在 Axios 请求拦截器中通过 `satoken` 请求头传给后端。
+请求鉴权采用 Sa-Token 原始 token。登录接口返回 `token` 和 `tokenName`，前端同时持久化两者，并在 Axios 请求拦截器中使用返回的 `tokenName` 作为请求头名称、`token` 作为请求头值；只有兼容旧登录数据时才回退为 `satoken`。应用刷新后通过 `/auth/me` 恢复并校验当前用户，接口返回 `401` 或退出登录时同时清理 token 与 tokenName。
 
 ## 5. 基础框架 + 登录模块
 
@@ -119,7 +119,7 @@ docs/api/erp-openapi.yaml
 页面包含：
 
 - 用户指标概览
-- 账号关键词、部门、角色、状态筛选
+- 登录账号、用户姓名、部门、角色、状态独立筛选
 - 用户分页表格
 - 分页底栏支持选择每页 `10 / 20 / 50` 条，翻页组件相对数据容器居中
 - 新增用户
@@ -147,6 +147,7 @@ sys_user_role
 - 管理员进入页面后能快速知道账号总量、启用数量、超级管理员数量和角色绑定覆盖情况
 - 筛选条件和表格保持在同一视线范围内，适合日常查找账号
 - 状态筛选值保持接口定义的数字 `0 | 1`，“全部”不发送给接口；部门、角色、状态等多个条件按 AND 组合
+- 登录账号和用户姓名分别提交 `username`、`realName`，对应各自数据库字段的包含匹配，不使用跨账号、姓名和部门的关键词混搜
 - 新增、编辑和角色绑定使用弹窗，避免频繁跳转
 - 行内操作只保留“编辑”和“角色绑定”两个高频动作，减少固定操作列拥挤和悬停裁切风险
 - 停用、删除、重置密码放在表格工具栏中作为批量操作，必须先勾选账号再执行，降低误操作风险，也便于后端统一实现批量接口
@@ -346,6 +347,7 @@ sys_user
 - 树形层级由前端固定展开按钮和占位控制，确保同一级部门在收起、展开后左右间隔一致
 - 勾选父级部门时自动勾选其下级部门，避免批量启停时漏掉组织分支内的子节点
 - 停用父级部门时必须级联停用全部下级；上级仍停用时，不允许单独启用下级。前端负责交互预校验，后端接口负责最终约束
+- 批量停用或在编辑弹窗中把部门改为停用时，必须先弹出简洁的风险确认，说明下级部门会同步停用、员工账号不会自动停用；精确影响范围和最终操作权限由后端基于最新数据判断
 - 无父节点统一显示为“无上级部门”，不使用“顶级部门”等口语化命名
 
 ### 9.3 字段映射
@@ -406,7 +408,7 @@ batchDeleteSystemDepts
 
 本次生成系统权限模块第四个页面：`/system/permissions` 权限码配置。
 
-页面包含权限指标概览、关键词/模块/操作类型/状态筛选、分页列表、新增与编辑、单条启停、批量启停、批量删除和角色引用保护。筛选查询使用 250ms 防抖，所有写操作均设置提交锁，防止重复请求。
+页面包含权限指标概览、权限码/权限名称/模块/操作类型/状态独立筛选、分页列表、新增与编辑、单条启停、批量启停、批量删除和角色引用保护。筛选查询使用 250ms 防抖，所有写操作均设置提交锁，防止重复请求。
 
 ### 10.2 字段与校验
 
@@ -424,6 +426,8 @@ batchDeleteSystemDepts
 
 权限码由后端鉴权逻辑和角色授权共同引用，创建后不可修改，更新接口也不接收 `permissionCode`；删除前必须确认没有角色引用。保留权限 `*` 仅供超级管理员使用，不在普通权限目录中维护。
 
+停用权限码时必须说明授权链路影响：相关角色将不再授予该权限，绑定这些角色的用户也将无法执行对应操作，后端应清理受影响用户的权限 Session。编辑弹窗内触发停用确认时，底层表单必须冻结，用户只能处理当前确认弹窗。
+
 ### 10.3 接口
 
 ```text
@@ -440,8 +444,113 @@ GET    /system/permissions/options
 
 `GET /system/permissions/options` 只返回启用权限，并按模块分组供角色授权弹窗使用。权限码唯一性冲突返回 `409 Conflict`；删除仍被角色引用的权限码也返回 `409 Conflict`。
 
+权限列表分别使用 `permissionCode`、`permissionName` 查询权限码和权限名称，模块、操作类型、状态使用精确筛选；所有有效条件按 AND 组合，不提供跨字段 `keyword`。
+
 ## 11. 前端风格规范
 
 后续页面的视觉和交互细节统一参考 `docs/frontend-style-guide.md`。
 
 当前确认的风格方向是：深色应用壳与浅色内容区形成稳定层级；页面使用单条摘要栏、紧凑筛选区和一个数据容器；主操作使用品牌蓝，普通行内操作使用 `ghost`，危险操作仅保留红色文字；状态标签使用低饱和浅色语义；表格行内只保留少量高频操作；批量操作放在表格工具栏；树形数据优先使用树表，不强行分页。
+
+## 12. 产品模块：产品分类
+
+### 12.1 页面范围
+
+产品分类页面路径为 `/product/categories`，包含分类指标概览、分类名称和状态筛选、分类树表、新增分类、新增下级、编辑、批量启停、批量删除和刷新。
+
+对应库表：
+
+```text
+product_category
+product
+```
+
+### 12.2 页面与数据边界
+
+- `GET /product/categories` 返回未删除分类的扁平数组，字段只包含分类表字段、时间字段以及可通过 `product.category_id` 聚合得到的 `productCount`
+- 后端不返回 `children`、`parentName` 或 `categoryPath`，前端按 `parentId` 构建分类树、上级名称和层级路径
+- 查询按钮使用 250ms 防抖；点击后立即显示按钮转圈和数据区加载层，防抖等待期也必须有反馈；列表请求使用序号忽略过期响应，保存和批量操作使用提交锁
+- 分类名称提交前执行 `trim`、非空和 100 字符长度校验；同一上级下重名时回填分类名称字段错误
+- 勾选父级时同步选中全部下级；停用父级时级联停用全部下级和这些分类下的关联产品；上级停用时不能单独启用下级
+- 批量停用或编辑停用前必须显示简洁的风险确认，说明下级分类和关联产品会同步停用；前端不计算精确影响数量，确认后由后端基于最新数据在同一事务中完成校验和级联
+- 编辑分类时，上级选项排除当前分类及全部下级，前后端都要防止形成循环层级
+- 存在下级分类或关联产品时禁止删除，前端预检查，后端最终校验并返回 `409 Conflict`
+
+### 12.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 分类ID | `product_category.id` |
+| 上级分类ID | `product_category.parent_id` |
+| 分类名称 | `product_category.category_name` |
+| 状态 | `product_category.status` |
+| 创建时间 | `product_category.created_at` |
+| 更新时间 | `product_category.updated_at` |
+| 产品数量 | `product` 按 `category_id` 聚合未删除产品数量，只统计直接关联产品 |
+| 上级分类名称 | 前端根据扁平分类数组映射 |
+| 层级路径 | 前端根据 `parentId` 递归计算 |
+
+### 12.4 接口
+
+```text
+GET    /product/categories
+POST   /product/categories
+GET    /product/categories/{categoryId}
+PUT    /product/categories/{categoryId}
+PATCH  /product/categories/{categoryId}/status
+DELETE /product/categories/{categoryId}
+PATCH  /product/categories/batch/status
+POST   /product/categories/batch/delete
+```
+
+查询接口需要 `product:query`，写接口需要 `product:manage`。当前开发环境通过模块 API 层提供扁平 mock 数据；关闭 `VITE_USE_MOCK_API` 后，页面继续使用相同接口契约。
+
+## 13. 产品模块：产品档案
+
+### 13.1 页面范围
+
+产品档案页面路径为 `/product/products`，包含产品指标概览、产品编码/产品名称/品牌/条码/分类/状态独立筛选、分页列表、新增与编辑、单条启停和删除、批量启停和批量删除。
+
+### 13.2 页面与数据边界
+
+- 产品列表来源于 `product`，分类展示名称由后端按 `product.category_id` 关联 `product_category.category_name` 返回；后端不拼接分类层级路径
+- 产品分类选项继续使用 `/product/categories` 的扁平数据，前端按 `parentId` 生成表单中的分类路径
+- 分类下拉显示的 `办公用品 / 办公纸品` 路径由前端生成；请求只发送 `categoryId`，产品接口不返回路径字符串
+- 查询父分类时必须包含该分类及全部后代分类下的产品，后端按最新 `product_category.parent_id` 关系解析查询范围
+- 产品编码、产品名称、品牌名称和条码使用独立参数；编码、名称、品牌为包含匹配，条码为精确匹配，多个条件按 AND 组合
+- 查询使用 250ms 防抖；分页切换使用 180ms 防抖，点击查询、上一页、下一页、页码或每页条数后立即显示数据区加载层并锁定分页控件
+- 产品编码由后端在创建时生成，新增弹窗仅提示“保存后由系统生成”，编辑弹窗只读展示且创建、编辑请求都不提交编码；产品名称和单位名称必填，所有文本提交前 `trim`，价格和安全库存不得小于 0
+- 启用产品不能归属停用分类，前端做快速校验，后端在新增、编辑、单条启用和批量启用时基于最新分类状态再次校验
+- 产品允许暂不分类；接口在 `categoryId` 为空时同步返回 `categoryName: null`，前端统一展示为“未分类”，后端无需拼装空字符串或分类层级路径
+- 停用产品前提示该产品不能继续用于新建采购单或销售单，历史业务数据不受影响；编辑弹窗内停用时底层表单进入 `inert` 状态
+- 删除仅允许未被库存、采购、销售等业务数据引用的产品；前端只显示通用风险说明，后端执行最终关联校验，存在引用时返回 `409 Conflict`
+
+### 13.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 产品ID | `product.id` |
+| 产品编码 | `product.product_code` |
+| 产品名称 | `product.product_name` |
+| 分类ID | `product.category_id` |
+| 分类名称 | 按 `category_id` 关联 `product_category.category_name` |
+| 品牌、单位、规格、条码 | `product.brand_name`、`unit_name`、`specification`、`barcode` |
+| 参考采购价、参考销售价 | `product.reference_purchase_price`、`reference_sale_price` |
+| 安全库存 | `product.safety_stock_qty` |
+| 状态、备注、时间 | `product.status`、`remark`、`created_at`、`updated_at` |
+| 分类层级路径 | 前端根据分类扁平数组计算，不要求产品接口返回 |
+
+### 13.4 接口
+
+```text
+GET    /products
+POST   /products
+GET    /products/{productId}
+PUT    /products/{productId}
+PATCH  /products/{productId}/status
+DELETE /products/{productId}
+PATCH  /products/batch/status
+POST   /products/batch/delete
+```
+
+查询接口需要 `product:query`，写接口需要 `product:manage`，认证请求头名称使用登录响应返回的 Sa-Token `tokenName`。

@@ -24,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { permissionActionOptions, permissionModuleOptions } from '../catalog';
 import {
   batchDeleteSystemPermissions,
@@ -54,16 +55,19 @@ const permissionCodePattern = /^[a-z][a-z0-9]*(?::[a-z][a-z0-9]*){1,3}$/;
 const permissions = ref<SystemPermissionListItem[]>([]);
 const total = ref(0);
 const loading = ref(false);
+const queryPending = ref(false);
 const formSubmitting = ref(false);
 const actionSubmitting = ref(false);
 const selectedIds = ref<Set<string>>(new Set());
 const dialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingPermissionId = ref('');
+const editingOriginalStatus = ref<PermissionStatus>(1);
+const editingRoleCount = ref(0);
 let fetchSequence = 0;
 
 const query = reactive<SystemPermissionQuery>({
-  keyword: '', moduleCode: 'all', actionType: 'all', status: 'all', pageNum: 1, pageSize: 10,
+  permissionCode: '', permissionName: '', moduleCode: 'all', actionType: 'all', status: 'all', pageNum: 1, pageSize: 10,
 });
 const form = reactive<SystemPermissionFormPayload>({
   permissionCode: '', permissionName: '', moduleCode: '', actionType: 'query',
@@ -81,6 +85,7 @@ const moduleCount = computed(() => new Set(permissions.value.map(item => item.mo
 const boundRoleCount = computed(() => permissions.value.reduce((sum, item) => sum + item.roleCount, 0));
 const allSelected = computed(() => permissions.value.length > 0 && permissions.value.every(item => selectedIds.value.has(item.permissionId)));
 const selectedRows = computed(() => permissions.value.filter(item => selectedIds.value.has(item.permissionId)));
+const queryBusy = computed(() => queryPending.value || loading.value);
 
 async function fetchPermissions() {
   const sequence = ++fetchSequence;
@@ -93,7 +98,10 @@ async function fetchPermissions() {
     selectedIds.value = new Set();
   } catch {
   } finally {
-    if (sequence === fetchSequence) loading.value = false;
+    if (sequence === fetchSequence) {
+      loading.value = false;
+      queryPending.value = false;
+    }
   }
 }
 
@@ -104,14 +112,34 @@ const debouncedSearch = useDebounceFn(() => {
   fetchPermissions();
 }, 250);
 
+const debouncedPageChange = useDebounceFn((pageNum: number, pageSize: number) => {
+  query.pageNum = pageNum;
+  query.pageSize = pageSize;
+  fetchPermissions();
+}, 180);
+
 function handleSearch() {
-  if (loading.value) return;
+  if (queryBusy.value) return;
+  queryPending.value = true;
   debouncedSearch();
+}
+
+function handlePageChange(pageNum: number) {
+  if (queryBusy.value) return;
+  queryPending.value = true;
+  debouncedPageChange(pageNum, query.pageSize);
+}
+
+function handlePageSizeChange(pageSize: number) {
+  if (queryBusy.value) return;
+  queryPending.value = true;
+  debouncedPageChange(1, pageSize);
 }
 
 function handleReset() {
   if (loading.value) return;
-  query.keyword = '';
+  query.permissionCode = '';
+  query.permissionName = '';
   query.moduleCode = 'all';
   query.actionType = 'all';
   query.status = 'all';
@@ -166,6 +194,8 @@ function openCreateDialog() {
 function openEditDialog(row: SystemPermissionListItem) {
   dialogMode.value = 'edit';
   editingPermissionId.value = row.permissionId;
+  editingOriginalStatus.value = row.status;
+  editingRoleCount.value = row.roleCount;
   form.permissionCode = row.permissionCode;
   form.permissionName = row.permissionName;
   form.moduleCode = row.moduleCode;
@@ -197,7 +227,6 @@ function validateForm() {
 
 async function submitForm() {
   if (formSubmitting.value || !validateForm()) return;
-  formSubmitting.value = true;
   const payload: SystemPermissionFormPayload = {
     permissionCode: form.permissionCode.trim(),
     permissionName: form.permissionName.trim(),
@@ -207,6 +236,22 @@ async function submitForm() {
     sortOrder: Number(form.sortOrder),
     description: form.description.trim(),
   };
+  if (dialogMode.value === 'edit' && editingOriginalStatus.value === 1 && payload.status === 0) {
+    showConfirm(
+      '确认停用权限码',
+      buildPermissionDisableWarning(editingRoleCount.value > 0),
+      '确认停用',
+      'warning',
+      () => persistForm(payload),
+    );
+    return;
+  }
+  await persistForm(payload);
+}
+
+async function persistForm(payload: SystemPermissionFormPayload) {
+  if (formSubmitting.value) return;
+  formSubmitting.value = true;
   try {
     if (dialogMode.value === 'create') {
       await createSystemPermission(payload);
@@ -259,7 +304,10 @@ async function runConfirmAction() {
 
 function handleStatusChange(row: SystemPermissionListItem, status: PermissionStatus) {
   const action = status === 1 ? '启用' : '停用';
-  showConfirm(`${action}权限码`, `确认${action}「${row.permissionName}」吗？`, action, status === 1 ? 'default' : 'warning', async () => {
+  const description = status === 0
+    ? buildPermissionDisableWarning(row.roleCount > 0)
+    : `确认启用「${row.permissionName}」吗？`;
+  showConfirm(`${action}权限码`, description, action, status === 1 ? 'default' : 'warning', async () => {
     try {
       await updateSystemPermissionStatus(row.permissionId, status);
       toast.success(`权限码已${action}`);
@@ -285,13 +333,23 @@ function handleDelete(row: SystemPermissionListItem) {
 function handleBatchStatus(status: PermissionStatus) {
   if (actionSubmitting.value || selectedIds.value.size === 0) return;
   const action = status === 1 ? '启用' : '停用';
-  showConfirm(`批量${action}`, `确认${action}已选的 ${selectedIds.value.size} 个权限码吗？`, action, status === 1 ? 'default' : 'warning', async () => {
+  const description = status === 0
+    ? buildPermissionDisableWarning(selectedRows.value.some(item => item.roleCount > 0))
+    : `确认启用已选的 ${selectedIds.value.size} 个权限码吗？`;
+  showConfirm(`批量${action}`, description, action, status === 1 ? 'default' : 'warning', async () => {
     try {
       await batchUpdateSystemPermissionStatus({ permissionIds: [...selectedIds.value], status });
       toast.success(`已批量${action}`);
       fetchPermissions();
     } catch {}
   });
+}
+
+function buildPermissionDisableWarning(hasRoleBindings: boolean) {
+  if (hasRoleBindings) {
+    return '该权限码已与角色关联。停用后，相关角色将不再授予此权限，绑定这些角色的用户也将无法执行对应操作。系统会刷新受影响用户的权限会话。是否继续？';
+  }
+  return '停用后，该权限码将不再进入用户的有效权限集合，也不能继续分配给角色。是否继续？';
 }
 
 function handleBatchDelete() {
@@ -330,8 +388,12 @@ function handleBatchDelete() {
     <div class="filter-panel">
       <div class="filter-grid filter-grid--permissions">
         <div class="space-y-1">
-          <Label class="text-xs">关键词</Label>
-          <Input v-model="query.keyword" placeholder="权限码 权限名称" @keyup.enter="handleSearch" />
+          <Label class="text-xs">权限码</Label>
+          <Input v-model="query.permissionCode" placeholder="如 product:query" @keyup.enter="handleSearch" />
+        </div>
+        <div class="space-y-1">
+          <Label class="text-xs">权限名称</Label>
+          <Input v-model="query.permissionName" placeholder="请输入权限名称" @keyup.enter="handleSearch" />
         </div>
         <div class="space-y-1">
           <Label class="text-xs">所属模块</Label>
@@ -346,13 +408,14 @@ function handleBatchDelete() {
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
         <div class="filter-actions">
-          <Button size="sm" :disabled="loading" @click="handleSearch">{{ loading ? '查询中...' : '查询' }}</Button>
-          <Button size="sm" variant="outline" :disabled="loading" @click="handleReset">重置</Button>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+          <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
         </div>
       </div>
     </div>
 
-    <div class="data-panel">
+    <div class="data-panel relative">
+      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">权限码列表</strong>
@@ -409,12 +472,13 @@ function handleBatchDelete() {
       </ScrollArea>
 
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize"
-        @update:page-num="query.pageNum = $event; fetchPermissions()"
-        @update:page-size="query.pageSize = $event; query.pageNum = 1; fetchPermissions()" />
+        :loading="queryBusy"
+        @update:page-num="handlePageChange"
+        @update:page-size="handlePageSizeChange" />
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent class="sm:max-w-[620px]">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="sm:max-w-[620px]">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增权限码' : '编辑权限码' }}</DialogTitle><DialogDescription>权限码用于后端鉴权和角色授权，保存后请同步业务接口使用。</DialogDescription></DialogHeader>
         <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
           <div class="col-span-2 space-y-1 max-sm:col-span-1">

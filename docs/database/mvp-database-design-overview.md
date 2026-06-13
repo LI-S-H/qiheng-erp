@@ -679,12 +679,14 @@ flowchart LR
     permission -.->|"权限码目录：permission_code 由业务层校验"| role
 ```
 
+部门层级由业务层保证：停用父级时级联停用下级但不自动停用员工账号；有下级部门或员工归属时禁止删除；编辑接口和批量接口必须复用同一套校验与级联规则。
+
 ### 产品与库存余额 ER 关系图
 
 ```mermaid
 flowchart LR
     category["product_category 产品分类表<br/>id 主键<br/>parent_id 上级分类ID<br/>category_name 分类名称<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除"]
-    product["product 产品表<br/>id 主键<br/>product_code 产品编码<br/>product_name 产品名称<br/>category_id 分类ID<br/>category_name 分类名称快照<br/>brand_name 品牌名称<br/>unit_name 单位名称<br/>specification 规格型号<br/>barcode 条码<br/>reference_purchase_price 参考采购价<br/>reference_sale_price 参考销售价<br/>safety_stock_qty 安全库存<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
+    product["product 产品表<br/>id 主键<br/>product_code 产品编码<br/>product_name 产品名称<br/>category_id 分类ID<br/>brand_name 品牌名称<br/>unit_name 单位名称<br/>specification 规格型号<br/>barcode 条码<br/>reference_purchase_price 参考采购价<br/>reference_sale_price 参考销售价<br/>safety_stock_qty 安全库存<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
     warehouse["warehouse 仓库表<br/>id 主键<br/>warehouse_code 仓库编码<br/>warehouse_name 仓库名称<br/>contact_name 联系人<br/>contact_phone 联系电话<br/>address 仓库地址<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
     stock["warehouse_stock 库存余额表<br/>id 主键<br/>warehouse_id 仓库ID<br/>warehouse_code 仓库编码快照<br/>warehouse_name 仓库名称快照<br/>product_id 产品ID<br/>product_code 产品编码快照<br/>product_name 产品名称快照<br/>unit_name 单位快照<br/>stock_qty 当前库存<br/>locked_qty 锁定库存<br/>created_at / updated_at 审计时间"]
 
@@ -699,6 +701,8 @@ flowchart LR
 | 约束 | 字段 | 含义 |
 |---|---|---|
 | 产品编码唯一 | `product.product_code` | 一个产品编码只对应一个产品 |
+| 分类层级合法 | `product_category.parent_id` | 上级不能为自身或自身下级；状态按父子级联约束维护 |
+| 分类删除保护 | `product_category.id` | 有下级分类或仍被未删除产品关联时禁止删除 |
 | 仓库编码唯一 | `warehouse.warehouse_code` | 一个仓库编码只对应一个仓库 |
 | 库存余额唯一 | `warehouse_stock(warehouse_id, product_id)` | 一个仓库中的一个产品只保留一条库存余额 |
 

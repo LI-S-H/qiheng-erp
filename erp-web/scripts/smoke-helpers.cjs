@@ -49,7 +49,7 @@ async function loginIfNeeded(page, route) {
   await page.getByLabel('登录账号').fill('admin');
   await page.getByLabel('登录密码').fill('123456');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await page.waitForURL(/dashboard|system\//, { timeout: 10000 });
+  await page.waitForURL(url => url.pathname !== '/login', { timeout: 10000 });
   await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' });
 }
 
@@ -104,4 +104,38 @@ async function assertRequiredLabels(dialog, labels) {
   }
 }
 
-module.exports = { baseUrl, runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels };
+async function clickQueryAndAssertLoading(page, screenshotPath) {
+  await page.getByRole('button', { name: '查询', exact: true }).click();
+  const overlay = page.locator('[data-list-loading]');
+  await overlay.waitFor({ state: 'visible', timeout: 1000 });
+  const busyButton = page.getByRole('button', { name: '查询中', exact: true });
+  if (!(await busyButton.isDisabled())) throw new Error('查询进行中按钮未禁用');
+  const state = await overlay.evaluate((element) => {
+    const spinner = element.querySelector('.page-loading-spinner');
+    return {
+      position: getComputedStyle(element).position,
+      pointerEvents: getComputedStyle(element).pointerEvents,
+      spinnerAnimation: spinner ? getComputedStyle(spinner).animationName : '',
+    };
+  });
+  if (state.position !== 'absolute' || state.pointerEvents !== 'auto' || state.spinnerAnimation !== 'page-loading-spin') {
+    throw new Error(`查询加载反馈样式异常：${JSON.stringify(state)}`);
+  }
+  if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
+  await overlay.waitFor({ state: 'hidden', timeout: 5000 });
+}
+
+async function clickPaginationAndAssertLoading(page, label) {
+  const pagination = page.locator('[data-table-pagination]');
+  await pagination.getByText(label, { exact: true }).click();
+  const overlay = page.locator('[data-list-loading]');
+  await overlay.waitFor({ state: 'visible', timeout: 1000 });
+  if ((await pagination.getAttribute('aria-busy')) !== 'true') {
+    throw new Error(`分页切换期间未进入忙碌状态：${label}`);
+  }
+  const pointerEvents = await pagination.evaluate(element => getComputedStyle(element).pointerEvents);
+  if (pointerEvents !== 'none') throw new Error(`分页切换期间未阻止重复点击：${label}`);
+  await overlay.waitFor({ state: 'hidden', timeout: 5000 });
+}
+
+module.exports = { baseUrl, runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading };

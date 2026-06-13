@@ -17,10 +17,9 @@ CREATE TABLE IF NOT EXISTS product_category (
 
 CREATE TABLE IF NOT EXISTS product (
     id BIGINT NOT NULL COMMENT '产品ID',
-    product_code VARCHAR(64) NOT NULL COMMENT '产品编码',
+    product_code VARCHAR(64) NOT NULL COMMENT '产品编码，由后端生成且创建后不可修改',
     product_name VARCHAR(200) NOT NULL COMMENT '产品名称',
     category_id BIGINT DEFAULT NULL COMMENT '产品分类ID',
-    category_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '分类名称冗余',
     brand_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '品牌名称',
     unit_name VARCHAR(32) NOT NULL DEFAULT '件' COMMENT '单位名称',
     specification VARCHAR(255) NOT NULL DEFAULT '' COMMENT '规格型号',

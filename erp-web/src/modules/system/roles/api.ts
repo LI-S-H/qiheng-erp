@@ -48,12 +48,12 @@ let mockRoles: SystemRoleListItem[] = [
 
 function mockFilterRoles(params: SystemRoleQuery): PageResult<SystemRoleListItem> {
   let filtered = [...mockRoles];
-  if (params.roleCode) {
-    const kw = params.roleCode.toLowerCase();
+  if (params.roleCode?.trim()) {
+    const kw = params.roleCode.trim().toLowerCase();
     filtered = filtered.filter(r => r.roleCode.toLowerCase().includes(kw));
   }
-  if (params.roleName) {
-    const kw = params.roleName.toLowerCase();
+  if (params.roleName?.trim()) {
+    const kw = params.roleName.trim().toLowerCase();
     filtered = filtered.filter(r => r.roleName.toLowerCase().includes(kw));
   }
   if (params.status !== '' && params.status !== 'all' && params.status !== undefined) filtered = filtered.filter(r => r.status === params.status);
@@ -67,9 +67,11 @@ function mockFilterRoles(params: SystemRoleQuery): PageResult<SystemRoleListItem
 
 export function listSystemRoles(params: SystemRoleQuery) {
   if (useMockApi) return Promise.resolve(mockFilterRoles(params));
-  const { status, ...rest } = params;
+  const { roleCode, roleName, status, ...rest } = params;
   return getResult<PageResult<SystemRoleListItem>>('/system/roles', {
     ...rest,
+    ...(roleCode?.trim() ? { roleCode: roleCode.trim() } : {}),
+    ...(roleName?.trim() ? { roleName: roleName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
   });
 }

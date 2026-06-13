@@ -4,6 +4,7 @@ import { ChevronsUpDown } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useExclusiveDropdown } from '@/shared/composables/use-exclusive-dropdown';
 
 interface Option {
   value: string | number;
@@ -15,8 +16,12 @@ const props = withDefaults(defineProps<{
   modelValue?: string | number;
   options: Option[];
   placeholder?: string;
+  disabled?: boolean;
+  invalid?: boolean;
 }>(), {
   placeholder: '请选择',
+  disabled: false,
+  invalid: false,
 });
 
 const emit = defineEmits<{
@@ -24,6 +29,7 @@ const emit = defineEmits<{
 }>();
 
 const open = ref(false);
+const { setOpen } = useExclusiveDropdown(open);
 const normalizedValue = computed(() => String(props.modelValue ?? ''));
 const selectedLabel = computed(() => props.options.find(option => String(option.value) === normalizedValue.value)?.label || props.placeholder);
 
@@ -34,13 +40,15 @@ function selectOption(value: string | number) {
 </script>
 
 <template>
-  <Popover v-model:open="open">
+  <Popover :open="open" @update:open="setOpen">
     <PopoverTrigger as-child>
       <Button
         data-anchored-select-trigger
         variant="outline"
         role="combobox"
         :aria-expanded="open"
+        :aria-invalid="props.invalid"
+        :disabled="props.disabled"
         class="h-9 w-full justify-between bg-transparent px-3 text-sm font-normal shadow-xs"
       >
         <span class="truncate">{{ selectedLabel }}</span>
@@ -57,7 +65,7 @@ function selectOption(value: string | number) {
       class="p-1"
     >
       <Command :model-value="normalizedValue">
-        <CommandList>
+        <CommandList class="max-h-56">
           <CommandGroup>
             <CommandItem
               v-for="option in props.options"

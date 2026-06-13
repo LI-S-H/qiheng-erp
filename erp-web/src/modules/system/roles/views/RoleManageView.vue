@@ -32,6 +32,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type { RoleStatus, SystemRoleFormPayload, SystemRoleListItem, SystemRoleQuery } from '../types';
 import { listSystemRoles, createSystemRole, updateSystemRole, updateSystemRolePermissions, deleteSystemRole, batchUpdateSystemRoleStatus, batchDeleteSystemRoles } from '../api';
@@ -52,6 +53,7 @@ const allPermissionCodes = computed(() => permissionGroups.value.flatMap(group =
 const roles = ref<SystemRoleListItem[]>([]);
 const total = ref(0);
 const loading = ref(false);
+const queryPending = ref(false);
 const formSubmitting = ref(false);
 const permissionSubmitting = ref(false);
 const actionSubmitting = ref(false);
@@ -90,6 +92,7 @@ const boundUserTotal = computed(() => roles.value.reduce((t, r) => t + r.userCou
 
 const allSelected = computed(() => roles.value.length > 0 && roles.value.every(r => selectedIds.value.has(r.roleId)));
 const selectedRows = computed(() => roles.value.filter(r => selectedIds.value.has(r.roleId)));
+const queryBusy = computed(() => queryPending.value || loading.value);
 
 async function fetchRoles() {
   const sequence = ++fetchSequence;
@@ -102,7 +105,10 @@ async function fetchRoles() {
   } catch {
     // http.ts 统一处理接口错误提示。
   } finally {
-    if (sequence === fetchSequence) loading.value = false;
+    if (sequence === fetchSequence) {
+      loading.value = false;
+      queryPending.value = false;
+    }
   }
 }
 
@@ -146,7 +152,29 @@ const debouncedSearch = useDebounceFn(() => {
   fetchRoles();
 }, 250);
 
-function handleSearch() { debouncedSearch(); }
+const debouncedPageChange = useDebounceFn((pageNum: number, pageSize: number) => {
+  query.pageNum = pageNum;
+  query.pageSize = pageSize;
+  fetchRoles();
+}, 180);
+
+function handleSearch() {
+  if (queryBusy.value) return;
+  queryPending.value = true;
+  debouncedSearch();
+}
+
+function handlePageChange(pageNum: number) {
+  if (queryBusy.value) return;
+  queryPending.value = true;
+  debouncedPageChange(pageNum, query.pageSize);
+}
+
+function handlePageSizeChange(pageSize: number) {
+  if (queryBusy.value) return;
+  queryPending.value = true;
+  debouncedPageChange(1, pageSize);
+}
 
 function handleReset() {
   if (loading.value) return;
@@ -432,14 +460,15 @@ function togglePermForm(code: string, checked: boolean) {
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
         <div class="filter-actions">
-          <Button size="sm" :disabled="loading" @click="handleSearch">{{ loading ? '查询中...' : '查询' }}</Button>
-          <Button size="sm" variant="outline" :disabled="loading" @click="handleReset">重置</Button>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+          <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
         </div>
       </div>
     </div>
 
     <!-- Table -->
-    <div class="data-panel">
+    <div class="data-panel relative">
+      <ListLoadingOverlay :visible="queryBusy" />
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-toolbar__title">
@@ -563,14 +592,15 @@ function togglePermForm(code: string, checked: boolean) {
         :total="total"
         :page-num="query.pageNum"
         :page-size="query.pageSize"
-        @update:page-num="query.pageNum = $event; fetchRoles()"
-        @update:page-size="query.pageSize = $event; query.pageNum = 1; fetchRoles()"
+        :loading="queryBusy"
+        @update:page-num="handlePageChange"
+        @update:page-size="handlePageSizeChange"
       />
     </div>
 
     <!-- Create/Edit Role Dialog -->
     <Dialog v-model:open="roleDialogVisible">
-      <DialogContent class="flex h-[760px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[620px]">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[760px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[620px]">
         <DialogHeader>
           <DialogTitle>{{ dialogMode === 'create' ? '新增角色' : '编辑角色' }}</DialogTitle>
           <DialogDescription>填写角色信息和权限码</DialogDescription>
@@ -637,7 +667,7 @@ function togglePermForm(code: string, checked: boolean) {
 
     <!-- Permission Preview Dialog -->
     <Dialog v-model:open="permissionPreviewVisible">
-      <DialogContent class="flex h-[680px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[640px]">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[680px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[640px]">
         <DialogHeader>
           <DialogTitle>权限码明细</DialogTitle>
           <DialogDescription>查看角色的权限码详情</DialogDescription>
@@ -681,7 +711,7 @@ function togglePermForm(code: string, checked: boolean) {
 
     <!-- Permission Config Dialog -->
     <Dialog v-model:open="permissionDialogVisible">
-      <DialogContent class="flex h-[720px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[600px]">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[720px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>权限配置</DialogTitle>
           <DialogDescription>为角色配置权限码</DialogDescription>

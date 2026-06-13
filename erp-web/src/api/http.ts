@@ -1,6 +1,6 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { toast } from 'vue-sonner';
-import { AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
+import { AUTH_TOKEN_NAME_STORAGE_KEY, AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
 import type { ApiErrorPayload, Result } from '@/shared/types/api';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -22,9 +22,10 @@ export function getApiErrorMessage(error: unknown): string {
 
 http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  const tokenName = localStorage.getItem(AUTH_TOKEN_NAME_STORAGE_KEY) || 'satoken';
 
   if (token) {
-    config.headers.set('satoken', token);
+    config.headers.set(tokenName, token);
   }
 
   return config;
@@ -47,6 +48,7 @@ http.interceptors.response.use(
 
     if (error.response?.status === 401) {
       localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      localStorage.removeItem(AUTH_TOKEN_NAME_STORAGE_KEY);
       window.location.href = '/login';
     }
 

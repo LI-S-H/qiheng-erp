@@ -133,7 +133,8 @@ function handleReset() {
   Object.assign(query, {
     warehouseCode: '', warehouseName: '', contactName: '', contactPhone: '', status: 'all', pageNum: 1,
   });
-  fetchWarehouses();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 function handlePageChange(pageNum: number) {

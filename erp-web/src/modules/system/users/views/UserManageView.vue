@@ -213,9 +213,10 @@ function handlePageSizeChange(pageSize: number) {
 }
 
 function handleReset() {
-  if (loading.value) return;
+  if (queryBusy.value) return;
   query.username = ''; query.realName = ''; query.deptId = 'all'; query.roleId = 'all'; query.status = 'all'; query.pageNum = 1;
-  fetchUsers();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 function toggleSelectAll() {

@@ -6,6 +6,7 @@ const {
   clickQueryAndAssertLoading,
   clickPaginationAndAssertLoading,
   clickRefreshAndAssertLoading,
+  clickResetAndAssertLoading,
 } = require('./smoke-helpers.cjs');
 
 runSmoke({
@@ -21,14 +22,14 @@ runSmoke({
     await clickQueryAndAssertLoading(page, 'smoke-warehouse-query-loading.png');
     await tableRow(page, 'WH001').waitFor();
     await tableRow(page, 'WH002').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-warehouse-reset-loading.png');
 
     await page.getByPlaceholder('请输入联系人').first().fill('林敏');
     await page.getByPlaceholder('请输入联系电话').first().fill('020');
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'WH002').waitFor();
     await tableRow(page, 'WH001').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     await clickPaginationAndAssertLoading(page, '下一页');
     await tableRow(page, 'WH011').waitFor();
@@ -65,7 +66,7 @@ runSmoke({
     const createdRow = tableRow(page, 'WH013');
     await createdRow.waitFor();
     await createdRow.getByText('苏州测试仓', { exact: true }).waitFor();
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const referencedRow = tableRow(page, 'WH001');
     await referencedRow.getByRole('button', { name: '删除' }).click();

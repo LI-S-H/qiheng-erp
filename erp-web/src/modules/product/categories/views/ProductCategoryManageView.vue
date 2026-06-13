@@ -298,12 +298,11 @@ function handleSearch() {
 }
 
 function handleReset() {
-  if (loading.value) return;
+  if (queryBusy.value) return;
   query.categoryName = '';
   query.status = 'all';
-  appliedQuery.categoryName = '';
-  appliedQuery.status = 'all';
-  selectedIds.value = new Set();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 const refreshList = useListRefresh(queryBusy, queryPending, fetchCategories);

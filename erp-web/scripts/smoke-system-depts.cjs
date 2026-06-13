@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/depts',
@@ -24,7 +24,7 @@ runSmoke({
     await clickQueryAndAssertLoading(page);
     await tableRow(page, '行政部').waitFor({ state: 'detached' });
     await tableRow(page, '采购部').waitFor();
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-system-depts-reset-loading.png');
 
     const statusTrigger = page.locator('.filter-panel').getByRole('combobox');
     await statusTrigger.click();
@@ -33,7 +33,7 @@ runSmoke({
     await tableRow(page, '行政部').waitFor({ state: 'detached' });
     await tableRow(page, '华南销售组').waitFor();
     if (await tableRow(page, '行政部').count()) throw new Error('部门停用状态筛选未生效');
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const deptButtonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)

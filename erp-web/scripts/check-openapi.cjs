@@ -259,6 +259,9 @@ if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes(
   || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {
   throw new Error('已完成列表页未统一接入刷新防抖和即时加载状态');
 }
+if (listViewSources.some(viewSource => !/function handleReset\(\) \{[\s\S]*?queryPending\.value = true;[\s\S]*?debouncedSearch\(\);[\s\S]*?\n\}/.test(viewSource))) {
+  throw new Error('已完成列表页未统一接入重置防抖和即时加载状态');
+}
 for (const fragment of [
   '仓库编码创建后不可修改',
   '同步 `warehouse_stock.warehouse_name`',

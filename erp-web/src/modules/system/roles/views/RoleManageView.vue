@@ -178,9 +178,10 @@ function handlePageSizeChange(pageSize: number) {
 }
 
 function handleReset() {
-  if (loading.value) return;
+  if (queryBusy.value) return;
   query.roleCode = ''; query.roleName = ''; query.status = 'all'; query.pageNum = 1;
-  fetchRoles();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 const refreshList = useListRefresh(queryBusy, queryPending, fetchRoles);

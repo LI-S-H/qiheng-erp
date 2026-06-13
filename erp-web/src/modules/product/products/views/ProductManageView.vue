@@ -163,7 +163,8 @@ function handleReset() {
   query.categoryId = 'all';
   query.status = 'all';
   query.pageNum = 1;
-  fetchProducts();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 function handlePageChange(pageNum: number) {

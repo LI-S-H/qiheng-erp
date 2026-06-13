@@ -148,6 +148,16 @@ async function clickRefreshAndAssertLoading(page, screenshotPath) {
   await overlay.waitFor({ state: 'hidden', timeout: 5000 });
 }
 
+async function clickResetAndAssertLoading(page, screenshotPath) {
+  const resetButton = page.getByRole('button', { name: '重置', exact: true });
+  await resetButton.click();
+  const overlay = page.locator('[data-list-loading]');
+  await overlay.waitFor({ state: 'visible', timeout: 1000 });
+  if (!(await resetButton.isDisabled())) throw new Error('重置查询进行中按钮未禁用');
+  if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
+  await overlay.waitFor({ state: 'hidden', timeout: 5000 });
+}
+
 module.exports = {
   baseUrl,
   runSmoke,
@@ -157,4 +167,5 @@ module.exports = {
   clickQueryAndAssertLoading,
   clickPaginationAndAssertLoading,
   clickRefreshAndAssertLoading,
+  clickResetAndAssertLoading,
 };

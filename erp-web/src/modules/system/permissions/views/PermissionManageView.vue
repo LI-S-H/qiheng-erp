@@ -138,14 +138,15 @@ function handlePageSizeChange(pageSize: number) {
 }
 
 function handleReset() {
-  if (loading.value) return;
+  if (queryBusy.value) return;
   query.permissionCode = '';
   query.permissionName = '';
   query.moduleCode = 'all';
   query.actionType = 'all';
   query.status = 'all';
   query.pageNum = 1;
-  fetchPermissions();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 const refreshList = useListRefresh(queryBusy, queryPending, fetchPermissions);

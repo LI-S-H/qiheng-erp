@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/roles',
@@ -16,7 +16,7 @@ runSmoke({
     await tableRow(page, 'SUPER_ADMIN').waitFor({ state: 'detached' });
     await tableRow(page, 'BUSINESS_MANAGER').waitFor();
     if (await tableRow(page, 'SUPER_ADMIN').count()) throw new Error('角色编码筛选未生效');
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-system-roles-reset-loading.png');
 
     const statusTrigger = page.locator('.filter-panel').getByRole('combobox');
     await statusTrigger.click();
@@ -25,7 +25,7 @@ runSmoke({
     await tableRow(page, 'SUPER_ADMIN').waitFor({ state: 'detached' });
     await tableRow(page, 'AI_ANALYST').waitFor();
     if (await tableRow(page, 'SUPER_ADMIN').count()) throw new Error('角色停用状态筛选未生效');
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const roleButtonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)

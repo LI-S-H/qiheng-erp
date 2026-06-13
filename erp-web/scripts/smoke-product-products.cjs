@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/product/products',
@@ -15,7 +15,7 @@ runSmoke({
     await clickQueryAndAssertLoading(page, 'smoke-product-products-query-loading.png');
     await tableRow(page, 'P0007').waitFor();
     await tableRow(page, 'P0001').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-product-products-reset-loading.png');
     await tableRow(page, 'P0001').waitFor();
 
     const filterPanel = page.locator('.filter-grid--products');
@@ -36,14 +36,14 @@ runSmoke({
     await tableRow(page, 'P0007').waitFor();
     await tableRow(page, 'P0008').waitFor();
     await tableRow(page, 'P0005').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     await page.getByPlaceholder('请输入品牌名称').fill('森纸');
     await page.getByPlaceholder('请输入完整条码').fill('6901000000073');
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'P0007').waitFor();
     await tableRow(page, 'P0008').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const queryInput = page.getByPlaceholder('请输入产品名称').first();
     await queryInput.click();
@@ -117,7 +117,7 @@ runSmoke({
     const uncategorizedRow = tableRow(page, 'P0015');
     await uncategorizedRow.waitFor();
     await uncategorizedRow.getByText('未分类', { exact: true }).waitFor();
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const referencedRow = tableRow(page, 'P0001');
     await referencedRow.getByRole('button', { name: '删除' }).click();

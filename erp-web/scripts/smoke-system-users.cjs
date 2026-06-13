@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/users',
@@ -116,7 +116,7 @@ runSmoke({
     await tableRow(page, 'purchase01').waitFor({ state: 'detached' });
     await tableRow(page, 'sales_stop').waitFor();
     if (await tableRow(page, 'purchase01').count()) throw new Error('用户角色与停用状态组合筛选未生效');
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-system-users-reset-loading.png');
 
     const pagination = page.locator('[data-table-pagination]');
     const paginationState = await pagination.evaluate(element => {
@@ -180,7 +180,7 @@ runSmoke({
     await tableRow(page, 'purchase01').waitFor({ state: 'detached' });
     await tableRow(page, 'admin').waitFor();
     if (await tableRow(page, 'purchase01').count()) throw new Error('用户账号筛选未生效');
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     await page.getByPlaceholder('请输入用户姓名').fill('采购主管');
     await page.getByRole('button', { name: '查询', exact: true }).click();
@@ -190,7 +190,7 @@ runSmoke({
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'purchase01').waitFor();
     if (await tableRow(page, 'admin').count()) throw new Error('用户账号与姓名筛选未按 AND 条件生效');
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     await page.setViewportSize({ width: 933, height: 460 });
     await page.getByRole('button', { name: '新增用户' }).click();

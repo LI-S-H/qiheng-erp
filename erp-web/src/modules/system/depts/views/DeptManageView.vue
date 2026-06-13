@@ -261,9 +261,10 @@ function handleSearch() {
   debouncedSearch();
 }
 function handleReset() {
+  if (queryBusy.value) return;
   query.deptName = ''; query.status = 'all';
-  appliedQuery.deptName = ''; appliedQuery.status = 'all';
-  selectedIds.value = new Set();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 const refreshList = useListRefresh(queryBusy, queryPending, fetchDepts);

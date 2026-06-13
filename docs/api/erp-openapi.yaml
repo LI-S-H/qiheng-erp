@@ -1395,7 +1395,7 @@ paths:
     post:
       tags: [Warehouse]
       summary: 新增仓库
-      description: 仓库编码由用户创建时填写，去除首尾空格后必须唯一，创建成功后不可修改。本接口需要 `warehouse:manage` 权限。
+      description: 仓库编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交仓库编码；生成后的编码不可修改。本接口需要 `warehouse:manage` 权限。
       operationId: warehouseCreate
       security:
         - SaTokenAuth: []
@@ -2968,7 +2968,7 @@ components:
           minLength: 1
           maxLength: 64
           readOnly: true
-          description: 仓库编码，对应 `warehouse.warehouse_code`，创建时填写、全局唯一且创建后不可修改
+          description: 仓库编码，对应 `warehouse.warehouse_code`，由后端生成、全局唯一且创建后不可修改
         warehouseName: { type: string, minLength: 1, maxLength: 100 }
         contactName: { type: string, maxLength: 100 }
         contactPhone: { type: string, maxLength: 32 }
@@ -2980,14 +2980,8 @@ components:
 
     WarehouseCreateRequest:
       type: object
-      required: [warehouseCode, warehouseName, contactName, contactPhone, address, status, remark]
+      required: [warehouseName, contactName, contactPhone, address, status, remark]
       properties:
-        warehouseCode:
-          type: string
-          minLength: 1
-          maxLength: 64
-          pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
-          description: 用户创建时填写，提交前去除首尾空格并转换为大写，创建后不可修改
         warehouseName: { type: string, minLength: 1, maxLength: 100 }
         contactName: { type: string, maxLength: 100 }
         contactPhone: { type: string, maxLength: 32 }

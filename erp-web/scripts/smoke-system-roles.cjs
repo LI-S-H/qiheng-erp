@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/roles',
@@ -9,6 +9,7 @@ runSmoke({
     await assertFixedTableLayout(page, 8);
     await page.getByText('SUPER_ADMIN').waitFor();
     await page.getByText('业务主管').waitFor();
+    await clickRefreshAndAssertLoading(page, 'smoke-system-roles-refresh-loading.png');
 
     await page.getByPlaceholder('如 SUPER_ADMIN').fill('BUSINESS_MANAGER');
     await clickQueryAndAssertLoading(page);

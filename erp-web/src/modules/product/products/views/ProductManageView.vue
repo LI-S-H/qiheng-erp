@@ -18,6 +18,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import { listProductCategories } from '../../categories/api';
 import type { ProductCategoryListItem } from '../../categories/types';
 import {
@@ -177,9 +178,7 @@ function handlePageSizeChange(pageSize: number) {
   debouncedPageChange(1, pageSize);
 }
 
-function refreshList() {
-  if (!queryBusy.value) fetchProducts();
-}
+const refreshList = useListRefresh(queryBusy, queryPending, fetchProducts);
 
 function toggleSelectAll(value: boolean | 'indeterminate') {
   selectedIds.value = value === true ? new Set(products.value.map(item => item.productId)) : new Set();

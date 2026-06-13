@@ -565,7 +565,7 @@ POST   /products/batch/delete
 
 - 页面字段全部来源于 `warehouse` 表，不要求后端返回前端可计算的展示字段。
 - 仓库编码、名称、联系人和联系电话分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合，不提供跨字段 `keyword`。
-- 仓库编码由用户创建时填写，提交前去除首尾空格并转换为大写；创建后不可修改，编辑请求不提交 `warehouseCode`。
+- 仓库编码由后端创建时统一生成并由唯一索引兜底；新增弹窗只显示“保存后由系统生成”，创建和编辑请求都不提交 `warehouseCode`，编辑时仅只读展示已有编码。
 - 仓库名称修改时，后端在同一事务内同步 `warehouse_stock.warehouse_name`；历史 `stock_bill.warehouse_name` 继续作为业务发生时的快照保留。
 - 停用仓库前提示该仓库不能继续用于新建采购、销售、退货和库存调整业务，历史单据与现有库存不受影响；编辑弹窗内停用时底层表单进入 `inert` 状态。
 - 删除只允许无库存余额且无出入库记录的仓库；前端显示通用风险说明，后端执行最终关联校验并在存在引用时返回 `409 Conflict`。
@@ -576,7 +576,7 @@ POST   /products/batch/delete
 | 页面字段 | 后端来源 |
 |---|---|
 | 仓库ID | `warehouse.id`，BIGINT 按字符串传输 |
-| 仓库编码 | `warehouse.warehouse_code`，创建时填写，创建后只读 |
+| 仓库编码 | `warehouse.warehouse_code`，后端创建时生成，创建后只读 |
 | 仓库名称 | `warehouse.warehouse_name` |
 | 联系人、联系电话 | `warehouse.contact_name`、`warehouse.contact_phone` |
 | 仓库地址 | `warehouse.address` |
@@ -596,4 +596,4 @@ PATCH  /warehouse/warehouses/batch/status
 POST   /warehouse/warehouses/batch/delete
 ```
 
-查询接口需要 `warehouse:query`，写接口需要 `warehouse:manage`。仓库编码冲突和删除引用保护统一返回 `409 Conflict`。
+查询接口需要 `warehouse:query`，写接口需要 `warehouse:manage`。仓库编码由后端生成并由唯一索引兜底，删除引用保护返回 `409 Conflict`。

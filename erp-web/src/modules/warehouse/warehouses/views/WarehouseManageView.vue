@@ -7,6 +7,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -28,16 +29,13 @@ import {
   updateWarehouseStatus,
 } from '../api';
 import type {
-  WarehouseCreatePayload,
   WarehouseListItem,
   WarehouseQuery,
   WarehouseStatus,
   WarehouseUpdatePayload,
 } from '../types';
 
-interface WarehouseFormModel extends WarehouseUpdatePayload {
-  warehouseCode: string;
-}
+interface WarehouseFormModel extends WarehouseUpdatePayload { warehouseCode: string }
 
 const statusFilterOptions = [
   { value: 'all', label: '全部状态' },
@@ -122,6 +120,7 @@ const debouncedPageChange = useDebounceFn((pageNum: number, pageSize: number) =>
   query.pageSize = pageSize;
   fetchWarehouses();
 }, 180);
+const refreshList = useListRefresh(queryBusy, queryPending, fetchWarehouses);
 
 function handleSearch() {
   if (queryBusy.value) return;
@@ -193,12 +192,6 @@ function openEditDialog(row: WarehouseListItem) {
 
 function validateForm() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
-  const warehouseCode = form.warehouseCode.trim();
-  if (dialogMode.value === 'create') {
-    if (!warehouseCode) formErrors.warehouseCode = '请输入仓库编码';
-    else if (warehouseCode.length > 64) formErrors.warehouseCode = '仓库编码不能超过 64 个字符';
-    else if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(warehouseCode)) formErrors.warehouseCode = '仓库编码仅支持字母、数字、下划线和连字符';
-  }
   if (!form.warehouseName.trim()) formErrors.warehouseName = '请输入仓库名称';
   else if (form.warehouseName.trim().length > 100) formErrors.warehouseName = '仓库名称不能超过 100 个字符';
   if (form.contactName.trim().length > 100) formErrors.contactName = '联系人不能超过 100 个字符';
@@ -237,11 +230,7 @@ async function persistForm(updatePayload: WarehouseUpdatePayload) {
   formSubmitting.value = true;
   try {
     if (dialogMode.value === 'create') {
-      const createPayload: WarehouseCreatePayload = {
-        warehouseCode: form.warehouseCode.trim().toLocaleUpperCase(),
-        ...updatePayload,
-      };
-      await createWarehouse(createPayload);
+      await createWarehouse(updatePayload);
       toast.success('仓库已创建');
     } else {
       await updateWarehouse(editingWarehouseId.value, updatePayload);
@@ -251,7 +240,6 @@ async function persistForm(updatePayload: WarehouseUpdatePayload) {
     await fetchWarehouses();
   } catch (error) {
     const message = getApiErrorMessage(error) || '仓库保存失败';
-    if (dialogMode.value === 'create' && message.includes('仓库编码')) formErrors.warehouseCode = message;
     toast.warning(message);
   } finally {
     formSubmitting.value = false;
@@ -361,7 +349,7 @@ function handleBatchDelete() {
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchStatus(1)">批量启用</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '启用已选仓库' : '请先选择仓库' }}</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchStatus(0)">批量停用</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '停用已选仓库' : '请先选择仓库' }}</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="destructive" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchDelete">删除</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '删除无库存和流水引用的仓库' : '请先选择仓库' }}</TooltipContent></Tooltip>
-          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="fetchWarehouses">刷新</Button></span></TooltipTrigger><TooltipContent>重新加载仓库列表</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger><TooltipContent>重新加载仓库列表</TooltipContent></Tooltip>
         </div>
       </div>
 
@@ -397,7 +385,7 @@ function handleBatchDelete() {
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增仓库' : '编辑仓库' }}</DialogTitle><DialogDescription>仓库会被采购、销售和库存业务共同引用，请准确维护基础信息。</DialogDescription></DialogHeader>
         <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-3">
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
-            <div class="space-y-1"><Label>仓库编码 <span class="text-destructive">*</span></Label><Input data-warehouse-code v-model="form.warehouseCode" :readonly="dialogMode === 'edit'" maxlength="64" placeholder="如 WH001" :class="dialogMode === 'edit' ? 'bg-muted/55 text-muted-foreground' : ''" :aria-invalid="Boolean(formErrors.warehouseCode)" @update:model-value="form.warehouseCode = String($event).toLocaleUpperCase()" /><p v-if="formErrors.warehouseCode" class="text-xs text-destructive">{{ formErrors.warehouseCode }}</p><p v-else class="text-xs text-muted-foreground">创建时填写，保存后不可修改</p></div>
+            <div class="space-y-1"><Label>仓库编码</Label><Input data-warehouse-code :model-value="dialogMode === 'create' ? '保存后由系统生成' : form.warehouseCode" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">系统生成，创建后不可修改</p></div>
             <div class="space-y-1"><Label>仓库名称 <span class="text-destructive">*</span></Label><Input v-model="form.warehouseName" maxlength="100" placeholder="请输入仓库名称" :aria-invalid="Boolean(formErrors.warehouseName)" /><p v-if="formErrors.warehouseName" class="text-xs text-destructive">{{ formErrors.warehouseName }}</p></div>
             <div class="space-y-1"><Label>联系人</Label><Input v-model="form.contactName" maxlength="100" placeholder="请输入联系人" :aria-invalid="Boolean(formErrors.contactName)" /><p v-if="formErrors.contactName" class="text-xs text-destructive">{{ formErrors.contactName }}</p></div>
             <div class="space-y-1"><Label>联系电话</Label><Input v-model="form.contactPhone" maxlength="32" placeholder="请输入联系电话" :aria-invalid="Boolean(formErrors.contactPhone)" /><p v-if="formErrors.contactPhone" class="text-xs text-destructive">{{ formErrors.contactPhone }}</p></div>

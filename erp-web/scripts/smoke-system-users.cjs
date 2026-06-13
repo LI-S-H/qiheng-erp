@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/users',
@@ -8,6 +8,7 @@ runSmoke({
     await assertFixedTableLayout(page, 8);
     await page.getByText('系统管理员').first().waitFor();
     await page.getByText('purchase01').waitFor();
+    await clickRefreshAndAssertLoading(page, 'smoke-system-users-refresh-loading.png');
 
     const bodyText = await page.locator('body').innerText();
     if (bodyText.includes('总部') || !bodyText.includes('行政部')) {

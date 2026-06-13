@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/product/products',
@@ -9,6 +9,7 @@ runSmoke({
     await assertFixedTableLayout(page, 10);
     await page.getByText('经典原味苏打水', { exact: true }).waitFor();
     await page.getByText('饮料冲调', { exact: true }).first().waitFor();
+    await clickRefreshAndAssertLoading(page, 'smoke-product-products-refresh-loading.png');
 
     await page.getByPlaceholder('请输入产品名称').first().fill('A4');
     await clickQueryAndAssertLoading(page, 'smoke-product-products-query-loading.png');

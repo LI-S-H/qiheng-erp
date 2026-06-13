@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/permissions',
@@ -9,6 +9,7 @@ runSmoke({
     await page.getByRole('heading', { name: '权限码配置' }).waitFor();
     await page.getByText('system:user:query', { exact: true }).waitFor();
     await assertFixedTableLayout(page, 9);
+    await clickRefreshAndAssertLoading(page, 'smoke-system-permissions-refresh-loading.png');
 
     const filterComboboxes = page.locator('.filter-panel').getByRole('combobox');
     await filterComboboxes.nth(0).click();

@@ -33,6 +33,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type { RoleStatus, SystemRoleFormPayload, SystemRoleListItem, SystemRoleQuery } from '../types';
 import { listSystemRoles, createSystemRole, updateSystemRole, updateSystemRolePermissions, deleteSystemRole, batchUpdateSystemRoleStatus, batchDeleteSystemRoles } from '../api';
@@ -182,7 +183,7 @@ function handleReset() {
   fetchRoles();
 }
 
-function refreshList() { if (!loading.value) fetchRoles(); }
+const refreshList = useListRefresh(queryBusy, queryPending, fetchRoles);
 
 function toggleSelectAll() {
   if (allSelected.value) {
@@ -495,7 +496,7 @@ function togglePermForm(code: string, checked: boolean) {
             <TooltipContent>{{ selectedIds.size === 0 ? '请先选择角色' : '删除已选角色' }}</TooltipContent>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="loading" @click="refreshList">刷新</Button></span></TooltipTrigger>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger>
             <TooltipContent>重新加载角色列表</TooltipContent>
           </Tooltip>
         </div>

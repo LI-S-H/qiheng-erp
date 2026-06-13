@@ -23,8 +23,7 @@ export interface WarehouseQuery {
   pageSize: number;
 }
 
-export interface WarehouseCreatePayload {
-  warehouseCode: string;
+export interface WarehouseFormPayload {
   warehouseName: string;
   contactName: string;
   contactPhone: string;
@@ -33,7 +32,8 @@ export interface WarehouseCreatePayload {
   remark: string;
 }
 
-export type WarehouseUpdatePayload = Omit<WarehouseCreatePayload, 'warehouseCode'>;
+export type WarehouseCreatePayload = WarehouseFormPayload;
+export type WarehouseUpdatePayload = WarehouseFormPayload;
 
 export interface WarehouseBatchIdsPayload {
   warehouseIds: string[];

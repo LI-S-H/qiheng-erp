@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/product/categories',
@@ -10,6 +10,7 @@ runSmoke({
     await page.getByText('无上级分类').first().waitFor();
     await page.getByText('饮料冲调', { exact: true }).waitFor();
     await page.getByText('食品饮料 / 饮料冲调', { exact: true }).waitFor();
+    await clickRefreshAndAssertLoading(page, 'smoke-product-categories-refresh-loading.png');
 
     const treeToggle = page.getByRole('button', { name: '收起当前分类' }).first();
     const toggleStyle = await treeToggle.evaluate(element => {

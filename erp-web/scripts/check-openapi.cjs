@@ -27,6 +27,16 @@ const warehouseSchema = readProjectFile('docs', 'database', 'mvp-warehouse-schem
 const warehouseApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'api.ts');
 const warehouseTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'types.ts');
 const warehouseViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'views', 'WarehouseManageView.vue');
+const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
+const listViewSources = [
+  readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'views', 'UserManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'system', 'roles', 'views', 'RoleManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'system', 'depts', 'views', 'DeptManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'system', 'permissions', 'views', 'PermissionManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'product', 'categories', 'views', 'ProductCategoryManageView.vue'),
+  productViewSource,
+  warehouseViewSource,
+];
 const anchoredSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'AnchoredSelect.vue');
 const treeSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'TreeSelect.vue');
 const exclusiveDropdownSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-exclusive-dropdown.ts');
@@ -224,17 +234,30 @@ const warehouseUpdateSchema = source.slice(warehouseUpdateStart, warehouseUpdate
 if (warehouseUpdateStart < 0 || warehouseUpdateEnd < 0 || warehouseUpdateSchema.includes('warehouseCode:')) {
   throw new Error('仓库编辑请求不得包含创建后不可修改的 warehouseCode');
 }
-const warehouseUpdateTypeStart = warehouseTypeSource.indexOf('export type WarehouseUpdatePayload');
-const warehouseUpdateTypeEnd = warehouseTypeSource.indexOf('export interface WarehouseBatchIdsPayload', warehouseUpdateTypeStart);
-if (warehouseUpdateTypeStart < 0 || warehouseUpdateTypeEnd < 0
-  || warehouseTypeSource.slice(warehouseUpdateTypeStart, warehouseUpdateTypeEnd).includes('warehouseCode:')) {
-  throw new Error('前端仓库编辑 DTO 不得包含 warehouseCode');
+const warehouseCreateStart = source.indexOf('    WarehouseCreateRequest:');
+const warehouseCreateEnd = source.indexOf('    WarehouseUpdateRequest:', warehouseCreateStart);
+if (warehouseCreateStart < 0 || warehouseCreateEnd < 0
+  || source.slice(warehouseCreateStart, warehouseCreateEnd).includes('warehouseCode:')) {
+  throw new Error('仓库创建请求不得包含由后端生成的 warehouseCode');
+}
+const warehouseFormTypeStart = warehouseTypeSource.indexOf('export interface WarehouseFormPayload');
+const warehouseFormTypeEnd = warehouseTypeSource.indexOf('export type WarehouseCreatePayload', warehouseFormTypeStart);
+if (warehouseFormTypeStart < 0 || warehouseFormTypeEnd < 0
+  || warehouseTypeSource.slice(warehouseFormTypeStart, warehouseFormTypeEnd).includes('warehouseCode:')) {
+  throw new Error('前端仓库创建和编辑 DTO 不得包含 warehouseCode');
 }
 for (const fragment of ['normalizeStringId', 'normalizeBinaryStatus', 'normalizeWarehousePage']) {
   if (!warehouseApiSource.includes(fragment)) throw new Error(`仓库 API 缺少响应字段转换：${fragment}`);
 }
-for (const fragment of ['data-warehouse-code', 'warehouseDisableWarning', 'table-fixed']) {
+for (const fragment of ['data-warehouse-code', '保存后由系统生成', 'warehouseDisableWarning', 'table-fixed']) {
   if (!warehouseViewSource.includes(fragment)) throw new Error(`仓库管理页面缺少关键交互实现：${fragment}`);
+}
+if (!warehouseApiSource.includes('generateMockWarehouseCode()') || !source.includes('仓库编码由后端统一生成')) {
+  throw new Error('仓库编码的后端生成契约或 Mock 实现不完整');
+}
+if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
+  || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {
+  throw new Error('已完成列表页未统一接入刷新防抖和即时加载状态');
 }
 for (const fragment of [
   '仓库编码创建后不可修改',

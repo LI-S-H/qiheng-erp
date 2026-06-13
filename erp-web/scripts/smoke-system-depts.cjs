@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/depts',
@@ -9,6 +9,7 @@ runSmoke({
     await page.getByText('无上级部门').first().waitFor();
     await page.getByText('采购跟单组', { exact: true }).waitFor();
     await page.getByText('采购部 / 采购跟单组', { exact: true }).waitFor();
+    await clickRefreshAndAssertLoading(page, 'smoke-system-depts-refresh-loading.png');
 
     const treeToggle = page.getByRole('button', { name: '收起当前部门' }).first();
     const toggleStyle = await treeToggle.evaluate(element => {

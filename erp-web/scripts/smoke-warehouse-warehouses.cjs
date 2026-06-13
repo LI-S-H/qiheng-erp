@@ -5,6 +5,7 @@ const {
   assertRequiredLabels,
   clickQueryAndAssertLoading,
   clickPaginationAndAssertLoading,
+  clickRefreshAndAssertLoading,
 } = require('./smoke-helpers.cjs');
 
 runSmoke({
@@ -14,6 +15,7 @@ runSmoke({
     await page.getByRole('heading', { name: '仓库管理' }).waitFor();
     await tableRow(page, 'WH001').waitFor();
     await assertFixedTableLayout(page, 9);
+    await clickRefreshAndAssertLoading(page, 'smoke-warehouse-refresh-loading.png');
 
     await page.getByPlaceholder('请输入仓库名称').first().fill('华东');
     await clickQueryAndAssertLoading(page, 'smoke-warehouse-query-loading.png');
@@ -36,19 +38,20 @@ runSmoke({
 
     await page.getByRole('button', { name: '新增仓库' }).click();
     const createDialog = page.getByRole('dialog', { name: '新增仓库' });
-    await assertRequiredLabels(createDialog, ['仓库编码', '仓库名称', '启用状态']);
+    await assertRequiredLabels(createDialog, ['仓库名称', '启用状态']);
+    const generatedCode = createDialog.locator('[data-warehouse-code]');
+    if (await generatedCode.inputValue() !== '保存后由系统生成' || !await generatedCode.evaluate(element => element.hasAttribute('readonly'))) {
+      throw new Error('新增仓库的仓库编码必须由系统生成并以只读方式提示');
+    }
+    if (!(await createDialog.innerText()).includes('系统生成，创建后不可修改')) {
+      throw new Error('仓库编码缺少系统生成和不可修改说明');
+    }
     await createDialog.getByRole('button', { name: '保存', exact: true }).click();
     const emptyFormText = await createDialog.innerText();
-    if (!emptyFormText.includes('请输入仓库编码') || !emptyFormText.includes('请输入仓库名称')) {
+    if (!emptyFormText.includes('请输入仓库名称') || emptyFormText.includes('请输入仓库编码')) {
       throw new Error('仓库新增表单缺少必填校验');
     }
 
-    await createDialog.getByPlaceholder('如 WH001').fill('WH001');
-    await createDialog.getByPlaceholder('请输入仓库名称').fill('重复编码仓库');
-    await createDialog.getByRole('button', { name: '保存', exact: true }).click();
-    await page.getByText('仓库编码已存在', { exact: true }).first().waitFor();
-
-    await createDialog.getByPlaceholder('如 WH001').fill('wh013');
     await createDialog.getByPlaceholder('请输入仓库名称').fill('苏州测试仓');
     await createDialog.getByPlaceholder('请输入联系人').fill('顾青');
     await createDialog.getByPlaceholder('请输入联系电话').fill('0512-5558-1013');

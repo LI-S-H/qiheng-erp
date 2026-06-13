@@ -25,6 +25,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import { permissionActionOptions, permissionModuleOptions } from '../catalog';
 import {
   batchDeleteSystemPermissions,
@@ -147,9 +148,7 @@ function handleReset() {
   fetchPermissions();
 }
 
-function refreshList() {
-  if (!loading.value) fetchPermissions();
-}
+const refreshList = useListRefresh(queryBusy, queryPending, fetchPermissions);
 
 function formatTableTime(value: string) {
   return value.slice(5, 16);
@@ -426,7 +425,7 @@ function handleBatchDelete() {
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchStatus(1)">批量启用</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '启用已选权限码' : '请先选择权限码' }}</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchStatus(0)">批量停用</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '停用已选权限码' : '请先选择权限码' }}</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="destructive" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchDelete">删除</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '删除未被角色引用的权限码' : '请先选择权限码' }}</TooltipContent></Tooltip>
-          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="loading" @click="refreshList">刷新</Button></span></TooltipTrigger><TooltipContent>重新加载权限码列表</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger><TooltipContent>重新加载权限码列表</TooltipContent></Tooltip>
         </div>
       </div>
 

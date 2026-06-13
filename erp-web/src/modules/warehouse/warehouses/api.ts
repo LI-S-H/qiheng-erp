@@ -94,11 +94,15 @@ function filterWarehouses(params: WarehouseQuery): PageResult<WarehouseListItem>
   };
 }
 
-function ensureUniqueCode(warehouseCode: string, excludeWarehouseId = '') {
-  const normalizedCode = warehouseCode.trim().toLocaleUpperCase();
-  if (mockWarehouses.some(item => item.warehouseId !== excludeWarehouseId && item.warehouseCode === normalizedCode)) {
-    throw new Error('仓库编码已存在');
-  }
+let nextMockWarehouseSequence = warehouseSeed.length + 1;
+
+function generateMockWarehouseCode() {
+  let warehouseCode = '';
+  do {
+    warehouseCode = `WH${String(nextMockWarehouseSequence).padStart(3, '0')}`;
+    nextMockWarehouseSequence += 1;
+  } while (mockWarehouses.some(item => item.warehouseCode === warehouseCode));
+  return warehouseCode;
 }
 
 export function listWarehouses(params: WarehouseQuery) {
@@ -116,13 +120,11 @@ export function listWarehouses(params: WarehouseQuery) {
 
 export function createWarehouse(payload: WarehouseCreatePayload) {
   if (useMockApi) {
-    const warehouseCode = payload.warehouseCode.trim().toLocaleUpperCase();
-    ensureUniqueCode(warehouseCode);
     const timestamp = nowText();
     const created: WarehouseListItem & { referenced: boolean } = {
       warehouseId: String(Date.now()),
       ...payload,
-      warehouseCode,
+      warehouseCode: generateMockWarehouseCode(),
       createdAt: timestamp,
       updatedAt: timestamp,
       referenced: false,

@@ -138,4 +138,23 @@ async function clickPaginationAndAssertLoading(page, label) {
   await overlay.waitFor({ state: 'hidden', timeout: 5000 });
 }
 
-module.exports = { baseUrl, runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading };
+async function clickRefreshAndAssertLoading(page, screenshotPath) {
+  const refreshButton = page.getByRole('button', { name: '刷新', exact: true });
+  await refreshButton.click();
+  const overlay = page.locator('[data-list-loading]');
+  await overlay.waitFor({ state: 'visible', timeout: 1000 });
+  if (!(await refreshButton.isDisabled())) throw new Error('刷新进行中按钮未禁用');
+  if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
+  await overlay.waitFor({ state: 'hidden', timeout: 5000 });
+}
+
+module.exports = {
+  baseUrl,
+  runSmoke,
+  tableRow,
+  assertFixedTableLayout,
+  assertRequiredLabels,
+  clickQueryAndAssertLoading,
+  clickPaginationAndAssertLoading,
+  clickRefreshAndAssertLoading,
+};

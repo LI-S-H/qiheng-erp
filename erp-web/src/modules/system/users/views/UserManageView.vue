@@ -41,6 +41,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import PromptDialog from '@/components/common/PromptDialog.vue';
 import MultiSelect from '@/components/common/MultiSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type {
   DeptOption,
@@ -67,6 +68,7 @@ import {
 } from '../api';
 
 const loading = ref(false);
+const queryPending = ref(false);
 const formSubmitting = ref(false);
 const roleSubmitting = ref(false);
 const actionSubmitting = ref(false);
@@ -96,7 +98,7 @@ const editingUserId = ref('');
 const roleEditingUser = ref<SystemUserListItem | null>(null);
 
 const query = reactive<SystemUserQuery>({
-  keyword: '', deptId: 'all', roleId: 'all', status: 'all', pageNum: 1, pageSize: 10,
+  username: '', realName: '', deptId: 'all', roleId: 'all', status: 'all', pageNum: 1, pageSize: 10,
 });
 
 const userForm = reactive<SystemUserFormModel>({
@@ -138,6 +140,7 @@ const roleBoundCount = computed(() => users.value.filter(u => u.roleIds.length >
 
 const allSelected = computed(() => users.value.length > 0 && users.value.every(u => selectedIds.value.has(u.userId)));
 const selectedRows = computed(() => users.value.filter(u => selectedIds.value.has(u.userId)));
+const queryBusy = computed(() => queryPending.value || loading.value);
 
 async function fetchUsers() {
   const sequence = ++fetchSequence;
@@ -150,7 +153,10 @@ async function fetchUsers() {
   } catch {
     // http.ts 统一处理接口错误提示。
   } finally {
-    if (sequence === fetchSequence) loading.value = false;
+    if (sequence === fetchSequence) {
+      loading.value = false;
+      queryPending.value = false;
+    }
   }
 }
 
@@ -184,13 +190,33 @@ const debouncedSearch = useDebounceFn(() => {
   fetchUsers();
 }, 250);
 
+const debouncedPageChange = useDebounceFn((pageNum: number, pageSize: number) => {
+  query.pageNum = pageNum;
+  query.pageSize = pageSize;
+  fetchUsers();
+}, 180);
+
 function handleSearch() {
+  if (queryBusy.value) return;
+  queryPending.value = true;
   debouncedSearch();
+}
+
+function handlePageChange(pageNum: number) {
+  if (queryBusy.value) return;
+  queryPending.value = true;
+  debouncedPageChange(pageNum, query.pageSize);
+}
+
+function handlePageSizeChange(pageSize: number) {
+  if (queryBusy.value) return;
+  queryPending.value = true;
+  debouncedPageChange(1, pageSize);
 }
 
 function handleReset() {
   if (loading.value) return;
-  query.keyword = ''; query.deptId = 'all'; query.roleId = 'all'; query.status = 'all'; query.pageNum = 1;
+  query.username = ''; query.realName = ''; query.deptId = 'all'; query.roleId = 'all'; query.status = 'all'; query.pageNum = 1;
   fetchUsers();
 }
 
@@ -493,8 +519,12 @@ function handleDelete(row: SystemUserListItem) {
     <div class="filter-panel">
       <div class="filter-grid filter-grid--users">
         <div class="space-y-1">
-          <Label class="text-xs">关键词</Label>
-          <Input v-model="query.keyword" placeholder="账号 姓名 部门" @keyup.enter="handleSearch" />
+          <Label class="text-xs">登录账号</Label>
+          <Input v-model="query.username" placeholder="请输入登录账号" @keyup.enter="handleSearch" />
+        </div>
+        <div class="space-y-1">
+          <Label class="text-xs">用户姓名</Label>
+          <Input v-model="query.realName" placeholder="请输入用户姓名" @keyup.enter="handleSearch" />
         </div>
         <div class="space-y-1">
           <Label class="text-xs">部门</Label>
@@ -509,14 +539,15 @@ function handleDelete(row: SystemUserListItem) {
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
         <div class="filter-actions">
-          <Button size="sm" :disabled="loading" @click="handleSearch">{{ loading ? '查询中...' : '查询' }}</Button>
-          <Button size="sm" variant="outline" :disabled="loading" @click="handleReset">重置</Button>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+          <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
         </div>
       </div>
     </div>
 
     <!-- Table -->
-    <div class="data-panel">
+    <div class="data-panel relative">
+      <ListLoadingOverlay :visible="queryBusy" />
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-toolbar__title">
@@ -657,14 +688,15 @@ function handleDelete(row: SystemUserListItem) {
         :total="total"
         :page-num="query.pageNum"
         :page-size="query.pageSize"
-        @update:page-num="query.pageNum = $event; fetchUsers()"
-        @update:page-size="query.pageSize = $event; query.pageNum = 1; fetchUsers()"
+        :loading="queryBusy"
+        @update:page-num="handlePageChange"
+        @update:page-size="handlePageSizeChange"
       />
     </div>
 
     <!-- Create/Edit User Dialog -->
     <Dialog v-model:open="userDialogVisible">
-      <DialogContent class="sm:max-w-[560px]">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>{{ dialogMode === 'create' ? '新增用户' : '编辑用户' }}</DialogTitle>
           <DialogDescription>填写用户基本信息</DialogDescription>
@@ -727,7 +759,7 @@ function handleDelete(row: SystemUserListItem) {
 
     <!-- Role Binding Dialog -->
     <Dialog v-model:open="roleDialogVisible">
-      <DialogContent class="sm:max-w-[460px]">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle>角色绑定</DialogTitle>
           <DialogDescription>为用户「{{ roleEditingUser?.realName }}」配置角色</DialogDescription>

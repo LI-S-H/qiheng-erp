@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/depts',
@@ -20,7 +20,7 @@ runSmoke({
     }
 
     await page.getByPlaceholder('如 采购部').fill('采购部');
-    await page.getByRole('button', { name: '查询', exact: true }).click();
+    await clickQueryAndAssertLoading(page);
     await tableRow(page, '行政部').waitFor({ state: 'detached' });
     await tableRow(page, '采购部').waitFor();
     await page.getByRole('button', { name: '重置', exact: true }).click();
@@ -55,6 +55,16 @@ runSmoke({
     await page.getByRole('button', { name: '批量停用' }).click();
     const stopDialog = page.getByRole('alertdialog', { name: '批量停用' });
     await stopDialog.waitFor();
+    const stopWarning = await stopDialog.innerText();
+    if (!stopWarning.includes('下级部门会同步停用') || !stopWarning.includes('员工账号不会自动停用') || !stopWarning.includes('不能再将员工')) {
+      throw new Error(`部门停用警告未说明级联和员工影响：${stopWarning}`);
+    }
+    if (/\d+\s*个下级部门|\d+\s*名员工/.test(stopWarning)) {
+      throw new Error(`部门停用不应由前端计算精确影响数量：${stopWarning}`);
+    }
+    if (await stopDialog.locator('[data-confirm-dialog-icon]').count() !== 1) {
+      throw new Error('部门停用确认弹窗缺少风险图标');
+    }
     const layerState = await stopDialog.evaluate(element => ({
       dialogZIndex: getComputedStyle(element).zIndex,
       overlayZIndex: getComputedStyle(document.querySelector('[data-slot="alert-dialog-overlay"]')).zIndex,
@@ -76,11 +86,31 @@ runSmoke({
 
     await tableRow(page, '采购部').getByRole('button', { name: '删除' }).click();
     await page.getByText('该部门存在下级部门，请先调整层级').waitFor();
+
+    await tableRow(page, '华东销售组').getByRole('button', { name: '删除' }).click();
+    await page.getByText('该部门已有员工归属，请先调整员工所属部门').waitFor();
+
+    await tableRow(page, '仓储部').getByRole('button', { name: '编辑' }).click();
+    const warehouseDialog = page.getByRole('dialog', { name: '编辑部门' });
+    await warehouseDialog.getByLabel('停用').click();
+    await warehouseDialog.getByRole('button', { name: '保存', exact: true }).click();
+    const editStopDialog = page.getByRole('alertdialog', { name: '确认停用部门' });
+    const editStopWarning = await editStopDialog.innerText();
+    if (!editStopWarning.includes('下级部门会同步停用') || !editStopWarning.includes('员工账号不会自动停用')) {
+      throw new Error(`编辑停用部门未展示完整影响：${editStopWarning}`);
+    }
+    if (/\d+\s*个下级部门|\d+\s*名员工/.test(editStopWarning)) {
+      throw new Error(`编辑停用部门不应由前端计算精确影响数量：${editStopWarning}`);
+    }
+    await editStopDialog.getByRole('button', { name: '确认停用' }).click();
+    await tableRow(page, '仓储部').getByText('停用').waitFor();
+    await tableRow(page, '入库作业组').getByText('停用').waitFor();
+    await tableRow(page, '出库复核组').getByText('停用').waitFor();
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '部门管理' }).waitFor();
   },
 }).then(() => {
-  console.log('SMOKE_OK: 部门树、级联状态与删除约束通过');
+  console.log('SMOKE_OK: 部门树、停用风险确认、级联状态与删除约束通过');
 }).catch(error => {
   console.error(error);
   process.exit(1);

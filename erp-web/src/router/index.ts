@@ -8,6 +8,8 @@ import UserManageView from '@/modules/system/users/views/UserManageView.vue';
 import RoleManageView from '@/modules/system/roles/views/RoleManageView.vue';
 import DeptManageView from '@/modules/system/depts/views/DeptManageView.vue';
 import PermissionManageView from '@/modules/system/permissions/views/PermissionManageView.vue';
+import ProductCategoryManageView from '@/modules/product/categories/views/ProductCategoryManageView.vue';
+import ProductManageView from '@/modules/product/products/views/ProductManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -81,12 +83,18 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'product/categories',
         name: 'product-categories',
-        ...placeholder('产品分类', '产品中心', '维护产品分类树和分类启用状态'),
+        component: ProductCategoryManageView,
+        meta: {
+          title: '产品分类',
+        },
       },
       {
         path: 'product/products',
         name: 'product-products',
-        ...placeholder('产品档案', '产品中心', '维护产品编码 名称 分类 品牌 规格 单位 条码 参考价格和安全库存'),
+        component: ProductManageView,
+        meta: {
+          title: '产品档案',
+        },
       },
       { path: 'warehouse', redirect: '/warehouse/warehouses' },
       {

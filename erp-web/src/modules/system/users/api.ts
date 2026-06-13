@@ -13,6 +13,7 @@ import type {
   UserStatus,
 } from './types';
 import type { PageResult } from '@/shared/types/api';
+import { normalizeBinaryStatus, normalizeStringId } from '@/shared/utils/api-normalizers';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
 
@@ -32,6 +33,23 @@ const mockDeptOptions: DeptOption[] = [
   { deptId: '1900000000000000103', deptName: '销售部', parentId: '0', status: 1 },
   { deptId: '1900000000000000104', deptName: '仓储部', parentId: '0', status: 1 },
 ];
+
+function normalizeRoleOption(item: RoleOption): RoleOption {
+  return {
+    ...item,
+    roleId: normalizeStringId(item.roleId, 'roleId'),
+    status: normalizeBinaryStatus(item.status),
+  };
+}
+
+function normalizeDeptOption(item: DeptOption): DeptOption {
+  return {
+    ...item,
+    deptId: normalizeStringId(item.deptId, 'deptId'),
+    parentId: normalizeStringId(item.parentId, 'parentId'),
+    status: normalizeBinaryStatus(item.status),
+  };
+}
 
 let mockUsers: SystemUserListItem[] = [
   {
@@ -62,14 +80,10 @@ let mockUsers: SystemUserListItem[] = [
 
 function mockFilterUsers(params: SystemUserQuery): PageResult<SystemUserListItem> {
   let filtered = [...mockUsers];
-  if (params.keyword) {
-    const kw = params.keyword.toLowerCase();
-    filtered = filtered.filter(u =>
-      u.username.toLowerCase().includes(kw) ||
-      u.realName.toLowerCase().includes(kw) ||
-      u.deptName.toLowerCase().includes(kw),
-    );
-  }
+  const username = params.username?.trim().toLowerCase();
+  const realName = params.realName?.trim().toLowerCase();
+  if (username) filtered = filtered.filter(u => u.username.toLowerCase().includes(username));
+  if (realName) filtered = filtered.filter(u => u.realName.toLowerCase().includes(realName));
   if (params.deptId && params.deptId !== 'all') filtered = filtered.filter(u => u.deptId === params.deptId);
   if (params.roleId && params.roleId !== 'all') filtered = filtered.filter(u => u.roleIds.includes(params.roleId!));
   if (params.status !== '' && params.status !== 'all' && params.status !== undefined) filtered = filtered.filter(u => u.status === params.status);
@@ -83,9 +97,11 @@ function mockFilterUsers(params: SystemUserQuery): PageResult<SystemUserListItem
 
 export function listSystemUsers(params: SystemUserQuery) {
   if (useMockApi) return Promise.resolve(mockFilterUsers(params));
-  const { deptId, roleId, status, ...rest } = params;
+  const { username, realName, deptId, roleId, status, ...rest } = params;
   return getResult<PageResult<SystemUserListItem>>('/system/users', {
     ...rest,
+    ...(username?.trim() ? { username: username.trim() } : {}),
+    ...(realName?.trim() ? { realName: realName.trim() } : {}),
     ...(deptId && deptId !== 'all' ? { deptId } : {}),
     ...(roleId && roleId !== 'all' ? { roleId } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
@@ -213,11 +229,11 @@ export function batchDeleteSystemUsers(payload: UserBatchIdsPayload) {
 }
 
 export function listRoleOptions() {
-  if (useMockApi) return Promise.resolve([...mockRoleOptions]);
-  return getResult<RoleOption[]>('/system/roles/options');
+  if (useMockApi) return Promise.resolve(mockRoleOptions.map(normalizeRoleOption));
+  return getResult<RoleOption[]>('/system/roles/options').then(items => items.map(normalizeRoleOption));
 }
 
 export function listDeptOptions() {
-  if (useMockApi) return Promise.resolve([...mockDeptOptions]);
-  return getResult<DeptOption[]>('/system/depts/options');
+  if (useMockApi) return Promise.resolve(mockDeptOptions.map(normalizeDeptOption));
+  return getResult<DeptOption[]>('/system/depts/options').then(items => items.map(normalizeDeptOption));
 }

@@ -28,6 +28,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type { DeptStatus, SystemDeptFormPayload, SystemDeptListItem, SystemDeptQuery } from '../types';
@@ -55,6 +56,7 @@ interface VisibleDeptRow extends SystemDeptListItem {
 
 const depts = ref<SystemDeptListItem[]>([]);
 const loading = ref(false);
+const queryPending = ref(false);
 const formSubmitting = ref(false);
 const actionSubmitting = ref(false);
 const selectedIds = ref<Set<string>>(new Set());
@@ -91,6 +93,7 @@ const parentOptions = computed(() => [
 ]);
 
 const selectedRows = computed(() => flatDepts.value.filter(d => selectedIds.value.has(d.deptId)));
+const queryBusy = computed(() => queryPending.value || loading.value);
 const dialogTitle = computed(() => {
   if (dialogMode.value === 'edit') return '编辑部门';
   if (dialogMode.value === 'child') return '新增下级部门';
@@ -248,9 +251,14 @@ const debouncedSearch = useDebounceFn(() => {
   appliedQuery.deptName = query.deptName?.trim() || '';
   appliedQuery.status = query.status;
   selectedIds.value = new Set();
+  queryPending.value = false;
 }, 250);
 
-function handleSearch() { debouncedSearch(); }
+function handleSearch() {
+  if (queryBusy.value) return;
+  queryPending.value = true;
+  debouncedSearch();
+}
 function handleReset() {
   query.deptName = ''; query.status = 'all';
   appliedQuery.deptName = ''; appliedQuery.status = 'all';
@@ -285,8 +293,24 @@ function validateDeptForm(): boolean {
 
 async function submitDeptForm() {
   if (formSubmitting.value || !validateDeptForm()) return;
-  formSubmitting.value = true;
   const payload: SystemDeptFormPayload = { ...deptForm, deptName: deptForm.deptName.trim() };
+  const currentDept = dialogMode.value === 'edit' ? findDept(editingDeptId.value) : null;
+  if (currentDept?.status === 1 && payload.status === 0) {
+    showConfirm(
+      '确认停用部门',
+      '停用后，该部门及其下级部门会同步停用。员工账号不会自动停用，但不能再将员工新增或调整到停用部门。是否继续？',
+      '确认停用',
+      'warning',
+      () => persistDeptForm(payload),
+    );
+    return;
+  }
+  await persistDeptForm(payload);
+}
+
+async function persistDeptForm(payload: SystemDeptFormPayload) {
+  if (formSubmitting.value) return;
+  formSubmitting.value = true;
   try {
     if (dialogMode.value === 'edit') {
       await updateSystemDept(editingDeptId.value, payload);
@@ -409,11 +433,12 @@ function confirmBatchStatus(status: DeptStatus) {
     }
   }
 
-  const hasBranchDept = rows.some(row => hasChildren(row));
-  const cascadeText = hasBranchDept ? `，其下级部门会同步${actionName}` : '';
+  const description = status === 0
+    ? '停用后，所选部门及其下级部门会同步停用。员工账号不会自动停用，但不能再将员工新增或调整到停用部门。是否继续？'
+    : `确认启用已选的 ${rows.length} 个部门吗？`;
   showConfirm(
     `批量${actionName}`,
-    `确认${actionName}已选的 ${rows.length} 个部门吗${cascadeText}？`,
+    description,
     actionName, 'warning',
     async () => {
       try {
@@ -520,14 +545,15 @@ function confirmBatchDelete() {
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
         <div class="filter-actions">
-          <Button size="sm" :disabled="loading" @click="handleSearch">{{ loading ? '查询中...' : '查询' }}</Button>
-          <Button size="sm" variant="outline" :disabled="loading" @click="handleReset">重置</Button>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+          <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
         </div>
       </div>
     </div>
 
     <!-- Table -->
-    <div class="data-panel">
+    <div class="data-panel relative">
+      <ListLoadingOverlay :visible="queryBusy" />
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-toolbar__title">
@@ -654,7 +680,7 @@ function confirmBatchDelete() {
 
     <!-- Create/Edit Dept Dialog -->
     <Dialog v-model:open="deptDialogVisible" @update:open="(val: boolean) => { if (!val) resetDeptForm() }">
-      <DialogContent class="sm:max-w-[500px]">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{{ dialogTitle }}</DialogTitle>
           <DialogDescription>填写部门信息</DialogDescription>

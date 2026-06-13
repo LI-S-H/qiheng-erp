@@ -17,10 +17,10 @@ let mockPermissions = createInitialPermissions();
 
 function filterPermissions(params: SystemPermissionQuery): PageResult<SystemPermissionListItem> {
   let filtered = [...mockPermissions];
-  const keyword = params.keyword?.trim().toLowerCase();
-  if (keyword) filtered = filtered.filter(item =>
-    item.permissionCode.toLowerCase().includes(keyword) || item.permissionName.toLowerCase().includes(keyword),
-  );
+  const permissionCode = params.permissionCode?.trim().toLowerCase();
+  const permissionName = params.permissionName?.trim().toLowerCase();
+  if (permissionCode) filtered = filtered.filter(item => item.permissionCode.toLowerCase().includes(permissionCode));
+  if (permissionName) filtered = filtered.filter(item => item.permissionName.toLowerCase().includes(permissionName));
   if (params.moduleCode && params.moduleCode !== 'all') filtered = filtered.filter(item => item.moduleCode === params.moduleCode);
   if (params.actionType && params.actionType !== 'all') filtered = filtered.filter(item => item.actionType === params.actionType);
   if (params.status !== '' && params.status !== 'all' && params.status !== undefined) filtered = filtered.filter(item => item.status === params.status);
@@ -32,9 +32,11 @@ function filterPermissions(params: SystemPermissionQuery): PageResult<SystemPerm
 
 export function listSystemPermissions(params: SystemPermissionQuery) {
   if (useMockApi) return Promise.resolve(filterPermissions(params));
-  const { status, moduleCode, actionType, ...rest } = params;
+  const { permissionCode, permissionName, status, moduleCode, actionType, ...rest } = params;
   return getResult<PageResult<SystemPermissionListItem>>('/system/permissions', {
     ...rest,
+    ...(permissionCode?.trim() ? { permissionCode: permissionCode.trim() } : {}),
+    ...(permissionName?.trim() ? { permissionName: permissionName.trim() } : {}),
     ...(moduleCode && moduleCode !== 'all' ? { moduleCode } : {}),
     ...(actionType && actionType !== 'all' ? { actionType } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),

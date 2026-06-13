@@ -16,7 +16,8 @@ export interface SystemUserListItem {
 }
 
 export interface SystemUserQuery {
-  keyword?: string;
+  username?: string;
+  realName?: string;
   deptId?: string;
   roleId?: string;
   status?: UserStatus | '' | 'all';

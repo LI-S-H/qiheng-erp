@@ -1,11 +1,11 @@
 openapi: 3.0.3
 info:
   title: 启衡 ERP 接口文档
-  version: 0.2.0
+  version: 0.3.0
   description: |
     本文档用于启衡 ERP 前后端接口约定，可直接导入 Apifox 使用。
-    当前版本包含登录模块和系统权限下的用户管理、角色管理、部门管理、权限码配置模块。
-    MVP 阶段认证使用 Sa-Token 原始 token，前端登录成功后通过 `satoken` 请求头传递 token。
+    当前版本包含登录模块、系统权限模块、产品分类和产品档案管理模块。
+    MVP 阶段认证使用 Sa-Token 原始 token。登录接口返回 `token` 和 `tokenName`，前端后续请求必须使用返回的 `tokenName` 作为请求头名称、`token` 作为请求头值；当前默认配置为 `satoken`。
 servers:
   - url: http://localhost:8080/api
     description: 本地开发环境
@@ -22,6 +22,10 @@ tags:
     description: 系统权限 - 权限码配置
   - name: SystemOption
     description: 系统权限 - 页面下拉选项
+  - name: ProductCategory
+    description: 产品中心 - 产品分类管理
+  - name: Product
+    description: 产品中心 - 产品档案管理
 paths:
   /auth/login:
     post:
@@ -124,12 +128,20 @@ paths:
       security:
         - SaTokenAuth: []
       parameters:
-        - name: keyword
+        - name: username
           in: query
           required: false
           schema:
             type: string
-          description: 账号、姓名或部门关键词
+            maxLength: 64
+          description: 登录账号，对应 `sys_user.username`，使用包含匹配
+        - name: realName
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: 用户姓名，对应 `sys_user.real_name`，使用包含匹配
         - name: deptId
           in: query
           required: false
@@ -888,7 +900,7 @@ paths:
       tags:
         - SystemDept
       summary: 批量修改部门状态
-      description: 停用父级部门时必须级联停用全部下级；启用下级部门时，其全部上级必须已启用或包含在同一次启用请求中。
+      description: 停用父级部门时必须在同一事务内级联停用全部下级；员工账号不自动停用。启用下级部门时，其全部上级必须已启用或包含在同一次启用请求中。
       operationId: systemDeptBatchStatus
       security:
         - SaTokenAuth: []
@@ -911,13 +923,15 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         "403":
           $ref: '#/components/responses/Forbidden'
+        "409":
+          $ref: '#/components/responses/Conflict'
 
   /system/depts/batch/delete:
     post:
       tags:
         - SystemDept
       summary: 批量删除部门
-      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户的部门需要先调整层级和用户归属。
+      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户时返回 409，禁止删除。
       operationId: systemDeptBatchDelete
       security:
         - SaTokenAuth: []
@@ -940,6 +954,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         "403":
           $ref: '#/components/responses/Forbidden'
+        "409":
+          $ref: '#/components/responses/Conflict'
 
   /system/depts/{deptId}:
     get:
@@ -969,6 +985,7 @@ paths:
       tags:
         - SystemDept
       summary: 编辑部门
+      description: 修改状态为停用时必须执行与状态接口相同的下级级联规则，不能通过编辑接口绕过；员工账号不自动停用。
       operationId: systemDeptUpdate
       security:
         - SaTokenAuth: []
@@ -1000,7 +1017,7 @@ paths:
       tags:
         - SystemDept
       summary: 删除部门
-      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户的部门需要先调整层级和用户归属。
+      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户时返回 409，禁止删除。
       operationId: systemDeptDelete
       security:
         - SaTokenAuth: []
@@ -1017,13 +1034,15 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "404":
           $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
 
   /system/depts/{deptId}/status:
     patch:
       tags:
         - SystemDept
       summary: 修改部门状态
-      description: 停用父级部门时必须级联停用全部下级；上级部门停用时禁止单独启用下级部门。
+      description: 停用父级部门时必须在同一事务内级联停用全部下级，员工账号不自动停用；上级部门停用时禁止单独启用下级部门。
       operationId: systemDeptStatus
       security:
         - SaTokenAuth: []
@@ -1055,10 +1074,14 @@ paths:
       security:
         - SaTokenAuth: []
       parameters:
-        - name: keyword
+        - name: permissionCode
           in: query
           schema: { type: string, maxLength: 100 }
-          description: 权限码或权限名称关键词
+          description: 权限码，对应 `sys_permission.permission_code`，使用包含匹配
+        - name: permissionName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 权限名称，对应 `sys_permission.permission_name`，使用包含匹配
         - name: moduleCode
           in: query
           schema: { type: string, maxLength: 64 }
@@ -1316,13 +1339,462 @@ paths:
                         items:
                           $ref: '#/components/schemas/DeptOption'
 
+  /products:
+    get:
+      tags: [Product]
+      summary: 分页查询产品档案
+      description: 产品编码、产品名称、品牌名称分别使用包含匹配，条码使用精确匹配；多个有效条件按 AND 组合。传入 `categoryId` 时，后端必须根据 `product_category.parent_id` 查询该分类及全部后代分类 ID，再筛选这些分类下的产品。分类名称由后端通过 `product.category_id` 单次关联查询返回，分类层级路径由前端根据分类扁平数据计算。本接口需要 `product:query` 权限。
+      operationId: productPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: productCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 产品编码，对应 `product.product_code`，使用包含匹配
+        - name: productName
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: 产品名称，对应 `product.product_name`，使用包含匹配
+        - name: brandName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 品牌名称，对应 `product.brand_name`，使用包含匹配
+        - name: barcode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 产品条码，对应 `product.barcode`，使用精确匹配
+        - name: categoryId
+          in: query
+          schema: { type: string }
+          description: 产品分类 ID；查询范围包含当前分类及其全部后代分类，前端只传分类 ID，不传路径或后代 ID 集合
+        - name: status
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProductPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Product]
+      summary: 新增产品档案
+      description: 产品编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交产品编码；启用产品不能归属停用分类。本接口需要 `product:manage` 权限。
+      operationId: productCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductFormRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/batch/status:
+    patch:
+      tags: [Product]
+      summary: 批量修改产品状态
+      description: 停用产品后不能用于新建采购单或销售单；启用时后端必须校验产品所属分类仍为启用状态。本接口需要 `product:manage` 权限。
+      operationId: productBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/batch/delete:
+    post:
+      tags: [Product]
+      summary: 批量删除产品档案
+      description: 批量逻辑删除产品；任一产品已被库存、采购或销售业务数据引用时整批返回 409。本接口需要 `product:manage` 权限。
+      operationId: productBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/{productId}:
+    get:
+      tags: [Product]
+      summary: 获取产品档案详情
+      description: 本接口需要 `product:query` 权限。
+      operationId: productDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Product]
+      summary: 编辑产品档案
+      description: 产品编码创建后不可修改，编辑请求不接收产品编码；启用产品不能归属停用分类。通过编辑接口停用产品时遵守与状态接口相同的业务规则。本接口需要 `product:manage` 权限。
+      operationId: productUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductFormRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Product]
+      summary: 删除产品档案
+      description: 逻辑删除产品；已被库存、采购或销售业务数据引用时返回 409，避免破坏历史业务链路。本接口需要 `product:manage` 权限。
+      operationId: productDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/{productId}/status:
+    patch:
+      tags: [Product]
+      summary: 修改产品状态
+      description: 停用产品后不能用于新建采购单或销售单，历史单据不受影响；启用时必须校验所属分类为启用状态。本接口需要 `product:manage` 权限。
+      operationId: productStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /product/categories:
+    get:
+      tags: [ProductCategory]
+      summary: 查询产品分类列表
+      description: |
+        返回 `product_category` 未删除数据的扁平数组，并通过一次可执行的聚合查询返回每个分类直接关联的 `productCount`。
+        后端不组装 `children`、上级分类名称或层级路径；前端根据 `parentId` 构建分类树、计算路径并完成名称和状态筛选。
+        本接口需要 `product:query` 权限。
+      operationId: productCategoryList
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProductCategory' }
+              example:
+                code: 0
+                message: success
+                data:
+                  - categoryId: "1910000000000000100"
+                    parentId: "0"
+                    categoryName: 食品饮料
+                    status: 1
+                    productCount: 0
+                    createdAt: "2026-06-09 09:10:00"
+                    updatedAt: "2026-06-12 14:20:00"
+                  - categoryId: "1910000000000000101"
+                    parentId: "1910000000000000100"
+                    categoryName: 饮料冲调
+                    status: 1
+                    productCount: 18
+                    createdAt: "2026-06-09 09:20:00"
+                    updatedAt: "2026-06-12 10:16:00"
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [ProductCategory]
+      summary: 新增产品分类
+      description: 同一上级分类下的分类名称不能重复；新增启用分类时，其上级分类必须已启用。本接口需要 `product:manage` 权限。
+      operationId: productCategoryCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryCreateRequest' }
+      responses:
+        "200":
+          description: 新增成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProductCategory' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /product/categories/batch/status:
+    patch:
+      tags: [ProductCategory]
+      summary: 批量修改产品分类状态
+      description: 停用父级分类时，后端必须在同一事务内级联停用全部下级分类，并停用当前分类和全部下级分类直接关联的未删除产品；启用分类不会自动重新启用产品。启用下级分类时，其全部上级必须已启用或包含在同一次启用请求中。本接口需要 `product:manage` 权限。
+      operationId: productCategoryBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /product/categories/batch/delete:
+    post:
+      tags: [ProductCategory]
+      summary: 批量删除产品分类
+      description: 逻辑删除分类；存在下级分类或仍有产品直接关联的分类不能删除。本接口需要 `product:manage` 权限。
+      operationId: productCategoryBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /product/categories/{categoryId}:
+    get:
+      tags: [ProductCategory]
+      summary: 获取产品分类详情
+      description: 本接口需要 `product:query` 权限。
+      operationId: productCategoryDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProductCategory' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [ProductCategory]
+      summary: 编辑产品分类
+      description: 禁止把上级分类设置为自身或自身下级；同级分类名称不能重复；通过编辑接口停用分类时必须执行与状态接口相同的下级分类和关联产品级联规则。本接口需要 `product:manage` 权限。
+      operationId: productCategoryUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryUpdateRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProductCategory' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [ProductCategory]
+      summary: 删除产品分类
+      description: 逻辑删除分类；存在下级分类或仍有产品直接关联时返回 409。本接口需要 `product:manage` 权限。
+      operationId: productCategoryDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /product/categories/{categoryId}/status:
+    patch:
+      tags: [ProductCategory]
+      summary: 修改产品分类状态
+      description: 停用父级分类时，后端必须在同一事务内级联停用全部下级分类和关联产品；上级分类停用时禁止单独启用下级分类。启用分类不会自动重新启用产品。本接口需要 `product:manage` 权限。
+      operationId: productCategoryStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
 components:
   securitySchemes:
     SaTokenAuth:
       type: apiKey
       in: header
       name: satoken
-      description: Sa-Token 原始 token，前端登录后通过 satoken 请求头传递
+      description: Sa-Token 原始 token。当前默认请求头为 satoken，实际调用以前端登录响应中的 tokenName 为准
   parameters:
     UserId:
       name: userId
@@ -1350,7 +1822,21 @@ components:
       required: true
       schema:
         type: string
-      description: 部门 ID，对应 `sys_dept.id`
+      description: 权限 ID，对应 `sys_permission.id`
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 产品分类 ID，对应 `product_category.id`
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 产品 ID，对应 `product.id`
   responses:
     BadRequest:
       description: 请求参数错误
@@ -2224,3 +2710,242 @@ components:
         status:
           type: integer
           enum: [0, 1]
+
+    ProductPage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/Product' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    Product:
+      type: object
+      required:
+        - productId
+        - productCode
+        - productName
+        - categoryName
+        - brandName
+        - unitName
+        - specification
+        - referencePurchasePrice
+        - referenceSalePrice
+        - safetyStockQty
+        - status
+        - remark
+        - createdAt
+        - updatedAt
+      properties:
+        productId:
+          type: string
+          description: 产品 ID，对应 `product.id`
+        productCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: 产品编码，对应 `product.product_code`，由后端生成、全局唯一且创建后不可修改
+        productName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 产品名称，对应 `product.product_name`
+        categoryId:
+          type: string
+          nullable: true
+          description: 分类 ID，对应 `product.category_id`
+        categoryName:
+          type: string
+          nullable: true
+          readOnly: true
+          description: 分类展示名称，由后端按 `category_id` 关联 `product_category.category_name` 返回，不在产品表冗余存储；未分类时返回 `null`，无需拼装为空字符串或层级路径
+        brandName:
+          type: string
+          maxLength: 100
+        unitName:
+          type: string
+          minLength: 1
+          maxLength: 32
+        specification:
+          type: string
+          maxLength: 255
+        barcode:
+          type: string
+          nullable: true
+          maxLength: 64
+        referencePurchasePrice:
+          type: number
+          format: double
+          minimum: 0
+        referenceSalePrice:
+          type: number
+          format: double
+          minimum: 0
+        safetyStockQty:
+          type: number
+          format: double
+          minimum: 0
+        status:
+          type: integer
+          enum: [0, 1]
+        remark:
+          type: string
+          maxLength: 500
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    ProductFormRequest:
+      type: object
+      required:
+        - productName
+        - categoryId
+        - brandName
+        - unitName
+        - specification
+        - barcode
+        - referencePurchasePrice
+        - referenceSalePrice
+        - safetyStockQty
+        - status
+        - remark
+      properties:
+        productName: { type: string, minLength: 1, maxLength: 200 }
+        categoryId:
+          type: string
+          nullable: true
+        brandName: { type: string, maxLength: 100 }
+        unitName: { type: string, minLength: 1, maxLength: 32 }
+        specification: { type: string, maxLength: 255 }
+        barcode:
+          type: string
+          nullable: true
+          maxLength: 64
+        referencePurchasePrice: { type: number, format: double, minimum: 0 }
+        referenceSalePrice: { type: number, format: double, minimum: 0 }
+        safetyStockQty: { type: number, format: double, minimum: 0 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    ProductStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: integer, enum: [0, 1] }
+
+    ProductBatchStatusRequest:
+      type: object
+      required: [productIds, status]
+      properties:
+        productIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status: { type: integer, enum: [0, 1] }
+
+    ProductBatchDeleteRequest:
+      type: object
+      required: [productIds]
+      properties:
+        productIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+
+    ProductCategory:
+      type: object
+      required: [categoryId, parentId, categoryName, status, productCount, createdAt, updatedAt]
+      properties:
+        categoryId:
+          type: string
+          description: 分类 ID，对应 `product_category.id`
+        parentId:
+          type: string
+          description: 上级分类 ID，对应 `product_category.parent_id`；顶级分类为 `"0"`
+        categoryName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 分类名称，对应 `product_category.category_name`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        productCount:
+          type: integer
+          minimum: 0
+          description: 当前分类直接关联的未删除产品数量，通过 `product.category_id` 聚合，不包含下级分类产品
+        createdAt:
+          type: string
+          description: 创建时间，对应 `product_category.created_at`
+        updatedAt:
+          type: string
+          description: 更新时间，对应 `product_category.updated_at`
+
+    ProductCategoryCreateRequest:
+      type: object
+      required: [parentId, categoryName, status]
+      properties:
+        parentId:
+          type: string
+          description: 上级分类 ID；顶级分类传 `"0"`
+        categoryName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 分类名称，提交前去除首尾空格，同一上级下不能重复
+        status:
+          type: integer
+          enum: [0, 1]
+
+    ProductCategoryUpdateRequest:
+      type: object
+      required: [parentId, categoryName, status]
+      properties:
+        parentId:
+          type: string
+          description: 上级分类 ID；禁止设置为自身或自身下级
+        categoryName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 分类名称，提交前去除首尾空格，同一上级下不能重复
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态修改必须遵守分类父子级联约束
+
+    ProductCategoryStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: integer
+          enum: [0, 1]
+
+    ProductCategoryBatchStatusRequest:
+      type: object
+      required: [categoryIds, status]
+      properties:
+        categoryIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status:
+          type: integer
+          enum: [0, 1]
+
+    ProductCategoryBatchDeleteRequest:
+      type: object
+      required: [categoryIds]
+      properties:
+        categoryIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }

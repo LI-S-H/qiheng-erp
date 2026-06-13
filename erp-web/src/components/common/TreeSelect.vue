@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChevronDown } from 'lucide-vue-next';
 import TreeSelectNode from './TreeSelectNode.vue';
+import { useExclusiveDropdown } from '@/shared/composables/use-exclusive-dropdown';
 
 interface TreeNode {
   deptId: string;
@@ -29,6 +30,7 @@ const emit = defineEmits<{
 }>();
 
 const isOpen = ref(false);
+const { setOpen } = useExclusiveDropdown(isOpen);
 const expandedIds = ref<Set<string>>(new Set(collectAllIds(props.options)));
 
 function collectAllIds(nodes: TreeNode[]): string[] {
@@ -76,7 +78,7 @@ function selectNode(id: string) {
 </script>
 
 <template>
-  <Popover v-model:open="isOpen">
+  <Popover :open="isOpen" @update:open="setOpen">
     <PopoverTrigger as-child>
       <Button
         variant="outline"
@@ -90,7 +92,7 @@ function selectNode(id: string) {
         <ChevronDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </Button>
     </PopoverTrigger>
-    <PopoverContent class="w-[--reka-popover-trigger-width] p-0" align="start">
+    <PopoverContent data-tree-select-content class="w-[--reka-popover-trigger-width] p-0" align="start">
       <ScrollArea class="h-[250px] p-2">
         <template v-for="node in props.options" :key="node.deptId">
           <TreeSelectNode

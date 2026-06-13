@@ -597,3 +597,41 @@ POST   /warehouse/warehouses/batch/delete
 ```
 
 查询接口需要 `warehouse:query`，写接口需要 `warehouse:manage`。仓库编码由后端生成并由唯一索引兜底，删除引用保护返回 `409 Conflict`。
+
+## 15. 仓库库存模块：库存管理
+
+### 15.1 页面范围
+
+库存管理页面路径为 `/warehouse/stocks`，用于只读查询仓库与产品维度的当前库存余额，包含库存记录摘要、仓库/产品编码/产品名称/库存状态独立筛选、分页列表和刷新操作。库存变化必须由采购入库、销售出库、退货或库存调整形成，当前页不提供直接修改库存入口。
+
+### 15.2 页面与数据边界
+
+- 当前库存和锁定库存来源于 `warehouse_stock.stock_qty`、`warehouse_stock.locked_qty`，可用库存由服务层计算 `stock_qty - locked_qty`。
+- 安全库存来源于关联的 `product.safety_stock_qty`；低库存按 `stock_qty <= safety_stock_qty` 判断，不新增库存预警表。
+- 仓库使用 `warehouseId` 精确筛选，产品编码和产品名称分别使用包含匹配，库存状态使用明确派生条件筛选，多个条件按 AND 组合，不提供跨字段 `keyword`。
+- 不同产品的单位可能不同，摘要区只展示库存记录数、涉及仓库数、涉及产品数和低库存记录数，不跨产品汇总库存数量。
+- 页面展示 `warehouse_stock` 中的仓库、产品和单位快照；产品或仓库名称变更时由后端按数据库规则维护当前余额快照，历史出入库凭证仍保留业务发生时快照。
+- 查询、重置、刷新和分页均使用短防抖，点击后立即显示数据区加载层并锁定重复操作。
+
+### 15.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 库存ID | `warehouse_stock.id`，BIGINT 按字符串传输 |
+| 仓库ID、编码、名称 | `warehouse_stock.warehouse_id`、`warehouse_code`、`warehouse_name` |
+| 产品ID、编码、名称 | `warehouse_stock.product_id`、`product_code`、`product_name` |
+| 单位 | `warehouse_stock.unit_name` |
+| 当前库存 | `warehouse_stock.stock_qty` |
+| 锁定库存 | `warehouse_stock.locked_qty` |
+| 可用库存 | 服务层计算 `stock_qty - locked_qty` |
+| 安全库存 | 关联 `product.safety_stock_qty` |
+| 库存状态 | 前端根据当前库存、锁定库存、可用库存和安全库存展示 |
+| 更新时间 | `warehouse_stock.updated_at` |
+
+### 15.4 接口
+
+```text
+GET /warehouse/stocks
+```
+
+接口需要 `warehouse:query` 权限。响应摘要基于当前全部筛选结果计算，不得只统计当前分页记录。

@@ -27,6 +27,9 @@ const warehouseSchema = readProjectFile('docs', 'database', 'mvp-warehouse-schem
 const warehouseApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'api.ts');
 const warehouseTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'types.ts');
 const warehouseViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'views', 'WarehouseManageView.vue');
+const warehouseStockApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'api.ts');
+const warehouseStockTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'types.ts');
+const warehouseStockViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'views', 'WarehouseStockManageView.vue');
 const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
 const listViewSources = [
   readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'views', 'UserManageView.vue'),
@@ -36,6 +39,7 @@ const listViewSources = [
   readProjectFile('erp-web', 'src', 'modules', 'product', 'categories', 'views', 'ProductCategoryManageView.vue'),
   productViewSource,
   warehouseViewSource,
+  warehouseStockViewSource,
 ];
 const anchoredSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'AnchoredSelect.vue');
 const treeSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'TreeSelect.vue');
@@ -75,6 +79,7 @@ const requiredPaths = [
   '/warehouse/warehouses/batch/delete:',
   '/warehouse/warehouses/{warehouseId}:',
   '/warehouse/warehouses/{warehouseId}/status:',
+  '/warehouse/stocks:',
 ];
 
 for (const requiredPath of requiredPaths) {
@@ -255,6 +260,33 @@ for (const fragment of ['data-warehouse-code', '保存后由系统生成', 'ware
 if (!warehouseApiSource.includes('generateMockWarehouseCode()') || !source.includes('仓库编码由后端统一生成')) {
   throw new Error('仓库编码的后端生成契约或 Mock 实现不完整');
 }
+for (const fragment of [
+  'availableQty 必须等于 stockQty - lockedQty',
+  "state === 'LOW_STOCK'",
+  'WarehouseStockSummary',
+  'stockRecordCount',
+  'warehouseCount',
+  'productCount',
+  'lowStockCount',
+]) {
+  if (!warehouseStockApiSource.includes(fragment) && !warehouseStockTypeSource.includes(fragment)) {
+    throw new Error(`库存管理前端契约缺少：${fragment}`);
+  }
+}
+for (const fragment of [
+  'stock_qty - locked_qty',
+  'stock_qty <= safety_stock_qty',
+  '不同单位的库存数量不得跨产品汇总',
+  "enum: [AVAILABLE, LOCKED, LOW_STOCK, OUT_OF_STOCK]",
+  "data: { $ref: '#/components/schemas/WarehouseStockPage' }",
+]) {
+  if (!source.includes(fragment)) throw new Error(`库存管理 OpenAPI 缺少：${fragment}`);
+}
+if (!warehouseStockViewSource.includes('库存变更请通过出入库或库存调整业务完成')
+  || !warehouseStockViewSource.includes('filter-grid--stocks')
+  || !pageDesign.includes('## 15. 仓库库存模块：库存管理')) {
+  throw new Error('库存管理页面边界、响应式布局或页面设计文档不完整');
+}
 if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
   || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {
   throw new Error('已完成列表页未统一接入刷新防抖和即时加载状态');
@@ -314,4 +346,4 @@ for (const document of [databaseOverview, permissionSchema, projectPlan]) {
   }
 }
 
-console.log(`OPENAPI_OK: ${references.length} 个引用完整，21 张数据库表、系统权限、产品与仓库管理契约已对齐`);
+console.log(`OPENAPI_OK: ${references.length} 个引用完整，21 张数据库表、系统权限、产品与仓库库存契约已对齐`);

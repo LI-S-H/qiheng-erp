@@ -1,0 +1,87 @@
+const {
+  runSmoke,
+  tableRow,
+  assertFixedTableLayout,
+  clickQueryAndAssertLoading,
+  clickPaginationAndAssertLoading,
+  clickRefreshAndAssertLoading,
+  clickResetAndAssertLoading,
+} = require('./smoke-helpers.cjs');
+
+async function selectFilter(page, index, label) {
+  const trigger = page.locator('.filter-panel').getByRole('combobox').nth(index);
+  await trigger.click();
+  await page.locator('[data-anchored-select-content][data-state="open"]').getByText(label, { exact: true }).click();
+}
+
+runSmoke({
+  route: '/warehouse/stocks',
+  screenshot: 'smoke-warehouse-stocks.png',
+  async test(page) {
+    await page.getByRole('heading', { name: '库存管理' }).waitFor();
+    await tableRow(page, 'P0001').waitFor();
+    await assertFixedTableLayout(page, 9);
+
+    const summaryText = await page.locator('.summary-strip').innerText();
+    for (const expected of ['库存记录\n15', '涉及仓库\n8', '涉及产品\n14', '低库存记录\n7']) {
+      if (!summaryText.includes(expected)) throw new Error(`库存摘要不正确：缺少 ${expected}`);
+    }
+    await clickRefreshAndAssertLoading(page, 'smoke-warehouse-stocks-refresh-loading.png');
+
+    await page.getByPlaceholder('请输入产品名称').fill('复印纸');
+    await clickQueryAndAssertLoading(page, 'smoke-warehouse-stocks-query-loading.png');
+    await tableRow(page, 'P0007').waitFor();
+    await tableRow(page, 'P0001').waitFor({ state: 'detached' });
+    await clickResetAndAssertLoading(page, 'smoke-warehouse-stocks-reset-loading.png');
+
+    await selectFilter(page, 0, 'WH002 华南中心仓');
+    await clickQueryAndAssertLoading(page);
+    const warehouseRows = page.locator('tbody tr');
+    if (await warehouseRows.count() !== 3) throw new Error('仓库筛选未返回预期的 3 条库存记录');
+    for (const text of await warehouseRows.allInnerTexts()) {
+      if (!text.includes('WH002')) throw new Error(`仓库筛选混入其他仓库：${text}`);
+    }
+    await clickResetAndAssertLoading(page);
+
+    await selectFilter(page, 1, '低库存');
+    await clickQueryAndAssertLoading(page);
+    await tableRow(page, 'P0002').waitFor();
+    await tableRow(page, 'P0003').waitFor({ state: 'detached' });
+    const lowRows = page.locator('tbody tr');
+    if (await lowRows.count() !== 7) throw new Error('低库存派生条件未按 stock_qty <= safety_stock_qty 生效');
+    await clickResetAndAssertLoading(page);
+
+    await page.getByPlaceholder('如 P0001').fill('P0014');
+    await clickQueryAndAssertLoading(page);
+    const lockedOutRow = tableRow(page, 'P0014');
+    await lockedOutRow.waitFor();
+    const lockedOutText = await lockedOutRow.innerText();
+    if (!lockedOutText.includes('8') || !lockedOutText.includes('0') || !lockedOutText.includes('低库存')) {
+      throw new Error(`库存数量或状态展示不正确：${lockedOutText}`);
+    }
+    await clickResetAndAssertLoading(page);
+
+    await clickPaginationAndAssertLoading(page, '下一页');
+    await tableRow(page, 'P0004').waitFor();
+    await tableRow(page, 'P0001').waitFor({ state: 'detached' });
+    await clickPaginationAndAssertLoading(page, '上一页');
+    await tableRow(page, 'P0001').waitFor();
+
+    await page.setViewportSize({ width: 1115, height: 838 });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: '库存管理' }).waitFor();
+    await tableRow(page, 'P0001').waitFor();
+    const filterColumns = await page.locator('.filter-grid--stocks').evaluate(element =>
+      getComputedStyle(element).gridTemplateColumns.split(' ').length,
+    );
+    if (filterColumns !== 2) throw new Error(`库存筛选区在中等宽度下应为两列，当前为 ${filterColumns} 列`);
+    await page.screenshot({ path: 'smoke-warehouse-stocks-1115.png', fullPage: true });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: '库存管理' }).waitFor();
+    await tableRow(page, 'P0001').waitFor();
+  },
+}).then(() => {
+  console.log('SMOKE_OK: 库存余额、独立筛选、派生状态、分页与加载反馈通过');
+});

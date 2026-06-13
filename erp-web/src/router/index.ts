@@ -11,6 +11,7 @@ import PermissionManageView from '@/modules/system/permissions/views/PermissionM
 import ProductCategoryManageView from '@/modules/product/categories/views/ProductCategoryManageView.vue';
 import ProductManageView from '@/modules/product/products/views/ProductManageView.vue';
 import WarehouseManageView from '@/modules/warehouse/warehouses/views/WarehouseManageView.vue';
+import WarehouseStockManageView from '@/modules/warehouse/stocks/views/WarehouseStockManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -109,7 +110,10 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'warehouse/stocks',
         name: 'warehouse-stocks',
-        ...placeholder('库存管理', '仓储库存', '查询仓库和产品维度的当前库存 锁定库存和可用库存'),
+        component: WarehouseStockManageView,
+        meta: {
+          title: '库存管理',
+        },
       },
       {
         path: 'warehouse/stock-bills',

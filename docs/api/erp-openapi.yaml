@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: 启衡 ERP 接口文档
-  version: 0.4.0
+  version: 0.5.0
   description: |
     本文档用于启衡 ERP 前后端接口约定，可直接导入 Apifox 使用。
-    当前版本包含登录模块、系统权限模块、产品模块和仓库管理页面。
+    当前版本包含登录模块、系统权限模块、产品模块、仓库管理和库存管理页面。
     MVP 阶段认证使用 Sa-Token 原始 token。登录接口返回 `token` 和 `tokenName`，前端后续请求必须使用返回的 `tokenName` 作为请求头名称、`token` 作为请求头值；当前默认配置为 `satoken`。
 servers:
   - url: http://localhost:8080/api
@@ -28,6 +28,8 @@ tags:
     description: 产品中心 - 产品档案管理
   - name: Warehouse
     description: 仓储库存 - 仓库管理
+  - name: WarehouseStock
+    description: 仓储库存 - 当前库存余额查询
 paths:
   /auth/login:
     post:
@@ -1340,6 +1342,60 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/DeptOption'
+
+  /warehouse/stocks:
+    get:
+      tags: [WarehouseStock]
+      summary: 分页查询当前库存
+      description: |
+        查询 `warehouse_stock` 当前库存余额，并关联 `product.safety_stock_qty` 用于低库存判断。
+        `availableQty` 由服务层按 `stock_qty - locked_qty` 计算；不同单位的库存数量不得跨产品汇总。
+        仓库使用 `warehouseId` 精确匹配，产品编码和产品名称分别使用包含匹配，库存状态使用派生条件精确筛选，多个有效条件按 AND 组合。
+        `LOW_STOCK` 表示 `stock_qty <= safety_stock_qty`，`OUT_OF_STOCK` 表示 `stock_qty = 0`，`LOCKED` 表示 `locked_qty > 0`，`AVAILABLE` 表示 `stock_qty - locked_qty > 0`。
+        本接口需要 `warehouse:query` 权限。
+      operationId: warehouseStockPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: warehouseId
+          in: query
+          schema: { type: string }
+          description: 仓库 ID，对应 `warehouse_stock.warehouse_id`，使用精确匹配
+        - name: productCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 产品编码，对应 `warehouse_stock.product_code`，使用包含匹配
+        - name: productName
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: 产品名称，对应 `warehouse_stock.product_name`，使用包含匹配
+        - name: stockState
+          in: query
+          schema:
+            type: string
+            enum: [AVAILABLE, LOCKED, LOW_STOCK, OUT_OF_STOCK]
+          description: 库存状态，由库存数量、锁定数量和产品安全库存派生
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WarehouseStockPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
 
   /warehouse/warehouses:
     get:
@@ -2944,6 +3000,51 @@ components:
         status:
           type: integer
           enum: [0, 1]
+
+    WarehouseStockPage:
+      type: object
+      required: [records, total, pageNum, pageSize, summary]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/WarehouseStock' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        summary: { $ref: '#/components/schemas/WarehouseStockSummary' }
+
+    WarehouseStock:
+      type: object
+      required: [stockId, warehouseId, warehouseCode, warehouseName, productId, productCode, productName, unitName, stockQty, lockedQty, availableQty, safetyStockQty, updatedAt]
+      properties:
+        stockId:
+          type: string
+          description: 库存 ID，对应 `warehouse_stock.id`，BIGINT 按字符串传输
+        warehouseId:
+          type: string
+          description: 仓库 ID，对应 `warehouse_stock.warehouse_id`，BIGINT 按字符串传输
+        warehouseCode: { type: string, maxLength: 64, description: 对应 `warehouse_stock.warehouse_code` }
+        warehouseName: { type: string, maxLength: 100, description: 对应 `warehouse_stock.warehouse_name` }
+        productId:
+          type: string
+          description: 产品 ID，对应 `warehouse_stock.product_id`，BIGINT 按字符串传输
+        productCode: { type: string, maxLength: 64, description: 对应 `warehouse_stock.product_code` }
+        productName: { type: string, maxLength: 200, description: 对应 `warehouse_stock.product_name` }
+        unitName: { type: string, maxLength: 32, description: 对应 `warehouse_stock.unit_name` }
+        stockQty: { type: number, format: double, minimum: 0, description: 当前库存，对应 `warehouse_stock.stock_qty` }
+        lockedQty: { type: number, format: double, minimum: 0, description: 锁定库存，对应 `warehouse_stock.locked_qty` }
+        availableQty: { type: number, format: double, minimum: 0, description: 服务层计算 `stock_qty - locked_qty` }
+        safetyStockQty: { type: number, format: double, minimum: 0, description: 关联 `product.safety_stock_qty` }
+        updatedAt: { type: string, description: 对应 `warehouse_stock.updated_at` }
+
+    WarehouseStockSummary:
+      type: object
+      required: [stockRecordCount, warehouseCount, productCount, lowStockCount]
+      properties:
+        stockRecordCount: { type: integer, minimum: 0, description: 当前筛选范围内库存余额记录数 }
+        warehouseCount: { type: integer, minimum: 0, description: 当前筛选范围内去重仓库数 }
+        productCount: { type: integer, minimum: 0, description: 当前筛选范围内去重产品数 }
+        lowStockCount: { type: integer, minimum: 0, description: 当前筛选范围内 `stock_qty <= safety_stock_qty` 的记录数 }
 
     WarehousePage:
       type: object

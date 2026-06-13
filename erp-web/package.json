@@ -15,8 +15,9 @@
     "smoke:system-permissions": "node scripts/smoke-system-permissions.cjs",
     "smoke:product-categories": "node scripts/smoke-product-categories.cjs",
     "smoke:product-products": "node scripts/smoke-product-products.cjs",
+    "smoke:warehouse-warehouses": "node scripts/smoke-warehouse-warehouses.cjs",
     "check:openapi": "node scripts/check-openapi.cjs",
-    "test:delivery": "node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs",
+    "test:delivery": "node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

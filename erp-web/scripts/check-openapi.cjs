@@ -22,6 +22,11 @@ const preCommitHook = readProjectFile('.githooks', 'pre-commit');
 const productApiSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'api.ts');
 const productTypeSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'types.ts');
 const productViewSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'views', 'ProductManageView.vue');
+const warehouseSql = readProjectFile('docs', 'database', 'sql', '003_mvp_warehouse.sql');
+const warehouseSchema = readProjectFile('docs', 'database', 'mvp-warehouse-schema.md');
+const warehouseApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'api.ts');
+const warehouseTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'types.ts');
+const warehouseViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'views', 'WarehouseManageView.vue');
 const anchoredSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'AnchoredSelect.vue');
 const treeSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'TreeSelect.vue');
 const exclusiveDropdownSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-exclusive-dropdown.ts');
@@ -55,6 +60,11 @@ const requiredPaths = [
   '/product/categories/batch/delete:',
   '/product/categories/{categoryId}:',
   '/product/categories/{categoryId}/status:',
+  '/warehouse/warehouses:',
+  '/warehouse/warehouses/batch/status:',
+  '/warehouse/warehouses/batch/delete:',
+  '/warehouse/warehouses/{warehouseId}:',
+  '/warehouse/warehouses/{warehouseId}/status:',
 ];
 
 for (const requiredPath of requiredPaths) {
@@ -198,6 +208,49 @@ if (!productApiSource.includes('generateMockProductCode()')
   || !productViewSource.includes('data-currency-prefix')) {
   throw new Error('产品编码系统生成展示或金额货币前缀实现不完整');
 }
+for (const fragment of ['warehouseCode', 'warehouseName', 'contactName', 'contactPhone', '多个有效条件按 AND 组合']) {
+  if (!source.includes(fragment)) throw new Error(`仓库管理 OpenAPI 缺少字段级查询契约：${fragment}`);
+}
+const warehouseSchemaStart = source.indexOf('    Warehouse:');
+const warehouseSchemaEnd = source.indexOf('    WarehouseCreateRequest:', warehouseSchemaStart);
+const warehouseResponseSchema = source.slice(warehouseSchemaStart, warehouseSchemaEnd);
+if (warehouseSchemaStart < 0 || warehouseSchemaEnd < 0 || !warehouseResponseSchema.includes('warehouseCode:')
+  || !warehouseResponseSchema.includes('readOnly: true')) {
+  throw new Error('仓库返回结构必须包含创建后只读的仓库编码');
+}
+const warehouseUpdateStart = source.indexOf('    WarehouseUpdateRequest:');
+const warehouseUpdateEnd = source.indexOf('    WarehouseStatusRequest:', warehouseUpdateStart);
+const warehouseUpdateSchema = source.slice(warehouseUpdateStart, warehouseUpdateEnd);
+if (warehouseUpdateStart < 0 || warehouseUpdateEnd < 0 || warehouseUpdateSchema.includes('warehouseCode:')) {
+  throw new Error('仓库编辑请求不得包含创建后不可修改的 warehouseCode');
+}
+const warehouseUpdateTypeStart = warehouseTypeSource.indexOf('export type WarehouseUpdatePayload');
+const warehouseUpdateTypeEnd = warehouseTypeSource.indexOf('export interface WarehouseBatchIdsPayload', warehouseUpdateTypeStart);
+if (warehouseUpdateTypeStart < 0 || warehouseUpdateTypeEnd < 0
+  || warehouseTypeSource.slice(warehouseUpdateTypeStart, warehouseUpdateTypeEnd).includes('warehouseCode:')) {
+  throw new Error('前端仓库编辑 DTO 不得包含 warehouseCode');
+}
+for (const fragment of ['normalizeStringId', 'normalizeBinaryStatus', 'normalizeWarehousePage']) {
+  if (!warehouseApiSource.includes(fragment)) throw new Error(`仓库 API 缺少响应字段转换：${fragment}`);
+}
+for (const fragment of ['data-warehouse-code', 'warehouseDisableWarning', 'table-fixed']) {
+  if (!warehouseViewSource.includes(fragment)) throw new Error(`仓库管理页面缺少关键交互实现：${fragment}`);
+}
+for (const fragment of [
+  '仓库编码创建后不可修改',
+  '同步 `warehouse_stock.warehouse_name`',
+  '存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时禁止删除',
+]) {
+  if (!source.includes(fragment) && !warehouseSchema.includes(fragment)) {
+    throw new Error(`仓库管理缺少后端业务边界：${fragment}`);
+  }
+}
+if (!source.includes('存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时返回 409')) {
+  throw new Error('仓库删除接口缺少 409 Conflict 引用保护契约');
+}
+if (!warehouseSql.includes('UNIQUE KEY uk_warehouse_code (warehouse_code)')) {
+  throw new Error('仓库表缺少仓库编码唯一索引');
+}
 if (!exclusiveDropdownSource.includes("erp:dropdown-open")
   || !anchoredSelectSource.includes('useExclusiveDropdown(open)')
   || !treeSelectSource.includes('useExclusiveDropdown(isOpen)')) {
@@ -235,4 +288,4 @@ for (const document of [databaseOverview, permissionSchema, projectPlan]) {
   }
 }
 
-console.log(`OPENAPI_OK: ${references.length} 个引用完整，21 张数据库表、系统权限、产品分类及产品档案契约已对齐`);
+console.log(`OPENAPI_OK: ${references.length} 个引用完整，21 张数据库表、系统权限、产品与仓库管理契约已对齐`);

@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: 启衡 ERP 接口文档
-  version: 0.3.0
+  version: 0.4.0
   description: |
     本文档用于启衡 ERP 前后端接口约定，可直接导入 Apifox 使用。
-    当前版本包含登录模块、系统权限模块、产品分类和产品档案管理模块。
+    当前版本包含登录模块、系统权限模块、产品模块和仓库管理页面。
     MVP 阶段认证使用 Sa-Token 原始 token。登录接口返回 `token` 和 `tokenName`，前端后续请求必须使用返回的 `tokenName` 作为请求头名称、`token` 作为请求头值；当前默认配置为 `satoken`。
 servers:
   - url: http://localhost:8080/api
@@ -26,6 +26,8 @@ tags:
     description: 产品中心 - 产品分类管理
   - name: Product
     description: 产品中心 - 产品档案管理
+  - name: Warehouse
+    description: 仓储库存 - 仓库管理
 paths:
   /auth/login:
     post:
@@ -1339,6 +1341,231 @@ paths:
                         items:
                           $ref: '#/components/schemas/DeptOption'
 
+  /warehouse/warehouses:
+    get:
+      tags: [Warehouse]
+      summary: 分页查询仓库
+      description: |
+        查询未删除的 `warehouse` 数据。仓库编码、仓库名称、联系人和联系电话分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
+        不接收含义不明确的 `keyword` 参数。本接口需要 `warehouse:query` 权限。
+      operationId: warehousePage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: warehouseCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 仓库编码，对应 `warehouse.warehouse_code`，使用包含匹配
+        - name: warehouseName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 仓库名称，对应 `warehouse.warehouse_name`，使用包含匹配
+        - name: contactName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 联系人，对应 `warehouse.contact_name`，使用包含匹配
+        - name: contactPhone
+          in: query
+          schema: { type: string, maxLength: 32 }
+          description: 联系电话，对应 `warehouse.contact_phone`，使用包含匹配
+        - name: status
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WarehousePage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Warehouse]
+      summary: 新增仓库
+      description: 仓库编码由用户创建时填写，去除首尾空格后必须唯一，创建成功后不可修改。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Warehouse' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/warehouses/batch/status:
+    patch:
+      tags: [Warehouse]
+      summary: 批量修改仓库状态
+      description: 停用后仓库不能再用于新建采购、销售、退货或库存调整业务，但历史单据和现有库存余额继续保留并可查询。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /warehouse/warehouses/batch/delete:
+    post:
+      tags: [Warehouse]
+      summary: 批量删除仓库
+      description: 批量逻辑删除仓库；任一仓库存在库存余额或出入库记录时整批返回 409，避免破坏库存与业务追溯链路。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/warehouses/{warehouseId}:
+    get:
+      tags: [Warehouse]
+      summary: 获取仓库详情
+      description: 本接口需要 `warehouse:query` 权限。
+      operationId: warehouseDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Warehouse' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Warehouse]
+      summary: 编辑仓库
+      description: 仓库编码创建后不可修改，编辑请求不接收 `warehouseCode`。仓库名称修改时，后端必须在同一事务内同步 `warehouse_stock.warehouse_name`，已生成的出入库凭证继续保留历史快照名称。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseUpdateRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Warehouse' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Warehouse]
+      summary: 删除仓库
+      description: 逻辑删除仓库；存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时返回 409。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/warehouses/{warehouseId}/status:
+    patch:
+      tags: [Warehouse]
+      summary: 修改仓库状态
+      description: 停用后仓库不能用于新业务单据和库存调整，历史单据与库存余额不受影响。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
   /products:
     get:
       tags: [Product]
@@ -1837,6 +2064,13 @@ components:
       schema:
         type: string
       description: 产品 ID，对应 `product.id`
+    WarehouseId:
+      name: warehouseId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 仓库 ID，对应 `warehouse.id`
   responses:
     BadRequest:
       description: 请求参数错误
@@ -2710,6 +2944,94 @@ components:
         status:
           type: integer
           enum: [0, 1]
+
+    WarehousePage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/Warehouse' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    Warehouse:
+      type: object
+      required: [warehouseId, warehouseCode, warehouseName, contactName, contactPhone, address, status, remark, createdAt, updatedAt]
+      properties:
+        warehouseId:
+          type: string
+          description: 仓库 ID，对应 `warehouse.id`，BIGINT 按字符串传输
+        warehouseCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          readOnly: true
+          description: 仓库编码，对应 `warehouse.warehouse_code`，创建时填写、全局唯一且创建后不可修改
+        warehouseName: { type: string, minLength: 1, maxLength: 100 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    WarehouseCreateRequest:
+      type: object
+      required: [warehouseCode, warehouseName, contactName, contactPhone, address, status, remark]
+      properties:
+        warehouseCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
+          description: 用户创建时填写，提交前去除首尾空格并转换为大写，创建后不可修改
+        warehouseName: { type: string, minLength: 1, maxLength: 100 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    WarehouseUpdateRequest:
+      type: object
+      required: [warehouseName, contactName, contactPhone, address, status, remark]
+      properties:
+        warehouseName: { type: string, minLength: 1, maxLength: 100 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    WarehouseStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: integer, enum: [0, 1] }
+
+    WarehouseBatchStatusRequest:
+      type: object
+      required: [warehouseIds, status]
+      properties:
+        warehouseIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status: { type: integer, enum: [0, 1] }
+
+    WarehouseBatchDeleteRequest:
+      type: object
+      required: [warehouseIds]
+      properties:
+        warehouseIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
 
     ProductPage:
       type: object

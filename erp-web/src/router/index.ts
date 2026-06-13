@@ -10,6 +10,7 @@ import DeptManageView from '@/modules/system/depts/views/DeptManageView.vue';
 import PermissionManageView from '@/modules/system/permissions/views/PermissionManageView.vue';
 import ProductCategoryManageView from '@/modules/product/categories/views/ProductCategoryManageView.vue';
 import ProductManageView from '@/modules/product/products/views/ProductManageView.vue';
+import WarehouseManageView from '@/modules/warehouse/warehouses/views/WarehouseManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -100,7 +101,10 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'warehouse/warehouses',
         name: 'warehouse-list',
-        ...placeholder('仓库管理', '仓储库存', '维护仓库编码 名称 联系人 联系电话 地址和启用状态'),
+        component: WarehouseManageView,
+        meta: {
+          title: '仓库管理',
+        },
       },
       {
         path: 'warehouse/stocks',

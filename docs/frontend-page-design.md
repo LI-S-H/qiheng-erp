@@ -643,7 +643,7 @@ GET /warehouse/stocks
 
 ### 16.1 页面范围
 
-出入库记录页面路径为 `/warehouse/stock-bills`，用于处理出入库草稿并追溯采购入库、销售出库、采购退货、销售退货和库存调整形成的库存凭证。页面包含流水摘要、字段级筛选、分页列表、刷新、新增库存调整、编辑草稿、确认、取消和凭证明细弹窗。
+出入库记录页面路径为 `/warehouse/stock-bills`，用于处理出入库草稿并追溯采购入库、销售出库、采购退货、销售退货和库存调整形成的库存凭证。页面包含流水摘要、字段级筛选、分页列表、刷新、新增出入库、编辑草稿、确认、取消和凭证明细弹窗。
 
 ### 16.2 页面与数据边界
 
@@ -653,8 +653,11 @@ GET /warehouse/stocks
 - 摘要只统计流水数、入库流水数、出库流水数和已确认流水数。不同产品可能使用不同单位，列表和摘要不得跨明细汇总数量。
 - 详情展示 `quantity`、`qualified_qty`、`defective_qty`、`before_qty`、`change_qty` 和 `after_qty`；入库变动为正、出库变动为负，草稿和取消流水不应形成实际库存变动。
 - 仓库名称、产品编码、产品名称和单位使用业务发生时保存的快照字段，后续主数据改名不回写历史凭证。
-- 新增按钮只创建 `ADJUST_IN` 或 `ADJUST_OUT` 草稿，来源类型固定为 `STOCK_ADJUST`；流水号和调整单号由后端生成。采购、销售和退货流水必须由对应业务单据生成，不能在本页脱离来源单据手工创建。
-- 仅 `DRAFT` 行显示编辑、确认和取消。来源业务单据生成的草稿只能编辑实际数量、质量数量和备注；库存调整草稿允许增删产品明细。确认和取消都使用独立写接口、提交锁和二次确认。
+- 正常采购、销售和退货流水由来源单据生成；原业务遗漏登记时，新增按钮允许补录对应四类出入库草稿。补录必须填写原业务单号和补录原因，列表与详情显示“手工补录”，`source_id` 为空，来源类型由出入库类型推导。
+- 库存调整允许创建 `ADJUST_IN` 或 `ADJUST_OUT` 草稿，来源类型固定为 `STOCK_ADJUST`，流水号和调整单号由后端生成，调整原因必填。
+- 手工补录和库存调整的负责人由后端按当前登录用户写入，页面只读展示，不允许人工代填；列表中的创建信息排列在确认信息前。
+- 数量输入按产品 `quantity_precision` 控制步长和校验。箱、瓶等精度为 0 的产品按 1 增减且拒绝小数；kg 等精度为 2 的产品按 0.01 增减。接口传业务真实值，后端按 100 倍整数写入数据库。
+- 仅 `DRAFT` 行显示编辑、确认和取消。来源业务单据生成的草稿只能编辑实际数量、质量数量和备注；手工补录和库存调整草稿允许增删产品明细。确认和取消都使用独立写接口、提交锁和二次确认。
 - 状态不使用普通下拉任意修改，只允许 `DRAFT -> CONFIRMED` 或 `DRAFT -> CANCELLED`。确认接口在事务中更新库存和来源单据；已确认凭证出现错误时新增反向调整，不直接修改历史状态。
 - 查询、重置、刷新和分页均使用短防抖，点击后立即显示数据区加载层并锁定重复操作；详情加载使用独立状态。
 
@@ -665,12 +668,14 @@ GET /warehouse/stocks
 | 流水ID、流水号 | `stock_bill.id`、`stock_bill.bill_no`，BIGINT ID 按字符串传输 |
 | 出入库类型 | `stock_bill.bill_type` |
 | 来源类型、ID、单号 | `stock_bill.source_type`、`source_id`、`source_no` |
+| 录入方式 | `stock_bill.entry_mode`：来源生成、手工补录、手工调整 |
 | 仓库ID、名称 | `stock_bill.warehouse_id`、`warehouse_name` |
 | 状态 | `stock_bill.status` |
 | 明细数 | 按 `stock_bill_item.bill_id` 聚合 |
 | 确认人、确认时间 | `stock_bill.confirmed_by_id`、`confirmed_by_name`、`confirmed_at` |
 | 创建人、创建时间 | `stock_bill.created_by_id`、`created_by_name`、`created_at` |
-| 产品及单位快照 | `stock_bill_item.product_id`、`product_code`、`product_name`、`unit_name` |
+| 负责人、补录/调整原因 | `stock_bill.responsible_by_id`、`responsible_by_name`、`manual_reason` |
+| 产品及单位精度快照 | `stock_bill_item.product_id`、`product_code`、`product_name`、`unit_name`、`quantity_precision` |
 | 本次、合格、不合格数量 | `stock_bill_item.quantity`、`qualified_qty`、`defective_qty` |
 | 变动前、变动量、变动后 | `stock_bill_item.before_qty`、`change_qty`、`after_qty` |
 

@@ -7,6 +7,7 @@ import type {
   StockBillCreatePayload,
   StockBillDetail,
   StockBillDraftItemPayload,
+  StockBillEntryMode,
   StockBillItem,
   StockBillListItem,
   StockBillPage,
@@ -23,7 +24,17 @@ const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 
 const billTypes: StockBillType[] = ['PURCHASE_IN', 'SALES_OUT', 'PURCHASE_RETURN', 'SALES_RETURN', 'ADJUST_IN', 'ADJUST_OUT'];
 const sourceTypes: StockBillSourceType[] = ['PURCHASE_ORDER', 'SALES_ORDER', 'PURCHASE_RETURN_ORDER', 'SALES_RETURN_ORDER', 'STOCK_ADJUST'];
 const billStatuses: StockBillStatus[] = ['DRAFT', 'CONFIRMED', 'CANCELLED'];
+const entryModes: StockBillEntryMode[] = ['SOURCE_GENERATED', 'MANUAL_SUPPLEMENT', 'MANUAL_ADJUSTMENT'];
 const inboundTypes = new Set<StockBillType>(['PURCHASE_IN', 'SALES_RETURN', 'ADJUST_IN']);
+const adjustmentTypes = new Set<StockBillType>(['ADJUST_IN', 'ADJUST_OUT']);
+const sourceTypeByBillType: Record<StockBillType, StockBillSourceType> = {
+  PURCHASE_IN: 'PURCHASE_ORDER',
+  SALES_OUT: 'SALES_ORDER',
+  PURCHASE_RETURN: 'PURCHASE_RETURN_ORDER',
+  SALES_RETURN: 'SALES_RETURN_ORDER',
+  ADJUST_IN: 'STOCK_ADJUST',
+  ADJUST_OUT: 'STOCK_ADJUST',
+};
 
 interface MockBillSeed {
   billNo: string;
@@ -76,6 +87,7 @@ function buildMockBills(): StockBillDetail[] {
         productCode,
         productName,
         unitName,
+        quantityPrecision: 0,
         quantity,
         qualifiedQty: isQualityInbound ? quantity - defectiveQty : 0,
         defectiveQty,
@@ -94,6 +106,7 @@ function buildMockBills(): StockBillDetail[] {
       sourceType: seed.sourceType,
       sourceId: `1980000000000000${String(billIndex + 1).padStart(3, '0')}`,
       sourceNo: seed.sourceNo,
+      entryMode: seed.sourceType === 'STOCK_ADJUST' ? 'MANUAL_ADJUSTMENT' : 'SOURCE_GENERATED',
       warehouseId: `1930000000000000${String(seed.warehouseIndex).padStart(3, '0')}`,
       warehouseName: seed.warehouseName,
       status: seed.status,
@@ -103,9 +116,12 @@ function buildMockBills(): StockBillDetail[] {
       confirmedAt: confirmed ? timestamp : null,
       createdById: '1900000000000000001',
       createdByName: '系统管理员',
+      responsibleById: '1900000000000000001',
+      responsibleByName: '系统管理员',
       createdAt: timestamp,
       updatedAt: timestamp,
       remark: seed.status === 'CANCELLED' ? '业务单据取消，库存未发生变化' : '',
+      manualReason: seed.sourceType === 'STOCK_ADJUST' ? '库存盘点调整' : '',
       items,
     };
   });
@@ -128,6 +144,7 @@ function normalizeStockBill(item: StockBillListItem): StockBillListItem {
     sourceType: normalizeEnum(item.sourceType, sourceTypes, 'sourceType'),
     sourceId: normalizeNullableStringId(item.sourceId, 'sourceId'),
     sourceNo: String(item.sourceNo),
+    entryMode: normalizeEnum(item.entryMode, entryModes, 'entryMode'),
     warehouseId: normalizeStringId(item.warehouseId, 'warehouseId'),
     warehouseName: String(item.warehouseName),
     status: normalizeEnum(item.status, billStatuses, 'status'),
@@ -137,6 +154,8 @@ function normalizeStockBill(item: StockBillListItem): StockBillListItem {
     confirmedAt: item.confirmedAt ? String(item.confirmedAt) : null,
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
     createdByName: String(item.createdByName),
+    responsibleById: normalizeStringId(item.responsibleById, 'responsibleById'),
+    responsibleByName: String(item.responsibleByName),
     createdAt: String(item.createdAt),
     updatedAt: String(item.updatedAt),
   };
@@ -148,6 +167,10 @@ function normalizeStockBillItem(item: StockBillItem): StockBillItem {
   if (quantities.quantity < 0 || quantities.qualifiedQty < 0 || quantities.defectiveQty < 0 || quantities.beforeQty < 0 || quantities.afterQty < 0) {
     throw new Error('出入库明细数量不符合非负数约束');
   }
+  const quantityPrecision = normalizeFiniteNumber(item.quantityPrecision, 'quantityPrecision');
+  if (!Number.isInteger(quantityPrecision) || quantityPrecision < 0 || quantityPrecision > 2) {
+    throw new Error('接口字段 quantityPrecision 必须是 0 到 2 的整数');
+  }
   return {
     ...item,
     stockBillItemId: normalizeStringId(item.stockBillItemId, 'stockBillItemId'),
@@ -158,6 +181,7 @@ function normalizeStockBillItem(item: StockBillItem): StockBillItem {
     productCode: String(item.productCode),
     productName: String(item.productName),
     unitName: String(item.unitName),
+    quantityPrecision,
     quantity: quantities.quantity,
     qualifiedQty: quantities.qualifiedQty,
     defectiveQty: quantities.defectiveQty,
@@ -171,7 +195,7 @@ function normalizeStockBillItem(item: StockBillItem): StockBillItem {
 }
 
 function normalizeStockBillDetail(detail: StockBillDetail): StockBillDetail {
-  return { ...normalizeStockBill(detail), remark: String(detail.remark), items: detail.items.map(normalizeStockBillItem) };
+  return { ...normalizeStockBill(detail), manualReason: String(detail.manualReason), remark: String(detail.remark), items: detail.items.map(normalizeStockBillItem) };
 }
 
 function normalizeSummary(summary: StockBillSummary): StockBillSummary {
@@ -237,13 +261,21 @@ function requireDraft(stockBillId: string) {
   return bill;
 }
 
-function validateDraftItems(items: StockBillDraftItemPayload[], billType: StockBillType) {
+function matchesPrecision(value: number, precision: number) {
+  return Math.abs(value * 10 ** precision - Math.round(value * 10 ** precision)) < 1e-8;
+}
+
+function validateDraftItems(items: StockBillDraftItemPayload[], billType: StockBillType, precisionByProduct?: Map<string, number>) {
   if (!items.length) throw new Error('至少添加一条产品明细');
   if (new Set(items.map(item => item.productId)).size !== items.length) throw new Error('同一产品不能重复添加');
   const qualityInbound = billType === 'PURCHASE_IN' || billType === 'SALES_RETURN';
   items.forEach(item => {
     if (!item.productId) throw new Error('请选择产品');
     if (!Number.isFinite(item.quantity) || item.quantity <= 0) throw new Error('出入库数量必须大于 0');
+    const precision = precisionByProduct?.get(item.productId) ?? 2;
+    if (!matchesPrecision(item.quantity, precision) || !matchesPrecision(item.qualifiedQty, precision) || !matchesPrecision(item.defectiveQty, precision)) {
+      throw new Error(`产品数量最多保留 ${precision} 位小数`);
+    }
     if (!Number.isFinite(item.qualifiedQty) || item.qualifiedQty < 0 || !Number.isFinite(item.defectiveQty) || item.defectiveQty < 0) {
       throw new Error('合格数量和不合格数量不能小于 0');
     }
@@ -269,10 +301,17 @@ function nextBillIdentity() {
 
 export async function createStockBill(payload: StockBillCreatePayload) {
   if (useMockApi) {
-    validateDraftItems(payload.items, payload.billType);
     const { warehouses, products } = await loadMockMasterData();
+    validateDraftItems(payload.items, payload.billType, new Map(products.map(item => [item.productId, item.quantityPrecision])));
     const warehouse = warehouses.find(item => item.warehouseId === payload.warehouseId);
     if (!warehouse) throw new Error('只能选择启用状态的仓库');
+    const isAdjustment = adjustmentTypes.has(payload.billType);
+    const sourceNo = isAdjustment ? '' : payload.sourceNo.trim();
+    const manualReason = payload.manualReason.trim();
+    if (!isAdjustment && !sourceNo) throw new Error('手工补录采购、销售或退货凭证时必须填写原业务单号');
+    if (sourceNo.length > 64) throw new Error('原业务单号不能超过 64 个字符');
+    if (!manualReason) throw new Error(isAdjustment ? '请填写调整原因' : '请填写补录原因');
+    if (manualReason.length > 500) throw new Error('补录或调整原因不能超过 500 个字符');
     const identity = nextBillIdentity();
     const timestamp = nowText();
     const stockBillId = String(Date.now());
@@ -289,9 +328,10 @@ export async function createStockBill(payload: StockBillCreatePayload) {
         productCode: product.productCode,
         productName: product.productName,
         unitName: product.unitName,
+        quantityPrecision: product.quantityPrecision,
         quantity: item.quantity,
-        qualifiedQty: 0,
-        defectiveQty: 0,
+        qualifiedQty: payload.billType === 'PURCHASE_IN' || payload.billType === 'SALES_RETURN' ? item.qualifiedQty : 0,
+        defectiveQty: payload.billType === 'PURCHASE_IN' || payload.billType === 'SALES_RETURN' ? item.defectiveQty : 0,
         beforeQty: currentStock?.stockQty || 0,
         changeQty: 0,
         afterQty: currentStock?.stockQty || 0,
@@ -304,9 +344,10 @@ export async function createStockBill(payload: StockBillCreatePayload) {
       stockBillId,
       billNo: identity.billNo,
       billType: payload.billType,
-      sourceType: 'STOCK_ADJUST',
+      sourceType: sourceTypeByBillType[payload.billType],
       sourceId: null,
-      sourceNo: identity.sourceNo,
+      sourceNo: isAdjustment ? identity.sourceNo : sourceNo,
+      entryMode: isAdjustment ? 'MANUAL_ADJUSTMENT' : 'MANUAL_SUPPLEMENT',
       warehouseId: warehouse.warehouseId,
       warehouseName: warehouse.warehouseName,
       status: 'DRAFT',
@@ -316,8 +357,11 @@ export async function createStockBill(payload: StockBillCreatePayload) {
       confirmedAt: null,
       createdById: '1900000000000000001',
       createdByName: '系统管理员',
+      responsibleById: '1900000000000000001',
+      responsibleByName: '系统管理员',
       createdAt: timestamp,
       updatedAt: timestamp,
+      manualReason,
       remark: payload.remark.trim(),
       items,
     };
@@ -330,8 +374,8 @@ export async function createStockBill(payload: StockBillCreatePayload) {
 export async function updateStockBill(stockBillId: string, payload: StockBillUpdatePayload) {
   if (useMockApi) {
     const current = requireDraft(stockBillId);
-    validateDraftItems(payload.items, current.billType);
-    const sourceGenerated = current.sourceType !== 'STOCK_ADJUST';
+    validateDraftItems(payload.items, current.billType, new Map(current.items.map(item => [item.productId, item.quantityPrecision])));
+    const sourceGenerated = current.entryMode === 'SOURCE_GENERATED';
     if (sourceGenerated && (payload.items.length !== current.items.length
       || payload.items.some(item => !item.stockBillItemId || !current.items.some(existing => existing.stockBillItemId === item.stockBillItemId && existing.productId === item.productId)))) {
       throw new Error('业务单据生成的草稿不能增删或更换产品');
@@ -354,6 +398,7 @@ export async function updateStockBill(stockBillId: string, payload: StockBillUpd
         productCode: snapshot.productCode,
         productName: snapshot.productName,
         unitName: snapshot.unitName,
+        quantityPrecision: snapshot.quantityPrecision,
         quantity: item.quantity,
         qualifiedQty: current.billType === 'PURCHASE_IN' || current.billType === 'SALES_RETURN' ? item.qualifiedQty : 0,
         defectiveQty: current.billType === 'PURCHASE_IN' || current.billType === 'SALES_RETURN' ? item.defectiveQty : 0,
@@ -365,7 +410,14 @@ export async function updateStockBill(stockBillId: string, payload: StockBillUpd
         remark: item.remark.trim(),
       } satisfies StockBillItem;
     });
-    const updated = { ...current, items, itemCount: items.length, remark: payload.remark.trim(), updatedAt: timestamp };
+    const isSupplement = current.entryMode === 'MANUAL_SUPPLEMENT';
+    const sourceNo = isSupplement ? payload.sourceNo.trim() : current.sourceNo;
+    const manualReason = sourceGenerated ? current.manualReason : payload.manualReason.trim();
+    if (isSupplement && !sourceNo) throw new Error('手工补录凭证必须填写原业务单号');
+    if (sourceNo.length > 64) throw new Error('原业务单号不能超过 64 个字符');
+    if (!sourceGenerated && !manualReason) throw new Error(current.entryMode === 'MANUAL_ADJUSTMENT' ? '请填写调整原因' : '请填写补录原因');
+    if (manualReason.length > 500) throw new Error('补录或调整原因不能超过 500 个字符');
+    const updated = { ...current, sourceNo, manualReason, items, itemCount: items.length, remark: payload.remark.trim(), updatedAt: timestamp };
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? updated : item);
     return normalizeStockBillDetail(updated);
   }

@@ -1466,10 +1466,11 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [WarehouseStockBill]
-      summary: 新增库存调整草稿
+      summary: 新增手工出入库草稿
       description: |
-        手工新增仅允许 `ADJUST_IN` 或 `ADJUST_OUT`，来源类型由后端固定为 `STOCK_ADJUST`。
-        `billNo`、`sourceNo`、创建人、创建时间和产品快照由后端生成或填充，前端只提交仓库、产品数量和备注。
+        允许创建 `ADJUST_IN`、`ADJUST_OUT` 库存调整，或在原采购、销售、退货业务遗漏登记时补录对应出入库凭证。
+        非调整类型必须提交原业务单号和补录原因，后端设置 `entryMode=MANUAL_SUPPLEMENT`、按 `billType` 推导 `sourceType`，且 `sourceId` 为空；调整类型由后端生成调整单号并设置 `entryMode=MANUAL_ADJUSTMENT`。
+        `billNo`、负责人、创建人、创建时间和产品快照由后端生成或按当前登录上下文填充；负责人字段不接受前端提交。
         保存后状态为 `DRAFT`，不立即改变库存；需要 `warehouse:manage` 权限。
       operationId: stockBillCreate
       security:
@@ -3237,17 +3238,19 @@ components:
       properties:
         stockBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
         productId: { type: string, description: 产品 ID，后端保存当前产品编码、名称和单位快照 }
-        quantity: { type: number, format: double, exclusiveMinimum: 0, description: 本次出入库数量 }
-        qualifiedQty: { type: number, format: double, minimum: 0, description: 采购入库或销售退货的合格数量，其他类型传 0 }
-        defectiveQty: { type: number, format: double, minimum: 0, description: 采购入库或销售退货的不合格数量，其他类型传 0 }
+        quantity: { type: number, format: double, exclusiveMinimum: 0, multipleOf: 0.01, description: 本次出入库业务真实值，最多两位小数；后端按产品数量精度校验并按 100 倍整数持久化 }
+        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的合格数量，其他类型传 0 }
+        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的不合格数量，其他类型传 0 }
         remark: { type: string, maxLength: 500 }
 
     StockBillCreateRequest:
       type: object
-      required: [billType, warehouseId, items, remark]
+      required: [billType, sourceNo, warehouseId, manualReason, items, remark]
       properties:
-        billType: { type: string, enum: [ADJUST_IN, ADJUST_OUT], description: 手工新增只允许库存调整入库或出库 }
+        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 手工补录或库存调整类型 }
+        sourceNo: { type: string, maxLength: 64, description: 非调整类型必填原业务单号；调整类型传空字符串，由后端生成调整单号 }
         warehouseId: { type: string, description: 启用状态的仓库 ID }
+        manualReason: { type: string, minLength: 1, maxLength: 500, description: 补录原因或库存调整原因，必填 }
         items:
           type: array
           minItems: 1
@@ -3256,8 +3259,10 @@ components:
 
     StockBillUpdateRequest:
       type: object
-      required: [items, remark]
+      required: [sourceNo, manualReason, items, remark]
       properties:
+        sourceNo: { type: string, maxLength: 64, description: 手工补录草稿可维护原业务单号；其他录入方式保持原值 }
+        manualReason: { type: string, maxLength: 500, description: 手工补录或调整草稿必填；来源生成草稿保持原值 }
         items:
           type: array
           minItems: 1
@@ -3287,7 +3292,7 @@ components:
 
     StockBill:
       type: object
-      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, warehouseId, warehouseName, status, itemCount, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, createdAt, updatedAt]
+      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, entryMode, warehouseId, warehouseName, status, itemCount, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, createdAt, updatedAt]
       properties:
         stockBillId: { type: string, description: 对应 `stock_bill.id`，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 对应 `stock_bill.bill_no` }
@@ -3295,6 +3300,7 @@ components:
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 对应 `stock_bill.source_type` }
         sourceId: { type: string, nullable: true, description: 对应 `stock_bill.source_id`，BIGINT 按字符串传输 }
         sourceNo: { type: string, maxLength: 64, description: 对应 `stock_bill.source_no` }
+        entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 对应 `stock_bill.entry_mode`，区分来源生成、手工补录和手工调整 }
         warehouseId: { type: string, description: 对应 `stock_bill.warehouse_id`，BIGINT 按字符串传输 }
         warehouseName: { type: string, maxLength: 100, description: 对应 `stock_bill.warehouse_name` }
         status: { type: string, enum: [DRAFT, CONFIRMED, CANCELLED], description: 对应 `stock_bill.status` }
@@ -3304,6 +3310,8 @@ components:
         confirmedAt: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_at` }
         createdById: { type: string, nullable: true, description: 对应 `stock_bill.created_by_id`，BIGINT 按字符串传输 }
         createdByName: { type: string, maxLength: 100, description: 对应 `stock_bill.created_by_name` }
+        responsibleById: { type: string, description: 对应 `stock_bill.responsible_by_id`；手工单据由后端取当前登录用户 }
+        responsibleByName: { type: string, maxLength: 100, description: 对应 `stock_bill.responsible_by_name` }
         createdAt: { type: string, description: 对应 `stock_bill.created_at` }
         updatedAt: { type: string, description: 对应 `stock_bill.updated_at` }
 
@@ -3311,8 +3319,9 @@ components:
       allOf:
         - $ref: '#/components/schemas/StockBill'
         - type: object
-          required: [remark, items]
+          required: [manualReason, remark, items]
           properties:
+            manualReason: { type: string, maxLength: 500, description: 对应 `stock_bill.manual_reason`；来源生成凭证为空字符串 }
             remark: { type: string, maxLength: 500, description: 对应 `stock_bill.remark` }
             items:
               type: array
@@ -3320,7 +3329,7 @@ components:
 
     StockBillItem:
       type: object
-      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createdAt, updatedAt, remark]
+      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createdAt, updatedAt, remark]
       properties:
         stockBillItemId: { type: string, description: 对应 `stock_bill_item.id`，BIGINT 按字符串传输 }
         stockBillId: { type: string, description: 对应 `stock_bill_item.bill_id`，BIGINT 按字符串传输 }
@@ -3330,12 +3339,13 @@ components:
         productCode: { type: string, maxLength: 64, description: 对应 `stock_bill_item.product_code` }
         productName: { type: string, maxLength: 200, description: 对应 `stock_bill_item.product_name` }
         unitName: { type: string, maxLength: 32, description: 对应 `stock_bill_item.unit_name` }
-        quantity: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.quantity` }
-        qualifiedQty: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.qualified_qty` }
-        defectiveQty: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.defective_qty` }
-        beforeQty: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.before_qty` }
-        changeQty: { type: number, format: double, description: 对应 `stock_bill_item.change_qty`，入库为正、出库为负 }
-        afterQty: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.after_qty` }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应 `stock_bill_item.quantity_precision`，产品数量精度快照 }
+        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.quantity` 按 100 倍整数存储，Service 层负责转换 }
+        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.qualified_qty` 按 100 倍整数存储 }
+        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.defective_qty` 按 100 倍整数存储 }
+        beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.before_qty` 按 100 倍整数存储 }
+        changeQty: { type: number, format: double, multipleOf: 0.01, description: 业务真实值，入库为正、出库为负；数据库按 100 倍整数存储 }
+        afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.after_qty` 按 100 倍整数存储 }
         createdAt: { type: string, description: 对应 `stock_bill_item.created_at` }
         updatedAt: { type: string, description: 对应 `stock_bill_item.updated_at` }
         remark: { type: string, maxLength: 500, description: 对应 `stock_bill_item.remark` }
@@ -3358,10 +3368,10 @@ components:
         productCode: { type: string, maxLength: 64, description: 对应 `warehouse_stock.product_code` }
         productName: { type: string, maxLength: 200, description: 对应 `warehouse_stock.product_name` }
         unitName: { type: string, maxLength: 32, description: 对应 `warehouse_stock.unit_name` }
-        stockQty: { type: number, format: double, minimum: 0, description: 当前库存，对应 `warehouse_stock.stock_qty` }
-        lockedQty: { type: number, format: double, minimum: 0, description: 锁定库存，对应 `warehouse_stock.locked_qty` }
+        stockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 当前库存业务真实值；数据库 `warehouse_stock.stock_qty` 按 100 倍整数存储 }
+        lockedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 锁定库存业务真实值；数据库 `warehouse_stock.locked_qty` 按 100 倍整数存储 }
         availableQty: { type: number, format: double, minimum: 0, description: 服务层计算 `stock_qty - locked_qty` }
-        safetyStockQty: { type: number, format: double, minimum: 0, description: 关联 `product.safety_stock_qty` }
+        safetyStockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 安全库存业务真实值；数据库 `product.safety_stock_qty` 按 100 倍整数存储 }
         updatedAt: { type: string, description: 对应 `warehouse_stock.updated_at` }
 
     WarehouseStockSummary:
@@ -3475,6 +3485,7 @@ components:
         - categoryName
         - brandName
         - unitName
+        - quantityPrecision
         - specification
         - referencePurchasePrice
         - referenceSalePrice
@@ -3513,6 +3524,11 @@ components:
           type: string
           minLength: 1
           maxLength: 32
+        quantityPrecision:
+          type: integer
+          minimum: 0
+          maximum: 2
+          description: 产品数量允许的小数位，箱、瓶、个等离散单位通常为 0，最多保留两位小数
         specification:
           type: string
           maxLength: 255
@@ -3532,6 +3548,8 @@ components:
           type: number
           format: double
           minimum: 0
+          multipleOf: 0.01
+          description: 业务真实值；数据库按 100 倍整数存储
         status:
           type: integer
           enum: [0, 1]
@@ -3548,6 +3566,7 @@ components:
         - categoryId
         - brandName
         - unitName
+        - quantityPrecision
         - specification
         - barcode
         - referencePurchasePrice
@@ -3562,6 +3581,7 @@ components:
           nullable: true
         brandName: { type: string, maxLength: 100 }
         unitName: { type: string, minLength: 1, maxLength: 32 }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2 }
         specification: { type: string, maxLength: 255 }
         barcode:
           type: string
@@ -3569,7 +3589,7 @@ components:
           maxLength: 64
         referencePurchasePrice: { type: number, format: double, minimum: 0 }
         referenceSalePrice: { type: number, format: double, minimum: 0 }
-        safetyStockQty: { type: number, format: double, minimum: 0 }
+        safetyStockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库按 100 倍整数存储 }
         status: { type: integer, enum: [0, 1] }
         remark: { type: string, maxLength: 500 }
 

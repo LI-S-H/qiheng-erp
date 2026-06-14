@@ -28,7 +28,7 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '出入库记录' }).waitFor();
     await tableRow(page, 'SB202606140001').waitFor();
-    await assertFixedTableLayout(page, 9);
+    await assertFixedTableLayout(page, 10);
 
     const summaryText = await page.locator('.summary-strip').innerText();
     for (const expected of ['流水记录\n15', '入库记录\n8', '出库记录\n7', '已确认\n10']) {
@@ -95,14 +95,19 @@ runSmoke({
     await clickPaginationAndAssertLoading(page, '上一页');
     await tableRow(page, 'SB202606140001').waitFor();
 
-    await page.getByRole('button', { name: '新增调整' }).click();
-    const createDialog = page.getByRole('dialog', { name: '新增库存调整' });
+    await page.getByRole('button', { name: '新增出入库' }).click();
+    const createDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
     const generatedFields = createDialog.locator('input[readonly]');
     if (!(await generatedFields.first().inputValue()).includes('系统生成')) throw new Error('新增调整的流水号必须由系统生成');
     await selectDialogOption(page, createDialog, 1, 'WH001 华东中心仓');
     await selectDialogOption(page, createDialog, 2, 'P0002 速溶黑咖啡（盒）');
-    await createDialog.getByRole('spinbutton').fill('2');
-    await createDialog.getByPlaceholder('填写调整原因、盘点依据或其他说明').fill('盘点补录测试');
+    const integerQuantity = createDialog.getByRole('spinbutton').first();
+    if (await integerQuantity.getAttribute('step') !== '1') throw new Error('盒装产品数量步长必须为 1');
+    await integerQuantity.fill('1.5');
+    await createDialog.getByRole('button', { name: '保存草稿' }).click();
+    if (!(await createDialog.innerText()).includes('数量必须是整数')) throw new Error('盒装产品未拒绝小数数量');
+    await integerQuantity.fill('2');
+    await createDialog.getByPlaceholder('说明盘点差异或调整依据').fill('盘点补录测试');
     const draftColumns = await createDialog.locator('.draft-item-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
     if (draftColumns !== 4) throw new Error(`库存调整明细在宽屏下应为四列，当前为 ${draftColumns} 列`);
     await page.screenshot({ path: 'smoke-warehouse-stock-bills-create.png', fullPage: true });
@@ -138,6 +143,23 @@ runSmoke({
     if (!adjustedText.includes('+3') || !adjustedText.includes('盘点补录测试')) throw new Error('编辑后的调整数量未在确认凭证中生效');
     await adjustedDialog.getByRole('button', { name: 'Close' }).click();
 
+    await page.getByRole('button', { name: '新增出入库' }).click();
+    const kgDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
+    await selectDialogOption(page, kgDialog, 1, 'WH001 华东中心仓');
+    await selectDialogOption(page, kgDialog, 2, 'P0015 散装东北大米（kg）');
+    const kgQuantity = kgDialog.getByRole('spinbutton').first();
+    if (await kgQuantity.getAttribute('step') !== '0.01') throw new Error('kg 产品数量步长必须为 0.01');
+    await kgQuantity.fill('1.234');
+    await kgDialog.getByPlaceholder('说明盘点差异或调整依据').fill('称重盘点测试');
+    await kgDialog.getByRole('button', { name: '保存草稿' }).click();
+    if (!(await kgDialog.innerText()).includes('最多保留 2 位小数')) throw new Error('kg 产品未拒绝三位小数');
+    await kgQuantity.fill('1.25');
+    await kgDialog.getByRole('button', { name: '保存草稿' }).click();
+    const kgRow = tableRow(page, 'SB202606140017');
+    await kgRow.getByText('手工调整', { exact: true }).waitFor();
+    await kgRow.getByRole('button', { name: '取消', exact: true }).click();
+    await page.getByRole('alertdialog', { name: '取消出入库草稿' }).getByRole('button', { name: '确认取消', exact: true }).click();
+
     await page.getByRole('button', { name: '库存管理', exact: true }).click();
     await page.getByRole('heading', { name: '库存管理' }).waitFor();
     await page.getByPlaceholder('如 P0001').fill('P0002');
@@ -148,20 +170,47 @@ runSmoke({
     await page.getByRole('heading', { name: '出入库记录' }).waitFor();
     await tableRow(page, createdBillNo).waitFor();
 
-    await page.getByRole('button', { name: '新增调整' }).click();
-    const cancelCreateDialog = page.getByRole('dialog', { name: '新增库存调整' });
+    await page.getByRole('button', { name: '新增出入库' }).click();
+    const cancelCreateDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
     await selectDialogOption(page, cancelCreateDialog, 0, '库存调整出库');
     await selectDialogOption(page, cancelCreateDialog, 1, 'WH001 华东中心仓');
     await selectDialogOption(page, cancelCreateDialog, 2, 'P0003 每日坚果混合装（盒）');
     await cancelCreateDialog.getByRole('spinbutton').fill('1');
+    await cancelCreateDialog.getByPlaceholder('说明盘点差异或调整依据').fill('取消流程测试');
     await cancelCreateDialog.getByRole('button', { name: '保存草稿' }).click();
-    const cancelRow = tableRow(page, 'SB202606140017');
+    const cancelRow = tableRow(page, 'SB202606140018');
     const cancelBillNo = (await cancelRow.locator('code').first().innerText()).trim();
     await cancelRow.getByRole('button', { name: '取消', exact: true }).click();
     const cancelDialog = page.getByRole('alertdialog', { name: '取消出入库草稿' });
     if (!(await cancelDialog.innerText()).includes('取消后不改变库存')) throw new Error('取消草稿未说明库存不变');
     await cancelDialog.getByRole('button', { name: '确认取消', exact: true }).click();
     await tableRow(page, cancelBillNo).getByText('已取消', { exact: true }).waitFor();
+
+    await page.getByRole('button', { name: '新增出入库' }).click();
+    const supplementDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
+    await selectDialogOption(page, supplementDialog, 0, '补录销售退货入库');
+    await supplementDialog.getByPlaceholder('填写线下单据、送货单或退货单号').fill('SRO-OFFLINE-001');
+    await supplementDialog.getByPlaceholder('说明未登记原业务单据的原因').fill('线下退货单遗漏登记');
+    const readonlyValues = await supplementDialog.locator('input[readonly]').evaluateAll(elements => elements.map(element => element.value));
+    if (!readonlyValues.includes('系统管理员') || !(await supplementDialog.innerText()).includes('不允许代填')) {
+      throw new Error('补录负责人未按当前登录用户只读展示');
+    }
+    await selectDialogOption(page, supplementDialog, 1, 'WH001 华东中心仓');
+    await selectDialogOption(page, supplementDialog, 2, 'P0001 经典原味苏打水（箱）');
+    const supplementQuantities = supplementDialog.getByRole('spinbutton');
+    await supplementQuantities.nth(0).fill('2');
+    await supplementQuantities.nth(1).fill('2');
+    await supplementDialog.getByRole('button', { name: '保存草稿' }).click();
+    const supplementRow = page.getByRole('row').filter({ hasText: 'SRO-OFFLINE-001' }).first();
+    await supplementRow.getByText('手工补录', { exact: true }).waitFor();
+    await supplementRow.getByText('系统管理员', { exact: true }).first().waitFor();
+    await supplementRow.getByRole('button', { name: '详情' }).click();
+    const supplementDetail = page.getByRole('dialog', { name: '出入库凭证详情' });
+    const supplementText = await supplementDetail.innerText();
+    for (const expected of ['手工补录', 'SRO-OFFLINE-001', '线下退货单遗漏登记', '系统管理员']) {
+      if (!supplementText.includes(expected)) throw new Error(`补录详情缺少 ${expected}`);
+    }
+    await supplementDetail.getByRole('button', { name: 'Close' }).click();
 
     await page.setViewportSize({ width: 1115, height: 838 });
     await page.reload({ waitUntil: 'domcontentloaded' });

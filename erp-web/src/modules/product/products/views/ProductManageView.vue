@@ -62,7 +62,7 @@ const query = reactive<ProductQuery>({
 });
 const form = reactive<ProductFormPayload>({
   productName: '', categoryId: null, brandName: '', unitName: '件', specification: '', barcode: null,
-  referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
+  quantityPrecision: 0, referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
 });
 const formErrors = reactive<Record<string, string>>({});
 const confirmState = reactive({
@@ -74,6 +74,15 @@ const confirmState = reactive({
 const queryBusy = computed(() => queryPending.value || loading.value);
 const enabledCount = computed(() => products.value.filter(item => item.status === 1).length);
 const lowStockConfigCount = computed(() => products.value.filter(item => item.safetyStockQty > 0).length);
+const quantityPrecisionOptions = [0, 1, 2].map(value => ({
+  value,
+  label: value === 0 ? '0 位（仅整数）' : `${value} 位小数`,
+}));
+const quantityStep = computed(() => 10 ** -form.quantityPrecision);
+
+function matchesQuantityPrecision(value: number, precision: number) {
+  return Math.abs(value * 10 ** precision - Math.round(value * 10 ** precision)) < 1e-8;
+}
 const categoryCount = computed(() => new Set(products.value.map(item => item.categoryId).filter(Boolean)).size);
 const selectedRows = computed(() => products.value.filter(item => selectedIds.value.has(item.productId)));
 const allSelected = computed(() => products.value.length > 0 && products.value.every(item => selectedIds.value.has(item.productId)));
@@ -194,7 +203,7 @@ function toggleSelect(productId: string, value: boolean | 'indeterminate') {
 function resetForm() {
   Object.assign(form, {
     productName: '', categoryId: null, brandName: '', unitName: '件', specification: '', barcode: null,
-    referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
+    quantityPrecision: 0, referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
   });
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
@@ -217,6 +226,7 @@ function openEditDialog(row: ProductListItem) {
     categoryId: row.categoryId,
     brandName: row.brandName,
     unitName: row.unitName,
+    quantityPrecision: row.quantityPrecision,
     specification: row.specification,
     barcode: row.barcode,
     referencePurchasePrice: row.referencePurchasePrice,
@@ -235,11 +245,15 @@ function validateForm() {
   else if (form.productName.trim().length > 200) formErrors.productName = '产品名称不能超过 200 个字符';
   if (!form.unitName.trim()) formErrors.unitName = '请输入单位名称';
   else if (form.unitName.trim().length > 32) formErrors.unitName = '单位名称不能超过 32 个字符';
+  if (!Number.isInteger(form.quantityPrecision) || form.quantityPrecision < 0 || form.quantityPrecision > 2) formErrors.quantityPrecision = '数量小数位必须是 0 到 2 的整数';
   if (form.brandName.trim().length > 100) formErrors.brandName = '品牌名称不能超过 100 个字符';
   if (form.specification.trim().length > 255) formErrors.specification = '规格型号不能超过 255 个字符';
   if ((form.barcode || '').trim().length > 64) formErrors.barcode = '条码不能超过 64 个字符';
   for (const [key, label] of [['referencePurchasePrice', '参考采购价'], ['referenceSalePrice', '参考销售价'], ['safetyStockQty', '安全库存']] as const) {
     if (!Number.isFinite(Number(form[key])) || Number(form[key]) < 0) formErrors[key] = `${label}不能小于 0`;
+  }
+  if (!formErrors.safetyStockQty && !matchesQuantityPrecision(Number(form.safetyStockQty), form.quantityPrecision)) {
+    formErrors.safetyStockQty = `安全库存最多保留 ${form.quantityPrecision} 位小数`;
   }
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   const selectedCategory = categories.value.find(item => item.categoryId === form.categoryId);
@@ -449,9 +463,10 @@ function formatQty(value: number) {
             <div class="space-y-1"><Label>产品分类</Label><AnchoredSelect v-model="formCategoryValue" :options="formCategoryOptions" placeholder="请选择分类" :invalid="Boolean(formErrors.categoryId)" /><p v-if="formErrors.categoryId" class="text-xs text-destructive">{{ formErrors.categoryId }}</p></div>
             <div class="space-y-1"><Label>品牌名称</Label><Input v-model="form.brandName" maxlength="100" placeholder="请输入品牌名称" :aria-invalid="Boolean(formErrors.brandName)" /><p v-if="formErrors.brandName" class="text-xs text-destructive">{{ formErrors.brandName }}</p></div>
             <div class="space-y-1"><Label>单位名称 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.unitName" :options="unitSelectOptions" :invalid="Boolean(formErrors.unitName)" /><p v-if="formErrors.unitName" class="text-xs text-destructive">{{ formErrors.unitName }}</p></div>
+            <div class="space-y-1"><Label>数量小数位 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.quantityPrecision" :options="quantityPrecisionOptions" :invalid="Boolean(formErrors.quantityPrecision)" /><p class="text-xs" :class="formErrors.quantityPrecision ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.quantityPrecision || '箱、瓶、个等不可拆分单位选择 0；重量、长度单位按业务设置。' }}</p></div>
             <div class="space-y-1"><Label>规格型号</Label><Input v-model="form.specification" maxlength="255" placeholder="请输入规格型号" :aria-invalid="Boolean(formErrors.specification)" /><p v-if="formErrors.specification" class="text-xs text-destructive">{{ formErrors.specification }}</p></div>
             <div class="space-y-1"><Label>产品条码</Label><Input :model-value="form.barcode || ''" maxlength="64" placeholder="请输入条码" :aria-invalid="Boolean(formErrors.barcode)" @update:model-value="form.barcode = String($event) || null" /><p v-if="formErrors.barcode" class="text-xs text-destructive">{{ formErrors.barcode }}</p></div>
-            <div class="space-y-1"><Label>安全库存</Label><Input v-model.number="form.safetyStockQty" type="number" min="0" step="0.0001" :aria-invalid="Boolean(formErrors.safetyStockQty)" /><p v-if="formErrors.safetyStockQty" class="text-xs text-destructive">{{ formErrors.safetyStockQty }}</p></div>
+            <div class="space-y-1"><Label>安全库存</Label><Input v-model.number="form.safetyStockQty" type="number" min="0" :step="quantityStep" :aria-invalid="Boolean(formErrors.safetyStockQty)" /><p v-if="formErrors.safetyStockQty" class="text-xs text-destructive">{{ formErrors.safetyStockQty }}</p></div>
             <div class="space-y-1"><Label>参考采购价</Label><div class="relative"><span data-currency-prefix class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">￥</span><Input v-model.number="form.referencePurchasePrice" class="pl-8" type="number" min="0" step="0.01" :aria-invalid="Boolean(formErrors.referencePurchasePrice)" /></div><p v-if="formErrors.referencePurchasePrice" class="text-xs text-destructive">{{ formErrors.referencePurchasePrice }}</p></div>
             <div class="space-y-1"><Label>参考销售价</Label><div class="relative"><span data-currency-prefix class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">￥</span><Input v-model.number="form.referenceSalePrice" class="pl-8" type="number" min="0" step="0.01" :aria-invalid="Boolean(formErrors.referenceSalePrice)" /></div><p v-if="formErrors.referenceSalePrice" class="text-xs text-destructive">{{ formErrors.referenceSalePrice }}</p></div>
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>启用状态 <span class="text-destructive">*</span></Label><RadioGroup :model-value="String(form.status)" class="flex gap-5" @update:model-value="form.status = Number($event) as ProductStatus"><div class="flex items-center gap-2"><RadioGroupItem id="product-status-1" value="1" /><Label for="product-status-1" class="cursor-pointer font-normal">启用</Label></div><div class="flex items-center gap-2"><RadioGroupItem id="product-status-0" value="0" /><Label for="product-status-0" class="cursor-pointer font-normal">停用</Label></div></RadioGroup></div>

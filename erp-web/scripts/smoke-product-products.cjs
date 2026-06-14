@@ -87,8 +87,10 @@ runSmoke({
     if (await page.locator('[data-anchored-select-content][data-state="open"]').count() !== 1) {
       throw new Error('打开产品分类后应且仅应存在一个下拉弹层');
     }
-    await unitSelect.evaluate(element => element.click());
-    await page.waitForTimeout(100);
+    await page.keyboard.press('Escape');
+    await page.locator('[data-anchored-select-content][data-state="open"]').waitFor({ state: 'hidden' });
+    await unitSelect.click();
+    await page.locator('[data-anchored-select-content][data-state="open"]').waitFor();
     const openDropdownCount = await page.locator('[data-anchored-select-content][data-state="open"]').count();
     if (openDropdownCount !== 1 || await categorySelect.getAttribute('aria-expanded') !== 'false' || await unitSelect.getAttribute('aria-expanded') !== 'true') {
       throw new Error(`下拉弹层未互斥：open=${openDropdownCount}`);
@@ -114,7 +116,7 @@ runSmoke({
     await page.getByText('产品已创建', { exact: true }).waitFor();
     await page.getByPlaceholder('请输入产品名称').first().fill('系统编码测试产品');
     await page.getByRole('button', { name: '查询', exact: true }).click();
-    const uncategorizedRow = tableRow(page, 'P0015');
+    const uncategorizedRow = tableRow(page, 'P0016');
     await uncategorizedRow.waitFor();
     await uncategorizedRow.getByText('未分类', { exact: true }).waitFor();
     await clickResetAndAssertLoading(page);

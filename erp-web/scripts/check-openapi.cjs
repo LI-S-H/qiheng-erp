@@ -308,6 +308,7 @@ for (const fragment of [
   'StockBillSummary',
   'normalizeNullableStringId',
   'normalizeStockBillItem',
+  'StockBillEntryMode',
   'listStockBills',
   'getStockBillDetail',
   'createStockBill',
@@ -324,7 +325,10 @@ for (const fragment of [
   '列表不跨不同产品单位汇总数量',
   'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
   'enum: [DRAFT, CONFIRMED, CANCELLED]',
-  'enum: [ADJUST_IN, ADJUST_OUT]',
+  'enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]',
+  'required: [billType, sourceNo, warehouseId, manualReason, items, remark]',
+  'responsibleById',
+  'quantityPrecision',
   "schema: { $ref: '#/components/schemas/StockBillCreateRequest' }",
   "schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }",
   '仅允许 `DRAFT -> CONFIRMED`',
@@ -334,13 +338,17 @@ for (const fragment of [
 ]) {
   if (!source.includes(fragment)) throw new Error(`出入库记录 OpenAPI 缺少：${fragment}`);
 }
-if (!stockBillViewSource.includes('新增库存调整')
+if (!stockBillViewSource.includes('新增出入库')
+  || !stockBillViewSource.includes('手工补录')
+  || !stockBillViewSource.includes('responsibleByName')
+  || !stockBillViewSource.includes('itemQuantityStep')
   || !stockBillViewSource.includes('handleConfirm(row)')
   || !stockBillViewSource.includes('handleCancel(row)')
   || !stockBillViewSource.includes('filter-grid--stock-bills')
   || !stockBillViewSource.includes('出入库凭证详情')
   || !pageDesign.includes('## 16. 仓库库存模块：出入库记录')
-  || !warehouseSchema.includes('已确认凭证不能直接取消或改回草稿')) {
+  || !warehouseSchema.includes('已确认凭证不能直接取消或改回草稿')
+  || !warehouseSchema.includes('100 倍整数存储')) {
   throw new Error('出入库记录新增、编辑、状态流转、详情或页面设计文档不完整');
 }
 if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')

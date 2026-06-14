@@ -22,11 +22,12 @@ CREATE TABLE IF NOT EXISTS product (
     category_id BIGINT DEFAULT NULL COMMENT '产品分类ID',
     brand_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '品牌名称',
     unit_name VARCHAR(32) NOT NULL DEFAULT '件' COMMENT '单位名称',
+    quantity_precision TINYINT NOT NULL DEFAULT 0 COMMENT '数量小数位：0-2，离散单位通常为0',
     specification VARCHAR(255) NOT NULL DEFAULT '' COMMENT '规格型号',
     barcode VARCHAR(64) DEFAULT NULL COMMENT '条码',
     reference_purchase_price DECIMAL(18,2) NOT NULL DEFAULT 0.00 COMMENT '参考采购价',
     reference_sale_price DECIMAL(18,2) NOT NULL DEFAULT 0.00 COMMENT '参考销售价',
-    safety_stock_qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000 COMMENT '安全库存数量',
+    safety_stock_qty BIGINT NOT NULL DEFAULT 0 COMMENT '安全库存数量，按100倍整数存储，例如12.50存1250',
     status TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1启用，0禁用',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -37,5 +38,6 @@ CREATE TABLE IF NOT EXISTS product (
     KEY idx_product_category (category_id),
     KEY idx_product_name (product_name),
     KEY idx_product_barcode (barcode),
-    KEY idx_product_deleted_status (deleted, status)
+    KEY idx_product_deleted_status (deleted, status),
+    CONSTRAINT chk_product_quantity_precision CHECK (quantity_precision BETWEEN 0 AND 2)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='产品表';

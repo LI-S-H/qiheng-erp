@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
+import { useAuthStore } from '@/modules/auth/stores/authStore';
 import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
 import { listWarehouses } from '../../warehouses/api';
@@ -48,6 +49,7 @@ interface DraftFormItem extends StockBillDraftItemPayload {
 }
 
 const emptySummary = (): StockBillSummary => ({ stockBillCount: 0, inboundCount: 0, outboundCount: 0, confirmedCount: 0 });
+const authStore = useAuthStore();
 const loading = ref(false);
 const queryPending = ref(false);
 const requestSequence = ref(0);
@@ -86,17 +88,21 @@ const query = reactive<StockBillQuery>({
   pageNum: 1,
   pageSize: 10,
 });
-const form = reactive<{ billType: ManualStockBillType; warehouseId: string; remark: string; items: DraftFormItem[] }>({
+const form = reactive<{ billType: ManualStockBillType; sourceNo: string; warehouseId: string; manualReason: string; remark: string; items: DraftFormItem[] }>({
   billType: 'ADJUST_IN',
+  sourceNo: '',
   warehouseId: '',
+  manualReason: '',
   remark: '',
   items: [],
 });
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const formBillType = computed<StockBillType>(() => dialogMode.value === 'edit' && editingDetail.value ? editingDetail.value.billType : form.billType);
-const structureEditable = computed(() => dialogMode.value === 'create' || editingDetail.value?.sourceType === 'STOCK_ADJUST');
+const structureEditable = computed(() => dialogMode.value === 'create' || editingDetail.value?.entryMode !== 'SOURCE_GENERATED');
 const qualityFieldsVisible = computed(() => formBillType.value === 'PURCHASE_IN' || formBillType.value === 'SALES_RETURN');
+const isAdjustmentForm = computed(() => formBillType.value === 'ADJUST_IN' || formBillType.value === 'ADJUST_OUT');
+const isManualForm = computed(() => dialogMode.value === 'create' || editingDetail.value?.entryMode !== 'SOURCE_GENERATED');
 const billTypeOptions: Array<{ value: StockBillType | 'all'; label: string }> = [
   { value: 'all', label: '全部类型' },
   { value: 'PURCHASE_IN', label: '采购入库' },
@@ -107,6 +113,10 @@ const billTypeOptions: Array<{ value: StockBillType | 'all'; label: string }> = 
   { value: 'ADJUST_OUT', label: '库存调整出库' },
 ];
 const manualBillTypeOptions: Array<{ value: ManualStockBillType; label: string }> = [
+  { value: 'PURCHASE_IN', label: '补录采购入库' },
+  { value: 'SALES_OUT', label: '补录销售出库' },
+  { value: 'PURCHASE_RETURN', label: '补录采购退货出库' },
+  { value: 'SALES_RETURN', label: '补录销售退货入库' },
   { value: 'ADJUST_IN', label: '库存调整入库' },
   { value: 'ADJUST_OUT', label: '库存调整出库' },
 ];
@@ -135,6 +145,11 @@ const sourceTypeMap = {
   PURCHASE_RETURN_ORDER: '采购退货单',
   SALES_RETURN_ORDER: '销售退货单',
   STOCK_ADJUST: '库存调整单',
+} as const;
+const entryModeMap = {
+  SOURCE_GENERATED: { label: '来源生成', className: 'border-slate-200 bg-slate-50 text-slate-600' },
+  MANUAL_SUPPLEMENT: { label: '手工补录', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+  MANUAL_ADJUSTMENT: { label: '手工调整', className: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
 } as const;
 
 function newDraftItem(): DraftFormItem {
@@ -232,7 +247,7 @@ async function openDetail(row: StockBillListItem) {
 }
 
 function resetForm() {
-  Object.assign(form, { billType: 'ADJUST_IN', warehouseId: formWarehouseOptions.value[0]?.value || '', remark: '', items: [newDraftItem()] });
+  Object.assign(form, { billType: 'ADJUST_IN', sourceNo: '', warehouseId: formWarehouseOptions.value[0]?.value || '', manualReason: '', remark: '', items: [newDraftItem()] });
   editingDetail.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
@@ -254,8 +269,10 @@ async function openEditDialog(row: StockBillListItem) {
     const current = await getStockBillDetail(row.stockBillId);
     if (current.status !== 'DRAFT') throw new Error('只有草稿状态的出入库流水可以编辑');
     editingDetail.value = current;
-    form.billType = current.billType === 'ADJUST_OUT' ? 'ADJUST_OUT' : 'ADJUST_IN';
+    form.billType = current.billType;
+    form.sourceNo = current.sourceNo;
     form.warehouseId = current.warehouseId;
+    form.manualReason = current.manualReason;
     form.remark = current.remark;
     form.items = current.items.map(item => ({
       key: item.stockBillItemId,
@@ -290,9 +307,40 @@ function productLabel(item: DraftFormItem) {
   return product ? `${product.productCode} ${product.productName}（${product.unitName}）` : item.productId;
 }
 
+function itemQuantityPrecision(item: DraftFormItem) {
+  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.stockBillItemId === item.stockBillItemId);
+  return snapshot?.quantityPrecision ?? products.value.find(product => product.productId === item.productId)?.quantityPrecision ?? 0;
+}
+
+function itemQuantityStep(item: DraftFormItem) {
+  return 10 ** -itemQuantityPrecision(item);
+}
+
+function itemUnitName(item: DraftFormItem) {
+  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.stockBillItemId === item.stockBillItemId);
+  return snapshot?.unitName ?? products.value.find(product => product.productId === item.productId)?.unitName ?? '';
+}
+
+function quantityHint(item: DraftFormItem) {
+  const precision = itemQuantityPrecision(item);
+  const unit = itemUnitName(item);
+  return `${unit ? `单位 ${unit}，` : ''}${precision === 0 ? '仅允许整数' : `最多 ${precision} 位小数`}`;
+}
+
+function matchesQuantityPrecision(value: number, precision: number) {
+  return Math.abs(value * 10 ** precision - Math.round(value * 10 ** precision)) < 1e-8;
+}
+
+function clearFormError(key: string) {
+  delete formErrors[key];
+}
+
 function validateForm() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   if (dialogMode.value === 'create' && !form.warehouseId) formErrors.warehouseId = '请选择仓库';
+  if (isManualForm.value && !isAdjustmentForm.value && !form.sourceNo.trim()) formErrors.sourceNo = '请输入原业务单号，便于追溯补录来源';
+  if (isManualForm.value && !form.manualReason.trim()) formErrors.manualReason = isAdjustmentForm.value ? '请填写调整原因' : '请填写补录原因';
+  else if (form.manualReason.trim().length > 500) formErrors.manualReason = '原因不能超过 500 个字符';
   if (!form.items.length) formErrors.items = '至少添加一条产品明细';
   const selectedProducts = new Set<string>();
   form.items.forEach((item, index) => {
@@ -300,11 +348,17 @@ function validateForm() {
     else if (selectedProducts.has(item.productId)) formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
     selectedProducts.add(item.productId);
     if (!Number.isFinite(item.quantity) || item.quantity <= 0) formErrors[`items.${index}.quantity`] = '数量必须大于 0';
+    const precision = itemQuantityPrecision(item);
+    if (!formErrors[`items.${index}.quantity`] && !matchesQuantityPrecision(item.quantity, precision)) {
+      formErrors[`items.${index}.quantity`] = precision === 0 ? '该产品按整单位管理，数量必须是整数' : `该产品数量最多保留 ${precision} 位小数`;
+    }
     if (qualityFieldsVisible.value) {
       if (!Number.isFinite(item.qualifiedQty) || item.qualifiedQty < 0 || !Number.isFinite(item.defectiveQty) || item.defectiveQty < 0) {
         formErrors[`items.${index}.quality`] = '质量数量不能小于 0';
       } else if (Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) {
         formErrors[`items.${index}.quality`] = '合格与不合格数量之和必须等于本次数量';
+      } else if (!matchesQuantityPrecision(item.qualifiedQty, precision) || !matchesQuantityPrecision(item.defectiveQty, precision)) {
+        formErrors[`items.${index}.quality`] = precision === 0 ? '该产品的质量数量必须是整数' : `质量数量最多保留 ${precision} 位小数`;
       }
     }
     if (item.remark.trim().length > 500) formErrors[`items.${index}.remark`] = '明细备注不能超过 500 个字符';
@@ -331,14 +385,16 @@ async function submitForm() {
     if (dialogMode.value === 'create') {
       const payload: StockBillCreatePayload = {
         billType: form.billType,
+        sourceNo: form.sourceNo.trim(),
         warehouseId: form.warehouseId,
+        manualReason: form.manualReason.trim(),
         items: buildItemPayloads(),
         remark: form.remark.trim(),
       };
       await createStockBill(payload);
-      toast.success('库存调整草稿已创建');
+      toast.success(isAdjustmentForm.value ? '库存调整草稿已创建' : '补录出入库草稿已创建');
     } else if (editingDetail.value) {
-      const payload: StockBillUpdatePayload = { items: buildItemPayloads(), remark: form.remark.trim() };
+      const payload: StockBillUpdatePayload = { sourceNo: form.sourceNo.trim(), manualReason: form.manualReason.trim(), items: buildItemPayloads(), remark: form.remark.trim() };
       await updateStockBill(editingDetail.value.stockBillId, payload);
       toast.success('出入库草稿已更新');
     }
@@ -444,29 +500,30 @@ onMounted(() => {
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
-        <div class="table-toolbar__title"><strong class="text-sm">库存变动凭证</strong><span class="text-xs text-muted-foreground">采购和销售草稿由来源单据生成；本页可新增库存调整并处理所有草稿</span></div>
+        <div class="table-toolbar__title"><strong class="text-sm">库存变动凭证</strong><span class="text-xs text-muted-foreground">业务单据正常生成凭证；遗漏登记时可手工补录，并保留负责人、原业务单号和补录原因</span></div>
         <div class="table-toolbar__actions">
-          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" :disabled="formSubmitting || actionSubmitting" @click="openCreateDialog"><Plus class="size-4" />新增调整</Button></span></TooltipTrigger><TooltipContent>创建调整入库或调整出库草稿</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" :disabled="formSubmitting || actionSubmitting" @click="openCreateDialog"><Plus class="size-4" />新增出入库</Button></span></TooltipTrigger><TooltipContent>创建库存调整或补录采购、销售、退货凭证</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger><TooltipContent>重新加载当前出入库记录</TooltipContent></Tooltip>
         </div>
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1510px] table-fixed">
-          <colgroup><col class="w-[165px]" /><col class="w-[125px]" /><col class="w-[175px]" /><col class="w-[150px]" /><col class="w-[70px]" /><col class="w-[90px]" /><col class="w-[165px]" /><col class="w-[165px]" /><col class="w-[260px]" /></colgroup>
-          <TableHeader><TableRow><TableHead>流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>来源单据</TableHead><TableHead>仓库</TableHead><TableHead class="text-center">明细数</TableHead><TableHead class="text-center">状态</TableHead><TableHead>确认信息</TableHead><TableHead>创建信息</TableHead><TableHead class="text-center">操作</TableHead></TableRow></TableHeader>
+        <Table class="min-w-[1650px] table-fixed">
+          <colgroup><col class="w-[165px]" /><col class="w-[125px]" /><col class="w-[190px]" /><col class="w-[150px]" /><col class="w-[70px]" /><col class="w-[90px]" /><col class="w-[130px]" /><col class="w-[165px]" /><col class="w-[165px]" /><col class="w-[260px]" /></colgroup>
+          <TableHeader><TableRow><TableHead>流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>来源单据</TableHead><TableHead>仓库</TableHead><TableHead class="text-center">明细数</TableHead><TableHead class="text-center">状态</TableHead><TableHead>负责人</TableHead><TableHead>创建信息</TableHead><TableHead>确认信息</TableHead><TableHead class="text-center">操作</TableHead></TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading && records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无符合条件的出入库记录</TableCell></TableRow>
+            <TableRow v-if="loading && records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
+            <TableRow v-else-if="records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无符合条件的出入库记录</TableCell></TableRow>
             <TableRow v-for="row in records" v-else :key="row.stockBillId" :data-stock-bill-id="row.stockBillId">
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.billNo }}</code></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="billTypeMap[row.billType].className">{{ billTypeMap[row.billType].label }}</Badge></TableCell>
-              <TableCell><div class="flex flex-col gap-1"><span class="text-xs text-muted-foreground">{{ sourceTypeMap[row.sourceType] }}</span><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.sourceNo || '无来源单号' }}</code></div></TableCell>
+              <TableCell><div class="flex flex-col items-start gap-1"><div class="flex items-center gap-1.5"><span class="text-xs text-muted-foreground">{{ sourceTypeMap[row.sourceType] }}</span><Badge variant="outline" :class="entryModeMap[row.entryMode].className">{{ entryModeMap[row.entryMode].label }}</Badge></div><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.sourceNo || '无来源单号' }}</code></div></TableCell>
               <TableCell class="font-medium">{{ row.warehouseName }}</TableCell>
               <TableCell class="text-center tabular-nums">{{ row.itemCount }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="statusMap[row.status].className">{{ statusMap[row.status].label }}</Badge></TableCell>
-              <TableCell><div v-if="row.status === 'CONFIRMED'" class="flex flex-col gap-1"><span>{{ row.confirmedByName }}</span><span class="text-xs text-muted-foreground">{{ row.confirmedAt }}</span></div><span v-else class="text-sm text-muted-foreground">未确认</span></TableCell>
+              <TableCell>{{ row.responsibleByName }}</TableCell>
               <TableCell><div class="flex flex-col gap-1"><span>{{ row.createdByName || '系统' }}</span><span class="text-xs text-muted-foreground">{{ row.createdAt }}</span></div></TableCell>
+              <TableCell><div v-if="row.status === 'CONFIRMED'" class="flex flex-col gap-1"><span>{{ row.confirmedByName }}</span><span class="text-xs text-muted-foreground">{{ row.confirmedAt }}</span></div><span v-else class="text-sm text-muted-foreground">未确认</span></TableCell>
               <TableCell class="text-center">
                 <div class="flex justify-center gap-1">
                   <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openDetail(row)"><Eye class="size-4" />详情</Button>
@@ -487,8 +544,8 @@ onMounted(() => {
     <Dialog v-model:open="formVisible">
       <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(820px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-[1080px]">
         <DialogHeader>
-          <DialogTitle>{{ dialogMode === 'create' ? '新增库存调整' : '编辑出入库草稿' }}</DialogTitle>
-          <DialogDescription>{{ dialogMode === 'create' ? '手工新增仅用于调整入库或调整出库，流水号和调整单号保存后由系统生成。' : '只有草稿可以编辑；来源业务单据生成的草稿不能更换仓库、产品或出入库类型。' }}</DialogDescription>
+          <DialogTitle>{{ dialogMode === 'create' ? '新增出入库凭证' : '编辑出入库草稿' }}</DialogTitle>
+          <DialogDescription>{{ dialogMode === 'create' ? '库存调整由系统生成调整单号；采购、销售和退货补录必须填写原业务单号、原因，并由当前登录人承担补录责任。' : '只有草稿可以编辑；来源业务单据生成的草稿不能更换仓库、产品或出入库类型。' }}</DialogDescription>
         </DialogHeader>
         <div v-if="formLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />草稿加载中...</div>
         <ScrollArea v-else class="dialog-scroll-area min-h-0 flex-1 pr-3">
@@ -508,6 +565,17 @@ onMounted(() => {
               </div>
             </div>
 
+            <div v-if="isManualForm" class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
+              <div class="space-y-1">
+                <Label>{{ isAdjustmentForm ? '调整单号' : '原业务单号' }} <span v-if="!isAdjustmentForm" class="text-destructive">*</span></Label>
+                <Input v-if="!isAdjustmentForm" v-model="form.sourceNo" maxlength="64" placeholder="填写线下单据、送货单或退货单号" :aria-invalid="Boolean(formErrors.sourceNo)" @update:model-value="clearFormError('sourceNo')" />
+                <Input v-else :model-value="dialogMode === 'create' ? '保存后由系统生成' : form.sourceNo" readonly class="bg-muted/55 text-muted-foreground" />
+                <p v-if="formErrors.sourceNo" class="text-xs text-destructive">{{ formErrors.sourceNo }}</p>
+              </div>
+              <div class="space-y-1"><Label>负责人</Label><Input :model-value="editingDetail?.responsibleByName || authStore.displayName" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">由后端按当前登录用户写入，不允许代填</p></div>
+              <div class="space-y-1"><Label>{{ isAdjustmentForm ? '调整原因' : '补录原因' }} <span class="text-destructive">*</span></Label><Input v-model="form.manualReason" maxlength="500" :placeholder="isAdjustmentForm ? '说明盘点差异或调整依据' : '说明未登记原业务单据的原因'" :aria-invalid="Boolean(formErrors.manualReason)" @update:model-value="clearFormError('manualReason')" /><p v-if="formErrors.manualReason" class="text-xs text-destructive">{{ formErrors.manualReason }}</p></div>
+            </div>
+
             <div>
               <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">产品明细 <span class="text-destructive">*</span></h3><p class="mt-1 text-xs text-muted-foreground">确认后才会更新库存；出库数量还会校验当前库存与锁定库存。</p></div><Button v-if="structureEditable" size="sm" variant="outline" @click="addFormItem"><Plus class="size-4" />添加产品</Button></div>
               <p v-if="formErrors.items" class="mb-2 text-xs text-destructive">{{ formErrors.items }}</p>
@@ -515,14 +583,14 @@ onMounted(() => {
                 <div v-for="(item, index) in form.items" :key="item.key" class="draft-item-grid rounded-lg border bg-muted/20 p-3" :class="{ 'draft-item-grid--quality': qualityFieldsVisible }">
                   <div class="space-y-1 draft-product">
                     <Label>产品 <span class="text-destructive">*</span></Label>
-                    <AnchoredSelect v-if="structureEditable" v-model="item.productId" :options="productOptions" placeholder="请选择启用产品" />
+                    <AnchoredSelect v-if="structureEditable" v-model="item.productId" :options="productOptions" placeholder="请选择启用产品" @update:model-value="clearFormError(`items.${index}.productId`)" />
                     <Input v-else :model-value="productLabel(item)" readonly class="bg-background text-muted-foreground" />
                     <p v-if="formErrors[`items.${index}.productId`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p>
                   </div>
-                  <div class="space-y-1"><Label>本次数量 <span class="text-destructive">*</span></Label><Input v-model.number="item.quantity" type="number" min="0.0001" step="0.0001" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" /><p v-if="formErrors[`items.${index}.quantity`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.quantity`] }}</p></div>
+                  <div class="space-y-1"><Label>本次数量 <span class="text-destructive">*</span></Label><Input v-model.number="item.quantity" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="clearFormError(`items.${index}.quantity`)" /><p class="text-xs" :class="formErrors[`items.${index}.quantity`] ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors[`items.${index}.quantity`] || quantityHint(item) }}</p></div>
                   <template v-if="qualityFieldsVisible">
-                    <div class="space-y-1"><Label>合格数量</Label><Input v-model.number="item.qualifiedQty" type="number" min="0" step="0.0001" /></div>
-                    <div class="space-y-1"><Label>不合格数量</Label><Input v-model.number="item.defectiveQty" type="number" min="0" step="0.0001" /><p v-if="formErrors[`items.${index}.quality`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.quality`] }}</p></div>
+                    <div class="space-y-1"><Label>合格数量</Label><Input v-model.number="item.qualifiedQty" type="number" min="0" :step="itemQuantityStep(item)" /></div>
+                    <div class="space-y-1"><Label>不合格数量</Label><Input v-model.number="item.defectiveQty" type="number" min="0" :step="itemQuantityStep(item)" /><p v-if="formErrors[`items.${index}.quality`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.quality`] }}</p></div>
                   </template>
                   <div class="space-y-1 draft-remark"><Label>明细备注</Label><Input v-model="item.remark" maxlength="500" placeholder="可填写盘点差异原因" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></div>
                   <Button v-if="structureEditable" size="icon" variant="ghost" class="mt-6 text-destructive" :disabled="form.items.length <= 1" aria-label="删除产品明细" @click="removeFormItem(index)"><Trash2 class="size-4" /></Button>
@@ -548,8 +616,10 @@ onMounted(() => {
               <div class="detail-field"><span>类型</span><Badge variant="outline" :class="billTypeMap[detail.billType].className">{{ billTypeMap[detail.billType].label }}</Badge></div>
               <div class="detail-field"><span>状态</span><Badge variant="outline" :class="statusMap[detail.status].className">{{ statusMap[detail.status].label }}</Badge></div>
               <div class="detail-field"><span>仓库</span><strong>{{ detail.warehouseName }}</strong></div>
+              <div class="detail-field"><span>录入方式</span><Badge variant="outline" :class="entryModeMap[detail.entryMode].className">{{ entryModeMap[detail.entryMode].label }}</Badge></div>
               <div class="detail-field"><span>来源类型</span><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></div>
               <div class="detail-field"><span>来源单号</span><code>{{ detail.sourceNo || '-' }}</code></div>
+              <div class="detail-field"><span>负责人</span><strong>{{ detail.responsibleByName }}</strong></div>
               <div class="detail-field"><span>创建人 / 时间</span><strong>{{ detail.createdByName || '系统' }}</strong><small>{{ detail.createdAt }}</small></div>
               <div class="detail-field"><span>确认人 / 时间</span><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></div>
             </div>
@@ -577,6 +647,7 @@ onMounted(() => {
                 </ScrollArea>
               </div>
             </div>
+            <div v-if="detail.entryMode !== 'SOURCE_GENERATED'" class="rounded-lg border border-amber-200 bg-amber-50/60 p-3"><span class="text-xs text-amber-700">{{ detail.entryMode === 'MANUAL_SUPPLEMENT' ? '补录原因' : '调整原因' }}</span><p class="mt-1 text-sm">{{ detail.manualReason }}</p></div>
             <div class="rounded-lg border bg-muted/25 p-3"><span class="text-xs text-muted-foreground">凭证备注</span><p class="mt-1 text-sm">{{ detail.remark || '无' }}</p></div>
           </div>
         </ScrollArea>

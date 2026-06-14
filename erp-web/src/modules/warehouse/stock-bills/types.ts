@@ -3,7 +3,8 @@ import type { PageResult } from '@/shared/types/api';
 export type StockBillType = 'PURCHASE_IN' | 'SALES_OUT' | 'PURCHASE_RETURN' | 'SALES_RETURN' | 'ADJUST_IN' | 'ADJUST_OUT';
 export type StockBillSourceType = 'PURCHASE_ORDER' | 'SALES_ORDER' | 'PURCHASE_RETURN_ORDER' | 'SALES_RETURN_ORDER' | 'STOCK_ADJUST';
 export type StockBillStatus = 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
-export type ManualStockBillType = 'ADJUST_IN' | 'ADJUST_OUT';
+export type StockBillEntryMode = 'SOURCE_GENERATED' | 'MANUAL_SUPPLEMENT' | 'MANUAL_ADJUSTMENT';
+export type ManualStockBillType = StockBillType;
 
 export interface StockBillListItem {
   stockBillId: string;
@@ -12,6 +13,7 @@ export interface StockBillListItem {
   sourceType: StockBillSourceType;
   sourceId: string | null;
   sourceNo: string;
+  entryMode: StockBillEntryMode;
   warehouseId: string;
   warehouseName: string;
   status: StockBillStatus;
@@ -21,6 +23,8 @@ export interface StockBillListItem {
   confirmedAt: string | null;
   createdById: string | null;
   createdByName: string;
+  responsibleById: string;
+  responsibleByName: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,6 +38,7 @@ export interface StockBillItem {
   productCode: string;
   productName: string;
   unitName: string;
+  quantityPrecision: number;
   quantity: number;
   qualifiedQty: number;
   defectiveQty: number;
@@ -46,6 +51,7 @@ export interface StockBillItem {
 }
 
 export interface StockBillDetail extends StockBillListItem {
+  manualReason: string;
   remark: string;
   items: StockBillItem[];
 }
@@ -82,12 +88,16 @@ export interface StockBillDraftItemPayload {
 
 export interface StockBillCreatePayload {
   billType: ManualStockBillType;
+  sourceNo: string;
   warehouseId: string;
+  manualReason: string;
   items: StockBillDraftItemPayload[];
   remark: string;
 }
 
 export interface StockBillUpdatePayload {
+  sourceNo: string;
+  manualReason: string;
   items: StockBillDraftItemPayload[];
   remark: string;
 }

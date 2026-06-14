@@ -1405,6 +1405,91 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
 
+  /warehouse/stock-bills:
+    get:
+      tags: [WarehouseStockBill]
+      summary: 分页查询出入库记录
+      description: |
+        查询 `stock_bill` 出入库流水主表，并按 `stock_bill_item.bill_id` 聚合返回 `itemCount`；列表不跨不同产品单位汇总数量。
+        流水号和来源单号分别使用包含匹配，仓库、出入库类型和状态使用精确匹配，多个有效条件按 AND 组合。
+        列表摘要基于当前全部筛选结果统计单据数、入库单数、出库单数和已确认单数，不只统计当前分页。
+        入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`；出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`。
+        本接口只用于追溯库存凭证，不直接创建、确认或取消流水，需要 `warehouse:query` 权限。
+      operationId: stockBillPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: billNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 出入库流水号，对应 `stock_bill.bill_no`，使用包含匹配
+        - name: sourceNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 来源单号，对应 `stock_bill.source_no`，使用包含匹配
+        - name: warehouseId
+          in: query
+          schema: { type: string }
+          description: 仓库 ID，对应 `stock_bill.warehouse_id`，使用精确匹配
+        - name: billType
+          in: query
+          schema:
+            type: string
+            enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]
+          description: 出入库类型，对应 `stock_bill.bill_type`，使用精确匹配
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, CONFIRMED, CANCELLED]
+          description: 流水状态，对应 `stock_bill.status`，使用精确匹配
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /warehouse/stock-bills/{stockBillId}:
+    get:
+      tags: [WarehouseStockBill]
+      summary: 获取出入库记录详情
+      description: 返回 `stock_bill` 主表信息及按 `stock_bill_item.bill_id` 查询的全部明细，用于追溯来源单据、确认信息、产品数量和库存变动。本接口需要 `warehouse:query` 权限。
+      operationId: stockBillDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
   /warehouse/warehouses:
     get:
       tags: [Warehouse]
@@ -2135,6 +2220,13 @@ components:
       schema:
         type: string
       description: 仓库 ID，对应 `warehouse.id`
+    StockBillId:
+      name: stockBillId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 出入库流水 ID，对应 `stock_bill.id`
   responses:
     BadRequest:
       description: 请求参数错误
@@ -3020,6 +3112,82 @@ components:
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1 }
         summary: { $ref: '#/components/schemas/WarehouseStockSummary' }
+
+    StockBillPage:
+      type: object
+      required: [records, total, pageNum, pageSize, summary]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/StockBill' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        summary: { $ref: '#/components/schemas/StockBillSummary' }
+
+    StockBillSummary:
+      type: object
+      required: [stockBillCount, inboundCount, outboundCount, confirmedCount]
+      properties:
+        stockBillCount: { type: integer, minimum: 0, description: 当前筛选范围内出入库流水数 }
+        inboundCount: { type: integer, minimum: 0, description: 当前筛选范围内入库类型流水数 }
+        outboundCount: { type: integer, minimum: 0, description: 当前筛选范围内出库类型流水数 }
+        confirmedCount: { type: integer, minimum: 0, description: 当前筛选范围内状态为 CONFIRMED 的流水数 }
+
+    StockBill:
+      type: object
+      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, warehouseId, warehouseName, status, itemCount, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, createdAt, updatedAt]
+      properties:
+        stockBillId: { type: string, description: 对应 `stock_bill.id`，BIGINT 按字符串传输 }
+        billNo: { type: string, maxLength: 64, description: 对应 `stock_bill.bill_no` }
+        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 对应 `stock_bill.bill_type` }
+        sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 对应 `stock_bill.source_type` }
+        sourceId: { type: string, nullable: true, description: 对应 `stock_bill.source_id`，BIGINT 按字符串传输 }
+        sourceNo: { type: string, maxLength: 64, description: 对应 `stock_bill.source_no` }
+        warehouseId: { type: string, description: 对应 `stock_bill.warehouse_id`，BIGINT 按字符串传输 }
+        warehouseName: { type: string, maxLength: 100, description: 对应 `stock_bill.warehouse_name` }
+        status: { type: string, enum: [DRAFT, CONFIRMED, CANCELLED], description: 对应 `stock_bill.status` }
+        itemCount: { type: integer, minimum: 0, description: 按 `stock_bill_item.bill_id` 聚合的明细条数 }
+        confirmedById: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_by_id`，BIGINT 按字符串传输 }
+        confirmedByName: { type: string, maxLength: 100, description: 对应 `stock_bill.confirmed_by_name` }
+        confirmedAt: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_at` }
+        createdById: { type: string, nullable: true, description: 对应 `stock_bill.created_by_id`，BIGINT 按字符串传输 }
+        createdByName: { type: string, maxLength: 100, description: 对应 `stock_bill.created_by_name` }
+        createdAt: { type: string, description: 对应 `stock_bill.created_at` }
+        updatedAt: { type: string, description: 对应 `stock_bill.updated_at` }
+
+    StockBillDetail:
+      allOf:
+        - $ref: '#/components/schemas/StockBill'
+        - type: object
+          required: [remark, items]
+          properties:
+            remark: { type: string, maxLength: 500, description: 对应 `stock_bill.remark` }
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/StockBillItem' }
+
+    StockBillItem:
+      type: object
+      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createdAt, updatedAt, remark]
+      properties:
+        stockBillItemId: { type: string, description: 对应 `stock_bill_item.id`，BIGINT 按字符串传输 }
+        stockBillId: { type: string, description: 对应 `stock_bill_item.bill_id`，BIGINT 按字符串传输 }
+        billNo: { type: string, maxLength: 64, description: 对应 `stock_bill_item.bill_no` }
+        sourceItemId: { type: string, nullable: true, description: 对应 `stock_bill_item.source_item_id`，BIGINT 按字符串传输 }
+        productId: { type: string, description: 对应 `stock_bill_item.product_id`，BIGINT 按字符串传输 }
+        productCode: { type: string, maxLength: 64, description: 对应 `stock_bill_item.product_code` }
+        productName: { type: string, maxLength: 200, description: 对应 `stock_bill_item.product_name` }
+        unitName: { type: string, maxLength: 32, description: 对应 `stock_bill_item.unit_name` }
+        quantity: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.quantity` }
+        qualifiedQty: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.qualified_qty` }
+        defectiveQty: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.defective_qty` }
+        beforeQty: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.before_qty` }
+        changeQty: { type: number, format: double, description: 对应 `stock_bill_item.change_qty`，入库为正、出库为负 }
+        afterQty: { type: number, format: double, minimum: 0, description: 对应 `stock_bill_item.after_qty` }
+        createdAt: { type: string, description: 对应 `stock_bill_item.created_at` }
+        updatedAt: { type: string, description: 对应 `stock_bill_item.updated_at` }
+        remark: { type: string, maxLength: 500, description: 对应 `stock_bill_item.remark` }
 
     WarehouseStock:
       type: object

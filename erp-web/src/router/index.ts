@@ -12,6 +12,7 @@ import ProductCategoryManageView from '@/modules/product/categories/views/Produc
 import ProductManageView from '@/modules/product/products/views/ProductManageView.vue';
 import WarehouseManageView from '@/modules/warehouse/warehouses/views/WarehouseManageView.vue';
 import WarehouseStockManageView from '@/modules/warehouse/stocks/views/WarehouseStockManageView.vue';
+import StockBillManageView from '@/modules/warehouse/stock-bills/views/StockBillManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -118,7 +119,10 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'warehouse/stock-bills',
         name: 'warehouse-stock-bills',
-        ...placeholder('出入库记录', '仓储库存', '追踪采购入库 销售出库 退货和库存调整形成的库存变动凭证'),
+        component: StockBillManageView,
+        meta: {
+          title: '出入库记录',
+        },
       },
       {
         path: 'warehouse/stock-adjustments',

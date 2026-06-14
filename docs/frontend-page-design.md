@@ -638,3 +638,44 @@ GET /warehouse/stocks
 ```
 
 接口需要 `warehouse:query` 权限。响应摘要基于当前全部筛选结果计算，不得只统计当前分页记录。
+
+## 16. 仓库库存模块：出入库记录
+
+### 16.1 页面范围
+
+出入库记录页面路径为 `/warehouse/stock-bills`，用于只读追溯采购入库、销售出库、采购退货、销售退货和库存调整形成的库存凭证。页面包含流水摘要、字段级筛选、分页列表、刷新和凭证明细弹窗，不在本页直接创建、确认、取消或删除流水。
+
+### 16.2 页面与数据边界
+
+- 主列表来源于 `stock_bill`；明细条数由后端按 `stock_bill_item.bill_id` 聚合，详情按流水 ID 查询全部 `stock_bill_item`。
+- 流水号和来源单号分别使用包含匹配，仓库、出入库类型和状态使用精确匹配；多个有效条件按 AND 组合，不提供跨字段 `keyword`。
+- 入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`，出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`；状态严格使用数据库值 `DRAFT`、`CONFIRMED`、`CANCELLED`。
+- 摘要只统计流水数、入库流水数、出库流水数和已确认流水数。不同产品可能使用不同单位，列表和摘要不得跨明细汇总数量。
+- 详情展示 `quantity`、`qualified_qty`、`defective_qty`、`before_qty`、`change_qty` 和 `after_qty`；入库变动为正、出库变动为负，草稿和取消流水不应形成实际库存变动。
+- 仓库名称、产品编码、产品名称和单位使用业务发生时保存的快照字段，后续主数据改名不回写历史凭证。
+- 查询、重置、刷新和分页均使用短防抖，点击后立即显示数据区加载层并锁定重复操作；详情加载使用独立状态。
+
+### 16.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 流水ID、流水号 | `stock_bill.id`、`stock_bill.bill_no`，BIGINT ID 按字符串传输 |
+| 出入库类型 | `stock_bill.bill_type` |
+| 来源类型、ID、单号 | `stock_bill.source_type`、`source_id`、`source_no` |
+| 仓库ID、名称 | `stock_bill.warehouse_id`、`warehouse_name` |
+| 状态 | `stock_bill.status` |
+| 明细数 | 按 `stock_bill_item.bill_id` 聚合 |
+| 确认人、确认时间 | `stock_bill.confirmed_by_id`、`confirmed_by_name`、`confirmed_at` |
+| 创建人、创建时间 | `stock_bill.created_by_id`、`created_by_name`、`created_at` |
+| 产品及单位快照 | `stock_bill_item.product_id`、`product_code`、`product_name`、`unit_name` |
+| 本次、合格、不合格数量 | `stock_bill_item.quantity`、`qualified_qty`、`defective_qty` |
+| 变动前、变动量、变动后 | `stock_bill_item.before_qty`、`change_qty`、`after_qty` |
+
+### 16.4 接口
+
+```text
+GET /warehouse/stock-bills
+GET /warehouse/stock-bills/{stockBillId}
+```
+
+两个接口均需要 `warehouse:query` 权限。列表摘要基于当前全部筛选结果计算，详情必须返回完整主表信息和全部明细。

@@ -30,6 +30,9 @@ const warehouseViewSource = readProjectFile('erp-web', 'src', 'modules', 'wareho
 const warehouseStockApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'api.ts');
 const warehouseStockTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'types.ts');
 const warehouseStockViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'views', 'WarehouseStockManageView.vue');
+const stockBillApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'api.ts');
+const stockBillTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'types.ts');
+const stockBillViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'views', 'StockBillManageView.vue');
 const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
 const listViewSources = [
   readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'views', 'UserManageView.vue'),
@@ -40,6 +43,7 @@ const listViewSources = [
   productViewSource,
   warehouseViewSource,
   warehouseStockViewSource,
+  stockBillViewSource,
 ];
 const anchoredSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'AnchoredSelect.vue');
 const treeSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'TreeSelect.vue');
@@ -80,6 +84,8 @@ const requiredPaths = [
   '/warehouse/warehouses/{warehouseId}:',
   '/warehouse/warehouses/{warehouseId}/status:',
   '/warehouse/stocks:',
+  '/warehouse/stock-bills:',
+  '/warehouse/stock-bills/{stockBillId}:',
 ];
 
 for (const requiredPath of requiredPaths) {
@@ -292,6 +298,36 @@ if (!warehouseStockViewSource.includes('库存变更请通过出入库或库存�
   || !warehouseStockViewSource.includes('占用情况')
   || !pageDesign.includes('## 15. 仓库库存模块：库存管理')) {
   throw new Error('库存管理页面边界、响应式布局或页面设计文档不完整');
+}
+for (const fragment of [
+  'StockBillType',
+  'StockBillStatus',
+  'StockBillDetail',
+  'StockBillSummary',
+  'normalizeNullableStringId',
+  'normalizeStockBillItem',
+  'listStockBills',
+  'getStockBillDetail',
+]) {
+  if (!stockBillApiSource.includes(fragment) && !stockBillTypeSource.includes(fragment)) {
+    throw new Error(`出入库记录前端契约缺少：${fragment}`);
+  }
+}
+for (const fragment of [
+  '按 `stock_bill_item.bill_id` 聚合返回 `itemCount`',
+  '列表不跨不同产品单位汇总数量',
+  'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
+  'enum: [DRAFT, CONFIRMED, CANCELLED]',
+  "data: { $ref: '#/components/schemas/StockBillPage' }",
+  "data: { $ref: '#/components/schemas/StockBillDetail' }",
+]) {
+  if (!source.includes(fragment)) throw new Error(`出入库记录 OpenAPI 缺少：${fragment}`);
+}
+if (!stockBillViewSource.includes('流水由对应业务流程生成，当前页面仅提供查询和追溯')
+  || !stockBillViewSource.includes('filter-grid--stock-bills')
+  || !stockBillViewSource.includes('出入库凭证详情')
+  || !pageDesign.includes('## 16. 仓库库存模块：出入库记录')) {
+  throw new Error('出入库记录页面边界、详情或页面设计文档不完整');
 }
 if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
   || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {

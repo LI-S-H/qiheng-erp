@@ -27,6 +27,61 @@ const stockSeed: WarehouseStockListItem[] = [
   { stockId: '1940000000000000015', warehouseId: '1930000000000000008', warehouseCode: 'WH008', warehouseName: '南京备货仓', productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', unitName: '个', stockQty: 17, lockedQty: 4, availableQty: 13, safetyStockQty: 4, updatedAt: '2026-06-13 11:55:00' },
 ];
 
+let mockStocks = stockSeed.map(item => ({ ...item }));
+
+interface MockStockChange {
+  warehouseId: string;
+  warehouseCode: string;
+  warehouseName: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  unitName: string;
+  safetyStockQty: number;
+  changeQty: number;
+  lockedChangeQty?: number;
+}
+
+export function getMockWarehouseStock(warehouseId: string, productId: string) {
+  const stock = mockStocks.find(item => item.warehouseId === warehouseId && item.productId === productId);
+  return stock ? { ...stock } : null;
+}
+
+export function applyMockWarehouseStockChange(change: MockStockChange) {
+  const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const current = mockStocks.find(item => item.warehouseId === change.warehouseId && item.productId === change.productId);
+  const beforeQty = current?.stockQty || 0;
+  const afterQty = beforeQty + change.changeQty;
+  const lockedQty = current?.lockedQty || 0;
+  const afterLockedQty = lockedQty + (change.lockedChangeQty || 0);
+  if (afterQty < 0) throw new Error(`产品 ${change.productCode} 库存不足，无法确认出库`);
+  if (afterLockedQty < 0) throw new Error(`产品 ${change.productCode} 的销售锁定库存不足`);
+  if (afterQty < afterLockedQty) throw new Error(`产品 ${change.productCode} 调整后库存不能低于已锁定库存`);
+  if (current) {
+    mockStocks = mockStocks.map(item => item.stockId === current.stockId
+      ? { ...item, stockQty: afterQty, lockedQty: afterLockedQty, availableQty: afterQty - afterLockedQty, updatedAt: timestamp }
+      : item);
+  } else {
+    if (change.changeQty < 0) throw new Error(`产品 ${change.productCode} 在当前仓库没有可出库库存`);
+    mockStocks = [...mockStocks, {
+      stockId: String(Date.now()),
+      warehouseId: change.warehouseId,
+      warehouseCode: change.warehouseCode,
+      warehouseName: change.warehouseName,
+      productId: change.productId,
+      productCode: change.productCode,
+      productName: change.productName,
+      unitName: change.unitName,
+      stockQty: afterQty,
+      lockedQty: 0,
+      availableQty: afterQty,
+      safetyStockQty: change.safetyStockQty,
+      updatedAt: timestamp,
+    }];
+  }
+  return { beforeQty, afterQty };
+}
+
 function normalizeStock(item: WarehouseStockListItem): WarehouseStockListItem {
   const stockQty = normalizeFiniteNumber(item.stockQty, 'stockQty');
   const lockedQty = normalizeFiniteNumber(item.lockedQty, 'lockedQty');
@@ -102,7 +157,7 @@ function buildSummary(records: WarehouseStockListItem[]): WarehouseStockSummary 
 function filterStocks(params: WarehouseStockQuery): WarehouseStockPage {
   const productCode = params.productCode?.trim().toLocaleLowerCase();
   const productName = params.productName?.trim().toLocaleLowerCase();
-  let filtered = stockSeed.filter(item => {
+  let filtered = mockStocks.filter(item => {
     if (params.warehouseId && params.warehouseId !== 'all' && item.warehouseId !== params.warehouseId) return false;
     if (productCode && !item.productCode.toLocaleLowerCase().includes(productCode)) return false;
     if (productName && !item.productName.toLocaleLowerCase().includes(productName)) return false;

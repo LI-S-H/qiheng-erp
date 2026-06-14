@@ -14,6 +14,14 @@ async function selectFilter(page, index, label) {
   await page.locator('[data-anchored-select-content][data-state="open"]').getByText(label, { exact: true }).click();
 }
 
+async function selectDialogOption(page, dialog, index, label) {
+  await dialog.getByRole('combobox').nth(index).click();
+  const content = page.locator('[data-anchored-select-content][data-state="open"]');
+  await content.getByText(label, { exact: true }).click();
+  await content.waitFor({ state: 'hidden' });
+  await page.waitForTimeout(180);
+}
+
 runSmoke({
   route: '/warehouse/stock-bills',
   screenshot: 'smoke-warehouse-stock-bills.png',
@@ -87,6 +95,74 @@ runSmoke({
     await clickPaginationAndAssertLoading(page, '上一页');
     await tableRow(page, 'SB202606140001').waitFor();
 
+    await page.getByRole('button', { name: '新增调整' }).click();
+    const createDialog = page.getByRole('dialog', { name: '新增库存调整' });
+    const generatedFields = createDialog.locator('input[readonly]');
+    if (!(await generatedFields.first().inputValue()).includes('系统生成')) throw new Error('新增调整的流水号必须由系统生成');
+    await selectDialogOption(page, createDialog, 1, 'WH001 华东中心仓');
+    await selectDialogOption(page, createDialog, 2, 'P0002 速溶黑咖啡（盒）');
+    await createDialog.getByRole('spinbutton').fill('2');
+    await createDialog.getByPlaceholder('填写调整原因、盘点依据或其他说明').fill('盘点补录测试');
+    const draftColumns = await createDialog.locator('.draft-item-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+    if (draftColumns !== 4) throw new Error(`库存调整明细在宽屏下应为四列，当前为 ${draftColumns} 列`);
+    await page.screenshot({ path: 'smoke-warehouse-stock-bills-create.png', fullPage: true });
+    await createDialog.getByRole('button', { name: '保存草稿' }).click();
+
+    const createdRow = tableRow(page, 'SB202606140016');
+    await createdRow.getByText('调整入库', { exact: true }).waitFor();
+    const createdText = await createdRow.innerText();
+    if (!createdText.includes('库存调整单') || !createdText.includes('草稿')) throw new Error('新增库存调整未形成草稿流水');
+    const createdBillNo = (await createdRow.locator('code').first().innerText()).trim();
+
+    await createdRow.getByRole('button', { name: '编辑' }).click();
+    const editDialog = page.getByRole('dialog', { name: '编辑出入库草稿' });
+    if (await editDialog.locator('input[readonly]').first().inputValue() !== createdBillNo) throw new Error('编辑草稿未显示系统生成的流水号');
+    await editDialog.getByRole('spinbutton').fill('3');
+    await editDialog.getByRole('button', { name: '保存草稿' }).click();
+
+    const editedRow = tableRow(page, createdBillNo);
+    await editedRow.getByRole('button', { name: '确认', exact: true }).click();
+    const confirmDialog = page.getByRole('alertdialog', { name: '确认出入库' });
+    const confirmText = await confirmDialog.innerText();
+    if (!confirmText.includes('立即更新库存余额') || !confirmText.includes('不能再编辑或直接取消')) throw new Error('确认出入库未说明库存与状态影响');
+    await confirmDialog.getByRole('button', { name: '确认执行', exact: true }).click();
+    await editedRow.getByText('已确认', { exact: true }).waitFor();
+    if (await editedRow.getByRole('button', { name: '编辑' }).count() !== 0
+      || await editedRow.getByRole('button', { name: '确认', exact: true }).count() !== 0
+      || await editedRow.getByRole('button', { name: '取消', exact: true }).count() !== 0) {
+      throw new Error('已确认凭证仍允许编辑或再次变更状态');
+    }
+    await editedRow.getByRole('button', { name: '详情' }).click();
+    const adjustedDialog = page.getByRole('dialog', { name: '出入库凭证详情' });
+    const adjustedText = await adjustedDialog.innerText();
+    if (!adjustedText.includes('+3') || !adjustedText.includes('盘点补录测试')) throw new Error('编辑后的调整数量未在确认凭证中生效');
+    await adjustedDialog.getByRole('button', { name: 'Close' }).click();
+
+    await page.getByRole('button', { name: '库存管理', exact: true }).click();
+    await page.getByRole('heading', { name: '库存管理' }).waitFor();
+    await page.getByPlaceholder('如 P0001').fill('P0002');
+    await clickQueryAndAssertLoading(page);
+    const changedStockRow = tableRow(page, 'P0002');
+    if ((await changedStockRow.getByRole('cell').nth(3).innerText()).trim() !== '10') throw new Error('确认调整入库后库存余额未从 7 更新为 10');
+    await page.getByRole('button', { name: '出入库记录', exact: true }).click();
+    await page.getByRole('heading', { name: '出入库记录' }).waitFor();
+    await tableRow(page, createdBillNo).waitFor();
+
+    await page.getByRole('button', { name: '新增调整' }).click();
+    const cancelCreateDialog = page.getByRole('dialog', { name: '新增库存调整' });
+    await selectDialogOption(page, cancelCreateDialog, 0, '库存调整出库');
+    await selectDialogOption(page, cancelCreateDialog, 1, 'WH001 华东中心仓');
+    await selectDialogOption(page, cancelCreateDialog, 2, 'P0003 每日坚果混合装（盒）');
+    await cancelCreateDialog.getByRole('spinbutton').fill('1');
+    await cancelCreateDialog.getByRole('button', { name: '保存草稿' }).click();
+    const cancelRow = tableRow(page, 'SB202606140017');
+    const cancelBillNo = (await cancelRow.locator('code').first().innerText()).trim();
+    await cancelRow.getByRole('button', { name: '取消', exact: true }).click();
+    const cancelDialog = page.getByRole('alertdialog', { name: '取消出入库草稿' });
+    if (!(await cancelDialog.innerText()).includes('取消后不改变库存')) throw new Error('取消草稿未说明库存不变');
+    await cancelDialog.getByRole('button', { name: '确认取消', exact: true }).click();
+    await tableRow(page, cancelBillNo).getByText('已取消', { exact: true }).waitFor();
+
     await page.setViewportSize({ width: 1115, height: 838 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '出入库记录' }).waitFor();
@@ -103,5 +179,5 @@ runSmoke({
     await tableRow(page, 'SB202606140001').waitFor();
   },
 }).then(() => {
-  console.log('SMOKE_OK: 出入库记录独立筛选、组合查询、凭证明细、分页与加载反馈通过');
+  console.log('SMOKE_OK: 出入库记录筛选、新增调整、编辑草稿、确认取消、凭证明细与加载反馈通过');
 });

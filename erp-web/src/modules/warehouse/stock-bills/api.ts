@@ -1,7 +1,12 @@
-import { getResult } from '@/api/http';
+import { getResult, http, postResult } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { listProducts } from '@/modules/product/products/api';
+import { listWarehouses } from '../warehouses/api';
+import { applyMockWarehouseStockChange, getMockWarehouseStock } from '../stocks/api';
 import type {
+  StockBillCreatePayload,
   StockBillDetail,
+  StockBillDraftItemPayload,
   StockBillItem,
   StockBillListItem,
   StockBillPage,
@@ -10,6 +15,7 @@ import type {
   StockBillStatus,
   StockBillSummary,
   StockBillType,
+  StockBillUpdatePayload,
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
@@ -105,7 +111,8 @@ function buildMockBills(): StockBillDetail[] {
   });
 }
 
-const mockBills = buildMockBills();
+let mockBills = buildMockBills();
+let nextMockBillSequence = mockBills.length + 1;
 
 function normalizeEnum<T extends string>(value: unknown, values: readonly T[], fieldName: string): T {
   if (typeof value !== 'string' || !values.includes(value as T)) throw new Error(`接口字段 ${fieldName} 状态非法`);
@@ -213,6 +220,224 @@ function normalizeStockBillPage(page: StockBillPage): StockBillPage {
     pageSize: normalizeFiniteNumber(page.pageSize, 'pageSize'),
     summary: normalizeSummary(page.summary),
   };
+}
+
+function nowText() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function dateKey() {
+  return billSeed[0].billNo.slice(2, 10);
+}
+
+function requireDraft(stockBillId: string) {
+  const bill = mockBills.find(item => item.stockBillId === stockBillId);
+  if (!bill) throw new Error('出入库流水不存在');
+  if (bill.status !== 'DRAFT') throw new Error('只有草稿状态的出入库流水可以操作');
+  return bill;
+}
+
+function validateDraftItems(items: StockBillDraftItemPayload[], billType: StockBillType) {
+  if (!items.length) throw new Error('至少添加一条产品明细');
+  if (new Set(items.map(item => item.productId)).size !== items.length) throw new Error('同一产品不能重复添加');
+  const qualityInbound = billType === 'PURCHASE_IN' || billType === 'SALES_RETURN';
+  items.forEach(item => {
+    if (!item.productId) throw new Error('请选择产品');
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) throw new Error('出入库数量必须大于 0');
+    if (!Number.isFinite(item.qualifiedQty) || item.qualifiedQty < 0 || !Number.isFinite(item.defectiveQty) || item.defectiveQty < 0) {
+      throw new Error('合格数量和不合格数量不能小于 0');
+    }
+    if (qualityInbound && Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) {
+      throw new Error('采购入库和销售退货的合格数量与不合格数量之和必须等于本次数量');
+    }
+  });
+}
+
+async function loadMockMasterData() {
+  const [warehouses, products] = await Promise.all([
+    listWarehouses({ status: 1, pageNum: 1, pageSize: 100 }),
+    listProducts({ status: 1, pageNum: 1, pageSize: 100 }),
+  ]);
+  return { warehouses: warehouses.records, products: products.records };
+}
+
+function nextBillIdentity() {
+  const sequence = String(nextMockBillSequence).padStart(4, '0');
+  nextMockBillSequence += 1;
+  return { billNo: `SB${dateKey()}${sequence}`, sourceNo: `ADJ${dateKey()}${sequence}` };
+}
+
+export async function createStockBill(payload: StockBillCreatePayload) {
+  if (useMockApi) {
+    validateDraftItems(payload.items, payload.billType);
+    const { warehouses, products } = await loadMockMasterData();
+    const warehouse = warehouses.find(item => item.warehouseId === payload.warehouseId);
+    if (!warehouse) throw new Error('只能选择启用状态的仓库');
+    const identity = nextBillIdentity();
+    const timestamp = nowText();
+    const stockBillId = String(Date.now());
+    const items = payload.items.map((item, index) => {
+      const product = products.find(option => option.productId === item.productId);
+      if (!product) throw new Error('只能选择启用状态的产品');
+      const currentStock = getMockWarehouseStock(warehouse.warehouseId, product.productId);
+      return {
+        stockBillItemId: `${stockBillId}${index + 1}`,
+        stockBillId,
+        billNo: identity.billNo,
+        sourceItemId: null,
+        productId: product.productId,
+        productCode: product.productCode,
+        productName: product.productName,
+        unitName: product.unitName,
+        quantity: item.quantity,
+        qualifiedQty: 0,
+        defectiveQty: 0,
+        beforeQty: currentStock?.stockQty || 0,
+        changeQty: 0,
+        afterQty: currentStock?.stockQty || 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        remark: item.remark.trim(),
+      } satisfies StockBillItem;
+    });
+    const created: StockBillDetail = {
+      stockBillId,
+      billNo: identity.billNo,
+      billType: payload.billType,
+      sourceType: 'STOCK_ADJUST',
+      sourceId: null,
+      sourceNo: identity.sourceNo,
+      warehouseId: warehouse.warehouseId,
+      warehouseName: warehouse.warehouseName,
+      status: 'DRAFT',
+      itemCount: items.length,
+      confirmedById: null,
+      confirmedByName: '',
+      confirmedAt: null,
+      createdById: '1900000000000000001',
+      createdByName: '系统管理员',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      remark: payload.remark.trim(),
+      items,
+    };
+    mockBills = [created, ...mockBills];
+    return normalizeStockBillDetail(created);
+  }
+  return postResult<StockBillDetail, StockBillCreatePayload>('/warehouse/stock-bills', payload).then(normalizeStockBillDetail);
+}
+
+export async function updateStockBill(stockBillId: string, payload: StockBillUpdatePayload) {
+  if (useMockApi) {
+    const current = requireDraft(stockBillId);
+    validateDraftItems(payload.items, current.billType);
+    const sourceGenerated = current.sourceType !== 'STOCK_ADJUST';
+    if (sourceGenerated && (payload.items.length !== current.items.length
+      || payload.items.some(item => !item.stockBillItemId || !current.items.some(existing => existing.stockBillItemId === item.stockBillItemId && existing.productId === item.productId)))) {
+      throw new Error('业务单据生成的草稿不能增删或更换产品');
+    }
+    const { products } = await loadMockMasterData();
+    const timestamp = nowText();
+    const items = payload.items.map((item, index) => {
+      const existing = current.items.find(candidate => candidate.stockBillItemId === item.stockBillItemId);
+      const product = products.find(option => option.productId === item.productId);
+      if (!product && !existing) throw new Error('产品不存在或已停用');
+      const snapshot = sourceGenerated ? existing : product || existing;
+      if (!snapshot) throw new Error('产品不存在');
+      const currentStock = getMockWarehouseStock(current.warehouseId, item.productId);
+      return {
+        stockBillItemId: existing?.stockBillItemId || `${stockBillId}${Date.now()}${index + 1}`,
+        stockBillId,
+        billNo: current.billNo,
+        sourceItemId: existing?.sourceItemId || null,
+        productId: item.productId,
+        productCode: snapshot.productCode,
+        productName: snapshot.productName,
+        unitName: snapshot.unitName,
+        quantity: item.quantity,
+        qualifiedQty: current.billType === 'PURCHASE_IN' || current.billType === 'SALES_RETURN' ? item.qualifiedQty : 0,
+        defectiveQty: current.billType === 'PURCHASE_IN' || current.billType === 'SALES_RETURN' ? item.defectiveQty : 0,
+        beforeQty: currentStock?.stockQty || 0,
+        changeQty: 0,
+        afterQty: currentStock?.stockQty || 0,
+        createdAt: existing?.createdAt || timestamp,
+        updatedAt: timestamp,
+        remark: item.remark.trim(),
+      } satisfies StockBillItem;
+    });
+    const updated = { ...current, items, itemCount: items.length, remark: payload.remark.trim(), updatedAt: timestamp };
+    mockBills = mockBills.map(item => item.stockBillId === stockBillId ? updated : item);
+    return normalizeStockBillDetail(updated);
+  }
+  const response = await http.put(`/warehouse/stock-bills/${stockBillId}`, payload);
+  return normalizeStockBillDetail(response.data.data as StockBillDetail);
+}
+
+export async function confirmStockBill(stockBillId: string) {
+  if (useMockApi) {
+    const existing = mockBills.find(item => item.stockBillId === stockBillId);
+    if (!existing) throw new Error('出入库流水不存在');
+    if (existing.status === 'CONFIRMED') return normalizeStockBillDetail(existing);
+    if (existing.status === 'CANCELLED') throw new Error('已取消的出入库流水不能确认');
+    const current = existing;
+    validateDraftItems(current.items, current.billType);
+    const { warehouses, products } = await loadMockMasterData();
+    const warehouse = warehouses.find(item => item.warehouseId === current.warehouseId);
+    if (!warehouse) throw new Error('当前仓库已停用，不能确认出入库');
+    const direction = inboundTypes.has(current.billType) ? 1 : -1;
+    current.items.forEach(item => {
+      const stock = getMockWarehouseStock(current.warehouseId, item.productId);
+      const afterQty = (stock?.stockQty || 0) + direction * item.quantity;
+      const afterLockedQty = (stock?.lockedQty || 0) - (current.billType === 'SALES_OUT' ? item.quantity : 0);
+      if (afterQty < 0) throw new Error(`产品 ${item.productCode} 库存不足，无法确认出库`);
+      if (afterLockedQty < 0) throw new Error(`产品 ${item.productCode} 的销售锁定库存不足`);
+      if (afterQty < afterLockedQty) throw new Error(`产品 ${item.productCode} 出库后库存不能低于锁定库存`);
+    });
+    const timestamp = nowText();
+    const items = current.items.map(item => {
+      const product = products.find(option => option.productId === item.productId);
+      const result = applyMockWarehouseStockChange({
+        warehouseId: current.warehouseId,
+        warehouseCode: warehouse.warehouseCode,
+        warehouseName: current.warehouseName,
+        productId: item.productId,
+        productCode: item.productCode,
+        productName: item.productName,
+        unitName: item.unitName,
+        safetyStockQty: product?.safetyStockQty || 0,
+        changeQty: direction * item.quantity,
+        lockedChangeQty: current.billType === 'SALES_OUT' ? -item.quantity : 0,
+      });
+      return { ...item, beforeQty: result.beforeQty, changeQty: direction * item.quantity, afterQty: result.afterQty, updatedAt: timestamp };
+    });
+    const confirmed: StockBillDetail = {
+      ...current,
+      status: 'CONFIRMED',
+      confirmedById: '1900000000000000001',
+      confirmedByName: '系统管理员',
+      confirmedAt: timestamp,
+      updatedAt: timestamp,
+      items,
+    };
+    mockBills = mockBills.map(item => item.stockBillId === stockBillId ? confirmed : item);
+    return normalizeStockBillDetail(confirmed);
+  }
+  return postResult<StockBillDetail, Record<string, never>>(`/warehouse/stock-bills/${stockBillId}/confirm`, {}).then(normalizeStockBillDetail);
+}
+
+export async function cancelStockBill(stockBillId: string) {
+  if (useMockApi) {
+    const existing = mockBills.find(item => item.stockBillId === stockBillId);
+    if (!existing) throw new Error('出入库流水不存在');
+    if (existing.status === 'CANCELLED') return normalizeStockBillDetail(existing);
+    if (existing.status === 'CONFIRMED') throw new Error('已确认凭证不能直接取消，请创建反向库存调整');
+    const current = existing;
+    const timestamp = nowText();
+    const cancelled: StockBillDetail = { ...current, status: 'CANCELLED', updatedAt: timestamp };
+    mockBills = mockBills.map(item => item.stockBillId === stockBillId ? cancelled : item);
+    return normalizeStockBillDetail(cancelled);
+  }
+  return postResult<StockBillDetail, Record<string, never>>(`/warehouse/stock-bills/${stockBillId}/cancel`, {}).then(normalizeStockBillDetail);
 }
 
 export function listStockBills(params: StockBillQuery) {

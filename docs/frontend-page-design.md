@@ -643,7 +643,7 @@ GET /warehouse/stocks
 
 ### 16.1 页面范围
 
-出入库记录页面路径为 `/warehouse/stock-bills`，用于只读追溯采购入库、销售出库、采购退货、销售退货和库存调整形成的库存凭证。页面包含流水摘要、字段级筛选、分页列表、刷新和凭证明细弹窗，不在本页直接创建、确认、取消或删除流水。
+出入库记录页面路径为 `/warehouse/stock-bills`，用于处理出入库草稿并追溯采购入库、销售出库、采购退货、销售退货和库存调整形成的库存凭证。页面包含流水摘要、字段级筛选、分页列表、刷新、新增库存调整、编辑草稿、确认、取消和凭证明细弹窗。
 
 ### 16.2 页面与数据边界
 
@@ -653,6 +653,9 @@ GET /warehouse/stocks
 - 摘要只统计流水数、入库流水数、出库流水数和已确认流水数。不同产品可能使用不同单位，列表和摘要不得跨明细汇总数量。
 - 详情展示 `quantity`、`qualified_qty`、`defective_qty`、`before_qty`、`change_qty` 和 `after_qty`；入库变动为正、出库变动为负，草稿和取消流水不应形成实际库存变动。
 - 仓库名称、产品编码、产品名称和单位使用业务发生时保存的快照字段，后续主数据改名不回写历史凭证。
+- 新增按钮只创建 `ADJUST_IN` 或 `ADJUST_OUT` 草稿，来源类型固定为 `STOCK_ADJUST`；流水号和调整单号由后端生成。采购、销售和退货流水必须由对应业务单据生成，不能在本页脱离来源单据手工创建。
+- 仅 `DRAFT` 行显示编辑、确认和取消。来源业务单据生成的草稿只能编辑实际数量、质量数量和备注；库存调整草稿允许增删产品明细。确认和取消都使用独立写接口、提交锁和二次确认。
+- 状态不使用普通下拉任意修改，只允许 `DRAFT -> CONFIRMED` 或 `DRAFT -> CANCELLED`。确认接口在事务中更新库存和来源单据；已确认凭证出现错误时新增反向调整，不直接修改历史状态。
 - 查询、重置、刷新和分页均使用短防抖，点击后立即显示数据区加载层并锁定重复操作；详情加载使用独立状态。
 
 ### 16.3 字段映射
@@ -675,7 +678,11 @@ GET /warehouse/stocks
 
 ```text
 GET /warehouse/stock-bills
+POST /warehouse/stock-bills
 GET /warehouse/stock-bills/{stockBillId}
+PUT /warehouse/stock-bills/{stockBillId}
+POST /warehouse/stock-bills/{stockBillId}/confirm
+POST /warehouse/stock-bills/{stockBillId}/cancel
 ```
 
-两个接口均需要 `warehouse:query` 权限。列表摘要基于当前全部筛选结果计算，详情必须返回完整主表信息和全部明细。
+查询和详情需要 `warehouse:query` 权限，新增、编辑、确认和取消需要 `warehouse:manage` 权限。列表摘要基于当前全部筛选结果计算，详情必须返回完整主表信息和全部明细。

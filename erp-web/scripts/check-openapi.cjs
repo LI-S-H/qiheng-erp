@@ -86,6 +86,8 @@ const requiredPaths = [
   '/warehouse/stocks:',
   '/warehouse/stock-bills:',
   '/warehouse/stock-bills/{stockBillId}:',
+  '/warehouse/stock-bills/{stockBillId}/confirm:',
+  '/warehouse/stock-bills/{stockBillId}/cancel:',
 ];
 
 for (const requiredPath of requiredPaths) {
@@ -117,7 +119,7 @@ for (const fragment of [
 for (const fragment of ['# 前端开发规范', '一个筛选控件必须对应一个明确的查询参数', '禁止为了减少筛选框使用含义不明的 `keyword`', '历史问题清单']) {
   if (!frontendDevelopmentGuide.includes(fragment)) throw new Error(`前端开发规范缺少强制规则：${fragment}`);
 }
-for (const fragment of ['非用户输入字段不得渲染为可编辑控件', '同一页面同一时刻只能打开一个下拉弹层', '人民币显示 `￥`']) {
+for (const fragment of ['非用户输入字段不得渲染为可编辑控件', '同一页面同一时刻只能打开一个下拉弹层', '人民币显示 `￥`', '业务状态不能使用普通下拉任意修改']) {
   if (!frontendDevelopmentGuide.includes(fragment)) throw new Error(`前端开发规范缺少表单字段或下拉交互规则：${fragment}`);
 }
 for (const fragment of ['前端开发强制前置流程', 'npm run preflight:frontend -- <scope>', '禁止使用 `--no-verify`']) {
@@ -308,6 +310,10 @@ for (const fragment of [
   'normalizeStockBillItem',
   'listStockBills',
   'getStockBillDetail',
+  'createStockBill',
+  'updateStockBill',
+  'confirmStockBill',
+  'cancelStockBill',
 ]) {
   if (!stockBillApiSource.includes(fragment) && !stockBillTypeSource.includes(fragment)) {
     throw new Error(`出入库记录前端契约缺少：${fragment}`);
@@ -318,16 +324,24 @@ for (const fragment of [
   '列表不跨不同产品单位汇总数量',
   'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
   'enum: [DRAFT, CONFIRMED, CANCELLED]',
+  'enum: [ADJUST_IN, ADJUST_OUT]',
+  "schema: { $ref: '#/components/schemas/StockBillCreateRequest' }",
+  "schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }",
+  '仅允许 `DRAFT -> CONFIRMED`',
+  '仅允许 `DRAFT -> CANCELLED`',
   "data: { $ref: '#/components/schemas/StockBillPage' }",
   "data: { $ref: '#/components/schemas/StockBillDetail' }",
 ]) {
   if (!source.includes(fragment)) throw new Error(`出入库记录 OpenAPI 缺少：${fragment}`);
 }
-if (!stockBillViewSource.includes('流水由对应业务流程生成，当前页面仅提供查询和追溯')
+if (!stockBillViewSource.includes('新增库存调整')
+  || !stockBillViewSource.includes('handleConfirm(row)')
+  || !stockBillViewSource.includes('handleCancel(row)')
   || !stockBillViewSource.includes('filter-grid--stock-bills')
   || !stockBillViewSource.includes('出入库凭证详情')
-  || !pageDesign.includes('## 16. 仓库库存模块：出入库记录')) {
-  throw new Error('出入库记录页面边界、详情或页面设计文档不完整');
+  || !pageDesign.includes('## 16. 仓库库存模块：出入库记录')
+  || !warehouseSchema.includes('已确认凭证不能直接取消或改回草稿')) {
+  throw new Error('出入库记录新增、编辑、状态流转、详情或页面设计文档不完整');
 }
 if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
   || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {

@@ -1,31 +1,51 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
-import { Eye } from 'lucide-vue-next';
+import { Eye, Pencil, Plus, Trash2 } from 'lucide-vue-next';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
+import { listProducts } from '@/modules/product/products/api';
+import type { ProductListItem } from '@/modules/product/products/types';
 import { listWarehouses } from '../../warehouses/api';
-import { getStockBillDetail, listStockBills } from '../api';
+import type { WarehouseListItem } from '../../warehouses/types';
+import {
+  cancelStockBill,
+  confirmStockBill,
+  createStockBill,
+  getStockBillDetail,
+  listStockBills,
+  updateStockBill,
+} from '../api';
 import type {
+  ManualStockBillType,
+  StockBillCreatePayload,
   StockBillDetail,
+  StockBillDraftItemPayload,
   StockBillListItem,
   StockBillQuery,
   StockBillStatus,
   StockBillSummary,
   StockBillType,
+  StockBillUpdatePayload,
 } from '../types';
+
+interface DraftFormItem extends StockBillDraftItemPayload {
+  key: string;
+}
 
 const emptySummary = (): StockBillSummary => ({ stockBillCount: 0, inboundCount: 0, outboundCount: 0, confirmedCount: 0 });
 const loading = ref(false);
@@ -37,7 +57,26 @@ const summary = reactive(emptySummary());
 const detailVisible = ref(false);
 const detailLoading = ref(false);
 const detail = ref<StockBillDetail | null>(null);
+const formVisible = ref(false);
+const formLoading = ref(false);
+const formSubmitting = ref(false);
+const actionSubmitting = ref(false);
+const dialogMode = ref<'create' | 'edit'>('create');
+const editingDetail = ref<StockBillDetail | null>(null);
+const warehouses = ref<WarehouseListItem[]>([]);
+const products = ref<ProductListItem[]>([]);
 const warehouseOptions = ref<Array<{ value: string; label: string }>>([{ value: 'all', label: '全部仓库' }]);
+const formWarehouseOptions = ref<Array<{ value: string; label: string }>>([]);
+const productOptions = ref<Array<{ value: string; label: string }>>([]);
+const formErrors = reactive<Record<string, string>>({});
+const confirmState = reactive({
+  open: false,
+  title: '',
+  description: '',
+  confirmText: '',
+  variant: 'default' as 'default' | 'destructive' | 'warning',
+  onConfirm: async () => {},
+});
 const query = reactive<StockBillQuery>({
   billNo: '',
   sourceNo: '',
@@ -47,8 +86,17 @@ const query = reactive<StockBillQuery>({
   pageNum: 1,
   pageSize: 10,
 });
+const form = reactive<{ billType: ManualStockBillType; warehouseId: string; remark: string; items: DraftFormItem[] }>({
+  billType: 'ADJUST_IN',
+  warehouseId: '',
+  remark: '',
+  items: [],
+});
 
 const queryBusy = computed(() => loading.value || queryPending.value);
+const formBillType = computed<StockBillType>(() => dialogMode.value === 'edit' && editingDetail.value ? editingDetail.value.billType : form.billType);
+const structureEditable = computed(() => dialogMode.value === 'create' || editingDetail.value?.sourceType === 'STOCK_ADJUST');
+const qualityFieldsVisible = computed(() => formBillType.value === 'PURCHASE_IN' || formBillType.value === 'SALES_RETURN');
 const billTypeOptions: Array<{ value: StockBillType | 'all'; label: string }> = [
   { value: 'all', label: '全部类型' },
   { value: 'PURCHASE_IN', label: '采购入库' },
@@ -58,13 +106,16 @@ const billTypeOptions: Array<{ value: StockBillType | 'all'; label: string }> = 
   { value: 'ADJUST_IN', label: '库存调整入库' },
   { value: 'ADJUST_OUT', label: '库存调整出库' },
 ];
+const manualBillTypeOptions: Array<{ value: ManualStockBillType; label: string }> = [
+  { value: 'ADJUST_IN', label: '库存调整入库' },
+  { value: 'ADJUST_OUT', label: '库存调整出库' },
+];
 const statusOptions: Array<{ value: StockBillStatus | 'all'; label: string }> = [
   { value: 'all', label: '全部状态' },
   { value: 'DRAFT', label: '草稿' },
   { value: 'CONFIRMED', label: '已确认' },
   { value: 'CANCELLED', label: '已取消' },
 ];
-
 const billTypeMap: Record<StockBillType, { label: string; direction: 'in' | 'out'; className: string }> = {
   PURCHASE_IN: { label: '采购入库', direction: 'in', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   SALES_OUT: { label: '销售出库', direction: 'out', className: 'border-blue-200 bg-blue-50 text-blue-700' },
@@ -86,15 +137,28 @@ const sourceTypeMap = {
   STOCK_ADJUST: '库存调整单',
 } as const;
 
-async function loadWarehouseOptions() {
+function newDraftItem(): DraftFormItem {
+  return { key: `${Date.now()}-${Math.random()}`, productId: '', quantity: 1, qualifiedQty: 0, defectiveQty: 0, remark: '' };
+}
+
+async function loadFormOptions() {
   try {
-    const page = await listWarehouses({ pageNum: 1, pageSize: 100 });
+    const [warehousePage, productPage] = await Promise.all([
+      listWarehouses({ pageNum: 1, pageSize: 100 }),
+      listProducts({ status: 1, pageNum: 1, pageSize: 100 }),
+    ]);
+    warehouses.value = warehousePage.records;
+    products.value = productPage.records;
     warehouseOptions.value = [
       { value: 'all', label: '全部仓库' },
-      ...page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` })),
+      ...warehousePage.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` })),
     ];
+    formWarehouseOptions.value = warehousePage.records
+      .filter(item => item.status === 1)
+      .map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
+    productOptions.value = productPage.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}（${item.unitName}）` }));
   } catch (error) {
-    toast.warning(getApiErrorMessage(error) || '仓库选项加载失败');
+    toast.warning(getApiErrorMessage(error) || '出入库表单选项加载失败');
   }
 }
 
@@ -167,6 +231,171 @@ async function openDetail(row: StockBillListItem) {
   }
 }
 
+function resetForm() {
+  Object.assign(form, { billType: 'ADJUST_IN', warehouseId: formWarehouseOptions.value[0]?.value || '', remark: '', items: [newDraftItem()] });
+  editingDetail.value = null;
+  Object.keys(formErrors).forEach(key => delete formErrors[key]);
+}
+
+function openCreateDialog() {
+  dialogMode.value = 'create';
+  resetForm();
+  formVisible.value = true;
+}
+
+async function openEditDialog(row: StockBillListItem) {
+  if (row.status !== 'DRAFT') return;
+  dialogMode.value = 'edit';
+  formVisible.value = true;
+  formLoading.value = true;
+  editingDetail.value = null;
+  Object.keys(formErrors).forEach(key => delete formErrors[key]);
+  try {
+    const current = await getStockBillDetail(row.stockBillId);
+    if (current.status !== 'DRAFT') throw new Error('只有草稿状态的出入库流水可以编辑');
+    editingDetail.value = current;
+    form.billType = current.billType === 'ADJUST_OUT' ? 'ADJUST_OUT' : 'ADJUST_IN';
+    form.warehouseId = current.warehouseId;
+    form.remark = current.remark;
+    form.items = current.items.map(item => ({
+      key: item.stockBillItemId,
+      stockBillItemId: item.stockBillItemId,
+      productId: item.productId,
+      quantity: item.quantity,
+      qualifiedQty: item.qualifiedQty,
+      defectiveQty: item.defectiveQty,
+      remark: item.remark,
+    }));
+  } catch (error) {
+    formVisible.value = false;
+    toast.warning(getApiErrorMessage(error) || '草稿加载失败');
+  } finally {
+    formLoading.value = false;
+  }
+}
+
+function addFormItem() {
+  form.items.push(newDraftItem());
+}
+
+function removeFormItem(index: number) {
+  if (form.items.length <= 1) return;
+  form.items.splice(index, 1);
+}
+
+function productLabel(item: DraftFormItem) {
+  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.stockBillItemId === item.stockBillItemId);
+  if (snapshot) return `${snapshot.productCode} ${snapshot.productName}（${snapshot.unitName}）`;
+  const product = products.value.find(option => option.productId === item.productId);
+  return product ? `${product.productCode} ${product.productName}（${product.unitName}）` : item.productId;
+}
+
+function validateForm() {
+  Object.keys(formErrors).forEach(key => delete formErrors[key]);
+  if (dialogMode.value === 'create' && !form.warehouseId) formErrors.warehouseId = '请选择仓库';
+  if (!form.items.length) formErrors.items = '至少添加一条产品明细';
+  const selectedProducts = new Set<string>();
+  form.items.forEach((item, index) => {
+    if (!item.productId) formErrors[`items.${index}.productId`] = '请选择产品';
+    else if (selectedProducts.has(item.productId)) formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
+    selectedProducts.add(item.productId);
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) formErrors[`items.${index}.quantity`] = '数量必须大于 0';
+    if (qualityFieldsVisible.value) {
+      if (!Number.isFinite(item.qualifiedQty) || item.qualifiedQty < 0 || !Number.isFinite(item.defectiveQty) || item.defectiveQty < 0) {
+        formErrors[`items.${index}.quality`] = '质量数量不能小于 0';
+      } else if (Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) {
+        formErrors[`items.${index}.quality`] = '合格与不合格数量之和必须等于本次数量';
+      }
+    }
+    if (item.remark.trim().length > 500) formErrors[`items.${index}.remark`] = '明细备注不能超过 500 个字符';
+  });
+  if (form.remark.trim().length > 500) formErrors.remark = '凭证备注不能超过 500 个字符';
+  return Object.keys(formErrors).length === 0;
+}
+
+function buildItemPayloads(): StockBillDraftItemPayload[] {
+  return form.items.map(item => ({
+    ...(item.stockBillItemId ? { stockBillItemId: item.stockBillItemId } : {}),
+    productId: item.productId,
+    quantity: Number(item.quantity),
+    qualifiedQty: qualityFieldsVisible.value ? Number(item.qualifiedQty) : 0,
+    defectiveQty: qualityFieldsVisible.value ? Number(item.defectiveQty) : 0,
+    remark: item.remark.trim(),
+  }));
+}
+
+async function submitForm() {
+  if (formSubmitting.value || !validateForm()) return;
+  formSubmitting.value = true;
+  try {
+    if (dialogMode.value === 'create') {
+      const payload: StockBillCreatePayload = {
+        billType: form.billType,
+        warehouseId: form.warehouseId,
+        items: buildItemPayloads(),
+        remark: form.remark.trim(),
+      };
+      await createStockBill(payload);
+      toast.success('库存调整草稿已创建');
+    } else if (editingDetail.value) {
+      const payload: StockBillUpdatePayload = { items: buildItemPayloads(), remark: form.remark.trim() };
+      await updateStockBill(editingDetail.value.stockBillId, payload);
+      toast.success('出入库草稿已更新');
+    }
+    formVisible.value = false;
+    await fetchRecords();
+  } catch (error) {
+    toast.warning(getApiErrorMessage(error) || '出入库草稿保存失败');
+  } finally {
+    formSubmitting.value = false;
+  }
+}
+
+function showConfirm(title: string, description: string, confirmText: string, variant: 'default' | 'destructive' | 'warning', onConfirm: () => Promise<void>) {
+  Object.assign(confirmState, { open: true, title, description, confirmText, variant, onConfirm });
+}
+
+function handleConfirm(row: StockBillListItem) {
+  showConfirm(
+    '确认出入库',
+    `确认「${row.billNo}」后将立即更新库存余额，且凭证不能再编辑或直接取消。请确认仓库和产品数量无误。`,
+    '确认执行',
+    'warning',
+    async () => {
+      await confirmStockBill(row.stockBillId);
+      toast.success('出入库已确认，库存余额已更新');
+      await fetchRecords();
+    },
+  );
+}
+
+function handleCancel(row: StockBillListItem) {
+  showConfirm(
+    '取消出入库草稿',
+    `确认取消「${row.billNo}」吗？取消后不改变库存，凭证将保留用于追溯且不能再次编辑。`,
+    '确认取消',
+    'destructive',
+    async () => {
+      await cancelStockBill(row.stockBillId);
+      toast.success('出入库草稿已取消');
+      await fetchRecords();
+    },
+  );
+}
+
+async function runConfirmAction() {
+  if (actionSubmitting.value) return;
+  actionSubmitting.value = true;
+  try {
+    await confirmState.onConfirm();
+    confirmState.open = false;
+  } catch (error) {
+    toast.warning(getApiErrorMessage(error) || '出入库状态变更失败');
+  } finally {
+    actionSubmitting.value = false;
+  }
+}
+
 function formatQty(value: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 4 }).format(value);
 }
@@ -177,7 +406,7 @@ function formatChangeQty(value: number) {
 }
 
 onMounted(() => {
-  loadWarehouseOptions();
+  loadFormOptions();
   fetchRecords();
 });
 </script>
@@ -187,7 +416,7 @@ onMounted(() => {
     <div class="page-heading">
       <div>
         <h1 class="page-title">出入库记录</h1>
-        <p class="page-description">追踪采购、销售、退货和库存调整形成的库存变动凭证</p>
+        <p class="page-description">处理出入库草稿并追踪采购、销售、退货和库存调整形成的库存变动凭证</p>
       </div>
     </div>
 
@@ -215,15 +444,16 @@ onMounted(() => {
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
-        <div class="table-toolbar__title"><strong class="text-sm">库存变动凭证</strong><span class="text-xs text-muted-foreground">流水由对应业务流程生成，当前页面仅提供查询和追溯</span></div>
+        <div class="table-toolbar__title"><strong class="text-sm">库存变动凭证</strong><span class="text-xs text-muted-foreground">采购和销售草稿由来源单据生成；本页可新增库存调整并处理所有草稿</span></div>
         <div class="table-toolbar__actions">
+          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" :disabled="formSubmitting || actionSubmitting" @click="openCreateDialog"><Plus class="size-4" />新增调整</Button></span></TooltipTrigger><TooltipContent>创建调整入库或调整出库草稿</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger><TooltipContent>重新加载当前出入库记录</TooltipContent></Tooltip>
         </div>
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1340px] table-fixed">
-          <colgroup><col class="w-[165px]" /><col class="w-[125px]" /><col class="w-[175px]" /><col class="w-[165px]" /><col class="w-[80px]" /><col class="w-[90px]" /><col class="w-[180px]" /><col class="w-[180px]" /><col class="w-[90px]" /></colgroup>
+        <Table class="min-w-[1510px] table-fixed">
+          <colgroup><col class="w-[165px]" /><col class="w-[125px]" /><col class="w-[175px]" /><col class="w-[150px]" /><col class="w-[70px]" /><col class="w-[90px]" /><col class="w-[165px]" /><col class="w-[165px]" /><col class="w-[260px]" /></colgroup>
           <TableHeader><TableRow><TableHead>流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>来源单据</TableHead><TableHead>仓库</TableHead><TableHead class="text-center">明细数</TableHead><TableHead class="text-center">状态</TableHead><TableHead>确认信息</TableHead><TableHead>创建信息</TableHead><TableHead class="text-center">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -237,7 +467,16 @@ onMounted(() => {
               <TableCell class="text-center"><Badge variant="outline" :class="statusMap[row.status].className">{{ statusMap[row.status].label }}</Badge></TableCell>
               <TableCell><div v-if="row.status === 'CONFIRMED'" class="flex flex-col gap-1"><span>{{ row.confirmedByName }}</span><span class="text-xs text-muted-foreground">{{ row.confirmedAt }}</span></div><span v-else class="text-sm text-muted-foreground">未确认</span></TableCell>
               <TableCell><div class="flex flex-col gap-1"><span>{{ row.createdByName || '系统' }}</span><span class="text-xs text-muted-foreground">{{ row.createdAt }}</span></div></TableCell>
-              <TableCell class="text-center"><Button size="sm" variant="ghost" class="text-primary" @click="openDetail(row)"><Eye class="size-4" />详情</Button></TableCell>
+              <TableCell class="text-center">
+                <div class="flex justify-center gap-1">
+                  <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openDetail(row)"><Eye class="size-4" />详情</Button>
+                  <template v-if="row.status === 'DRAFT'">
+                    <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)"><Pencil class="size-4" />编辑</Button>
+                    <Button size="sm" variant="ghost" class="text-emerald-700" :disabled="actionSubmitting" @click="handleConfirm(row)">确认</Button>
+                    <Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="handleCancel(row)">取消</Button>
+                  </template>
+                </div>
+              </TableCell>
             </TableRow>
           </TableBody>
         </Table>
@@ -245,12 +484,62 @@ onMounted(() => {
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
 
+    <Dialog v-model:open="formVisible">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(820px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-[1080px]">
+        <DialogHeader>
+          <DialogTitle>{{ dialogMode === 'create' ? '新增库存调整' : '编辑出入库草稿' }}</DialogTitle>
+          <DialogDescription>{{ dialogMode === 'create' ? '手工新增仅用于调整入库或调整出库，流水号和调整单号保存后由系统生成。' : '只有草稿可以编辑；来源业务单据生成的草稿不能更换仓库、产品或出入库类型。' }}</DialogDescription>
+        </DialogHeader>
+        <div v-if="formLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />草稿加载中...</div>
+        <ScrollArea v-else class="dialog-scroll-area min-h-0 flex-1 pr-3">
+          <div class="space-y-5 py-2">
+            <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
+              <div class="space-y-1"><Label>流水号</Label><Input :model-value="dialogMode === 'create' ? '保存后由系统生成' : editingDetail?.billNo" readonly class="bg-muted/55 text-muted-foreground" /></div>
+              <div class="space-y-1">
+                <Label>出入库类型 <span class="text-destructive">*</span></Label>
+                <AnchoredSelect v-if="dialogMode === 'create'" v-model="form.billType" :options="manualBillTypeOptions" placeholder="请选择类型" />
+                <Input v-else :model-value="billTypeMap[formBillType].label" readonly class="bg-muted/55 text-muted-foreground" />
+              </div>
+              <div class="space-y-1">
+                <Label>仓库 <span class="text-destructive">*</span></Label>
+                <AnchoredSelect v-if="dialogMode === 'create'" v-model="form.warehouseId" :options="formWarehouseOptions" placeholder="请选择启用仓库" />
+                <Input v-else :model-value="editingDetail?.warehouseName" readonly class="bg-muted/55 text-muted-foreground" />
+                <p v-if="formErrors.warehouseId" class="text-xs text-destructive">{{ formErrors.warehouseId }}</p>
+              </div>
+            </div>
+
+            <div>
+              <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">产品明细 <span class="text-destructive">*</span></h3><p class="mt-1 text-xs text-muted-foreground">确认后才会更新库存；出库数量还会校验当前库存与锁定库存。</p></div><Button v-if="structureEditable" size="sm" variant="outline" @click="addFormItem"><Plus class="size-4" />添加产品</Button></div>
+              <p v-if="formErrors.items" class="mb-2 text-xs text-destructive">{{ formErrors.items }}</p>
+              <div class="space-y-3">
+                <div v-for="(item, index) in form.items" :key="item.key" class="draft-item-grid rounded-lg border bg-muted/20 p-3" :class="{ 'draft-item-grid--quality': qualityFieldsVisible }">
+                  <div class="space-y-1 draft-product">
+                    <Label>产品 <span class="text-destructive">*</span></Label>
+                    <AnchoredSelect v-if="structureEditable" v-model="item.productId" :options="productOptions" placeholder="请选择启用产品" />
+                    <Input v-else :model-value="productLabel(item)" readonly class="bg-background text-muted-foreground" />
+                    <p v-if="formErrors[`items.${index}.productId`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p>
+                  </div>
+                  <div class="space-y-1"><Label>本次数量 <span class="text-destructive">*</span></Label><Input v-model.number="item.quantity" type="number" min="0.0001" step="0.0001" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" /><p v-if="formErrors[`items.${index}.quantity`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.quantity`] }}</p></div>
+                  <template v-if="qualityFieldsVisible">
+                    <div class="space-y-1"><Label>合格数量</Label><Input v-model.number="item.qualifiedQty" type="number" min="0" step="0.0001" /></div>
+                    <div class="space-y-1"><Label>不合格数量</Label><Input v-model.number="item.defectiveQty" type="number" min="0" step="0.0001" /><p v-if="formErrors[`items.${index}.quality`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.quality`] }}</p></div>
+                  </template>
+                  <div class="space-y-1 draft-remark"><Label>明细备注</Label><Input v-model="item.remark" maxlength="500" placeholder="可填写盘点差异原因" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></div>
+                  <Button v-if="structureEditable" size="icon" variant="ghost" class="mt-6 text-destructive" :disabled="form.items.length <= 1" aria-label="删除产品明细" @click="removeFormItem(index)"><Trash2 class="size-4" /></Button>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-1"><Label>凭证备注</Label><Textarea v-model="form.remark" maxlength="500" rows="3" placeholder="填写调整原因、盘点依据或其他说明" :aria-invalid="Boolean(formErrors.remark)" /><div class="flex justify-between text-xs"><span :class="formErrors.remark ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.remark || '选填，最多 500 个字符' }}</span><span class="text-muted-foreground">{{ form.remark.length }}/500</span></div></div>
+          </div>
+        </ScrollArea>
+        <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="formVisible = false">关闭</Button><Button :disabled="formSubmitting || formLoading" @click="submitForm">{{ formSubmitting ? '保存中...' : '保存草稿' }}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     <Dialog v-model:open="detailVisible">
       <DialogContent class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-[1120px]">
-        <DialogHeader>
-          <DialogTitle>出入库凭证详情</DialogTitle>
-          <DialogDescription>查看业务来源、确认信息以及每个产品的库存变动记录。</DialogDescription>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>出入库凭证详情</DialogTitle><DialogDescription>查看业务来源、确认信息以及每个产品的库存变动记录。</DialogDescription></DialogHeader>
         <div v-if="detailLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
         <ScrollArea v-else-if="detail" class="dialog-scroll-area min-h-0 flex-1 pr-3">
           <div class="space-y-5 py-1">
@@ -264,7 +553,6 @@ onMounted(() => {
               <div class="detail-field"><span>创建人 / 时间</span><strong>{{ detail.createdByName || '系统' }}</strong><small>{{ detail.createdAt }}</small></div>
               <div class="detail-field"><span>确认人 / 时间</span><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></div>
             </div>
-
             <div>
               <div class="mb-2 flex items-center justify-between"><h3 class="text-sm font-semibold">产品明细</h3><span class="text-xs text-muted-foreground">共 {{ detail.items.length }} 条</span></div>
               <div class="overflow-hidden rounded-lg border">
@@ -289,12 +577,13 @@ onMounted(() => {
                 </ScrollArea>
               </div>
             </div>
-
             <div class="rounded-lg border bg-muted/25 p-3"><span class="text-xs text-muted-foreground">凭证备注</span><p class="mt-1 text-sm">{{ detail.remark || '无' }}</p></div>
           </div>
         </ScrollArea>
       </DialogContent>
     </Dialog>
+
+    <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
   </section>
 </template>
 
@@ -324,6 +613,17 @@ onMounted(() => {
   color: var(--muted-foreground);
 }
 
+.draft-item-grid {
+  display: grid;
+  grid-template-columns: minmax(250px, 2fr) minmax(120px, 0.8fr) minmax(220px, 1.5fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.draft-item-grid--quality {
+  grid-template-columns: minmax(220px, 1.7fr) repeat(3, minmax(110px, 0.75fr)) minmax(180px, 1.2fr) auto;
+}
+
 @media (max-width: 1279px) {
   .filter-grid--stock-bills {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -333,11 +633,26 @@ onMounted(() => {
     grid-column: 1 / -1;
     justify-content: flex-end;
   }
+
+  .draft-item-grid,
+  .draft-item-grid--quality {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .draft-remark {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 640px) {
-  .filter-grid--stock-bills {
+  .filter-grid--stock-bills,
+  .draft-item-grid,
+  .draft-item-grid--quality {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .draft-remark {
+    grid-column: auto;
   }
 }
 </style>

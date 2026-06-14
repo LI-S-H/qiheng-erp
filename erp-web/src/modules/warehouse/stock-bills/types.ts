@@ -3,6 +3,7 @@ import type { PageResult } from '@/shared/types/api';
 export type StockBillType = 'PURCHASE_IN' | 'SALES_OUT' | 'PURCHASE_RETURN' | 'SALES_RETURN' | 'ADJUST_IN' | 'ADJUST_OUT';
 export type StockBillSourceType = 'PURCHASE_ORDER' | 'SALES_ORDER' | 'PURCHASE_RETURN_ORDER' | 'SALES_RETURN_ORDER' | 'STOCK_ADJUST';
 export type StockBillStatus = 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+export type ManualStockBillType = 'ADJUST_IN' | 'ADJUST_OUT';
 
 export interface StockBillListItem {
   stockBillId: string;
@@ -68,4 +69,25 @@ export interface StockBillQuery {
   status?: StockBillStatus | 'all';
   pageNum: number;
   pageSize: number;
+}
+
+export interface StockBillDraftItemPayload {
+  stockBillItemId?: string;
+  productId: string;
+  quantity: number;
+  qualifiedQty: number;
+  defectiveQty: number;
+  remark: string;
+}
+
+export interface StockBillCreatePayload {
+  billType: ManualStockBillType;
+  warehouseId: string;
+  items: StockBillDraftItemPayload[];
+  remark: string;
+}
+
+export interface StockBillUpdatePayload {
+  items: StockBillDraftItemPayload[];
+  remark: string;
 }

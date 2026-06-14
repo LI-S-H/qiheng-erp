@@ -1464,6 +1464,36 @@ paths:
                       data: { $ref: '#/components/schemas/StockBillPage' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [WarehouseStockBill]
+      summary: 新增库存调整草稿
+      description: |
+        手工新增仅允许 `ADJUST_IN` 或 `ADJUST_OUT`，来源类型由后端固定为 `STOCK_ADJUST`。
+        `billNo`、`sourceNo`、创建人、创建时间和产品快照由后端生成或填充，前端只提交仓库、产品数量和备注。
+        保存后状态为 `DRAFT`，不立即改变库存；需要 `warehouse:manage` 权限。
+      operationId: stockBillCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockBillCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
 
   /warehouse/stock-bills/{stockBillId}:
     get:
@@ -1489,6 +1519,94 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [WarehouseStockBill]
+      summary: 编辑出入库草稿
+      description: |
+        仅 `DRAFT` 状态允许编辑数量和备注。来源业务单据生成的草稿不能在本接口增删或更换产品，也不能修改来源、仓库和出入库类型；库存调整草稿允许维护产品明细。
+        流水号、来源信息、审计字段、变动前后库存均由后端维护，前端不得提交；需要 `warehouse:manage` 权限。
+      operationId: stockBillUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/stock-bills/{stockBillId}/confirm:
+    post:
+      tags: [WarehouseStockBill]
+      summary: 确认出入库
+      description: |
+        仅允许 `DRAFT -> CONFIRMED`。后端必须锁定出入库草稿和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已出入库数量。
+        已确认凭证不得直接改回草稿或取消；错误凭证通过反向库存调整纠正。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
+      operationId: stockBillConfirm
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      responses:
+        "200":
+          description: 确认成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/stock-bills/{stockBillId}/cancel:
+    post:
+      tags: [WarehouseStockBill]
+      summary: 取消出入库草稿
+      description: 仅允许 `DRAFT -> CANCELLED`，取消不改变库存，取消后的凭证保留追溯且不能再次编辑或确认。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
+      operationId: stockBillCancel
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      responses:
+        "200":
+          description: 取消成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
 
   /warehouse/warehouses:
     get:
@@ -3112,6 +3230,39 @@ components:
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1 }
         summary: { $ref: '#/components/schemas/WarehouseStockSummary' }
+
+    StockBillDraftItemRequest:
+      type: object
+      required: [productId, quantity, qualifiedQty, defectiveQty, remark]
+      properties:
+        stockBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
+        productId: { type: string, description: 产品 ID，后端保存当前产品编码、名称和单位快照 }
+        quantity: { type: number, format: double, exclusiveMinimum: 0, description: 本次出入库数量 }
+        qualifiedQty: { type: number, format: double, minimum: 0, description: 采购入库或销售退货的合格数量，其他类型传 0 }
+        defectiveQty: { type: number, format: double, minimum: 0, description: 采购入库或销售退货的不合格数量，其他类型传 0 }
+        remark: { type: string, maxLength: 500 }
+
+    StockBillCreateRequest:
+      type: object
+      required: [billType, warehouseId, items, remark]
+      properties:
+        billType: { type: string, enum: [ADJUST_IN, ADJUST_OUT], description: 手工新增只允许库存调整入库或出库 }
+        warehouseId: { type: string, description: 启用状态的仓库 ID }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/StockBillDraftItemRequest' }
+        remark: { type: string, maxLength: 500 }
+
+    StockBillUpdateRequest:
+      type: object
+      required: [items, remark]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/StockBillDraftItemRequest' }
+        remark: { type: string, maxLength: 500 }
 
     StockBillPage:
       type: object

@@ -262,7 +262,10 @@ if (!warehouseApiSource.includes('generateMockWarehouseCode()') || !source.inclu
 }
 for (const fragment of [
   'availableQty 必须等于 stockQty - lockedQty',
-  "state === 'LOW_STOCK'",
+  "health === 'LOW_STOCK'",
+  "state === 'PARTIALLY_LOCKED'",
+  'inventoryHealth',
+  'reservationState',
   'WarehouseStockSummary',
   'stockRecordCount',
   'warehouseCount',
@@ -275,15 +278,18 @@ for (const fragment of [
 }
 for (const fragment of [
   'stock_qty - locked_qty',
-  'stock_qty <= safety_stock_qty',
+  '0 < available_qty <= safety_stock_qty',
   '不同单位的库存数量不得跨产品汇总',
-  "enum: [AVAILABLE, LOCKED, LOW_STOCK, OUT_OF_STOCK]",
+  "enum: [NORMAL, LOW_STOCK, NO_AVAILABLE, OUT_OF_STOCK]",
+  "enum: [UNLOCKED, PARTIALLY_LOCKED, FULLY_LOCKED]",
   "data: { $ref: '#/components/schemas/WarehouseStockPage' }",
 ]) {
   if (!source.includes(fragment)) throw new Error(`库存管理 OpenAPI 缺少：${fragment}`);
 }
 if (!warehouseStockViewSource.includes('库存变更请通过出入库或库存调整业务完成')
   || !warehouseStockViewSource.includes('filter-grid--stocks')
+  || !warehouseStockViewSource.includes('库存健康')
+  || !warehouseStockViewSource.includes('占用情况')
   || !pageDesign.includes('## 15. 仓库库存模块：库存管理')) {
   throw new Error('库存管理页面边界、响应式布局或页面设计文档不完整');
 }

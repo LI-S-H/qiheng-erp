@@ -16,7 +16,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import { listWarehouses } from '../../warehouses/api';
 import { listWarehouseStocks } from '../api';
-import type { WarehouseStockListItem, WarehouseStockQuery, WarehouseStockState, WarehouseStockSummary } from '../types';
+import type {
+  InventoryHealth,
+  ReservationState,
+  WarehouseStockListItem,
+  WarehouseStockQuery,
+  WarehouseStockSummary,
+} from '../types';
 
 const emptySummary = (): WarehouseStockSummary => ({
   stockRecordCount: 0,
@@ -36,18 +42,25 @@ const query = reactive<WarehouseStockQuery>({
   warehouseId: 'all',
   productCode: '',
   productName: '',
-  stockState: 'all',
+  inventoryHealth: 'all',
+  reservationState: 'all',
   pageNum: 1,
   pageSize: 10,
 });
 
 const queryBusy = computed(() => loading.value || queryPending.value);
-const stockStateOptions: Array<{ value: WarehouseStockState | 'all'; label: string }> = [
-  { value: 'all', label: '全部状态' },
-  { value: 'AVAILABLE', label: '有可用库存' },
-  { value: 'LOCKED', label: '存在锁定库存' },
+const inventoryHealthOptions: Array<{ value: InventoryHealth | 'all'; label: string }> = [
+  { value: 'all', label: '全部健康状态' },
+  { value: 'NORMAL', label: '正常库存' },
   { value: 'LOW_STOCK', label: '低库存' },
+  { value: 'NO_AVAILABLE', label: '无可用库存' },
   { value: 'OUT_OF_STOCK', label: '零库存' },
+];
+const reservationStateOptions: Array<{ value: ReservationState | 'all'; label: string }> = [
+  { value: 'all', label: '全部占用情况' },
+  { value: 'UNLOCKED', label: '未锁定' },
+  { value: 'PARTIALLY_LOCKED', label: '部分锁定' },
+  { value: 'FULLY_LOCKED', label: '全部锁定' },
 ];
 
 async function loadWarehouseOptions() {
@@ -101,7 +114,7 @@ function handleSearch() {
 function handleReset() {
   if (queryBusy.value) return;
   Object.assign(query, {
-    warehouseId: 'all', productCode: '', productName: '', stockState: 'all', pageNum: 1,
+    warehouseId: 'all', productCode: '', productName: '', inventoryHealth: 'all', reservationState: 'all', pageNum: 1,
   });
   queryPending.value = true;
   debouncedSearch();
@@ -125,9 +138,15 @@ function formatQty(value: number) {
 
 function stockHealth(row: WarehouseStockListItem) {
   if (row.stockQty === 0) return { label: '零库存', className: 'border-rose-200 bg-rose-50 text-rose-700' };
-  if (row.stockQty <= row.safetyStockQty) return { label: '低库存', className: 'border-amber-200 bg-amber-50 text-amber-700' };
-  if (row.lockedQty > 0) return { label: '有锁定', className: 'border-blue-200 bg-blue-50 text-blue-700' };
+  if (row.availableQty === 0) return { label: '无可用库存', className: 'border-rose-200 bg-rose-50 text-rose-700' };
+  if (row.availableQty <= row.safetyStockQty) return { label: '低库存', className: 'border-amber-200 bg-amber-50 text-amber-700' };
   return { label: '库存正常', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+}
+
+function reservationState(row: WarehouseStockListItem) {
+  if (row.lockedQty === 0) return { label: '未锁定', className: 'border-slate-200 bg-slate-50 text-slate-600' };
+  if (row.lockedQty === row.stockQty) return { label: '全部锁定', className: 'border-violet-200 bg-violet-50 text-violet-700' };
+  return { label: '部分锁定', className: 'border-blue-200 bg-blue-50 text-blue-700' };
 }
 
 onMounted(() => {
@@ -157,7 +176,8 @@ onMounted(() => {
         <div class="space-y-1"><Label class="text-xs">仓库</Label><AnchoredSelect v-model="query.warehouseId" :options="warehouseOptions" placeholder="全部仓库" /></div>
         <div class="space-y-1"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P0001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">库存状态</Label><AnchoredSelect v-model="query.stockState" :options="stockStateOptions" placeholder="全部状态" /></div>
+        <div class="space-y-1"><Label class="text-xs">库存健康</Label><AnchoredSelect v-model="query.inventoryHealth" :options="inventoryHealthOptions" placeholder="全部健康状态" /></div>
+        <div class="space-y-1"><Label class="text-xs">占用情况</Label><AnchoredSelect v-model="query.reservationState" :options="reservationStateOptions" placeholder="全部占用情况" /></div>
         <div class="filter-actions">
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
@@ -175,13 +195,13 @@ onMounted(() => {
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1160px] table-fixed">
-          <colgroup><col class="w-[170px]" /><col class="w-[220px]" /><col class="w-[70px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[150px]" /></colgroup>
-          <TableHeader><TableRow><TableHead>仓库</TableHead><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">当前库存</TableHead><TableHead class="text-right">锁定库存</TableHead><TableHead class="text-right">可用库存</TableHead><TableHead class="text-right">安全库存</TableHead><TableHead class="text-center">库存状态</TableHead><TableHead>更新时间</TableHead></TableRow></TableHeader>
+        <Table class="min-w-[1280px] table-fixed">
+          <colgroup><col class="w-[170px]" /><col class="w-[220px]" /><col class="w-[70px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[115px]" /><col class="w-[105px]" /><col class="w-[150px]" /></colgroup>
+          <TableHeader><TableRow><TableHead>仓库</TableHead><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">当前库存</TableHead><TableHead class="text-right">锁定库存</TableHead><TableHead class="text-right">可用库存</TableHead><TableHead class="text-right">安全库存</TableHead><TableHead class="text-center">库存健康</TableHead><TableHead class="text-center">占用情况</TableHead><TableHead>更新时间</TableHead></TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading && stocks.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="stocks.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无符合条件的库存记录</TableCell></TableRow>
-            <TableRow v-for="row in stocks" v-else :key="row.stockId" :data-stock-id="row.stockId" :class="row.stockQty <= row.safetyStockQty ? 'bg-amber-50/35' : ''">
+            <TableRow v-if="loading && stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
+            <TableRow v-else-if="stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无符合条件的库存记录</TableCell></TableRow>
+            <TableRow v-for="row in stocks" v-else :key="row.stockId" :data-stock-id="row.stockId" :class="row.availableQty <= row.safetyStockQty ? 'bg-amber-50/35' : ''">
               <TableCell><div class="flex flex-col gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.warehouseCode }}</code><span class="truncate font-medium" :title="row.warehouseName">{{ row.warehouseName }}</span></div></TableCell>
               <TableCell><div class="flex flex-col gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.productCode }}</code><span class="truncate font-medium" :title="row.productName">{{ row.productName }}</span></div></TableCell>
               <TableCell class="text-center">{{ row.unitName }}</TableCell>
@@ -190,6 +210,7 @@ onMounted(() => {
               <TableCell class="text-right font-semibold tabular-nums" :class="row.availableQty === 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatQty(row.availableQty) }}</TableCell>
               <TableCell class="text-right tabular-nums text-muted-foreground">{{ formatQty(row.safetyStockQty) }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="stockHealth(row).className">{{ stockHealth(row).label }}</Badge></TableCell>
+              <TableCell class="text-center"><Badge variant="outline" :class="reservationState(row).className">{{ reservationState(row).label }}</Badge></TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ row.updatedAt }}</TableCell>
             </TableRow>
           </TableBody>
@@ -203,7 +224,7 @@ onMounted(() => {
 
 <style scoped>
 .filter-grid--stocks {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
 }
 
 @media (max-width: 1279px) {

@@ -1,6 +1,7 @@
 import type { PageResult } from '@/shared/types/api';
 
-export type WarehouseStockState = 'AVAILABLE' | 'LOCKED' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+export type InventoryHealth = 'NORMAL' | 'LOW_STOCK' | 'NO_AVAILABLE' | 'OUT_OF_STOCK';
+export type ReservationState = 'UNLOCKED' | 'PARTIALLY_LOCKED' | 'FULLY_LOCKED';
 
 export interface WarehouseStockListItem {
   stockId: string;
@@ -33,7 +34,8 @@ export interface WarehouseStockQuery {
   warehouseId?: string | 'all';
   productCode?: string;
   productName?: string;
-  stockState?: WarehouseStockState | 'all';
+  inventoryHealth?: InventoryHealth | 'all';
+  reservationState?: ReservationState | 'all';
   pageNum: number;
   pageSize: number;
 }

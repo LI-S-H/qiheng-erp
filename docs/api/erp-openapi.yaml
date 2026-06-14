@@ -1348,10 +1348,12 @@ paths:
       tags: [WarehouseStock]
       summary: 分页查询当前库存
       description: |
-        查询 `warehouse_stock` 当前库存余额，并关联 `product.safety_stock_qty` 用于低库存判断。
+        查询 `warehouse_stock` 当前库存余额，并关联 `product.safety_stock_qty` 用于库存健康判断。
         `availableQty` 由服务层按 `stock_qty - locked_qty` 计算；不同单位的库存数量不得跨产品汇总。
-        仓库使用 `warehouseId` 精确匹配，产品编码和产品名称分别使用包含匹配，库存状态使用派生条件精确筛选，多个有效条件按 AND 组合。
-        `LOW_STOCK` 表示 `stock_qty <= safety_stock_qty`，`OUT_OF_STOCK` 表示 `stock_qty = 0`，`LOCKED` 表示 `locked_qty > 0`，`AVAILABLE` 表示 `stock_qty - locked_qty > 0`。
+        仓库使用 `warehouseId` 精确匹配，产品编码和产品名称分别使用包含匹配；库存健康与占用情况是两个独立派生维度，多个有效条件按 AND 组合。
+        库存健康：`NORMAL` 表示 `available_qty > safety_stock_qty`，`LOW_STOCK` 表示 `0 < available_qty <= safety_stock_qty`，`NO_AVAILABLE` 表示 `stock_qty > 0` 且 `available_qty = 0`，`OUT_OF_STOCK` 表示 `stock_qty = 0`。
+        占用情况：`UNLOCKED` 表示 `locked_qty = 0`，`PARTIALLY_LOCKED` 表示 `0 < locked_qty < stock_qty`，`FULLY_LOCKED` 表示 `stock_qty > 0` 且 `locked_qty = stock_qty`。
+        上述状态均为查询时派生，不在 `warehouse_stock` 中增加单一状态字段。
         本接口需要 `warehouse:query` 权限。
       operationId: warehouseStockPage
       security:
@@ -1369,12 +1371,18 @@ paths:
           in: query
           schema: { type: string, maxLength: 200 }
           description: 产品名称，对应 `warehouse_stock.product_name`，使用包含匹配
-        - name: stockState
+        - name: inventoryHealth
           in: query
           schema:
             type: string
-            enum: [AVAILABLE, LOCKED, LOW_STOCK, OUT_OF_STOCK]
-          description: 库存状态，由库存数量、锁定数量和产品安全库存派生
+            enum: [NORMAL, LOW_STOCK, NO_AVAILABLE, OUT_OF_STOCK]
+          description: 库存健康，由可用库存、当前库存和产品安全库存派生
+        - name: reservationState
+          in: query
+          schema:
+            type: string
+            enum: [UNLOCKED, PARTIALLY_LOCKED, FULLY_LOCKED]
+          description: 占用情况，由当前库存和锁定库存派生
         - name: pageNum
           in: query
           required: true
@@ -3044,7 +3052,7 @@ components:
         stockRecordCount: { type: integer, minimum: 0, description: 当前筛选范围内库存余额记录数 }
         warehouseCount: { type: integer, minimum: 0, description: 当前筛选范围内去重仓库数 }
         productCount: { type: integer, minimum: 0, description: 当前筛选范围内去重产品数 }
-        lowStockCount: { type: integer, minimum: 0, description: 当前筛选范围内 `stock_qty <= safety_stock_qty` 的记录数 }
+        lowStockCount: { type: integer, minimum: 0, description: 当前筛选范围内 `0 < available_qty <= safety_stock_qty` 的记录数 }
 
     WarehousePage:
       type: object

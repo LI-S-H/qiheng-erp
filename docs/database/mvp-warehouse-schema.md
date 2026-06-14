@@ -121,7 +121,10 @@
 - 采购退货后续使用 `PURCHASE_RETURN` 出库流水，确认后扣减库存。
 - 库存调整使用 `ADJUST_IN` 或 `ADJUST_OUT` 出入库流水。
 - 可用库存由服务层计算：`stock_qty - locked_qty`。
-- 库存预警先不落表，查询时用 `warehouse_stock.stock_qty` 和 `product.safety_stock_qty` 判断。
+- `warehouse_stock` 不增加单一库存状态字段；库存健康和占用情况是可同时成立的独立维度，统一在查询时根据数量派生，避免状态值与库存事实不一致。
+- 库存健康分为：正常库存（`available_qty > safety_stock_qty`）、低库存（`0 < available_qty <= safety_stock_qty`）、无可用库存（`stock_qty > 0` 且 `available_qty = 0`）、零库存（`stock_qty = 0`）。
+- 占用情况分为：未锁定（`locked_qty = 0`）、部分锁定（`0 < locked_qty < stock_qty`）、全部锁定（`stock_qty > 0` 且 `locked_qty = stock_qty`）。
+- 其中 `available_qty` 表示服务层计算的 `stock_qty - locked_qty`；库存预警先不落表，并关联 `product.safety_stock_qty` 实时判断。
 
 ## 测试场景
 
@@ -135,6 +138,7 @@
 - 出入库流水可以通过 `source_id/source_no` 反查采购单、销售单或退货单。
 - 销售退货和采购退货可以通过同一套出入库流水类型扩展。
 - 库存列表可以按仓库、产品编码、产品名称查询。
-- 库存列表可以按可用、已锁定、低库存和零库存等明确派生状态查询；多个条件按 AND 组合。
+- 库存列表可以分别按库存健康和占用情况查询；两个维度可组合筛选，并与其他有效条件按 AND 组合。
+- 同一条库存可以同时是低库存和部分锁定，也可以同时是无可用库存和全部锁定，页面不得用单一状态互相覆盖。
 - 库存摘要只统计记录数、去重仓库数、去重产品数和低库存记录数，不跨单位汇总产品数量。
 - AI 查询库存时读取 `warehouse_stock`，并校验 `ai:query:stock` 或 `warehouse:query` 权限。

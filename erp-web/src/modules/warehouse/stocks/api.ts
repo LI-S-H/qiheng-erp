@@ -75,12 +75,19 @@ function normalizeStockPage(page: WarehouseStockPage): WarehouseStockPage {
   };
 }
 
-function matchesStockState(item: WarehouseStockListItem, state: WarehouseStockQuery['stockState']) {
-  if (!state || state === 'all') return true;
-  if (state === 'AVAILABLE') return item.availableQty > 0;
-  if (state === 'LOCKED') return item.lockedQty > 0;
-  if (state === 'LOW_STOCK') return item.stockQty <= item.safetyStockQty;
+function matchesInventoryHealth(item: WarehouseStockListItem, health: WarehouseStockQuery['inventoryHealth']) {
+  if (!health || health === 'all') return true;
+  if (health === 'NORMAL') return item.availableQty > item.safetyStockQty;
+  if (health === 'LOW_STOCK') return item.availableQty > 0 && item.availableQty <= item.safetyStockQty;
+  if (health === 'NO_AVAILABLE') return item.stockQty > 0 && item.availableQty === 0;
   return item.stockQty === 0;
+}
+
+function matchesReservationState(item: WarehouseStockListItem, state: WarehouseStockQuery['reservationState']) {
+  if (!state || state === 'all') return true;
+  if (state === 'UNLOCKED') return item.lockedQty === 0;
+  if (state === 'PARTIALLY_LOCKED') return item.lockedQty > 0 && item.lockedQty < item.stockQty;
+  return item.stockQty > 0 && item.lockedQty === item.stockQty;
 }
 
 function buildSummary(records: WarehouseStockListItem[]): WarehouseStockSummary {
@@ -88,7 +95,7 @@ function buildSummary(records: WarehouseStockListItem[]): WarehouseStockSummary 
     stockRecordCount: records.length,
     warehouseCount: new Set(records.map(item => item.warehouseId)).size,
     productCount: new Set(records.map(item => item.productId)).size,
-    lowStockCount: records.filter(item => item.stockQty <= item.safetyStockQty).length,
+    lowStockCount: records.filter(item => item.availableQty > 0 && item.availableQty <= item.safetyStockQty).length,
   };
 }
 
@@ -99,7 +106,8 @@ function filterStocks(params: WarehouseStockQuery): WarehouseStockPage {
     if (params.warehouseId && params.warehouseId !== 'all' && item.warehouseId !== params.warehouseId) return false;
     if (productCode && !item.productCode.toLocaleLowerCase().includes(productCode)) return false;
     if (productName && !item.productName.toLocaleLowerCase().includes(productName)) return false;
-    return matchesStockState(item, params.stockState);
+    return matchesInventoryHealth(item, params.inventoryHealth)
+      && matchesReservationState(item, params.reservationState);
   });
   filtered = filtered.sort((a, b) => a.warehouseCode.localeCompare(b.warehouseCode) || a.productCode.localeCompare(b.productCode));
   const summary = buildSummary(filtered);
@@ -115,12 +123,13 @@ function filterStocks(params: WarehouseStockQuery): WarehouseStockPage {
 
 export function listWarehouseStocks(params: WarehouseStockQuery) {
   if (useMockApi) return Promise.resolve(filterStocks(params));
-  const { warehouseId, productCode, productName, stockState, ...rest } = params;
+  const { warehouseId, productCode, productName, inventoryHealth, reservationState, ...rest } = params;
   return getResult<WarehouseStockPage>('/warehouse/stocks', {
     ...rest,
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(productCode?.trim() ? { productCode: productCode.trim() } : {}),
     ...(productName?.trim() ? { productName: productName.trim() } : {}),
-    ...(stockState && stockState !== 'all' ? { stockState } : {}),
+    ...(inventoryHealth && inventoryHealth !== 'all' ? { inventoryHealth } : {}),
+    ...(reservationState && reservationState !== 'all' ? { reservationState } : {}),
   }).then(normalizeStockPage);
 }

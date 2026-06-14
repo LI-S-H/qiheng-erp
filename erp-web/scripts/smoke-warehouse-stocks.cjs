@@ -20,10 +20,10 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '库存管理' }).waitFor();
     await tableRow(page, 'P0001').waitFor();
-    await assertFixedTableLayout(page, 9);
+    await assertFixedTableLayout(page, 10);
 
     const summaryText = await page.locator('.summary-strip').innerText();
-    for (const expected of ['库存记录\n15', '涉及仓库\n8', '涉及产品\n14', '低库存记录\n7']) {
+    for (const expected of ['库存记录\n15', '涉及仓库\n8', '涉及产品\n14', '低库存记录\n5']) {
       if (!summaryText.includes(expected)) throw new Error(`库存摘要不正确：缺少 ${expected}`);
     }
     await clickRefreshAndAssertLoading(page, 'smoke-warehouse-stocks-refresh-loading.png');
@@ -44,11 +44,13 @@ runSmoke({
     await clickResetAndAssertLoading(page);
 
     await selectFilter(page, 1, '低库存');
+    await selectFilter(page, 2, '部分锁定');
     await clickQueryAndAssertLoading(page);
     await tableRow(page, 'P0002').waitFor();
+    await tableRow(page, 'P0009').waitFor({ state: 'detached' });
     await tableRow(page, 'P0003').waitFor({ state: 'detached' });
     const lowRows = page.locator('tbody tr');
-    if (await lowRows.count() !== 7) throw new Error('低库存派生条件未按 stock_qty <= safety_stock_qty 生效');
+    if (await lowRows.count() !== 4) throw new Error('库存健康与占用情况未按独立维度执行 AND 组合');
     await clickResetAndAssertLoading(page);
 
     await page.getByPlaceholder('如 P0001').fill('P0014');
@@ -56,9 +58,15 @@ runSmoke({
     const lockedOutRow = tableRow(page, 'P0014');
     await lockedOutRow.waitFor();
     const lockedOutText = await lockedOutRow.innerText();
-    if (!lockedOutText.includes('8') || !lockedOutText.includes('0') || !lockedOutText.includes('低库存')) {
+    if (!lockedOutText.includes('8') || !lockedOutText.includes('0') || !lockedOutText.includes('无可用库存') || !lockedOutText.includes('全部锁定')) {
       throw new Error(`库存数量或状态展示不正确：${lockedOutText}`);
     }
+    await clickResetAndAssertLoading(page);
+
+    await selectFilter(page, 1, '零库存');
+    await clickQueryAndAssertLoading(page);
+    await tableRow(page, 'P0008').waitFor();
+    if (await page.locator('tbody tr').count() !== 1) throw new Error('零库存筛选应只返回当前库存为 0 的记录');
     await clickResetAndAssertLoading(page);
 
     await clickPaginationAndAssertLoading(page, '下一页');
@@ -83,5 +91,5 @@ runSmoke({
     await tableRow(page, 'P0001').waitFor();
   },
 }).then(() => {
-  console.log('SMOKE_OK: 库存余额、独立筛选、派生状态、分页与加载反馈通过');
+  console.log('SMOKE_OK: 库存余额、库存健康、占用情况、组合筛选、分页与加载反馈通过');
 });

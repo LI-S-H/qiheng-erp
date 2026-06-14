@@ -149,6 +149,12 @@ function reservationState(row: WarehouseStockListItem) {
   return { label: '部分锁定', className: 'border-blue-200 bg-blue-50 text-blue-700' };
 }
 
+function stockRowClass(row: WarehouseStockListItem) {
+  if (row.stockQty === 0) return 'bg-rose-50/60';
+  if (row.availableQty <= row.safetyStockQty) return 'bg-amber-50/35';
+  return '';
+}
+
 onMounted(() => {
   loadWarehouseOptions();
   fetchStocks();
@@ -201,7 +207,7 @@ onMounted(() => {
           <TableBody>
             <TableRow v-if="loading && stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
             <TableRow v-else-if="stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无符合条件的库存记录</TableCell></TableRow>
-            <TableRow v-for="row in stocks" v-else :key="row.stockId" :data-stock-id="row.stockId" :class="row.availableQty <= row.safetyStockQty ? 'bg-amber-50/35' : ''">
+            <TableRow v-for="row in stocks" v-else :key="row.stockId" :data-stock-id="row.stockId" :class="stockRowClass(row)">
               <TableCell><div class="flex flex-col gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.warehouseCode }}</code><span class="truncate font-medium" :title="row.warehouseName">{{ row.warehouseName }}</span></div></TableCell>
               <TableCell><div class="flex flex-col gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.productCode }}</code><span class="truncate font-medium" :title="row.productName">{{ row.productName }}</span></div></TableCell>
               <TableCell class="text-center">{{ row.unitName }}</TableCell>

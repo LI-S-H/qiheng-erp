@@ -609,6 +609,7 @@ POST   /warehouse/warehouses/batch/delete
 - 当前库存和锁定库存来源于 `warehouse_stock.stock_qty`、`warehouse_stock.locked_qty`，可用库存由服务层计算 `stock_qty - locked_qty`。
 - 安全库存来源于关联的 `product.safety_stock_qty`；低库存按 `0 < available_qty <= safety_stock_qty` 判断，不新增库存预警表。
 - 库存健康和占用情况是两个独立派生维度，不在 `warehouse_stock` 增加单一状态字段。同一条库存可同时显示“低库存 + 部分锁定”或“无可用库存 + 全部锁定”。
+- 风险行使用低饱和背景辅助识别：低库存和无可用库存使用浅黄色，零库存使用浅红色；状态标签仍保留对应文字，不能只依赖颜色表达。
 - 仓库使用 `warehouseId` 精确筛选，产品编码和产品名称分别使用包含匹配，库存健康和占用情况分别使用明确派生条件筛选，多个条件按 AND 组合，不提供跨字段 `keyword`。
 - 不同产品的单位可能不同，摘要区只展示库存记录数、涉及仓库数、涉及产品数和低库存记录数，不跨产品汇总库存数量。
 - 页面展示 `warehouse_stock` 中的仓库、产品和单位快照；产品或仓库名称变更时由后端按数据库规则维护当前余额快照，历史出入库凭证仍保留业务发生时快照。

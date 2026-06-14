@@ -65,8 +65,12 @@ runSmoke({
 
     await selectFilter(page, 1, '零库存');
     await clickQueryAndAssertLoading(page);
-    await tableRow(page, 'P0008').waitFor();
+    const outOfStockRow = tableRow(page, 'P0008');
+    await outOfStockRow.waitFor();
     if (await page.locator('tbody tr').count() !== 1) throw new Error('零库存筛选应只返回当前库存为 0 的记录');
+    if (!await outOfStockRow.evaluate(element => element.classList.contains('bg-rose-50/60'))) {
+      throw new Error('零库存行未使用浅红色风险背景');
+    }
     await clickResetAndAssertLoading(page);
 
     await clickPaginationAndAssertLoading(page, '下一页');

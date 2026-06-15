@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/roles',
@@ -38,6 +38,7 @@ runSmoke({
     const createRoleDialog = page.getByRole('dialog', { name: '新增角色' });
     await createRoleDialog.waitFor();
     await assertRequiredLabels(createRoleDialog, ['角色编码', '角色名称', '启用状态', '权限码']);
+    await assertDialogScrollGutter(createRoleDialog);
     await createRoleDialog.getByRole('button', { name: '保存', exact: true }).click();
     const roleValidationText = await createRoleDialog.innerText();
     for (const message of ['请输入角色编码', '请输入角色名称', '请选择权限码']) {

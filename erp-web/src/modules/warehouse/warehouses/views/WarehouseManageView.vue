@@ -11,7 +11,7 @@ import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -384,7 +384,7 @@ function handleBatchDelete() {
     <Dialog v-model:open="dialogVisible">
       <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[720px]">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增仓库' : '编辑仓库' }}</DialogTitle><DialogDescription>仓库会被采购、销售和库存业务共同引用，请准确维护基础信息。</DialogDescription></DialogHeader>
-        <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-3">
+        <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
             <div class="space-y-1"><Label>仓库编码</Label><Input data-warehouse-code :model-value="dialogMode === 'create' ? '保存后由系统生成' : form.warehouseCode" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">系统生成，创建后不可修改</p></div>
             <div class="space-y-1"><Label>仓库名称 <span class="text-destructive">*</span></Label><Input v-model="form.warehouseName" maxlength="100" placeholder="请输入仓库名称" :aria-invalid="Boolean(formErrors.warehouseName)" /><p v-if="formErrors.warehouseName" class="text-xs text-destructive">{{ formErrors.warehouseName }}</p></div>
@@ -394,7 +394,7 @@ function handleBatchDelete() {
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>启用状态 <span class="text-destructive">*</span></Label><RadioGroup :model-value="String(form.status)" class="flex gap-5" @update:model-value="form.status = Number($event) as WarehouseStatus"><div class="flex items-center gap-2"><RadioGroupItem id="warehouse-status-1" value="1" /><Label for="warehouse-status-1" class="cursor-pointer font-normal">启用</Label></div><div class="flex items-center gap-2"><RadioGroupItem id="warehouse-status-0" value="0" /><Label for="warehouse-status-0" class="cursor-pointer font-normal">停用</Label></div></RadioGroup></div>
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>备注</Label><Textarea v-model="form.remark" maxlength="500" rows="3" placeholder="补充仓库用途、收发货时间或管理说明" :aria-invalid="Boolean(formErrors.remark)" /><div class="flex justify-between text-xs"><span :class="formErrors.remark ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.remark || '选填，最多 500 个字符' }}</span><span class="text-muted-foreground">{{ form.remark.length }}/500</span></div></div>
           </div>
-        </ScrollArea>
+        </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>

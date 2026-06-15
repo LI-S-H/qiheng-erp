@@ -2,6 +2,7 @@ const {
   runSmoke,
   tableRow,
   assertFixedTableLayout,
+  assertDialogScrollGutter,
   clickQueryAndAssertLoading,
   clickPaginationAndAssertLoading,
   clickRefreshAndAssertLoading,
@@ -97,6 +98,12 @@ runSmoke({
 
     await page.getByRole('button', { name: '新增出入库' }).click();
     const createDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
+    await page.setViewportSize({ width: 1115, height: 838 });
+    await createDialog.getByRole('button', { name: '添加产品' }).click();
+    await assertDialogScrollGutter(createDialog, 8, true);
+    await page.screenshot({ path: 'smoke-warehouse-stock-bills-dialog-scroll-gutter.png', fullPage: true });
+    await createDialog.getByRole('button', { name: '删除产品明细' }).last().click();
+    await page.setViewportSize({ width: 1440, height: 900 });
     const generatedFields = createDialog.locator('input[readonly]');
     if (!(await generatedFields.first().inputValue()).includes('系统生成')) throw new Error('新增调整的流水号必须由系统生成');
     await selectDialogOption(page, createDialog, 1, 'WH001 华东中心仓');

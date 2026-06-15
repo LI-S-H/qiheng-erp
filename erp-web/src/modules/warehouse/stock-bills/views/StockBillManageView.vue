@@ -10,7 +10,7 @@ import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -548,7 +548,7 @@ onMounted(() => {
           <DialogDescription>{{ dialogMode === 'create' ? '库存调整由系统生成调整单号；采购、销售和退货补录必须填写原业务单号、原因，并由当前登录人承担补录责任。' : '只有草稿可以编辑；来源业务单据生成的草稿不能更换仓库、产品或出入库类型。' }}</DialogDescription>
         </DialogHeader>
         <div v-if="formLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />草稿加载中...</div>
-        <ScrollArea v-else class="dialog-scroll-area min-h-0 flex-1 pr-3">
+        <DialogScrollArea v-else>
           <div class="space-y-5 py-2">
             <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
               <div class="space-y-1"><Label>流水号</Label><Input :model-value="dialogMode === 'create' ? '保存后由系统生成' : editingDetail?.billNo" readonly class="bg-muted/55 text-muted-foreground" /></div>
@@ -600,7 +600,7 @@ onMounted(() => {
 
             <div class="space-y-1"><Label>凭证备注</Label><Textarea v-model="form.remark" maxlength="500" rows="3" placeholder="填写调整原因、盘点依据或其他说明" :aria-invalid="Boolean(formErrors.remark)" /><div class="flex justify-between text-xs"><span :class="formErrors.remark ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.remark || '选填，最多 500 个字符' }}</span><span class="text-muted-foreground">{{ form.remark.length }}/500</span></div></div>
           </div>
-        </ScrollArea>
+        </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="formVisible = false">关闭</Button><Button :disabled="formSubmitting || formLoading" @click="submitForm">{{ formSubmitting ? '保存中...' : '保存草稿' }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
@@ -609,7 +609,7 @@ onMounted(() => {
       <DialogContent class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-[1120px]">
         <DialogHeader><DialogTitle>出入库凭证详情</DialogTitle><DialogDescription>查看业务来源、确认信息以及每个产品的库存变动记录。</DialogDescription></DialogHeader>
         <div v-if="detailLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
-        <ScrollArea v-else-if="detail" class="dialog-scroll-area min-h-0 flex-1 pr-3">
+        <DialogScrollArea v-else-if="detail">
           <div class="space-y-5 py-1">
             <div class="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-sm:grid-cols-1">
               <div class="detail-field"><span>流水号</span><code>{{ detail.billNo }}</code></div>
@@ -650,7 +650,7 @@ onMounted(() => {
             <div v-if="detail.entryMode !== 'SOURCE_GENERATED'" class="rounded-lg border border-amber-200 bg-amber-50/60 p-3"><span class="text-xs text-amber-700">{{ detail.entryMode === 'MANUAL_SUPPLEMENT' ? '补录原因' : '调整原因' }}</span><p class="mt-1 text-sm">{{ detail.manualReason }}</p></div>
             <div class="rounded-lg border bg-muted/25 p-3"><span class="text-xs text-muted-foreground">凭证备注</span><p class="mt-1 text-sm">{{ detail.remark || '无' }}</p></div>
           </div>
-        </ScrollArea>
+        </DialogScrollArea>
       </DialogContent>
     </Dialog>
 

@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/product/products',
@@ -69,6 +69,7 @@ runSmoke({
     await page.getByRole('button', { name: '新增产品' }).click();
     const createDialog = page.getByRole('dialog', { name: '新增产品' });
     await assertRequiredLabels(createDialog, ['产品名称', '单位名称', '启用状态']);
+    await assertDialogScrollGutter(createDialog);
     const productCodeDisplay = createDialog.locator('[data-product-code-display]');
     if (await productCodeDisplay.inputValue() !== '保存后由系统生成' || !await productCodeDisplay.evaluate(element => element.hasAttribute('readonly'))) {
       throw new Error('新增产品的产品编码必须由系统生成并以只读方式提示');

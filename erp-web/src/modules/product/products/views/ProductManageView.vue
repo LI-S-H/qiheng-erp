@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
@@ -456,7 +456,7 @@ function formatQty(value: number) {
     <Dialog v-model:open="dialogVisible">
       <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[760px]">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增产品' : '编辑产品' }}</DialogTitle><DialogDescription>产品档案将被采购、销售和库存业务共同引用，请准确维护主数据。</DialogDescription></DialogHeader>
-        <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-3">
+        <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
             <div class="space-y-1"><Label>产品编码</Label><Input data-product-code-display :model-value="dialogMode === 'create' ? '保存后由系统生成' : editingProductCode" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">系统生成，创建后不可修改</p></div>
             <div class="space-y-1"><Label>产品名称 <span class="text-destructive">*</span></Label><Input v-model="form.productName" maxlength="200" placeholder="请输入产品名称" :aria-invalid="Boolean(formErrors.productName)" /><p v-if="formErrors.productName" class="text-xs text-destructive">{{ formErrors.productName }}</p></div>
@@ -472,7 +472,7 @@ function formatQty(value: number) {
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>启用状态 <span class="text-destructive">*</span></Label><RadioGroup :model-value="String(form.status)" class="flex gap-5" @update:model-value="form.status = Number($event) as ProductStatus"><div class="flex items-center gap-2"><RadioGroupItem id="product-status-1" value="1" /><Label for="product-status-1" class="cursor-pointer font-normal">启用</Label></div><div class="flex items-center gap-2"><RadioGroupItem id="product-status-0" value="0" /><Label for="product-status-0" class="cursor-pointer font-normal">停用</Label></div></RadioGroup></div>
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>备注</Label><Textarea v-model="form.remark" maxlength="500" rows="3" placeholder="补充产品采购、销售或仓储注意事项" :aria-invalid="Boolean(formErrors.remark)" /><div class="flex justify-between text-xs"><span :class="formErrors.remark ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.remark || '选填，最多 500 个字符' }}</span><span class="text-muted-foreground">{{ form.remark.length }}/500</span></div></div>
           </div>
-        </ScrollArea>
+        </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>

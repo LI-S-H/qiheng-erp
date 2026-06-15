@@ -3,6 +3,7 @@ const {
   tableRow,
   assertFixedTableLayout,
   assertRequiredLabels,
+  assertDialogScrollGutter,
   clickQueryAndAssertLoading,
   clickPaginationAndAssertLoading,
   clickRefreshAndAssertLoading,
@@ -40,6 +41,7 @@ runSmoke({
     await page.getByRole('button', { name: '新增仓库' }).click();
     const createDialog = page.getByRole('dialog', { name: '新增仓库' });
     await assertRequiredLabels(createDialog, ['仓库名称', '启用状态']);
+    await assertDialogScrollGutter(createDialog);
     const generatedCode = createDialog.locator('[data-warehouse-code]');
     if (await generatedCode.inputValue() !== '保存后由系统生成' || !await generatedCode.evaluate(element => element.hasAttribute('readonly'))) {
       throw new Error('新增仓库的仓库编码必须由系统生成并以只读方式提示');

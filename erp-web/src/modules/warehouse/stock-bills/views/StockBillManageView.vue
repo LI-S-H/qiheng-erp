@@ -45,12 +45,6 @@ import type {
   StockBillUpdatePayload,
 } from '../types';
 
-type StockBillPageMode = 'all' | 'adjustments';
-
-const props = withDefaults(defineProps<{ pageMode?: StockBillPageMode }>(), {
-  pageMode: 'all',
-});
-
 interface DraftFormItem extends StockBillDraftItemPayload {
   key: string;
 }
@@ -78,22 +72,7 @@ const warehouseOptions = ref<Array<{ value: string; label: string }>>([{ value: 
 const formWarehouseOptions = ref<Array<{ value: string; label: string }>>([]);
 const productOptions = ref<Array<{ value: string; label: string }>>([]);
 const formErrors = reactive<Record<string, string>>({});
-const isAdjustmentPage = computed(() => props.pageMode === 'adjustments');
-const pageText = computed(() => isAdjustmentPage.value ? {
-  title: '库存调整',
-  description: '处理盘盈、盘亏和其他人工库存调整，并保留负责人、调整原因与完整库存变动记录',
-  countLabel: '调整单据',
-  inboundLabel: '调整入库',
-  outboundLabel: '调整出库',
-  sourceNoLabel: '调整单号',
-  sourceNoPlaceholder: '如 ADJ202606001',
-  toolbarTitle: '库存调整凭证',
-  toolbarDescription: '调整单由系统生成编号，草稿确认后才更新库存；已确认错误通过反向调整纠正',
-  createButton: '新增调整',
-  createTooltip: '创建调整入库或调整出库草稿',
-  refreshTooltip: '重新加载当前库存调整记录',
-  emptyText: '暂无符合条件的库存调整记录',
-} : {
+const pageText = {
   title: '出入库记录',
   description: '处理出入库草稿并追踪采购、销售、退货和库存调整形成的库存变动凭证',
   countLabel: '流水记录',
@@ -107,7 +86,7 @@ const pageText = computed(() => isAdjustmentPage.value ? {
   createTooltip: '创建库存调整或补录采购、销售、退货凭证',
   refreshTooltip: '重新加载当前出入库记录',
   emptyText: '暂无符合条件的出入库记录',
-});
+};
 const confirmState = reactive({
   open: false,
   title: '',
@@ -121,7 +100,7 @@ const query = reactive<StockBillQuery>({
   sourceNo: '',
   warehouseId: 'all',
   billType: 'all',
-  entryMode: props.pageMode === 'adjustments' ? 'MANUAL_ADJUSTMENT' : 'all',
+  entryMode: 'all',
   status: 'all',
   pageNum: 1,
   pageSize: 10,
@@ -158,17 +137,6 @@ const manualBillTypeOptions: Array<{ value: ManualStockBillType; label: string }
   { value: 'ADJUST_IN', label: '库存调整入库' },
   { value: 'ADJUST_OUT', label: '库存调整出库' },
 ];
-const adjustmentBillTypeOptions: Array<{ value: StockBillType | 'all'; label: string }> = [
-  { value: 'all', label: '全部调整方向' },
-  { value: 'ADJUST_IN', label: '调整入库' },
-  { value: 'ADJUST_OUT', label: '调整出库' },
-];
-const adjustmentFormTypeOptions: Array<{ value: ManualStockBillType; label: string }> = [
-  { value: 'ADJUST_IN', label: '库存调整入库' },
-  { value: 'ADJUST_OUT', label: '库存调整出库' },
-];
-const visibleBillTypeOptions = computed(() => isAdjustmentPage.value ? adjustmentBillTypeOptions : billTypeOptions);
-const visibleManualBillTypeOptions = computed(() => isAdjustmentPage.value ? adjustmentFormTypeOptions : manualBillTypeOptions);
 const statusOptions: Array<{ value: StockBillStatus | 'all'; label: string }> = [
   { value: 'all', label: '全部状态' },
   { value: 'DRAFT', label: '草稿' },
@@ -236,14 +204,13 @@ async function fetchRecords() {
   const currentSequence = ++requestSequence.value;
   loading.value = true;
   try {
-    if (isAdjustmentPage.value) query.entryMode = 'MANUAL_ADJUSTMENT';
     const page = await listStockBills(query);
     if (currentSequence !== requestSequence.value) return;
     records.value = page.records;
     total.value = page.total;
     Object.assign(summary, page.summary);
   } catch (error) {
-    if (currentSequence === requestSequence.value) toast.warning(getApiErrorMessage(error) || `${pageText.value.title}查询失败`);
+    if (currentSequence === requestSequence.value) toast.warning(getApiErrorMessage(error) || `${pageText.title}查询失败`);
   } finally {
     if (currentSequence === requestSequence.value) {
       loading.value = false;
@@ -276,7 +243,7 @@ function handleReset() {
     sourceNo: '',
     warehouseId: 'all',
     billType: 'all',
-    entryMode: isAdjustmentPage.value ? 'MANUAL_ADJUSTMENT' : 'all',
+    entryMode: 'all',
     status: 'all',
     pageNum: 1,
   });
@@ -304,7 +271,7 @@ async function openDetail(row: StockBillListItem) {
     detail.value = await getStockBillDetail(row.stockBillId);
   } catch (error) {
     detailVisible.value = false;
-    toast.warning(getApiErrorMessage(error) || `${pageText.value.title}详情加载失败`);
+    toast.warning(getApiErrorMessage(error) || `${pageText.title}详情加载失败`);
   } finally {
     detailLoading.value = false;
   }
@@ -460,12 +427,12 @@ async function submitForm() {
     } else if (editingDetail.value) {
       const payload: StockBillUpdatePayload = { sourceNo: form.sourceNo.trim(), manualReason: form.manualReason.trim(), items: buildItemPayloads(), remark: form.remark.trim() };
       await updateStockBill(editingDetail.value.stockBillId, payload);
-      toast.success(isAdjustmentPage.value ? '库存调整草稿已更新' : '出入库草稿已更新');
+      toast.success('出入库草稿已更新');
     }
     formVisible.value = false;
     await fetchRecords();
   } catch (error) {
-    toast.warning(getApiErrorMessage(error) || `${pageText.value.title}草稿保存失败`);
+    toast.warning(getApiErrorMessage(error) || `${pageText.title}草稿保存失败`);
   } finally {
     formSubmitting.value = false;
   }
@@ -477,13 +444,13 @@ function showConfirm(title: string, description: string, confirmText: string, va
 
 function handleConfirm(row: StockBillListItem) {
   showConfirm(
-    isAdjustmentPage.value ? '确认库存调整' : '确认出入库',
+    '确认出入库',
     `确认「${row.billNo}」后将立即更新库存余额，且凭证不能再编辑或直接取消。请确认仓库和产品数量无误。`,
     '确认执行',
     'warning',
     async () => {
       await confirmStockBill(row.stockBillId);
-      toast.success(isAdjustmentPage.value ? '库存调整已确认，库存余额已更新' : '出入库已确认，库存余额已更新');
+      toast.success('出入库已确认，库存余额已更新');
       await fetchRecords();
     },
   );
@@ -491,13 +458,13 @@ function handleConfirm(row: StockBillListItem) {
 
 function handleCancel(row: StockBillListItem) {
   showConfirm(
-    isAdjustmentPage.value ? '取消库存调整草稿' : '取消出入库草稿',
+    '取消出入库草稿',
     `确认取消「${row.billNo}」吗？取消后不改变库存，凭证将保留用于追溯且不能再次编辑。`,
     '确认取消',
     'destructive',
     async () => {
       await cancelStockBill(row.stockBillId);
-      toast.success(isAdjustmentPage.value ? '库存调整草稿已取消' : '出入库草稿已取消');
+      toast.success('出入库草稿已取消');
       await fetchRecords();
     },
   );
@@ -510,7 +477,7 @@ async function runConfirmAction() {
     await confirmState.onConfirm();
     confirmState.open = false;
   } catch (error) {
-    toast.warning(getApiErrorMessage(error) || `${pageText.value.title}状态变更失败`);
+    toast.warning(getApiErrorMessage(error) || `${pageText.title}状态变更失败`);
   } finally {
     actionSubmitting.value = false;
   }
@@ -548,12 +515,12 @@ onMounted(() => {
     </div>
 
     <div class="filter-panel">
-      <div class="filter-grid" :class="isAdjustmentPage ? 'filter-grid--stock-adjustments' : 'filter-grid--stock-bills'">
+      <div class="filter-grid filter-grid--stock-bills">
         <div class="space-y-1"><Label class="text-xs">流水号</Label><Input v-model="query.billNo" placeholder="如 SB202606140001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">{{ pageText.sourceNoLabel }}</Label><Input v-model="query.sourceNo" :placeholder="pageText.sourceNoPlaceholder" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">仓库</Label><AnchoredSelect v-model="query.warehouseId" :options="warehouseOptions" placeholder="全部仓库" /></div>
-        <div class="space-y-1"><Label class="text-xs">{{ isAdjustmentPage ? '调整方向' : '出入库类型' }}</Label><AnchoredSelect v-model="query.billType" :options="visibleBillTypeOptions" :placeholder="isAdjustmentPage ? '全部调整方向' : '全部类型'" /></div>
-        <div v-if="!isAdjustmentPage" class="space-y-1"><Label class="text-xs">录入方式</Label><AnchoredSelect v-model="query.entryMode" :options="entryModeOptions" placeholder="全部录入方式" /></div>
+        <div class="space-y-1"><Label class="text-xs">出入库类型</Label><AnchoredSelect v-model="query.billType" :options="billTypeOptions" placeholder="全部类型" /></div>
+        <div class="space-y-1"><Label class="text-xs">录入方式</Label><AnchoredSelect v-model="query.entryMode" :options="entryModeOptions" placeholder="全部录入方式" /></div>
         <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" placeholder="全部状态" /></div>
         <div class="filter-actions">
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
@@ -575,7 +542,7 @@ onMounted(() => {
       <ScrollArea class="w-full">
         <Table class="min-w-[1650px] table-fixed">
           <colgroup><col class="w-[165px]" /><col class="w-[125px]" /><col class="w-[190px]" /><col class="w-[150px]" /><col class="w-[70px]" /><col class="w-[90px]" /><col class="w-[130px]" /><col class="w-[165px]" /><col class="w-[165px]" /><col class="w-[260px]" /></colgroup>
-          <TableHeader><TableRow><TableHead>流水号</TableHead><TableHead class="text-center">{{ isAdjustmentPage ? '调整方向' : '出入库类型' }}</TableHead><TableHead>{{ isAdjustmentPage ? '调整信息' : '来源单据' }}</TableHead><TableHead>仓库</TableHead><TableHead class="text-center">明细数</TableHead><TableHead class="text-center">状态</TableHead><TableHead>负责人</TableHead><TableHead>创建信息</TableHead><TableHead>确认信息</TableHead><TableHead class="text-center">操作</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>来源单据</TableHead><TableHead>仓库</TableHead><TableHead class="text-center">明细数</TableHead><TableHead class="text-center">状态</TableHead><TableHead>负责人</TableHead><TableHead>创建信息</TableHead><TableHead>确认信息</TableHead><TableHead class="text-center">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
             <TableRow v-else-if="records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">{{ pageText.emptyText }}</TableCell></TableRow>
@@ -609,8 +576,8 @@ onMounted(() => {
     <Dialog v-model:open="formVisible">
       <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(820px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-[1080px]">
         <DialogHeader>
-          <DialogTitle>{{ dialogMode === 'create' ? (isAdjustmentPage ? '新增库存调整' : '新增出入库凭证') : (isAdjustmentPage ? '编辑库存调整草稿' : '编辑出入库草稿') }}</DialogTitle>
-          <DialogDescription>{{ dialogMode === 'create' ? (isAdjustmentPage ? '调整单号和负责人由后端生成；保存草稿不会改变库存，确认后才形成库存变动。' : '库存调整由系统生成调整单号；采购、销售和退货补录必须填写原业务单号、原因，并由当前登录人承担补录责任。') : '只有草稿可以编辑；已确认或已取消的凭证只能查看。' }}</DialogDescription>
+          <DialogTitle>{{ dialogMode === 'create' ? '新增出入库凭证' : '编辑出入库草稿' }}</DialogTitle>
+          <DialogDescription>{{ dialogMode === 'create' ? '库存调整由系统生成调整单号；采购、销售和退货补录必须填写原业务单号、原因，并由当前登录人承担补录责任。' : '只有草稿可以编辑；已确认或已取消的凭证只能查看。' }}</DialogDescription>
         </DialogHeader>
         <div v-if="formLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />草稿加载中...</div>
         <DialogScrollArea v-else>
@@ -618,8 +585,8 @@ onMounted(() => {
             <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
               <div class="space-y-1"><Label>流水号</Label><Input :model-value="dialogMode === 'create' ? '保存后由系统生成' : editingDetail?.billNo" readonly class="bg-muted/55 text-muted-foreground" /></div>
               <div class="space-y-1">
-                <Label>{{ isAdjustmentPage ? '调整方向' : '出入库类型' }} <span class="text-destructive">*</span></Label>
-                <AnchoredSelect v-if="dialogMode === 'create'" v-model="form.billType" :options="visibleManualBillTypeOptions" placeholder="请选择类型" />
+                <Label>出入库类型 <span class="text-destructive">*</span></Label>
+                <AnchoredSelect v-if="dialogMode === 'create'" v-model="form.billType" :options="manualBillTypeOptions" placeholder="请选择类型" />
                 <Input v-else :model-value="billTypeMap[formBillType].label" readonly class="bg-muted/55 text-muted-foreground" />
               </div>
               <div class="space-y-1">
@@ -672,18 +639,18 @@ onMounted(() => {
 
     <Dialog v-model:open="detailVisible">
       <DialogContent class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-[1120px]">
-        <DialogHeader><DialogTitle>{{ isAdjustmentPage ? '库存调整详情' : '出入库凭证详情' }}</DialogTitle><DialogDescription>查看业务来源、确认信息以及每个产品的库存变动记录。</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>出入库凭证详情</DialogTitle><DialogDescription>查看业务来源、确认信息以及每个产品的库存变动记录。</DialogDescription></DialogHeader>
         <div v-if="detailLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
         <DialogScrollArea v-else-if="detail">
           <div class="space-y-5 py-1">
             <div class="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-sm:grid-cols-1">
               <div class="detail-field"><span>流水号</span><code>{{ detail.billNo }}</code></div>
-              <div class="detail-field"><span>{{ isAdjustmentPage ? '调整方向' : '类型' }}</span><Badge variant="outline" :class="billTypeMap[detail.billType].className">{{ billTypeMap[detail.billType].label }}</Badge></div>
+              <div class="detail-field"><span>类型</span><Badge variant="outline" :class="billTypeMap[detail.billType].className">{{ billTypeMap[detail.billType].label }}</Badge></div>
               <div class="detail-field"><span>状态</span><Badge variant="outline" :class="statusMap[detail.status].className">{{ statusMap[detail.status].label }}</Badge></div>
               <div class="detail-field"><span>仓库</span><strong>{{ detail.warehouseName }}</strong></div>
               <div class="detail-field"><span>录入方式</span><strong>{{ entryModeMap[detail.entryMode] }}</strong></div>
-              <div class="detail-field"><span>{{ isAdjustmentPage ? '凭证来源' : '来源类型' }}</span><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></div>
-              <div class="detail-field"><span>{{ isAdjustmentPage ? '调整单号' : '来源单号' }}</span><code>{{ detail.sourceNo || '-' }}</code></div>
+              <div class="detail-field"><span>来源类型</span><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></div>
+              <div class="detail-field"><span>来源单号</span><code>{{ detail.sourceNo || '-' }}</code></div>
               <div class="detail-field"><span>负责人</span><strong>{{ detail.responsibleByName }}</strong></div>
               <div class="detail-field"><span>创建人 / 时间</span><strong>{{ detail.createdByName || '系统' }}</strong><small>{{ detail.createdAt }}</small></div>
               <div class="detail-field"><span>确认人 / 时间</span><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></div>
@@ -728,10 +695,6 @@ onMounted(() => {
   grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
 }
 
-.filter-grid--stock-adjustments {
-  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
-}
-
 .detail-field {
   display: flex;
   min-height: 78px;
@@ -765,13 +728,11 @@ onMounted(() => {
 }
 
 @media (max-width: 1279px) {
-  .filter-grid--stock-bills,
-  .filter-grid--stock-adjustments {
+  .filter-grid--stock-bills {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .filter-grid--stock-bills .filter-actions,
-  .filter-grid--stock-adjustments .filter-actions {
+  .filter-grid--stock-bills .filter-actions {
     grid-column: 1 / -1;
     justify-content: flex-end;
   }
@@ -788,7 +749,6 @@ onMounted(() => {
 
 @media (max-width: 640px) {
   .filter-grid--stock-bills,
-  .filter-grid--stock-adjustments,
   .draft-item-grid,
   .draft-item-grid--quality {
     grid-template-columns: minmax(0, 1fr);

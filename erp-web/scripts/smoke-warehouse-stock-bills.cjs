@@ -59,11 +59,26 @@ runSmoke({
     await clickResetAndAssertLoading(page);
 
     await selectFilter(page, 1, '采购入库');
-    await selectFilter(page, 2, '已确认');
+    await selectFilter(page, 3, '已确认');
     await clickQueryAndAssertLoading(page);
     await tableRow(page, 'SB202606140001').waitFor();
     await tableRow(page, 'SB202606130006').waitFor();
     if (await page.locator('tbody tr').count() !== 2) throw new Error('出入库类型与状态未按 AND 组合筛选');
+    await clickResetAndAssertLoading(page);
+
+    await selectFilter(page, 2, '系统自动录入');
+    await clickQueryAndAssertLoading(page);
+    if (await page.locator('tbody [data-manual-entry-marker]').count() !== 0) throw new Error('系统自动录入筛选混入人工凭证');
+    await tableRow(page, 'SB202606140001').waitFor();
+    await clickResetAndAssertLoading(page);
+
+    await selectFilter(page, 2, '人工调整');
+    await clickQueryAndAssertLoading(page);
+    const adjustmentRows = page.locator('tbody tr');
+    if (await adjustmentRows.count() === 0) throw new Error('人工调整筛选未返回库存调整凭证');
+    for (const row of await adjustmentRows.all()) {
+      await row.locator('[data-manual-entry-marker]').getByText('人工录入', { exact: true }).waitFor();
+    }
     await clickResetAndAssertLoading(page);
 
     const confirmedRow = tableRow(page, 'SB202606140001');
@@ -219,6 +234,15 @@ runSmoke({
       if (!supplementText.includes(expected)) throw new Error(`补录详情缺少 ${expected}`);
     }
     await supplementDetail.getByRole('button', { name: 'Close' }).click();
+
+    await selectFilter(page, 2, '人工补录');
+    await clickQueryAndAssertLoading(page);
+    const supplementFilteredRow = page.getByRole('row').filter({ hasText: 'SRO-OFFLINE-001' }).first();
+    await supplementFilteredRow.locator('[data-manual-entry-marker]').getByText('人工录入', { exact: true }).waitFor();
+    for (const rowText of await page.locator('tbody tr').allInnerTexts()) {
+      if (!rowText.includes('SRO-OFFLINE-001')) throw new Error(`人工补录筛选混入其他录入方式：${rowText}`);
+    }
+    await clickResetAndAssertLoading(page);
 
     await page.setViewportSize({ width: 1115, height: 838 });
     await page.reload({ waitUntil: 'domcontentloaded' });

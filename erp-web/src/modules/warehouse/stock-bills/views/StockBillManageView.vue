@@ -36,6 +36,7 @@ import type {
   StockBillCreatePayload,
   StockBillDetail,
   StockBillDraftItemPayload,
+  StockBillEntryMode,
   StockBillListItem,
   StockBillQuery,
   StockBillStatus,
@@ -84,6 +85,7 @@ const query = reactive<StockBillQuery>({
   sourceNo: '',
   warehouseId: 'all',
   billType: 'all',
+  entryMode: 'all',
   status: 'all',
   pageNum: 1,
   pageSize: 10,
@@ -125,6 +127,12 @@ const statusOptions: Array<{ value: StockBillStatus | 'all'; label: string }> = 
   { value: 'DRAFT', label: '草稿' },
   { value: 'CONFIRMED', label: '已确认' },
   { value: 'CANCELLED', label: '已取消' },
+];
+const entryModeOptions: Array<{ value: StockBillEntryMode | 'all'; label: string }> = [
+  { value: 'all', label: '全部录入方式' },
+  { value: 'SOURCE_GENERATED', label: '系统自动录入' },
+  { value: 'MANUAL_SUPPLEMENT', label: '人工补录' },
+  { value: 'MANUAL_ADJUSTMENT', label: '人工调整' },
 ];
 const billTypeMap: Record<StockBillType, { label: string; direction: 'in' | 'out'; className: string }> = {
   PURCHASE_IN: { label: '采购入库', direction: 'in', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
@@ -215,7 +223,7 @@ function handleSearch() {
 
 function handleReset() {
   if (queryBusy.value) return;
-  Object.assign(query, { billNo: '', sourceNo: '', warehouseId: 'all', billType: 'all', status: 'all', pageNum: 1 });
+  Object.assign(query, { billNo: '', sourceNo: '', warehouseId: 'all', billType: 'all', entryMode: 'all', status: 'all', pageNum: 1 });
   queryPending.value = true;
   debouncedSearch();
 }
@@ -489,6 +497,7 @@ onMounted(() => {
         <div class="space-y-1"><Label class="text-xs">来源单号</Label><Input v-model="query.sourceNo" placeholder="如 PO202606001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">仓库</Label><AnchoredSelect v-model="query.warehouseId" :options="warehouseOptions" placeholder="全部仓库" /></div>
         <div class="space-y-1"><Label class="text-xs">出入库类型</Label><AnchoredSelect v-model="query.billType" :options="billTypeOptions" placeholder="全部类型" /></div>
+        <div class="space-y-1"><Label class="text-xs">录入方式</Label><AnchoredSelect v-model="query.entryMode" :options="entryModeOptions" placeholder="全部录入方式" /></div>
         <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" placeholder="全部状态" /></div>
         <div class="filter-actions">
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
@@ -660,7 +669,7 @@ onMounted(() => {
 
 <style scoped>
 .filter-grid--stock-bills {
-  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
 }
 
 .detail-field {

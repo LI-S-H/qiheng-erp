@@ -326,6 +326,8 @@ for (const fragment of [
   'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
   'enum: [DRAFT, CONFIRMED, CANCELLED]',
   'enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]',
+  'name: entryMode',
+  '对应 `stock_bill.entry_mode`，使用精确匹配',
   'required: [billType, sourceNo, warehouseId, manualReason, items, remark]',
   'responsibleById',
   'quantityPrecision',
@@ -345,6 +347,7 @@ if (!stockBillViewSource.includes('新增出入库')
   || !stockBillViewSource.includes('handleConfirm(row)')
   || !stockBillViewSource.includes('handleCancel(row)')
   || !stockBillViewSource.includes('filter-grid--stock-bills')
+  || !stockBillViewSource.includes('entryModeOptions')
   || !stockBillViewSource.includes('出入库凭证详情')
   || !pageDesign.includes('## 16. 仓库库存模块：出入库记录')
   || !warehouseSchema.includes('已确认凭证不能直接取消或改回草稿')

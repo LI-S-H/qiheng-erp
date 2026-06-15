@@ -224,6 +224,7 @@ function filterMockBills(params: StockBillQuery): StockBillPage {
     if (sourceNo && !item.sourceNo.toLocaleLowerCase().includes(sourceNo)) return false;
     if (params.warehouseId && params.warehouseId !== 'all' && item.warehouseId !== params.warehouseId) return false;
     if (params.billType && params.billType !== 'all' && item.billType !== params.billType) return false;
+    if (params.entryMode && params.entryMode !== 'all' && item.entryMode !== params.entryMode) return false;
     return !params.status || params.status === 'all' || item.status === params.status;
   }).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.billNo.localeCompare(a.billNo));
   const start = (params.pageNum - 1) * params.pageSize;
@@ -494,13 +495,14 @@ export async function cancelStockBill(stockBillId: string) {
 
 export function listStockBills(params: StockBillQuery) {
   if (useMockApi) return Promise.resolve(filterMockBills(params));
-  const { billNo, sourceNo, warehouseId, billType, status, ...rest } = params;
+  const { billNo, sourceNo, warehouseId, billType, entryMode, status, ...rest } = params;
   return getResult<StockBillPage>('/warehouse/stock-bills', {
     ...rest,
     ...(billNo?.trim() ? { billNo: billNo.trim() } : {}),
     ...(sourceNo?.trim() ? { sourceNo: sourceNo.trim() } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(billType && billType !== 'all' ? { billType } : {}),
+    ...(entryMode && entryMode !== 'all' ? { entryMode } : {}),
     ...(status && status !== 'all' ? { status } : {}),
   }).then(normalizeStockBillPage);
 }

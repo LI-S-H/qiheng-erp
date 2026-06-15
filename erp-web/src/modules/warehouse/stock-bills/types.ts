@@ -72,6 +72,7 @@ export interface StockBillQuery {
   sourceNo?: string;
   warehouseId?: string | 'all';
   billType?: StockBillType | 'all';
+  entryMode?: StockBillEntryMode | 'all';
   status?: StockBillStatus | 'all';
   pageNum: number;
   pageSize: number;

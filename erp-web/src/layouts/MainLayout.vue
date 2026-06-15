@@ -1,0 +1,341 @@
+<script setup lang="ts">
+import {
+  Home,
+  Lock,
+  Package,
+  Warehouse,
+  ShoppingCart,
+  Tag,
+  MessageCircle,
+  Bell,
+  LogOut,
+} from 'lucide-vue-next';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import logoUrl from '@/assets/brand/qiheng-logo.svg';
+import { useAuthStore } from '@/modules/auth/stores/authStore';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+
+interface MenuItem {
+  index: string;
+  title: string;
+  icon: unknown;
+  permission?: string;
+  children?: Array<Omit<MenuItem, 'icon' | 'children'> & { icon?: unknown }>;
+}
+
+const route = useRoute();
+const router = useRouter();
+const authStore = useAuthStore();
+
+const activeMenu = computed(() => route.path);
+const openedMenus = reactive(new Set<string>());
+const logoutConfirmOpen = ref(false);
+const pageLoading = ref(false);
+let pageLoadingTimer: number | undefined;
+let pageLoadingFrame: number | undefined;
+
+const menus: MenuItem[] = [
+  { index: '/dashboard', title: '工作台', icon: Home },
+  {
+    index: '/system',
+    title: '系统权限',
+    icon: Lock,
+    children: [
+      { index: '/system/users', title: '用户管理' },
+      { index: '/system/roles', title: '角色管理' },
+      { index: '/system/depts', title: '部门管理' },
+      { index: '/system/permissions', title: '权限码配置' },
+    ],
+  },
+  {
+    index: '/product',
+    title: '产品中心',
+    icon: Package,
+    permission: 'product:query',
+    children: [
+      { index: '/product/categories', title: '产品分类' },
+      { index: '/product/products', title: '产品档案' },
+    ],
+  },
+  {
+    index: '/warehouse',
+    title: '仓储库存',
+    icon: Warehouse,
+    permission: 'warehouse:query',
+    children: [
+      { index: '/warehouse/warehouses', title: '仓库管理' },
+      { index: '/warehouse/stocks', title: '库存管理' },
+      { index: '/warehouse/stock-bills', title: '出入库记录' },
+      { index: '/warehouse/stock-adjustments', title: '库存调整' },
+    ],
+  },
+  {
+    index: '/purchase',
+    title: '采购业务',
+    icon: ShoppingCart,
+    permission: 'purchase:query',
+    children: [
+      { index: '/purchase/suppliers', title: '供应商管理' },
+      { index: '/purchase/supplier-products', title: '供货产品' },
+      { index: '/purchase/orders', title: '采购订单' },
+    ],
+  },
+  {
+    index: '/sales',
+    title: '销售业务',
+    icon: Tag,
+    permission: 'sales:query',
+    children: [
+      { index: '/sales/customers', title: '客户管理' },
+      { index: '/sales/orders', title: '销售订单' },
+    ],
+  },
+  {
+    index: '/ai',
+    title: '智能助手',
+    icon: MessageCircle,
+    permission: 'ai:query:stock',
+    children: [
+      { index: '/ai/rag', title: '知识库问答' },
+      { index: '/ai/assistant', title: '智能经营助手' },
+      { index: '/ai/audit-logs', title: 'AI 调用审计' },
+    ],
+  },
+];
+
+const visibleMenus = computed(() => {
+  return menus.filter(item => {
+    if (!item.permission) return true;
+    return authStore.hasPermission(item.permission);
+  });
+});
+
+const userLabel = computed(() => {
+  const user = authStore.user;
+  if (!user) return '未登录';
+  return authStore.displayName;
+});
+
+const currentSection = computed(() => {
+  return visibleMenus.value.find(item => item.index === route.path || item.children?.some(child => child.index === route.path));
+});
+
+const currentPageTitle = computed(() => String(route.meta.title || currentSection.value?.title || '启衡 ERP'));
+
+function isMenuActive(item: MenuItem) {
+  if (item.index === activeMenu.value) return true;
+  return Boolean(item.children?.some(child => child.index === activeMenu.value));
+}
+
+function isMenuOpen(index: string) {
+  return openedMenus.has(index);
+}
+
+function toggleMenu(item: MenuItem) {
+  if (!item.children?.length) {
+    navigateTo(item.index);
+    return;
+  }
+  if (openedMenus.has(item.index)) {
+    openedMenus.delete(item.index);
+  } else {
+    openedMenus.add(item.index);
+  }
+}
+
+function navigateTo(path: string) {
+  if (route.path !== path) {
+    router.push(path);
+  }
+}
+
+function openCurrentParent(path: string) {
+  const parent = visibleMenus.value.find(item => item.children?.some(child => child.index === path));
+  if (parent) openedMenus.add(parent.index);
+}
+
+function showPageLoading() {
+  pageLoading.value = true;
+  window.clearTimeout(pageLoadingTimer);
+  if (pageLoadingFrame !== undefined) window.cancelAnimationFrame(pageLoadingFrame);
+
+  nextTick(() => {
+    pageLoadingFrame = window.requestAnimationFrame(() => {
+      pageLoadingTimer = window.setTimeout(() => {
+        pageLoading.value = false;
+      }, 220);
+    });
+  });
+}
+
+function handleLogout() {
+  logoutConfirmOpen.value = true;
+}
+
+async function confirmLogout() {
+  logoutConfirmOpen.value = false;
+  await authStore.logout();
+  router.replace('/login');
+}
+
+watch(
+  () => route.path,
+  (path, previousPath) => {
+    openCurrentParent(path);
+    if (previousPath !== undefined && previousPath !== path) showPageLoading();
+  },
+  { immediate: true },
+);
+
+onBeforeUnmount(() => {
+  window.clearTimeout(pageLoadingTimer);
+  if (pageLoadingFrame !== undefined) window.cancelAnimationFrame(pageLoadingFrame);
+});
+</script>
+
+<template>
+  <div class="flex h-screen bg-background text-foreground">
+    <!-- Sidebar -->
+    <aside class="flex w-[224px] shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
+      <!-- Brand -->
+      <div class="flex h-16 items-center gap-3 px-4 text-sidebar-foreground border-b border-sidebar-border">
+        <img class="h-9 w-9 rounded-lg" :src="logoUrl" alt="启衡 ERP" />
+        <div class="min-w-0">
+          <div class="text-[18px] font-bold leading-tight tracking-tight">启衡 ERP</div>
+          <div class="mt-1 truncate text-[13px] font-medium text-sidebar-foreground/55">进销存智能管理台</div>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 overflow-y-auto px-2.5 py-3" aria-label="主导航">
+        <div v-for="item in visibleMenus" :key="item.index" class="mb-1">
+          <button
+            class="relative flex h-11 w-full items-center gap-3 rounded-md px-3 text-[15px] font-semibold text-sidebar-foreground/78 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer"
+            :class="{
+              'bg-sidebar-accent text-sidebar-foreground': isMenuActive(item) || isMenuOpen(item.index),
+            }"
+            type="button"
+            @click="toggleMenu(item)"
+          >
+            <span
+              v-if="isMenuActive(item) && !item.children?.length"
+              class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sidebar-primary"
+            />
+            <component :is="item.icon" class="h-4 w-4 shrink-0" />
+            <span class="flex-1 text-left">{{ item.title }}</span>
+            <span
+              v-if="item.children?.length"
+              class="ml-auto h-1.5 w-1.5 rotate-45 border-r border-b border-current transition-transform"
+              :class="{ 'rotate-[225deg]': isMenuOpen(item.index) }"
+            />
+          </button>
+
+          <!-- Children -->
+          <div
+            v-if="item.children?.length"
+            class="submenu-collapse"
+            :class="{ 'is-open': isMenuOpen(item.index) }"
+          >
+            <div class="submenu-collapse__inner">
+              <div class="py-1">
+                <button
+                  v-for="child in item.children"
+                  :key="child.index"
+                  class="relative flex h-10 w-full items-center rounded-md pl-10 pr-3 text-[15px] font-medium text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer"
+                  :class="{
+                    'bg-sidebar-accent text-sidebar-foreground font-semibold': activeMenu === child.index,
+                  }"
+                  type="button"
+                  @click="navigateTo(child.index)"
+                >
+                  <span
+                    v-if="activeMenu === child.index"
+                    class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sidebar-primary"
+                  />
+                  {{ child.title }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main content -->
+    <div class="flex flex-col flex-1 min-w-0">
+      <!-- Header -->
+      <header class="flex h-16 items-center justify-between bg-sidebar px-5 text-sidebar-foreground border-b border-sidebar-border">
+        <div class="min-w-0">
+          <div class="text-[13px] font-medium text-sidebar-foreground/55">{{ currentSection?.title || '工作台' }}</div>
+          <div class="mt-0.5 truncate text-[16px] font-semibold">{{ currentPageTitle }}</div>
+        </div>
+        <div class="flex items-center gap-3">
+          <!-- Notification bell -->
+          <button class="relative flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer" type="button" aria-label="通知">
+            <Bell class="h-4 w-4" />
+            <span class="absolute right-[9px] top-[8px] h-1.5 w-1.5 rounded-full bg-sidebar-primary ring-2 ring-sidebar" />
+          </button>
+
+          <!-- User dropdown -->
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <button class="flex h-10 items-center gap-2 rounded-md px-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent cursor-pointer" type="button" :title="userLabel">
+                <Avatar class="h-7 w-7 bg-sidebar-primary">
+                  <AvatarFallback class="bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground">{{ userLabel.slice(0, 1) }}</AvatarFallback>
+                </Avatar>
+                <span class="max-w-[132px] overflow-hidden text-ellipsis whitespace-nowrap text-[15px] font-semibold">{{ userLabel }}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-48">
+              <DropdownMenuLabel>{{ authStore.user?.username }}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem @click="handleLogout" class="cursor-pointer text-destructive focus:text-destructive">
+                <LogOut class="mr-2 h-4 w-4" />
+                退出登录
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      <!-- Page content -->
+      <main class="relative flex-1 overflow-auto bg-background">
+        <RouterView v-slot="{ Component, route: viewRoute }">
+          <Transition name="page-view" mode="out-in">
+            <component :is="Component" :key="viewRoute.fullPath" />
+          </Transition>
+        </RouterView>
+        <Transition name="page-loading">
+          <div v-if="pageLoading" class="page-loading-mask" data-page-loading aria-live="polite" aria-label="页面加载中">
+            <div class="page-loading-indicator">
+              <span class="page-loading-spinner" aria-hidden="true" />
+              页面加载中
+            </div>
+          </div>
+        </Transition>
+      </main>
+    </div>
+
+    <!-- Logout confirm dialog -->
+    <ConfirmDialog
+      :open="logoutConfirmOpen"
+      title="退出登录"
+      description="确认退出当前登录吗？"
+      confirm-text="退出"
+      cancel-text="取消"
+      variant="warning"
+      @update:open="logoutConfirmOpen = $event"
+      @confirm="confirmLogout"
+    />
+  </div>
+</template>

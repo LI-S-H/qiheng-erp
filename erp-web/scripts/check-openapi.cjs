@@ -1,0 +1,238 @@
+const fs = require('fs');
+const path = require('path');
+
+const projectRoot = path.resolve(__dirname, '..', '..');
+const readProjectFile = (...segments) => fs.readFileSync(path.join(projectRoot, ...segments), 'utf8');
+
+const source = readProjectFile('docs', 'api', 'erp-openapi.yaml');
+const pageDesign = readProjectFile('docs', 'frontend-page-design.md');
+const databaseOverview = readProjectFile('docs', 'database', 'mvp-database-design-overview.md');
+const permissionSchema = readProjectFile('docs', 'database', 'mvp-system-permission-schema.md');
+const projectPlan = readProjectFile('docs', 'erp-project-plan.md');
+const databaseSql = readProjectFile('docs', 'database', 'sql', '001_mvp_system_permission.sql');
+const productSql = readProjectFile('docs', 'database', 'sql', '002_mvp_product.sql');
+const authStoreSource = readProjectFile('erp-web', 'src', 'modules', 'auth', 'stores', 'authStore.ts');
+const httpSource = readProjectFile('erp-web', 'src', 'api', 'http.ts');
+const storageSource = readProjectFile('erp-web', 'src', 'shared', 'constants', 'storage.ts');
+const frontendDevelopmentGuide = readProjectFile('docs', 'frontend-development-guide.md');
+const agentInstructions = readProjectFile('AGENTS.md');
+const frontendPreflightSource = readProjectFile('erp-web', 'scripts', 'frontend-preflight.cjs');
+const frontendPreflightCheckSource = readProjectFile('erp-web', 'scripts', 'check-frontend-preflight.cjs');
+const preCommitHook = readProjectFile('.githooks', 'pre-commit');
+const productApiSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'api.ts');
+const productTypeSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'types.ts');
+const productViewSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'views', 'ProductManageView.vue');
+const anchoredSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'AnchoredSelect.vue');
+const treeSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'TreeSelect.vue');
+const exclusiveDropdownSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-exclusive-dropdown.ts');
+const categoryApiSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'categories', 'api.ts');
+const apiNormalizerSource = readProjectFile('erp-web', 'src', 'shared', 'utils', 'api-normalizers.ts');
+const userApiSource = readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'api.ts');
+const sqlDirectory = path.join(projectRoot, 'docs', 'database', 'sql');
+const allSql = fs.readdirSync(sqlDirectory)
+  .filter(fileName => fileName.endsWith('.sql'))
+  .map(fileName => fs.readFileSync(path.join(sqlDirectory, fileName), 'utf8'))
+  .join('\n');
+
+const requiredPaths = [
+  '/auth/login:',
+  '/auth/me:',
+  '/system/users:',
+  '/system/roles:',
+  '/system/depts:',
+  '/system/depts/batch/status:',
+  '/system/permissions:',
+  '/system/permissions/{permissionId}:',
+  '/system/permissions/batch/status:',
+  '/system/permissions/options:',
+  '/products:',
+  '/products/batch/status:',
+  '/products/batch/delete:',
+  '/products/{productId}:',
+  '/products/{productId}/status:',
+  '/product/categories:',
+  '/product/categories/batch/status:',
+  '/product/categories/batch/delete:',
+  '/product/categories/{categoryId}:',
+  '/product/categories/{categoryId}/status:',
+];
+
+for (const requiredPath of requiredPaths) {
+  if (!source.includes(`  ${requiredPath}`)) throw new Error(`OpenAPI 缺少路径：${requiredPath}`);
+}
+
+const definitions = new Set([...source.matchAll(/^    ([A-Za-z0-9_]+):\s*$/gm)].map(match => match[1]));
+const references = [...source.matchAll(/#\/components\/(?:schemas|parameters|responses)\/([A-Za-z0-9_]+)/g)].map(match => match[1]);
+const missing = [...new Set(references.filter(name => !definitions.has(name)))];
+if (missing.length > 0) throw new Error(`OpenAPI 存在断开的 $ref：${missing.join(', ')}`);
+
+if (source.includes('deptName: 总部')) throw new Error('OpenAPI 仍残留“总部”部门口径');
+if (!source.includes('扁平列表') || !source.includes('parentId')) throw new Error('部门接口未明确扁平列表套约');
+if (!source.includes('product_category` 未删除数据的扁平数组') || !source.includes('productCount')) {
+  throw new Error('产品分类接口未明确扁平列表和产品数量聚合契约');
+}
+if (/\n\s*- name: keyword\s*$/m.test(source)) {
+  throw new Error('OpenAPI 列表查询不得使用未声明匹配边界的 keyword 参数');
+}
+for (const fragment of [
+  '查询范围包含当前分类及其全部后代分类',
+  'productCode',
+  'productName',
+  'brandName',
+  'barcode',
+]) {
+  if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少字段级查询或分类后代查询契约：${fragment}`);
+}
+for (const fragment of ['# 前端开发规范', '一个筛选控件必须对应一个明确的查询参数', '禁止为了减少筛选框使用含义不明的 `keyword`', '历史问题清单']) {
+  if (!frontendDevelopmentGuide.includes(fragment)) throw new Error(`前端开发规范缺少强制规则：${fragment}`);
+}
+for (const fragment of ['非用户输入字段不得渲染为可编辑控件', '同一页面同一时刻只能打开一个下拉弹层', '人民币显示 `￥`']) {
+  if (!frontendDevelopmentGuide.includes(fragment)) throw new Error(`前端开发规范缺少表单字段或下拉交互规则：${fragment}`);
+}
+for (const fragment of ['前端开发强制前置流程', 'npm run preflight:frontend -- <scope>', '禁止使用 `--no-verify`']) {
+  if (!agentInstructions.includes(fragment)) throw new Error(`AGENTS.md 缺少前端开发门禁规则：${fragment}`);
+}
+if (!frontendPreflightSource.includes('FRONTEND_PREFLIGHT_OK')
+  || !frontendPreflightCheckSource.includes('FRONTEND_PREFLIGHT_REQUIRED')
+  || !preCommitHook.includes('check-frontend-preflight.cjs')) {
+  throw new Error('前端开发预检脚本或 Git pre-commit 门禁不完整');
+}
+for (const fragment of ['normalizeBinaryStatus', 'normalizeFiniteNumber', 'normalizeStringId']) {
+  if (!apiNormalizerSource.includes(fragment) || !productApiSource.includes(fragment)) {
+    throw new Error(`产品 API 缺少响应字段转换：${fragment}`);
+  }
+}
+if (!categoryApiSource.includes('normalizeCategory') || !categoryApiSource.includes('getMockProductCategoryScope')) {
+  throw new Error('产品分类 API 缺少下拉响应转换或父子分类范围计算');
+}
+if (!userApiSource.includes('normalizeRoleOption') || !userApiSource.includes('normalizeDeptOption')) {
+  throw new Error('用户筛选下拉的角色和部门选项缺少响应类型转换');
+}
+for (const fragment of [
+  '级联停用全部下级分类，并停用当前分类和全部下级分类直接关联的未删除产品',
+  '员工账号不自动停用',
+  '存在下级部门或已绑定用户时返回 409',
+]) {
+  if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少层级停用或删除保护契约：${fragment}`);
+}
+for (const fragment of ['前端只展示通用风险说明', '不能作为是否允许操作的最终依据', '编辑表单内修改状态和列表批量启停']) {
+  if (!readProjectFile('docs', 'frontend-style-guide.md').includes(fragment)) {
+    throw new Error(`前端规范缺少层级操作风险规则：${fragment}`);
+  }
+}
+if (/Element Plus/i.test(pageDesign)) throw new Error('前端设计文档仍残留 Element Plus 技术选型');
+if (!storageSource.includes('AUTH_TOKEN_NAME_STORAGE_KEY')
+  || !authStoreSource.includes('loginResult.tokenName')
+  || !httpSource.includes("config.headers.set(tokenName, token)")) {
+  throw new Error('Sa-Token 前端鉴权必须保存登录响应 tokenName，并用它动态设置请求头');
+}
+
+const requiredContractFragments = [
+  "pattern: '^[A-Za-z][A-Za-z0-9_]{2,63}$'",
+  'minItems: 1',
+  'minLength: 1',
+  '#/components/responses/Conflict',
+];
+for (const fragment of requiredContractFragments) {
+  if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少必填或唯一性约束：${fragment}`);
+}
+
+if (!databaseSql.includes("dept_id BIGINT NOT NULL COMMENT '所属部门ID'")) {
+  throw new Error('数据库 DDL 与用户所属部门必填套约不一致');
+}
+if (!databaseSql.includes('CREATE TABLE IF NOT EXISTS sys_permission')
+  || !databaseSql.includes('UNIQUE KEY uk_sys_permission_code')
+  || !databaseSql.includes('KEY idx_sys_permission_module_action (module_code, action_type)')
+  || !databaseSql.includes('KEY idx_sys_permission_deleted_status_sort (deleted, status, sort_order)')) {
+  throw new Error('数据库 DDL 缺少权限目录表、唯一索引或列表查询索引');
+}
+if (!source.includes("pattern: '^[a-z][a-z0-9]*(?::[a-z][a-z0-9]*){1,3}$'")) {
+  throw new Error('OpenAPI 缺少权限码格式约束');
+}
+if (source.includes('moduleName:')) {
+  throw new Error('OpenAPI 不应要求后端返回数据库中不存在的权限模块名称字段');
+}
+
+const categorySchemaStart = source.indexOf('    ProductCategory:');
+const categorySchemaEnd = source.indexOf('    ProductCategoryCreateRequest:', categorySchemaStart);
+const categorySchema = source.slice(categorySchemaStart, categorySchemaEnd);
+if (categorySchemaStart < 0 || categorySchemaEnd < 0 || categorySchema.includes('children:')
+  || categorySchema.includes('parentName:') || categorySchema.includes('categoryPath:')) {
+  throw new Error('产品分类返回结构不应包含前端可计算的树节点、上级名称或层级路径');
+}
+const productTableStart = productSql.indexOf('CREATE TABLE IF NOT EXISTS product (');
+const productTableEnd = productSql.indexOf(') ENGINE=', productTableStart);
+const productTableDdl = productSql.slice(productTableStart, productTableEnd);
+if (productTableStart < 0 || productTableEnd < 0 || /\bcategory_name\b/i.test(productTableDdl)) {
+  throw new Error('product 主数据表不应冗余 category_name，分类名称应按 category_id 关联查询');
+}
+
+const productSchemaStart = source.indexOf('    Product:');
+const productSchemaEnd = source.indexOf('    ProductFormRequest:', productSchemaStart);
+const productSchema = source.slice(productSchemaStart, productSchemaEnd);
+if (productSchemaStart < 0 || productSchemaEnd < 0 || !productSchema.includes('categoryName:')
+  || !productSchema.includes('nullable: true') || !productSchema.includes('readOnly: true')
+  || productSchema.includes('categoryPath:')) {
+  throw new Error('产品档案必须只返回可关联查询的分类名称，不能要求后端拼接分类层级路径');
+}
+if (!productSchema.includes('未分类时返回 `null`')) {
+  throw new Error('产品档案未分类时必须明确返回 categoryName: null，不能要求后端拼装空字符串');
+}
+const productFormStart = source.indexOf('    ProductFormRequest:');
+const productFormEnd = source.indexOf('    ProductStatusRequest:', productFormStart);
+const productFormSchema = source.slice(productFormStart, productFormEnd);
+if (productFormStart < 0 || productFormEnd < 0 || productFormSchema.includes('productCode:')) {
+  throw new Error('产品创建和编辑请求不得接收由后端生成的 productCode');
+}
+if (!source.includes('产品编码由后端统一生成') || !source.includes('产品编码创建后不可修改')) {
+  throw new Error('OpenAPI 未明确产品编码的后端生成和不可修改规则');
+}
+const productFormTypeStart = productTypeSource.indexOf('export interface ProductFormPayload');
+const productFormTypeEnd = productTypeSource.indexOf('export interface ProductBatchIdsPayload', productFormTypeStart);
+const productFormType = productTypeSource.slice(productFormTypeStart, productFormTypeEnd);
+if (productFormTypeStart < 0 || productFormTypeEnd < 0 || productFormType.includes('productCode')) {
+  throw new Error('前端产品提交 DTO 不得包含由后端生成的 productCode');
+}
+if (!productApiSource.includes('generateMockProductCode()')
+  || !productViewSource.includes('data-product-code-display')
+  || !productViewSource.includes('data-currency-prefix')) {
+  throw new Error('产品编码系统生成展示或金额货币前缀实现不完整');
+}
+if (!exclusiveDropdownSource.includes("erp:dropdown-open")
+  || !anchoredSelectSource.includes('useExclusiveDropdown(open)')
+  || !treeSelectSource.includes('useExclusiveDropdown(isOpen)')) {
+  throw new Error('共享下拉组件未接入全局互斥机制');
+}
+for (const fragment of [
+  '启用时后端必须校验产品所属分类仍为启用状态',
+  '已被库存、采购或销售业务数据引用时返回 409',
+  '任一产品已被库存、采购或销售业务数据引用时整批返回 409',
+]) {
+  if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少产品档案业务约束：${fragment}`);
+}
+
+const updateRequestStart = source.indexOf('    SystemPermissionUpdateRequest:');
+const updateRequestEnd = source.indexOf('    SystemPermissionStatusRequest:', updateRequestStart);
+const updateRequest = source.slice(updateRequestStart, updateRequestEnd);
+if (updateRequestStart < 0 || updateRequestEnd < 0 || updateRequest.includes('permissionCode:')) {
+  throw new Error('权限更新请求不得包含创建后不可修改的 permissionCode');
+}
+
+const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)].length;
+if (tableCount !== 21) throw new Error(`数据库设计文档声明 21 张表，当前 DDL 实际为 ${tableCount} 张`);
+if (!databaseOverview.includes('共设计 21 张表') || !databaseOverview.includes('`sys_permission`')) {
+  throw new Error('数据库总览未同步 21 张表或 sys_permission 权限目录表');
+}
+
+const stalePermissionDescriptions = [
+  /没有设计[^\n]*sys_permission/,
+  /暂不设计[^\n]*独立权限表/,
+  /后续[^\n]*新增[^\n]*sys_permission/,
+];
+for (const document of [databaseOverview, permissionSchema, projectPlan]) {
+  if (stalePermissionDescriptions.some(pattern => pattern.test(document))) {
+    throw new Error('项目文档仍残留权限目录表的旧设计口径');
+  }
+}
+
+console.log(`OPENAPI_OK: ${references.length} 个引用完整，21 张数据库表、系统权限、产品分类及产品档案契约已对齐`);

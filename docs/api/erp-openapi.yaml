@@ -1,0 +1,2951 @@
+openapi: 3.0.3
+info:
+  title: 启衡 ERP 接口文档
+  version: 0.3.0
+  description: |
+    本文档用于启衡 ERP 前后端接口约定，可直接导入 Apifox 使用。
+    当前版本包含登录模块、系统权限模块、产品分类和产品档案管理模块。
+    MVP 阶段认证使用 Sa-Token 原始 token。登录接口返回 `token` 和 `tokenName`，前端后续请求必须使用返回的 `tokenName` 作为请求头名称、`token` 作为请求头值；当前默认配置为 `satoken`。
+servers:
+  - url: http://localhost:8080/api
+    description: 本地开发环境
+tags:
+  - name: Auth
+    description: 登录、退出和当前用户接口
+  - name: SystemUser
+    description: 系统权限 - 用户管理
+  - name: SystemRole
+    description: 系统权限 - 角色管理
+  - name: SystemDept
+    description: 系统权限 - 部门管理
+  - name: SystemPermission
+    description: 系统权限 - 权限码配置
+  - name: SystemOption
+    description: 系统权限 - 页面下拉选项
+  - name: ProductCategory
+    description: 产品中心 - 产品分类管理
+  - name: Product
+    description: 产品中心 - 产品档案管理
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      summary: 用户登录
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: admin
+              password: "123456"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponse'
+              example:
+                code: 0
+                message: success
+                data:
+                  token: 5f4dcc3b-0000-4000-9000-000000000001
+                  tokenName: satoken
+                  user:
+                    userId: "1900000000000000001"
+                    username: admin
+                    realName: 系统管理员
+                    deptId: "1900000000000000100"
+                    deptName: 行政部
+                    isAdmin: true
+                    roleCodes:
+                      - SUPER_ADMIN
+                    permissionCodes:
+                      - "*"
+                    lastLoginAt: "2026-06-08 09:12:30"
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags:
+        - Auth
+      summary: 获取当前登录用户
+      operationId: authMe
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CurrentUser'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: 退出登录
+      operationId: authLogout
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 退出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /system/users:
+    get:
+      tags:
+        - SystemUser
+      summary: 分页查询用户
+      description: 仅传需要生效的筛选参数；未传参数表示不限制该字段。多个筛选参数同时存在时按 AND 条件组合。
+      operationId: systemUserPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: username
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+          description: 登录账号，对应 `sys_user.username`，使用包含匹配
+        - name: realName
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: 用户姓名，对应 `sys_user.real_name`，使用包含匹配
+        - name: deptId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 所属部门 ID，对应 `sys_user.dept_id`
+        - name: roleId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 绑定角色 ID，对应 `sys_user_role.role_id`
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: 状态，1 启用，0 停用；不筛选状态时不传该参数
+        - name: pageNum
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: 页码
+        - name: pageSize
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: 每页条数
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemUserPage'
+              example:
+                code: 0
+                message: success
+                data:
+                  records:
+                    - userId: "1900000000000000001"
+                      username: admin
+                      realName: 系统管理员
+                      deptId: "1900000000000000100"
+                      deptName: 行政部
+                      isAdmin: true
+                      status: 1
+                      roleIds:
+                        - "1900000000000001001"
+                      roleNames:
+                        - 超级管理员
+                      lastLoginAt: "2026-06-08 09:12:30"
+                      createdAt: "2026-06-05 20:30:00"
+                      updatedAt: "2026-06-08 09:12:30"
+                  total: 1
+                  pageNum: 1
+                  pageSize: 10
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+        - SystemUser
+      summary: 新增用户
+      operationId: systemUserCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserCreateRequest'
+      responses:
+        "200":
+          description: 新增成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemUser'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "409":
+          $ref: '#/components/responses/Conflict'
+
+  /system/users/batch/status:
+    patch:
+      tags:
+        - SystemUser
+      summary: 批量修改用户状态
+      description: 根据用户 ID 列表批量启用或停用账号
+      operationId: systemUserBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserBatchStatusRequest'
+      responses:
+        "200":
+          description: 批量修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/users/batch/password:
+    patch:
+      tags:
+        - SystemUser
+      summary: 批量重置用户密码
+      description: 根据用户 ID 列表批量设置新密码
+      operationId: systemUserBatchPassword
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserBatchPasswordResetRequest'
+      responses:
+        "200":
+          description: 批量重置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/users/batch/delete:
+    post:
+      tags:
+        - SystemUser
+      summary: 批量删除用户
+      description: 根据用户 ID 列表批量逻辑删除账号，对应 `sys_user.deleted = 1`
+      operationId: systemUserBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserBatchDeleteRequest'
+      responses:
+        "200":
+          description: 批量删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/users/{userId}:
+    get:
+      tags:
+        - SystemUser
+      summary: 获取用户详情
+      operationId: systemUserDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemUser'
+        "404":
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - SystemUser
+      summary: 编辑用户
+      operationId: systemUserUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserUpdateRequest'
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemUser'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - SystemUser
+      summary: 删除用户
+      description: 逻辑删除用户，对应 `sys_user.deleted = 1`
+      operationId: systemUserDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+
+  /system/users/{userId}/status:
+    patch:
+      tags:
+        - SystemUser
+      summary: 修改用户状态
+      operationId: systemUserStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserStatusRequest'
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+
+  /system/users/{userId}/password:
+    patch:
+      tags:
+        - SystemUser
+      summary: 重置用户密码
+      operationId: systemUserPassword
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserPasswordResetRequest'
+      responses:
+        "200":
+          description: 重置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+
+  /system/users/{userId}/roles:
+    put:
+      tags:
+        - SystemUser
+      summary: 绑定用户角色
+      operationId: systemUserBindRoles
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUserRoleBindRequest'
+      responses:
+        "200":
+          description: 绑定成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+
+  /system/roles:
+    get:
+      tags:
+        - SystemRole
+      summary: 分页查询角色
+      description: 仅传需要生效的筛选参数；未传参数表示不限制该字段。多个筛选参数同时存在时按 AND 条件组合。
+      operationId: systemRolePage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: roleCode
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+          description: 角色编码筛选，对应 `sys_role.role_code`
+        - name: roleName
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: 角色名称筛选，对应 `sys_role.role_name`
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: 状态，1 启用，0 停用；不筛选状态时不传该参数
+        - name: pageNum
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: 页码
+        - name: pageSize
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: 每页条数
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemRolePage'
+              example:
+                code: 0
+                message: success
+                data:
+                  records:
+                    - roleId: "1900000000000001001"
+                      roleCode: SUPER_ADMIN
+                      roleName: 超级管理员
+                      permissionCodes:
+                        - "*"
+                      status: 1
+                      remark: 拥有系统全部访问和维护权限
+                      userCount: 1
+                      createdAt: "2026-06-05 20:30:00"
+                      updatedAt: "2026-06-08 09:12:30"
+                  total: 1
+                  pageNum: 1
+                  pageSize: 10
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+        - SystemRole
+      summary: 新增角色
+      operationId: systemRoleCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemRoleCreateRequest'
+      responses:
+        "200":
+          description: 新增成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemRole'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "409":
+          $ref: '#/components/responses/Conflict'
+
+  /system/roles/batch/status:
+    patch:
+      tags:
+        - SystemRole
+      summary: 批量修改角色状态
+      operationId: systemRoleBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemRoleBatchStatusRequest'
+      responses:
+        "200":
+          description: 批量修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/roles/batch/delete:
+    post:
+      tags:
+        - SystemRole
+      summary: 批量删除角色
+      description: 逻辑删除角色，对应 `sys_role.deleted = 1`。已绑定用户的角色需要先解除 `sys_user_role` 关系后再删除。
+      operationId: systemRoleBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemRoleBatchDeleteRequest'
+      responses:
+        "200":
+          description: 批量删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/roles/{roleId}:
+    get:
+      tags:
+        - SystemRole
+      summary: 获取角色详情
+      operationId: systemRoleDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemRole'
+        "404":
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - SystemRole
+      summary: 编辑角色
+      operationId: systemRoleUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemRoleUpdateRequest'
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemRole'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - SystemRole
+      summary: 删除角色
+      description: 逻辑删除角色，对应 `sys_role.deleted = 1`。已绑定用户的角色需要先解除 `sys_user_role` 关系后再删除。
+      operationId: systemRoleDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  /system/roles/{roleId}/status:
+    patch:
+      tags:
+        - SystemRole
+      summary: 修改角色状态
+      operationId: systemRoleStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemRoleStatusRequest'
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  /system/roles/{roleId}/permissions:
+    patch:
+      tags:
+        - SystemRole
+      summary: 配置角色权限码
+      description: 除保留值 `*` 外，权限码必须存在于 `sys_permission` 且状态为启用；更新成功后应清理受影响用户的权限 Session。
+      operationId: systemRolePermissions
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemRolePermissionUpdateRequest'
+      responses:
+        "200":
+          description: 配置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  /system/depts:
+    get:
+      tags:
+        - SystemDept
+      summary: 查询部门列表
+      description: 返回 `sys_dept` 扁平列表即可，前端根据 `parentId` 构建树形结构和层级路径，不要求后端组装 `children` 或路径字符串。仅传需要生效的筛选参数，多个筛选参数按 AND 条件组合。
+      operationId: systemDeptList
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: deptName
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: 部门名称筛选，对应 `sys_dept.dept_name`
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: 状态，1 启用，0 停用；不筛选状态时不传该参数
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SystemDept'
+              example:
+                code: 0
+                message: success
+                data:
+                  - deptId: "1900000000000000100"
+                    parentId: "0"
+                    ancestors: "0"
+                    deptName: 行政部
+                    status: 1
+                    userCount: 1
+                    createdAt: "2026-06-05 20:10:00"
+                    updatedAt: "2026-06-08 09:10:00"
+                  - deptId: "1900000000000000102"
+                    parentId: "0"
+                    ancestors: "0"
+                    deptName: 采购部
+                    status: 1
+                    userCount: 1
+                    createdAt: "2026-06-05 20:13:00"
+                    updatedAt: "2026-06-07 17:24:11"
+                  - deptId: "1900000000000000106"
+                    parentId: "1900000000000000102"
+                    ancestors: "0,1900000000000000102"
+                    deptName: 供应商维护组
+                    status: 1
+                    userCount: 0
+                    createdAt: "2026-06-07 09:30:00"
+                    updatedAt: "2026-06-07 09:30:00"
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+        - SystemDept
+      summary: 新增部门
+      operationId: systemDeptCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemDeptCreateRequest'
+      responses:
+        "200":
+          description: 新增成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemDept'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /system/depts/batch/status:
+    patch:
+      tags:
+        - SystemDept
+      summary: 批量修改部门状态
+      description: 停用父级部门时必须在同一事务内级联停用全部下级；员工账号不自动停用。启用下级部门时，其全部上级必须已启用或包含在同一次启用请求中。
+      operationId: systemDeptBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemDeptBatchStatusRequest'
+      responses:
+        "200":
+          description: 批量修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "409":
+          $ref: '#/components/responses/Conflict'
+
+  /system/depts/batch/delete:
+    post:
+      tags:
+        - SystemDept
+      summary: 批量删除部门
+      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户时返回 409，禁止删除。
+      operationId: systemDeptBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemDeptBatchDeleteRequest'
+      responses:
+        "200":
+          description: 批量删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "409":
+          $ref: '#/components/responses/Conflict'
+
+  /system/depts/{deptId}:
+    get:
+      tags:
+        - SystemDept
+      summary: 获取部门详情
+      operationId: systemDeptDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DeptId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemDept'
+        "404":
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - SystemDept
+      summary: 编辑部门
+      description: 修改状态为停用时必须执行与状态接口相同的下级级联规则，不能通过编辑接口绕过；员工账号不自动停用。
+      operationId: systemDeptUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DeptId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemDeptUpdateRequest'
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SystemDept'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - SystemDept
+      summary: 删除部门
+      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户时返回 409，禁止删除。
+      operationId: systemDeptDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DeptId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+
+  /system/depts/{deptId}/status:
+    patch:
+      tags:
+        - SystemDept
+      summary: 修改部门状态
+      description: 停用父级部门时必须在同一事务内级联停用全部下级，员工账号不自动停用；上级部门停用时禁止单独启用下级部门。
+      operationId: systemDeptStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DeptId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemDeptStatusRequest'
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResult'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  /system/permissions:
+    get:
+      tags: [SystemPermission]
+      summary: 分页查询权限码
+      operationId: systemPermissionPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: permissionCode
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 权限码，对应 `sys_permission.permission_code`，使用包含匹配
+        - name: permissionName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 权限名称，对应 `sys_permission.permission_name`，使用包含匹配
+        - name: moduleCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+        - name: actionType
+          in: query
+          schema: { $ref: '#/components/schemas/PermissionActionType' }
+        - name: status
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+        - name: pageNum
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SystemPermissionPage' }
+    post:
+      tags: [SystemPermission]
+      summary: 新增权限码
+      operationId: systemPermissionCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SystemPermissionCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SystemPermission' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /system/permissions/{permissionId}:
+    parameters:
+      - $ref: '#/components/parameters/PermissionId'
+    get:
+      tags: [SystemPermission]
+      summary: 获取权限码详情
+      operationId: systemPermissionDetail
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SystemPermission' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [SystemPermission]
+      summary: 更新权限码
+      operationId: systemPermissionUpdate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SystemPermissionUpdateRequest' }
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SystemPermission' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [SystemPermission]
+      summary: 删除权限码
+      description: 逻辑删除权限码。仍被未删除角色的 `permission_codes` 引用时返回 409。
+      operationId: systemPermissionDelete
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /system/permissions/{permissionId}/status:
+    parameters:
+      - $ref: '#/components/parameters/PermissionId'
+    patch:
+      tags: [SystemPermission]
+      summary: 修改权限码状态
+      description: 停用后该权限码不再进入普通用户的有效权限集合；修改成功后应清理引用该权限码角色下用户的权限 Session。
+      operationId: systemPermissionStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SystemPermissionStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /system/permissions/batch/status:
+    patch:
+      tags: [SystemPermission]
+      summary: 批量修改权限码状态
+      description: 批量停用后，对应权限码不再进入普通用户的有效权限集合；修改成功后应清理受影响角色下用户的权限 Session。
+      operationId: systemPermissionBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SystemPermissionBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+
+  /system/permissions/batch/delete:
+    post:
+      tags: [SystemPermission]
+      summary: 批量删除权限码
+      description: 已被角色引用的权限码不能删除，存在任一冲突时整批返回 409。
+      operationId: systemPermissionBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SystemPermissionBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /system/permissions/options:
+    get:
+      tags: [SystemOption]
+      summary: 获取可授权权限码选项
+      description: 只返回启用且未删除的权限码，按模块分组并按 sortOrder 排序。
+      operationId: systemPermissionOptions
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PermissionOptionGroup' }
+
+  /system/roles/options:
+    get:
+      tags:
+        - SystemOption
+      summary: 获取角色下拉选项
+      operationId: systemRoleOptions
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/RoleOption'
+
+  /system/depts/options:
+    get:
+      tags:
+        - SystemOption
+      summary: 获取部门下拉选项
+      operationId: systemDeptOptions
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DeptOption'
+
+  /products:
+    get:
+      tags: [Product]
+      summary: 分页查询产品档案
+      description: 产品编码、产品名称、品牌名称分别使用包含匹配，条码使用精确匹配；多个有效条件按 AND 组合。传入 `categoryId` 时，后端必须根据 `product_category.parent_id` 查询该分类及全部后代分类 ID，再筛选这些分类下的产品。分类名称由后端通过 `product.category_id` 单次关联查询返回，分类层级路径由前端根据分类扁平数据计算。本接口需要 `product:query` 权限。
+      operationId: productPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: productCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 产品编码，对应 `product.product_code`，使用包含匹配
+        - name: productName
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: 产品名称，对应 `product.product_name`，使用包含匹配
+        - name: brandName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 品牌名称，对应 `product.brand_name`，使用包含匹配
+        - name: barcode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 产品条码，对应 `product.barcode`，使用精确匹配
+        - name: categoryId
+          in: query
+          schema: { type: string }
+          description: 产品分类 ID；查询范围包含当前分类及其全部后代分类，前端只传分类 ID，不传路径或后代 ID 集合
+        - name: status
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProductPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Product]
+      summary: 新增产品档案
+      description: 产品编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交产品编码；启用产品不能归属停用分类。本接口需要 `product:manage` 权限。
+      operationId: productCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductFormRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/batch/status:
+    patch:
+      tags: [Product]
+      summary: 批量修改产品状态
+      description: 停用产品后不能用于新建采购单或销售单；启用时后端必须校验产品所属分类仍为启用状态。本接口需要 `product:manage` 权限。
+      operationId: productBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/batch/delete:
+    post:
+      tags: [Product]
+      summary: 批量删除产品档案
+      description: 批量逻辑删除产品；任一产品已被库存、采购或销售业务数据引用时整批返回 409。本接口需要 `product:manage` 权限。
+      operationId: productBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/{productId}:
+    get:
+      tags: [Product]
+      summary: 获取产品档案详情
+      description: 本接口需要 `product:query` 权限。
+      operationId: productDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Product]
+      summary: 编辑产品档案
+      description: 产品编码创建后不可修改，编辑请求不接收产品编码；启用产品不能归属停用分类。通过编辑接口停用产品时遵守与状态接口相同的业务规则。本接口需要 `product:manage` 权限。
+      operationId: productUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductFormRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Product]
+      summary: 删除产品档案
+      description: 逻辑删除产品；已被库存、采购或销售业务数据引用时返回 409，避免破坏历史业务链路。本接口需要 `product:manage` 权限。
+      operationId: productDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/{productId}/status:
+    patch:
+      tags: [Product]
+      summary: 修改产品状态
+      description: 停用产品后不能用于新建采购单或销售单，历史单据不受影响；启用时必须校验所属分类为启用状态。本接口需要 `product:manage` 权限。
+      operationId: productStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /product/categories:
+    get:
+      tags: [ProductCategory]
+      summary: 查询产品分类列表
+      description: |
+        返回 `product_category` 未删除数据的扁平数组，并通过一次可执行的聚合查询返回每个分类直接关联的 `productCount`。
+        后端不组装 `children`、上级分类名称或层级路径；前端根据 `parentId` 构建分类树、计算路径并完成名称和状态筛选。
+        本接口需要 `product:query` 权限。
+      operationId: productCategoryList
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProductCategory' }
+              example:
+                code: 0
+                message: success
+                data:
+                  - categoryId: "1910000000000000100"
+                    parentId: "0"
+                    categoryName: 食品饮料
+                    status: 1
+                    productCount: 0
+                    createdAt: "2026-06-09 09:10:00"
+                    updatedAt: "2026-06-12 14:20:00"
+                  - categoryId: "1910000000000000101"
+                    parentId: "1910000000000000100"
+                    categoryName: 饮料冲调
+                    status: 1
+                    productCount: 18
+                    createdAt: "2026-06-09 09:20:00"
+                    updatedAt: "2026-06-12 10:16:00"
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [ProductCategory]
+      summary: 新增产品分类
+      description: 同一上级分类下的分类名称不能重复；新增启用分类时，其上级分类必须已启用。本接口需要 `product:manage` 权限。
+      operationId: productCategoryCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryCreateRequest' }
+      responses:
+        "200":
+          description: 新增成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProductCategory' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /product/categories/batch/status:
+    patch:
+      tags: [ProductCategory]
+      summary: 批量修改产品分类状态
+      description: 停用父级分类时，后端必须在同一事务内级联停用全部下级分类，并停用当前分类和全部下级分类直接关联的未删除产品；启用分类不会自动重新启用产品。启用下级分类时，其全部上级必须已启用或包含在同一次启用请求中。本接口需要 `product:manage` 权限。
+      operationId: productCategoryBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /product/categories/batch/delete:
+    post:
+      tags: [ProductCategory]
+      summary: 批量删除产品分类
+      description: 逻辑删除分类；存在下级分类或仍有产品直接关联的分类不能删除。本接口需要 `product:manage` 权限。
+      operationId: productCategoryBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /product/categories/{categoryId}:
+    get:
+      tags: [ProductCategory]
+      summary: 获取产品分类详情
+      description: 本接口需要 `product:query` 权限。
+      operationId: productCategoryDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProductCategory' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [ProductCategory]
+      summary: 编辑产品分类
+      description: 禁止把上级分类设置为自身或自身下级；同级分类名称不能重复；通过编辑接口停用分类时必须执行与状态接口相同的下级分类和关联产品级联规则。本接口需要 `product:manage` 权限。
+      operationId: productCategoryUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryUpdateRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProductCategory' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [ProductCategory]
+      summary: 删除产品分类
+      description: 逻辑删除分类；存在下级分类或仍有产品直接关联时返回 409。本接口需要 `product:manage` 权限。
+      operationId: productCategoryDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /product/categories/{categoryId}/status:
+    patch:
+      tags: [ProductCategory]
+      summary: 修改产品分类状态
+      description: 停用父级分类时，后端必须在同一事务内级联停用全部下级分类和关联产品；上级分类停用时禁止单独启用下级分类。启用分类不会自动重新启用产品。本接口需要 `product:manage` 权限。
+      operationId: productCategoryStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCategoryStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    SaTokenAuth:
+      type: apiKey
+      in: header
+      name: satoken
+      description: Sa-Token 原始 token。当前默认请求头为 satoken，实际调用以前端登录响应中的 tokenName 为准
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 用户 ID，对应 `sys_user.id`
+    RoleId:
+      name: roleId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 角色 ID，对应 `sys_role.id`
+    DeptId:
+      name: deptId
+      in: path
+      required: true
+      schema:
+        type: string
+    PermissionId:
+      name: permissionId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 权限 ID，对应 `sys_permission.id`
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 产品分类 ID，对应 `product_category.id`
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 产品 ID，对应 `product.id`
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+    Unauthorized:
+      description: 未登录或登录态已失效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+    Forbidden:
+      description: 没有访问权限
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+    NotFound:
+      description: 数据不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+    Conflict:
+      description: 唯一字段冲突，例如登录账号或角色编码已存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
+  schemas:
+    Result:
+      type: object
+      required:
+        - code
+        - message
+        - data
+      properties:
+        code:
+          type: integer
+          description: 业务状态码，0 表示成功
+          example: 0
+        message:
+          type: string
+          description: 响应消息
+          example: success
+        data:
+          nullable: true
+          description: 响应数据
+
+    EmptyResult:
+      allOf:
+        - $ref: '#/components/schemas/Result'
+        - type: object
+          properties:
+            data:
+              nullable: true
+              example: null
+
+    ErrorResult:
+      allOf:
+        - $ref: '#/components/schemas/Result'
+        - type: object
+          properties:
+            data:
+              nullable: true
+              example: null
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          maxLength: 64
+          description: 登录账号，对应 `sys_user.username`
+          example: admin
+        password:
+          type: string
+          format: password
+          description: 登录密码，后端与 `sys_user.password_hash` 比对
+          example: "123456"
+
+    LoginResponse:
+      type: object
+      required:
+        - token
+        - tokenName
+        - user
+      properties:
+        token:
+          type: string
+          description: Sa-Token 原始 token
+        tokenName:
+          type: string
+          example: satoken
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+
+    CurrentUser:
+      type: object
+      required:
+        - userId
+        - username
+        - realName
+        - deptId
+        - deptName
+        - isAdmin
+        - roleCodes
+        - permissionCodes
+      properties:
+        userId:
+          type: string
+          description: 用户 ID，对应 `sys_user.id`
+        username:
+          type: string
+          description: 登录账号
+        realName:
+          type: string
+          description: 用户姓名
+        deptId:
+          type: string
+          description: 部门 ID
+        deptName:
+          type: string
+          description: 部门名称
+        isAdmin:
+          type: boolean
+          description: 是否超级管理员
+        roleCodes:
+          type: array
+          items:
+            type: string
+          description: 角色编码列表
+        permissionCodes:
+          type: array
+          items:
+            type: string
+          description: 权限码列表
+        lastLoginAt:
+          type: string
+          nullable: true
+          example: "2026-06-08 09:12:30"
+
+    SystemUserPage:
+      type: object
+      required:
+        - records
+        - total
+        - pageNum
+        - pageSize
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemUser'
+        total:
+          type: integer
+          example: 1
+        pageNum:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+
+    SystemUser:
+      type: object
+      required:
+        - userId
+        - username
+        - realName
+        - deptId
+        - deptName
+        - isAdmin
+        - status
+        - roleIds
+        - roleNames
+        - createdAt
+        - updatedAt
+      properties:
+        userId:
+          type: string
+          description: 用户 ID，对应 `sys_user.id`
+        username:
+          type: string
+          description: 登录账号，对应 `sys_user.username`
+        realName:
+          type: string
+          description: 用户姓名，对应 `sys_user.real_name`
+        deptId:
+          type: string
+          description: 部门 ID，对应 `sys_user.dept_id`
+        deptName:
+          type: string
+          description: 由后端通过 `sys_user.dept_id = sys_dept.id` 关联返回 `sys_dept.dept_name`
+        isAdmin:
+          type: boolean
+          description: 是否超级管理员，对应 `sys_user.is_admin`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        roleIds:
+          type: array
+          items:
+            type: string
+          description: 由后端查询 `sys_user_role` 返回用户绑定角色 ID 列表
+        roleNames:
+          type: array
+          items:
+            type: string
+          description: 由后端通过 `sys_user_role.role_id = sys_role.id` 关联返回角色名称列表
+        lastLoginAt:
+          type: string
+          nullable: true
+          description: 最近登录时间
+        createdAt:
+          type: string
+          description: 创建时间
+        updatedAt:
+          type: string
+          description: 更新时间
+
+    SystemUserCreateRequest:
+      type: object
+      required:
+        - username
+        - realName
+        - password
+        - deptId
+        - isAdmin
+        - status
+        - roleIds
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: '^[A-Za-z][A-Za-z0-9_]{2,63}$'
+          description: 登录账号
+        realName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 用户姓名
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 32
+          pattern: '^(?=.*\S).{6,32}$'
+          description: 初始密码
+        deptId:
+          type: string
+          description: 部门 ID
+        isAdmin:
+          type: boolean
+          description: 是否超级管理员
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        roleIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 绑定角色 ID 列表
+
+    SystemUserUpdateRequest:
+      type: object
+      required:
+        - username
+        - realName
+        - deptId
+        - isAdmin
+        - status
+        - roleIds
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: '^[A-Za-z][A-Za-z0-9_]{2,63}$'
+          description: 登录账号
+        realName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 用户姓名
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 32
+          pattern: '^(?=.*\S).{6,32}$'
+          description: 新密码，不传表示不修改密码
+        deptId:
+          type: string
+          description: 部门 ID
+        isAdmin:
+          type: boolean
+          description: 是否超级管理员
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        roleIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 绑定角色 ID 列表
+
+    SystemUserStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemUserPasswordResetRequest:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 32
+          pattern: '^(?=.*\S).{6,32}$'
+          description: 新密码
+
+    SystemUserBatchStatusRequest:
+      type: object
+      required:
+        - userIds
+        - status
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          description: 用户 ID 列表，对应 `sys_user.id`
+          items:
+            type: string
+          example:
+            - "1900000000000000001"
+            - "1900000000000000002"
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemUserBatchPasswordResetRequest:
+      type: object
+      required:
+        - userIds
+        - password
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          description: 用户 ID 列表，对应 `sys_user.id`
+          items:
+            type: string
+          example:
+            - "1900000000000000001"
+            - "1900000000000000002"
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 32
+          pattern: '^(?=.*\S).{6,32}$'
+          description: 新密码
+
+    SystemUserBatchDeleteRequest:
+      type: object
+      required:
+        - userIds
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          description: 用户 ID 列表，对应 `sys_user.id`
+          items:
+            type: string
+          example:
+            - "1900000000000000001"
+            - "1900000000000000002"
+
+    SystemUserRoleBindRequest:
+      type: object
+      required:
+        - roleIds
+      properties:
+        roleIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 角色 ID 列表
+
+    SystemRolePage:
+      type: object
+      required:
+        - records
+        - total
+        - pageNum
+        - pageSize
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemRole'
+        total:
+          type: integer
+          example: 1
+        pageNum:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+
+    SystemRole:
+      type: object
+      required:
+        - roleId
+        - roleCode
+        - roleName
+        - permissionCodes
+        - status
+        - remark
+        - userCount
+        - createdAt
+        - updatedAt
+      properties:
+        roleId:
+          type: string
+          description: 角色 ID，对应 `sys_role.id`
+        roleCode:
+          type: string
+          maxLength: 64
+          description: 角色编码，对应 `sys_role.role_code`
+          example: SUPER_ADMIN
+        roleName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 角色名称，对应 `sys_role.role_name`
+          example: 超级管理员
+        permissionCodes:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 权限码列表，对应 `sys_role.permission_codes`；除 `*` 外必须引用启用且未删除的 `sys_permission.permission_code`
+          example:
+            - "*"
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        remark:
+          type: string
+          maxLength: 500
+          description: 备注，对应 `sys_role.remark`
+        userCount:
+          type: integer
+          description: 当前绑定用户数量，由 `sys_user_role` 按角色聚合得到
+        createdAt:
+          type: string
+          description: 创建时间，对应 `sys_role.created_at`
+        updatedAt:
+          type: string
+          description: 更新时间，对应 `sys_role.updated_at`
+
+    SystemRoleCreateRequest:
+      type: object
+      required:
+        - roleCode
+        - roleName
+        - permissionCodes
+        - status
+        - remark
+      properties:
+        roleCode:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Z][A-Z0-9_]{2,63}$'
+          description: 角色编码，对应 `sys_role.role_code`
+        roleName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 角色名称，对应 `sys_role.role_name`
+        permissionCodes:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 权限码列表，对应 `sys_role.permission_codes`；除 `*` 外必须引用启用且未删除的 `sys_permission.permission_code`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        remark:
+          type: string
+          maxLength: 500
+          description: 备注，对应 `sys_role.remark`，无备注时传空字符串
+
+    SystemRoleUpdateRequest:
+      type: object
+      required:
+        - roleCode
+        - roleName
+        - permissionCodes
+        - status
+        - remark
+      properties:
+        roleCode:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Z][A-Z0-9_]{2,63}$'
+          description: 角色编码，对应 `sys_role.role_code`
+        roleName:
+          type: string
+          maxLength: 100
+          description: 角色名称，对应 `sys_role.role_name`
+        permissionCodes:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 权限码列表，对应 `sys_role.permission_codes`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        remark:
+          type: string
+          maxLength: 500
+          description: 备注，对应 `sys_role.remark`，无备注时传空字符串
+
+    SystemRoleStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemRolePermissionUpdateRequest:
+      type: object
+      required:
+        - permissionCodes
+      properties:
+        permissionCodes:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 权限码列表，对应 `sys_role.permission_codes`
+
+    SystemRoleBatchStatusRequest:
+      type: object
+      required:
+        - roleIds
+        - status
+      properties:
+        roleIds:
+          type: array
+          minItems: 1
+          description: 角色 ID 列表，对应 `sys_role.id`
+          items:
+            type: string
+          example:
+            - "1900000000000001001"
+            - "1900000000000001002"
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemRoleBatchDeleteRequest:
+      type: object
+      required:
+        - roleIds
+      properties:
+        roleIds:
+          type: array
+          minItems: 1
+          description: 角色 ID 列表，对应 `sys_role.id`
+          items:
+            type: string
+          example:
+            - "1900000000000001001"
+            - "1900000000000001002"
+
+    SystemDept:
+      type: object
+      required:
+        - deptId
+        - parentId
+        - ancestors
+        - deptName
+        - status
+        - userCount
+        - createdAt
+        - updatedAt
+      properties:
+        deptId:
+          type: string
+          description: 部门 ID，对应 `sys_dept.id`
+        parentId:
+          type: string
+          description: 上级部门 ID，对应 `sys_dept.parent_id`；无上级部门时为 `"0"`
+        ancestors:
+          type: string
+          maxLength: 500
+          description: 祖级路径，对应 `sys_dept.ancestors`；前端不依赖该字段组装展示路径，展示路径按 `parentId` 递归计算
+        deptName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 部门名称，对应 `sys_dept.dept_name`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        userCount:
+          type: integer
+          description: 当前员工数量，由 `sys_user.dept_id` 按部门聚合得到
+        createdAt:
+          type: string
+          description: 创建时间，对应 `sys_dept.created_at`
+        updatedAt:
+          type: string
+          description: 更新时间，对应 `sys_dept.updated_at`
+
+    SystemDeptCreateRequest:
+      type: object
+      required:
+        - parentId
+        - deptName
+        - status
+      properties:
+        parentId:
+          type: string
+          description: 上级部门 ID，对应 `sys_dept.parent_id`；无上级部门时传 `"0"`
+        deptName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 部门名称，对应 `sys_dept.dept_name`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemDeptUpdateRequest:
+      type: object
+      required:
+        - parentId
+        - deptName
+        - status
+      properties:
+        parentId:
+          type: string
+          description: 上级部门 ID，对应 `sys_dept.parent_id`；无上级部门时传 `"0"`；后端需禁止设置为自身或自身下级
+        deptName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 部门名称，对应 `sys_dept.dept_name`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用；停用时级联下级，启用时校验全部上级已启用
+
+    SystemDeptStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemDeptBatchStatusRequest:
+      type: object
+      required:
+        - deptIds
+        - status
+      properties:
+        deptIds:
+          type: array
+          minItems: 1
+          description: 部门 ID 列表，对应 `sys_dept.id`
+          items:
+            type: string
+          example:
+            - "1900000000000000102"
+            - "1900000000000000103"
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+
+    SystemDeptBatchDeleteRequest:
+      type: object
+      required:
+        - deptIds
+      properties:
+        deptIds:
+          type: array
+          minItems: 1
+          description: 部门 ID 列表，对应 `sys_dept.id`
+          items:
+            type: string
+          example:
+            - "1900000000000000102"
+            - "1900000000000000103"
+
+    PermissionActionType:
+      type: string
+      enum: [query, create, update, delete, manage, execute]
+
+    SystemPermissionPage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/SystemPermission' }
+        total: { type: integer, format: int64 }
+        pageNum: { type: integer }
+        pageSize: { type: integer }
+
+    SystemPermission:
+      type: object
+      required: [permissionId, permissionCode, permissionName, moduleCode, actionType, status, sortOrder, description, roleCount, createdAt, updatedAt]
+      properties:
+        permissionId: { type: string }
+        permissionCode:
+          type: string
+          minLength: 3
+          maxLength: 100
+          pattern: '^[a-z][a-z0-9]*(?::[a-z][a-z0-9]*){1,3}$'
+        permissionName: { type: string, minLength: 1, maxLength: 100 }
+        moduleCode: { type: string, minLength: 1, maxLength: 64 }
+        actionType: { $ref: '#/components/schemas/PermissionActionType' }
+        status: { type: integer, enum: [0, 1] }
+        sortOrder: { type: integer, minimum: 0, maximum: 9999 }
+        description: { type: string, maxLength: 500 }
+        roleCount: { type: integer, minimum: 0, description: 由后端使用 sys_role.permission_codes JSON 聚合得到；通配符 * 视为引用全部权限码 }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    SystemPermissionCreateRequest:
+      type: object
+      required: [permissionCode, permissionName, moduleCode, actionType, status, sortOrder, description]
+      properties:
+        permissionCode:
+          type: string
+          minLength: 3
+          maxLength: 100
+          pattern: '^[a-z][a-z0-9]*(?::[a-z][a-z0-9]*){1,3}$'
+        permissionName: { type: string, minLength: 1, maxLength: 100 }
+        moduleCode: { type: string, minLength: 1, maxLength: 64 }
+        actionType: { $ref: '#/components/schemas/PermissionActionType' }
+        status: { type: integer, enum: [0, 1] }
+        sortOrder: { type: integer, minimum: 0, maximum: 9999 }
+        description: { type: string, maxLength: 500 }
+
+    SystemPermissionUpdateRequest:
+      type: object
+      description: permissionCode 用于鉴权且创建后不可修改，因此更新请求不接收该字段。
+      required: [permissionName, moduleCode, actionType, status, sortOrder, description]
+      properties:
+        permissionName: { type: string, minLength: 1, maxLength: 100 }
+        moduleCode: { type: string, minLength: 1, maxLength: 64 }
+        actionType: { $ref: '#/components/schemas/PermissionActionType' }
+        status: { type: integer, enum: [0, 1] }
+        sortOrder: { type: integer, minimum: 0, maximum: 9999 }
+        description: { type: string, maxLength: 500 }
+
+    SystemPermissionStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: integer, enum: [0, 1] }
+
+    SystemPermissionBatchStatusRequest:
+      type: object
+      required: [permissionIds, status]
+      properties:
+        permissionIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        status: { type: integer, enum: [0, 1] }
+
+    SystemPermissionBatchDeleteRequest:
+      type: object
+      required: [permissionIds]
+      properties:
+        permissionIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+
+    PermissionOptionGroup:
+      type: object
+      required: [group, codes]
+      properties:
+        group: { type: string }
+        codes:
+          type: array
+          items:
+            type: object
+            required: [code, label]
+            properties:
+              code: { type: string }
+              label: { type: string }
+
+    RoleOption:
+      type: object
+      required:
+        - roleId
+        - roleCode
+        - roleName
+        - status
+      properties:
+        roleId:
+          type: string
+        roleCode:
+          type: string
+        roleName:
+          type: string
+        status:
+          type: integer
+          enum: [0, 1]
+
+    DeptOption:
+      type: object
+      required:
+        - deptId
+        - deptName
+        - parentId
+        - status
+      properties:
+        deptId:
+          type: string
+        deptName:
+          type: string
+        parentId:
+          type: string
+        status:
+          type: integer
+          enum: [0, 1]
+
+    ProductPage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/Product' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    Product:
+      type: object
+      required:
+        - productId
+        - productCode
+        - productName
+        - categoryName
+        - brandName
+        - unitName
+        - specification
+        - referencePurchasePrice
+        - referenceSalePrice
+        - safetyStockQty
+        - status
+        - remark
+        - createdAt
+        - updatedAt
+      properties:
+        productId:
+          type: string
+          description: 产品 ID，对应 `product.id`
+        productCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: 产品编码，对应 `product.product_code`，由后端生成、全局唯一且创建后不可修改
+        productName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 产品名称，对应 `product.product_name`
+        categoryId:
+          type: string
+          nullable: true
+          description: 分类 ID，对应 `product.category_id`
+        categoryName:
+          type: string
+          nullable: true
+          readOnly: true
+          description: 分类展示名称，由后端按 `category_id` 关联 `product_category.category_name` 返回，不在产品表冗余存储；未分类时返回 `null`，无需拼装为空字符串或层级路径
+        brandName:
+          type: string
+          maxLength: 100
+        unitName:
+          type: string
+          minLength: 1
+          maxLength: 32
+        specification:
+          type: string
+          maxLength: 255
+        barcode:
+          type: string
+          nullable: true
+          maxLength: 64
+        referencePurchasePrice:
+          type: number
+          format: double
+          minimum: 0
+        referenceSalePrice:
+          type: number
+          format: double
+          minimum: 0
+        safetyStockQty:
+          type: number
+          format: double
+          minimum: 0
+        status:
+          type: integer
+          enum: [0, 1]
+        remark:
+          type: string
+          maxLength: 500
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    ProductFormRequest:
+      type: object
+      required:
+        - productName
+        - categoryId
+        - brandName
+        - unitName
+        - specification
+        - barcode
+        - referencePurchasePrice
+        - referenceSalePrice
+        - safetyStockQty
+        - status
+        - remark
+      properties:
+        productName: { type: string, minLength: 1, maxLength: 200 }
+        categoryId:
+          type: string
+          nullable: true
+        brandName: { type: string, maxLength: 100 }
+        unitName: { type: string, minLength: 1, maxLength: 32 }
+        specification: { type: string, maxLength: 255 }
+        barcode:
+          type: string
+          nullable: true
+          maxLength: 64
+        referencePurchasePrice: { type: number, format: double, minimum: 0 }
+        referenceSalePrice: { type: number, format: double, minimum: 0 }
+        safetyStockQty: { type: number, format: double, minimum: 0 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    ProductStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: integer, enum: [0, 1] }
+
+    ProductBatchStatusRequest:
+      type: object
+      required: [productIds, status]
+      properties:
+        productIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status: { type: integer, enum: [0, 1] }
+
+    ProductBatchDeleteRequest:
+      type: object
+      required: [productIds]
+      properties:
+        productIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+
+    ProductCategory:
+      type: object
+      required: [categoryId, parentId, categoryName, status, productCount, createdAt, updatedAt]
+      properties:
+        categoryId:
+          type: string
+          description: 分类 ID，对应 `product_category.id`
+        parentId:
+          type: string
+          description: 上级分类 ID，对应 `product_category.parent_id`；顶级分类为 `"0"`
+        categoryName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 分类名称，对应 `product_category.category_name`
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态，1 启用，0 停用
+        productCount:
+          type: integer
+          minimum: 0
+          description: 当前分类直接关联的未删除产品数量，通过 `product.category_id` 聚合，不包含下级分类产品
+        createdAt:
+          type: string
+          description: 创建时间，对应 `product_category.created_at`
+        updatedAt:
+          type: string
+          description: 更新时间，对应 `product_category.updated_at`
+
+    ProductCategoryCreateRequest:
+      type: object
+      required: [parentId, categoryName, status]
+      properties:
+        parentId:
+          type: string
+          description: 上级分类 ID；顶级分类传 `"0"`
+        categoryName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 分类名称，提交前去除首尾空格，同一上级下不能重复
+        status:
+          type: integer
+          enum: [0, 1]
+
+    ProductCategoryUpdateRequest:
+      type: object
+      required: [parentId, categoryName, status]
+      properties:
+        parentId:
+          type: string
+          description: 上级分类 ID；禁止设置为自身或自身下级
+        categoryName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 分类名称，提交前去除首尾空格，同一上级下不能重复
+        status:
+          type: integer
+          enum: [0, 1]
+          description: 状态修改必须遵守分类父子级联约束
+
+    ProductCategoryStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: integer
+          enum: [0, 1]
+
+    ProductCategoryBatchStatusRequest:
+      type: object
+      required: [categoryIds, status]
+      properties:
+        categoryIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status:
+          type: integer
+          enum: [0, 1]
+
+    ProductCategoryBatchDeleteRequest:
+      type: object
+      required: [categoryIds]
+      properties:
+        categoryIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }

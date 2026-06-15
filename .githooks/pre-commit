@@ -1,0 +1,4 @@
+#!/bin/sh
+set -e
+
+node erp-web/scripts/check-frontend-preflight.cjs

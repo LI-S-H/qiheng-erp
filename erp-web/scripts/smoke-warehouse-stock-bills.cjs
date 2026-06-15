@@ -74,6 +74,7 @@ runSmoke({
     for (const expected of ['P0001', '经典原味苏打水', 'P0002', '速溶黑咖啡', '+30', '+12']) {
       if (!confirmedText.includes(expected)) throw new Error(`已确认入库详情缺少 ${expected}`);
     }
+    if (await confirmedRow.locator('[data-manual-adjustment-marker]').count() !== 0) throw new Error('来源生成凭证不应显示人工调整标记');
     await page.waitForTimeout(180);
     await page.screenshot({ path: 'smoke-warehouse-stock-bills-detail.png', fullPage: true });
     await confirmedDialog.getByRole('button', { name: 'Close' }).click();
@@ -163,7 +164,7 @@ runSmoke({
     await kgQuantity.fill('1.25');
     await kgDialog.getByRole('button', { name: '保存草稿' }).click();
     const kgRow = tableRow(page, 'SB202606140017');
-    await kgRow.getByText('手工调整', { exact: true }).waitFor();
+    await kgRow.locator('[data-manual-adjustment-marker]').getByText('人工调整', { exact: true }).waitFor();
     await kgRow.getByRole('button', { name: '取消', exact: true }).click();
     await page.getByRole('alertdialog', { name: '取消出入库草稿' }).getByRole('button', { name: '确认取消', exact: true }).click();
 
@@ -209,7 +210,7 @@ runSmoke({
     await supplementQuantities.nth(1).fill('2');
     await supplementDialog.getByRole('button', { name: '保存草稿' }).click();
     const supplementRow = page.getByRole('row').filter({ hasText: 'SRO-OFFLINE-001' }).first();
-    await supplementRow.getByText('手工补录', { exact: true }).waitFor();
+    if (await supplementRow.locator('[data-manual-adjustment-marker]').count() !== 0) throw new Error('手工补录凭证不应显示人工调整标记');
     await supplementRow.getByText('系统管理员', { exact: true }).first().waitFor();
     await supplementRow.getByRole('button', { name: '详情' }).click();
     const supplementDetail = page.getByRole('dialog', { name: '出入库凭证详情' });

@@ -147,9 +147,9 @@ const sourceTypeMap = {
   STOCK_ADJUST: '库存调整单',
 } as const;
 const entryModeMap = {
-  SOURCE_GENERATED: { label: '来源生成', className: 'border-slate-200 bg-slate-50 text-slate-600' },
-  MANUAL_SUPPLEMENT: { label: '手工补录', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  MANUAL_ADJUSTMENT: { label: '手工调整', className: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
+  SOURCE_GENERATED: '来源生成',
+  MANUAL_SUPPLEMENT: '手工补录',
+  MANUAL_ADJUSTMENT: '人工调整',
 } as const;
 
 function newDraftItem(): DraftFormItem {
@@ -517,7 +517,7 @@ onMounted(() => {
             <TableRow v-for="row in records" v-else :key="row.stockBillId" :data-stock-bill-id="row.stockBillId">
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.billNo }}</code></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="billTypeMap[row.billType].className">{{ billTypeMap[row.billType].label }}</Badge></TableCell>
-              <TableCell><div class="flex flex-col items-start gap-1"><div class="flex items-center gap-1.5"><span class="text-xs text-muted-foreground">{{ sourceTypeMap[row.sourceType] }}</span><Badge variant="outline" :class="entryModeMap[row.entryMode].className">{{ entryModeMap[row.entryMode].label }}</Badge></div><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.sourceNo || '无来源单号' }}</code></div></TableCell>
+              <TableCell><div class="flex flex-col items-start gap-1"><div class="flex items-center gap-2"><span class="text-xs text-muted-foreground">{{ sourceTypeMap[row.sourceType] }}</span><span v-if="row.entryMode === 'MANUAL_ADJUSTMENT'" data-manual-adjustment-marker class="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700"><span class="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />人工调整</span></div><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.sourceNo || '无来源单号' }}</code></div></TableCell>
               <TableCell class="font-medium">{{ row.warehouseName }}</TableCell>
               <TableCell class="text-center tabular-nums">{{ row.itemCount }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="statusMap[row.status].className">{{ statusMap[row.status].label }}</Badge></TableCell>
@@ -616,7 +616,7 @@ onMounted(() => {
               <div class="detail-field"><span>类型</span><Badge variant="outline" :class="billTypeMap[detail.billType].className">{{ billTypeMap[detail.billType].label }}</Badge></div>
               <div class="detail-field"><span>状态</span><Badge variant="outline" :class="statusMap[detail.status].className">{{ statusMap[detail.status].label }}</Badge></div>
               <div class="detail-field"><span>仓库</span><strong>{{ detail.warehouseName }}</strong></div>
-              <div class="detail-field"><span>录入方式</span><Badge variant="outline" :class="entryModeMap[detail.entryMode].className">{{ entryModeMap[detail.entryMode].label }}</Badge></div>
+              <div class="detail-field"><span>录入方式</span><strong>{{ entryModeMap[detail.entryMode] }}</strong></div>
               <div class="detail-field"><span>来源类型</span><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></div>
               <div class="detail-field"><span>来源单号</span><code>{{ detail.sourceNo || '-' }}</code></div>
               <div class="detail-field"><span>负责人</span><strong>{{ detail.responsibleByName }}</strong></div>

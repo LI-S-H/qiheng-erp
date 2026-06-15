@@ -691,3 +691,37 @@ POST /warehouse/stock-bills/{stockBillId}/cancel
 ```
 
 查询和详情需要 `warehouse:query` 权限，新增、编辑、确认和取消需要 `warehouse:manage` 权限。列表摘要基于当前全部筛选结果计算，详情必须返回完整主表信息和全部明细。
+
+## 17. 仓库库存模块：库存调整
+
+库存调整页面路径为 `/warehouse/stock-adjustments`，用于处理盘盈、盘亏、破损、账实差异和其他需要人工修正库存的场景。
+
+### 17.1 数据与接口边界
+
+- 页面不新增库存调整专表，复用 `stock_bill` 与 `stock_bill_item`，列表固定提交 `entryMode=MANUAL_ADJUSTMENT`。
+- 调整类型只允许 `ADJUST_IN` 和 `ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`；调整流水号和调整单号由后端生成。
+- 查询条件为流水号、调整单号、仓库、调整方向和状态，每个控件对应一个明确参数，多个有效条件按 AND 组合。
+- 摘要基于全部筛选结果统计调整单数、调整入库数、调整出库数和已确认数，不跨不同产品单位汇总数量。
+- 页面不得显示 `SOURCE_GENERATED` 来源生成凭证或 `MANUAL_SUPPLEMENT` 人工补录凭证。
+
+### 17.2 页面操作
+
+- 新增仅开放调整入库和调整出库，负责人由后端按当前登录用户写入，前端只读展示；调整原因和至少一条产品明细必填。
+- 数量输入继续按产品 `quantity_precision` 控制，接口传业务真实值，后端按 100 倍整数持久化。
+- 草稿允许编辑产品、数量、明细备注、调整原因和凭证备注；仓库、调整方向、流水号和调整单号创建后不可修改。
+- 确认使用独立动作和二次确认，后端在事务内校验库存并更新余额；取消只允许草稿执行且不改变库存。
+- 已确认调整不能直接取消或改回草稿，发现错误时创建相反方向的库存调整保留完整追溯链路。
+- 长表单和详情使用共享 `DialogScrollArea`，查询、刷新、重置和分页使用统一防抖加载层。
+
+### 17.3 接口
+
+库存调整页面复用出入库凭证接口，不新增重复端点：
+
+```text
+GET /warehouse/stock-bills?entryMode=MANUAL_ADJUSTMENT
+POST /warehouse/stock-bills
+GET /warehouse/stock-bills/{stockBillId}
+PUT /warehouse/stock-bills/{stockBillId}
+POST /warehouse/stock-bills/{stockBillId}/confirm
+POST /warehouse/stock-bills/{stockBillId}/cancel
+```

@@ -13,6 +13,7 @@ import ProductManageView from '@/modules/product/products/views/ProductManageVie
 import WarehouseManageView from '@/modules/warehouse/warehouses/views/WarehouseManageView.vue';
 import WarehouseStockManageView from '@/modules/warehouse/stocks/views/WarehouseStockManageView.vue';
 import StockBillManageView from '@/modules/warehouse/stock-bills/views/StockBillManageView.vue';
+import StockAdjustmentManageView from '@/modules/warehouse/stock-adjustments/views/StockAdjustmentManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -127,7 +128,10 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'warehouse/stock-adjustments',
         name: 'warehouse-stock-adjustments',
-        ...placeholder('库存调整', '仓储库存', '处理盘盈 盘亏和其他人工库存调整动作'),
+        component: StockAdjustmentManageView,
+        meta: {
+          title: '库存调整',
+        },
       },
       { path: 'purchase', redirect: '/purchase/suppliers' },
       {

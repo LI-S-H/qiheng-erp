@@ -1412,6 +1412,7 @@ paths:
       description: |
         查询 `stock_bill` 出入库流水主表，并按 `stock_bill_item.bill_id` 聚合返回 `itemCount`；列表不跨不同产品单位汇总数量。
         流水号和来源单号分别使用包含匹配，仓库、出入库类型、录入方式和状态使用精确匹配，多个有效条件按 AND 组合。
+        库存调整页面复用本接口，并固定提交 `entryMode=MANUAL_ADJUSTMENT`；调整方向使用 `billType=ADJUST_IN` 或 `billType=ADJUST_OUT` 进一步精确筛选。
         列表摘要基于当前全部筛选结果统计单据数、入库单数、出库单数和已确认单数，不只统计当前分页。
         入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`；出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`。
         本接口只用于追溯库存凭证，不直接创建、确认或取消流水，需要 `warehouse:query` 权限。

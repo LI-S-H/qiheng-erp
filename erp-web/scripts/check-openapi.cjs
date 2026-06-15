@@ -33,7 +33,7 @@ const warehouseStockViewSource = readProjectFile('erp-web', 'src', 'modules', 'w
 const stockBillApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'api.ts');
 const stockBillTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'types.ts');
 const stockBillViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'views', 'StockBillManageView.vue');
-const stockAdjustmentViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-adjustments', 'views', 'StockAdjustmentManageView.vue');
+
 const routerSource = readProjectFile('erp-web', 'src', 'router', 'index.ts');
 const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
 const listViewSources = [
@@ -356,16 +356,10 @@ if (!stockBillViewSource.includes('新增出入库')
   || !warehouseSchema.includes('100 倍整数存储')) {
   throw new Error('出入库记录新增、编辑、状态流转、详情或页面设计文档不完整');
 }
-if (!stockBillViewSource.includes('pageMode?: StockBillPageMode')
-  || !stockBillViewSource.includes("entryMode: props.pageMode === 'adjustments' ? 'MANUAL_ADJUSTMENT' : 'all'")
-  || !stockBillViewSource.includes('filter-grid--stock-adjustments')
-  || !stockBillViewSource.includes('新增库存调整')
-  || !stockAdjustmentViewSource.includes('page-mode="adjustments"')
-  || !routerSource.includes('component: StockAdjustmentManageView')
-  || !pageDesign.includes('## 17. 仓库库存模块：库存调整')
-  || !source.includes('库存调整页面复用本接口，并固定提交 `entryMode=MANUAL_ADJUSTMENT`')
-  || !warehouseSchema.includes('库存调整页面不新增独立业务表')) {
-  throw new Error('库存调整页面、路由、查询边界或设计文档不完整');
+if (!stockBillViewSource.includes('entryModeOptions')
+  || !source.includes('查询库存调整凭证时，可提交 `entryMode=MANUAL_ADJUSTMENT`')
+  || !warehouseSchema.includes('库存调整不新增独立页面')) {
+  throw new Error('库存调整功能合并到出入库记录页面的契约或设计文档不完整');
 }
 if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
   || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {

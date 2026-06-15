@@ -126,8 +126,8 @@
 - 采购退货后续使用 `PURCHASE_RETURN` 出库流水，确认后扣减库存。
 - 库存调整使用 `ADJUST_IN` 或 `ADJUST_OUT` 出入库流水。
 - 出入库流水号由后端统一生成，并由 `uk_stock_bill_no` 唯一索引兜底。正常采购、销售和退货流水由对应业务单据生成，`entry_mode=SOURCE_GENERATED`。
-- 当采购、销售或退货业务因线下操作、系统故障等原因遗漏登记时，允许在出入库页面手工补录四类业务凭证，`entry_mode=MANUAL_SUPPLEMENT`。补录必须填写原业务单号和补录原因，`source_id` 为空，`source_type` 按出入库类型推导；列表按普通来源单据展示，详情保留录入方式、补录原因和负责人用于追溯。
-- 库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`，仅允许 `ADJUST_IN`、`ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`，调整单号由后端生成，调整原因必填。列表仅对该模式显示低权重“人工调整”提示，避免给正常来源凭证和补录凭证重复堆叠状态标签。
+- 当采购、销售或退货业务因线下操作、系统故障等原因遗漏登记时，允许在出入库页面手工补录四类业务凭证，`entry_mode=MANUAL_SUPPLEMENT`。补录必须填写原业务单号和补录原因，`source_id` 为空，`source_type` 按出入库类型推导；列表显示低权重“人工录入”提示，详情保留录入方式、补录原因和负责人用于追溯。
+- 库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`，仅允许 `ADJUST_IN`、`ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`，调整单号由后端生成，调整原因必填。列表同样显示“人工录入”提示；只有 `entry_mode=SOURCE_GENERATED` 的正常业务来源凭证不显示人工标记。
 - 所有手工补录和库存调整的 `responsible_by_id/name` 必须由后端根据当前登录用户写入，前端只读展示且不得提交或代填；来源生成凭证的负责人由来源业务单据负责人带入。
 - 产品数量必须符合 `product.quantity_precision`；凭证明细保存 `quantity_precision` 快照。数据库统一使用 100 倍整数存储数量，Service 层入库前乘 100、返回接口前除以 100；前端和 OpenAPI 始终使用真实业务值。离散单位精度为 0 时，本次数量、合格数量和不合格数量均只能为整数。
 - 出入库状态只允许 `DRAFT -> CONFIRMED` 或 `DRAFT -> CANCELLED`。`DRAFT` 和 `CANCELLED` 不改变库存余额；确认时后端锁定草稿和库存记录，在同一事务内更新 `warehouse_stock`、明细 `before_qty/change_qty/after_qty` 以及采购或销售来源明细的已出入库数量。

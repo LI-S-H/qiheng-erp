@@ -11,13 +11,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import { listProductCategories } from '../../categories/api';
 import type { ProductCategoryListItem } from '../../categories/types';
 import {
@@ -61,7 +62,7 @@ const query = reactive<ProductQuery>({
 });
 const form = reactive<ProductFormPayload>({
   productName: '', categoryId: null, brandName: '', unitName: '件', specification: '', barcode: null,
-  referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
+  quantityPrecision: 0, referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
 });
 const formErrors = reactive<Record<string, string>>({});
 const confirmState = reactive({
@@ -73,6 +74,15 @@ const confirmState = reactive({
 const queryBusy = computed(() => queryPending.value || loading.value);
 const enabledCount = computed(() => products.value.filter(item => item.status === 1).length);
 const lowStockConfigCount = computed(() => products.value.filter(item => item.safetyStockQty > 0).length);
+const quantityPrecisionOptions = [0, 1, 2].map(value => ({
+  value,
+  label: value === 0 ? '0 位（仅整数）' : `${value} 位小数`,
+}));
+const quantityStep = computed(() => 10 ** -form.quantityPrecision);
+
+function matchesQuantityPrecision(value: number, precision: number) {
+  return Math.abs(value * 10 ** precision - Math.round(value * 10 ** precision)) < 1e-8;
+}
 const categoryCount = computed(() => new Set(products.value.map(item => item.categoryId).filter(Boolean)).size);
 const selectedRows = computed(() => products.value.filter(item => selectedIds.value.has(item.productId)));
 const allSelected = computed(() => products.value.length > 0 && products.value.every(item => selectedIds.value.has(item.productId)));
@@ -162,7 +172,8 @@ function handleReset() {
   query.categoryId = 'all';
   query.status = 'all';
   query.pageNum = 1;
-  fetchProducts();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 function handlePageChange(pageNum: number) {
@@ -177,9 +188,7 @@ function handlePageSizeChange(pageSize: number) {
   debouncedPageChange(1, pageSize);
 }
 
-function refreshList() {
-  if (!queryBusy.value) fetchProducts();
-}
+const refreshList = useListRefresh(queryBusy, queryPending, fetchProducts);
 
 function toggleSelectAll(value: boolean | 'indeterminate') {
   selectedIds.value = value === true ? new Set(products.value.map(item => item.productId)) : new Set();
@@ -194,7 +203,7 @@ function toggleSelect(productId: string, value: boolean | 'indeterminate') {
 function resetForm() {
   Object.assign(form, {
     productName: '', categoryId: null, brandName: '', unitName: '件', specification: '', barcode: null,
-    referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
+    quantityPrecision: 0, referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
   });
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
@@ -217,6 +226,7 @@ function openEditDialog(row: ProductListItem) {
     categoryId: row.categoryId,
     brandName: row.brandName,
     unitName: row.unitName,
+    quantityPrecision: row.quantityPrecision,
     specification: row.specification,
     barcode: row.barcode,
     referencePurchasePrice: row.referencePurchasePrice,
@@ -235,11 +245,15 @@ function validateForm() {
   else if (form.productName.trim().length > 200) formErrors.productName = '产品名称不能超过 200 个字符';
   if (!form.unitName.trim()) formErrors.unitName = '请输入单位名称';
   else if (form.unitName.trim().length > 32) formErrors.unitName = '单位名称不能超过 32 个字符';
+  if (!Number.isInteger(form.quantityPrecision) || form.quantityPrecision < 0 || form.quantityPrecision > 2) formErrors.quantityPrecision = '数量小数位必须是 0 到 2 的整数';
   if (form.brandName.trim().length > 100) formErrors.brandName = '品牌名称不能超过 100 个字符';
   if (form.specification.trim().length > 255) formErrors.specification = '规格型号不能超过 255 个字符';
   if ((form.barcode || '').trim().length > 64) formErrors.barcode = '条码不能超过 64 个字符';
   for (const [key, label] of [['referencePurchasePrice', '参考采购价'], ['referenceSalePrice', '参考销售价'], ['safetyStockQty', '安全库存']] as const) {
     if (!Number.isFinite(Number(form[key])) || Number(form[key]) < 0) formErrors[key] = `${label}不能小于 0`;
+  }
+  if (!formErrors.safetyStockQty && !matchesQuantityPrecision(Number(form.safetyStockQty), form.quantityPrecision)) {
+    formErrors.safetyStockQty = `安全库存最多保留 ${form.quantityPrecision} 位小数`;
   }
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   const selectedCategory = categories.value.find(item => item.categoryId === form.categoryId);
@@ -442,22 +456,23 @@ function formatQty(value: number) {
     <Dialog v-model:open="dialogVisible">
       <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[760px]">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增产品' : '编辑产品' }}</DialogTitle><DialogDescription>产品档案将被采购、销售和库存业务共同引用，请准确维护主数据。</DialogDescription></DialogHeader>
-        <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-3">
+        <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
             <div class="space-y-1"><Label>产品编码</Label><Input data-product-code-display :model-value="dialogMode === 'create' ? '保存后由系统生成' : editingProductCode" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">系统生成，创建后不可修改</p></div>
             <div class="space-y-1"><Label>产品名称 <span class="text-destructive">*</span></Label><Input v-model="form.productName" maxlength="200" placeholder="请输入产品名称" :aria-invalid="Boolean(formErrors.productName)" /><p v-if="formErrors.productName" class="text-xs text-destructive">{{ formErrors.productName }}</p></div>
             <div class="space-y-1"><Label>产品分类</Label><AnchoredSelect v-model="formCategoryValue" :options="formCategoryOptions" placeholder="请选择分类" :invalid="Boolean(formErrors.categoryId)" /><p v-if="formErrors.categoryId" class="text-xs text-destructive">{{ formErrors.categoryId }}</p></div>
             <div class="space-y-1"><Label>品牌名称</Label><Input v-model="form.brandName" maxlength="100" placeholder="请输入品牌名称" :aria-invalid="Boolean(formErrors.brandName)" /><p v-if="formErrors.brandName" class="text-xs text-destructive">{{ formErrors.brandName }}</p></div>
             <div class="space-y-1"><Label>单位名称 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.unitName" :options="unitSelectOptions" :invalid="Boolean(formErrors.unitName)" /><p v-if="formErrors.unitName" class="text-xs text-destructive">{{ formErrors.unitName }}</p></div>
+            <div class="space-y-1"><Label>数量小数位 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.quantityPrecision" :options="quantityPrecisionOptions" :invalid="Boolean(formErrors.quantityPrecision)" /><p class="text-xs" :class="formErrors.quantityPrecision ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.quantityPrecision || '箱、瓶、个等不可拆分单位选择 0；重量、长度单位按业务设置。' }}</p></div>
             <div class="space-y-1"><Label>规格型号</Label><Input v-model="form.specification" maxlength="255" placeholder="请输入规格型号" :aria-invalid="Boolean(formErrors.specification)" /><p v-if="formErrors.specification" class="text-xs text-destructive">{{ formErrors.specification }}</p></div>
             <div class="space-y-1"><Label>产品条码</Label><Input :model-value="form.barcode || ''" maxlength="64" placeholder="请输入条码" :aria-invalid="Boolean(formErrors.barcode)" @update:model-value="form.barcode = String($event) || null" /><p v-if="formErrors.barcode" class="text-xs text-destructive">{{ formErrors.barcode }}</p></div>
-            <div class="space-y-1"><Label>安全库存</Label><Input v-model.number="form.safetyStockQty" type="number" min="0" step="0.0001" :aria-invalid="Boolean(formErrors.safetyStockQty)" /><p v-if="formErrors.safetyStockQty" class="text-xs text-destructive">{{ formErrors.safetyStockQty }}</p></div>
+            <div class="space-y-1"><Label>安全库存</Label><Input v-model.number="form.safetyStockQty" type="number" min="0" :step="quantityStep" :aria-invalid="Boolean(formErrors.safetyStockQty)" /><p v-if="formErrors.safetyStockQty" class="text-xs text-destructive">{{ formErrors.safetyStockQty }}</p></div>
             <div class="space-y-1"><Label>参考采购价</Label><div class="relative"><span data-currency-prefix class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">￥</span><Input v-model.number="form.referencePurchasePrice" class="pl-8" type="number" min="0" step="0.01" :aria-invalid="Boolean(formErrors.referencePurchasePrice)" /></div><p v-if="formErrors.referencePurchasePrice" class="text-xs text-destructive">{{ formErrors.referencePurchasePrice }}</p></div>
             <div class="space-y-1"><Label>参考销售价</Label><div class="relative"><span data-currency-prefix class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">￥</span><Input v-model.number="form.referenceSalePrice" class="pl-8" type="number" min="0" step="0.01" :aria-invalid="Boolean(formErrors.referenceSalePrice)" /></div><p v-if="formErrors.referenceSalePrice" class="text-xs text-destructive">{{ formErrors.referenceSalePrice }}</p></div>
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>启用状态 <span class="text-destructive">*</span></Label><RadioGroup :model-value="String(form.status)" class="flex gap-5" @update:model-value="form.status = Number($event) as ProductStatus"><div class="flex items-center gap-2"><RadioGroupItem id="product-status-1" value="1" /><Label for="product-status-1" class="cursor-pointer font-normal">启用</Label></div><div class="flex items-center gap-2"><RadioGroupItem id="product-status-0" value="0" /><Label for="product-status-0" class="cursor-pointer font-normal">停用</Label></div></RadioGroup></div>
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>备注</Label><Textarea v-model="form.remark" maxlength="500" rows="3" placeholder="补充产品采购、销售或仓储注意事项" :aria-invalid="Boolean(formErrors.remark)" /><div class="flex justify-between text-xs"><span :class="formErrors.remark ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.remark || '选填，最多 500 个字符' }}</span><span class="text-muted-foreground">{{ form.remark.length }}/500</span></div></div>
           </div>
-        </ScrollArea>
+        </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>

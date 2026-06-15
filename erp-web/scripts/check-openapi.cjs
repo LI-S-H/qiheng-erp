@@ -22,6 +22,31 @@ const preCommitHook = readProjectFile('.githooks', 'pre-commit');
 const productApiSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'api.ts');
 const productTypeSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'types.ts');
 const productViewSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'views', 'ProductManageView.vue');
+const warehouseSql = readProjectFile('docs', 'database', 'sql', '003_mvp_warehouse.sql');
+const warehouseSchema = readProjectFile('docs', 'database', 'mvp-warehouse-schema.md');
+const warehouseApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'api.ts');
+const warehouseTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'types.ts');
+const warehouseViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'views', 'WarehouseManageView.vue');
+const warehouseStockApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'api.ts');
+const warehouseStockTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'types.ts');
+const warehouseStockViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'views', 'WarehouseStockManageView.vue');
+const stockBillApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'api.ts');
+const stockBillTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'types.ts');
+const stockBillViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'views', 'StockBillManageView.vue');
+
+const routerSource = readProjectFile('erp-web', 'src', 'router', 'index.ts');
+const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
+const listViewSources = [
+  readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'views', 'UserManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'system', 'roles', 'views', 'RoleManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'system', 'depts', 'views', 'DeptManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'system', 'permissions', 'views', 'PermissionManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'product', 'categories', 'views', 'ProductCategoryManageView.vue'),
+  productViewSource,
+  warehouseViewSource,
+  warehouseStockViewSource,
+  stockBillViewSource,
+];
 const anchoredSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'AnchoredSelect.vue');
 const treeSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'TreeSelect.vue');
 const exclusiveDropdownSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-exclusive-dropdown.ts');
@@ -55,6 +80,16 @@ const requiredPaths = [
   '/product/categories/batch/delete:',
   '/product/categories/{categoryId}:',
   '/product/categories/{categoryId}/status:',
+  '/warehouse/warehouses:',
+  '/warehouse/warehouses/batch/status:',
+  '/warehouse/warehouses/batch/delete:',
+  '/warehouse/warehouses/{warehouseId}:',
+  '/warehouse/warehouses/{warehouseId}/status:',
+  '/warehouse/stocks:',
+  '/warehouse/stock-bills:',
+  '/warehouse/stock-bills/{stockBillId}:',
+  '/warehouse/stock-bills/{stockBillId}/confirm:',
+  '/warehouse/stock-bills/{stockBillId}/cancel:',
 ];
 
 for (const requiredPath of requiredPaths) {
@@ -86,7 +121,7 @@ for (const fragment of [
 for (const fragment of ['# 前端开发规范', '一个筛选控件必须对应一个明确的查询参数', '禁止为了减少筛选框使用含义不明的 `keyword`', '历史问题清单']) {
   if (!frontendDevelopmentGuide.includes(fragment)) throw new Error(`前端开发规范缺少强制规则：${fragment}`);
 }
-for (const fragment of ['非用户输入字段不得渲染为可编辑控件', '同一页面同一时刻只能打开一个下拉弹层', '人民币显示 `￥`']) {
+for (const fragment of ['非用户输入字段不得渲染为可编辑控件', '同一页面同一时刻只能打开一个下拉弹层', '人民币显示 `￥`', '业务状态不能使用普通下拉任意修改']) {
   if (!frontendDevelopmentGuide.includes(fragment)) throw new Error(`前端开发规范缺少表单字段或下拉交互规则：${fragment}`);
 }
 for (const fragment of ['前端开发强制前置流程', 'npm run preflight:frontend -- <scope>', '禁止使用 `--no-verify`']) {
@@ -198,6 +233,156 @@ if (!productApiSource.includes('generateMockProductCode()')
   || !productViewSource.includes('data-currency-prefix')) {
   throw new Error('产品编码系统生成展示或金额货币前缀实现不完整');
 }
+for (const fragment of ['warehouseCode', 'warehouseName', 'contactName', 'contactPhone', '多个有效条件按 AND 组合']) {
+  if (!source.includes(fragment)) throw new Error(`仓库管理 OpenAPI 缺少字段级查询契约：${fragment}`);
+}
+const warehouseSchemaStart = source.indexOf('    Warehouse:');
+const warehouseSchemaEnd = source.indexOf('    WarehouseCreateRequest:', warehouseSchemaStart);
+const warehouseResponseSchema = source.slice(warehouseSchemaStart, warehouseSchemaEnd);
+if (warehouseSchemaStart < 0 || warehouseSchemaEnd < 0 || !warehouseResponseSchema.includes('warehouseCode:')
+  || !warehouseResponseSchema.includes('readOnly: true')) {
+  throw new Error('仓库返回结构必须包含创建后只读的仓库编码');
+}
+const warehouseUpdateStart = source.indexOf('    WarehouseUpdateRequest:');
+const warehouseUpdateEnd = source.indexOf('    WarehouseStatusRequest:', warehouseUpdateStart);
+const warehouseUpdateSchema = source.slice(warehouseUpdateStart, warehouseUpdateEnd);
+if (warehouseUpdateStart < 0 || warehouseUpdateEnd < 0 || warehouseUpdateSchema.includes('warehouseCode:')) {
+  throw new Error('仓库编辑请求不得包含创建后不可修改的 warehouseCode');
+}
+const warehouseCreateStart = source.indexOf('    WarehouseCreateRequest:');
+const warehouseCreateEnd = source.indexOf('    WarehouseUpdateRequest:', warehouseCreateStart);
+if (warehouseCreateStart < 0 || warehouseCreateEnd < 0
+  || source.slice(warehouseCreateStart, warehouseCreateEnd).includes('warehouseCode:')) {
+  throw new Error('仓库创建请求不得包含由后端生成的 warehouseCode');
+}
+const warehouseFormTypeStart = warehouseTypeSource.indexOf('export interface WarehouseFormPayload');
+const warehouseFormTypeEnd = warehouseTypeSource.indexOf('export type WarehouseCreatePayload', warehouseFormTypeStart);
+if (warehouseFormTypeStart < 0 || warehouseFormTypeEnd < 0
+  || warehouseTypeSource.slice(warehouseFormTypeStart, warehouseFormTypeEnd).includes('warehouseCode:')) {
+  throw new Error('前端仓库创建和编辑 DTO 不得包含 warehouseCode');
+}
+for (const fragment of ['normalizeStringId', 'normalizeBinaryStatus', 'normalizeWarehousePage']) {
+  if (!warehouseApiSource.includes(fragment)) throw new Error(`仓库 API 缺少响应字段转换：${fragment}`);
+}
+for (const fragment of ['data-warehouse-code', '保存后由系统生成', 'warehouseDisableWarning', 'table-fixed']) {
+  if (!warehouseViewSource.includes(fragment)) throw new Error(`仓库管理页面缺少关键交互实现：${fragment}`);
+}
+if (!warehouseApiSource.includes('generateMockWarehouseCode()') || !source.includes('仓库编码由后端统一生成')) {
+  throw new Error('仓库编码的后端生成契约或 Mock 实现不完整');
+}
+for (const fragment of [
+  'availableQty 必须等于 stockQty - lockedQty',
+  "health === 'LOW_STOCK'",
+  "state === 'PARTIALLY_LOCKED'",
+  'inventoryHealth',
+  'reservationState',
+  'WarehouseStockSummary',
+  'stockRecordCount',
+  'warehouseCount',
+  'productCount',
+  'lowStockCount',
+]) {
+  if (!warehouseStockApiSource.includes(fragment) && !warehouseStockTypeSource.includes(fragment)) {
+    throw new Error(`库存管理前端契约缺少：${fragment}`);
+  }
+}
+for (const fragment of [
+  'stock_qty - locked_qty',
+  '0 < available_qty <= safety_stock_qty',
+  '不同单位的库存数量不得跨产品汇总',
+  "enum: [NORMAL, LOW_STOCK, NO_AVAILABLE, OUT_OF_STOCK]",
+  "enum: [UNLOCKED, PARTIALLY_LOCKED, FULLY_LOCKED]",
+  "data: { $ref: '#/components/schemas/WarehouseStockPage' }",
+]) {
+  if (!source.includes(fragment)) throw new Error(`库存管理 OpenAPI 缺少：${fragment}`);
+}
+if (!warehouseStockViewSource.includes('库存变更请通过出入库或库存调整业务完成')
+  || !warehouseStockViewSource.includes('filter-grid--stocks')
+  || !warehouseStockViewSource.includes('库存健康')
+  || !warehouseStockViewSource.includes('占用情况')
+  || !pageDesign.includes('## 15. 仓库库存模块：库存管理')) {
+  throw new Error('库存管理页面边界、响应式布局或页面设计文档不完整');
+}
+for (const fragment of [
+  'StockBillType',
+  'StockBillStatus',
+  'StockBillDetail',
+  'StockBillSummary',
+  'normalizeNullableStringId',
+  'normalizeStockBillItem',
+  'StockBillEntryMode',
+  'listStockBills',
+  'getStockBillDetail',
+  'createStockBill',
+  'updateStockBill',
+  'confirmStockBill',
+  'cancelStockBill',
+]) {
+  if (!stockBillApiSource.includes(fragment) && !stockBillTypeSource.includes(fragment)) {
+    throw new Error(`出入库记录前端契约缺少：${fragment}`);
+  }
+}
+for (const fragment of [
+  '按 `stock_bill_item.bill_id` 聚合返回 `itemCount`',
+  '列表不跨不同产品单位汇总数量',
+  'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
+  'enum: [DRAFT, CONFIRMED, CANCELLED]',
+  'enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]',
+  'name: entryMode',
+  '对应 `stock_bill.entry_mode`，使用精确匹配',
+  'required: [billType, sourceNo, warehouseId, manualReason, items, remark]',
+  'responsibleById',
+  'quantityPrecision',
+  "schema: { $ref: '#/components/schemas/StockBillCreateRequest' }",
+  "schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }",
+  '仅允许 `DRAFT -> CONFIRMED`',
+  '仅允许 `DRAFT -> CANCELLED`',
+  "data: { $ref: '#/components/schemas/StockBillPage' }",
+  "data: { $ref: '#/components/schemas/StockBillDetail' }",
+]) {
+  if (!source.includes(fragment)) throw new Error(`出入库记录 OpenAPI 缺少：${fragment}`);
+}
+if (!stockBillViewSource.includes('新增出入库')
+  || !stockBillViewSource.includes('手工补录')
+  || !stockBillViewSource.includes('responsibleByName')
+  || !stockBillViewSource.includes('itemQuantityStep')
+  || !stockBillViewSource.includes('handleConfirm(row)')
+  || !stockBillViewSource.includes('handleCancel(row)')
+  || !stockBillViewSource.includes('filter-grid--stock-bills')
+  || !stockBillViewSource.includes('entryModeOptions')
+  || !stockBillViewSource.includes('出入库凭证详情')
+  || !pageDesign.includes('## 16. 仓库库存模块：出入库记录')
+  || !warehouseSchema.includes('已确认凭证不能直接取消或改回草稿')
+  || !warehouseSchema.includes('100 倍整数存储')) {
+  throw new Error('出入库记录新增、编辑、状态流转、详情或页面设计文档不完整');
+}
+if (!stockBillViewSource.includes('entryModeOptions')
+  || !source.includes('查询库存调整凭证时，可提交 `entryMode=MANUAL_ADJUSTMENT`')
+  || !warehouseSchema.includes('库存调整不新增独立页面')) {
+  throw new Error('库存调整功能合并到出入库记录页面的契约或设计文档不完整');
+}
+if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
+  || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {
+  throw new Error('已完成列表页未统一接入刷新防抖和即时加载状态');
+}
+if (listViewSources.some(viewSource => !/function handleReset\(\) \{[\s\S]*?queryPending\.value = true;[\s\S]*?debouncedSearch\(\);[\s\S]*?\n\}/.test(viewSource))) {
+  throw new Error('已完成列表页未统一接入重置防抖和即时加载状态');
+}
+for (const fragment of [
+  '仓库编码创建后不可修改',
+  '同步 `warehouse_stock.warehouse_name`',
+  '存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时禁止删除',
+]) {
+  if (!source.includes(fragment) && !warehouseSchema.includes(fragment)) {
+    throw new Error(`仓库管理缺少后端业务边界：${fragment}`);
+  }
+}
+if (!source.includes('存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时返回 409')) {
+  throw new Error('仓库删除接口缺少 409 Conflict 引用保护契约');
+}
+if (!warehouseSql.includes('UNIQUE KEY uk_warehouse_code (warehouse_code)')) {
+  throw new Error('仓库表缺少仓库编码唯一索引');
+}
 if (!exclusiveDropdownSource.includes("erp:dropdown-open")
   || !anchoredSelectSource.includes('useExclusiveDropdown(open)')
   || !treeSelectSource.includes('useExclusiveDropdown(isOpen)')) {
@@ -235,4 +420,4 @@ for (const document of [databaseOverview, permissionSchema, projectPlan]) {
   }
 }
 
-console.log(`OPENAPI_OK: ${references.length} 个引用完整，21 张数据库表、系统权限、产品分类及产品档案契约已对齐`);
+console.log(`OPENAPI_OK: ${references.length} 个引用完整，21 张数据库表、系统权限、产品与仓库库存契约已对齐`);

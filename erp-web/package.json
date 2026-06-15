@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc --noEmit && vite build .",
     "preflight:frontend": "node scripts/frontend-preflight.cjs",
     "check:frontend-preflight": "node scripts/check-frontend-preflight.cjs",
     "hooks:install": "node scripts/install-git-hooks.cjs",
@@ -15,8 +15,11 @@
     "smoke:system-permissions": "node scripts/smoke-system-permissions.cjs",
     "smoke:product-categories": "node scripts/smoke-product-categories.cjs",
     "smoke:product-products": "node scripts/smoke-product-products.cjs",
+    "smoke:warehouse-warehouses": "node scripts/smoke-warehouse-warehouses.cjs",
+    "smoke:warehouse-stocks": "node scripts/smoke-warehouse-stocks.cjs",
+    "smoke:warehouse-stock-bills": "node scripts/smoke-warehouse-stock-bills.cjs",
     "check:openapi": "node scripts/check-openapi.cjs",
-    "test:delivery": "node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs",
+    "test:delivery": "node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-bills.cjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

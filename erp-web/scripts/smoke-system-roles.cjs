@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/roles',
@@ -9,13 +9,14 @@ runSmoke({
     await assertFixedTableLayout(page, 8);
     await page.getByText('SUPER_ADMIN').waitFor();
     await page.getByText('业务主管').waitFor();
+    await clickRefreshAndAssertLoading(page, 'smoke-system-roles-refresh-loading.png');
 
     await page.getByPlaceholder('如 SUPER_ADMIN').fill('BUSINESS_MANAGER');
     await clickQueryAndAssertLoading(page);
     await tableRow(page, 'SUPER_ADMIN').waitFor({ state: 'detached' });
     await tableRow(page, 'BUSINESS_MANAGER').waitFor();
     if (await tableRow(page, 'SUPER_ADMIN').count()) throw new Error('角色编码筛选未生效');
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-system-roles-reset-loading.png');
 
     const statusTrigger = page.locator('.filter-panel').getByRole('combobox');
     await statusTrigger.click();
@@ -24,7 +25,7 @@ runSmoke({
     await tableRow(page, 'SUPER_ADMIN').waitFor({ state: 'detached' });
     await tableRow(page, 'AI_ANALYST').waitFor();
     if (await tableRow(page, 'SUPER_ADMIN').count()) throw new Error('角色停用状态筛选未生效');
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const roleButtonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)
@@ -37,6 +38,7 @@ runSmoke({
     const createRoleDialog = page.getByRole('dialog', { name: '新增角色' });
     await createRoleDialog.waitFor();
     await assertRequiredLabels(createRoleDialog, ['角色编码', '角色名称', '启用状态', '权限码']);
+    await assertDialogScrollGutter(createRoleDialog);
     await createRoleDialog.getByRole('button', { name: '保存', exact: true }).click();
     const roleValidationText = await createRoleDialog.innerText();
     for (const message of ['请输入角色编码', '请输入角色名称', '请选择权限码']) {

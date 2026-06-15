@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/permissions',
@@ -9,6 +9,7 @@ runSmoke({
     await page.getByRole('heading', { name: '权限码配置' }).waitFor();
     await page.getByText('system:user:query', { exact: true }).waitFor();
     await assertFixedTableLayout(page, 9);
+    await clickRefreshAndAssertLoading(page, 'smoke-system-permissions-refresh-loading.png');
 
     const filterComboboxes = page.locator('.filter-panel').getByRole('combobox');
     await filterComboboxes.nth(0).click();
@@ -16,19 +17,19 @@ runSmoke({
     await clickQueryAndAssertLoading(page, path.resolve(__dirname, '..', 'smoke-query-loading.png'));
     await tableRow(page, 'system:user:query').waitFor({ state: 'detached' });
     await tableRow(page, 'ai:query:stock').waitFor();
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-system-permissions-reset-loading.png');
     await tableRow(page, 'system:user:query').waitFor();
 
     await page.getByPlaceholder('如 product:query').fill('system:user:query');
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'system:user:query').waitFor();
     await tableRow(page, 'system:user:manage').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
     await page.getByPlaceholder('请输入权限名称').first().fill('用户查询');
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'system:user:query').waitFor();
     await tableRow(page, 'system:role:query').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const buttonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)

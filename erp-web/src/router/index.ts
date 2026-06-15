@@ -10,6 +10,9 @@ import DeptManageView from '@/modules/system/depts/views/DeptManageView.vue';
 import PermissionManageView from '@/modules/system/permissions/views/PermissionManageView.vue';
 import ProductCategoryManageView from '@/modules/product/categories/views/ProductCategoryManageView.vue';
 import ProductManageView from '@/modules/product/products/views/ProductManageView.vue';
+import WarehouseManageView from '@/modules/warehouse/warehouses/views/WarehouseManageView.vue';
+import WarehouseStockManageView from '@/modules/warehouse/stocks/views/WarehouseStockManageView.vue';
+import StockBillManageView from '@/modules/warehouse/stock-bills/views/StockBillManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -100,22 +103,26 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'warehouse/warehouses',
         name: 'warehouse-list',
-        ...placeholder('仓库管理', '仓储库存', '维护仓库编码 名称 联系人 联系电话 地址和启用状态'),
+        component: WarehouseManageView,
+        meta: {
+          title: '仓库管理',
+        },
       },
       {
         path: 'warehouse/stocks',
         name: 'warehouse-stocks',
-        ...placeholder('库存管理', '仓储库存', '查询仓库和产品维度的当前库存 锁定库存和可用库存'),
+        component: WarehouseStockManageView,
+        meta: {
+          title: '库存管理',
+        },
       },
       {
         path: 'warehouse/stock-bills',
         name: 'warehouse-stock-bills',
-        ...placeholder('出入库记录', '仓储库存', '追踪采购入库 销售出库 退货和库存调整形成的库存变动凭证'),
-      },
-      {
-        path: 'warehouse/stock-adjustments',
-        name: 'warehouse-stock-adjustments',
-        ...placeholder('库存调整', '仓储库存', '处理盘盈 盘亏和其他人工库存调整动作'),
+        component: StockBillManageView,
+        meta: {
+          title: '出入库记录',
+        },
       },
       { path: 'purchase', redirect: '/purchase/suppliers' },
       {

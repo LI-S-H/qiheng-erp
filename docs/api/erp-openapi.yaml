@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: 启衡 ERP 接口文档
-  version: 0.3.0
+  version: 0.5.0
   description: |
     本文档用于启衡 ERP 前后端接口约定，可直接导入 Apifox 使用。
-    当前版本包含登录模块、系统权限模块、产品分类和产品档案管理模块。
+    当前版本包含登录模块、系统权限模块、产品模块、仓库管理和库存管理页面。
     MVP 阶段认证使用 Sa-Token 原始 token。登录接口返回 `token` 和 `tokenName`，前端后续请求必须使用返回的 `tokenName` 作为请求头名称、`token` 作为请求头值；当前默认配置为 `satoken`。
 servers:
   - url: http://localhost:8080/api
@@ -26,6 +26,10 @@ tags:
     description: 产品中心 - 产品分类管理
   - name: Product
     description: 产品中心 - 产品档案管理
+  - name: Warehouse
+    description: 仓储库存 - 仓库管理
+  - name: WarehouseStock
+    description: 仓储库存 - 当前库存余额查询
 paths:
   /auth/login:
     post:
@@ -1339,6 +1343,504 @@ paths:
                         items:
                           $ref: '#/components/schemas/DeptOption'
 
+  /warehouse/stocks:
+    get:
+      tags: [WarehouseStock]
+      summary: 分页查询当前库存
+      description: |
+        查询 `warehouse_stock` 当前库存余额，并关联 `product.safety_stock_qty` 用于库存健康判断。
+        `availableQty` 由服务层按 `stock_qty - locked_qty` 计算；不同单位的库存数量不得跨产品汇总。
+        仓库使用 `warehouseId` 精确匹配，产品编码和产品名称分别使用包含匹配；库存健康与占用情况是两个独立派生维度，多个有效条件按 AND 组合。
+        库存健康：`NORMAL` 表示 `available_qty > safety_stock_qty`，`LOW_STOCK` 表示 `0 < available_qty <= safety_stock_qty`，`NO_AVAILABLE` 表示 `stock_qty > 0` 且 `available_qty = 0`，`OUT_OF_STOCK` 表示 `stock_qty = 0`。
+        占用情况：`UNLOCKED` 表示 `locked_qty = 0`，`PARTIALLY_LOCKED` 表示 `0 < locked_qty < stock_qty`，`FULLY_LOCKED` 表示 `stock_qty > 0` 且 `locked_qty = stock_qty`。
+        上述状态均为查询时派生，不在 `warehouse_stock` 中增加单一状态字段。
+        本接口需要 `warehouse:query` 权限。
+      operationId: warehouseStockPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: warehouseId
+          in: query
+          schema: { type: string }
+          description: 仓库 ID，对应 `warehouse_stock.warehouse_id`，使用精确匹配
+        - name: productCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 产品编码，对应 `warehouse_stock.product_code`，使用包含匹配
+        - name: productName
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: 产品名称，对应 `warehouse_stock.product_name`，使用包含匹配
+        - name: inventoryHealth
+          in: query
+          schema:
+            type: string
+            enum: [NORMAL, LOW_STOCK, NO_AVAILABLE, OUT_OF_STOCK]
+          description: 库存健康，由可用库存、当前库存和产品安全库存派生
+        - name: reservationState
+          in: query
+          schema:
+            type: string
+            enum: [UNLOCKED, PARTIALLY_LOCKED, FULLY_LOCKED]
+          description: 占用情况，由当前库存和锁定库存派生
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WarehouseStockPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /warehouse/stock-bills:
+    get:
+      tags: [WarehouseStockBill]
+      summary: 分页查询出入库记录
+      description: |
+        查询 `stock_bill` 出入库流水主表，并按 `stock_bill_item.bill_id` 聚合返回 `itemCount`；列表不跨不同产品单位汇总数量。
+        流水号和来源单号分别使用包含匹配，仓库、出入库类型、录入方式和状态使用精确匹配，多个有效条件按 AND 组合。
+        查询库存调整凭证时，可提交 `entryMode=MANUAL_ADJUSTMENT`；调整方向使用 `billType=ADJUST_IN` 或 `billType=ADJUST_OUT` 进一步精确筛选。
+        列表摘要基于当前全部筛选结果统计单据数、入库单数、出库单数和已确认单数，不只统计当前分页。
+        入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`；出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`。
+        本接口只用于追溯库存凭证，不直接创建、确认或取消流水，需要 `warehouse:query` 权限。
+      operationId: stockBillPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: billNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 出入库流水号，对应 `stock_bill.bill_no`，使用包含匹配
+        - name: sourceNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 来源单号，对应 `stock_bill.source_no`，使用包含匹配
+        - name: warehouseId
+          in: query
+          schema: { type: string }
+          description: 仓库 ID，对应 `stock_bill.warehouse_id`，使用精确匹配
+        - name: billType
+          in: query
+          schema:
+            type: string
+            enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]
+          description: 出入库类型，对应 `stock_bill.bill_type`，使用精确匹配
+        - name: entryMode
+          in: query
+          schema:
+            type: string
+            enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]
+          description: 录入方式，对应 `stock_bill.entry_mode`，使用精确匹配；分别表示系统自动录入、人工补录和人工调整
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, CONFIRMED, CANCELLED]
+          description: 流水状态，对应 `stock_bill.status`，使用精确匹配
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [WarehouseStockBill]
+      summary: 新增手工出入库草稿
+      description: |
+        允许创建 `ADJUST_IN`、`ADJUST_OUT` 库存调整，或在原采购、销售、退货业务遗漏登记时补录对应出入库凭证。
+        非调整类型必须提交原业务单号和补录原因，后端设置 `entryMode=MANUAL_SUPPLEMENT`、按 `billType` 推导 `sourceType`，且 `sourceId` 为空；调整类型由后端生成调整单号并设置 `entryMode=MANUAL_ADJUSTMENT`。
+        `billNo`、负责人、创建人、创建时间和产品快照由后端生成或按当前登录上下文填充；负责人字段不接受前端提交。
+        保存后状态为 `DRAFT`，不立即改变库存；需要 `warehouse:manage` 权限。
+      operationId: stockBillCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockBillCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/stock-bills/{stockBillId}:
+    get:
+      tags: [WarehouseStockBill]
+      summary: 获取出入库记录详情
+      description: 返回 `stock_bill` 主表信息及按 `stock_bill_item.bill_id` 查询的全部明细，用于追溯来源单据、确认信息、产品数量和库存变动。本接口需要 `warehouse:query` 权限。
+      operationId: stockBillDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [WarehouseStockBill]
+      summary: 编辑出入库草稿
+      description: |
+        仅 `DRAFT` 状态允许编辑数量和备注。来源业务单据生成的草稿不能在本接口增删或更换产品，也不能修改来源、仓库和出入库类型；库存调整草稿允许维护产品明细。
+        流水号、来源信息、审计字段、变动前后库存均由后端维护，前端不得提交；需要 `warehouse:manage` 权限。
+      operationId: stockBillUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/stock-bills/{stockBillId}/confirm:
+    post:
+      tags: [WarehouseStockBill]
+      summary: 确认出入库
+      description: |
+        仅允许 `DRAFT -> CONFIRMED`。后端必须锁定出入库草稿和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已出入库数量。
+        已确认凭证不得直接改回草稿或取消；错误凭证通过反向库存调整纠正。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
+      operationId: stockBillConfirm
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      responses:
+        "200":
+          description: 确认成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/stock-bills/{stockBillId}/cancel:
+    post:
+      tags: [WarehouseStockBill]
+      summary: 取消出入库草稿
+      description: 仅允许 `DRAFT -> CANCELLED`，取消不改变库存，取消后的凭证保留追溯且不能再次编辑或确认。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
+      operationId: stockBillCancel
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      responses:
+        "200":
+          description: 取消成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/warehouses:
+    get:
+      tags: [Warehouse]
+      summary: 分页查询仓库
+      description: |
+        查询未删除的 `warehouse` 数据。仓库编码、仓库名称、联系人和联系电话分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
+        不接收含义不明确的 `keyword` 参数。本接口需要 `warehouse:query` 权限。
+      operationId: warehousePage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: warehouseCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 仓库编码，对应 `warehouse.warehouse_code`，使用包含匹配
+        - name: warehouseName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 仓库名称，对应 `warehouse.warehouse_name`，使用包含匹配
+        - name: contactName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 联系人，对应 `warehouse.contact_name`，使用包含匹配
+        - name: contactPhone
+          in: query
+          schema: { type: string, maxLength: 32 }
+          description: 联系电话，对应 `warehouse.contact_phone`，使用包含匹配
+        - name: status
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/WarehousePage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Warehouse]
+      summary: 新增仓库
+      description: 仓库编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交仓库编码；生成后的编码不可修改。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Warehouse' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/warehouses/batch/status:
+    patch:
+      tags: [Warehouse]
+      summary: 批量修改仓库状态
+      description: 停用后仓库不能再用于新建采购、销售、退货或库存调整业务，但历史单据和现有库存余额继续保留并可查询。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /warehouse/warehouses/batch/delete:
+    post:
+      tags: [Warehouse]
+      summary: 批量删除仓库
+      description: 批量逻辑删除仓库；任一仓库存在库存余额或出入库记录时整批返回 409，避免破坏库存与业务追溯链路。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/warehouses/{warehouseId}:
+    get:
+      tags: [Warehouse]
+      summary: 获取仓库详情
+      description: 本接口需要 `warehouse:query` 权限。
+      operationId: warehouseDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Warehouse' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Warehouse]
+      summary: 编辑仓库
+      description: 仓库编码创建后不可修改，编辑请求不接收 `warehouseCode`。仓库名称修改时，后端必须在同一事务内同步 `warehouse_stock.warehouse_name`，已生成的出入库凭证继续保留历史快照名称。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseUpdateRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Warehouse' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Warehouse]
+      summary: 删除仓库
+      description: 逻辑删除仓库；存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时返回 409。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/warehouses/{warehouseId}/status:
+    patch:
+      tags: [Warehouse]
+      summary: 修改仓库状态
+      description: 停用后仓库不能用于新业务单据和库存调整，历史单据与库存余额不受影响。本接口需要 `warehouse:manage` 权限。
+      operationId: warehouseStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WarehouseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WarehouseStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
   /products:
     get:
       tags: [Product]
@@ -1837,6 +2339,20 @@ components:
       schema:
         type: string
       description: 产品 ID，对应 `product.id`
+    WarehouseId:
+      name: warehouseId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 仓库 ID，对应 `warehouse.id`
+    StockBillId:
+      name: stockBillId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 出入库流水 ID，对应 `stock_bill.id`
   responses:
     BadRequest:
       description: 请求参数错误
@@ -2711,6 +3227,251 @@ components:
           type: integer
           enum: [0, 1]
 
+    WarehouseStockPage:
+      type: object
+      required: [records, total, pageNum, pageSize, summary]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/WarehouseStock' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        summary: { $ref: '#/components/schemas/WarehouseStockSummary' }
+
+    StockBillDraftItemRequest:
+      type: object
+      required: [productId, quantity, qualifiedQty, defectiveQty, remark]
+      properties:
+        stockBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
+        productId: { type: string, description: 产品 ID，后端保存当前产品编码、名称和单位快照 }
+        quantity: { type: number, format: double, exclusiveMinimum: 0, multipleOf: 0.01, description: 本次出入库业务真实值，最多两位小数；后端按产品数量精度校验并按 100 倍整数持久化 }
+        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的合格数量，其他类型传 0 }
+        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的不合格数量，其他类型传 0 }
+        remark: { type: string, maxLength: 500 }
+
+    StockBillCreateRequest:
+      type: object
+      required: [billType, sourceNo, warehouseId, manualReason, items, remark]
+      properties:
+        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 手工补录或库存调整类型 }
+        sourceNo: { type: string, maxLength: 64, description: 非调整类型必填原业务单号；调整类型传空字符串，由后端生成调整单号 }
+        warehouseId: { type: string, description: 启用状态的仓库 ID }
+        manualReason: { type: string, minLength: 1, maxLength: 500, description: 补录原因或库存调整原因，必填 }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/StockBillDraftItemRequest' }
+        remark: { type: string, maxLength: 500 }
+
+    StockBillUpdateRequest:
+      type: object
+      required: [sourceNo, manualReason, items, remark]
+      properties:
+        sourceNo: { type: string, maxLength: 64, description: 手工补录草稿可维护原业务单号；其他录入方式保持原值 }
+        manualReason: { type: string, maxLength: 500, description: 手工补录或调整草稿必填；来源生成草稿保持原值 }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/StockBillDraftItemRequest' }
+        remark: { type: string, maxLength: 500 }
+
+    StockBillPage:
+      type: object
+      required: [records, total, pageNum, pageSize, summary]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/StockBill' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        summary: { $ref: '#/components/schemas/StockBillSummary' }
+
+    StockBillSummary:
+      type: object
+      required: [stockBillCount, inboundCount, outboundCount, confirmedCount]
+      properties:
+        stockBillCount: { type: integer, minimum: 0, description: 当前筛选范围内出入库流水数 }
+        inboundCount: { type: integer, minimum: 0, description: 当前筛选范围内入库类型流水数 }
+        outboundCount: { type: integer, minimum: 0, description: 当前筛选范围内出库类型流水数 }
+        confirmedCount: { type: integer, minimum: 0, description: 当前筛选范围内状态为 CONFIRMED 的流水数 }
+
+    StockBill:
+      type: object
+      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, entryMode, warehouseId, warehouseName, status, itemCount, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, createdAt, updatedAt]
+      properties:
+        stockBillId: { type: string, description: 对应 `stock_bill.id`，BIGINT 按字符串传输 }
+        billNo: { type: string, maxLength: 64, description: 对应 `stock_bill.bill_no` }
+        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 对应 `stock_bill.bill_type` }
+        sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 对应 `stock_bill.source_type` }
+        sourceId: { type: string, nullable: true, description: 对应 `stock_bill.source_id`，BIGINT 按字符串传输 }
+        sourceNo: { type: string, maxLength: 64, description: 对应 `stock_bill.source_no` }
+        entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 对应 `stock_bill.entry_mode`，区分来源生成、手工补录和手工调整 }
+        warehouseId: { type: string, description: 对应 `stock_bill.warehouse_id`，BIGINT 按字符串传输 }
+        warehouseName: { type: string, maxLength: 100, description: 对应 `stock_bill.warehouse_name` }
+        status: { type: string, enum: [DRAFT, CONFIRMED, CANCELLED], description: 对应 `stock_bill.status` }
+        itemCount: { type: integer, minimum: 0, description: 按 `stock_bill_item.bill_id` 聚合的明细条数 }
+        confirmedById: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_by_id`，BIGINT 按字符串传输 }
+        confirmedByName: { type: string, maxLength: 100, description: 对应 `stock_bill.confirmed_by_name` }
+        confirmedAt: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_at` }
+        createdById: { type: string, nullable: true, description: 对应 `stock_bill.created_by_id`，BIGINT 按字符串传输 }
+        createdByName: { type: string, maxLength: 100, description: 对应 `stock_bill.created_by_name` }
+        responsibleById: { type: string, description: 对应 `stock_bill.responsible_by_id`；手工单据由后端取当前登录用户 }
+        responsibleByName: { type: string, maxLength: 100, description: 对应 `stock_bill.responsible_by_name` }
+        createdAt: { type: string, description: 对应 `stock_bill.created_at` }
+        updatedAt: { type: string, description: 对应 `stock_bill.updated_at` }
+
+    StockBillDetail:
+      allOf:
+        - $ref: '#/components/schemas/StockBill'
+        - type: object
+          required: [manualReason, remark, items]
+          properties:
+            manualReason: { type: string, maxLength: 500, description: 对应 `stock_bill.manual_reason`；来源生成凭证为空字符串 }
+            remark: { type: string, maxLength: 500, description: 对应 `stock_bill.remark` }
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/StockBillItem' }
+
+    StockBillItem:
+      type: object
+      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createdAt, updatedAt, remark]
+      properties:
+        stockBillItemId: { type: string, description: 对应 `stock_bill_item.id`，BIGINT 按字符串传输 }
+        stockBillId: { type: string, description: 对应 `stock_bill_item.bill_id`，BIGINT 按字符串传输 }
+        billNo: { type: string, maxLength: 64, description: 对应 `stock_bill_item.bill_no` }
+        sourceItemId: { type: string, nullable: true, description: 对应 `stock_bill_item.source_item_id`，BIGINT 按字符串传输 }
+        productId: { type: string, description: 对应 `stock_bill_item.product_id`，BIGINT 按字符串传输 }
+        productCode: { type: string, maxLength: 64, description: 对应 `stock_bill_item.product_code` }
+        productName: { type: string, maxLength: 200, description: 对应 `stock_bill_item.product_name` }
+        unitName: { type: string, maxLength: 32, description: 对应 `stock_bill_item.unit_name` }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应 `stock_bill_item.quantity_precision`，产品数量精度快照 }
+        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.quantity` 按 100 倍整数存储，Service 层负责转换 }
+        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.qualified_qty` 按 100 倍整数存储 }
+        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.defective_qty` 按 100 倍整数存储 }
+        beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.before_qty` 按 100 倍整数存储 }
+        changeQty: { type: number, format: double, multipleOf: 0.01, description: 业务真实值，入库为正、出库为负；数据库按 100 倍整数存储 }
+        afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.after_qty` 按 100 倍整数存储 }
+        createdAt: { type: string, description: 对应 `stock_bill_item.created_at` }
+        updatedAt: { type: string, description: 对应 `stock_bill_item.updated_at` }
+        remark: { type: string, maxLength: 500, description: 对应 `stock_bill_item.remark` }
+
+    WarehouseStock:
+      type: object
+      required: [stockId, warehouseId, warehouseCode, warehouseName, productId, productCode, productName, unitName, stockQty, lockedQty, availableQty, safetyStockQty, updatedAt]
+      properties:
+        stockId:
+          type: string
+          description: 库存 ID，对应 `warehouse_stock.id`，BIGINT 按字符串传输
+        warehouseId:
+          type: string
+          description: 仓库 ID，对应 `warehouse_stock.warehouse_id`，BIGINT 按字符串传输
+        warehouseCode: { type: string, maxLength: 64, description: 对应 `warehouse_stock.warehouse_code` }
+        warehouseName: { type: string, maxLength: 100, description: 对应 `warehouse_stock.warehouse_name` }
+        productId:
+          type: string
+          description: 产品 ID，对应 `warehouse_stock.product_id`，BIGINT 按字符串传输
+        productCode: { type: string, maxLength: 64, description: 对应 `warehouse_stock.product_code` }
+        productName: { type: string, maxLength: 200, description: 对应 `warehouse_stock.product_name` }
+        unitName: { type: string, maxLength: 32, description: 对应 `warehouse_stock.unit_name` }
+        stockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 当前库存业务真实值；数据库 `warehouse_stock.stock_qty` 按 100 倍整数存储 }
+        lockedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 锁定库存业务真实值；数据库 `warehouse_stock.locked_qty` 按 100 倍整数存储 }
+        availableQty: { type: number, format: double, minimum: 0, description: 服务层计算 `stock_qty - locked_qty` }
+        safetyStockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 安全库存业务真实值；数据库 `product.safety_stock_qty` 按 100 倍整数存储 }
+        updatedAt: { type: string, description: 对应 `warehouse_stock.updated_at` }
+
+    WarehouseStockSummary:
+      type: object
+      required: [stockRecordCount, warehouseCount, productCount, lowStockCount]
+      properties:
+        stockRecordCount: { type: integer, minimum: 0, description: 当前筛选范围内库存余额记录数 }
+        warehouseCount: { type: integer, minimum: 0, description: 当前筛选范围内去重仓库数 }
+        productCount: { type: integer, minimum: 0, description: 当前筛选范围内去重产品数 }
+        lowStockCount: { type: integer, minimum: 0, description: 当前筛选范围内 `0 < available_qty <= safety_stock_qty` 的记录数 }
+
+    WarehousePage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/Warehouse' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    Warehouse:
+      type: object
+      required: [warehouseId, warehouseCode, warehouseName, contactName, contactPhone, address, status, remark, createdAt, updatedAt]
+      properties:
+        warehouseId:
+          type: string
+          description: 仓库 ID，对应 `warehouse.id`，BIGINT 按字符串传输
+        warehouseCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          readOnly: true
+          description: 仓库编码，对应 `warehouse.warehouse_code`，由后端生成、全局唯一且创建后不可修改
+        warehouseName: { type: string, minLength: 1, maxLength: 100 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    WarehouseCreateRequest:
+      type: object
+      required: [warehouseName, contactName, contactPhone, address, status, remark]
+      properties:
+        warehouseName: { type: string, minLength: 1, maxLength: 100 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    WarehouseUpdateRequest:
+      type: object
+      required: [warehouseName, contactName, contactPhone, address, status, remark]
+      properties:
+        warehouseName: { type: string, minLength: 1, maxLength: 100 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    WarehouseStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: integer, enum: [0, 1] }
+
+    WarehouseBatchStatusRequest:
+      type: object
+      required: [warehouseIds, status]
+      properties:
+        warehouseIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status: { type: integer, enum: [0, 1] }
+
+    WarehouseBatchDeleteRequest:
+      type: object
+      required: [warehouseIds]
+      properties:
+        warehouseIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+
     ProductPage:
       type: object
       required: [records, total, pageNum, pageSize]
@@ -2731,6 +3492,7 @@ components:
         - categoryName
         - brandName
         - unitName
+        - quantityPrecision
         - specification
         - referencePurchasePrice
         - referenceSalePrice
@@ -2769,6 +3531,11 @@ components:
           type: string
           minLength: 1
           maxLength: 32
+        quantityPrecision:
+          type: integer
+          minimum: 0
+          maximum: 2
+          description: 产品数量允许的小数位，箱、瓶、个等离散单位通常为 0，最多保留两位小数
         specification:
           type: string
           maxLength: 255
@@ -2788,6 +3555,8 @@ components:
           type: number
           format: double
           minimum: 0
+          multipleOf: 0.01
+          description: 业务真实值；数据库按 100 倍整数存储
         status:
           type: integer
           enum: [0, 1]
@@ -2804,6 +3573,7 @@ components:
         - categoryId
         - brandName
         - unitName
+        - quantityPrecision
         - specification
         - barcode
         - referencePurchasePrice
@@ -2818,6 +3588,7 @@ components:
           nullable: true
         brandName: { type: string, maxLength: 100 }
         unitName: { type: string, minLength: 1, maxLength: 32 }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2 }
         specification: { type: string, maxLength: 255 }
         barcode:
           type: string
@@ -2825,7 +3596,7 @@ components:
           maxLength: 64
         referencePurchasePrice: { type: number, format: double, minimum: 0 }
         referenceSalePrice: { type: number, format: double, minimum: 0 }
-        safetyStockQty: { type: number, format: double, minimum: 0 }
+        safetyStockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库按 100 倍整数存储 }
         status: { type: integer, enum: [0, 1] }
         remark: { type: string, maxLength: 500 }
 

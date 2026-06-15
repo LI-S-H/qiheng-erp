@@ -30,6 +30,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type {
@@ -297,17 +298,14 @@ function handleSearch() {
 }
 
 function handleReset() {
-  if (loading.value) return;
+  if (queryBusy.value) return;
   query.categoryName = '';
   query.status = 'all';
-  appliedQuery.categoryName = '';
-  appliedQuery.status = 'all';
-  selectedIds.value = new Set();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
-function refreshList() {
-  if (!loading.value) fetchCategories();
-}
+const refreshList = useListRefresh(queryBusy, queryPending, fetchCategories);
 
 function resetForm() {
   editingCategoryId.value = '';
@@ -603,7 +601,7 @@ function confirmBatchDelete() {
             <TooltipContent>{{ selectedIds.size === 0 ? '请先选择分类' : '删除已选分类' }}</TooltipContent>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="loading" @click="refreshList">刷新</Button></span></TooltipTrigger>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger>
             <TooltipContent>重新加载分类列表</TooltipContent>
           </Tooltip>
         </div>

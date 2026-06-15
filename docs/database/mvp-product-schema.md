@@ -46,18 +46,19 @@
 | category_id | bigint | 产品分类ID |
 | brand_name | varchar(100) | 品牌名称 |
 | unit_name | varchar(32) | 单位名称，如 件、箱、kg |
+| quantity_precision | tinyint | 数量允许的小数位，0-2；箱、瓶、个等离散单位通常为 0 |
 | specification | varchar(255) | 规格型号 |
 | barcode | varchar(64) | 条码，可为空 |
 | reference_purchase_price | decimal(18,2) | 参考采购价 |
 | reference_sale_price | decimal(18,2) | 参考销售价 |
-| safety_stock_qty | decimal(18,4) | 安全库存数量，库存预警和采购建议可先参考 |
+| safety_stock_qty | bigint | 安全库存数量，按 100 倍整数存储，例如 12.50 存为 1250 |
 | status | tinyint | 状态：1 启用，0 禁用 |
 | created_at | datetime | 创建时间 |
 | updated_at | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
-关系说明：采购订单明细、销售订单明细、库存表后续都通过 `product_id` 关联本表，同时在业务单据明细中冗余 `product_code`、`product_name`、`unit_name`，保留历史快照并减少列表查询联表。`product` 是当前主数据，不冗余 `category_name`；分类展示名称按 `category_id` 关联查询，避免分类改名后产生双写和数据不一致。
+关系说明：采购订单明细、销售订单明细、库存表后续都通过 `product_id` 关联本表，同时在业务单据明细中冗余 `product_code`、`product_name`、`unit_name`、`quantity_precision`，保留历史快照并减少列表查询联表。`product` 是当前主数据，不冗余 `category_name`；分类展示名称按 `category_id` 关联查询，避免分类改名后产生双写和数据不一致。
 
 ## 表间关系
 
@@ -66,6 +67,7 @@
 ## MVP 业务规则
 
 - 产品编码 `product_code` 由后端在创建产品时统一生成，创建和编辑请求均不接收该字段；编码创建后不可修改，并由唯一索引兜底防止并发重复。编码用于导入、查询和业务单据展示。
+- 产品数量精度由 `quantity_precision` 统一控制，取值 0-2。箱、瓶、盒、个等不可拆分单位设为 0；kg、L、m 等可拆分单位按实际业务设置。数据库数量字段统一按 100 倍整数存储，例如 12.50 存为 1250；Service 层负责业务值与存储值转换，接口仍使用真实业务值 12.50。
 - 产品停用后不能新增采购、销售单据，但历史单据仍保留产品快照字段。
 - 产品允许暂不分类；启用产品一旦选择分类，该分类必须处于启用状态。新增、编辑、单条启用和批量启用都由 Service 层按最新分类状态校验，冲突返回 `409 Conflict`。
 - 产品已被库存、采购订单明细、销售订单明细或其他业务数据引用时禁止删除；批量删除中任一产品存在引用则整批拒绝并返回 `409 Conflict`。
@@ -89,3 +91,4 @@
 - 有库存或采购、销售业务引用的产品不能删除。
 - 已停用产品不能被新采购单或销售单选择。
 - 库存、采购、销售模块可以通过 `product_id` 引用产品。
+- 数量小数位为 0 时，安全库存和业务单据数量只能填写整数；设置为 2 时最多填写两位小数。

@@ -554,3 +554,173 @@ POST   /products/batch/delete
 ```
 
 查询接口需要 `product:query`，写接口需要 `product:manage`，认证请求头名称使用登录响应返回的 Sa-Token `tokenName`。
+
+## 14. 仓库库存模块：仓库管理
+
+### 14.1 页面范围
+
+仓库管理页面路径为 `/warehouse/warehouses`，包含仓库指标概览、仓库编码/仓库名称/联系人/联系电话/状态独立筛选、分页列表、新增与编辑、单条启停和删除、批量启停和批量删除。
+
+### 14.2 页面与数据边界
+
+- 页面字段全部来源于 `warehouse` 表，不要求后端返回前端可计算的展示字段。
+- 仓库编码、名称、联系人和联系电话分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合，不提供跨字段 `keyword`。
+- 仓库编码由后端创建时统一生成并由唯一索引兜底；新增弹窗只显示“保存后由系统生成”，创建和编辑请求都不提交 `warehouseCode`，编辑时仅只读展示已有编码。
+- 仓库名称修改时，后端在同一事务内同步 `warehouse_stock.warehouse_name`；历史 `stock_bill.warehouse_name` 继续作为业务发生时的快照保留。
+- 停用仓库前提示该仓库不能继续用于新建采购、销售、退货和库存调整业务，历史单据与现有库存不受影响；编辑弹窗内停用时底层表单进入 `inert` 状态。
+- 删除只允许无库存余额且无出入库记录的仓库；前端显示通用风险说明，后端执行最终关联校验并在存在引用时返回 `409 Conflict`。
+- 查询使用 250ms 防抖，分页使用 180ms 防抖；点击后立即显示数据区加载层并锁定重复操作，写操作统一使用提交锁。
+
+### 14.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 仓库ID | `warehouse.id`，BIGINT 按字符串传输 |
+| 仓库编码 | `warehouse.warehouse_code`，后端创建时生成，创建后只读 |
+| 仓库名称 | `warehouse.warehouse_name` |
+| 联系人、联系电话 | `warehouse.contact_name`、`warehouse.contact_phone` |
+| 仓库地址 | `warehouse.address` |
+| 状态、备注 | `warehouse.status`、`warehouse.remark` |
+| 创建、更新时间 | `warehouse.created_at`、`warehouse.updated_at` |
+
+### 14.4 接口
+
+```text
+GET    /warehouse/warehouses
+POST   /warehouse/warehouses
+GET    /warehouse/warehouses/{warehouseId}
+PUT    /warehouse/warehouses/{warehouseId}
+PATCH  /warehouse/warehouses/{warehouseId}/status
+DELETE /warehouse/warehouses/{warehouseId}
+PATCH  /warehouse/warehouses/batch/status
+POST   /warehouse/warehouses/batch/delete
+```
+
+查询接口需要 `warehouse:query`，写接口需要 `warehouse:manage`。仓库编码由后端生成并由唯一索引兜底，删除引用保护返回 `409 Conflict`。
+
+## 15. 仓库库存模块：库存管理
+
+### 15.1 页面范围
+
+库存管理页面路径为 `/warehouse/stocks`，用于只读查询仓库与产品维度的当前库存余额，包含库存记录摘要、仓库/产品编码/产品名称/库存健康/占用情况独立筛选、分页列表和刷新操作。库存变化必须由采购入库、销售出库、退货或库存调整形成，当前页不提供直接修改库存入口。
+
+### 15.2 页面与数据边界
+
+- 当前库存和锁定库存来源于 `warehouse_stock.stock_qty`、`warehouse_stock.locked_qty`，可用库存由服务层计算 `stock_qty - locked_qty`。
+- 安全库存来源于关联的 `product.safety_stock_qty`；低库存按 `0 < available_qty <= safety_stock_qty` 判断，不新增库存预警表。
+- 库存健康和占用情况是两个独立派生维度，不在 `warehouse_stock` 增加单一状态字段。同一条库存可同时显示“低库存 + 部分锁定”或“无可用库存 + 全部锁定”。
+- 风险行使用低饱和背景辅助识别：低库存和无可用库存使用浅黄色，零库存使用浅红色；状态标签仍保留对应文字，不能只依赖颜色表达。
+- 仓库使用 `warehouseId` 精确筛选，产品编码和产品名称分别使用包含匹配，库存健康和占用情况分别使用明确派生条件筛选，多个条件按 AND 组合，不提供跨字段 `keyword`。
+- 不同产品的单位可能不同，摘要区只展示库存记录数、涉及仓库数、涉及产品数和低库存记录数，不跨产品汇总库存数量。
+- 页面展示 `warehouse_stock` 中的仓库、产品和单位快照；产品或仓库名称变更时由后端按数据库规则维护当前余额快照，历史出入库凭证仍保留业务发生时快照。
+- 查询、重置、刷新和分页均使用短防抖，点击后立即显示数据区加载层并锁定重复操作。
+
+### 15.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 库存ID | `warehouse_stock.id`，BIGINT 按字符串传输 |
+| 仓库ID、编码、名称 | `warehouse_stock.warehouse_id`、`warehouse_code`、`warehouse_name` |
+| 产品ID、编码、名称 | `warehouse_stock.product_id`、`product_code`、`product_name` |
+| 单位 | `warehouse_stock.unit_name` |
+| 当前库存 | `warehouse_stock.stock_qty` |
+| 锁定库存 | `warehouse_stock.locked_qty` |
+| 可用库存 | 服务层计算 `stock_qty - locked_qty` |
+| 安全库存 | 关联 `product.safety_stock_qty` |
+| 库存健康 | 根据当前库存、可用库存和安全库存派生：正常、低库存、无可用库存、零库存 |
+| 占用情况 | 根据当前库存和锁定库存派生：未锁定、部分锁定、全部锁定 |
+| 更新时间 | `warehouse_stock.updated_at` |
+
+### 15.4 接口
+
+```text
+GET /warehouse/stocks
+```
+
+接口需要 `warehouse:query` 权限。响应摘要基于当前全部筛选结果计算，不得只统计当前分页记录。
+
+## 16. 仓库库存模块：出入库记录
+
+### 16.1 页面范围
+
+出入库记录页面路径为 `/warehouse/stock-bills`，用于处理出入库草稿并追溯采购入库、销售出库、采购退货、销售退货和库存调整形成的库存凭证。页面包含流水摘要、字段级筛选、分页列表、刷新、新增出入库、编辑草稿、确认、取消和凭证明细弹窗。
+
+### 16.2 页面与数据边界
+
+- 主列表来源于 `stock_bill`；明细条数由后端按 `stock_bill_item.bill_id` 聚合，详情按流水 ID 查询全部 `stock_bill_item`。
+- 流水号和来源单号分别使用包含匹配，仓库、出入库类型、录入方式和状态使用精确匹配；录入方式提供系统自动录入、人工补录、人工调整三项，多个有效条件按 AND 组合，不提供跨字段 `keyword`。
+- 入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`，出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`；状态严格使用数据库值 `DRAFT`、`CONFIRMED`、`CANCELLED`。
+- 摘要只统计流水数、入库流水数、出库流水数和已确认流水数。不同产品可能使用不同单位，列表和摘要不得跨明细汇总数量。
+- 详情展示 `quantity`、`qualified_qty`、`defective_qty`、`before_qty`、`change_qty` 和 `after_qty`；入库变动为正、出库变动为负，草稿和取消流水不应形成实际库存变动。
+- 仓库名称、产品编码、产品名称和单位使用业务发生时保存的快照字段，后续主数据改名不回写历史凭证。
+- 正常采购、销售和退货流水由来源单据生成；原业务遗漏登记时，新增按钮允许补录对应四类出入库草稿。补录必须填写原业务单号和补录原因，列表统一显示“人工录入”提示，详情展示具体“手工补录”方式，`source_id` 为空，来源类型由出入库类型推导。
+- 库存调整允许创建 `ADJUST_IN` 或 `ADJUST_OUT` 草稿，来源类型固定为 `STOCK_ADJUST`，流水号和调整单号由后端生成，调整原因必填。
+- 手工补录和库存调整的负责人由后端按当前登录用户写入，页面只读展示，不允许人工代填；列表中的创建信息排列在确认信息前。
+- 数量输入按产品 `quantity_precision` 控制步长和校验。箱、瓶等精度为 0 的产品按 1 增减且拒绝小数；kg 等精度为 2 的产品按 0.01 增减。接口传业务真实值，后端按 100 倍整数写入数据库。
+- 仅 `DRAFT` 行显示编辑、确认和取消。来源业务单据生成的草稿只能编辑实际数量、质量数量和备注；手工补录和库存调整草稿允许增删产品明细。确认和取消都使用独立写接口、提交锁和二次确认。
+- 状态不使用普通下拉任意修改，只允许 `DRAFT -> CONFIRMED` 或 `DRAFT -> CANCELLED`。确认接口在事务中更新库存和来源单据；已确认凭证出现错误时新增反向调整，不直接修改历史状态。
+- 查询、重置、刷新和分页均使用短防抖，点击后立即显示数据区加载层并锁定重复操作；详情加载使用独立状态。
+
+### 16.3 字段映射
+
+| 页面字段 | 后端来源 |
+|---|---|
+| 流水ID、流水号 | `stock_bill.id`、`stock_bill.bill_no`，BIGINT ID 按字符串传输 |
+| 出入库类型 | `stock_bill.bill_type` |
+| 来源类型、ID、单号 | `stock_bill.source_type`、`source_id`、`source_no` |
+| 录入方式 | `stock_bill.entry_mode`：来源生成、手工补录、手工调整 |
+| 仓库ID、名称 | `stock_bill.warehouse_id`、`warehouse_name` |
+| 状态 | `stock_bill.status` |
+| 明细数 | 按 `stock_bill_item.bill_id` 聚合 |
+| 确认人、确认时间 | `stock_bill.confirmed_by_id`、`confirmed_by_name`、`confirmed_at` |
+| 创建人、创建时间 | `stock_bill.created_by_id`、`created_by_name`、`created_at` |
+| 负责人、补录/调整原因 | `stock_bill.responsible_by_id`、`responsible_by_name`、`manual_reason` |
+| 产品及单位精度快照 | `stock_bill_item.product_id`、`product_code`、`product_name`、`unit_name`、`quantity_precision` |
+| 本次、合格、不合格数量 | `stock_bill_item.quantity`、`qualified_qty`、`defective_qty` |
+| 变动前、变动量、变动后 | `stock_bill_item.before_qty`、`change_qty`、`after_qty` |
+
+### 16.4 接口
+
+```text
+GET /warehouse/stock-bills
+POST /warehouse/stock-bills
+GET /warehouse/stock-bills/{stockBillId}
+PUT /warehouse/stock-bills/{stockBillId}
+POST /warehouse/stock-bills/{stockBillId}/confirm
+POST /warehouse/stock-bills/{stockBillId}/cancel
+```
+
+查询和详情需要 `warehouse:query` 权限，新增、编辑、确认和取消需要 `warehouse:manage` 权限。列表摘要基于当前全部筛选结果计算，详情必须返回完整主表信息和全部明细。
+
+## 17. 仓库库存模块：库存调整（合并至出入库记录）
+
+库存调整不新增独立页面，统一在出入库记录页面（`/warehouse/stock-bills`）中通过 `entryMode=MANUAL_ADJUSTMENT` 筛选调整凭证，用于处理盘盈、盘亏、破损、账实差异和其他需要人工修正库存的场景。
+
+### 17.1 数据与接口边界
+
+- 不新增库存调整专表，复用 `stock_bill` 与 `stock_bill_item`，查询调整凭证时提交 `entryMode=MANUAL_ADJUSTMENT`。
+- 调整类型只允许 `ADJUST_IN` 和 `ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`；调整流水号和调整单号由后端生成。
+- 出入库记录页面同时展示来源生成凭证、人工补录凭证和库存调整凭证，通过录入方式筛选区分。
+- 摘要基于全部筛选结果统计流水记录数、入库记录数、出库记录数和已确认数，不跨不同产品单位汇总数量。
+
+### 17.2 页面操作
+
+- 新增出入库时可选调整入库和调整出库，负责人由后端按当前登录用户写入，前端只读展示；调整原因和至少一条产品明细必填。
+- 数量输入继续按产品 `quantity_precision` 控制，接口传业务真实值，后端按 100 倍整数持久化。
+- 草稿允许编辑产品、数量、明细备注、调整原因和凭证备注；仓库、调整方向、流水号和调整单号创建后不可修改。
+- 确认使用独立动作和二次确认，后端在事务内校验库存并更新余额；取消只允许草稿执行且不改变库存。
+- 已确认调整不能直接取消或改回草稿，发现错误时创建相反方向的库存调整保留完整追溯链路。
+- 长表单和详情使用共享 `DialogScrollArea`，查询、刷新、重置和分页使用统一防抖加载层。
+
+### 17.3 接口
+
+库存调整复用出入库凭证接口，不新增重复端点：
+
+```text
+GET /warehouse/stock-bills?entryMode=MANUAL_ADJUSTMENT
+POST /warehouse/stock-bills
+GET /warehouse/stock-bills/{stockBillId}
+PUT /warehouse/stock-bills/{stockBillId}
+POST /warehouse/stock-bills/{stockBillId}/confirm
+POST /warehouse/stock-bills/{stockBillId}/cancel
+```

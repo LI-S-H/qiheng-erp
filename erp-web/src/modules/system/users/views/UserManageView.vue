@@ -42,6 +42,7 @@ import PromptDialog from '@/components/common/PromptDialog.vue';
 import MultiSelect from '@/components/common/MultiSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type {
   DeptOption,
@@ -180,10 +181,7 @@ function formatTableTime(value: string | null) {
   return value.slice(5, 16);
 }
 
-function refreshList() {
-  if (loading.value) return;
-  fetchUsers();
-}
+const refreshList = useListRefresh(queryBusy, queryPending, fetchUsers);
 
 const debouncedSearch = useDebounceFn(() => {
   query.pageNum = 1;
@@ -215,9 +213,10 @@ function handlePageSizeChange(pageSize: number) {
 }
 
 function handleReset() {
-  if (loading.value) return;
+  if (queryBusy.value) return;
   query.username = ''; query.realName = ''; query.deptId = 'all'; query.roleId = 'all'; query.status = 'all'; query.pageNum = 1;
-  fetchUsers();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
 function toggleSelectAll() {
@@ -597,7 +596,7 @@ function handleDelete(row: SystemUserListItem) {
           </Tooltip>
           <Tooltip>
             <TooltipTrigger as-child>
-              <span class="inline-flex"><Button size="sm" variant="outline" :disabled="loading" @click="refreshList">刷新</Button></span>
+              <span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span>
             </TooltipTrigger>
             <TooltipContent>重新加载账号列表</TooltipContent>
           </Tooltip>

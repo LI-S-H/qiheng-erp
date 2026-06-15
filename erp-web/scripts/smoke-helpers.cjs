@@ -104,6 +104,36 @@ async function assertRequiredLabels(dialog, labels) {
   }
 }
 
+async function assertDialogScrollGutter(dialog, minimumGap = 8, requireScrollbar = false) {
+  const scrollArea = dialog.locator('[data-dialog-scroll-area]').first();
+  await scrollArea.waitFor();
+  await scrollArea.hover();
+  await dialog.page().waitForTimeout(120);
+  const state = await scrollArea.evaluate((element) => {
+    const content = element.querySelector('[data-slot="dialog-scroll-content"]');
+    const scrollbar = element.querySelector('[data-slot="scroll-area-scrollbar"]');
+    if (!content) return null;
+
+    const contentRect = content.getBoundingClientRect();
+    const scrollbarRect = scrollbar?.getBoundingClientRect();
+    const paddingRight = Number.parseFloat(getComputedStyle(content).paddingRight) || 0;
+    const scrollbarLeft = scrollbarRect && scrollbarRect.width > 0
+      ? scrollbarRect.left
+      : element.getBoundingClientRect().right;
+    return {
+      gap: scrollbarLeft - (contentRect.right - paddingRight),
+      paddingRight,
+      scrollbarWidth: scrollbarRect?.width || 0,
+    };
+  });
+  if (!state || state.gap < minimumGap) {
+    throw new Error(`长弹窗内容与滚动条间距不足：${JSON.stringify(state)}`);
+  }
+  if (requireScrollbar && state.scrollbarWidth <= 0) {
+    throw new Error(`长弹窗在内容溢出时未显示滚动条：${JSON.stringify(state)}`);
+  }
+}
+
 async function clickQueryAndAssertLoading(page, screenshotPath) {
   await page.getByRole('button', { name: '查询', exact: true }).click();
   const overlay = page.locator('[data-list-loading]');
@@ -138,4 +168,35 @@ async function clickPaginationAndAssertLoading(page, label) {
   await overlay.waitFor({ state: 'hidden', timeout: 5000 });
 }
 
-module.exports = { baseUrl, runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading };
+async function clickRefreshAndAssertLoading(page, screenshotPath) {
+  const refreshButton = page.getByRole('button', { name: '刷新', exact: true });
+  await refreshButton.click();
+  const overlay = page.locator('[data-list-loading]');
+  await overlay.waitFor({ state: 'visible', timeout: 1000 });
+  if (!(await refreshButton.isDisabled())) throw new Error('刷新进行中按钮未禁用');
+  if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
+  await overlay.waitFor({ state: 'hidden', timeout: 5000 });
+}
+
+async function clickResetAndAssertLoading(page, screenshotPath) {
+  const resetButton = page.getByRole('button', { name: '重置', exact: true });
+  await resetButton.click();
+  const overlay = page.locator('[data-list-loading]');
+  await overlay.waitFor({ state: 'visible', timeout: 1000 });
+  if (!(await resetButton.isDisabled())) throw new Error('重置查询进行中按钮未禁用');
+  if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
+  await overlay.waitFor({ state: 'hidden', timeout: 5000 });
+}
+
+module.exports = {
+  baseUrl,
+  runSmoke,
+  tableRow,
+  assertFixedTableLayout,
+  assertRequiredLabels,
+  assertDialogScrollGutter,
+  clickQueryAndAssertLoading,
+  clickPaginationAndAssertLoading,
+  clickRefreshAndAssertLoading,
+  clickResetAndAssertLoading,
+};

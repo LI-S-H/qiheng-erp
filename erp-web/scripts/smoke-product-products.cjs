@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/product/products',
@@ -9,12 +9,13 @@ runSmoke({
     await assertFixedTableLayout(page, 10);
     await page.getByText('经典原味苏打水', { exact: true }).waitFor();
     await page.getByText('饮料冲调', { exact: true }).first().waitFor();
+    await clickRefreshAndAssertLoading(page, 'smoke-product-products-refresh-loading.png');
 
     await page.getByPlaceholder('请输入产品名称').first().fill('A4');
     await clickQueryAndAssertLoading(page, 'smoke-product-products-query-loading.png');
     await tableRow(page, 'P0007').waitFor();
     await tableRow(page, 'P0001').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-product-products-reset-loading.png');
     await tableRow(page, 'P0001').waitFor();
 
     const filterPanel = page.locator('.filter-grid--products');
@@ -35,14 +36,14 @@ runSmoke({
     await tableRow(page, 'P0007').waitFor();
     await tableRow(page, 'P0008').waitFor();
     await tableRow(page, 'P0005').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     await page.getByPlaceholder('请输入品牌名称').fill('森纸');
     await page.getByPlaceholder('请输入完整条码').fill('6901000000073');
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'P0007').waitFor();
     await tableRow(page, 'P0008').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const queryInput = page.getByPlaceholder('请输入产品名称').first();
     await queryInput.click();
@@ -68,6 +69,7 @@ runSmoke({
     await page.getByRole('button', { name: '新增产品' }).click();
     const createDialog = page.getByRole('dialog', { name: '新增产品' });
     await assertRequiredLabels(createDialog, ['产品名称', '单位名称', '启用状态']);
+    await assertDialogScrollGutter(createDialog);
     const productCodeDisplay = createDialog.locator('[data-product-code-display]');
     if (await productCodeDisplay.inputValue() !== '保存后由系统生成' || !await productCodeDisplay.evaluate(element => element.hasAttribute('readonly'))) {
       throw new Error('新增产品的产品编码必须由系统生成并以只读方式提示');
@@ -86,8 +88,10 @@ runSmoke({
     if (await page.locator('[data-anchored-select-content][data-state="open"]').count() !== 1) {
       throw new Error('打开产品分类后应且仅应存在一个下拉弹层');
     }
-    await unitSelect.evaluate(element => element.click());
-    await page.waitForTimeout(100);
+    await page.keyboard.press('Escape');
+    await page.locator('[data-anchored-select-content][data-state="open"]').waitFor({ state: 'hidden' });
+    await unitSelect.click();
+    await page.locator('[data-anchored-select-content][data-state="open"]').waitFor();
     const openDropdownCount = await page.locator('[data-anchored-select-content][data-state="open"]').count();
     if (openDropdownCount !== 1 || await categorySelect.getAttribute('aria-expanded') !== 'false' || await unitSelect.getAttribute('aria-expanded') !== 'true') {
       throw new Error(`下拉弹层未互斥：open=${openDropdownCount}`);
@@ -113,10 +117,10 @@ runSmoke({
     await page.getByText('产品已创建', { exact: true }).waitFor();
     await page.getByPlaceholder('请输入产品名称').first().fill('系统编码测试产品');
     await page.getByRole('button', { name: '查询', exact: true }).click();
-    const uncategorizedRow = tableRow(page, 'P0015');
+    const uncategorizedRow = tableRow(page, 'P0016');
     await uncategorizedRow.waitFor();
     await uncategorizedRow.getByText('未分类', { exact: true }).waitFor();
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const referencedRow = tableRow(page, 'P0001');
     await referencedRow.getByRole('button', { name: '删除' }).click();

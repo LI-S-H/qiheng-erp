@@ -8,6 +8,7 @@ export interface ProductListItem {
   categoryName: string | null;
   brandName: string;
   unitName: string;
+  quantityPrecision: number;
   specification: string;
   barcode: string | null;
   referencePurchasePrice: number;
@@ -35,6 +36,7 @@ export interface ProductFormPayload {
   categoryId: string | null;
   brandName: string;
   unitName: string;
+  quantityPrecision: number;
   specification: string;
   barcode: string | null;
   referencePurchasePrice: number;

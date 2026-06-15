@@ -25,6 +25,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogScrollArea,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -33,6 +34,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type { RoleStatus, SystemRoleFormPayload, SystemRoleListItem, SystemRoleQuery } from '../types';
 import { listSystemRoles, createSystemRole, updateSystemRole, updateSystemRolePermissions, deleteSystemRole, batchUpdateSystemRoleStatus, batchDeleteSystemRoles } from '../api';
@@ -177,12 +179,13 @@ function handlePageSizeChange(pageSize: number) {
 }
 
 function handleReset() {
-  if (loading.value) return;
+  if (queryBusy.value) return;
   query.roleCode = ''; query.roleName = ''; query.status = 'all'; query.pageNum = 1;
-  fetchRoles();
+  queryPending.value = true;
+  debouncedSearch();
 }
 
-function refreshList() { if (!loading.value) fetchRoles(); }
+const refreshList = useListRefresh(queryBusy, queryPending, fetchRoles);
 
 function toggleSelectAll() {
   if (allSelected.value) {
@@ -495,7 +498,7 @@ function togglePermForm(code: string, checked: boolean) {
             <TooltipContent>{{ selectedIds.size === 0 ? '请先选择角色' : '删除已选角色' }}</TooltipContent>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="loading" @click="refreshList">刷新</Button></span></TooltipTrigger>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger>
             <TooltipContent>重新加载角色列表</TooltipContent>
           </Tooltip>
         </div>
@@ -605,7 +608,7 @@ function togglePermForm(code: string, checked: boolean) {
           <DialogTitle>{{ dialogMode === 'create' ? '新增角色' : '编辑角色' }}</DialogTitle>
           <DialogDescription>填写角色信息和权限码</DialogDescription>
         </DialogHeader>
-        <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-3">
+        <DialogScrollArea>
           <div class="space-y-4 py-2">
             <div class="space-y-1">
               <Label>角色编码 <span class="text-destructive">*</span></Label>
@@ -657,7 +660,7 @@ function togglePermForm(code: string, checked: boolean) {
               <p v-if="formErrors.remark" class="text-xs text-destructive">{{ formErrors.remark }}</p>
             </div>
           </div>
-        </ScrollArea>
+        </DialogScrollArea>
         <DialogFooter>
           <Button variant="outline" :disabled="formSubmitting" @click="roleDialogVisible = false">取消</Button>
           <Button :disabled="formSubmitting" @click="submitRoleForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button>
@@ -689,7 +692,7 @@ function togglePermForm(code: string, checked: boolean) {
             </AlertDescription>
           </Alert>
 
-          <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-2">
+          <DialogScrollArea>
             <div class="space-y-3">
               <div v-for="group in getPermissionGroupsForRole(permissionPreviewRole)" :key="group.group" class="p-3 bg-muted/30 border border-border rounded-lg">
                 <div class="text-xs font-bold mb-2">{{ group.group }}</div>
@@ -701,7 +704,7 @@ function togglePermForm(code: string, checked: boolean) {
                 </div>
               </div>
             </div>
-          </ScrollArea>
+          </DialogScrollArea>
         </div>
         <DialogFooter>
           <Button variant="outline" @click="permissionPreviewVisible = false">关闭</Button>
@@ -716,7 +719,7 @@ function togglePermForm(code: string, checked: boolean) {
           <DialogTitle>权限配置</DialogTitle>
           <DialogDescription>为角色配置权限码</DialogDescription>
         </DialogHeader>
-        <ScrollArea class="dialog-scroll-area min-h-0 flex-1 pr-3">
+        <DialogScrollArea>
           <div class="space-y-4 py-2">
             <div class="space-y-1">
               <Label>当前角色</Label>
@@ -742,7 +745,7 @@ function togglePermForm(code: string, checked: boolean) {
               <p v-if="permFormErrors.permissionCodes" class="text-xs text-destructive">{{ permFormErrors.permissionCodes }}</p>
             </div>
           </div>
-        </ScrollArea>
+        </DialogScrollArea>
         <DialogFooter>
           <Button variant="outline" :disabled="permissionSubmitting" @click="permissionDialogVisible = false">取消</Button>
           <Button :disabled="permissionSubmitting" @click="submitPermissionForm">{{ permissionSubmitting ? '保存中...' : '保存' }}</Button>

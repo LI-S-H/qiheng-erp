@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/product/categories',
@@ -10,6 +10,7 @@ runSmoke({
     await page.getByText('无上级分类').first().waitFor();
     await page.getByText('饮料冲调', { exact: true }).waitFor();
     await page.getByText('食品饮料 / 饮料冲调', { exact: true }).waitFor();
+    await clickRefreshAndAssertLoading(page, 'smoke-product-categories-refresh-loading.png');
 
     const treeToggle = page.getByRole('button', { name: '收起当前分类' }).first();
     const toggleStyle = await treeToggle.evaluate(element => {
@@ -24,7 +25,7 @@ runSmoke({
     await clickQueryAndAssertLoading(page);
     await tableRow(page, '食品饮料').waitFor({ state: 'detached' });
     await tableRow(page, '办公用品').waitFor();
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page, 'smoke-product-categories-reset-loading.png');
     await tableRow(page, '书写文具').waitFor();
 
     const statusTrigger = page.locator('.filter-panel').getByRole('combobox');
@@ -34,7 +35,7 @@ runSmoke({
     await tableRow(page, '办公用品').waitFor({ state: 'detached' });
     await tableRow(page, '电子配件').waitFor();
     await tableRow(page, '电脑周边').waitFor();
-    await page.getByRole('button', { name: '重置', exact: true }).click();
+    await clickResetAndAssertLoading(page);
 
     const buttonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)

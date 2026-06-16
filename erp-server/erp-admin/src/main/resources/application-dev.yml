@@ -1,0 +1,40 @@
+spring:
+  # MySQL
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/erp?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: root
+    password: 123456
+  # Redis
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+# RocketMQ
+rocketmq:
+  name-server: localhost:9876
+  producer:
+    group: erp-producer-group
+    send-message-timeout: 3000
+    retry-times-when-send-failed: 2
+
+# MyBatis-Plus 开发环境打印 SQL
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# Spring AI Alibaba（开发 AI 模块时启用）
+# spring:
+#   ai:
+#     dashscope:
+#       api-key: sk-xxx
+#       chat:
+#         options:
+#           model: qwen-plus

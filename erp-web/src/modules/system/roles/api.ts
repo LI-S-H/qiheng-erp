@@ -18,31 +18,31 @@ let mockRoles: SystemRoleListItem[] = [
   {
     roleId: '1900000000000001001', roleCode: 'SUPER_ADMIN', roleName: '超级管理员',
     permissionCodes: ['*'], status: 1, remark: '拥有系统全部访问和维护权限',
-    userCount: 1, createdAt: '2026-06-05 20:30:00', updatedAt: '2026-06-08 09:12:30',
+    userCount: 1, createTime: '2026-06-05 20:30:00', updateTime: '2026-06-08 09:12:30',
   },
   {
     roleId: '1900000000000001002', roleCode: 'SYSTEM_ADMIN', roleName: '系统管理员',
     permissionCodes: ['system:user:query', 'system:user:manage', 'system:role:query', 'system:role:manage'],
     status: 1, remark: '维护账号、角色和基础权限配置',
-    userCount: 0, createdAt: '2026-06-05 21:00:00', updatedAt: '2026-06-07 16:20:00',
+    userCount: 0, createTime: '2026-06-05 21:00:00', updateTime: '2026-06-07 16:20:00',
   },
   {
     roleId: '1900000000000001003', roleCode: 'BUSINESS_MANAGER', roleName: '业务主管',
     permissionCodes: ['product:query', 'supplier:query', 'purchase:query', 'customer:query', 'sales:query'],
     status: 1, remark: '查看产品、采购和销售主线数据',
-    userCount: 2, createdAt: '2026-06-06 10:18:22', updatedAt: '2026-06-07 13:00:00',
+    userCount: 2, createTime: '2026-06-06 10:18:22', updateTime: '2026-06-07 13:00:00',
   },
   {
     roleId: '1900000000000001004', roleCode: 'WAREHOUSE_OPERATOR', roleName: '仓库操作员',
     permissionCodes: ['product:query', 'warehouse:query', 'warehouse:manage', 'ai:query:stock'],
     status: 1, remark: '处理仓储库存查询和出入库相关操作',
-    userCount: 1, createdAt: '2026-06-06 11:05:19', updatedAt: '2026-06-06 11:05:19',
+    userCount: 1, createTime: '2026-06-06 11:05:19', updateTime: '2026-06-06 11:05:19',
   },
   {
     roleId: '1900000000000001005', roleCode: 'AI_ANALYST', roleName: '智能分析员',
     permissionCodes: ['ai:query:stock', 'ai:query:sales', 'ai:query:purchase', 'ai:decision:suggest'],
     status: 0, remark: '用于后续智能经营分析试点',
-    userCount: 0, createdAt: '2026-06-07 09:40:00', updatedAt: '2026-06-07 09:40:00',
+    userCount: 0, createTime: '2026-06-07 09:40:00', updateTime: '2026-06-07 09:40:00',
   },
 ];
 
@@ -95,8 +95,8 @@ export function createSystemRole(payload: SystemRoleFormPayload) {
       status: payload.status,
       remark: payload.remark,
       userCount: 0,
-      createdAt: now,
-      updatedAt: now,
+      createTime: now,
+      updateTime: now,
     };
     mockRoles = [newRole, ...mockRoles];
     return Promise.resolve(newRole);
@@ -114,7 +114,7 @@ export async function updateSystemRole(roleId: string, payload: SystemRoleFormPa
       r.roleId === roleId ? {
         ...r, roleCode: payload.roleCode, roleName: payload.roleName,
         permissionCodes: [...payload.permissionCodes], status: payload.status,
-        remark: payload.remark, updatedAt: now,
+        remark: payload.remark, updateTime: now,
       } : r,
     );
     return mockRoles.find(r => r.roleId === roleId) as SystemRoleListItem;
@@ -126,7 +126,7 @@ export async function updateSystemRole(roleId: string, payload: SystemRoleFormPa
 export async function updateSystemRoleStatus(roleId: string, status: RoleStatus) {
   if (useMockApi) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    mockRoles = mockRoles.map(r => r.roleId === roleId ? { ...r, status, updatedAt: now } : r);
+    mockRoles = mockRoles.map(r => r.roleId === roleId ? { ...r, status, updateTime: now } : r);
     return null;
   }
   const response = await http.patch(`/system/roles/${roleId}/status`, { status });
@@ -137,7 +137,7 @@ export async function updateSystemRolePermissions(roleId: string, payload: RoleP
   if (useMockApi) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     mockRoles = mockRoles.map(r =>
-      r.roleId === roleId ? { ...r, permissionCodes: [...payload.permissionCodes], updatedAt: now } : r,
+      r.roleId === roleId ? { ...r, permissionCodes: [...payload.permissionCodes], updateTime: now } : r,
     );
     return null;
   }
@@ -158,7 +158,7 @@ export async function batchUpdateSystemRoleStatus(payload: RoleBatchStatusPayloa
   if (useMockApi) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     mockRoles = mockRoles.map(r =>
-      payload.roleIds.includes(r.roleId) ? { ...r, status: payload.status, updatedAt: now } : r,
+      payload.roleIds.includes(r.roleId) ? { ...r, status: payload.status, updateTime: now } : r,
     );
     return null;
   }

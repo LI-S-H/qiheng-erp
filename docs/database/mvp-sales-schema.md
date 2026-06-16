@@ -26,8 +26,8 @@
 | address | varchar(255) | 地址 |
 | credit_limit | decimal(18,2) | 信用额度，MVP 先仅记录不做强拦截 |
 | status | tinyint | 状态：1 启用，0 禁用 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -54,8 +54,8 @@
 | approved_by_id | bigint | 审核人ID |
 | approved_by_name | varchar(100) | 审核人姓名 |
 | approved_at | datetime | 审核时间 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -77,8 +77,8 @@
 | outbound_qty | decimal(18,4) | 已出库数量 |
 | unit_price | decimal(18,2) | 销售单价 |
 | total_amount | decimal(18,2) | 明细金额 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | remark | varchar(500) | 备注 |
 
 关系说明：仓库出入库流水明细 `stock_bill_item.source_item_id` 关联本表，用于从销售出库动作追溯到销售订单明细。

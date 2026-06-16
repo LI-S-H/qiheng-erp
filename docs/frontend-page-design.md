@@ -164,8 +164,8 @@ sys_user_role
 | 超级管理员 | `sys_user.is_admin` |
 | 状态 | `sys_user.status` |
 | 最近登录 | `sys_user.last_login_at` |
-| 创建时间 | `sys_user.created_at` |
-| 更新时间 | `sys_user.updated_at` |
+| 创建时间 | `sys_user.create_time` |
+| 更新时间 | `sys_user.update_time` |
 | 绑定角色 | `sys_user_role` 关联 `sys_role` |
 
 ### 7.4 接口设计考虑
@@ -263,8 +263,8 @@ sys_user_role
 | 权限码 | `sys_role.permission_codes` |
 | 状态 | `sys_role.status` |
 | 备注 | `sys_role.remark` |
-| 创建时间 | `sys_role.created_at` |
-| 更新时间 | `sys_role.updated_at` |
+| 创建时间 | `sys_role.create_time` |
+| 更新时间 | `sys_role.update_time` |
 | 绑定用户数 | `sys_user_role` 按 `role_id` 聚合 |
 
 ### 8.4 接口设计考虑
@@ -359,8 +359,8 @@ sys_user
 | 祖级路径 | `sys_dept.ancestors`，接口可原样返回；页面展示路径由前端按 `parent_id` 递归计算 |
 | 部门名称 | `sys_dept.dept_name` |
 | 状态 | `sys_dept.status` |
-| 创建时间 | `sys_dept.created_at` |
-| 更新时间 | `sys_dept.updated_at` |
+| 创建时间 | `sys_dept.create_time` |
+| 更新时间 | `sys_dept.update_time` |
 | 员工数量 | `sys_user` 按 `dept_id` 聚合，接口字段暂沿用 `userCount` |
 
 ### 9.4 接口设计考虑
@@ -484,8 +484,8 @@ product
 | 上级分类ID | `product_category.parent_id` |
 | 分类名称 | `product_category.category_name` |
 | 状态 | `product_category.status` |
-| 创建时间 | `product_category.created_at` |
-| 更新时间 | `product_category.updated_at` |
+| 创建时间 | `product_category.create_time` |
+| 更新时间 | `product_category.update_time` |
 | 产品数量 | `product` 按 `category_id` 聚合未删除产品数量，只统计直接关联产品 |
 | 上级分类名称 | 前端根据扁平分类数组映射 |
 | 层级路径 | 前端根据 `parentId` 递归计算 |
@@ -537,7 +537,7 @@ POST   /product/categories/batch/delete
 | 品牌、单位、规格、条码 | `product.brand_name`、`unit_name`、`specification`、`barcode` |
 | 参考采购价、参考销售价 | `product.reference_purchase_price`、`reference_sale_price` |
 | 安全库存 | `product.safety_stock_qty` |
-| 状态、备注、时间 | `product.status`、`remark`、`created_at`、`updated_at` |
+| 状态、备注、时间 | `product.status`、`remark`、`create_time`、`update_time` |
 | 分类层级路径 | 前端根据分类扁平数组计算，不要求产品接口返回 |
 
 ### 13.4 接口
@@ -581,7 +581,7 @@ POST   /products/batch/delete
 | 联系人、联系电话 | `warehouse.contact_name`、`warehouse.contact_phone` |
 | 仓库地址 | `warehouse.address` |
 | 状态、备注 | `warehouse.status`、`warehouse.remark` |
-| 创建、更新时间 | `warehouse.created_at`、`warehouse.updated_at` |
+| 创建、更新时间 | `warehouse.create_time`、`warehouse.update_time` |
 
 ### 14.4 接口
 
@@ -629,7 +629,7 @@ POST   /warehouse/warehouses/batch/delete
 | 安全库存 | 关联 `product.safety_stock_qty` |
 | 库存健康 | 根据当前库存、可用库存和安全库存派生：正常、低库存、无可用库存、零库存 |
 | 占用情况 | 根据当前库存和锁定库存派生：未锁定、部分锁定、全部锁定 |
-| 更新时间 | `warehouse_stock.updated_at` |
+| 更新时间 | `warehouse_stock.update_time` |
 
 ### 15.4 接口
 
@@ -673,7 +673,7 @@ GET /warehouse/stocks
 | 状态 | `stock_bill.status` |
 | 明细数 | 按 `stock_bill_item.bill_id` 聚合 |
 | 确认人、确认时间 | `stock_bill.confirmed_by_id`、`confirmed_by_name`、`confirmed_at` |
-| 创建人、创建时间 | `stock_bill.created_by_id`、`created_by_name`、`created_at` |
+| 创建人、创建时间 | `stock_bill.created_by_id`、`created_by_name`、`create_time` |
 | 负责人、补录/调整原因 | `stock_bill.responsible_by_id`、`responsible_by_name`、`manual_reason` |
 | 产品及单位精度快照 | `stock_bill_item.product_id`、`product_code`、`product_name`、`unit_name`、`quantity_precision` |
 | 本次、合格、不合格数量 | `stock_bill_item.quantity`、`qualified_qty`、`defective_qty` |

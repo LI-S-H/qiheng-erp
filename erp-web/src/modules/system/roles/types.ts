@@ -8,8 +8,8 @@ export interface SystemRoleListItem {
   status: RoleStatus;
   remark: string;
   userCount: number;
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
 }
 
 export interface SystemRoleQuery {

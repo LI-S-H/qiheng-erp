@@ -56,8 +56,8 @@ let mockProducts: Array<ProductListItem & { referenced: boolean }> = productSeed
   safetyStockQty: item[9],
   status: item[10],
   remark: index % 3 === 0 ? '常备产品，关注安全库存' : '',
-  createdAt: `2026-06-${String(1 + (index % 9)).padStart(2, '0')} 09:20:00`,
-  updatedAt: `2026-06-${String(10 + (index % 3)).padStart(2, '0')} 14:30:00`,
+  createTime: `2026-06-${String(1 + (index % 9)).padStart(2, '0')} 09:20:00`,
+  updateTime: `2026-06-${String(10 + (index % 3)).padStart(2, '0')} 14:30:00`,
   referenced: index < 8,
 }));
 
@@ -155,8 +155,8 @@ export function createProduct(payload: ProductFormPayload) {
       productCode: generateMockProductCode(),
       ...payload,
       categoryName: payload.categoryId ? getMockProductCategorySnapshot(payload.categoryId)?.categoryName || null : null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
+      createTime: timestamp,
+      updateTime: timestamp,
       referenced: false,
     };
     mockProducts = [...mockProducts, created];
@@ -169,7 +169,7 @@ export async function updateProduct(productId: string, payload: ProductFormPaylo
   if (useMockApi) {
     ensureEnabledCategory(payload);
     mockProducts = mockProducts.map(item => item.productId === productId
-      ? { ...item, ...payload, categoryName: payload.categoryId ? getMockProductCategorySnapshot(payload.categoryId)?.categoryName || null : null, updatedAt: nowText() }
+      ? { ...item, ...payload, categoryName: payload.categoryId ? getMockProductCategorySnapshot(payload.categoryId)?.categoryName || null : null, updateTime: nowText() }
       : item);
     const product = mockProducts.find(item => item.productId === productId);
     return product ? normalizeProduct(product) : null;
@@ -182,7 +182,7 @@ export async function updateProductStatus(productId: string, status: ProductList
   if (useMockApi) {
     const target = mockProducts.find(item => item.productId === productId);
     ensureEnabledCategory({ categoryId: target?.categoryId || null, status });
-    mockProducts = mockProducts.map(item => item.productId === productId ? { ...item, status, updatedAt: nowText() } : item);
+    mockProducts = mockProducts.map(item => item.productId === productId ? { ...item, status, updateTime: nowText() } : item);
     return null;
   }
   const response = await http.patch(`/products/${productId}/status`, { status });
@@ -208,7 +208,7 @@ export async function batchUpdateProductStatus(payload: ProductBatchStatusPayloa
       if (invalid) throw new Error('所选产品中存在停用分类下的产品，无法启用');
     }
     mockProducts = mockProducts.map(item => payload.productIds.includes(item.productId)
-      ? { ...item, status: payload.status, updatedAt: nowText() }
+      ? { ...item, status: payload.status, updateTime: nowText() }
       : item);
     return null;
   }

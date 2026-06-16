@@ -217,7 +217,7 @@ onMounted(() => {
               <TableCell class="text-right tabular-nums text-muted-foreground">{{ formatQty(row.safetyStockQty) }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="stockHealth(row).className">{{ stockHealth(row).label }}</Badge></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="reservationState(row).className">{{ reservationState(row).label }}</Badge></TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.updatedAt }}</TableCell>
+              <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
             </TableRow>
           </TableBody>
         </Table>

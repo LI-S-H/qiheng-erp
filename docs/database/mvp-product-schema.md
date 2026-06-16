@@ -21,8 +21,8 @@
 | parent_id | bigint | 上级分类ID，顶级为 0 |
 | category_name | varchar(100) | 分类名称 |
 | status | tinyint | 状态：1 启用，0 禁用 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 
 关系说明：`product.category_id` 关联本表。MVP 阶段分类只做基础分组，不做复杂分类属性。
@@ -53,8 +53,8 @@
 | reference_sale_price | decimal(18,2) | 参考销售价 |
 | safety_stock_qty | bigint | 安全库存数量，按 100 倍整数存储，例如 12.50 存为 1250 |
 | status | tinyint | 状态：1 启用，0 禁用 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 

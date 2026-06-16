@@ -1,0 +1,69 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  profiles:
+    active: dev
+  application:
+    name: erp-admin
+
+  # Jackson 配置
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+
+# MyBatis-Plus 配置
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+
+# Sa-Token 配置
+sa-token:
+  token-name: satoken
+  timeout: 86400
+  active-timeout: 1800
+  is-concurrent: true
+  is-share: false
+  token-style: uuid
+  is-log: false
+
+# Knife4j 配置
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: 系统管理
+      packages-to-scan: com.qiheng.erp.system.controller
+    - group: 产品管理
+      packages-to-scan: com.qiheng.erp.product.controller
+    - group: 仓库库存
+      packages-to-scan: com.qiheng.erp.warehouse.controller
+    - group: 采购管理
+      packages-to-scan: com.qiheng.erp.purchase.controller
+    - group: 销售管理
+      packages-to-scan: com.qiheng.erp.sales.controller
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+
+# Spring AI Alibaba（开发 AI 模块时启用）
+# spring-ai-alibaba:
+#   dashscope:
+#     api-key: ${AI_DASHSCOPE_API_KEY:}
+#     chat:
+#       options:
+#         model: qwen-plus
+#         temperature: 0.7

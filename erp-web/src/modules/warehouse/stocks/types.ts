@@ -16,7 +16,7 @@ export interface WarehouseStockListItem {
   lockedQty: number;
   availableQty: number;
   safetyStockQty: number;
-  updatedAt: string;
+  updateTime: string;
 }
 
 export interface WarehouseStockSummary {

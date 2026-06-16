@@ -11,8 +11,8 @@ export interface SystemPermissionListItem {
   sortOrder: number;
   description: string;
   roleCount: number;
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
 }
 
 export interface SystemPermissionQuery {

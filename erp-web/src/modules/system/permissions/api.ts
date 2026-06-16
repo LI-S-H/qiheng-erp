@@ -70,7 +70,7 @@ export function createSystemPermission(payload: SystemPermissionFormPayload) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const created: SystemPermissionListItem = {
       permissionId: String(Date.now()), ...payload,
-      roleCount: 0, createdAt: now, updatedAt: now,
+      roleCount: 0, createTime: now, updateTime: now,
     };
     mockPermissions = [...mockPermissions, created];
     return Promise.resolve(created);
@@ -82,7 +82,7 @@ export async function updateSystemPermission(permissionId: string, payload: Syst
   if (useMockApi) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     mockPermissions = mockPermissions.map(item => item.permissionId === permissionId
-      ? { ...item, ...payload, updatedAt: now }
+      ? { ...item, ...payload, updateTime: now }
       : item);
     return mockPermissions.find(item => item.permissionId === permissionId) as SystemPermissionListItem;
   }
@@ -93,7 +93,7 @@ export async function updateSystemPermission(permissionId: string, payload: Syst
 export async function updateSystemPermissionStatus(permissionId: string, status: PermissionStatus) {
   if (useMockApi) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    mockPermissions = mockPermissions.map(item => item.permissionId === permissionId ? { ...item, status, updatedAt: now } : item);
+    mockPermissions = mockPermissions.map(item => item.permissionId === permissionId ? { ...item, status, updateTime: now } : item);
     return null;
   }
   const response = await http.patch(`/system/permissions/${permissionId}/status`, { status });
@@ -115,7 +115,7 @@ export async function batchUpdateSystemPermissionStatus(payload: PermissionBatch
   if (useMockApi) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     mockPermissions = mockPermissions.map(item => payload.permissionIds.includes(item.permissionId)
-      ? { ...item, status: payload.status, updatedAt: now } : item);
+      ? { ...item, status: payload.status, updateTime: now } : item);
     return null;
   }
   const response = await http.patch('/system/permissions/batch/status', payload);

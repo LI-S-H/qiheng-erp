@@ -576,8 +576,8 @@ function togglePermForm(code: string, checked: boolean) {
               </TableCell>
               <TableCell>
                 <div class="flex flex-col text-xs">
-                  <span>创建 {{ formatTableTime(row.createdAt) }}</span>
-                  <span class="text-muted-foreground">更新 {{ formatTableTime(row.updatedAt) }}</span>
+                  <span>创建 {{ formatTableTime(row.createTime) }}</span>
+                  <span class="text-muted-foreground">更新 {{ formatTableTime(row.updateTime) }}</span>
                 </div>
               </TableCell>
               <TableCell class="text-center">

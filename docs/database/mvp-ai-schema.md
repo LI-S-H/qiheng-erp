@@ -30,8 +30,8 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 | uploaded_by_name | varchar(100) | 上传人姓名 |
 | parsed_at | datetime | 解析完成时间 |
 | indexed_at | datetime | 向量索引完成时间 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -49,8 +49,8 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 | token_count | int | token 数估算 |
 | vector_key | varchar(200) | RedisStack 向量 key |
 | status | varchar(32) | 状态：`PENDING`、`INDEXED`、`FAILED` |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 
 关系说明：RAG 检索命中后，通过 `vector_key` 和 `id` 反查切片内容，并在回答里返回引用来源。
@@ -77,8 +77,8 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 | success | tinyint | 是否成功 |
 | error_message | varchar(1000) | 错误信息 |
 | duration_ms | int | 调用耗时，毫秒 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 
 关系说明：AI Tool 必须记录权限校验结果、入参、返回摘要和是否脱敏。RAG 问答记录引用切片 ID，方便追溯回答来源。
 

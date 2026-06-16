@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.qiheng</groupId>
+        <artifactId>erp-server</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>erp-admin</artifactId>
+    <name>erp-admin</name>
+
+    <dependencies>
+        <!-- 业务模块 -->
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-product</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-warehouse</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-purchase</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-sales</artifactId>
+        </dependency>
+
+        <!-- AI 模块（开发 AI 模块时取消注释） -->
+        <!--
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-ai</artifactId>
+        </dependency>
+        -->
+
+        <!-- Knife4j -->
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- RocketMQ -->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- MinIO -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+        </dependency>
+
+        <!-- MySQL -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

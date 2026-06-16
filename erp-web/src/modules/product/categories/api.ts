@@ -11,17 +11,17 @@ import type {
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
 
 const mockFlatCategories: ProductCategoryListItem[] = [
-  { categoryId: '1910000000000000100', parentId: '0', categoryName: '食品饮料', status: 1, productCount: 0, createdAt: '2026-06-09 09:10:00', updatedAt: '2026-06-12 14:20:00' },
-  { categoryId: '1910000000000000101', parentId: '1910000000000000100', categoryName: '饮料冲调', status: 1, productCount: 18, createdAt: '2026-06-09 09:20:00', updatedAt: '2026-06-12 10:16:00' },
-  { categoryId: '1910000000000000102', parentId: '1910000000000000100', categoryName: '休闲零食', status: 1, productCount: 26, createdAt: '2026-06-09 09:25:00', updatedAt: '2026-06-11 16:40:00' },
-  { categoryId: '1910000000000000103', parentId: '0', categoryName: '办公用品', status: 1, productCount: 0, createdAt: '2026-06-09 10:00:00', updatedAt: '2026-06-12 09:30:00' },
-  { categoryId: '1910000000000000104', parentId: '1910000000000000103', categoryName: '书写文具', status: 1, productCount: 12, createdAt: '2026-06-09 10:10:00', updatedAt: '2026-06-10 15:20:00' },
-  { categoryId: '1910000000000000105', parentId: '1910000000000000103', categoryName: '办公纸品', status: 1, productCount: 9, createdAt: '2026-06-09 10:15:00', updatedAt: '2026-06-10 15:22:00' },
-  { categoryId: '1910000000000000106', parentId: '0', categoryName: '日用百货', status: 1, productCount: 3, createdAt: '2026-06-09 11:00:00', updatedAt: '2026-06-12 11:45:00' },
-  { categoryId: '1910000000000000107', parentId: '1910000000000000106', categoryName: '清洁用品', status: 1, productCount: 15, createdAt: '2026-06-09 11:10:00', updatedAt: '2026-06-12 11:46:00' },
-  { categoryId: '1910000000000000108', parentId: '1910000000000000106', categoryName: '家居耗材', status: 1, productCount: 8, createdAt: '2026-06-09 11:20:00', updatedAt: '2026-06-11 12:00:00' },
-  { categoryId: '1910000000000000109', parentId: '0', categoryName: '电子配件', status: 0, productCount: 0, createdAt: '2026-06-10 09:00:00', updatedAt: '2026-06-12 16:30:00' },
-  { categoryId: '1910000000000000110', parentId: '1910000000000000109', categoryName: '电脑周边', status: 0, productCount: 6, createdAt: '2026-06-10 09:10:00', updatedAt: '2026-06-12 16:30:00' },
+  { categoryId: '1910000000000000100', parentId: '0', categoryName: '食品饮料', status: 1, productCount: 0, createTime: '2026-06-09 09:10:00', updateTime: '2026-06-12 14:20:00' },
+  { categoryId: '1910000000000000101', parentId: '1910000000000000100', categoryName: '饮料冲调', status: 1, productCount: 18, createTime: '2026-06-09 09:20:00', updateTime: '2026-06-12 10:16:00' },
+  { categoryId: '1910000000000000102', parentId: '1910000000000000100', categoryName: '休闲零食', status: 1, productCount: 26, createTime: '2026-06-09 09:25:00', updateTime: '2026-06-11 16:40:00' },
+  { categoryId: '1910000000000000103', parentId: '0', categoryName: '办公用品', status: 1, productCount: 0, createTime: '2026-06-09 10:00:00', updateTime: '2026-06-12 09:30:00' },
+  { categoryId: '1910000000000000104', parentId: '1910000000000000103', categoryName: '书写文具', status: 1, productCount: 12, createTime: '2026-06-09 10:10:00', updateTime: '2026-06-10 15:20:00' },
+  { categoryId: '1910000000000000105', parentId: '1910000000000000103', categoryName: '办公纸品', status: 1, productCount: 9, createTime: '2026-06-09 10:15:00', updateTime: '2026-06-10 15:22:00' },
+  { categoryId: '1910000000000000106', parentId: '0', categoryName: '日用百货', status: 1, productCount: 3, createTime: '2026-06-09 11:00:00', updateTime: '2026-06-12 11:45:00' },
+  { categoryId: '1910000000000000107', parentId: '1910000000000000106', categoryName: '清洁用品', status: 1, productCount: 15, createTime: '2026-06-09 11:10:00', updateTime: '2026-06-12 11:46:00' },
+  { categoryId: '1910000000000000108', parentId: '1910000000000000106', categoryName: '家居耗材', status: 1, productCount: 8, createTime: '2026-06-09 11:20:00', updateTime: '2026-06-11 12:00:00' },
+  { categoryId: '1910000000000000109', parentId: '0', categoryName: '电子配件', status: 0, productCount: 0, createTime: '2026-06-10 09:00:00', updateTime: '2026-06-12 16:30:00' },
+  { categoryId: '1910000000000000110', parentId: '1910000000000000109', categoryName: '电脑周边', status: 0, productCount: 6, createTime: '2026-06-10 09:10:00', updateTime: '2026-06-12 16:30:00' },
 ];
 
 function nowText() {
@@ -111,15 +111,15 @@ export function createProductCategory(payload: ProductCategoryFormPayload) {
     if (payload.status === 1 && payload.parentId !== '0' && findCategory(payload.parentId)?.status === 0) {
       return Promise.reject(new Error('上级分类停用时不能新增启用的下级分类'));
     }
-    const createdAt = nowText();
+    const createTime = nowText();
     const newCategory: ProductCategoryListItem = {
       categoryId: `${Date.now()}`,
       parentId: payload.parentId,
       categoryName: payload.categoryName,
       status: payload.status,
       productCount: 0,
-      createdAt,
-      updatedAt: createdAt,
+      createTime,
+      updateTime: createTime,
     };
     mockFlatCategories.push(newCategory);
     return Promise.resolve(normalizeCategory(newCategory));
@@ -137,9 +137,9 @@ export async function updateProductCategory(categoryId: string, payload: Product
     const targetIds = new Set([categoryId, ...(payload.status === 0 ? getDescendantIds(categoryId) : [])]);
     mockFlatCategories.forEach((item, index) => {
       if (item.categoryId === categoryId) {
-        mockFlatCategories[index] = { ...item, ...payload, updatedAt: nowText() };
+        mockFlatCategories[index] = { ...item, ...payload, updateTime: nowText() };
       } else if (targetIds.has(item.categoryId)) {
-        mockFlatCategories[index] = { ...item, status: 0, updatedAt: nowText() };
+        mockFlatCategories[index] = { ...item, status: 0, updateTime: nowText() };
       }
     });
     const category = findCategory(categoryId);
@@ -181,9 +181,9 @@ export async function batchUpdateProductCategoryStatus(payload: ProductCategoryB
     if (payload.status === 0) {
       payload.categoryIds.forEach(categoryId => getDescendantIds(categoryId).forEach(id => targetIds.add(id)));
     }
-    const updatedAt = nowText();
+    const updateTime = nowText();
     mockFlatCategories.forEach((item, index) => {
-      if (targetIds.has(item.categoryId)) mockFlatCategories[index] = { ...item, status: payload.status, updatedAt };
+      if (targetIds.has(item.categoryId)) mockFlatCategories[index] = { ...item, status: payload.status, updateTime };
     });
     return null;
   }

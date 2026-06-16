@@ -9,13 +9,13 @@
 - 主数据、配置表和可删除的业务主表使用 `deleted tinyint`，`0` 表示正常，`1` 表示删除。
 - 关系表、订单明细表、库存余额表、出入库流水表、审计日志表默认不使用 `deleted`，避免历史链路和审计追溯被软删除语义干扰；这类数据需要作废时优先通过主表 `status` 或业务状态表达。
 - MVP 阶段不强制创建物理外键，关系由业务层和索引保证。
-- 所有表默认包含 `created_at` 和 `updated_at`。创建时间使用 `DEFAULT CURRENT_TIMESTAMP`，更新时间使用 `DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`，避免业务代码手动填普通审计时间。
+- 所有表默认包含 `create_time` 和 `update_time`。创建时间使用 `DEFAULT CURRENT_TIMESTAMP`，更新时间使用 `DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`，避免业务代码手动填普通审计时间。
 
 时间字段约定：
 
 ```sql
-created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
+create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
 ```
 
 业务动作时间不使用自动更新时间代替，例如 `confirmed_at`、`approved_at`、`submitted_at`、`last_login_at`，这些字段由对应业务动作显式写入。

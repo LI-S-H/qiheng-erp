@@ -26,8 +26,8 @@
 | contact_phone | varchar(32) | 联系电话 |
 | address | varchar(255) | 仓库地址 |
 | status | tinyint | 状态：1 启用，0 禁用 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -47,8 +47,8 @@
 | unit_name | varchar(32) | 单位名称，冗余 |
 | stock_qty | bigint | 当前库存数量，按 100 倍整数存储，例如 12.50 存为 1250 |
 | locked_qty | bigint | 锁定库存数量，按 100 倍整数存储，销售单占用时使用 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 
 关系说明：建议唯一约束 `(warehouse_id, product_id)`，一个仓库里一个产品只有一条库存余额。
 
@@ -73,8 +73,8 @@
 | created_by_name | varchar(100) | 创建人姓名 |
 | responsible_by_id | bigint | 业务负责人ID；手工单据由后端取当前登录用户 |
 | responsible_by_name | varchar(100) | 业务负责人姓名快照 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | manual_reason | varchar(500) | 手工补录或库存调整原因；来源生成凭证为空 |
 | remark | varchar(500) | 备注 |
 
@@ -99,8 +99,8 @@
 | before_qty | bigint | 变动前库存，按 100 倍整数存储 |
 | change_qty | bigint | 库存变动数量，入库为正，出库为负，按 100 倍整数存储 |
 | after_qty | bigint | 变动后库存，按 100 倍整数存储 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | remark | varchar(500) | 备注 |
 
 关系说明：明细通过 `source_item_id` 关联采购订单明细、销售订单明细或退货单明细，便于从库存动作反查业务来源。

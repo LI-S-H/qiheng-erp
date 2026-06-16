@@ -51,14 +51,14 @@ docs/ai-module-final-design.md                AI 模块最终设计方案
 | 模块 | 技术 |
 |---|---|
 | JDK | Java 21 |
-| 后端框架 | Spring Boot 3 |
+| 后端框架 | Spring Boot 3.5.8 |
 | 权限认证 | Sa-Token 原始 token + Redis session + RBAC + 数据权限 |
 | 数据库 | MySQL 8 |
 | ORM | MyBatis-Plus |
 | 缓存 / 向量检索 | RedisStack |
 | 接口文档 | Knife4j |
-| AI 框架 | Spring AI Alibaba |
-| Agent 编排 | Spring AI Alibaba Multi-agent / Graph |
+| AI 框架 | Spring AI Alibaba 1.1.2.0 + Spring AI 1.1.2 |
+| Agent 编排 | Spring AI Alibaba Agent Framework / Graph |
 | Python 分析 | Spring AI Alibaba PythonTool |
 | 外部工具接入 | MCP |
 | 跨系统 Agent 协议 | A2A 预留，MVP 暂不引入 |

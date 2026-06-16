@@ -11,8 +11,8 @@ export interface SystemUserListItem {
   roleIds: string[];
   roleNames: string[];
   lastLoginAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
 }
 
 export interface SystemUserQuery {

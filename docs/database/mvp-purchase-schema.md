@@ -45,8 +45,8 @@
 | on_time_rate | int | 准时交付率，放大 100 倍保存，10000 表示 100.00% |
 | qualified_rate | int | 到货合格率，放大 100 倍保存，10000 表示 100.00% |
 | status | tinyint | 状态：1 启用，0 禁用 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -74,8 +74,8 @@
 | ai_score | int | AI/规则综合推荐分，放大 100 倍保存 |
 | last_purchase_at | datetime | 最近采购时间 |
 | status | tinyint | 状态：1 启用，0 禁用 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -101,8 +101,8 @@
 | approved_by_id | bigint | 审核人ID |
 | approved_by_name | varchar(100) | 审核人姓名 |
 | approved_at | datetime | 审核时间 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -126,8 +126,8 @@
 | total_amount | decimal(18,2) | 明细金额 |
 | selected_supplier_score | int | 下单时供应商推荐分快照，放大 100 倍保存 |
 | expected_arrival_date | date | 明细预计到货日期 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | remark | varchar(500) | 备注 |
 
 关系说明：仓库出入库流水明细 `stock_bill_item.source_item_id` 关联本表，用于从采购入库动作追溯到采购订单明细。

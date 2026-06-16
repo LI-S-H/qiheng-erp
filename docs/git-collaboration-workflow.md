@@ -8,64 +8,69 @@
 https://github.com/LI-S-H/qiheng-erp.git
 ```
 
-## 1. 推荐仓库结构
+## 1. 仓库结构
 
 项目采用一个仓库管理前端、后端和文档，便于接口、库表和页面开发保持一致。
 
 ```text
 qiheng-erp/
 ├── docs/          项目文档、库表设计、接口文档
-├── erp-web/       前端工程，Vue + Element Plus
-├── erp-system/    后端工程，后续脚手架放这里
+├── erp-web/       前端工程，Vue 3 + TypeScript
+├── erp-server/    后端工程，Spring Boot 3 + Maven 多模块
 ├── .gitignore
-└── README.md
+└── AGENTS.md
 ```
 
-这样做的好处：
+后端工程内部结构：
 
-- 前端、后端和接口文档放在同一个仓库，方便同步审核
-- 一个模块的页面、接口、库表可以一起提交，减少信息断层
-- 后端两个人协作时可以按模块拆分分支，互不干扰
-- 项目负责人可以通过 Pull Request 统一审核代码质量和接口设计
+```text
+erp-server/
+├── pom.xml              父 POM（依赖版本管理）
+├── erp-common/          通用基础（Result、异常、枚举、工具）
+├── erp-security/        登录鉴权（Sa-Token + Redis Session）
+├── erp-system/          用户、角色、部门、权限码
+├── erp-product/         产品、分类
+├── erp-warehouse/       仓库、库存、出入库
+├── erp-purchase/        供应商、采购订单
+├── erp-sales/           客户、销售订单
+├── erp-ai/              AI 智能体（后续）
+├── erp-job/             定时任务（后续）
+└── erp-admin/           启动模块（配置文件 + 启动类）
+```
 
 ## 2. 分支规则
 
-建议使用三类分支。
+项目采用 **main + feature** 两层分支模型，不设 dev 分支。开发人员不多时，功能分支直接合并到 main，流程简洁。
 
 ```text
 main
-稳定分支，只放已经审核通过、可以作为阶段成果的代码
-
-dev
-开发集成分支，前端和后端日常开发完成后先合并到这里
+稳定分支，只放已经审核通过的代码
 
 feature/*
-功能分支，每个人开发具体功能时从 dev 拉出
+功能分支，从 main 拉出，完成后通过 PR 合并回 main
 ```
 
-推荐分支示例：
+分支命名规范：
 
 ```text
-feature/backend-foundation
-feature/backend-auth
-feature/backend-system-permission
-feature/backend-product
-feature/backend-warehouse
-feature/backend-purchase
-feature/backend-sales
-feature/backend-ai
+feature/backend-foundation          后端脚手架
+feature/backend-auth                登录鉴权
+feature/backend-system              用户/角色/部门/权限
+feature/backend-product             产品/分类
+feature/backend-warehouse           仓库/库存/出入库
+feature/backend-purchase            供应商/采购
+feature/backend-sales               客户/销售
+feature/backend-ai                  AI 模块
 
-feature/web-login
-feature/web-product
-feature/web-warehouse
+feature/web-login                   前端登录
+feature/web-product                 前端产品
+feature/web-warehouse               前端仓库
 
-fix/backend-login-error
-fix/web-menu-animation
+fix/backend-login-error             修复
+fix/web-menu-animation              修复
 ```
 
-## 3. 当前项目已经完成的 Git 状态
-
-当前项目已经完成以下初始化：
+## 3. 当前项目 Git 状态
 
 ```text
 已初始化 Git 仓库
@@ -86,268 +91,131 @@ target/
 浏览器截图
 临时目录
 本地 Agent 配置
+.idea/
+*.iml
 ```
 
-后续上传代码前，仍然建议先执行：
-
-```powershell
-git status
-```
-
-确认没有把临时文件、构建产物、依赖目录提交进去。
-
-## 4. 项目负责人第一次创建 dev 分支
-
-如果仓库目前只有 `main`，建议先创建 `dev` 分支作为日常开发集成分支。
-
-```powershell
-git checkout main
-git pull
-git checkout -b dev
-git push -u origin dev
-```
-
-之后所有功能开发都从 `dev` 分支拉出。
-
-## 5. 新成员第一次拉取项目
-
-后端开发人员第一次参与项目时，执行：
+## 4. 新成员第一次拉取项目
 
 ```powershell
 git clone https://github.com/LI-S-H/qiheng-erp.git
 cd qiheng-erp
-git checkout dev
+git checkout main
 git pull
 ```
 
-如果本地没有 `dev` 分支，可以执行：
+## 5. 功能开发流程
+
+### 5.1 从 main 拉出功能分支
 
 ```powershell
-git checkout -b dev origin/dev
-```
-
-## 6. 后端脚手架初始化上传流程
-
-你准备先搭建后端脚手架时，建议不要直接在 `main` 上提交，而是创建一个后端基础分支。
-
-### 6.1 拉取最新代码
-
-```powershell
-git checkout dev
+git checkout main
 git pull
-```
-
-### 6.2 创建后端脚手架分支
-
-```powershell
 git checkout -b feature/backend-foundation
 ```
 
-### 6.3 在根目录创建后端工程
-
-推荐后端工程目录名：
-
-```text
-erp-system/
-```
-
-搭建完成后的结构示例：
-
-```text
-qiheng-erp/
-├── docs/
-├── erp-web/
-├── erp-system/
-│   ├── pom.xml
-│   ├── src/
-│   └── README.md
-├── .gitignore
-└── README.md
-```
-
-### 6.4 检查不要提交无关文件
-
-提交前先执行：
+### 5.2 开发并提交
 
 ```powershell
-git status
-```
-
-需要避免提交：
-
-```text
-target/
-.idea/
-.vscode/
-*.log
-本地数据库文件
-本地密钥文件
-.env
-```
-
-如果后端使用 Maven，通常可以提交：
-
-```text
-pom.xml
-src/
-mvnw
-mvnw.cmd
-.mvn/wrapper/
-```
-
-不要提交：
-
-```text
-target/
-*.class
-本地运行日志
-本地配置密钥
-```
-
-### 6.5 本地验证
-
-如果是 Maven 项目，提交前建议执行：
-
-```powershell
-mvn test
-```
-
-或者使用 Maven Wrapper：
-
-```powershell
-.\mvnw.cmd test
-```
-
-如果暂时没有测试，至少执行启动或编译命令，确认脚手架能跑起来。
-
-### 6.6 提交后端脚手架
-
-```powershell
-git add erp-system .gitignore
+# 开发过程中随时提交
+git add 需要提交的文件
 git commit -m "feat: 初始化后端工程脚手架"
 ```
 
-### 6.7 推送分支
+### 5.3 推送分支
 
 ```powershell
 git push -u origin feature/backend-foundation
 ```
 
-### 6.8 创建 Pull Request
+### 5.4 创建 Pull Request
 
 在 GitHub 上创建 PR：
 
 ```text
-feature/backend-foundation -> dev
+feature/backend-foundation -> main
 ```
 
 PR 描述建议写清楚：
 
 ```text
 本次变更：
-- 新增 erp-system 后端工程
-- 初始化项目依赖和基础目录
-- 添加启动配置
-- 添加基础健康检查接口
+- 新增 erp-server 后端工程（Maven 多模块）
+- 初始化 10 个子模块
+- 配置 Spring Boot 3 + MyBatis-Plus + Sa-Token + RocketMQ + Knife4j
 
 验证方式：
-- 已执行 mvn test
-- 已本地启动后端服务
+- mvn clean compile 通过
+- 本地启动成功，Knife4j 文档页面可访问
 ```
 
-审核通过后再合并到 `dev`。
+### 5.5 审核通过后合并
 
-## 7. 两个后端开发人员如何并行开发
+PR 审核通过后合并到 main，然后删除远程功能分支。
 
-假设后端有两个人：
-
-```text
-开发 A：系统权限模块
-开发 B：产品中心模块
-```
-
-开发 A 创建分支：
+### 5.6 同步本地 main
 
 ```powershell
-git checkout dev
+git checkout main
 git pull
-git checkout -b feature/backend-system-permission
+git branch -d feature/backend-foundation   # 删除本地分支
 ```
 
-开发 B 创建分支：
+## 6. 并行开发
+
+假设两个人同时开发不同模块：
+
+开发 A（系统权限）：
 
 ```powershell
-git checkout dev
-git pull
+git checkout main && git pull
+git checkout -b feature/backend-system
+# 开发...
+git push -u origin feature/backend-system
+# 创建 PR -> main
+```
+
+开发 B（产品模块）：
+
+```powershell
+git checkout main && git pull
 git checkout -b feature/backend-product
-```
-
-两个人分别开发自己的模块，完成后分别推送自己的分支并创建 PR。
-
-开发 A：
-
-```powershell
-git add erp-system docs
-git commit -m "feat: 添加系统权限后端接口"
-git push -u origin feature/backend-system-permission
-```
-
-开发 B：
-
-```powershell
-git add erp-system docs
-git commit -m "feat: 添加产品管理后端接口"
+# 开发...
 git push -u origin feature/backend-product
+# 创建 PR -> main
 ```
 
-然后分别创建 PR：
+两人互不干扰，各自 PR 合并后对方再 pull main 即可。
 
-```text
-feature/backend-system-permission -> dev
-feature/backend-product -> dev
-```
-
-## 8. 每天开始开发前的固定动作
-
-每个人每天开始写代码前，都先同步 `dev`。
+## 7. 每天开始开发前
 
 ```powershell
-git checkout dev
+git checkout main
 git pull
-```
-
-然后回到自己的功能分支：
-
-```powershell
 git checkout feature/自己的分支名
-git merge dev
+git merge main
 ```
 
-这样可以提前拿到别人已经合并的代码，减少后面冲突。
+把 main 上别人已合并的代码同步过来，减少后续冲突。
 
-## 9. 开发完成后的固定动作
+## 8. 遇到冲突怎么办
 
-开发完成后不要直接合并到 `main` 或 `dev`，先提交自己的分支。
+合并 main 时如果出现冲突：
+
+1. 打开冲突文件
+2. 手动选择要保留的代码
+3. 删除 Git 冲突标记（`<<<<<<<`、`=======`、`>>>>>>>`）
+4. 重新提交
 
 ```powershell
-git status
-git diff
-git add 需要提交的文件
-git commit -m "feat: 添加具体功能说明"
+git add 冲突文件
+git commit -m "fix: 解决合并冲突"
 git push
 ```
 
-如果是第一次推送这个分支：
+## 9. 代码审核规则
 
-```powershell
-git push -u origin feature/自己的分支名
-```
-
-然后在 GitHub 创建 PR，等待审核。
-
-## 10. 代码审核和合并规则
-
-每个 PR 至少检查以下内容：
+每个 PR 至少检查：
 
 - 是否只包含本次功能相关文件
 - 是否误提交 `target`、`dist`、`node_modules`、日志文件
@@ -356,72 +224,28 @@ git push -u origin feature/自己的分支名
 - 是否能本地启动或通过测试
 - 提交信息是否清晰
 
-PR 合并后，开发人员需要同步最新 `dev`：
-
-```powershell
-git checkout dev
-git pull
-```
-
-## 11. 遇到冲突怎么办
-
-如果执行下面命令时出现冲突：
-
-```powershell
-git merge dev
-```
-
-说明当前分支和 `dev` 修改了同一个文件的同一部分。
-
-处理方式：
-
-1. 打开冲突文件
-2. 手动选择要保留的代码
-3. 删除 Git 自动生成的冲突标记
-4. 重新提交
-
-冲突标记通常长这样：
+## 10. 提交信息规范
 
 ```text
-<<<<<<< HEAD
-当前分支的代码
-=======
-dev 分支的代码
->>>>>>> dev
+feat: 新增功能
+fix: 修复问题
+docs: 文档变更
+refactor: 重构（不新增功能、不修复问题）
+style: 格式调整（不影响逻辑）
+test: 测试相关
+chore: 构建/配置/工具变更
 ```
 
-处理完成后：
-
-```powershell
-git add 冲突文件
-git commit -m "fix: 解决合并冲突"
-git push
-```
-
-## 12. 阶段发布流程
-
-当 `dev` 上的前后端功能稳定后，再把 `dev` 合并到 `main`。
-
-```powershell
-git checkout main
-git pull
-git merge dev
-git push
-```
-
-建议只有项目负责人执行这个操作。
-
-如果使用 GitHub PR，也可以创建：
+示例：
 
 ```text
-dev -> main
+feat: 初始化后端工程脚手架
+feat: 添加用户管理接口
+fix: 修复登录 token 未存入 Redis 的问题
+docs: 消息队列从 RabbitMQ 改为 RocketMQ
 ```
 
-审核通过后合并。
-
-## 13. 常用安全命令
-
-这些命令日常可以放心使用：
+## 11. 常用安全命令
 
 ```powershell
 git status
@@ -447,45 +271,36 @@ npm.cmd run build
 后端常用：
 
 ```powershell
+cd erp-server
+mvn clean compile
 mvn test
-mvn package
+mvn spring-boot:run -pl erp-admin
 ```
 
-或者：
-
-```powershell
-.\mvnw.cmd test
-.\mvnw.cmd package
-```
-
-## 14. 谨慎使用的命令
-
-下面这些命令可能会删除或回滚代码，不要随便执行：
+## 12. 谨慎使用的命令
 
 ```powershell
 git reset --hard
 git clean -fd
+git push --force
 Remove-Item -Recurse
 ```
 
-如果必须使用，需要先确认：
+使用前必须确认：
 
 - 当前代码是否已经提交
 - 是否有未保存的重要改动
 - 删除范围是否明确
-- 是否已经备份
 
-## 15. 最简单的协作口诀
+## 13. 协作口诀
 
 ```text
-先拉 dev
+先拉 main
 再建分支
 自己开发
 提交推送
 创建 PR
 审核合并
-同步 dev
+同步 main
 继续开发
 ```
-
-只要坚持这个流程，两个人同时写后端也不会乱，前端、后端和文档也能保持一致。

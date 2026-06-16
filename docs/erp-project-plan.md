@@ -63,7 +63,7 @@ docs/ai-module-final-design.md                AI 模块最终设计方案
 | 外部工具接入 | MCP |
 | 跨系统 Agent 协议 | A2A 预留，MVP 暂不引入 |
 | 定时任务 | Spring Scheduler |
-| 消息队列 | RabbitMQ |
+| 消息队列 | RocketMQ |
 | 技术日志 | SLF4J + Logback |
 | 业务审计 | 审计日志表 |
 
@@ -85,7 +85,7 @@ flowchart TD
 
     D --> K["MySQL 8"]
     D --> L["RedisStack"]
-    D --> M["RabbitMQ"]
+    D --> M["RocketMQ"]
     D --> N["Spring Scheduler"]
 
     B --> O["AI 智能体层<br/>Spring AI Alibaba"]
@@ -631,11 +631,11 @@ explain_existing_result
 
 Spring AI Alibaba 可以支撑 Planner 所需的 LLM 调用、结构化输出、Tool Calling、Workflow / Graph 和 Multi-agent / Agent Tool 能力；但 `PlanValidator`、能力节点白名单、ERP 权限校验、业务顺序和执行器必须由项目自己实现。
 
-## 10. RabbitMQ 设计
+## 10. RocketMQ 设计
 
-RabbitMQ 用于异步处理业务事件，降低主流程耦合。
+RocketMQ 用于异步处理业务事件，降低主流程耦合。相比 RabbitMQ，RocketMQ 原生支持事务消息、延迟消息和顺序消息，更适合 ERP 场景中采购入库、销售出库与库存更新之间的强一致性需求。
 
-适合的事件：
+适合的事件（Topic）：
 
 ```text
 stock.changed                  库存变化
@@ -644,6 +644,16 @@ sales.outbound.completed       销售出库完成
 ai.analysis.requested          请求 AI 分析
 audit.log.created              创建审计日志
 ```
+
+RocketMQ 在本项目中的核心优势：
+
+| 能力 | 说明 | ERP 应用场景 |
+|---|---|---|
+| 事务消息 | 半消息 + 本地事务 + 提交/回滚 | 采购入库确认时，库存更新和消息发送保证原子性 |
+| 延迟消息 | 原生支持 1s-2h 延迟等级 | 采购订单超时未入库自动提醒、库存预警延迟去重 |
+| 顺序消息 | 队列维度有序 | 同一仓库 + 产品的库存变更按顺序消费，避免并发更新冲突 |
+| 消息回溯 | 按 TimeStamp 回溯消费 | 库存异常时重新消费历史消息排查问题 |
+| 死信队列 | 消费重试 16 次后进入 DLQ | 供应商评分刷新失败后人工介入 |
 
 示例流程：
 
@@ -654,6 +664,32 @@ flowchart LR
     C --> D["检查是否低于安全库存"]
     D --> E["生成库存预警记录"]
 ```
+
+事务消息示例（采购入库确认）：
+
+```mermaid
+sequenceDiagram
+    participant S as 采购入库 Service
+    participant MQ as RocketMQ Broker
+    participant L as 库存预警 Listener
+
+    S->>MQ: 发送半消息 stock.changed
+    MQ-->>S: 半消息发送成功
+    S->>S: 执行本地事务：更新库存 + 回写采购明细
+    alt 本地事务成功
+        S->>MQ: 提交消息
+        MQ->>L: 投递 stock.changed
+    else 本地事务失败
+        S->>MQ: 回滚消息
+        MQ--xL: 消息不投递
+    end
+```
+
+MVP 阶段 RocketMQ 部署建议：
+
+- 本地开发使用 Docker Compose 启动 NameServer + Broker
+- 生产环境最小部署：1 NameServer + 1 Broker（主从可选）
+- Spring Boot 集成使用 `rocketmq-spring-boot-starter`
 
 ## 11. 定时任务设计
 
@@ -694,7 +730,7 @@ SLF4J + Logback
 - 接口异常。
 - SQL 慢查询。
 - AI Tool 调用失败。
-- RabbitMQ 消费失败。
+- RocketMQ 消费失败。
 - 定时任务执行失败。
 
 ### 12.2 业务审计

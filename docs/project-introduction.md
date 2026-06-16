@@ -158,7 +158,7 @@ AI 禁止行为：
 | Python 分析 | Spring AI Alibaba PythonTool |
 | 外部工具接入 | MCP |
 | 定时任务 | Spring Scheduler |
-| 消息队列 | RabbitMQ |
+| 消息队列 | RocketMQ |
 | 日志体系 | SLF4J + Logback |
 | 业务审计 | 审计日志表 |
 

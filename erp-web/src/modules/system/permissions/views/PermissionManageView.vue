@@ -460,7 +460,7 @@ function handleBatchDelete() {
               <TableCell class="text-center"><span :class="row.roleCount ? 'font-medium text-primary' : 'text-muted-foreground'">{{ row.roleCount }}</span></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
               <TableCell class="text-center">{{ row.sortOrder }}</TableCell>
-              <TableCell class="text-xs">{{ formatTableTime(row.updatedAt) }}</TableCell>
+              <TableCell class="text-xs">{{ formatTableTime(row.updateTime) }}</TableCell>
               <TableCell class="text-center"><div class="flex items-center justify-center gap-1">
                 <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
                 <Button size="sm" variant="ghost" :class="row.status === 1 ? 'text-amber-700' : 'text-primary'" :disabled="actionSubmitting" @click="handleStatusChange(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button>

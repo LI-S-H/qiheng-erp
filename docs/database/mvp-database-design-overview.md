@@ -517,8 +517,8 @@ MVP 阶段不强制创建数据库物理外键，关系由业务层和索引保�
 普通审计时间字段统一使用：
 
 ```sql
-created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
+create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
 ```
 
 这样可以减少业务代码手动填充普通创建时间、更新时间的工作。
@@ -666,11 +666,11 @@ AI 关系里需要特别说明两点：
 
 ```mermaid
 flowchart LR
-    dept["sys_dept 部门表<br/>id 主键<br/>parent_id 上级部门ID<br/>ancestors 祖级路径<br/>dept_name 部门名称<br/>status 启用状态<br/>created_at 创建时间<br/>updated_at 更新时间<br/>deleted 逻辑删除"]
-    user["sys_user 用户表<br/>id 主键<br/>username 登录账号<br/>password_hash 密码哈希<br/>real_name 用户姓名<br/>dept_id 所属部门ID<br/>is_admin 是否超级管理员<br/>status 启用状态<br/>last_login_at 最近登录时间<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除"]
-    role["sys_role 角色表<br/>id 主键<br/>role_code 角色编码<br/>role_name 角色名称<br/>permission_codes 已授权权限码<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
-    permission["sys_permission 权限码目录表<br/>id 主键<br/>permission_code 权限码<br/>permission_name 权限名称<br/>module_code 所属模块<br/>action_type 操作类型<br/>status 启用状态<br/>sort_order 排序<br/>description 权限说明<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除"]
-    userRole["sys_user_role 用户角色关系表<br/>id 主键<br/>user_id 用户ID<br/>role_id 角色ID<br/>created_at / updated_at 审计时间"]
+    dept["sys_dept 部门表<br/>id 主键<br/>parent_id 上级部门ID<br/>ancestors 祖级路径<br/>dept_name 部门名称<br/>status 启用状态<br/>create_time 创建时间<br/>update_time 更新时间<br/>deleted 逻辑删除"]
+    user["sys_user 用户表<br/>id 主键<br/>username 登录账号<br/>password_hash 密码哈希<br/>real_name 用户姓名<br/>dept_id 所属部门ID<br/>is_admin 是否超级管理员<br/>status 启用状态<br/>last_login_at 最近登录时间<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
+    role["sys_role 角色表<br/>id 主键<br/>role_code 角色编码<br/>role_name 角色名称<br/>permission_codes 已授权权限码<br/>status 启用状态<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
+    permission["sys_permission 权限码目录表<br/>id 主键<br/>permission_code 权限码<br/>permission_name 权限名称<br/>module_code 所属模块<br/>action_type 操作类型<br/>status 启用状态<br/>sort_order 排序<br/>description 权限说明<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
+    userRole["sys_user_role 用户角色关系表<br/>id 主键<br/>user_id 用户ID<br/>role_id 角色ID<br/>create_time / update_time 审计时间"]
 
     dept -->|"上级部门：parent_id -> id"| dept
     dept -->|"用户所属部门：dept_id -> id，必填"| user
@@ -685,10 +685,10 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    category["product_category 产品分类表<br/>id 主键<br/>parent_id 上级分类ID<br/>category_name 分类名称<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除"]
-    product["product 产品表<br/>id 主键<br/>product_code 产品编码<br/>product_name 产品名称<br/>category_id 分类ID<br/>brand_name 品牌名称<br/>unit_name 单位名称<br/>specification 规格型号<br/>barcode 条码<br/>reference_purchase_price 参考采购价<br/>reference_sale_price 参考销售价<br/>safety_stock_qty 安全库存<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
-    warehouse["warehouse 仓库表<br/>id 主键<br/>warehouse_code 仓库编码<br/>warehouse_name 仓库名称<br/>contact_name 联系人<br/>contact_phone 联系电话<br/>address 仓库地址<br/>status 启用状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
-    stock["warehouse_stock 库存余额表<br/>id 主键<br/>warehouse_id 仓库ID<br/>warehouse_code 仓库编码快照<br/>warehouse_name 仓库名称快照<br/>product_id 产品ID<br/>product_code 产品编码快照<br/>product_name 产品名称快照<br/>unit_name 单位快照<br/>stock_qty 当前库存<br/>locked_qty 锁定库存<br/>created_at / updated_at 审计时间"]
+    category["product_category 产品分类表<br/>id 主键<br/>parent_id 上级分类ID<br/>category_name 分类名称<br/>status 启用状态<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
+    product["product 产品表<br/>id 主键<br/>product_code 产品编码<br/>product_name 产品名称<br/>category_id 分类ID<br/>brand_name 品牌名称<br/>unit_name 单位名称<br/>specification 规格型号<br/>barcode 条码<br/>reference_purchase_price 参考采购价<br/>reference_sale_price 参考销售价<br/>safety_stock_qty 安全库存<br/>status 启用状态<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
+    warehouse["warehouse 仓库表<br/>id 主键<br/>warehouse_code 仓库编码<br/>warehouse_name 仓库名称<br/>contact_name 联系人<br/>contact_phone 联系电话<br/>address 仓库地址<br/>status 启用状态<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除<br/>remark 备注"]
+    stock["warehouse_stock 库存余额表<br/>id 主键<br/>warehouse_id 仓库ID<br/>warehouse_code 仓库编码快照<br/>warehouse_name 仓库名称快照<br/>product_id 产品ID<br/>product_code 产品编码快照<br/>product_name 产品名称快照<br/>unit_name 单位快照<br/>stock_qty 当前库存<br/>locked_qty 锁定库存<br/>create_time / update_time 审计时间"]
 
     category -->|"上级分类：parent_id -> id"| category
     category -->|"产品分类：category_id -> id，可空"| product
@@ -712,7 +712,7 @@ flowchart LR
 flowchart LR
     supplier["supplier 供应商表<br/>id 主键<br/>supplier_code 供应商编码<br/>supplier_name 供应商名称<br/>contact_name / contact_phone 联系方式<br/>address 地址<br/>payment_terms 付款条件<br/>overall_score 综合评分<br/>delivery_score 交付评分<br/>quality_score 质量评分<br/>price_score 价格评分<br/>service_score 服务评分<br/>avg_delivery_days 平均交付天数<br/>on_time_rate 准时率<br/>qualified_rate 合格率<br/>status / deleted 状态字段<br/>remark 备注"]
     supplierProduct["supplier_product 供应商供货产品表<br/>id 主键<br/>supplier_id 供应商ID<br/>supplier_code / supplier_name 供应商快照<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>supplier_product_code 供应商侧产品编码<br/>latest_purchase_price 最近采购价<br/>min_order_qty 最小起订量<br/>lead_time_days 预计交期<br/>delivery_score / quality_score / price_score 分项评分<br/>ai_score 推荐分<br/>last_purchase_at 最近采购时间<br/>status / deleted 状态字段"]
-    purchaseOrder["purchase_order 采购订单主表<br/>id 主键<br/>purchase_no 采购单号<br/>supplier_id 供应商ID<br/>supplier_code / supplier_name 供应商快照<br/>warehouse_id 入库仓库ID<br/>warehouse_name 仓库名称快照<br/>status 订单状态<br/>total_amount 订单总金额<br/>expected_arrival_date 预计到货日期<br/>created_by / submitted_at / approved_by / approved_at 流程字段<br/>created_at / updated_at / deleted 审计字段"]
+    purchaseOrder["purchase_order 采购订单主表<br/>id 主键<br/>purchase_no 采购单号<br/>supplier_id 供应商ID<br/>supplier_code / supplier_name 供应商快照<br/>warehouse_id 入库仓库ID<br/>warehouse_name 仓库名称快照<br/>status 订单状态<br/>total_amount 订单总金额<br/>expected_arrival_date 预计到货日期<br/>created_by / submitted_at / approved_by / approved_at 流程字段<br/>create_time / update_time / deleted 审计字段"]
     purchaseItem["purchase_order_item 采购订单明细表<br/>id 主键<br/>purchase_order_id 采购订单ID<br/>purchase_no 采购单号快照<br/>supplier_product_id 供货产品ID，可空<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 采购数量<br/>inbound_qty 已入库数量<br/>unit_price 采购单价<br/>total_amount 明细金额<br/>selected_supplier_score 下单时推荐分快照<br/>expected_arrival_date 明细预计到货日期"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]
     warehouseRef["warehouse 仓库表<br/>id 仓库ID<br/>warehouse_name 仓库名称"]
@@ -731,7 +731,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     customer["customer 客户表<br/>id 主键<br/>customer_code 客户编码<br/>customer_name 客户名称<br/>contact_name / contact_phone 联系方式<br/>address 地址<br/>credit_limit 信用额度<br/>status / deleted 状态字段<br/>remark 备注"]
-    salesOrder["sales_order 销售订单主表<br/>id 主键<br/>sales_no 销售单号<br/>customer_id 客户ID<br/>customer_code / customer_name 客户快照<br/>warehouse_id 出库仓库ID<br/>warehouse_name 仓库名称快照<br/>status 订单状态<br/>total_amount 订单总金额<br/>expected_delivery_date 预计发货日期<br/>locked_at 库存锁定时间<br/>created_by / submitted_at / approved_by / approved_at 流程字段<br/>created_at / updated_at / deleted 审计字段"]
+    salesOrder["sales_order 销售订单主表<br/>id 主键<br/>sales_no 销售单号<br/>customer_id 客户ID<br/>customer_code / customer_name 客户快照<br/>warehouse_id 出库仓库ID<br/>warehouse_name 仓库名称快照<br/>status 订单状态<br/>total_amount 订单总金额<br/>expected_delivery_date 预计发货日期<br/>locked_at 库存锁定时间<br/>created_by / submitted_at / approved_by / approved_at 流程字段<br/>create_time / update_time / deleted 审计字段"]
     salesItem["sales_order_item 销售订单明细表<br/>id 主键<br/>sales_order_id 销售订单ID<br/>sales_no 销售单号快照<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 销售数量<br/>locked_qty 已锁定库存数量<br/>outbound_qty 已出库数量<br/>unit_price 销售单价<br/>total_amount 明细金额"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]
     warehouseRef["warehouse 仓库表<br/>id 仓库ID<br/>warehouse_name 仓库名称"]
@@ -746,7 +746,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    stockBill["stock_bill 出入库流水主表<br/>id 主键<br/>bill_no 出入库流水号<br/>bill_type 出入库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_no 来源单据号<br/>warehouse_id 仓库ID<br/>warehouse_name 仓库名称快照<br/>status 流水状态<br/>confirmed_by / confirmed_at 确认信息<br/>created_by 创建人信息<br/>created_at / updated_at 审计时间"]
+    stockBill["stock_bill 出入库流水主表<br/>id 主键<br/>bill_no 出入库流水号<br/>bill_type 出入库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_no 来源单据号<br/>warehouse_id 仓库ID<br/>warehouse_name 仓库名称快照<br/>status 流水状态<br/>confirmed_by / confirmed_at 确认信息<br/>created_by 创建人信息<br/>create_time / update_time 审计时间"]
     stockItem["stock_bill_item 出入库流水明细表<br/>id 主键<br/>bill_id 出入库流水ID<br/>bill_no 流水号快照<br/>source_item_id 来源明细ID<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 本次出入库数量<br/>qualified_qty 合格数量<br/>defective_qty 不合格数量<br/>before_qty 变动前库存<br/>change_qty 变动数量<br/>after_qty 变动后库存"]
     warehouseRef["warehouse 仓库表<br/>id 仓库ID<br/>warehouse_name 仓库名称"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]
@@ -779,8 +779,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    document["ai_document AI知识库文档表<br/>id 主键<br/>title 文档标题<br/>file_name 原始文件名<br/>file_ext 文件扩展名<br/>storage_path 文件存储路径<br/>content_hash 文件内容哈希<br/>status 处理状态<br/>chunk_count 切片数量<br/>uploaded_by 上传人信息<br/>parsed_at 解析完成时间<br/>indexed_at 向量索引完成时间<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除"]
-    chunk["ai_document_chunk AI文档切片表<br/>id 主键<br/>document_id 文档ID<br/>chunk_index 切片序号<br/>content 切片内容<br/>content_hash 切片哈希<br/>token_count token估算<br/>vector_key RedisStack向量key<br/>status 索引状态<br/>created_at / updated_at 审计时间<br/>deleted 逻辑删除"]
+    document["ai_document AI知识库文档表<br/>id 主键<br/>title 文档标题<br/>file_name 原始文件名<br/>file_ext 文件扩展名<br/>storage_path 文件存储路径<br/>content_hash 文件内容哈希<br/>status 处理状态<br/>chunk_count 切片数量<br/>uploaded_by 上传人信息<br/>parsed_at 解析完成时间<br/>indexed_at 向量索引完成时间<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
+    chunk["ai_document_chunk AI文档切片表<br/>id 主键<br/>document_id 文档ID<br/>chunk_index 切片序号<br/>content 切片内容<br/>content_hash 切片哈希<br/>token_count token估算<br/>vector_key RedisStack向量key<br/>status 索引状态<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
     log["ai_interaction_log AI交互审计表<br/>id 主键<br/>request_id 请求ID<br/>parent_request_id 父请求ID<br/>interaction_type 交互类型<br/>user_id / username 用户信息<br/>user_question 用户原始问题<br/>tool_name Tool或Workflow名称<br/>permission_code 权限码<br/>permission_passed 权限是否通过<br/>request_params 调用入参<br/>result_summary 返回摘要<br/>result_count 返回条数<br/>cited_chunk_ids 引用切片ID列表<br/>desensitized 是否脱敏<br/>success 是否成功<br/>error_message 错误信息<br/>duration_ms 调用耗时"]
     redis["RedisStack 向量索引<br/>vector_key 向量key<br/>embedding 向量本体"]
     userRef["sys_user 用户表<br/>id 用户ID<br/>username 登录账号"]

@@ -10,21 +10,21 @@ import type {
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
 
 const stockSeed: WarehouseStockListItem[] = [
-  { stockId: '1940000000000000001', warehouseId: '1930000000000000001', warehouseCode: 'WH001', warehouseName: '华东中心仓', productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', unitName: '箱', stockQty: 86, lockedQty: 18, availableQty: 68, safetyStockQty: 12, updatedAt: '2026-06-14 09:20:00' },
-  { stockId: '1940000000000000002', warehouseId: '1930000000000000001', warehouseCode: 'WH001', warehouseName: '华东中心仓', productId: '1920000000000000002', productCode: 'P0002', productName: '速溶黑咖啡', unitName: '盒', stockQty: 7, lockedQty: 2, availableQty: 5, safetyStockQty: 8, updatedAt: '2026-06-14 09:18:00' },
-  { stockId: '1940000000000000003', warehouseId: '1930000000000000001', warehouseCode: 'WH001', warehouseName: '华东中心仓', productId: '1920000000000000005', productCode: 'P0005', productName: '中性签字笔', unitName: '盒', stockQty: 42.5, lockedQty: 12, availableQty: 30.5, safetyStockQty: 30, updatedAt: '2026-06-14 09:15:00' },
-  { stockId: '1940000000000000004', warehouseId: '1930000000000000002', warehouseCode: 'WH002', warehouseName: '华南中心仓', productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', unitName: '箱', stockQty: 54, lockedQty: 0, availableQty: 54, safetyStockQty: 12, updatedAt: '2026-06-14 08:50:00' },
-  { stockId: '1940000000000000005', warehouseId: '1930000000000000002', warehouseCode: 'WH002', warehouseName: '华南中心仓', productId: '1920000000000000007', productCode: 'P0007', productName: 'A4复印纸', unitName: '箱', stockQty: 13, lockedQty: 3, availableQty: 10, safetyStockQty: 15, updatedAt: '2026-06-14 08:45:00' },
-  { stockId: '1940000000000000006', warehouseId: '1930000000000000002', warehouseCode: 'WH002', warehouseName: '华南中心仓', productId: '1920000000000000008', productCode: 'P0008', productName: '热敏标签纸', unitName: '卷', stockQty: 0, lockedQty: 0, availableQty: 0, safetyStockQty: 40, updatedAt: '2026-06-14 08:40:00' },
-  { stockId: '1940000000000000007', warehouseId: '1930000000000000003', warehouseCode: 'WH003', warehouseName: '华北中心仓', productId: '1920000000000000003', productCode: 'P0003', productName: '每日坚果混合装', unitName: '盒', stockQty: 31, lockedQty: 6, availableQty: 25, safetyStockQty: 6, updatedAt: '2026-06-13 17:30:00' },
-  { stockId: '1940000000000000008', warehouseId: '1930000000000000003', warehouseCode: 'WH003', warehouseName: '华北中心仓', productId: '1920000000000000009', productCode: 'P0009', productName: '浓缩洗衣液', unitName: '瓶', stockQty: 9, lockedQty: 0, availableQty: 9, safetyStockQty: 10, updatedAt: '2026-06-13 17:25:00' },
-  { stockId: '1940000000000000009', warehouseId: '1930000000000000004', warehouseCode: 'WH004', warehouseName: '西南中心仓', productId: '1920000000000000010', productCode: 'P0010', productName: '厨房清洁湿巾', unitName: '包', stockQty: 48, lockedQty: 16, availableQty: 32, safetyStockQty: 18, updatedAt: '2026-06-13 16:48:00' },
-  { stockId: '1940000000000000010', warehouseId: '1930000000000000004', warehouseCode: 'WH004', warehouseName: '西南中心仓', productId: '1920000000000000011', productCode: 'P0011', productName: '加厚垃圾袋', unitName: '卷', stockQty: 25, lockedQty: 5, availableQty: 20, safetyStockQty: 25, updatedAt: '2026-06-13 16:45:00' },
-  { stockId: '1940000000000000011', warehouseId: '1930000000000000005', warehouseCode: 'WH005', warehouseName: '武汉中转仓', productId: '1920000000000000004', productCode: 'P0004', productName: '海盐苏打饼干', unitName: '箱', stockQty: 19, lockedQty: 0, availableQty: 19, safetyStockQty: 5, updatedAt: '2026-06-13 15:20:00' },
-  { stockId: '1940000000000000012', warehouseId: '1930000000000000005', warehouseCode: 'WH005', warehouseName: '武汉中转仓', productId: '1920000000000000012', productCode: 'P0012', productName: '无痕粘钩', unitName: '卡', stockQty: 11, lockedQty: 1, availableQty: 10, safetyStockQty: 15, updatedAt: '2026-06-13 15:18:00' },
-  { stockId: '1940000000000000013', warehouseId: '1930000000000000006', warehouseCode: 'WH006', warehouseName: '西安中转仓', productId: '1920000000000000006', productCode: 'P0006', productName: '彩色便利贴', unitName: '本', stockQty: 63, lockedQty: 0, availableQty: 63, safetyStockQty: 20, updatedAt: '2026-06-13 14:35:00' },
-  { stockId: '1940000000000000014', warehouseId: '1930000000000000007', warehouseCode: 'WH007', warehouseName: '杭州电商仓', productId: '1920000000000000014', productCode: 'P0014', productName: '无线办公鼠标', unitName: '个', stockQty: 8, lockedQty: 8, availableQty: 0, safetyStockQty: 8, updatedAt: '2026-06-13 13:10:00' },
-  { stockId: '1940000000000000015', warehouseId: '1930000000000000008', warehouseCode: 'WH008', warehouseName: '南京备货仓', productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', unitName: '个', stockQty: 17, lockedQty: 4, availableQty: 13, safetyStockQty: 4, updatedAt: '2026-06-13 11:55:00' },
+  { stockId: '1940000000000000001', warehouseId: '1930000000000000001', warehouseCode: 'WH001', warehouseName: '华东中心仓', productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', unitName: '箱', stockQty: 86, lockedQty: 18, availableQty: 68, safetyStockQty: 12, updateTime: '2026-06-14 09:20:00' },
+  { stockId: '1940000000000000002', warehouseId: '1930000000000000001', warehouseCode: 'WH001', warehouseName: '华东中心仓', productId: '1920000000000000002', productCode: 'P0002', productName: '速溶黑咖啡', unitName: '盒', stockQty: 7, lockedQty: 2, availableQty: 5, safetyStockQty: 8, updateTime: '2026-06-14 09:18:00' },
+  { stockId: '1940000000000000003', warehouseId: '1930000000000000001', warehouseCode: 'WH001', warehouseName: '华东中心仓', productId: '1920000000000000005', productCode: 'P0005', productName: '中性签字笔', unitName: '盒', stockQty: 42.5, lockedQty: 12, availableQty: 30.5, safetyStockQty: 30, updateTime: '2026-06-14 09:15:00' },
+  { stockId: '1940000000000000004', warehouseId: '1930000000000000002', warehouseCode: 'WH002', warehouseName: '华南中心仓', productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', unitName: '箱', stockQty: 54, lockedQty: 0, availableQty: 54, safetyStockQty: 12, updateTime: '2026-06-14 08:50:00' },
+  { stockId: '1940000000000000005', warehouseId: '1930000000000000002', warehouseCode: 'WH002', warehouseName: '华南中心仓', productId: '1920000000000000007', productCode: 'P0007', productName: 'A4复印纸', unitName: '箱', stockQty: 13, lockedQty: 3, availableQty: 10, safetyStockQty: 15, updateTime: '2026-06-14 08:45:00' },
+  { stockId: '1940000000000000006', warehouseId: '1930000000000000002', warehouseCode: 'WH002', warehouseName: '华南中心仓', productId: '1920000000000000008', productCode: 'P0008', productName: '热敏标签纸', unitName: '卷', stockQty: 0, lockedQty: 0, availableQty: 0, safetyStockQty: 40, updateTime: '2026-06-14 08:40:00' },
+  { stockId: '1940000000000000007', warehouseId: '1930000000000000003', warehouseCode: 'WH003', warehouseName: '华北中心仓', productId: '1920000000000000003', productCode: 'P0003', productName: '每日坚果混合装', unitName: '盒', stockQty: 31, lockedQty: 6, availableQty: 25, safetyStockQty: 6, updateTime: '2026-06-13 17:30:00' },
+  { stockId: '1940000000000000008', warehouseId: '1930000000000000003', warehouseCode: 'WH003', warehouseName: '华北中心仓', productId: '1920000000000000009', productCode: 'P0009', productName: '浓缩洗衣液', unitName: '瓶', stockQty: 9, lockedQty: 0, availableQty: 9, safetyStockQty: 10, updateTime: '2026-06-13 17:25:00' },
+  { stockId: '1940000000000000009', warehouseId: '1930000000000000004', warehouseCode: 'WH004', warehouseName: '西南中心仓', productId: '1920000000000000010', productCode: 'P0010', productName: '厨房清洁湿巾', unitName: '包', stockQty: 48, lockedQty: 16, availableQty: 32, safetyStockQty: 18, updateTime: '2026-06-13 16:48:00' },
+  { stockId: '1940000000000000010', warehouseId: '1930000000000000004', warehouseCode: 'WH004', warehouseName: '西南中心仓', productId: '1920000000000000011', productCode: 'P0011', productName: '加厚垃圾袋', unitName: '卷', stockQty: 25, lockedQty: 5, availableQty: 20, safetyStockQty: 25, updateTime: '2026-06-13 16:45:00' },
+  { stockId: '1940000000000000011', warehouseId: '1930000000000000005', warehouseCode: 'WH005', warehouseName: '武汉中转仓', productId: '1920000000000000004', productCode: 'P0004', productName: '海盐苏打饼干', unitName: '箱', stockQty: 19, lockedQty: 0, availableQty: 19, safetyStockQty: 5, updateTime: '2026-06-13 15:20:00' },
+  { stockId: '1940000000000000012', warehouseId: '1930000000000000005', warehouseCode: 'WH005', warehouseName: '武汉中转仓', productId: '1920000000000000012', productCode: 'P0012', productName: '无痕粘钩', unitName: '卡', stockQty: 11, lockedQty: 1, availableQty: 10, safetyStockQty: 15, updateTime: '2026-06-13 15:18:00' },
+  { stockId: '1940000000000000013', warehouseId: '1930000000000000006', warehouseCode: 'WH006', warehouseName: '西安中转仓', productId: '1920000000000000006', productCode: 'P0006', productName: '彩色便利贴', unitName: '本', stockQty: 63, lockedQty: 0, availableQty: 63, safetyStockQty: 20, updateTime: '2026-06-13 14:35:00' },
+  { stockId: '1940000000000000014', warehouseId: '1930000000000000007', warehouseCode: 'WH007', warehouseName: '杭州电商仓', productId: '1920000000000000014', productCode: 'P0014', productName: '无线办公鼠标', unitName: '个', stockQty: 8, lockedQty: 8, availableQty: 0, safetyStockQty: 8, updateTime: '2026-06-13 13:10:00' },
+  { stockId: '1940000000000000015', warehouseId: '1930000000000000008', warehouseCode: 'WH008', warehouseName: '南京备货仓', productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', unitName: '个', stockQty: 17, lockedQty: 4, availableQty: 13, safetyStockQty: 4, updateTime: '2026-06-13 11:55:00' },
 ];
 
 let mockStocks = stockSeed.map(item => ({ ...item }));
@@ -59,7 +59,7 @@ export function applyMockWarehouseStockChange(change: MockStockChange) {
   if (afterQty < afterLockedQty) throw new Error(`产品 ${change.productCode} 调整后库存不能低于已锁定库存`);
   if (current) {
     mockStocks = mockStocks.map(item => item.stockId === current.stockId
-      ? { ...item, stockQty: afterQty, lockedQty: afterLockedQty, availableQty: afterQty - afterLockedQty, updatedAt: timestamp }
+      ? { ...item, stockQty: afterQty, lockedQty: afterLockedQty, availableQty: afterQty - afterLockedQty, updateTime: timestamp }
       : item);
   } else {
     if (change.changeQty < 0) throw new Error(`产品 ${change.productCode} 在当前仓库没有可出库库存`);
@@ -76,7 +76,7 @@ export function applyMockWarehouseStockChange(change: MockStockChange) {
       lockedQty: 0,
       availableQty: afterQty,
       safetyStockQty: change.safetyStockQty,
-      updatedAt: timestamp,
+      updateTime: timestamp,
     }];
   }
   return { beforeQty, afterQty };
@@ -107,7 +107,7 @@ function normalizeStock(item: WarehouseStockListItem): WarehouseStockListItem {
     lockedQty,
     availableQty,
     safetyStockQty,
-    updatedAt: String(item.updatedAt),
+    updateTime: String(item.updateTime),
   };
 }
 

@@ -7,8 +7,8 @@ export interface ProductCategoryListItem {
   status: ProductCategoryStatus;
   productCount: number;
   children?: ProductCategoryListItem[];
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
 }
 
 export interface ProductCategoryQuery {

@@ -20,7 +20,7 @@ export const permissionActionOptions: Array<{ value: PermissionAction; label: st
   { value: 'execute', label: '执行' },
 ];
 
-const initialRows: Array<Omit<SystemPermissionListItem, 'permissionId' | 'createdAt' | 'updatedAt'>> = [
+const initialRows: Array<Omit<SystemPermissionListItem, 'permissionId' | 'createTime' | 'updateTime'>> = [
   ['system:user:query', '用户查询', 'system', 'query', 1, 10, '查看用户账号及其部门、角色信息', 2],
   ['system:user:manage', '用户维护', 'system', 'manage', 1, 20, '新增、编辑、启停和删除用户账号', 2],
   ['system:role:query', '角色查询', 'system', 'query', 1, 30, '查看角色及权限绑定信息', 2],
@@ -55,7 +55,7 @@ export function createInitialPermissions(): SystemPermissionListItem[] {
   return initialRows.map((row, index) => ({
     ...row,
     permissionId: `1900000000000002${String(index + 1).padStart(3, '0')}`,
-    createdAt: '2026-06-08 10:00:00',
-    updatedAt: index === initialRows.length - 1 ? '2026-06-11 16:20:00' : '2026-06-10 09:30:00',
+    createTime: '2026-06-08 10:00:00',
+    updateTime: index === initialRows.length - 1 ? '2026-06-11 16:20:00' : '2026-06-10 09:30:00',
   }));
 }

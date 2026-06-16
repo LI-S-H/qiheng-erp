@@ -25,8 +25,8 @@ export interface StockBillListItem {
   createdByName: string;
   responsibleById: string;
   responsibleByName: string;
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
 }
 
 export interface StockBillItem {
@@ -45,8 +45,8 @@ export interface StockBillItem {
   beforeQty: number;
   changeQty: number;
   afterQty: number;
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
   remark: string;
 }
 

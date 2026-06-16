@@ -371,7 +371,7 @@ function handleBatchDelete() {
               <TableCell>{{ row.contactPhone || '未维护' }}</TableCell>
               <TableCell><span class="block truncate" :title="row.address">{{ row.address || '未维护' }}</span></TableCell>
               <TableCell><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.updatedAt }}</TableCell>
+              <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
               <TableCell class="text-center"><div class="flex justify-center gap-1"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><Button size="sm" variant="ghost" :class="row.status === 1 ? 'text-amber-700' : 'text-primary'" :disabled="actionSubmitting" @click="handleStatusChange(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button><Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="handleDelete(row)">删除</Button></div></TableCell>
             </TableRow>
           </TableBody>

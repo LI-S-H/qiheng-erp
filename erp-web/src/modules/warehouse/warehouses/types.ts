@@ -9,8 +9,8 @@ export interface WarehouseListItem {
   address: string;
   status: WarehouseStatus;
   remark: string;
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
 }
 
 export interface WarehouseQuery {

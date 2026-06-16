@@ -8,8 +8,8 @@ export interface SystemDeptListItem {
   status: DeptStatus;
   userCount: number;
   children?: SystemDeptListItem[];
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
 }
 
 export interface SystemDeptQuery {

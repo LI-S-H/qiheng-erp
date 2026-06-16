@@ -211,8 +211,8 @@ paths:
                       roleNames:
                         - 超级管理员
                       lastLoginAt: "2026-06-08 09:12:30"
-                      createdAt: "2026-06-05 20:30:00"
-                      updatedAt: "2026-06-08 09:12:30"
+                      createTime: "2026-06-05 20:30:00"
+                      updateTime: "2026-06-08 09:12:30"
                   total: 1
                   pageNum: 1
                   pageSize: 10
@@ -561,8 +561,8 @@ paths:
                       status: 1
                       remark: 拥有系统全部访问和维护权限
                       userCount: 1
-                      createdAt: "2026-06-05 20:30:00"
-                      updatedAt: "2026-06-08 09:12:30"
+                      createTime: "2026-06-05 20:30:00"
+                      updateTime: "2026-06-08 09:12:30"
                   total: 1
                   pageNum: 1
                   pageSize: 10
@@ -845,24 +845,24 @@ paths:
                     deptName: 行政部
                     status: 1
                     userCount: 1
-                    createdAt: "2026-06-05 20:10:00"
-                    updatedAt: "2026-06-08 09:10:00"
+                    createTime: "2026-06-05 20:10:00"
+                    updateTime: "2026-06-08 09:10:00"
                   - deptId: "1900000000000000102"
                     parentId: "0"
                     ancestors: "0"
                     deptName: 采购部
                     status: 1
                     userCount: 1
-                    createdAt: "2026-06-05 20:13:00"
-                    updatedAt: "2026-06-07 17:24:11"
+                    createTime: "2026-06-05 20:13:00"
+                    updateTime: "2026-06-07 17:24:11"
                   - deptId: "1900000000000000106"
                     parentId: "1900000000000000102"
                     ancestors: "0,1900000000000000102"
                     deptName: 供应商维护组
                     status: 1
                     userCount: 0
-                    createdAt: "2026-06-07 09:30:00"
-                    updatedAt: "2026-06-07 09:30:00"
+                    createTime: "2026-06-07 09:30:00"
+                    updateTime: "2026-06-07 09:30:00"
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -2104,15 +2104,15 @@ paths:
                     categoryName: 食品饮料
                     status: 1
                     productCount: 0
-                    createdAt: "2026-06-09 09:10:00"
-                    updatedAt: "2026-06-12 14:20:00"
+                    createTime: "2026-06-09 09:10:00"
+                    updateTime: "2026-06-12 14:20:00"
                   - categoryId: "1910000000000000101"
                     parentId: "1910000000000000100"
                     categoryName: 饮料冲调
                     status: 1
                     productCount: 18
-                    createdAt: "2026-06-09 09:20:00"
-                    updatedAt: "2026-06-12 10:16:00"
+                    createTime: "2026-06-09 09:20:00"
+                    updateTime: "2026-06-12 10:16:00"
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
     post:
@@ -2534,8 +2534,8 @@ components:
         - status
         - roleIds
         - roleNames
-        - createdAt
-        - updatedAt
+        - createTime
+        - updateTime
       properties:
         userId:
           type: string
@@ -2573,10 +2573,10 @@ components:
           type: string
           nullable: true
           description: 最近登录时间
-        createdAt:
+        createTime:
           type: string
           description: 创建时间
-        updatedAt:
+        updateTime:
           type: string
           description: 更新时间
 
@@ -2796,8 +2796,8 @@ components:
         - status
         - remark
         - userCount
-        - createdAt
-        - updatedAt
+        - createTime
+        - updateTime
       properties:
         roleId:
           type: string
@@ -2832,12 +2832,12 @@ components:
         userCount:
           type: integer
           description: 当前绑定用户数量，由 `sys_user_role` 按角色聚合得到
-        createdAt:
+        createTime:
           type: string
-          description: 创建时间，对应 `sys_role.created_at`
-        updatedAt:
+          description: 创建时间，对应 `sys_role.create_time`
+        updateTime:
           type: string
-          description: 更新时间，对应 `sys_role.updated_at`
+          description: 更新时间，对应 `sys_role.update_time`
 
     SystemRoleCreateRequest:
       type: object
@@ -2972,8 +2972,8 @@ components:
         - deptName
         - status
         - userCount
-        - createdAt
-        - updatedAt
+        - createTime
+        - updateTime
       properties:
         deptId:
           type: string
@@ -2997,12 +2997,12 @@ components:
         userCount:
           type: integer
           description: 当前员工数量，由 `sys_user.dept_id` 按部门聚合得到
-        createdAt:
+        createTime:
           type: string
-          description: 创建时间，对应 `sys_dept.created_at`
-        updatedAt:
+          description: 创建时间，对应 `sys_dept.create_time`
+        updateTime:
           type: string
-          description: 更新时间，对应 `sys_dept.updated_at`
+          description: 更新时间，对应 `sys_dept.update_time`
 
     SystemDeptCreateRequest:
       type: object
@@ -3106,7 +3106,7 @@ components:
 
     SystemPermission:
       type: object
-      required: [permissionId, permissionCode, permissionName, moduleCode, actionType, status, sortOrder, description, roleCount, createdAt, updatedAt]
+      required: [permissionId, permissionCode, permissionName, moduleCode, actionType, status, sortOrder, description, roleCount, createTime, updateTime]
       properties:
         permissionId: { type: string }
         permissionCode:
@@ -3121,8 +3121,8 @@ components:
         sortOrder: { type: integer, minimum: 0, maximum: 9999 }
         description: { type: string, maxLength: 500 }
         roleCount: { type: integer, minimum: 0, description: 由后端使用 sys_role.permission_codes JSON 聚合得到；通配符 * 视为引用全部权限码 }
-        createdAt: { type: string }
-        updatedAt: { type: string }
+        createTime: { type: string }
+        updateTime: { type: string }
 
     SystemPermissionCreateRequest:
       type: object
@@ -3299,7 +3299,7 @@ components:
 
     StockBill:
       type: object
-      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, entryMode, warehouseId, warehouseName, status, itemCount, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, createdAt, updatedAt]
+      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, entryMode, warehouseId, warehouseName, status, itemCount, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, createTime, updateTime]
       properties:
         stockBillId: { type: string, description: 对应 `stock_bill.id`，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 对应 `stock_bill.bill_no` }
@@ -3319,8 +3319,8 @@ components:
         createdByName: { type: string, maxLength: 100, description: 对应 `stock_bill.created_by_name` }
         responsibleById: { type: string, description: 对应 `stock_bill.responsible_by_id`；手工单据由后端取当前登录用户 }
         responsibleByName: { type: string, maxLength: 100, description: 对应 `stock_bill.responsible_by_name` }
-        createdAt: { type: string, description: 对应 `stock_bill.created_at` }
-        updatedAt: { type: string, description: 对应 `stock_bill.updated_at` }
+        createTime: { type: string, description: 对应 `stock_bill.create_time` }
+        updateTime: { type: string, description: 对应 `stock_bill.update_time` }
 
     StockBillDetail:
       allOf:
@@ -3336,7 +3336,7 @@ components:
 
     StockBillItem:
       type: object
-      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createdAt, updatedAt, remark]
+      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createTime, updateTime, remark]
       properties:
         stockBillItemId: { type: string, description: 对应 `stock_bill_item.id`，BIGINT 按字符串传输 }
         stockBillId: { type: string, description: 对应 `stock_bill_item.bill_id`，BIGINT 按字符串传输 }
@@ -3353,13 +3353,13 @@ components:
         beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.before_qty` 按 100 倍整数存储 }
         changeQty: { type: number, format: double, multipleOf: 0.01, description: 业务真实值，入库为正、出库为负；数据库按 100 倍整数存储 }
         afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.after_qty` 按 100 倍整数存储 }
-        createdAt: { type: string, description: 对应 `stock_bill_item.created_at` }
-        updatedAt: { type: string, description: 对应 `stock_bill_item.updated_at` }
+        createTime: { type: string, description: 对应 `stock_bill_item.create_time` }
+        updateTime: { type: string, description: 对应 `stock_bill_item.update_time` }
         remark: { type: string, maxLength: 500, description: 对应 `stock_bill_item.remark` }
 
     WarehouseStock:
       type: object
-      required: [stockId, warehouseId, warehouseCode, warehouseName, productId, productCode, productName, unitName, stockQty, lockedQty, availableQty, safetyStockQty, updatedAt]
+      required: [stockId, warehouseId, warehouseCode, warehouseName, productId, productCode, productName, unitName, stockQty, lockedQty, availableQty, safetyStockQty, updateTime]
       properties:
         stockId:
           type: string
@@ -3379,7 +3379,7 @@ components:
         lockedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 锁定库存业务真实值；数据库 `warehouse_stock.locked_qty` 按 100 倍整数存储 }
         availableQty: { type: number, format: double, minimum: 0, description: 服务层计算 `stock_qty - locked_qty` }
         safetyStockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 安全库存业务真实值；数据库 `product.safety_stock_qty` 按 100 倍整数存储 }
-        updatedAt: { type: string, description: 对应 `warehouse_stock.updated_at` }
+        updateTime: { type: string, description: 对应 `warehouse_stock.update_time` }
 
     WarehouseStockSummary:
       type: object
@@ -3403,7 +3403,7 @@ components:
 
     Warehouse:
       type: object
-      required: [warehouseId, warehouseCode, warehouseName, contactName, contactPhone, address, status, remark, createdAt, updatedAt]
+      required: [warehouseId, warehouseCode, warehouseName, contactName, contactPhone, address, status, remark, createTime, updateTime]
       properties:
         warehouseId:
           type: string
@@ -3420,8 +3420,8 @@ components:
         address: { type: string, maxLength: 255 }
         status: { type: integer, enum: [0, 1] }
         remark: { type: string, maxLength: 500 }
-        createdAt: { type: string }
-        updatedAt: { type: string }
+        createTime: { type: string }
+        updateTime: { type: string }
 
     WarehouseCreateRequest:
       type: object
@@ -3499,8 +3499,8 @@ components:
         - safetyStockQty
         - status
         - remark
-        - createdAt
-        - updatedAt
+        - createTime
+        - updateTime
       properties:
         productId:
           type: string
@@ -3563,8 +3563,8 @@ components:
         remark:
           type: string
           maxLength: 500
-        createdAt: { type: string }
-        updatedAt: { type: string }
+        createTime: { type: string }
+        updateTime: { type: string }
 
     ProductFormRequest:
       type: object
@@ -3629,7 +3629,7 @@ components:
 
     ProductCategory:
       type: object
-      required: [categoryId, parentId, categoryName, status, productCount, createdAt, updatedAt]
+      required: [categoryId, parentId, categoryName, status, productCount, createTime, updateTime]
       properties:
         categoryId:
           type: string
@@ -3650,12 +3650,12 @@ components:
           type: integer
           minimum: 0
           description: 当前分类直接关联的未删除产品数量，通过 `product.category_id` 聚合，不包含下级分类产品
-        createdAt:
+        createTime:
           type: string
-          description: 创建时间，对应 `product_category.created_at`
-        updatedAt:
+          description: 创建时间，对应 `product_category.create_time`
+        updateTime:
           type: string
-          description: 更新时间，对应 `product_category.updated_at`
+          description: 更新时间，对应 `product_category.update_time`
 
     ProductCategoryCreateRequest:
       type: object

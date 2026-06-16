@@ -56,25 +56,25 @@ let mockUsers: SystemUserListItem[] = [
     userId: '1900000000000000001', username: 'admin', realName: '系统管理员',
     deptId: '1900000000000000100', deptName: '行政部', isAdmin: true, status: 1,
     roleIds: ['1900000000000001001'], roleNames: ['超级管理员'],
-    lastLoginAt: '2026-06-08 09:12:30', createdAt: '2026-06-05 20:30:00', updatedAt: '2026-06-08 09:12:30',
+    lastLoginAt: '2026-06-08 09:12:30', createTime: '2026-06-05 20:30:00', updateTime: '2026-06-08 09:12:30',
   },
   {
     userId: '1900000000000000002', username: 'purchase01', realName: '采购主管',
     deptId: '1900000000000000102', deptName: '采购部', isAdmin: false, status: 1,
     roleIds: ['1900000000000001003'], roleNames: ['业务主管'],
-    lastLoginAt: '2026-06-07 17:24:11', createdAt: '2026-06-06 10:18:22', updatedAt: '2026-06-07 17:24:11',
+    lastLoginAt: '2026-06-07 17:24:11', createTime: '2026-06-06 10:18:22', updateTime: '2026-06-07 17:24:11',
   },
   {
     userId: '1900000000000000003', username: 'warehouse01', realName: '仓库操作员',
     deptId: '1900000000000000104', deptName: '仓储部', isAdmin: false, status: 1,
     roleIds: ['1900000000000001004'], roleNames: ['仓库操作员'],
-    lastLoginAt: null, createdAt: '2026-06-06 11:05:19', updatedAt: '2026-06-06 11:05:19',
+    lastLoginAt: null, createTime: '2026-06-06 11:05:19', updateTime: '2026-06-06 11:05:19',
   },
   {
     userId: '1900000000000000004', username: 'sales_stop', realName: '停用销售账号',
     deptId: '1900000000000000103', deptName: '销售部', isAdmin: false, status: 0,
     roleIds: ['1900000000000001003'], roleNames: ['业务主管'],
-    lastLoginAt: '2026-06-06 14:42:02', createdAt: '2026-06-05 22:10:00', updatedAt: '2026-06-07 13:00:00',
+    lastLoginAt: '2026-06-06 14:42:02', createTime: '2026-06-05 22:10:00', updateTime: '2026-06-07 13:00:00',
   },
 ];
 
@@ -132,8 +132,8 @@ export function createSystemUser(payload: SystemUserFormPayload) {
       roleIds: [...payload.roleIds],
       roleNames: roles.map(r => r.roleName),
       lastLoginAt: null,
-      createdAt: now,
-      updatedAt: now,
+      createTime: now,
+      updateTime: now,
     };
     mockUsers = [newUser, ...mockUsers];
     return Promise.resolve(newUser);
@@ -154,7 +154,7 @@ export async function updateSystemUser(userId: string, payload: SystemUserFormPa
         ...u, username: payload.username, realName: payload.realName,
         deptId: payload.deptId, deptName: dept?.deptName || '',
         isAdmin: payload.isAdmin, status: payload.status,
-        roleIds: [...payload.roleIds], roleNames: roles.map(r => r.roleName), updatedAt: now,
+        roleIds: [...payload.roleIds], roleNames: roles.map(r => r.roleName), updateTime: now,
       } : u,
     );
     return mockUsers.find(u => u.userId === userId) as SystemUserListItem;
@@ -166,7 +166,7 @@ export async function updateSystemUser(userId: string, payload: SystemUserFormPa
 export async function updateSystemUserStatus(userId: string, status: UserStatus) {
   if (useMockApi) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    mockUsers = mockUsers.map(u => u.userId === userId ? { ...u, status, updatedAt: now } : u);
+    mockUsers = mockUsers.map(u => u.userId === userId ? { ...u, status, updateTime: now } : u);
     return null;
   }
   const response = await http.patch(`/system/users/${userId}/status`, { status });
@@ -184,7 +184,7 @@ export async function bindSystemUserRoles(userId: string, payload: UserRoleBindP
     const roles = mockRoleOptions.filter(r => payload.roleIds.includes(r.roleId));
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     mockUsers = mockUsers.map(u =>
-      u.userId === userId ? { ...u, roleIds: [...payload.roleIds], roleNames: roles.map(r => r.roleName), updatedAt: now } : u,
+      u.userId === userId ? { ...u, roleIds: [...payload.roleIds], roleNames: roles.map(r => r.roleName), updateTime: now } : u,
     );
     return null;
   }
@@ -205,7 +205,7 @@ export async function batchUpdateSystemUserStatus(payload: UserBatchStatusPayloa
   if (useMockApi) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     mockUsers = mockUsers.map(u =>
-      payload.userIds.includes(u.userId) ? { ...u, status: payload.status, updatedAt: now } : u,
+      payload.userIds.includes(u.userId) ? { ...u, status: payload.status, updateTime: now } : u,
     );
     return null;
   }

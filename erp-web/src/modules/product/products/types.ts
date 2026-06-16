@@ -16,8 +16,8 @@ export interface ProductListItem {
   safetyStockQty: number;
   status: ProductStatus;
   remark: string;
-  createdAt: string;
-  updatedAt: string;
+  createTime: string;
+  updateTime: string;
 }
 
 export interface ProductQuery {

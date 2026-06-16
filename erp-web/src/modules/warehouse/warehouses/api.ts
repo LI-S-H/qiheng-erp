@@ -36,8 +36,8 @@ let mockWarehouses: Array<WarehouseListItem & { referenced: boolean }> = warehou
   address: item[4],
   status: item[5],
   remark: index < 4 ? '区域主仓，承担日常收发与调拨' : '',
-  createdAt: `2026-06-${String(1 + (index % 8)).padStart(2, '0')} 09:30:00`,
-  updatedAt: `2026-06-${String(10 + (index % 4)).padStart(2, '0')} 15:20:00`,
+  createTime: `2026-06-${String(1 + (index % 8)).padStart(2, '0')} 09:30:00`,
+  updateTime: `2026-06-${String(10 + (index % 4)).padStart(2, '0')} 15:20:00`,
   referenced: item[6],
 }));
 
@@ -56,8 +56,8 @@ function normalizeWarehouse(item: WarehouseListItem): WarehouseListItem {
     address: String(item.address),
     status: normalizeBinaryStatus(item.status),
     remark: String(item.remark),
-    createdAt: String(item.createdAt),
-    updatedAt: String(item.updatedAt),
+    createTime: String(item.createTime),
+    updateTime: String(item.updateTime),
   };
 }
 
@@ -125,8 +125,8 @@ export function createWarehouse(payload: WarehouseCreatePayload) {
       warehouseId: String(Date.now()),
       ...payload,
       warehouseCode: generateMockWarehouseCode(),
-      createdAt: timestamp,
-      updatedAt: timestamp,
+      createTime: timestamp,
+      updateTime: timestamp,
       referenced: false,
     };
     mockWarehouses = [...mockWarehouses, created];
@@ -138,7 +138,7 @@ export function createWarehouse(payload: WarehouseCreatePayload) {
 export async function updateWarehouse(warehouseId: string, payload: WarehouseUpdatePayload) {
   if (useMockApi) {
     mockWarehouses = mockWarehouses.map(item => item.warehouseId === warehouseId
-      ? { ...item, ...payload, updatedAt: nowText() }
+      ? { ...item, ...payload, updateTime: nowText() }
       : item);
     const warehouse = mockWarehouses.find(item => item.warehouseId === warehouseId);
     return warehouse ? normalizeWarehouse(warehouse) : null;
@@ -150,7 +150,7 @@ export async function updateWarehouse(warehouseId: string, payload: WarehouseUpd
 export async function updateWarehouseStatus(warehouseId: string, status: WarehouseListItem['status']) {
   if (useMockApi) {
     mockWarehouses = mockWarehouses.map(item => item.warehouseId === warehouseId
-      ? { ...item, status, updatedAt: nowText() }
+      ? { ...item, status, updateTime: nowText() }
       : item);
     return null;
   }
@@ -171,9 +171,9 @@ export async function deleteWarehouse(warehouseId: string) {
 
 export async function batchUpdateWarehouseStatus(payload: WarehouseBatchStatusPayload) {
   if (useMockApi) {
-    const updatedAt = nowText();
+    const updateTime = nowText();
     mockWarehouses = mockWarehouses.map(item => payload.warehouseIds.includes(item.warehouseId)
-      ? { ...item, status: payload.status, updatedAt }
+      ? { ...item, status: payload.status, updateTime }
       : item);
     return null;
   }

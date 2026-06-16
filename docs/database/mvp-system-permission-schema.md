@@ -24,16 +24,16 @@
 
 ## 表：sys_dept（部门表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 部门ID |
-| parent_id | bigint | 上级部门ID，顶级为 0 |
-| ancestors | varchar(500) | 祖级路径，后续扩展部门数据权限时使用 |
-| dept_name | varchar(100) | 部门名称 |
-| status | tinyint | 状态 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
-| deleted | tinyint | 逻辑删除 |
+| 字段         | 类型           | 说明                 |
+| ---------- | ------------ | ------------------ |
+| id         | bigint PK    | 部门ID               |
+| parent_id  | bigint       | 上级部门ID，顶级为 0       |
+| ancestors  | varchar(500) | 祖级路径，后续扩展部门数据权限时使用 |
+| dept_name  | varchar(100) | 部门名称               |
+| status     | tinyint      | 状态                 |
+| create_time | datetime     | 创建时间               |
+| update_time | datetime     | 更新时间               |
+| deleted    | tinyint      | 逻辑删除               |
 
 关系说明：`sys_user.dept_id` 关联本表。MVP 阶段部门只作为用户归属信息，不参与权限过滤。
 
@@ -57,8 +57,8 @@
 | is_admin | tinyint | 是否超级管理员 |
 | status | tinyint | 状态 |
 | last_login_at | datetime | 最近登录时间 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 
 关系说明：用户通过 `sys_user_role` 绑定角色。新增或编辑用户时至少绑定一个角色；超级管理员 `is_admin = 1` 默认拥有全部权限。
@@ -79,8 +79,8 @@
 | role_name | varchar(100) | 角色名称 |
 | permission_codes | json | 角色已授权权限码列表 |
 | status | tinyint | 状态 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -116,8 +116,8 @@
 | status | tinyint | 状态 |
 | sort_order | int | 排序值，0-9999 |
 | description | varchar(500) | 权限说明 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 
 关系说明：`sys_permission.permission_code` 是可授权权限码的目录，`sys_role.permission_codes` 保存角色实际获得的权限码数组。由于角色字段为 JSON，MVP 不建立物理外键；新增或修改角色时必须校验权限码存在且已启用，删除权限码前必须检查是否仍被任一未删除角色引用。超级管理员使用保留值 `*`，不作为普通目录数据新增或编辑。
@@ -137,8 +137,8 @@
 | id | bigint PK | 关系ID |
 | user_id | bigint | 用户ID |
 | role_id | bigint | 角色ID |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
 
 关系说明：用户和角色多对多。建议唯一索引 `(user_id, role_id)`。
 

@@ -554,7 +554,7 @@ onMounted(() => {
               <TableCell class="text-center tabular-nums">{{ row.itemCount }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="statusMap[row.status].className">{{ statusMap[row.status].label }}</Badge></TableCell>
               <TableCell>{{ row.responsibleByName }}</TableCell>
-              <TableCell><div class="flex flex-col gap-1"><span>{{ row.createdByName || '系统' }}</span><span class="text-xs text-muted-foreground">{{ row.createdAt }}</span></div></TableCell>
+              <TableCell><div class="flex flex-col gap-1"><span>{{ row.createdByName || '系统' }}</span><span class="text-xs text-muted-foreground">{{ row.createTime }}</span></div></TableCell>
               <TableCell><div v-if="row.status === 'CONFIRMED'" class="flex flex-col gap-1"><span>{{ row.confirmedByName }}</span><span class="text-xs text-muted-foreground">{{ row.confirmedAt }}</span></div><span v-else class="text-sm text-muted-foreground">未确认</span></TableCell>
               <TableCell class="text-center">
                 <div class="flex justify-center gap-1">
@@ -652,7 +652,7 @@ onMounted(() => {
               <div class="detail-field"><span>来源类型</span><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></div>
               <div class="detail-field"><span>来源单号</span><code>{{ detail.sourceNo || '-' }}</code></div>
               <div class="detail-field"><span>负责人</span><strong>{{ detail.responsibleByName }}</strong></div>
-              <div class="detail-field"><span>创建人 / 时间</span><strong>{{ detail.createdByName || '系统' }}</strong><small>{{ detail.createdAt }}</small></div>
+              <div class="detail-field"><span>创建人 / 时间</span><strong>{{ detail.createdByName || '系统' }}</strong><small>{{ detail.createTime }}</small></div>
               <div class="detail-field"><span>确认人 / 时间</span><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></div>
             </div>
             <div>

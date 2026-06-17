@@ -50,6 +50,10 @@ erp-web/scripts/capture-*.cjs
 .DS_Store
 Thumbs.db
 
+# Obsidian 笔记库
+.obsidian/
+**/.obsidian/
+
 # 本地 IDE Agent 配置（不提交到仓库）
 AGENTS.md
 AGENT.md

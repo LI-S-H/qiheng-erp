@@ -2,6 +2,9 @@
 -- 数据库：MySQL 8
 -- 说明：主键由 MyBatis-Plus ASSIGN_ID 生成，因此不使用 AUTO_INCREMENT。
 
+CREATE DATABASE IF NOT EXISTS erp DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+USE erp;
+
 CREATE TABLE IF NOT EXISTS sys_dept (
     id BIGINT NOT NULL COMMENT '部门ID',
     parent_id BIGINT NOT NULL DEFAULT 0 COMMENT '上级部门ID，顶级为0',

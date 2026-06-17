@@ -19,9 +19,15 @@
             <groupId>com.qiheng</groupId>
             <artifactId>erp-common</artifactId>
         </dependency>
+        <!-- Knife4j -->
         <dependency>
-            <groupId>com.qiheng</groupId>
-            <artifactId>erp-security</artifactId>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+        </dependency>
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
         </dependency>
     </dependencies>
 </project>

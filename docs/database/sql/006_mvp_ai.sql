@@ -2,6 +2,8 @@
 -- 数据库：MySQL 8
 -- 说明：主键由 MyBatis-Plus ASSIGN_ID 生成，因此不使用 AUTO_INCREMENT。
 
+USE erp;
+
 CREATE TABLE IF NOT EXISTS ai_document (
     id BIGINT NOT NULL COMMENT '文档ID',
     title VARCHAR(200) NOT NULL COMMENT '文档标题',
@@ -19,6 +21,7 @@ CREATE TABLE IF NOT EXISTS ai_document (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     KEY idx_ai_document_hash (content_hash),
     KEY idx_ai_document_status (status),
@@ -37,6 +40,7 @@ CREATE TABLE IF NOT EXISTS ai_document_chunk (
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_ai_document_chunk (document_id, chunk_index),
     KEY idx_ai_document_chunk_document (document_id),

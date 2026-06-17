@@ -2,6 +2,8 @@
 -- 数据库：MySQL 8
 -- 说明：主键由 MyBatis-Plus ASSIGN_ID 生成，因此不使用 AUTO_INCREMENT。
 
+USE erp;
+
 CREATE TABLE IF NOT EXISTS product_category (
     id BIGINT NOT NULL COMMENT '分类ID',
     parent_id BIGINT NOT NULL DEFAULT 0 COMMENT '上级分类ID，顶级为0',
@@ -10,6 +12,7 @@ CREATE TABLE IF NOT EXISTS product_category (
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     KEY idx_product_category_parent (parent_id),
     KEY idx_product_category_deleted_status (deleted, status)
@@ -33,6 +36,7 @@ CREATE TABLE IF NOT EXISTS product (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_product_code (product_code),
     KEY idx_product_category (category_id),

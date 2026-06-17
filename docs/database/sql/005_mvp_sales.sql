@@ -2,6 +2,8 @@
 -- 数据库：MySQL 8
 -- 说明：主键由 MyBatis-Plus ASSIGN_ID 生成，因此不使用 AUTO_INCREMENT。
 
+USE erp;
+
 CREATE TABLE IF NOT EXISTS customer (
     id BIGINT NOT NULL COMMENT '客户ID',
     customer_code VARCHAR(64) NOT NULL COMMENT '客户编码',
@@ -15,6 +17,7 @@ CREATE TABLE IF NOT EXISTS customer (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_customer_code (customer_code),
     KEY idx_customer_name (customer_name),
@@ -43,6 +46,7 @@ CREATE TABLE IF NOT EXISTS sales_order (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_sales_order_no (sales_no),
     KEY idx_sales_order_customer (customer_id),

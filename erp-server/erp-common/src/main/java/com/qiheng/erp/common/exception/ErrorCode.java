@@ -29,6 +29,7 @@ public enum ErrorCode {
     DEPT_HAS_CHILDREN(30004, "部门存在子部门，无法删除"),
     DEPT_HAS_USERS(30005, "部门下存在用户，无法删除"),
     PERMISSION_CODE_DUPLICATE(30006, "权限码已存在"),
+    USER_NOT_FOUND(30007, "用户不存在"),
 
     // 产品模块 4xxxx
     CATEGORY_NAME_DUPLICATE(40001, "同级别下分类名称已存在"),

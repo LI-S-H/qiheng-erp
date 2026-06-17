@@ -72,17 +72,17 @@
 
 ## 表：sys_role（角色表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 角色ID |
-| role_code | varchar(64) | 角色编码，唯一 |
-| role_name | varchar(100) | 角色名称 |
-| permission_codes | json | 角色已授权权限码列表 |
-| status | tinyint | 状态 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| deleted | tinyint | 逻辑删除 |
-| remark | varchar(500) | 备注 |
+| 字段               | 类型           | 说明         |
+| ---------------- | ------------ | ---------- |
+| id               | bigint PK    | 角色ID       |
+| role_code        | varchar(64)  | 角色编码，唯一    |
+| role_name        | varchar(100) | 角色名称       |
+| permission_codes | json         | 角色已授权权限码列表 |
+| status           | tinyint      | 状态         |
+| create_time      | datetime     | 创建时间       |
+| update_time      | datetime     | 更新时间       |
+| deleted          | tinyint      | 逻辑删除       |
+| remark           | varchar(500) | 备注         |
 
 权限码示例：
 

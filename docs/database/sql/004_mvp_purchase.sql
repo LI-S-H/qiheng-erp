@@ -2,6 +2,8 @@
 -- 数据库：MySQL 8
 -- 说明：主键由 MyBatis-Plus ASSIGN_ID 生成，因此不使用 AUTO_INCREMENT。
 
+USE erp;
+
 CREATE TABLE IF NOT EXISTS supplier (
     id BIGINT NOT NULL COMMENT '供应商ID',
     supplier_code VARCHAR(64) NOT NULL COMMENT '供应商编码',
@@ -23,6 +25,7 @@ CREATE TABLE IF NOT EXISTS supplier (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_supplier_code (supplier_code),
     KEY idx_supplier_name (supplier_name),
@@ -53,6 +56,7 @@ CREATE TABLE IF NOT EXISTS supplier_product (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_supplier_product (supplier_id, product_id),
     KEY idx_supplier_product_product (product_id),
@@ -81,6 +85,7 @@ CREATE TABLE IF NOT EXISTS purchase_order (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_purchase_order_no (purchase_no),
     KEY idx_purchase_order_supplier (supplier_id),

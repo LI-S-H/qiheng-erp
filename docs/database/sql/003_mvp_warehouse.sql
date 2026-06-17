@@ -2,6 +2,8 @@
 -- 数据库：MySQL 8
 -- 说明：主键由 MyBatis-Plus ASSIGN_ID 生成，因此不使用 AUTO_INCREMENT。
 
+USE erp;
+
 CREATE TABLE IF NOT EXISTS warehouse (
     id BIGINT NOT NULL COMMENT '仓库ID',
     warehouse_code VARCHAR(64) NOT NULL COMMENT '仓库编码',
@@ -14,6 +16,7 @@ CREATE TABLE IF NOT EXISTS warehouse (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_warehouse_code (warehouse_code),
     KEY idx_warehouse_deleted_status (deleted, status)
@@ -32,6 +35,7 @@ CREATE TABLE IF NOT EXISTS warehouse_stock (
     locked_qty BIGINT NOT NULL DEFAULT 0 COMMENT '锁定库存数量，按100倍整数存储，例如12.50存1250',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_warehouse_stock_product (warehouse_id, product_id),
     KEY idx_warehouse_stock_product (product_id),
@@ -61,6 +65,7 @@ CREATE TABLE IF NOT EXISTS stock_bill (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     manual_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '手工补录或库存调整原因，来源生成凭证为空',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_stock_bill_no (bill_no),
     KEY idx_stock_bill_source (source_type, source_id),

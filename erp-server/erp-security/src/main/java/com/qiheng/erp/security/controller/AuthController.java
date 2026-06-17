@@ -42,7 +42,7 @@ public class AuthController {
      * 获取当前登录用户信息
      */
     @GetMapping("/me")
-    public Result<LoginResponse> me() {
+    public Result<LoginUser> me() {
         return Result.ok(authService.me());
     }
 }

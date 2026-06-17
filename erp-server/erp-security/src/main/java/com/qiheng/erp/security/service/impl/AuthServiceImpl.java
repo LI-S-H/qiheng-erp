@@ -10,9 +10,13 @@ import com.qiheng.erp.security.domain.dto.LoginResponse;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.security.service.AuthService;
 import com.qiheng.erp.security.service.LoginUserService;
+import com.qiheng.erp.system.domain.entity.SysUser;
+import com.qiheng.erp.system.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
 
 /**
  * 认证服务：登录、退出、获取当前用户
@@ -24,6 +28,8 @@ public class AuthServiceImpl implements AuthService {
     private LoginUserService loginUserService;
     @Autowired
     private PasswordUtil passwordUtil;
+    @Autowired
+    private SysUserMapper sysUserMapper;
 
     /**
      * 登录
@@ -45,7 +51,15 @@ public class AuthServiceImpl implements AuthService {
         // 3. Sa-Token 登录
         StpUtil.login(loginUser.getUserId());
 
-        // 4. 存入 Session
+        // 4. 更新最近登录时间
+        LocalDateTime now = LocalDateTime.now();
+        SysUser update = new SysUser();
+        update.setId(loginUser.getUserId());
+        update.setLastLoginAt(now);
+        sysUserMapper.updateById(update);
+        loginUser.setLastLoginAt(now);
+
+        // 5. 存入 Session
         UserContext.setCurrentUser(loginUser);
 
         // 5. 返回响应
@@ -56,6 +70,7 @@ public class AuthServiceImpl implements AuthService {
         response.setTokenName(StpUtil.getTokenName());
         // 5.3. 设置用户信息
         response.setUser(loginUser);
+
         return response;
     }
 
@@ -69,18 +84,11 @@ public class AuthServiceImpl implements AuthService {
     /**
      * 获取当前登录用户信息
      */
-    public LoginResponse me() {
+    public LoginUser me() {
         LoginUser user = UserContext.getCurrentUser();
         if (user == null) {
             throw new BizException(ErrorCode.USER_PASSWORD_ERROR);
         }
-        LoginResponse response = new LoginResponse();
-        // 1. 设置 token
-        response.setToken(StpUtil.getTokenValue());
-        // 2. 设置 tokenName
-        response.setTokenName(StpUtil.getTokenName());
-        // 3. 设置用户信息
-        response.setUser(user);
-        return response;
+        return user;
     }
 }

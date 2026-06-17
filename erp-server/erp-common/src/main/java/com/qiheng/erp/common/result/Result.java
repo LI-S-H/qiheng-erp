@@ -1,5 +1,7 @@
 package com.qiheng.erp.common.result;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -12,6 +14,7 @@ public class Result<T> implements Serializable {
 
     private int code;
     private String message;
+    @JsonInclude(Include.ALWAYS)
     private T data;
 
     private Result() {}

@@ -3,6 +3,7 @@ package com.qiheng.erp.security.service;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.security.domain.dto.LoginRequest;
 import com.qiheng.erp.security.domain.dto.LoginResponse;
+import com.qiheng.erp.security.domain.dto.LoginUser;
 
 /**
  * 认证服务：登录、退出、获取当前用户
@@ -30,5 +31,5 @@ public interface AuthService {
      * @throws BizException
      *     当用户未登录时抛出
      */
-    LoginResponse me();
+    LoginUser me();
 }

@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -43,4 +44,7 @@ public class LoginUser implements Serializable {
 
     /** 权限码列表，超级管理员为 ["*"] */
     private List<String> permissionCodes;
+
+    /** 最近登录时间 */
+    private LocalDateTime lastLoginAt;
 }

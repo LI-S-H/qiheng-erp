@@ -36,6 +36,7 @@ public class LoginUserServiceImpl implements LoginUserService {
                         .selectAs(SysDept::getDeptName, LoginUser::getDeptName)
                         .selectAs(SysUser::getIsAdmin, LoginUser::getIsAdmin)
                         .select(SysUser::getPasswordHash)
+                        .selectAs(SysUser::getLastLoginAt, LoginUser::getLastLoginAt)
                         .leftJoin(SysDept.class, SysDept::getId, SysUser::getDeptId)
                         .eq(SysUser::getUsername, username)
         );

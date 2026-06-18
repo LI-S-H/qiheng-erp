@@ -2390,7 +2390,6 @@ components:
       required:
         - code
         - message
-        - data
       properties:
         code:
           type: integer
@@ -2401,8 +2400,7 @@ components:
           description: 响应消息
           example: success
         data:
-          nullable: true
-          description: 响应数据
+          description: 响应数据，类型由具体接口定义
 
     EmptyResult:
       allOf:

@@ -63,23 +63,23 @@
 
 ## 表：sales_order_item（销售订单明细表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 明细ID |
-| sales_order_id | bigint | 销售订单ID |
-| sales_no | varchar(64) | 销售单号，冗余 |
-| product_id | bigint | 产品ID |
-| product_code | varchar(64) | 产品编码，冗余 |
-| product_name | varchar(200) | 产品名称，冗余 |
-| unit_name | varchar(32) | 单位名称，冗余 |
-| quantity | decimal(18,4) | 销售数量 |
-| locked_qty | decimal(18,4) | 已锁定库存数量 |
-| outbound_qty | decimal(18,4) | 已出库数量 |
-| unit_price | decimal(18,2) | 销售单价 |
-| total_amount | decimal(18,2) | 明细金额 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| remark | varchar(500) | 备注 |
+| 字段             | 类型            | 说明      |
+| -------------- | ------------- | ------- |
+| id             | bigint PK     | 明细ID    |
+| sales_order_id | bigint        | 销售订单ID  |
+| sales_no       | varchar(64)   | 销售单号，冗余 |
+| product_id     | bigint        | 产品ID    |
+| product_code   | varchar(64)   | 产品编码，冗余 |
+| product_name   | varchar(200)  | 产品名称，冗余 |
+| unit_name      | varchar(32)   | 单位名称，冗余 |
+| quantity       | decimal(18,4) | 销售数量    |
+| locked_qty     | decimal(18,4) | 已锁定库存数量 |
+| outbound_qty   | decimal(18,4) | 已出库数量   |
+| unit_price     | decimal(18,2) | 销售单价    |
+| total_amount   | decimal(18,2) | 明细金额    |
+| create_time    | datetime      | 创建时间    |
+| update_time    | datetime      | 更新时间    |
+| remark         | varchar(500)  | 备注      |
 
 关系说明：仓库出入库流水明细 `stock_bill_item.source_item_id` 关联本表，用于从销售出库动作追溯到销售订单明细。
 
@@ -114,3 +114,58 @@
 - 确认出库后能扣减库存、释放锁定库存，并回写销售明细已出库数量。
 - 销售出库流水可以通过 `source_id/source_no` 反查销售订单。
 - AI 销售汇总 Tool 可以按销售订单和销售明细统计销售金额、销售数量。
+
+## 扩展点：部门数据范围权限（待后续实现）
+
+> 本节为后续 feature 的扩展点说明，**MVP 阶段不实现**。目的是把"业务表如何承接部门归属"的口子先在文档里定下来，避免将来 feature 上线时改表结构对线上数据造成破坏。
+
+### 销售订单的部门归属规则
+
+`MVP` 阶段 `sales_order` / `sales_order_item` 不携带部门字段，**新增**部门数据范围权限 feature 时，将**在 `sales_order` 主表新增 `dept_id` 字段**，归属规则采用**创建人归属（快照式）**：
+
+| 字段 | 取值 | 说明 |
+| --- | --- | --- |
+| `sales_order.dept_id` | 创建人在创建订单时所属部门的 ID | 取自 `sys_user.dept_id` 在订单创建时刻的快照值 |
+
+**关键约束**：
+
+- **快照式归属**：订单创建瞬间把 `created_by_id` 对应用户的 `sys_user.dept_id` 写入 `sales_order.dept_id`，**之后不随创建人调岗而变化**。这样历史订单的部门归属稳定可追溯。
+- **变更父级不影响历史订单**：若后续需要把订单"迁"到新部门，应提供专门的"调整部门归属"接口（暂不设计），而不是直接覆盖。
+- **创建人必须存在部门**：`sys_user.dept_id NOT NULL` 是硬约束，新建订单一定能拿到部门快照。
+- **被删除用户创建的订单**：`deleted = 1` 的用户仍可能在 `created_by_id` 字段上留下历史订单，**不级联清理**，部门快照保留。
+- **审核人不参与归属**：审核人（`approved_by_id`）不参与部门归属判定，只记录审批轨迹。
+
+### 扩展后的字段表（计划，仅供参考）
+
+```text
+sales_order（追加字段，未落地）
+├── dept_id  bigint NOT NULL DEFAULT 0  -- 部门 ID 快照，来自创建人 sys_user.dept_id
+├── KEY idx_sales_order_dept (dept_id)  -- 配合 ancestors LIKE 过滤
+```
+
+**索引选择**：`ancestors` LIKE 查询的命中行最终会回表到 `sales_order.dept_id`，所以 `dept_id` 上必须有索引；普通等值查询也会用到。`ancestors` 自身在 `sys_dept` 表上**不需要**额外索引——因为 `LIKE '%,X,%'` 前缀是固定的 `%,`，MySQL 无法走 B+Tree 前缀索引，依赖全表扫描 + 内存过滤；`sys_dept` 是小表（几十到几百行），全表扫描代价可忽略。
+
+### 启用数据范围权限后的查询模式
+
+```sql
+-- 1) 算"当前用户 + 所有下级"可见的部门 ID 集合
+-- 假设用户 A 的 dept_id = '1900000000000000108'，数据范围 = 本部门及下级
+SELECT id FROM sys_dept
+WHERE id = '1900000000000000108'
+   OR CONCAT(',', ancestors, ',') LIKE CONCAT('%,', '1900000000000000108', ',%');
+
+-- 2) 把可见部门 ID 集合代入销售订单主查询
+SELECT o.*
+FROM sales_order o
+WHERE o.dept_id IN ( <步骤 1 的结果集> )
+  AND o.deleted = 0
+  AND o.status IN ('APPROVED', 'PARTIAL_OUTBOUND', 'OUTBOUND_DONE')
+ORDER BY o.create_time DESC
+LIMIT ? OFFSET ?;
+```
+
+### 暂不设计的相关扩展
+
+- 销售明细 `sales_order_item` 不单独存 `dept_id`，**直接 join 主表**即可。冗余存储会引入"主表改部门后明细未同步"的一致性维护成本，**禁止**。
+- 客户 `customer`、产品 `product`、仓库 `warehouse` 不参与部门归属（它们是"业务实体"，归属的是"被谁维护/属于哪个组织"维度，**与"销售订单归属"无关**），因此**不**为它们预留 `dept_id` 字段。
+- 仓库模块的 `stock_bill` 是否也按创建人归属部门，待与采购、库存模块一起评审后再决定（可能存在"销售出库单与采购入库单分属不同部门"的场景）。

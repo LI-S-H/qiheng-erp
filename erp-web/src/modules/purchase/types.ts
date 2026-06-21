@@ -137,7 +137,6 @@ export interface PurchaseOrderItem {
   unitPrice: number;
   totalAmount: number;
   selectedSupplierScore: number;
-  expectedArrivalDate: string | null;
   remark: string;
 }
 
@@ -165,8 +164,8 @@ export interface PurchaseOrderListItem {
 }
 
 export interface PurchaseOrderSummary {
-  orderCount: number;
   draftCount: number;
+  submittedCount: number;
   approvedCount: number;
   inboundPendingCount: number;
 }
@@ -185,12 +184,12 @@ export interface PurchaseOrderQuery {
 }
 
 export interface PurchaseOrderDraftItemPayload {
+  purchaseOrderItemId?: string | null;
   supplierProductId?: string | null;
   productId: string;
   quantity: number;
   unitPrice: number;
   selectedSupplierScore: number;
-  expectedArrivalDate?: string | null;
   remark: string;
 }
 

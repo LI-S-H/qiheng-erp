@@ -119,12 +119,23 @@ const routes: RouteRecordRaw[] = [
           title: '库存管理',
         },
       },
+      { path: 'warehouse/stock-bills', redirect: '/warehouse/inbound-bills' },
       {
-        path: 'warehouse/stock-bills',
-        name: 'warehouse-stock-bills',
+        path: 'warehouse/inbound-bills',
+        name: 'warehouse-inbound-bills',
         component: StockBillManageView,
         meta: {
-          title: '出入库记录',
+          title: '入库单',
+          stockDirection: 'INBOUND',
+        },
+      },
+      {
+        path: 'warehouse/outbound-bills',
+        name: 'warehouse-outbound-bills',
+        component: StockBillManageView,
+        meta: {
+          title: '出库单',
+          stockDirection: 'OUTBOUND',
         },
       },
       { path: 'purchase', redirect: '/purchase/suppliers' },

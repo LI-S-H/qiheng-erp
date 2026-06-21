@@ -25,17 +25,17 @@ import type {
 } from '../types';
 
 const emptySummary = (): WarehouseStockSummary => ({
-  stockRecordCount: 0,
   warehouseCount: 0,
   productCount: 0,
   lowStockCount: 0,
+  noAvailableCount: 0,
+  lockedCount: 0,
 });
 
 const loading = ref(false);
 const queryPending = ref(false);
 const requestSequence = ref(0);
 const stocks = ref<WarehouseStockListItem[]>([]);
-const total = ref(0);
 const summary = reactive(emptySummary());
 const warehouseOptions = ref<Array<{ value: string; label: string }>>([{ value: 'all', label: '全部仓库' }]);
 const query = reactive<WarehouseStockQuery>({
@@ -49,6 +49,7 @@ const query = reactive<WarehouseStockQuery>({
 });
 
 const queryBusy = computed(() => loading.value || queryPending.value);
+const hasNextPage = computed(() => stocks.value.length >= query.pageSize);
 const inventoryHealthOptions: Array<{ value: InventoryHealth | 'all'; label: string }> = [
   { value: 'all', label: '全部健康状态' },
   { value: 'NORMAL', label: '正常库存' },
@@ -82,7 +83,6 @@ async function fetchStocks() {
     const page = await listWarehouseStocks(query);
     if (currentSequence !== requestSequence.value) return;
     stocks.value = page.records;
-    total.value = page.total;
     Object.assign(summary, page.summary);
   } catch (error) {
     if (currentSequence === requestSequence.value) toast.warning(getApiErrorMessage(error) || '库存查询失败');
@@ -171,10 +171,10 @@ onMounted(() => {
     </div>
 
     <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">库存记录</span><strong class="mt-1 text-2xl">{{ summary.stockRecordCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">涉及仓库</span><strong class="mt-1 text-2xl">{{ summary.warehouseCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">涉及产品</span><strong class="mt-1 text-2xl">{{ summary.productCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">低库存记录</span><strong class="mt-1 text-2xl text-amber-700">{{ summary.lowStockCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页仓库</span><strong class="mt-1 text-2xl">{{ summary.warehouseCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页产品</span><strong class="mt-1 text-2xl">{{ summary.productCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页低库存</span><strong class="mt-1 text-2xl text-amber-700">{{ summary.lowStockCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页已锁定</span><strong class="mt-1 text-2xl text-blue-700">{{ summary.lockedCount }}</strong></div>
     </div>
 
     <div class="filter-panel">
@@ -223,7 +223,7 @@ onMounted(() => {
         </Table>
       </ScrollArea>
 
-      <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
+      <DataTablePagination simple :current-count="stocks.length" :has-next="hasNextPage" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
   </section>
 </template>

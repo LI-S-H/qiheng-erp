@@ -20,10 +20,11 @@ export interface WarehouseStockListItem {
 }
 
 export interface WarehouseStockSummary {
-  stockRecordCount: number;
   warehouseCount: number;
   productCount: number;
   lowStockCount: number;
+  noAvailableCount: number;
+  lockedCount: number;
 }
 
 export interface WarehouseStockPage extends PageResult<WarehouseStockListItem> {

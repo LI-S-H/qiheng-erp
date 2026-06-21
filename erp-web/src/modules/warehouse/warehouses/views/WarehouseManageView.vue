@@ -44,7 +44,6 @@ const statusFilterOptions = [
 ];
 
 const warehouses = ref<WarehouseListItem[]>([]);
-const total = ref(0);
 const loading = ref(false);
 const queryPending = ref(false);
 const formSubmitting = ref(false);
@@ -88,6 +87,8 @@ const queryBusy = computed(() => queryPending.value || loading.value);
 const enabledCount = computed(() => warehouses.value.filter(item => item.status === 1).length);
 const disabledCount = computed(() => warehouses.value.filter(item => item.status === 0).length);
 const contactReadyCount = computed(() => warehouses.value.filter(item => item.contactName && item.contactPhone).length);
+const contactMissingCount = computed(() => warehouses.value.filter(item => !item.contactName || !item.contactPhone).length);
+const hasNextPage = computed(() => warehouses.value.length >= query.pageSize);
 const allSelected = computed(() => warehouses.value.length > 0 && warehouses.value.every(item => selectedIds.value.has(item.warehouseId)));
 
 async function fetchWarehouses() {
@@ -97,7 +98,6 @@ async function fetchWarehouses() {
     const result = await listWarehouses({ ...query });
     if (sequence !== fetchSequence) return;
     warehouses.value = result.records;
-    total.value = result.total;
     selectedIds.value = new Set();
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '仓库列表加载失败');
@@ -272,7 +272,7 @@ function handleStatusChange(row: WarehouseListItem, status: WarehouseStatus) {
 }
 
 function handleDelete(row: WarehouseListItem) {
-  showConfirm('删除仓库', `确认删除「${row.warehouseName}」吗？存在库存余额或出入库记录的仓库无法删除。`, '删除', 'destructive', async () => {
+  showConfirm('删除仓库', `确认删除「${row.warehouseName}」吗？存在库存余额、入库单、出库单或库存流水的仓库无法删除。`, '删除', 'destructive', async () => {
     try {
       await deleteWarehouse(row.warehouseId);
       toast.success('仓库已删除');
@@ -299,7 +299,7 @@ function handleBatchStatus(status: WarehouseStatus) {
 
 function handleBatchDelete() {
   if (!selectedIds.value.size) return;
-  showConfirm('批量删除', `确认删除已选的 ${selectedIds.value.size} 个仓库吗？存在库存余额或出入库记录时整批操作将被拒绝。`, '删除', 'destructive', async () => {
+  showConfirm('批量删除', `确认删除已选的 ${selectedIds.value.size} 个仓库吗？存在库存余额、入库单、出库单或库存流水时整批操作将被拒绝。`, '删除', 'destructive', async () => {
     try {
       await batchDeleteWarehouses({ warehouseIds: [...selectedIds.value] });
       toast.success('仓库已批量删除');
@@ -321,10 +321,10 @@ function handleBatchDelete() {
     </div>
 
     <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">仓库总数</span><strong class="mt-1 text-2xl">{{ total }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">当前页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">当前页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
       <div class="summary-item"><span class="text-xs text-muted-foreground">联系方式完整</span><strong class="mt-1 text-2xl">{{ contactReadyCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">联系方式待补</span><strong class="mt-1 text-2xl text-amber-700">{{ contactMissingCount }}</strong></div>
     </div>
 
     <div class="filter-panel">
@@ -378,7 +378,7 @@ function handleBatchDelete() {
         </Table>
       </ScrollArea>
 
-      <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
+      <DataTablePagination simple :current-count="warehouses.length" :has-next="hasNextPage" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
 
     <Dialog v-model:open="dialogVisible">

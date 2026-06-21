@@ -30,6 +30,12 @@ tags:
     description: 仓储库存 - 仓库管理
   - name: WarehouseStock
     description: 仓储库存 - 当前库存余额查询
+  - name: PurchaseSupplier
+    description: 采购管理 - 供应商管理
+  - name: PurchaseSupplierProduct
+    description: 采购管理 - 供货产品管理
+  - name: PurchaseOrder
+    description: 采购管理 - 采购订单管理
 paths:
   /auth/login:
     post:
@@ -1343,6 +1349,668 @@ paths:
                         items:
                           $ref: '#/components/schemas/DeptOption'
 
+  /purchase/suppliers:
+    get:
+      tags: [PurchaseSupplier]
+      summary: 分页查询供应商
+      description: |
+        查询未删除的 `supplier` 数据。供应商编码、供应商名称和联系人分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
+        不接收含义不明确的 `keyword` 参数。评分字段接口按 0-100 业务值返回，数据库按放大 100 倍整数保存。
+        本接口需要 `supplier:query` 权限。
+      operationId: purchaseSupplierPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: supplierCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 供应商编码，对应 `supplier.supplier_code`，使用包含匹配
+        - name: supplierName
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: 供应商名称，对应 `supplier.supplier_name`，使用包含匹配
+        - name: contactName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 联系人，对应 `supplier.contact_name`，使用包含匹配
+        - name: status
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+          description: 状态，对应 `supplier.status`，1 启用，0 停用，使用精确匹配
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplierPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [PurchaseSupplier]
+      summary: 新增供应商
+      description: 供应商编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交供应商编码；评分字段按 0-100 业务值提交，后端负责放大 100 倍落库。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierFormRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplier' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/suppliers/options:
+    get:
+      tags: [PurchaseSupplier]
+      summary: 获取启用供应商选项
+      description: 只返回未删除且启用的供应商，用于供货产品和采购订单表单下拉。本接口需要 `supplier:query` 权限。
+      operationId: purchaseSupplierOptions
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PurchaseSupplierOption' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /purchase/suppliers/batch/status:
+    patch:
+      tags: [PurchaseSupplier]
+      summary: 批量修改供应商状态
+      description: 停用供应商后不得用于新建采购订单或供货关系，但历史采购单保留供应商快照。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/suppliers/batch/delete:
+    post:
+      tags: [PurchaseSupplier]
+      summary: 批量删除供应商
+      description: 批量逻辑删除供应商；任一供应商存在供货产品或采购订单时整批返回 409，避免破坏采购追溯链路。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/suppliers/{supplierId}:
+    get:
+      tags: [PurchaseSupplier]
+      summary: 获取供应商详情
+      description: 本接口需要 `supplier:query` 权限。
+      operationId: purchaseSupplierDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplier' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [PurchaseSupplier]
+      summary: 编辑供应商
+      description: 编辑请求不接收 `supplierCode`；供应商名称修改时，后端同步当前供货产品快照，历史采购单继续保留下单时快照。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierFormRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplier' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [PurchaseSupplier]
+      summary: 删除供应商
+      description: 逻辑删除供应商；存在 `supplier_product` 供货关系或 `purchase_order` 采购订单时返回 409。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/suppliers/{supplierId}/status:
+    patch:
+      tags: [PurchaseSupplier]
+      summary: 修改供应商状态
+      description: 停用后供应商不能用于新建采购订单或供货关系，历史单据不受影响。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/supplier-products:
+    get:
+      tags: [PurchaseSupplierProduct]
+      summary: 分页查询供货产品
+      description: |
+        查询未删除的 `supplier_product` 数据。供应商使用 `supplierId` 精确匹配，产品编码和产品名称分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
+        不接收含义不明确的 `keyword` 参数。评分字段接口按 0-100 业务值返回，数据库按放大 100 倍整数保存。
+        采购订单表单需要按 `status=1` 分页取得启用供货关系全集，用于供应商与产品双向过滤；后端必须保证分页 total 准确，或后续提供等价的启用供货关系选项接口。
+        本接口需要 `supplier:query` 权限。
+      operationId: purchaseSupplierProductPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: supplierId
+          in: query
+          schema: { type: string }
+          description: 供应商 ID，对应 `supplier_product.supplier_id`，使用精确匹配
+        - name: productCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 产品编码，对应 `supplier_product.product_code`，使用包含匹配
+        - name: productName
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: 产品名称，对应 `supplier_product.product_name`，使用包含匹配
+        - name: status
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+          description: 状态，对应 `supplier_product.status`，1 启用，0 停用，使用精确匹配
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplierProductPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [PurchaseSupplierProduct]
+      summary: 新增供货产品
+      description: 后端根据 `supplierId`、`productId` 保存供应商与产品快照；建议唯一约束 `(supplier_id, product_id)`，冲突时返回 409。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierProductCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierProductFormRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplierProduct' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/supplier-products/batch/status:
+    patch:
+      tags: [PurchaseSupplierProduct]
+      summary: 批量修改供货产品状态
+      description: 停用后该供货关系不能用于新建采购明细或 AI 推荐，历史采购明细保留下单时快照。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierProductBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierProductBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/supplier-products/batch/delete:
+    post:
+      tags: [PurchaseSupplierProduct]
+      summary: 批量删除供货产品
+      description: 批量逻辑删除供货产品；任一供货关系已被采购明细引用时整批返回 409。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierProductBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierProductBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/supplier-products/{supplierProductId}:
+    get:
+      tags: [PurchaseSupplierProduct]
+      summary: 获取供货产品详情
+      description: 本接口需要 `supplier:query` 权限。
+      operationId: purchaseSupplierProductDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierProductId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplierProduct' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [PurchaseSupplierProduct]
+      summary: 编辑供货产品
+      description: 编辑时后端重新校验供应商和产品是否存在；如更换供应商或产品，必须重新保存对应快照并校验 `(supplier_id, product_id)` 唯一性。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierProductUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierProductFormRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplierProduct' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [PurchaseSupplierProduct]
+      summary: 删除供货产品
+      description: 逻辑删除供货产品；已被采购明细引用时返回 409。本接口 MVP 阶段复用 `purchase:create` 权限。
+      operationId: purchaseSupplierProductDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierProductId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/orders:
+    get:
+      tags: [PurchaseOrder]
+      summary: 分页查询采购订单
+      description: |
+        查询未删除的 `purchase_order` 数据，并返回按 `purchase_order_item.purchase_order_id` 查询的明细数组。采购单号使用包含匹配，供应商、仓库和状态使用精确匹配，多个有效条件按 AND 组合。
+        不接收含义不明确的 `keyword` 参数。列表摘要只展示当前页 `records` 派生的状态、入库等业务指标，不展示当前页行数；不得要求后端为了摘要额外全量聚合。
+        本接口需要 `purchase:query` 权限。
+      operationId: purchaseOrderPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: purchaseNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 采购单号，对应 `purchase_order.purchase_no`，使用包含匹配
+        - name: supplierId
+          in: query
+          schema: { type: string }
+          description: 供应商 ID，对应 `purchase_order.supplier_id`，使用精确匹配
+        - name: warehouseId
+          in: query
+          schema: { type: string }
+          description: 入库仓库 ID，对应 `purchase_order.warehouse_id`，使用精确匹配
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_INBOUND, INBOUND_DONE, CANCELLED]
+          description: 采购订单状态，对应 `purchase_order.status`，使用精确匹配
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseOrderPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [PurchaseOrder]
+      summary: 新增采购订单草稿
+      description: |
+        采购单号、供应商和产品快照、订单总金额、创建人和审计字段由后端维护，前端不提交；创建后状态为 `DRAFT`，不生成入库流水。
+        草稿阶段 `expectedArrivalDate` 可为空；提交或审核前，后端必须校验单头预计到货日期非空。
+        明细数量和金额使用业务真实值传输，数据库按 decimal 保存；`selectedSupplierScore` 按 0-100 业务值提交，后端负责放大 100 倍落库。
+        本接口需要 `purchase:create` 权限。
+      operationId: purchaseOrderCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseOrderCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseOrder' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/orders/{purchaseOrderId}:
+    get:
+      tags: [PurchaseOrder]
+      summary: 获取采购订单详情
+      description: 返回 `purchase_order` 主表信息及按 `purchase_order_item.purchase_order_id` 查询的全部明细。本接口需要 `purchase:query` 权限。
+      operationId: purchaseOrderDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseOrderDetail' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [PurchaseOrder]
+      summary: 编辑采购订单
+      description: |
+        `DRAFT` 状态可由采购创建权限编辑；`SUBMITTED` 状态仍允许具备审核/审批权限的用户编辑供应商、入库仓库、预计到货日期、备注和明细。
+        `APPROVED`、`PARTIAL_INBOUND`、`INBOUND_DONE`、`CANCELLED` 不允许通过本接口修改；已审核后的业务纠正应通过仓库出入库、冲销或反向业务单据处理。
+        采购单号、状态、已入库数量、创建人、提交人、审核人和审计字段由后端维护，前端不得提交。
+        明细传入 `purchaseOrderItemId` 表示更新已有明细，不传表示新增明细，被移除的旧明细由后端物理删除；采购明细不维护单独预计到货日期。
+        后端必须重新校验权限、供应商、仓库、产品、供货关系、数量精度和价格，并重算主表 `total_amount`。本接口需要 `purchase:create` 或审核/审批权限。
+      operationId: purchaseOrderUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseOrderUpdateRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseOrder' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/orders/{purchaseOrderId}/submit:
+    post:
+      tags: [PurchaseOrder]
+      summary: 提交采购订单
+      description: 仅允许 `DRAFT -> SUBMITTED`；前端调用本接口前必须先通过详情数据向操作人展示完整采购单头和采购明细，并在二次确认后提交。提交时后端重新校验单头预计到货日期非空、供应商、仓库、产品、供货关系和明细数量价格。本接口需要 `purchase:create` 权限并保证重复请求幂等。
+      operationId: purchaseOrderSubmit
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      responses:
+        "200":
+          description: 提交成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/orders/{purchaseOrderId}/approve:
+    post:
+      tags: [PurchaseOrder]
+      summary: 审核采购订单
+      description: |
+        仅允许 `SUBMITTED -> APPROVED`。前端调用本接口前必须先通过详情数据向审核人展示完整采购单头和采购明细，并在二次确认后审核通过。审核前后端必须重新校验单头预计到货日期非空、供应商、仓库、产品、供货关系和明细数量价格。
+        审核通过后，后端在同一事务内生成仓库模块 `PURCHASE_IN` 待确认入库单，`source_type = PURCHASE_ORDER`、`source_id = purchase_order.id`、`source_no = purchase_order.purchase_no`，并带入供应商、入库仓库、采购数量、累计已入库和剩余未入库数量。
+        采购订单审核后不直接改变库存，也不生成库存流水；需要审核/审批权限并保证重复请求幂等。
+      operationId: purchaseOrderApprove
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      responses:
+        "200":
+          description: 审核成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/orders/{purchaseOrderId}/cancel:
+    post:
+      tags: [PurchaseOrder]
+      summary: 取消采购订单
+      description: 仅允许 `DRAFT` 或 `SUBMITTED` 状态取消；取消不改变库存，不生成入库单或库存流水，已审核或已产生入库事实的采购订单不得直接取消。本接口需要 `purchase:create` 权限并保证重复请求幂等。
+      operationId: purchaseOrderCancel
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+      responses:
+        "200":
+          description: 取消成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
   /warehouse/stocks:
     get:
       tags: [WarehouseStock]
@@ -1354,6 +2022,7 @@ paths:
         库存健康：`NORMAL` 表示 `available_qty > safety_stock_qty`，`LOW_STOCK` 表示 `0 < available_qty <= safety_stock_qty`，`NO_AVAILABLE` 表示 `stock_qty > 0` 且 `available_qty = 0`，`OUT_OF_STOCK` 表示 `stock_qty = 0`。
         占用情况：`UNLOCKED` 表示 `locked_qty = 0`，`PARTIALLY_LOCKED` 表示 `0 < locked_qty < stock_qty`，`FULLY_LOCKED` 表示 `stock_qty > 0` 且 `locked_qty = stock_qty`。
         上述状态均为查询时派生，不在 `warehouse_stock` 中增加单一状态字段。
+        库存余额列表使用无总数分页，后端不需要返回精确 `total`，也不需要为了分页执行额外 `COUNT(*)`；前端只展示当前页、上一页和下一页。
         本接口需要 `warehouse:query` 权限。
       operationId: warehouseStockPage
       security:
@@ -1405,17 +2074,201 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
 
+  /warehouse/inbound-bills:
+    get:
+      tags: [WarehouseStockBill]
+      summary: 分页查询入库单
+      description: |
+        查询 `inbound_bill` 入库单主表，并按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要。
+        入库单承接采购入库、销售退货入库和调整入库；采购订单审核后生成 `PENDING_CONFIRM` 入库单，但不直接改变库存。
+        入库列表主列固定显示供应商，库存调整显示调整仓库，不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
+        本接口需要 `warehouse:query` 权限。
+      operationId: inboundBillPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: billNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 入库单号，对应 `inbound_bill.inbound_no`，使用包含匹配
+        - name: sourceNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 来源单号，对应 `inbound_bill.source_no`，使用包含匹配
+        - name: warehouseId
+          in: query
+          schema: { type: string }
+          description: 仓库 ID，对应 `inbound_bill.warehouse_id`，使用精确匹配
+        - name: billType
+          in: query
+          schema:
+            type: string
+            enum: [PURCHASE_IN, SALES_RETURN, ADJUST_IN]
+          description: 入库类型，对应 `inbound_bill.inbound_type`，使用精确匹配
+        - name: entryMode
+          in: query
+          schema:
+            type: string
+            enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]
+          description: 录入方式，对应 `inbound_bill.entry_mode`
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]
+          description: 入库单状态，对应 `inbound_bill.status`
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [WarehouseStockBill]
+      summary: 新增手工入库单草稿
+      description: 创建调整入库或补录采购入库、销售退货入库草稿。保存后不改变库存，确认入库后才生成库存流水。本接口需要 `warehouse:manage` 权限。
+      operationId: inboundBillCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockBillCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/outbound-bills:
+    get:
+      tags: [WarehouseStockBill]
+      summary: 分页查询出库单
+      description: |
+        查询 `outbound_bill` 出库单主表，并按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要。
+        出库单承接销售出库、采购退货出库和调整出库；销售订单审核后生成 `PENDING_CONFIRM` 出库单，但不直接扣减库存。
+        出库列表主列固定显示客户，库存调整显示调整仓库，不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
+        本接口需要 `warehouse:query` 权限。
+      operationId: outboundBillPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: billNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 出库单号，对应 `outbound_bill.outbound_no`，使用包含匹配
+        - name: sourceNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 来源单号，对应 `outbound_bill.source_no`，使用包含匹配
+        - name: warehouseId
+          in: query
+          schema: { type: string }
+          description: 仓库 ID，对应 `outbound_bill.warehouse_id`，使用精确匹配
+        - name: billType
+          in: query
+          schema:
+            type: string
+            enum: [SALES_OUT, PURCHASE_RETURN, ADJUST_OUT]
+          description: 出库类型，对应 `outbound_bill.outbound_type`，使用精确匹配
+        - name: entryMode
+          in: query
+          schema:
+            type: string
+            enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]
+          description: 录入方式，对应 `outbound_bill.entry_mode`
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]
+          description: 出库单状态，对应 `outbound_bill.status`
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [WarehouseStockBill]
+      summary: 新增手工出库单草稿
+      description: 创建调整出库或补录销售出库、采购退货出库草稿。保存后不改变库存，确认出库后才生成库存流水。本接口需要 `warehouse:manage` 权限。
+      operationId: outboundBillCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockBillCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
   /warehouse/stock-bills:
     get:
       tags: [WarehouseStockBill]
-      summary: 分页查询出入库记录
+      summary: 分页查询库存流水记录
       description: |
-        查询 `stock_bill` 出入库流水主表，并按 `stock_bill_item.bill_id` 聚合返回 `itemCount`；列表不跨不同产品单位汇总数量。
+        查询 `stock_bill` 已确认库存流水主表，并按 `stock_bill_item.bill_id` 聚合返回 `itemCount`；列表不跨不同产品单位汇总数量。
+        入库单和出库单的业务操作请优先使用 `/warehouse/inbound-bills`、`/warehouse/outbound-bills`。本路径仅用于已确认库存事实追溯或旧前端兼容。
         流水号和来源单号分别使用包含匹配，仓库、出入库类型、录入方式和状态使用精确匹配，多个有效条件按 AND 组合。
-        查询库存调整凭证时，可提交 `entryMode=MANUAL_ADJUSTMENT`；调整方向使用 `billType=ADJUST_IN` 或 `billType=ADJUST_OUT` 进一步精确筛选。
-        列表摘要基于当前全部筛选结果统计单据数、入库单数、出库单数和已确认单数，不只统计当前分页。
+        列表摘要只统计当前页 `records` 的待确认数、已确认数、已取消数和来源生成数，不展示当前页单据数，不要求后端为了摘要额外全量聚合。
         入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`；出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`。
-        本接口只用于追溯库存凭证，不直接创建、确认或取消流水，需要 `warehouse:query` 权限。
+        本接口只用于追溯库存凭证，需要 `warehouse:query` 权限。
       operationId: stockBillPage
       security:
         - SaTokenAuth: []
@@ -1423,7 +2276,7 @@ paths:
         - name: billNo
           in: query
           schema: { type: string, maxLength: 64 }
-          description: 出入库流水号，对应 `stock_bill.bill_no`，使用包含匹配
+          description: 库存流水号，对应 `stock_bill.bill_no`，使用包含匹配
         - name: sourceNo
           in: query
           schema: { type: string, maxLength: 64 }
@@ -1448,8 +2301,8 @@ paths:
           in: query
           schema:
             type: string
-            enum: [DRAFT, CONFIRMED, CANCELLED]
-          description: 流水状态，对应 `stock_bill.status`，使用精确匹配
+            enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]
+          description: 状态，兼容入库单/出库单查询时可为 `PENDING_CONFIRM`
         - name: pageNum
           in: query
           required: true
@@ -1473,12 +2326,13 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [WarehouseStockBill]
-      summary: 新增手工出入库草稿
+      summary: 新增手工入库单/出库单草稿（兼容路径）
       description: |
-        允许创建 `ADJUST_IN`、`ADJUST_OUT` 库存调整，或在原采购、销售、退货业务遗漏登记时补录对应出入库凭证。
+        兼容旧前端的统一创建路径。新接口应按方向使用 `/warehouse/inbound-bills` 或 `/warehouse/outbound-bills`。
+        允许创建 `ADJUST_IN`、`ADJUST_OUT` 库存调整，或在原采购、销售、退货业务遗漏登记时补录对应入库单/出库单。
         非调整类型必须提交原业务单号和补录原因，后端设置 `entryMode=MANUAL_SUPPLEMENT`、按 `billType` 推导 `sourceType`，且 `sourceId` 为空；调整类型由后端生成调整单号并设置 `entryMode=MANUAL_ADJUSTMENT`。
         `billNo`、负责人、创建人、创建时间和产品快照由后端生成或按当前登录上下文填充；负责人字段不接受前端提交。
-        保存后状态为 `DRAFT`，不立即改变库存；需要 `warehouse:manage` 权限。
+        保存后状态为 `DRAFT`，不立即改变库存；确认入库/出库后才生成库存流水。需要 `warehouse:manage` 权限。
       operationId: stockBillCreate
       security:
         - SaTokenAuth: []
@@ -1506,8 +2360,8 @@ paths:
   /warehouse/stock-bills/{stockBillId}:
     get:
       tags: [WarehouseStockBill]
-      summary: 获取出入库记录详情
-      description: 返回 `stock_bill` 主表信息及按 `stock_bill_item.bill_id` 查询的全部明细，用于追溯来源单据、确认信息、产品数量和库存变动。本接口需要 `warehouse:query` 权限。
+      summary: 获取入库单、出库单或库存流水详情
+      description: 返回入库单、出库单或库存流水主表信息及全部明细，用于追溯来源单据、供应商或客户、确认信息、产品数量和库存变动。本接口需要 `warehouse:query` 权限。
       operationId: stockBillDetail
       security:
         - SaTokenAuth: []
@@ -1529,9 +2383,11 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
     put:
       tags: [WarehouseStockBill]
-      summary: 编辑出入库草稿
+      summary: 编辑入库单/出库单草稿或待确认单
       description: |
-        仅 `DRAFT` 状态允许编辑数量和备注。来源业务单据生成的草稿不能在本接口增删或更换产品，也不能修改来源、仓库和出入库类型；库存调整草稿允许维护产品明细。
+        `DRAFT` 和 `PENDING_CONFIRM` 状态允许编辑数量、质量数量和备注；提交后或来源生成单据需要具备仓库确认/审核权限。
+        `DRAFT` 状态允许修改仓库；进入 `PENDING_CONFIRM` 后仓库、来源信息、产品结构均锁定，只允许调整本次数量、合格数量、不合格数量和备注。
+        来源业务单据生成的单据不能在本接口增删或更换产品，也不能修改来源和出入库类型；手工补录或库存调整草稿允许维护产品明细。
         流水号、来源信息、审计字段、变动前后库存均由后端维护，前端不得提交；需要 `warehouse:manage` 权限。
       operationId: stockBillUpdate
       security:
@@ -1560,13 +2416,45 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
+  /warehouse/stock-bills/{stockBillId}/submit:
+    post:
+      tags: [WarehouseStockBill]
+      summary: 提交入库单/出库单草稿为待确认
+      description: |
+        仅允许 `DRAFT -> PENDING_CONFIRM`。提交不改变库存、不生成库存流水，只表示单据明细已完成录入并进入仓库确认队列。
+        前端必须先展示入库单/出库单详情及全部产品明细，再在详情页提供提交确认按钮并进行二次确认。
+        提交前后端必须重新校验仓库、产品明细、本次数量、质检数量、手工补录原业务单号和补录/调整原因；来源生成单据还必须保留来源计划数量、生成本单前累计已处理数量和确认后剩余未处理数量。
+        待确认状态仍允许具备仓库管理权限的人员调整本次数量、质检数量和备注；确认后才禁止修改。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
+      operationId: stockBillSubmit
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StockBillId'
+      responses:
+        "200":
+          description: 提交成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
   /warehouse/stock-bills/{stockBillId}/confirm:
     post:
       tags: [WarehouseStockBill]
-      summary: 确认出入库
+      summary: 确认入库/出库
       description: |
-        仅允许 `DRAFT -> CONFIRMED`。后端必须锁定出入库草稿和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已出入库数量。
-        已确认凭证不得直接改回草稿或取消；错误凭证通过反向库存调整纠正。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
+        仅允许 `PENDING_CONFIRM -> CONFIRMED`。前端必须先展示入库单/出库单详情及全部产品明细，再在详情页提供确认按钮并进行二次确认。
+        后端必须锁定入库单/出库单和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，生成 `stock_bill` / `stock_bill_item`，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已入库/已出库数量。
+        已确认单据不得直接改回草稿或取消；错误凭证通过反向库存调整纠正。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
       operationId: stockBillConfirm
       security:
         - SaTokenAuth: []
@@ -1592,8 +2480,8 @@ paths:
   /warehouse/stock-bills/{stockBillId}/cancel:
     post:
       tags: [WarehouseStockBill]
-      summary: 取消出入库草稿
-      description: 仅允许 `DRAFT -> CANCELLED`，取消不改变库存，取消后的凭证保留追溯且不能再次编辑或确认。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
+      summary: 取消入库单/出库单草稿或待确认单
+      description: 仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`，取消不改变库存，取消后的单据保留追溯且不能再次编辑或确认。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
       operationId: stockBillCancel
       security:
         - SaTokenAuth: []
@@ -1622,6 +2510,7 @@ paths:
       summary: 分页查询仓库
       description: |
         查询未删除的 `warehouse` 数据。仓库编码、仓库名称、联系人和联系电话分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
+        仓库列表使用无总数分页，后端不需要返回精确 `total`，也不需要为了分页执行额外 `COUNT(*)`；前端只展示当前页、上一页和下一页。
         不接收含义不明确的 `keyword` 参数。本接口需要 `warehouse:query` 权限。
       operationId: warehousePage
       security:
@@ -1722,7 +2611,7 @@ paths:
     post:
       tags: [Warehouse]
       summary: 批量删除仓库
-      description: 批量逻辑删除仓库；任一仓库存在库存余额或出入库记录时整批返回 409，避免破坏库存与业务追溯链路。本接口需要 `warehouse:manage` 权限。
+      description: 批量逻辑删除仓库；任一仓库存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时整批返回 409，避免破坏库存与业务追溯链路。本接口需要 `warehouse:manage` 权限。
       operationId: warehouseBatchDelete
       security:
         - SaTokenAuth: []
@@ -1798,7 +2687,7 @@ paths:
     delete:
       tags: [Warehouse]
       summary: 删除仓库
-      description: 逻辑删除仓库；存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时返回 409。本接口需要 `warehouse:manage` 权限。
+      description: 逻辑删除仓库；存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时返回 409。本接口需要 `warehouse:manage` 权限。
       operationId: warehouseDelete
       security:
         - SaTokenAuth: []
@@ -2352,7 +3241,28 @@ components:
       required: true
       schema:
         type: string
-      description: 出入库流水 ID，对应 `stock_bill.id`
+      description: 入库单、出库单或库存流水 ID，BIGINT 按字符串传输
+    SupplierId:
+      name: supplierId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 供应商 ID，对应 `supplier.id`，BIGINT 按字符串传输
+    SupplierProductId:
+      name: supplierProductId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 供应商供货产品 ID，对应 `supplier_product.id`，BIGINT 按字符串传输
+    PurchaseOrderId:
+      name: purchaseOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 采购订单 ID，对应 `purchase_order.id`，BIGINT 按字符串传输
   responses:
     BadRequest:
       description: 请求参数错误
@@ -3225,14 +4135,290 @@ components:
           type: integer
           enum: [0, 1]
 
-    WarehouseStockPage:
+    PurchaseSupplierPage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/PurchaseSupplier' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    PurchaseSupplier:
+      type: object
+      required: [supplierId, supplierCode, supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, remark, createTime, updateTime]
+      properties:
+        supplierId: { type: string, description: 对应 `supplier.id`，BIGINT 按字符串传输 }
+        supplierCode: { type: string, minLength: 1, maxLength: 64, readOnly: true, description: 对应 `supplier.supplier_code`，由后端生成、全局唯一且创建后不可修改 }
+        supplierName: { type: string, minLength: 1, maxLength: 200, description: 对应 `supplier.supplier_name` }
+        contactName: { type: string, maxLength: 100, description: 对应 `supplier.contact_name` }
+        contactPhone: { type: string, maxLength: 32, description: 对应 `supplier.contact_phone` }
+        address: { type: string, maxLength: 255, description: 对应 `supplier.address` }
+        paymentTerms: { type: string, maxLength: 100, description: 对应 `supplier.payment_terms` }
+        overallScore: { type: number, format: double, minimum: 0, maximum: 100, description: 综合评分展示值；数据库 `supplier.overall_score` 按 100 倍整数存储 }
+        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100, description: 交付评分展示值；数据库按 100 倍整数存储 }
+        qualityScore: { type: number, format: double, minimum: 0, maximum: 100, description: 质量评分展示值；数据库按 100 倍整数存储 }
+        priceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 价格评分展示值；数据库按 100 倍整数存储 }
+        serviceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 服务评分展示值；数据库按 100 倍整数存储 }
+        avgDeliveryDays: { type: integer, minimum: 0, description: 对应 `supplier.avg_delivery_days` }
+        onTimeRate: { type: number, format: double, minimum: 0, maximum: 100, description: 准时率展示值；数据库 `supplier.on_time_rate` 按 100 倍整数存储 }
+        qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100, description: 合格率展示值；数据库 `supplier.qualified_rate` 按 100 倍整数存储 }
+        status: { type: integer, enum: [0, 1], description: 对应 `supplier.status`，1 启用，0 停用 }
+        remark: { type: string, maxLength: 500, description: 对应 `supplier.remark` }
+        createTime: { type: string, description: 对应 `supplier.create_time` }
+        updateTime: { type: string, description: 对应 `supplier.update_time` }
+
+    PurchaseSupplierFormRequest:
+      type: object
+      required: [supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, remark]
+      properties:
+        supplierName: { type: string, minLength: 1, maxLength: 200 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        paymentTerms: { type: string, maxLength: 100 }
+        overallScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        qualityScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        priceScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        serviceScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        avgDeliveryDays: { type: integer, minimum: 0 }
+        onTimeRate: { type: number, format: double, minimum: 0, maximum: 100 }
+        qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    PurchaseSupplierStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: integer, enum: [0, 1] }
+
+    PurchaseSupplierBatchStatusRequest:
+      type: object
+      required: [supplierIds, status]
+      properties:
+        supplierIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status: { type: integer, enum: [0, 1] }
+
+    PurchaseSupplierBatchDeleteRequest:
+      type: object
+      required: [supplierIds]
+      properties:
+        supplierIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+
+    PurchaseSupplierOption:
+      type: object
+      required: [supplierId, supplierCode, supplierName, status]
+      properties:
+        supplierId: { type: string, description: 对应 `supplier.id`，BIGINT 按字符串传输 }
+        supplierCode: { type: string, maxLength: 64 }
+        supplierName: { type: string, maxLength: 200 }
+        status: { type: integer, enum: [0, 1] }
+
+    PurchaseSupplierProductPage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/PurchaseSupplierProduct' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    PurchaseSupplierProduct:
+      type: object
+      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, supplierProductCode, latestPurchasePrice, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, lastPurchaseAt, status, remark, createTime, updateTime]
+      properties:
+        supplierProductId: { type: string, description: 对应 `supplier_product.id`，BIGINT 按字符串传输 }
+        supplierId: { type: string, description: 对应 `supplier_product.supplier_id`，BIGINT 按字符串传输 }
+        supplierCode: { type: string, maxLength: 64, description: 对应 `supplier_product.supplier_code` 供应商快照 }
+        supplierName: { type: string, maxLength: 200, description: 对应 `supplier_product.supplier_name` 供应商快照 }
+        productId: { type: string, description: 对应 `supplier_product.product_id`，BIGINT 按字符串传输 }
+        productCode: { type: string, maxLength: 64, description: 对应 `supplier_product.product_code` 产品快照 }
+        productName: { type: string, maxLength: 200, description: 对应 `supplier_product.product_name` 产品快照 }
+        unitName: { type: string, maxLength: 32, description: 对应 `supplier_product.unit_name` 产品单位快照 }
+        supplierProductCode: { type: string, maxLength: 100, description: 对应 `supplier_product.supplier_product_code` }
+        latestPurchasePrice: { type: number, format: double, minimum: 0, description: 对应 `supplier_product.latest_purchase_price` }
+        minOrderQty: { type: number, format: double, minimum: 0, description: 对应 `supplier_product.min_order_qty` }
+        leadTimeDays: { type: integer, minimum: 0, description: 对应 `supplier_product.lead_time_days` }
+        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100, description: 交付评分展示值；数据库按 100 倍整数存储 }
+        qualityScore: { type: number, format: double, minimum: 0, maximum: 100, description: 质量评分展示值；数据库按 100 倍整数存储 }
+        priceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 价格评分展示值；数据库按 100 倍整数存储 }
+        aiScore: { type: number, format: double, minimum: 0, maximum: 100, description: 推荐分展示值；数据库 `supplier_product.ai_score` 按 100 倍整数存储 }
+        lastPurchaseAt: { type: string, nullable: true, description: 对应 `supplier_product.last_purchase_at` }
+        status: { type: integer, enum: [0, 1], description: 对应 `supplier_product.status`，1 启用，0 停用 }
+        remark: { type: string, maxLength: 500, description: 对应 `supplier_product.remark` }
+        createTime: { type: string, description: 对应 `supplier_product.create_time` }
+        updateTime: { type: string, description: 对应 `supplier_product.update_time` }
+
+    PurchaseSupplierProductFormRequest:
+      type: object
+      required: [supplierId, productId, supplierProductCode, latestPurchasePrice, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, status, remark]
+      properties:
+        supplierId: { type: string, description: 启用供应商 ID；后端保存供应商编码和名称快照 }
+        productId: { type: string, description: 启用产品 ID；后端保存产品编码、名称和单位快照 }
+        supplierProductCode: { type: string, maxLength: 100 }
+        latestPurchasePrice: { type: number, format: double, minimum: 0 }
+        minOrderQty: { type: number, format: double, minimum: 0 }
+        leadTimeDays: { type: integer, minimum: 0 }
+        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        qualityScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        priceScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        aiScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    PurchaseSupplierProductBatchStatusRequest:
+      type: object
+      required: [supplierProductIds, status]
+      properties:
+        supplierProductIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status: { type: integer, enum: [0, 1] }
+
+    PurchaseSupplierProductBatchDeleteRequest:
+      type: object
+      required: [supplierProductIds]
+      properties:
+        supplierProductIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+
+    PurchaseOrderPage:
       type: object
       required: [records, total, pageNum, pageSize, summary]
       properties:
         records:
           type: array
-          items: { $ref: '#/components/schemas/WarehouseStock' }
+          items: { $ref: '#/components/schemas/PurchaseOrder' }
         total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        summary: { $ref: '#/components/schemas/PurchaseOrderSummary' }
+
+    PurchaseOrderSummary:
+      type: object
+      required: [draftCount, submittedCount, approvedCount, inboundPendingCount]
+      properties:
+        draftCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 DRAFT 的订单数 }
+        submittedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 SUBMITTED 的订单数 }
+        approvedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 APPROVED 的订单数 }
+        inboundPendingCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 APPROVED 或 PARTIAL_INBOUND 的待入库订单数 }
+
+    PurchaseOrder:
+      type: object
+      required: [purchaseOrderId, purchaseNo, supplierId, supplierCode, supplierName, warehouseId, warehouseName, status, totalAmount, expectedArrivalDate, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, remark, items]
+      properties:
+        purchaseOrderId: { type: string, description: 对应 `purchase_order.id`，BIGINT 按字符串传输 }
+        purchaseNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `purchase_order.purchase_no`，由后端生成、全局唯一 }
+        supplierId: { type: string, description: 对应 `purchase_order.supplier_id`，BIGINT 按字符串传输 }
+        supplierCode: { type: string, maxLength: 64, description: 对应 `purchase_order.supplier_code` 供应商快照 }
+        supplierName: { type: string, maxLength: 200, description: 对应 `purchase_order.supplier_name` 供应商快照 }
+        warehouseId: { type: string, description: 对应 `purchase_order.warehouse_id`，BIGINT 按字符串传输 }
+        warehouseName: { type: string, maxLength: 100, description: 对应 `purchase_order.warehouse_name` 仓库快照 }
+        status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_INBOUND, INBOUND_DONE, CANCELLED], description: 对应 `purchase_order.status` }
+        totalAmount: { type: number, format: double, minimum: 0, description: 对应 `purchase_order.total_amount` }
+        expectedArrivalDate: { type: string, nullable: true, description: 对应 `purchase_order.expected_arrival_date`；草稿可为空，提交和审核前必须非空 }
+        createdById: { type: string, nullable: true, description: 对应 `purchase_order.created_by_id`，BIGINT 按字符串传输 }
+        createdByName: { type: string, maxLength: 100, description: 对应 `purchase_order.created_by_name` }
+        submittedAt: { type: string, nullable: true, description: 对应 `purchase_order.submitted_at` }
+        approvedById: { type: string, nullable: true, description: 对应 `purchase_order.approved_by_id`，BIGINT 按字符串传输 }
+        approvedByName: { type: string, maxLength: 100, description: 对应 `purchase_order.approved_by_name` }
+        approvedAt: { type: string, nullable: true, description: 对应 `purchase_order.approved_at` }
+        createTime: { type: string, description: 对应 `purchase_order.create_time` }
+        updateTime: { type: string, description: 对应 `purchase_order.update_time` }
+        remark: { type: string, maxLength: 500, description: 对应 `purchase_order.remark` }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PurchaseOrderItem' }
+
+    PurchaseOrderDetail:
+      allOf:
+        - $ref: '#/components/schemas/PurchaseOrder'
+
+    PurchaseOrderItem:
+      type: object
+      required: [purchaseOrderItemId, purchaseOrderId, purchaseNo, supplierProductId, productId, productCode, productName, unitName, quantity, inboundQty, unitPrice, totalAmount, selectedSupplierScore, remark]
+      properties:
+        purchaseOrderItemId: { type: string, description: 对应 `purchase_order_item.id`，BIGINT 按字符串传输 }
+        purchaseOrderId: { type: string, description: 对应 `purchase_order_item.purchase_order_id`，BIGINT 按字符串传输 }
+        purchaseNo: { type: string, maxLength: 64, description: 对应 `purchase_order_item.purchase_no` }
+        supplierProductId: { type: string, nullable: true, description: 对应 `purchase_order_item.supplier_product_id`，BIGINT 按字符串传输，可为空 }
+        productId: { type: string, description: 对应 `purchase_order_item.product_id`，BIGINT 按字符串传输 }
+        productCode: { type: string, maxLength: 64, description: 对应 `purchase_order_item.product_code` 产品快照 }
+        productName: { type: string, maxLength: 200, description: 对应 `purchase_order_item.product_name` 产品快照 }
+        unitName: { type: string, maxLength: 32, description: 对应 `purchase_order_item.unit_name` 产品单位快照 }
+        quantity: { type: number, format: double, exclusiveMinimum: 0, description: 对应 `purchase_order_item.quantity` }
+        inboundQty: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.inbound_qty` }
+        unitPrice: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.unit_price` }
+        totalAmount: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.total_amount` }
+        selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100, description: 下单时推荐分展示值；数据库 `purchase_order_item.selected_supplier_score` 按 100 倍整数存储 }
+        remark: { type: string, maxLength: 500, description: 对应 `purchase_order_item.remark` }
+
+    PurchaseOrderCreateRequest:
+      type: object
+      required: [supplierId, warehouseId, expectedArrivalDate, remark, items]
+      properties:
+        supplierId: { type: string, description: 启用供应商 ID；后端保存供应商编码和名称快照 }
+        warehouseId: { type: string, description: 启用仓库 ID；后端保存仓库名称快照 }
+        expectedArrivalDate: { type: string, nullable: true, description: 对应 `purchase_order.expected_arrival_date`；草稿可为空，提交和审核前必须非空 }
+        remark: { type: string, maxLength: 500 }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/PurchaseOrderDraftItemRequest' }
+
+    PurchaseOrderUpdateRequest:
+      type: object
+      required: [supplierId, warehouseId, expectedArrivalDate, remark, items]
+      properties:
+        supplierId: { type: string, description: 供应商 ID；`DRAFT` 可由采购创建权限修改，`SUBMITTED` 仅允许审核/审批权限修改，后端重新保存供应商编码和名称快照 }
+        warehouseId: { type: string, description: 入库仓库 ID；`DRAFT` 可由采购创建权限修改，`SUBMITTED` 仅允许审核/审批权限修改，后端重新保存仓库名称快照 }
+        expectedArrivalDate: { type: string, nullable: true, description: 对应 `purchase_order.expected_arrival_date`；草稿可为空，提交和审核前必须非空 }
+        remark: { type: string, maxLength: 500, description: 对应 `purchase_order.remark` }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/PurchaseOrderDraftItemRequest' }
+
+    PurchaseOrderDraftItemRequest:
+      type: object
+      required: [productId, quantity, unitPrice, selectedSupplierScore, remark]
+      properties:
+        purchaseOrderItemId: { type: string, nullable: true, description: 编辑草稿时传已有明细 ID，对应 `purchase_order_item.id`；新增明细或创建订单时不传 }
+        supplierProductId: { type: string, nullable: true, description: 选中的供货关系 ID，对应 `supplier_product.id`；前端应按单头供应商和产品双向过滤后传入，若为空或与 `supplierId`、`productId` 不匹配，后端必须拒绝或按启用供货关系重新校验 }
+        productId: { type: string, description: 启用产品 ID；后端保存产品编码、名称和单位快照 }
+        quantity: { type: number, format: double, exclusiveMinimum: 0 }
+        unitPrice: { type: number, format: double, minimum: 0 }
+        selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        remark: { type: string, maxLength: 500 }
+
+    WarehouseStockPage:
+      type: object
+      required: [records, pageNum, pageSize, summary]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/WarehouseStock' }
+        total: { type: integer, minimum: 0, nullable: true, description: 可选；库存余额默认使用无总数分页，后端不需要返回精确总数 }
+        hasNext: { type: boolean, description: 可选；是否存在下一页，未返回时前端按 `records.length >= pageSize` 保守判断 }
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1 }
         summary: { $ref: '#/components/schemas/WarehouseStockSummary' }
@@ -3264,8 +4450,9 @@ components:
 
     StockBillUpdateRequest:
       type: object
-      required: [sourceNo, manualReason, items, remark]
+      required: [warehouseId, sourceNo, manualReason, items, remark]
       properties:
+        warehouseId: { type: string, description: 仓库 ID；仅 `DRAFT` 状态允许修改，`PENDING_CONFIRM` 必须保持原值 }
         sourceNo: { type: string, maxLength: 64, description: 手工补录草稿可维护原业务单号；其他录入方式保持原值 }
         manualReason: { type: string, maxLength: 500, description: 手工补录或调整草稿必填；来源生成草稿保持原值 }
         items:
@@ -3288,28 +4475,34 @@ components:
 
     StockBillSummary:
       type: object
-      required: [stockBillCount, inboundCount, outboundCount, confirmedCount]
+      required: [inboundCount, outboundCount, sourceGeneratedCount, pendingCount, confirmedCount, cancelledCount]
       properties:
-        stockBillCount: { type: integer, minimum: 0, description: 当前筛选范围内出入库流水数 }
-        inboundCount: { type: integer, minimum: 0, description: 当前筛选范围内入库类型流水数 }
-        outboundCount: { type: integer, minimum: 0, description: 当前筛选范围内出库类型流水数 }
-        confirmedCount: { type: integer, minimum: 0, description: 当前筛选范围内状态为 CONFIRMED 的流水数 }
+        inboundCount: { type: integer, minimum: 0, description: 当前页 `records` 中的入库方向数量 }
+        outboundCount: { type: integer, minimum: 0, description: 当前页 `records` 中的出库方向数量 }
+        sourceGeneratedCount: { type: integer, minimum: 0, description: 当前页 `records` 中 `entryMode = SOURCE_GENERATED` 的单据数 }
+        pendingCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 PENDING_CONFIRM 的单据数 }
+        confirmedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 CONFIRMED 的单据数 }
+        cancelledCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 CANCELLED 的单据数 }
 
     StockBill:
       type: object
-      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, entryMode, warehouseId, warehouseName, status, itemCount, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, createTime, updateTime]
+      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, sourcePartyName, entryMode, warehouseId, warehouseName, status, itemCount, quantitySummary, totalCurrentQty, quantityUnitName, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, createTime, updateTime]
       properties:
-        stockBillId: { type: string, description: 对应 `stock_bill.id`，BIGINT 按字符串传输 }
-        billNo: { type: string, maxLength: 64, description: 对应 `stock_bill.bill_no` }
-        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 对应 `stock_bill.bill_type` }
-        sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 对应 `stock_bill.source_type` }
-        sourceId: { type: string, nullable: true, description: 对应 `stock_bill.source_id`，BIGINT 按字符串传输 }
-        sourceNo: { type: string, maxLength: 64, description: 对应 `stock_bill.source_no` }
-        entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 对应 `stock_bill.entry_mode`，区分来源生成、手工补录和手工调整 }
-        warehouseId: { type: string, description: 对应 `stock_bill.warehouse_id`，BIGINT 按字符串传输 }
-        warehouseName: { type: string, maxLength: 100, description: 对应 `stock_bill.warehouse_name` }
-        status: { type: string, enum: [DRAFT, CONFIRMED, CANCELLED], description: 对应 `stock_bill.status` }
-        itemCount: { type: integer, minimum: 0, description: 按 `stock_bill_item.bill_id` 聚合的明细条数 }
+        stockBillId: { type: string, description: 入库单、出库单或库存流水 ID，BIGINT 按字符串传输 }
+        billNo: { type: string, maxLength: 64, description: 入库单号、出库单号或库存流水号 }
+        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 入库、出库或库存流水类型 }
+        sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 原业务来源类型 }
+        sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输 }
+        sourceNo: { type: string, maxLength: 64, description: 原业务来源单号 }
+        sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；`PURCHASE_IN`、`PURCHASE_RETURN` 表示供应商，`SALES_OUT`、`SALES_RETURN` 表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示调整仓库名称快照；前端不得再显示为泛化“往来方” }
+        entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 区分来源生成、手工补录和手工调整 }
+        warehouseId: { type: string, description: 仓库 ID，BIGINT 按字符串传输 }
+        warehouseName: { type: string, maxLength: 100, description: 仓库名称快照 }
+        status: { type: string, enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED], description: 入库单/出库单状态；库存流水只返回 CONFIRMED }
+        itemCount: { type: integer, minimum: 0, description: 明细条数 }
+        quantitySummary: { type: string, description: 列表入库量/出库量摘要，例如“本次 20 箱”；不同单位时返回简短明细摘要，前端列表按页面方向展示为入库量或出库量，展开明细必须使用 `items.quantity`、`items.qualifiedQty`、`items.defectiveQty`、`items.pendingQty` 独立列展示，不使用拼接质检字段 }
+        totalCurrentQty: { type: number, format: double, nullable: true, description: 同单位时的入库量/出库量合计，不同单位返回 null }
+        quantityUnitName: { type: string, description: 数量摘要单位；不同单位时返回空字符串 }
         confirmedById: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_by_id`，BIGINT 按字符串传输 }
         confirmedByName: { type: string, maxLength: 100, description: 对应 `stock_bill.confirmed_by_name` }
         confirmedAt: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_at` }
@@ -3334,7 +4527,7 @@ components:
 
     StockBillItem:
       type: object
-      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createTime, updateTime, remark]
+      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, planQty, processedQty, pendingQty, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createTime, updateTime, remark]
       properties:
         stockBillItemId: { type: string, description: 对应 `stock_bill_item.id`，BIGINT 按字符串传输 }
         stockBillId: { type: string, description: 对应 `stock_bill_item.bill_id`，BIGINT 按字符串传输 }
@@ -3345,9 +4538,12 @@ components:
         productName: { type: string, maxLength: 200, description: 对应 `stock_bill_item.product_name` }
         unitName: { type: string, maxLength: 32, description: 对应 `stock_bill_item.unit_name` }
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应 `stock_bill_item.quantity_precision`，产品数量精度快照 }
-        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.quantity` 按 100 倍整数存储，Service 层负责转换 }
-        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.qualified_qty` 按 100 倍整数存储 }
-        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.defective_qty` 按 100 倍整数存储 }
+        planQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 来源单据计划数量；库存调整可为 null }
+        processedQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 生成本单前来源明细累计已入库或已出库数量；库存调整可为 null }
+        pendingQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 确认本单后来源明细预计剩余未入库或未出库数量；库存调整可为 null；前端展开明细独立展示为剩余未入库或剩余未出库列 }
+        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 本次入库/出库业务真实值；数据库 `stock_bill_item.quantity` 按 100 倍整数存储；前端展开明细独立展示为入库量或出库量列 }
+        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 合格数量业务真实值；数据库 `stock_bill_item.qualified_qty` 按 100 倍整数存储；前端展开明细独立展示，不得与不合格数量拼接为一个质检字段 }
+        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 不合格数量业务真实值；数据库 `stock_bill_item.defective_qty` 按 100 倍整数存储；前端展开明细独立展示，不得与合格数量拼接为一个质检字段 }
         beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.before_qty` 按 100 倍整数存储 }
         changeQty: { type: number, format: double, multipleOf: 0.01, description: 业务真实值，入库为正、出库为负；数据库按 100 倍整数存储 }
         afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.after_qty` 按 100 倍整数存储 }
@@ -3381,21 +4577,23 @@ components:
 
     WarehouseStockSummary:
       type: object
-      required: [stockRecordCount, warehouseCount, productCount, lowStockCount]
+      required: [warehouseCount, productCount, lowStockCount, noAvailableCount, lockedCount]
       properties:
-        stockRecordCount: { type: integer, minimum: 0, description: 当前筛选范围内库存余额记录数 }
-        warehouseCount: { type: integer, minimum: 0, description: 当前筛选范围内去重仓库数 }
-        productCount: { type: integer, minimum: 0, description: 当前筛选范围内去重产品数 }
-        lowStockCount: { type: integer, minimum: 0, description: 当前筛选范围内 `0 < available_qty <= safety_stock_qty` 的记录数 }
+        warehouseCount: { type: integer, minimum: 0, description: 当前页 `records` 中的去重仓库数 }
+        productCount: { type: integer, minimum: 0, description: 当前页 `records` 中的去重产品数 }
+        lowStockCount: { type: integer, minimum: 0, description: 当前页 `records` 中 `0 < available_qty <= safety_stock_qty` 的记录数 }
+        noAvailableCount: { type: integer, minimum: 0, description: 当前页 `records` 中 `available_qty = 0` 的记录数 }
+        lockedCount: { type: integer, minimum: 0, description: 当前页 `records` 中 `locked_qty > 0` 的记录数 }
 
     WarehousePage:
       type: object
-      required: [records, total, pageNum, pageSize]
+      required: [records, pageNum, pageSize]
       properties:
         records:
           type: array
           items: { $ref: '#/components/schemas/Warehouse' }
-        total: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0, nullable: true, description: 可选；仓库列表默认使用无总数分页，后端不需要返回精确总数 }
+        hasNext: { type: boolean, description: 可选；是否存在下一页，未返回时前端按 `records.length >= pageSize` 保守判断 }
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1 }
 

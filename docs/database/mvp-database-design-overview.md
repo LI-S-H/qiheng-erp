@@ -9,12 +9,12 @@
 - 业务闭环完整：能维护产品、供应商、客户、仓库，能完成采购入库、销售出库和库存更新。
 - 表数量可控：第一版避免一开始拆出过多配置表、关系表和日志表，降低开发复杂度。
 - 查询性能友好：ERP 列表和大表查询频繁，适当冗余名称、编码等快照字段，减少高频多表联查。
-- AI 可用：供应商评分、库存余额、出入库流水、销售采购数据要能支撑后续 AI Tool 查询和采购建议。
+- AI 可用：供应商评分、库存余额、入库单、出库单、库存流水、销售采购数据要能支撑后续 AI Tool 查询和采购建议。
 - 后续可扩展：MVP 简化不是把路堵死，而是先保留清晰的扩展位置。
 
 ## 当前表清单
 
-MVP 阶段共设计 21 张表。
+MVP 阶段共设计 25 张表。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
@@ -27,8 +27,12 @@ MVP 阶段共设计 21 张表。
 | 产品 | `product` | 产品主数据 |
 | 仓库库存 | `warehouse` | 仓库主数据 |
 | 仓库库存 | `warehouse_stock` | 当前库存余额 |
-| 仓库库存 | `stock_bill` | 出入库流水主表 |
-| 仓库库存 | `stock_bill_item` | 出入库流水明细 |
+| 仓库库存 | `inbound_bill` | 入库单主表，承接待确认入库业务 |
+| 仓库库存 | `inbound_bill_item` | 入库单明细 |
+| 仓库库存 | `outbound_bill` | 出库单主表，承接待确认出库业务 |
+| 仓库库存 | `outbound_bill_item` | 出库单明细 |
+| 仓库库存 | `stock_bill` | 已确认库存流水凭证主表 |
+| 仓库库存 | `stock_bill_item` | 已确认库存流水凭证明细 |
 | 采购 | `supplier` | 供应商主数据和供应商总评分 |
 | 采购 | `supplier_product` | 供应商可供货产品、价格、交期和产品维度评分 |
 | 采购 | `purchase_order` | 采购订单主表 |
@@ -51,9 +55,9 @@ MVP 阶段共设计 21 张表。
 | 面试关注点 | 本设计的回答 |
 |---|---|
 | 业务是否闭环 | 产品、供应商、采购、仓库、库存、客户、销售都能串起来 |
-| 数据是否一致 | 采购和销售不直接改库存，统一通过 `stock_bill` 确认后更新库存 |
+| 数据是否一致 | 采购和销售不直接改库存，先生成入库单/出库单，仓库确认后通过 `stock_bill` 更新库存 |
 | 查询是否高效 | 库存余额单独存，订单和明细冗余名称、编码，减少高频联表 |
-| 是否可追溯 | 出入库流水带 `source_type/source_id/source_no/source_item_id` |
+| 是否可追溯 | 入库单/出库单承接待处理业务，库存流水带来源业务和来源单据链路 |
 | 是否可扩展 | 权限、退货、批次、财务、AI Workflow 都有明确扩展路径 |
 | AI 是否可信 | AI 不直接改业务数据，只通过受控 Tool 读 Service，并写审计日志 |
 
@@ -84,11 +88,11 @@ ERP 容易一开始设计得很重，例如岗位、菜单、按钮权限、字�
 flowchart LR
     P["产品资料"] --> S["供应商供货产品"]
     S --> PO["采购订单"]
-    PO --> IN["采购入库流水"]
+    PO --> IN["待确认入库单"]
     IN --> ST["库存余额"]
     C["客户资料"] --> SO["销售订单"]
     ST --> SO
-    SO --> OUT["销售出库流水"]
+    SO --> OUT["待确认出库单"]
     OUT --> ST
 ```
 
@@ -118,18 +122,19 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    A["采购订单 / 销售订单 / 退货 / 库存调整"] --> B["生成出入库流水草稿"]
-    B --> C["确认出入库流水"]
+    A["采购订单 / 销售订单 / 退货 / 库存调整"] --> B["生成入库单或出库单"]
+    B --> C["仓库确认本次数量"]
     C --> D["更新 warehouse_stock"]
-    C --> E["记录 stock_bill_item 库存变化"]
+    C --> E["生成 stock_bill 库存流水"]
 ```
 
 这样做的好处是：
 
 - 库存更新入口统一，避免采购、销售各自改库存导致不一致。
 - `warehouse_stock` 负责快速查询当前库存。
-- `stock_bill` / `stock_bill_item` 负责追溯库存为什么变化。
-- AI 查询库存时优先读库存余额，需要解释原因时再看出入库流水。
+- `inbound_bill` / `outbound_bill` 负责承接待确认的仓库作业。
+- `stock_bill` / `stock_bill_item` 只负责追溯已经确认的库存变化。
+- AI 查询库存时优先读库存余额，需要解释原因时再看入库单、出库单和库存流水。
 
 这里的架构考虑是把**交易模块**和**库存模块**分开：
 
@@ -137,29 +142,30 @@ flowchart LR
 |---|---|---|
 | 采购模块 | 供应商、采购订单、采购明细、采购价格 | 不直接改库存 |
 | 销售模块 | 客户、销售订单、销售明细、库存锁定 | 不直接扣库存 |
-| 仓库模块 | 库存余额、出入库确认、库存变动追溯 | 不负责采购或销售业务规则 |
+| 仓库模块 | 库存余额、入库确认、出库确认、库存变动追溯 | 不负责采购或销售业务规则 |
 
 这样做的好处是模块边界清楚。以后增加销售退货、采购退货、库存调整，也不需要让采购和销售模块各自维护一套库存逻辑。
 
-### 4. 不单独设计库存流水表
+### 4. 为什么拆出入库单和库存流水
 
-项目里没有再设计单独的 `stock_flow` 表，因为 `stock_bill` 和 `stock_bill_item` 已经承担库存变动凭证。
+项目里把“待处理的仓库作业”和“已经确认的库存事实”拆开：
 
-如果同时设计“出入库单”和“库存流水表”，第一版会出现两套记录：
+- `inbound_bill` / `outbound_bill`：可以是草稿或待确认，不一定已经改变库存。
+- `stock_bill` / `stock_bill_item`：只在确认入库或确认出库时生成，代表库存已经发生变化。
+
+如果把待确认和已确认都塞进 `stock_bill`，采购单审核后就会像“已经入库”一样出现在库存流水里，用户会误以为货已经到了。拆分后链路更清楚：
 
 ```text
-出入库流水记录一次出库
-库存流水又记录一次出库
+采购单审核 -> 待确认入库单 -> 仓库确认本次入库数量 -> 库存流水
+销售单审核 -> 待确认出库单 -> 仓库确认本次出库数量 -> 库存流水
 ```
-
-这会增加数据一致性维护成本，也会让后续排查库存问题时不知道以哪张表为准。
 
 所以当前设计是：
 
-- `stock_bill` 记录一次出入库动作的来源、类型、仓库、状态和确认信息。
-- `stock_bill_item` 记录每个产品的数量、合格数量、不合格数量、变动前库存、变动数量、变动后库存。
+- 入库单/出库单记录来源业务、往来方、计划数量、累计已处理、本次数量和剩余数量。
+- 库存流水记录每个产品的数量、合格数量、不合格数量、变动前库存、变动数量、变动后库存。
 
-后续如果财务库存台账、批次成本、月结存要求更高，再新增独立库存台账表。
+后续如果财务库存台账、批次成本、月结存要求更高，可以在 `stock_bill` 之后再新增独立库存台账表。
 
 ### 5. 适当冗余字段，减少高频联查
 
@@ -169,10 +175,10 @@ ERP 数据量大，列表页和查询页很多。如果每次展示订单、库�
 
 | 冗余字段 | 出现位置 | 目的 |
 |---|---|---|
-| `product_code`、`product_name` | 采购明细、销售明细、库存余额、出入库明细 | 历史单据保留产品快照，列表查询少联表 |
+| `product_code`、`product_name` | 采购明细、销售明细、库存余额、入库明细、出库明细、库存流水明细 | 历史单据保留产品快照，列表查询少联表 |
 | `supplier_code`、`supplier_name` | 采购订单、供应商供货产品 | 采购列表直接展示供应商 |
 | `customer_code`、`customer_name` | 销售订单 | 销售列表直接展示客户 |
-| `warehouse_name` | 库存、采购订单、销售订单、出入库流水 | 常用展示字段，避免频繁联仓库表 |
+| `warehouse_name` | 库存、采购订单、销售订单、入库单、出库单、库存流水 | 常用展示字段，避免频繁联仓库表 |
 | `purchase_no`、`sales_no`、`bill_no` | 明细表 | 方便按单号查询和排查问题 |
 
 这些冗余字段按业务快照处理。主数据后续改名，不影响历史订单和历史流水展示。
@@ -185,7 +191,7 @@ ERP 数据量大，列表页和查询页很多。如果每次展示订单、库�
 
 ### 6. 状态流转代替复杂工作流
 
-MVP 阶段没有单独设计审批流引擎，而是在订单和出入库流水上使用状态字段表达业务进度。
+MVP 阶段没有单独设计审批流引擎，而是在订单、入库单、出库单和库存流水上使用状态字段表达业务进度。
 
 采购订单核心状态：
 
@@ -199,7 +205,7 @@ DRAFT -> SUBMITTED -> APPROVED -> PARTIAL_INBOUND -> INBOUND_DONE
 DRAFT -> SUBMITTED -> APPROVED -> PARTIAL_OUTBOUND -> OUTBOUND_DONE
 ```
 
-出入库流水核心状态：
+入库单/出库单核心状态：
 
 ```text
 DRAFT -> CONFIRMED
@@ -342,7 +348,7 @@ AI 选择供应商时，不需要每次实时扫描所有历史订单，可以�
 
 如果只在 `supplier` 上放评分，就无法回答“同一个供应商供应不同产品时表现是否不同”。所以设计 `supplier_product` 保存产品维度的供应能力和推荐分。
 
-采购订单确认后不直接增加库存，而是生成 `PURCHASE_IN` 出入库流水草稿。只有确认入库后，才更新库存和采购明细的 `inbound_qty`。
+采购订单审核后不直接增加库存，而是生成 `PURCHASE_IN` 待确认入库单。只有仓库确认本次入库数量后，才生成库存流水、更新库存和采购明细的 `inbound_qty`。
 
 这符合真实业务：采购单代表“要买”，入库确认代表“货真的到了”。
 
@@ -377,9 +383,9 @@ AI 选择供应商时，不需要每次实时扫描所有历史订单，可以�
 
 如果只保留流水，每次查当前库存都要汇总历史流水，性能会很差。如果只保留余额，又无法追溯库存变化原因。
 
-所以同时保留库存余额和出入库流水，是 ERP 库存模块的基本设计。
+所以同时保留库存余额、入库/出库作业单和库存流水，是 ERP 库存模块的基本设计。
 
-### 4. 退货为什么先复用出入库流水
+### 4. 退货为什么先复用入库单/出库单
 
 MVP 没有单独设计销售退货单和采购退货单。
 
@@ -388,7 +394,7 @@ MVP 没有单独设计销售退货单和采购退货单。
 - 销售退货：客户退货入库，使用 `SALES_RETURN`。
 - 采购退货：退回供应商出库，使用 `PURCHASE_RETURN`。
 
-如果后续退货涉及退款、质检、责任判定、售后审批，再补独立退货单表。当前先复用出入库流水，可以减少表数量，同时保留库存追溯能力。
+如果后续退货涉及退款、质检、责任判定、售后审批，再补独立退货单表。当前先复用入库单/出库单，可以减少表数量，同时保留库存追溯能力。
 
 ### 5. AI 查询为什么必须写审计
 
@@ -449,7 +455,7 @@ MVP 很多复杂流程都没有单独拆表，而是先用状态字段表达。
 
 - 采购订单从草稿到已入库。
 - 销售订单从草稿到已出库。
-- 出入库流水从草稿到已确认。
+- 入库单/出库单从草稿或待确认到已确认。
 - AI 文档从待处理到已索引或失败。
 
 状态字段让系统能先跑起来，同时给后续审批流、异步任务、失败重试留下扩展点。
@@ -465,8 +471,8 @@ Service 层需要负责：
 - 校验产品、客户、供应商、仓库是否启用。
 - 校验库存是否足够。
 - 控制订单状态流转是否合法。
-- 确认出入库时更新库存和回写订单明细。
-- 防止重复确认同一张出入库流水。
+- 确认入库/出库时更新库存和回写订单明细。
+- 防止重复确认同一张入库单或出库单。
 
 也就是说，数据库负责存储和索引，业务层负责业务规则和事务边界。
 
@@ -544,7 +550,7 @@ update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMEST
 - `purchase_order`
 - `sales_order`
 
-关系表、订单明细表、库存余额表、出入库流水表、审计日志表默认不使用 `deleted`，例如：
+关系表、订单明细表、库存余额表、入库单/出库单明细、库存流水表、审计日志表默认不使用 `deleted`，例如：
 
 - `sys_user_role`
 - `purchase_order_item`
@@ -589,8 +595,10 @@ flowchart LR
     customer["customer<br/>客户表<br/>id 主键<br/>customer_code 客户编码<br/>customer_name 客户名称"]
     salesOrder["sales_order<br/>销售订单主表<br/>customer_id 客户ID<br/>warehouse_id 出库仓库ID<br/>status 销售状态"]
     salesItem["sales_order_item<br/>销售订单明细表<br/>sales_order_id 销售订单ID<br/>product_id 产品ID<br/>quantity 销售数量<br/>locked_qty 锁定数量<br/>outbound_qty 已出库数量"]
-    stockBill["stock_bill<br/>出入库流水主表<br/>bill_type 出入库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>warehouse_id 仓库ID"]
-    stockItem["stock_bill_item<br/>出入库流水明细表<br/>bill_id 出入库流水ID<br/>source_item_id 来源明细ID<br/>product_id 产品ID<br/>before_qty / change_qty / after_qty"]
+    inboundBill["inbound_bill<br/>入库单主表<br/>inbound_type 入库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_party_name 供应商/客户快照"]
+    outboundBill["outbound_bill<br/>出库单主表<br/>outbound_type 出库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_party_name 客户/供应商快照"]
+    stockBill["stock_bill<br/>库存流水凭证主表<br/>source_bill_type 来源单类型<br/>source_bill_id 入库单或出库单ID<br/>business_source_id 原业务单据ID"]
+    stockItem["stock_bill_item<br/>库存流水凭证明细<br/>source_bill_item_id 入库/出库明细ID<br/>business_source_item_id 原业务明细ID<br/>before_qty / change_qty / after_qty"]
     stock["warehouse_stock<br/>库存余额表<br/>warehouse_id 仓库ID<br/>product_id 产品ID<br/>stock_qty 当前库存<br/>locked_qty 锁定库存"]
 
     supplier -->|"supplier_id"| supplierProduct
@@ -622,10 +630,11 @@ flowchart LR
 | 关系点 | 字段 | 中文说明 |
 |---|---|---|
 | 供应商供货 | `supplier_product.supplier_id`、`supplier_product.product_id` | 说明哪个供应商能供应哪个产品，是 AI 推荐供应商的基础 |
-| 采购入库 | `stock_bill.source_type = PURCHASE_ORDER`、`stock_bill.source_id = purchase_order.id` | 出入库流水可以反查采购订单 |
-| 采购入库明细 | `stock_bill_item.source_item_id = purchase_order_item.id` | 出入库明细可以反查采购明细 |
-| 销售出库 | `stock_bill.source_type = SALES_ORDER`、`stock_bill.source_id = sales_order.id` | 出入库流水可以反查销售订单 |
-| 销售出库明细 | `stock_bill_item.source_item_id = sales_order_item.id` | 出入库明细可以反查销售明细 |
+| 采购入库 | `inbound_bill.source_type = PURCHASE_ORDER`、`inbound_bill.source_id = purchase_order.id` | 入库单可以反查采购订单 |
+| 采购入库明细 | `inbound_bill_item.source_item_id = purchase_order_item.id` | 入库单明细可以反查采购明细 |
+| 销售出库 | `outbound_bill.source_type = SALES_ORDER`、`outbound_bill.source_id = sales_order.id` | 出库单可以反查销售订单 |
+| 销售出库明细 | `outbound_bill_item.source_item_id = sales_order_item.id` | 出库单明细可以反查销售明细 |
+| 库存流水 | `stock_bill.source_bill_type/source_bill_id`、`stock_bill.business_source_type/business_source_id` | 库存流水可同时反查仓库作业单和原业务单据 |
 | 库存余额 | `warehouse_stock(warehouse_id, product_id)` | 一个仓库中一个产品只有一条当前库存记录 |
 
 ### 权限与 AI 关系图
@@ -713,7 +722,7 @@ flowchart LR
     supplier["supplier 供应商表<br/>id 主键<br/>supplier_code 供应商编码<br/>supplier_name 供应商名称<br/>contact_name / contact_phone 联系方式<br/>address 地址<br/>payment_terms 付款条件<br/>overall_score 综合评分<br/>delivery_score 交付评分<br/>quality_score 质量评分<br/>price_score 价格评分<br/>service_score 服务评分<br/>avg_delivery_days 平均交付天数<br/>on_time_rate 准时率<br/>qualified_rate 合格率<br/>status / deleted 状态字段<br/>remark 备注"]
     supplierProduct["supplier_product 供应商供货产品表<br/>id 主键<br/>supplier_id 供应商ID<br/>supplier_code / supplier_name 供应商快照<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>supplier_product_code 供应商侧产品编码<br/>latest_purchase_price 最近采购价<br/>min_order_qty 最小起订量<br/>lead_time_days 预计交期<br/>delivery_score / quality_score / price_score 分项评分<br/>ai_score 推荐分<br/>last_purchase_at 最近采购时间<br/>status / deleted 状态字段"]
     purchaseOrder["purchase_order 采购订单主表<br/>id 主键<br/>purchase_no 采购单号<br/>supplier_id 供应商ID<br/>supplier_code / supplier_name 供应商快照<br/>warehouse_id 入库仓库ID<br/>warehouse_name 仓库名称快照<br/>status 订单状态<br/>total_amount 订单总金额<br/>expected_arrival_date 预计到货日期<br/>created_by / submitted_at / approved_by / approved_at 流程字段<br/>create_time / update_time / deleted 审计字段"]
-    purchaseItem["purchase_order_item 采购订单明细表<br/>id 主键<br/>purchase_order_id 采购订单ID<br/>purchase_no 采购单号快照<br/>supplier_product_id 供货产品ID，可空<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 采购数量<br/>inbound_qty 已入库数量<br/>unit_price 采购单价<br/>total_amount 明细金额<br/>selected_supplier_score 下单时推荐分快照<br/>expected_arrival_date 明细预计到货日期"]
+    purchaseItem["purchase_order_item 采购订单明细表<br/>id 主键<br/>purchase_order_id 采购订单ID<br/>purchase_no 采购单号快照<br/>supplier_product_id 供货产品ID，可空<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 采购数量<br/>inbound_qty 已入库数量<br/>unit_price 采购单价<br/>total_amount 明细金额<br/>selected_supplier_score 下单时推荐分快照"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]
     warehouseRef["warehouse 仓库表<br/>id 仓库ID<br/>warehouse_name 仓库名称"]
 
@@ -742,12 +751,16 @@ flowchart LR
     productRef -->|"销售产品：product_id -> id"| salesItem
 ```
 
-### 出入库流水 ER 关系图
+### 入库单、出库单与库存流水 ER 关系图
 
 ```mermaid
 flowchart LR
-    stockBill["stock_bill 出入库流水主表<br/>id 主键<br/>bill_no 出入库流水号<br/>bill_type 出入库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_no 来源单据号<br/>warehouse_id 仓库ID<br/>warehouse_name 仓库名称快照<br/>status 流水状态<br/>confirmed_by / confirmed_at 确认信息<br/>created_by 创建人信息<br/>create_time / update_time 审计时间"]
-    stockItem["stock_bill_item 出入库流水明细表<br/>id 主键<br/>bill_id 出入库流水ID<br/>bill_no 流水号快照<br/>source_item_id 来源明细ID<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 本次出入库数量<br/>qualified_qty 合格数量<br/>defective_qty 不合格数量<br/>before_qty 变动前库存<br/>change_qty 变动数量<br/>after_qty 变动后库存"]
+    inboundBill["inbound_bill 入库单主表<br/>id 主键<br/>inbound_no 入库单号<br/>inbound_type 入库类型<br/>source_type/source_id/source_no 原业务来源<br/>source_party_name 供应商或客户快照<br/>status 入库单状态<br/>expected_arrival_date 预计到货日期<br/>confirmed_by / confirmed_at 确认信息"]
+    inboundItem["inbound_bill_item 入库单明细<br/>id 主键<br/>inbound_bill_id 入库单ID<br/>source_item_id 来源明细ID<br/>plan_qty 计划数量<br/>processed_qty 累计已入库快照<br/>current_qty 本次入库数量<br/>pending_qty 剩余未入库快照"]
+    outboundBill["outbound_bill 出库单主表<br/>id 主键<br/>outbound_no 出库单号<br/>outbound_type 出库类型<br/>source_type/source_id/source_no 原业务来源<br/>source_party_name 客户或供应商快照<br/>status 出库单状态<br/>confirmed_by / confirmed_at 确认信息"]
+    outboundItem["outbound_bill_item 出库单明细<br/>id 主键<br/>outbound_bill_id 出库单ID<br/>source_item_id 来源明细ID<br/>plan_qty 计划数量<br/>processed_qty 累计已出库快照<br/>current_qty 本次出库数量<br/>pending_qty 剩余未出库快照"]
+    stockBill["stock_bill 库存流水凭证<br/>id 主键<br/>bill_no 库存流水号<br/>source_bill_type/source_bill_id 入库单或出库单<br/>business_source_type/business_source_id 原业务单据<br/>warehouse_id 仓库ID<br/>status CONFIRMED"]
+    stockItem["stock_bill_item 库存流水明细<br/>id 主键<br/>bill_id 库存流水ID<br/>source_bill_item_id 入库/出库明细ID<br/>business_source_item_id 原业务明细ID<br/>quantity 本次数量<br/>before_qty / change_qty / after_qty"]
     warehouseRef["warehouse 仓库表<br/>id 仓库ID<br/>warehouse_name 仓库名称"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]
     purchaseOrderRef["purchase_order 采购订单<br/>id 采购订单ID<br/>purchase_no 采购单号"]
@@ -755,25 +768,33 @@ flowchart LR
     salesOrderRef["sales_order 销售订单<br/>id 销售订单ID<br/>sales_no 销售单号"]
     salesItemRef["sales_order_item 销售明细<br/>id 销售明细ID<br/>sales_order_id 销售订单ID"]
 
-    warehouseRef -->|"出入库仓库：warehouse_id -> id"| stockBill
-    stockBill -->|"流水明细：bill_id -> id"| stockItem
-    productRef -->|"出入库产品：product_id -> id"| stockItem
+    warehouseRef -->|"入库仓库：warehouse_id -> id"| inboundBill
+    warehouseRef -->|"出库仓库：warehouse_id -> id"| outboundBill
+    inboundBill -->|"入库明细：inbound_bill_id -> id"| inboundItem
+    outboundBill -->|"出库明细：outbound_bill_id -> id"| outboundItem
+    inboundBill -.->|"确认后生成库存流水"| stockBill
+    outboundBill -.->|"确认后生成库存流水"| stockBill
+    stockBill -->|"库存流水明细：bill_id -> id"| stockItem
+    productRef -->|"入库产品：product_id -> id"| inboundItem
+    productRef -->|"出库产品：product_id -> id"| outboundItem
+    productRef -->|"库存流水产品：product_id -> id"| stockItem
 
-    purchaseOrderRef -.->|"采购入库来源：source_type=PURCHASE_ORDER<br/>source_id -> purchase_order.id"| stockBill
-    salesOrderRef -.->|"销售出库来源：source_type=SALES_ORDER<br/>source_id -> sales_order.id"| stockBill
-    purchaseItemRef -.->|"采购入库明细来源：source_item_id -> purchase_order_item.id"| stockItem
-    salesItemRef -.->|"销售出库明细来源：source_item_id -> sales_order_item.id"| stockItem
+    purchaseOrderRef -.->|"采购入库来源：source_type=PURCHASE_ORDER<br/>source_id -> purchase_order.id"| inboundBill
+    salesOrderRef -.->|"销售出库来源：source_type=SALES_ORDER<br/>source_id -> sales_order.id"| outboundBill
+    purchaseItemRef -.->|"采购入库明细来源：source_item_id -> purchase_order_item.id"| inboundItem
+    salesItemRef -.->|"销售出库明细来源：source_item_id -> sales_order_item.id"| outboundItem
 ```
 
-出入库来源追溯不是固定物理外键，而是由 `source_type` 决定 `source_id` 指向哪类业务单据。
+入库单、出库单的业务来源追溯不是固定物理外键，而是由 `source_type` 决定 `source_id` 指向哪类业务单据；库存流水再通过 `source_bill_type/source_bill_id` 关联已经确认的入库单或出库单。
 
-| 出入库类型 | `stock_bill.bill_type` | `stock_bill.source_type` | `stock_bill.source_id` | `stock_bill_item.source_item_id` |
+| 业务类型 | 作业单类型 | 作业单来源 | 作业单来源明细 | 确认后库存流水 |
 |---|---|---|---|---|
-| 采购入库 | `PURCHASE_IN` | `PURCHASE_ORDER` | `purchase_order.id` | `purchase_order_item.id` |
-| 销售出库 | `SALES_OUT` | `SALES_ORDER` | `sales_order.id` | `sales_order_item.id` |
-| 采购退货 | `PURCHASE_RETURN` | `PURCHASE_RETURN_ORDER` | 后续采购退货单 ID | 后续采购退货明细 ID |
-| 销售退货 | `SALES_RETURN` | `SALES_RETURN_ORDER` | 后续销售退货单 ID | 后续销售退货明细 ID |
-| 库存调整 | `ADJUST_IN` / `ADJUST_OUT` | `STOCK_ADJUST` | 后续库存调整单 ID 或当前流水 ID | 后续库存调整明细 ID |
+| 采购入库 | `inbound_bill.inbound_type = PURCHASE_IN` | `purchase_order.id` | `purchase_order_item.id` | `stock_bill.bill_type = PURCHASE_IN` |
+| 销售出库 | `outbound_bill.outbound_type = SALES_OUT` | `sales_order.id` | `sales_order_item.id` | `stock_bill.bill_type = SALES_OUT` |
+| 采购退货 | `outbound_bill.outbound_type = PURCHASE_RETURN` | 后续采购退货单 ID | 后续采购退货明细 ID | `stock_bill.bill_type = PURCHASE_RETURN` |
+| 销售退货 | `inbound_bill.inbound_type = SALES_RETURN` | 后续销售退货单 ID | 后续销售退货明细 ID | `stock_bill.bill_type = SALES_RETURN` |
+| 库存调整入库 | `inbound_bill.inbound_type = ADJUST_IN` | `STOCK_ADJUST` | 可空 | `stock_bill.bill_type = ADJUST_IN` |
+| 库存调整出库 | `outbound_bill.outbound_type = ADJUST_OUT` | `STOCK_ADJUST` | 可空 | `stock_bill.bill_type = ADJUST_OUT` |
 
 ### AI / RAG ER 关系图
 
@@ -812,8 +833,8 @@ AI 关系里有两个特殊点：
 | 品牌表、单位表 | 存在 `product` 字段 | 主数据复杂后拆表 |
 | SPU/SKU | `product` 直接代表可交易产品 | 商品体系复杂后拆分 |
 | 库位、批次、序列号 | 先按仓库 + 产品管理库存 | 仓储精细化后扩展 |
-| 单独库存流水表 | `stock_bill` / `stock_bill_item` 承担凭证 | 财务台账复杂后扩展 |
-| 销售退货单、采购退货单 | 先复用 `SALES_RETURN`、`PURCHASE_RETURN` 出入库流水 | 退货流程复杂后补单据 |
+| 财务库存台账表 | `stock_bill` / `stock_bill_item` 先承担已确认库存凭证 | 财务台账复杂后扩展 |
+| 销售退货单、采购退货单 | 先复用 `SALES_RETURN` 入库单、`PURCHASE_RETURN` 出库单 | 退货流程复杂后补单据 |
 | 通用业务审计表 | AI 先用 `ai_interaction_log`，普通业务靠状态和流水追溯 | 审计要求提高后新增 `audit_log` |
 | AI 会话表、Prompt 表、Workflow 节点日志表 | 先用 `ai_interaction_log` 统一记录 | AI 功能复杂后拆分 |
 

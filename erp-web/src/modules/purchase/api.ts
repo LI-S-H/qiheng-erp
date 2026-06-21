@@ -163,7 +163,6 @@ function buildOrderSeed(
       unitPrice: line[2],
       totalAmount: line[1] * line[2],
       selectedSupplierScore: product.aiScore,
-      expectedArrivalDate,
       remark: '',
     });
   });
@@ -303,10 +302,17 @@ function filterSupplierProducts(params: SupplierProductQuery): PageResult<Suppli
   return { records: pageSlice(filtered, params.pageNum, params.pageSize).map(({ referenced: _, ...item }) => item), total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize };
 }
 
+function resolveOrderSupplierProduct(supplierId: string, line: PurchaseOrderFormPayload['items'][number]) {
+  const exact = line.supplierProductId
+    ? mockSupplierProducts.find(item => item.supplierProductId === line.supplierProductId && item.supplierId === supplierId && item.productId === line.productId && item.status === 1)
+    : null;
+  return exact || mockSupplierProducts.find(item => item.supplierId === supplierId && item.productId === line.productId && item.status === 1);
+}
+
 function buildOrderSummary(records: PurchaseOrderListItem[]): PurchaseOrderSummary {
   return {
-    orderCount: records.length,
     draftCount: records.filter(item => item.status === 'DRAFT').length,
+    submittedCount: records.filter(item => item.status === 'SUBMITTED').length,
     approvedCount: records.filter(item => item.status === 'APPROVED').length,
     inboundPendingCount: records.filter(item => item.status === 'APPROVED' || item.status === 'PARTIAL_INBOUND').length,
   };
@@ -320,7 +326,8 @@ function filterOrders(params: PurchaseOrderQuery): PurchaseOrderPage {
   if (params.warehouseId && params.warehouseId !== 'all') filtered = filtered.filter(item => item.warehouseId === params.warehouseId);
   if (params.status && params.status !== 'all') filtered = filtered.filter(item => item.status === params.status);
   filtered.sort((a, b) => b.createTime.localeCompare(a.createTime));
-  return { records: pageSlice(filtered, params.pageNum, params.pageSize), total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize, summary: buildOrderSummary(filtered) };
+  const records = pageSlice(filtered, params.pageNum, params.pageSize);
+  return { records, total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize, summary: buildOrderSummary(records) };
 }
 
 export function listSuppliers(params: SupplierQuery) {
@@ -506,7 +513,8 @@ export function batchDeleteSupplierProducts(payload: SupplierProductBatchIdsPayl
 export function listPurchaseOrders(params: PurchaseOrderQuery) {
   if (useMockApi) {
     const page = filterOrders(params);
-    return Promise.resolve({ ...normalizePage(page, normalizeOrder), summary: page.summary });
+    const normalized = normalizePage(page, normalizeOrder);
+    return Promise.resolve({ ...normalized, summary: buildOrderSummary(normalized.records) });
   }
   const { purchaseNo, supplierId, warehouseId, status, ...rest } = params;
   return getResult<PurchaseOrderPage>('/purchase/orders', {
@@ -515,7 +523,10 @@ export function listPurchaseOrders(params: PurchaseOrderQuery) {
     ...(supplierId && supplierId !== 'all' ? { supplierId } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(status && status !== 'all' ? { status } : {}),
-  }).then(page => ({ ...normalizePage(page, normalizeOrder), summary: page.summary }));
+  }).then(page => {
+    const normalized = normalizePage(page, normalizeOrder);
+    return { ...normalized, summary: buildOrderSummary(normalized.records) };
+  });
 }
 
 export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
@@ -527,8 +538,9 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
     const purchaseNo = `PO202606${String(nextPurchaseOrderSequence++).padStart(3, '0')}`;
     const timestamp = nowText();
     const items = payload.items.map((line, index) => {
-      const supplierProduct = line.supplierProductId ? mockSupplierProducts.find(item => item.supplierProductId === line.supplierProductId) : null;
-      const product = supplierProduct || mockProductSnapshotById(line.productId);
+      const supplierProduct = resolveOrderSupplierProduct(payload.supplierId, line);
+      if (!supplierProduct) throw new Error('当前供应商未维护所选产品的启用供货关系');
+      const product = supplierProduct;
       return normalizeOrderItem({
         purchaseOrderItemId: `${purchaseOrderId}${index + 1}`,
         purchaseOrderId,
@@ -543,7 +555,6 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
         unitPrice: line.unitPrice,
         totalAmount: line.quantity * line.unitPrice,
         selectedSupplierScore: line.selectedSupplierScore,
-        expectedArrivalDate: line.expectedArrivalDate || payload.expectedArrivalDate || null,
         remark: line.remark.trim(),
       });
     });
@@ -575,6 +586,56 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
   return postResult<PurchaseOrderListItem, PurchaseOrderFormPayload>('/purchase/orders', payload).then(normalizeOrder);
 }
 
+export async function updatePurchaseOrder(purchaseOrderId: string, payload: PurchaseOrderFormPayload) {
+  if (useMockApi) {
+    const existing = mockOrders.find(item => item.purchaseOrderId === purchaseOrderId);
+    if (!existing) return Promise.reject(new Error('采购订单不存在'));
+    if (existing.status !== 'DRAFT' && existing.status !== 'SUBMITTED') return Promise.reject(new Error('仅草稿或已提交采购单可以编辑'));
+    const supplier = mockSuppliers.find(item => item.supplierId === payload.supplierId);
+    if (!supplier || supplier.status === 0) return Promise.reject(new Error('请选择启用状态的供应商'));
+    const warehouse = mockWarehouseSnapshot(payload.warehouseId);
+    const timestamp = nowText();
+    const items = payload.items.map((line, index) => {
+      const supplierProduct = resolveOrderSupplierProduct(payload.supplierId, line);
+      if (!supplierProduct) throw new Error('当前供应商未维护所选产品的启用供货关系');
+      const product = supplierProduct;
+      return normalizeOrderItem({
+        purchaseOrderItemId: line.purchaseOrderItemId || `${purchaseOrderId}${index + 1}`,
+        purchaseOrderId,
+        purchaseNo: existing.purchaseNo,
+        supplierProductId: supplierProduct?.supplierProductId || null,
+        productId: product.productId,
+        productCode: product.productCode,
+        productName: product.productName,
+        unitName: product.unitName,
+        quantity: line.quantity,
+        inboundQty: 0,
+        unitPrice: line.unitPrice,
+        totalAmount: line.quantity * line.unitPrice,
+        selectedSupplierScore: line.selectedSupplierScore,
+        remark: line.remark.trim(),
+      });
+    });
+    const updated = normalizeOrder({
+      ...existing,
+      supplierId: supplier.supplierId,
+      supplierCode: supplier.supplierCode,
+      supplierName: supplier.supplierName,
+      warehouseId: warehouse.warehouseId,
+      warehouseName: warehouse.warehouseName,
+      totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
+      expectedArrivalDate: payload.expectedArrivalDate || null,
+      updateTime: timestamp,
+      remark: payload.remark.trim(),
+      items,
+    });
+    mockOrders = mockOrders.map(item => (item.purchaseOrderId === purchaseOrderId ? updated : item));
+    return Promise.resolve(updated);
+  }
+  const response = await http.put(`/purchase/orders/${purchaseOrderId}`, payload);
+  return normalizeOrder(response.data.data as PurchaseOrderListItem);
+}
+
 export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'submit' | 'approve' | 'cancel') {
   if (useMockApi) {
     const timestamp = nowText();
@@ -583,6 +644,7 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'subm
       if (action === 'submit' && item.status !== 'DRAFT') throw new Error('仅草稿采购单可以提交');
       if (action === 'approve' && item.status !== 'SUBMITTED') throw new Error('仅已提交采购单可以审核');
       if (action === 'cancel' && item.status !== 'DRAFT' && item.status !== 'SUBMITTED') throw new Error('仅草稿或已提交采购单可以取消');
+      if ((action === 'submit' || action === 'approve') && !item.expectedArrivalDate) throw new Error('提交或审核采购订单前必须维护预计到货日期');
       return {
         ...item,
         status: action === 'submit' ? 'SUBMITTED' : action === 'approve' ? 'APPROVED' : 'CANCELLED',

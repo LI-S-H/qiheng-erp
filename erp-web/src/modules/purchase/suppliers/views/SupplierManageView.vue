@@ -50,6 +50,8 @@ const dialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingSupplierId = ref('');
 const editingOriginalStatus = ref<0 | 1>(1);
+const detailVisible = ref(false);
+const detailRow = ref<SupplierListItem | null>(null);
 let requestSequence = 0;
 
 const query = reactive<SupplierQuery>({
@@ -91,6 +93,7 @@ const confirmState = reactive({
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const enabledCount = computed(() => suppliers.value.filter(item => item.status === 1).length);
+const disabledCount = computed(() => suppliers.value.filter(item => item.status === 0).length);
 const topScoreCount = computed(() => suppliers.value.filter(item => item.overallScore >= 90).length);
 const avgScore = computed(() => suppliers.value.length ? suppliers.value.reduce((sum, item) => sum + item.overallScore, 0) / suppliers.value.length : 0);
 const allSelected = computed(() => suppliers.value.length > 0 && suppliers.value.every(item => selectedIds.value.has(item.supplierId)));
@@ -197,6 +200,11 @@ function openEditDialog(row: SupplierListItem) {
   Object.assign(form, row);
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   dialogVisible.value = true;
+}
+
+function openDetail(row: SupplierListItem) {
+  detailRow.value = row;
+  detailVisible.value = true;
 }
 
 function validateScore(field: keyof SupplierFormPayload, label: string) {
@@ -339,14 +347,14 @@ onMounted(fetchSuppliers);
     </div>
 
     <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">当前供应商</span><strong class="mt-1 text-2xl">{{ total }}</strong></div>
       <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl text-emerald-700">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">高评分供应商</span><strong class="mt-1 text-2xl text-blue-700">{{ topScoreCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页高评分</span><strong class="mt-1 text-2xl text-blue-700">{{ topScoreCount }}</strong></div>
       <div class="summary-item"><span class="text-xs text-muted-foreground">本页均分</span><strong class="mt-1 text-2xl">{{ formatScore(avgScore) }}</strong></div>
     </div>
 
     <div class="filter-panel">
-      <div class="filter-grid">
+      <div class="filter-grid filter-grid--purchase">
         <div class="space-y-1"><Label class="text-xs">供应商编码</Label><Input v-model="query.supplierCode" placeholder="如 S001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">供应商名称</Label><Input v-model="query.supplierName" placeholder="请输入名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">联系人</Label><Input v-model="query.contactName" placeholder="请输入联系人" @keyup.enter="handleSearch" /></div>
@@ -372,8 +380,8 @@ onMounted(fetchSuppliers);
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1380px] table-fixed">
-          <colgroup><col class="w-[48px]" /><col class="w-[180px]" /><col class="w-[210px]" /><col class="w-[170px]" /><col class="w-[130px]" /><col class="w-[100px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[160px]" /><col class="w-[180px]" /></colgroup>
+        <Table class="min-w-[1420px] table-fixed">
+          <colgroup><col class="w-[48px]" /><col class="w-[180px]" /><col class="w-[210px]" /><col class="w-[170px]" /><col class="w-[130px]" /><col class="w-[100px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[160px]" /><col class="w-[220px]" /></colgroup>
           <TableHeader><TableRow><TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>编码</TableHead><TableHead>供应商</TableHead><TableHead>联系人</TableHead><TableHead class="text-center">综合评分</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-center">准时率</TableHead><TableHead class="text-center">合格率</TableHead><TableHead>付款条件</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && suppliers.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -389,8 +397,9 @@ onMounted(fetchSuppliers);
               <TableCell class="text-center tabular-nums">{{ formatScore(row.qualifiedRate) }}%</TableCell>
               <TableCell class="truncate text-muted-foreground" :title="row.paymentTerms">{{ row.paymentTerms || '未维护' }}</TableCell>
               <TableCell class="text-right">
+                <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" @click="openDetail(row)">详情</Button>
                 <Button variant="ghost" size="sm" @click="openEditDialog(row)">编辑</Button>
-                <Button variant="ghost" size="sm" @click="confirmStatus(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button>
+                <Button variant="ghost" size="sm" :class="row.status === 1 ? 'text-amber-700 hover:text-amber-800' : 'text-primary hover:text-primary'" @click="confirmStatus(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button>
                 <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="confirmDelete(row)">删除</Button>
               </TableCell>
             </TableRow>
@@ -401,9 +410,9 @@ onMounted(fetchSuppliers);
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent class="max-w-3xl">
+      <DialogContent class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-3xl">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增供应商' : '编辑供应商' }}</DialogTitle></DialogHeader>
-        <DialogScrollArea class="max-h-[calc(100dvh-12rem)]">
+        <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 p-1 max-sm:grid-cols-1">
             <div class="space-y-1"><Label>供应商编码</Label><Input v-model="form.supplierCode" disabled placeholder="后端自动生成" /></div>
             <div class="space-y-1"><Label>供应商名称 <span class="text-destructive">*</span></Label><Input v-model="form.supplierName" :aria-invalid="Boolean(formErrors.supplierName)" /><p v-if="formErrors.supplierName" class="form-error">{{ formErrors.supplierName }}</p></div>
@@ -422,6 +431,40 @@ onMounted(fetchSuppliers);
           </div>
         </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中' : '保存' }}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="detailVisible">
+      <DialogContent class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-4xl">
+        <DialogHeader><DialogTitle>供应商详情</DialogTitle></DialogHeader>
+        <DialogScrollArea>
+          <div v-if="detailRow" class="space-y-4 p-1">
+            <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-md:grid-cols-1">
+              <div class="purchase-detail-field"><span>供应商编码</span><code>{{ detailRow.supplierCode }}</code></div>
+              <div class="purchase-detail-field"><span>供应商名称</span><strong>{{ detailRow.supplierName }}</strong></div>
+              <div class="purchase-detail-field"><span>状态</span><Badge variant="outline" :class="detailRow.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'">{{ detailRow.status === 1 ? '启用' : '停用' }}</Badge></div>
+              <div class="purchase-detail-field"><span>联系人</span><strong>{{ detailRow.contactName || '未维护' }}</strong><small>{{ detailRow.contactPhone || '无电话' }}</small></div>
+              <div class="purchase-detail-field"><span>付款条件</span><strong>{{ detailRow.paymentTerms || '未维护' }}</strong></div>
+              <div class="purchase-detail-field"><span>综合评分</span><strong>{{ formatScore(detailRow.overallScore) }}</strong></div>
+            </div>
+            <div class="purchase-score-grid">
+              <div><span>交付评分</span><strong>{{ formatScore(detailRow.deliveryScore) }}</strong></div>
+              <div><span>质量评分</span><strong>{{ formatScore(detailRow.qualityScore) }}</strong></div>
+              <div><span>价格评分</span><strong>{{ formatScore(detailRow.priceScore) }}</strong></div>
+              <div><span>服务评分</span><strong>{{ formatScore(detailRow.serviceScore) }}</strong></div>
+              <div><span>准时率</span><strong>{{ formatScore(detailRow.onTimeRate) }}%</strong></div>
+              <div><span>合格率</span><strong>{{ formatScore(detailRow.qualifiedRate) }}%</strong></div>
+              <div><span>平均交付</span><strong>{{ detailRow.avgDeliveryDays }} 天</strong></div>
+            </div>
+            <div class="purchase-detail-grid grid grid-cols-2 gap-4 max-md:grid-cols-1">
+              <div class="purchase-detail-field"><span>创建时间</span><strong>{{ detailRow.createTime }}</strong></div>
+              <div class="purchase-detail-field"><span>更新时间</span><strong>{{ detailRow.updateTime }}</strong></div>
+              <div class="purchase-detail-field purchase-detail-field--wide"><span>地址</span><strong>{{ detailRow.address || '未维护' }}</strong></div>
+              <div class="purchase-detail-field purchase-detail-field--wide"><span>备注</span><strong>{{ detailRow.remark || '未维护' }}</strong></div>
+            </div>
+          </div>
+        </DialogScrollArea>
+        <DialogFooter><Button variant="outline" @click="detailVisible = false">关闭</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 

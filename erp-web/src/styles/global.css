@@ -399,6 +399,10 @@ a {
     grid-template-columns: repeat(4, minmax(160px, 1fr));
   }
 
+  .filter-grid--purchase {
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+  }
+
   .filter-grid--roles .filter-actions,
   .filter-grid--depts .filter-actions {
     grid-column: auto;
@@ -406,8 +410,100 @@ a {
 
   .filter-grid--users .filter-actions,
   .filter-grid--permissions .filter-actions,
-  .filter-grid--products .filter-actions {
+  .filter-grid--products .filter-actions,
+  .filter-grid--purchase .filter-actions {
     grid-column: 4;
+  }
+}
+
+.purchase-detail-field {
+  display: flex;
+  min-height: 92px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 14px;
+}
+
+.purchase-detail-field--wide {
+  grid-column: 1 / -1;
+}
+
+.purchase-detail-field > span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.purchase-detail-field > strong,
+.purchase-detail-field > code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.purchase-detail-field > small {
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.purchase-score-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.purchase-score-grid > div {
+  min-height: 72px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--border);
+}
+
+.purchase-score-grid > div:last-child {
+  border-right: 0;
+}
+
+.purchase-score-grid span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.purchase-score-grid strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.purchase-order-line-scroll [data-slot="table-head"],
+.purchase-order-line-scroll [data-slot="table-cell"] {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.purchase-order-line-scroll [data-slot="table-cell"] > * {
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.purchase-order-line-scroll input {
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .purchase-score-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .purchase-score-grid > div {
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
   }
 }
 

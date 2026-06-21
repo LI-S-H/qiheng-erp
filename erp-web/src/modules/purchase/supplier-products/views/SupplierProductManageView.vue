@@ -50,6 +50,8 @@ const actionSubmitting = ref(false);
 const dialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingId = ref('');
+const detailVisible = ref(false);
+const detailRow = ref<SupplierProductListItem | null>(null);
 const selectedIds = ref<Set<string>>(new Set());
 const supplierOptions = ref<Array<{ value: string; label: string; disabled?: boolean }>>([{ value: 'all', label: '全部供应商' }]);
 const productOptions = ref<ProductOption[]>([]);
@@ -90,6 +92,7 @@ const confirmState = reactive({
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const enabledCount = computed(() => records.value.filter(item => item.status === 1).length);
+const disabledCount = computed(() => records.value.filter(item => item.status === 0).length);
 const highRecommendCount = computed(() => records.value.filter(item => item.aiScore >= 90).length);
 const avgLeadDays = computed(() => records.value.length ? records.value.reduce((sum, item) => sum + item.leadTimeDays, 0) / records.value.length : 0);
 const allSelected = computed(() => records.value.length > 0 && records.value.every(item => selectedIds.value.has(item.supplierProductId)));
@@ -216,6 +219,11 @@ function openEditDialog(row: SupplierProductListItem) {
   });
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   dialogVisible.value = true;
+}
+
+function openDetail(row: SupplierProductListItem) {
+  detailRow.value = row;
+  detailVisible.value = true;
 }
 
 function validateScore(field: keyof SupplierProductFormPayload, label: string) {
@@ -357,14 +365,14 @@ onMounted(() => {
     </div>
 
     <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">供货关系</span><strong class="mt-1 text-2xl">{{ total }}</strong></div>
       <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl text-emerald-700">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">高推荐分</span><strong class="mt-1 text-2xl text-blue-700">{{ highRecommendCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页高推荐分</span><strong class="mt-1 text-2xl text-blue-700">{{ highRecommendCount }}</strong></div>
       <div class="summary-item"><span class="text-xs text-muted-foreground">平均交期</span><strong class="mt-1 text-2xl">{{ avgLeadDays.toFixed(1) }} 天</strong></div>
     </div>
 
     <div class="filter-panel">
-      <div class="filter-grid">
+      <div class="filter-grid filter-grid--purchase">
         <div class="space-y-1"><Label class="text-xs">供应商</Label><AnchoredSelect v-model="query.supplierId" :options="supplierOptions" /></div>
         <div class="space-y-1"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P0001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
@@ -390,8 +398,8 @@ onMounted(() => {
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1380px] table-fixed">
-          <colgroup><col class="w-[48px]" /><col class="w-[220px]" /><col class="w-[230px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[180px]" /></colgroup>
+        <Table class="min-w-[1420px] table-fixed">
+          <colgroup><col class="w-[48px]" /><col class="w-[220px]" /><col class="w-[230px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[220px]" /></colgroup>
           <TableHeader><TableRow><TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>供应商</TableHead><TableHead>产品</TableHead><TableHead>供应商侧编码</TableHead><TableHead class="text-right">最近采购价</TableHead><TableHead class="text-right">起订量</TableHead><TableHead class="text-center">交期</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -406,7 +414,7 @@ onMounted(() => {
               <TableCell class="text-center">{{ row.leadTimeDays }} 天</TableCell>
               <TableCell class="text-center font-semibold tabular-nums" :class="row.aiScore >= 90 ? 'text-emerald-700' : 'text-slate-700'">{{ formatScore(row.aiScore) }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
-              <TableCell class="text-right"><Button variant="ghost" size="sm" @click="openEditDialog(row)">编辑</Button><Button variant="ghost" size="sm" @click="confirmStatus(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="confirmDelete(row)">删除</Button></TableCell>
+              <TableCell class="text-right"><Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" @click="openDetail(row)">详情</Button><Button variant="ghost" size="sm" @click="openEditDialog(row)">编辑</Button><Button variant="ghost" size="sm" :class="row.status === 1 ? 'text-amber-700 hover:text-amber-800' : 'text-primary hover:text-primary'" @click="confirmStatus(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="confirmDelete(row)">删除</Button></TableCell>
             </TableRow>
           </TableBody>
         </Table>
@@ -415,9 +423,9 @@ onMounted(() => {
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent class="max-w-3xl">
+      <DialogContent class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-3xl">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增供货产品' : '编辑供货产品' }}</DialogTitle></DialogHeader>
-        <DialogScrollArea class="max-h-[calc(100dvh-12rem)]">
+        <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 p-1 max-sm:grid-cols-1">
             <div class="space-y-1"><Label>供应商 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.supplierId" :options="supplierOptions.filter(item => item.value !== 'all')" placeholder="请选择供应商" :invalid="Boolean(formErrors.supplierId)" /><p v-if="formErrors.supplierId" class="form-error">{{ formErrors.supplierId }}</p></div>
             <div class="space-y-1"><Label>产品 <span class="text-destructive">*</span></Label><AnchoredSelect :model-value="form.productId" :options="productOptions" placeholder="请选择产品" :invalid="Boolean(formErrors.productId)" @update:model-value="syncProductPrice" /><p v-if="formErrors.productId" class="form-error">{{ formErrors.productId }}</p></div>
@@ -434,6 +442,37 @@ onMounted(() => {
           </div>
         </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中' : '保存' }}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="detailVisible">
+      <DialogContent class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-4xl">
+        <DialogHeader><DialogTitle>供货产品详情</DialogTitle></DialogHeader>
+        <DialogScrollArea>
+          <div v-if="detailRow" class="space-y-4 p-1">
+            <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-md:grid-cols-1">
+              <div class="purchase-detail-field"><span>供应商</span><code>{{ detailRow.supplierCode }}</code><strong>{{ detailRow.supplierName }}</strong></div>
+              <div class="purchase-detail-field"><span>产品</span><code>{{ detailRow.productCode }}</code><strong>{{ detailRow.productName }}</strong><small>单位：{{ detailRow.unitName }}</small></div>
+              <div class="purchase-detail-field"><span>状态</span><Badge variant="outline" :class="detailRow.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'">{{ detailRow.status === 1 ? '启用' : '停用' }}</Badge></div>
+              <div class="purchase-detail-field"><span>供应商侧编码</span><strong>{{ detailRow.supplierProductCode || '未维护' }}</strong></div>
+              <div class="purchase-detail-field"><span>最近采购价</span><strong>{{ formatMoney(detailRow.latestPurchasePrice) }}</strong></div>
+              <div class="purchase-detail-field"><span>起订量</span><strong>{{ detailRow.minOrderQty }} {{ detailRow.unitName }}</strong></div>
+            </div>
+            <div class="purchase-score-grid">
+              <div><span>预计交期</span><strong>{{ detailRow.leadTimeDays }} 天</strong></div>
+              <div><span>推荐分</span><strong>{{ formatScore(detailRow.aiScore) }}</strong></div>
+              <div><span>交付评分</span><strong>{{ formatScore(detailRow.deliveryScore) }}</strong></div>
+              <div><span>质量评分</span><strong>{{ formatScore(detailRow.qualityScore) }}</strong></div>
+              <div><span>价格评分</span><strong>{{ formatScore(detailRow.priceScore) }}</strong></div>
+            </div>
+            <div class="purchase-detail-grid grid grid-cols-2 gap-4 max-md:grid-cols-1">
+              <div class="purchase-detail-field"><span>最近采购时间</span><strong>{{ detailRow.lastPurchaseAt || '暂无' }}</strong></div>
+              <div class="purchase-detail-field"><span>更新时间</span><strong>{{ detailRow.updateTime }}</strong></div>
+              <div class="purchase-detail-field purchase-detail-field--wide"><span>备注</span><strong>{{ detailRow.remark || '未维护' }}</strong></div>
+            </div>
+          </div>
+        </DialogScrollArea>
+        <DialogFooter><Button variant="outline" @click="detailVisible = false">关闭</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 

@@ -15,16 +15,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 
 interface Props {
-  total: number;
+  total?: number | null;
   pageNum: number;
   pageSize: number;
   loading?: boolean;
+  simple?: boolean;
+  hasNext?: boolean;
+  currentCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   loading: false,
+  simple: false,
+  total: null,
+  hasNext: undefined,
+  currentCount: undefined,
 });
 
 const emit = defineEmits<{
@@ -32,16 +40,25 @@ const emit = defineEmits<{
   'update:pageSize': [value: number];
 }>();
 
-const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)));
+const simpleMode = computed(() => props.simple || props.total === null || props.total === undefined || props.total < 0);
+const totalPages = computed(() => Math.max(1, Math.ceil((props.total ?? 0) / props.pageSize)));
+const currentCountText = computed(() => (typeof props.currentCount === 'number' ? props.currentCount : '-'));
+const canPrevious = computed(() => props.pageNum > 1);
+const canNext = computed(() => {
+  if (!simpleMode.value) return props.pageNum < totalPages.value;
+  if (typeof props.hasNext === 'boolean') return props.hasNext;
+  return typeof props.currentCount === 'number' ? props.currentCount >= props.pageSize : true;
+});
 const pageSizeValue = computed({
   get: () => String(props.pageSize),
   set: value => emit('update:pageSize', Number(value)),
 });
 
 function goToPage(page: number) {
-  if (!props.loading && page >= 1 && page <= totalPages.value && page !== props.pageNum) {
-    emit('update:pageNum', page);
-  }
+  if (props.loading || page < 1 || page === props.pageNum) return;
+  if (!simpleMode.value && page > totalPages.value) return;
+  if (simpleMode.value && page > props.pageNum && !canNext.value) return;
+  emit('update:pageNum', page);
 }
 </script>
 
@@ -53,7 +70,8 @@ function goToPage(page: number) {
     :class="{ 'pointer-events-none opacity-60': props.loading }"
   >
     <div class="flex items-center gap-3 justify-self-start max-sm:justify-self-center">
-      <span>共 {{ props.total }} 条</span>
+      <span v-if="simpleMode">本页 {{ currentCountText }} 条</span>
+      <span v-else>共 {{ props.total }} 条</span>
       <div class="flex items-center gap-1.5">
         <span>每页</span>
         <Select v-model="pageSizeValue" :disabled="props.loading">
@@ -70,8 +88,9 @@ function goToPage(page: number) {
     </div>
 
     <Pagination
+      v-if="!simpleMode"
       :page="props.pageNum"
-      :total="props.total"
+      :total="props.total || 0"
       :items-per-page="props.pageSize"
       :sibling-count="1"
       :disabled="props.loading"
@@ -97,7 +116,27 @@ function goToPage(page: number) {
         <PaginationNext size="sm" />
       </PaginationContent>
     </Pagination>
+    <div v-else class="flex items-center gap-2 justify-self-center">
+      <Button
+        variant="outline"
+        size="sm"
+        :disabled="props.loading || !canPrevious"
+        @click="goToPage(props.pageNum - 1)"
+      >
+        上一页
+      </Button>
+      <span class="min-w-16 text-center text-sm text-foreground">第 {{ props.pageNum }} 页</span>
+      <Button
+        variant="outline"
+        size="sm"
+        :disabled="props.loading || !canNext"
+        @click="goToPage(props.pageNum + 1)"
+      >
+        下一页
+      </Button>
+    </div>
 
-    <span class="justify-self-end max-sm:justify-self-center">共 {{ totalPages }} 页</span>
+    <span v-if="simpleMode" class="justify-self-end max-sm:justify-self-center">不统计总数</span>
+    <span v-else class="justify-self-end max-sm:justify-self-center">共 {{ totalPages }} 页</span>
   </div>
 </template>

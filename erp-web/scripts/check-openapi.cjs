@@ -86,8 +86,11 @@ const requiredPaths = [
   '/warehouse/warehouses/{warehouseId}:',
   '/warehouse/warehouses/{warehouseId}/status:',
   '/warehouse/stocks:',
+  '/warehouse/inbound-bills:',
+  '/warehouse/outbound-bills:',
   '/warehouse/stock-bills:',
   '/warehouse/stock-bills/{stockBillId}:',
+  '/warehouse/stock-bills/{stockBillId}/submit:',
   '/warehouse/stock-bills/{stockBillId}/confirm:',
   '/warehouse/stock-bills/{stockBillId}/cancel:',
 ];
@@ -277,10 +280,11 @@ for (const fragment of [
   'inventoryHealth',
   'reservationState',
   'WarehouseStockSummary',
-  'stockRecordCount',
   'warehouseCount',
   'productCount',
   'lowStockCount',
+  'noAvailableCount',
+  'lockedCount',
 ]) {
   if (!warehouseStockApiSource.includes(fragment) && !warehouseStockTypeSource.includes(fragment)) {
     throw new Error(`库存管理前端契约缺少：${fragment}`);
@@ -315,51 +319,87 @@ for (const fragment of [
   'getStockBillDetail',
   'createStockBill',
   'updateStockBill',
+  'submitStockBill',
   'confirmStockBill',
   'cancelStockBill',
 ]) {
   if (!stockBillApiSource.includes(fragment) && !stockBillTypeSource.includes(fragment)) {
-    throw new Error(`出入库记录前端契约缺少：${fragment}`);
+    throw new Error(`入库单/出库单前端契约缺少：${fragment}`);
   }
 }
 for (const fragment of [
-  '按 `stock_bill_item.bill_id` 聚合返回 `itemCount`',
-  '列表不跨不同产品单位汇总数量',
+  '按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要',
+  '按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要',
+  '入库列表主列固定显示供应商',
+  '出库列表主列固定显示客户',
+  '库存调整显示调整仓库，不自动生成反向入库单或出库单',
   'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
-  'enum: [DRAFT, CONFIRMED, CANCELLED]',
+  'enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]',
   'enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]',
   'name: entryMode',
-  '对应 `stock_bill.entry_mode`，使用精确匹配',
+  '对应 `inbound_bill.entry_mode`',
+  '对应 `outbound_bill.entry_mode`',
   'required: [billType, sourceNo, warehouseId, manualReason, items, remark]',
   'responsibleById',
+  'sourcePartyName',
+  'quantitySummary',
+  'totalCurrentQty',
+  'planQty',
+  'processedQty',
+  'pendingQty',
   'quantityPrecision',
   "schema: { $ref: '#/components/schemas/StockBillCreateRequest' }",
   "schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }",
-  '仅允许 `DRAFT -> CONFIRMED`',
-  '仅允许 `DRAFT -> CANCELLED`',
+  '仅允许 `DRAFT -> PENDING_CONFIRM`',
+  '仅允许 `PENDING_CONFIRM -> CONFIRMED`',
+  '仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`',
   "data: { $ref: '#/components/schemas/StockBillPage' }",
   "data: { $ref: '#/components/schemas/StockBillDetail' }",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`出入库记录 OpenAPI 缺少：${fragment}`);
+  if (!source.includes(fragment)) throw new Error(`入库单/出库单 OpenAPI 缺少：${fragment}`);
 }
-if (!stockBillViewSource.includes('新增出入库')
+if (!stockBillViewSource.includes('新增入库单')
+  || !stockBillViewSource.includes('新增出库单')
   || !stockBillViewSource.includes('手工补录')
+  || !stockBillViewSource.includes('sourcePartyName')
+  || !stockBillViewSource.includes('planQtyLabel')
+  || !stockBillViewSource.includes('pendingQtyLabel')
+  || !stockBillViewSource.includes('remainingAfterText')
+  || !stockBillViewSource.includes('qualifiedQty')
+  || !stockBillViewSource.includes('defectiveQty')
   || !stockBillViewSource.includes('responsibleByName')
   || !stockBillViewSource.includes('itemQuantityStep')
-  || !stockBillViewSource.includes('handleConfirm(row)')
+  || !stockBillViewSource.includes('openSubmitDetail(row)')
+  || !stockBillViewSource.includes('openConfirmDetail(row)')
+  || !stockBillViewSource.includes('handleConfirm(detail)')
+  || !stockBillViewSource.includes('handleSubmit(detail)')
   || !stockBillViewSource.includes('handleCancel(row)')
   || !stockBillViewSource.includes('filter-grid--stock-bills')
   || !stockBillViewSource.includes('entryModeOptions')
-  || !stockBillViewSource.includes('出入库凭证详情')
-  || !pageDesign.includes('## 16. 仓库库存模块：出入库记录')
-  || !warehouseSchema.includes('已确认凭证不能直接取消或改回草稿')
+  || !stockBillViewSource.includes('listQtyLabel')
+  || !stockBillViewSource.includes('billTotalQuantityText')
+  || !stockBillViewSource.includes('data-stock-bill-expanded-item-id')
+  || !stockBillViewSource.includes('toggleRowDetail')
+  || !stockBillViewSource.includes('submitStockBill')
+  || !stockBillViewSource.includes('stock-bill-table-scroll')
+  || !stockBillViewSource.includes('stock-bill-form-table-scroll')
+  || !stockBillViewSource.includes('detail-field-grid')
+  || !stockBillViewSource.includes('本次入库数量')
+  || !stockBillViewSource.includes('本次出库数量')
+  || !pageDesign.includes('## 16. 仓库库存模块：入库单与出库单')
+  || !pageDesign.includes('DRAFT -> PENDING_CONFIRM')
+  || !warehouseSchema.includes('CONFIRMED` 后不允许任何修改或取消')
   || !warehouseSchema.includes('100 倍整数存储')) {
-  throw new Error('出入库记录新增、编辑、状态流转、详情或页面设计文档不完整');
+  throw new Error('入库单/出库单新增、编辑、状态流转、详情或页面设计文档不完整');
+}
+for (const fragment of ['入库单号 / 商品', '类型 / 来源', '往来方 / 仓库', '状态 / 操作']) {
+  if (stockBillViewSource.includes(fragment)) throw new Error(`入库单/出库单主表列不得混合字段：${fragment}`);
 }
 if (!stockBillViewSource.includes('entryModeOptions')
-  || !source.includes('查询库存调整凭证时，可提交 `entryMode=MANUAL_ADJUSTMENT`')
-  || !warehouseSchema.includes('库存调整不新增独立页面')) {
-  throw new Error('库存调整功能合并到出入库记录页面的契约或设计文档不完整');
+  || !source.includes('创建调整入库或补录采购入库、销售退货入库草稿')
+  || !source.includes('创建调整出库或补录销售出库、采购退货出库草稿')
+  || !warehouseSchema.includes('库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`')) {
+  throw new Error('库存调整功能合并到入库单/出库单页面的契约或设计文档不完整');
 }
 if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
   || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {
@@ -371,13 +411,13 @@ if (listViewSources.some(viewSource => !/function handleReset\(\) \{[\s\S]*?quer
 for (const fragment of [
   '仓库编码创建后不可修改',
   '同步 `warehouse_stock.warehouse_name`',
-  '存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时禁止删除',
+  '存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时禁止删除',
 ]) {
   if (!source.includes(fragment) && !warehouseSchema.includes(fragment)) {
     throw new Error(`仓库管理缺少后端业务边界：${fragment}`);
   }
 }
-if (!source.includes('存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时返回 409')) {
+if (!source.includes('存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时返回 409')) {
   throw new Error('仓库删除接口缺少 409 Conflict 引用保护契约');
 }
 if (!warehouseSql.includes('UNIQUE KEY uk_warehouse_code (warehouse_code)')) {
@@ -404,9 +444,9 @@ if (updateRequestStart < 0 || updateRequestEnd < 0 || updateRequest.includes('pe
 }
 
 const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)].length;
-if (tableCount !== 21) throw new Error(`数据库设计文档声明 21 张表，当前 DDL 实际为 ${tableCount} 张`);
-if (!databaseOverview.includes('共设计 21 张表') || !databaseOverview.includes('`sys_permission`')) {
-  throw new Error('数据库总览未同步 21 张表或 sys_permission 权限目录表');
+if (tableCount !== 25) throw new Error(`数据库设计文档声明 25 张表，当前 DDL 实际为 ${tableCount} 张`);
+if (!databaseOverview.includes('共设计 25 张表') || !databaseOverview.includes('`sys_permission`')) {
+  throw new Error('数据库总览未同步 25 张表或 sys_permission 权限目录表');
 }
 
 const stalePermissionDescriptions = [
@@ -420,4 +460,4 @@ for (const document of [databaseOverview, permissionSchema, projectPlan]) {
   }
 }
 
-console.log(`OPENAPI_OK: ${references.length} 个引用完整，21 张数据库表、系统权限、产品与仓库库存契约已对齐`);
+console.log(`OPENAPI_OK: ${references.length} 个引用完整，25 张数据库表、系统权限、产品与仓库库存契约已对齐`);

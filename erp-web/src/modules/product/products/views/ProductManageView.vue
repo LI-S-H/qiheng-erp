@@ -73,6 +73,7 @@ const confirmState = reactive({
 
 const queryBusy = computed(() => queryPending.value || loading.value);
 const enabledCount = computed(() => products.value.filter(item => item.status === 1).length);
+const disabledCount = computed(() => products.value.filter(item => item.status === 0).length);
 const lowStockConfigCount = computed(() => products.value.filter(item => item.safetyStockQty > 0).length);
 const quantityPrecisionOptions = [0, 1, 2].map(value => ({
   value,
@@ -391,10 +392,10 @@ function formatQty(value: number) {
     </div>
 
     <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">产品总数</span><strong class="mt-1 text-2xl">{{ total }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">当前页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">当前页分类</span><strong class="mt-1 text-2xl">{{ categoryCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">已设安全库存</span><strong class="mt-1 text-2xl">{{ lowStockConfigCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页分类</span><strong class="mt-1 text-2xl">{{ categoryCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页安全库存</span><strong class="mt-1 text-2xl">{{ lowStockConfigCount }}</strong></div>
     </div>
 
     <div class="filter-panel">

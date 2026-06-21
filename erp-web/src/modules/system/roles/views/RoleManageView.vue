@@ -89,6 +89,7 @@ const confirmState = reactive({
 });
 
 const enabledCount = computed(() => roles.value.filter(r => r.status === 1).length);
+const disabledCount = computed(() => roles.value.filter(r => r.status === 0).length);
 const permissionTotal = computed(() => new Set(roles.value.flatMap(r => r.permissionCodes)).size);
 const boundUserTotal = computed(() => roles.value.reduce((t, r) => t + r.userCount, 0));
 
@@ -430,19 +431,19 @@ function togglePermForm(code: string, checked: boolean) {
     <!-- Metrics -->
     <div class="summary-strip">
       <div class="summary-item">
-        <span class="text-xs text-muted-foreground">角色总数</span>
-        <strong class="text-2xl mt-1">{{ total }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">启用角色</span>
+        <span class="text-xs text-muted-foreground">本页启用</span>
         <strong class="text-2xl mt-1">{{ enabledCount }}</strong>
       </div>
       <div class="summary-item">
-        <span class="text-xs text-muted-foreground">权限码覆盖</span>
+        <span class="text-xs text-muted-foreground">本页停用</span>
+        <strong class="text-2xl mt-1">{{ disabledCount }}</strong>
+      </div>
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">本页权限码覆盖</span>
         <strong class="text-2xl mt-1">{{ permissionTotal }}</strong>
       </div>
       <div class="summary-item">
-        <span class="text-xs text-muted-foreground">绑定用户数</span>
+        <span class="text-xs text-muted-foreground">本页绑定用户</span>
         <strong class="text-2xl mt-1">{{ boundUserTotal }}</strong>
       </div>
     </div>

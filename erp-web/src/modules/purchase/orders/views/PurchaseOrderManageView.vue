@@ -23,6 +23,7 @@ import {
   listPurchaseOrders,
   listSupplierOptions,
   listSupplierProducts,
+  updatePurchaseOrder,
   updatePurchaseOrderStatus,
 } from '../../api';
 import type {
@@ -43,6 +44,8 @@ interface Option {
 
 interface DraftItem extends PurchaseOrderDraftItemPayload {
   rowId: string;
+  remark: string;
+  unitName: string;
 }
 
 interface PurchaseOrderFormModel extends Omit<PurchaseOrderFormPayload, 'expectedArrivalDate'> {
@@ -50,8 +53,8 @@ interface PurchaseOrderFormModel extends Omit<PurchaseOrderFormPayload, 'expecte
 }
 
 const emptySummary = (): PurchaseOrderSummary => ({
-  orderCount: 0,
   draftCount: 0,
+  submittedCount: 0,
   approvedCount: 0,
   inboundPendingCount: 0,
 });
@@ -74,11 +77,14 @@ const queryPending = ref(false);
 const formSubmitting = ref(false);
 const actionSubmitting = ref(false);
 const createDialogOpen = ref(false);
+const dialogMode = ref<'create' | 'edit'>('create');
+const editingOrder = ref<PurchaseOrderListItem | null>(null);
 const detailDialogOpen = ref(false);
 const detailRow = ref<PurchaseOrderListItem | null>(null);
+const detailActionMode = ref<'view' | 'submit' | 'approve'>('view');
 const supplierOptions = ref<Option[]>([{ value: 'all', label: '全部供应商' }]);
 const warehouseOptions = ref<Option[]>([{ value: 'all', label: '全部仓库' }]);
-const productOptions = ref<Array<Option & { referencePurchasePrice: number }>>([]);
+const productOptions = ref<Array<Option & { referencePurchasePrice: number; quantityPrecision: number; unitName: string }>>([]);
 const supplierProducts = ref<SupplierProductListItem[]>([]);
 let requestSequence = 0;
 let lineSequence = 1;
@@ -112,14 +118,36 @@ const confirmState = reactive({
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const totalAmount = computed(() => draftItems.value.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0));
+const activeSupplierProducts = computed(() => supplierProducts.value.filter(item => item.status === 1));
+const selectedProductIds = computed(() => Array.from(new Set(draftItems.value.map(item => item.productId).filter(Boolean))));
+const selectableSupplierOptions = computed(() => {
+  return supplierOptions.value
+    .filter(item => item.value !== 'all')
+    .filter(item => selectedProductIds.value.length === 0 || selectedProductIds.value.every(productId => hasActiveSupply(String(item.value), productId)));
+});
+
+async function listAllActiveSupplierProducts() {
+  const pageSize = 200;
+  const records: SupplierProductListItem[] = [];
+  let pageNum = 1;
+  let total = 0;
+  do {
+    const page = await listSupplierProducts({ pageNum, pageSize, status: 1 });
+    records.push(...page.records);
+    total = page.total;
+    pageNum += 1;
+    if (page.records.length === 0) break;
+  } while (records.length < total);
+  return records;
+}
 
 async function loadOptions() {
   try {
-    const [suppliers, warehouses, products, supplierProductPage] = await Promise.all([
+    const [suppliers, warehouses, products, allSupplierProducts] = await Promise.all([
       listSupplierOptions(),
       listEnabledWarehouseOptions(),
       listEnabledProductOptions(),
-      listSupplierProducts({ pageNum: 1, pageSize: 200, status: 1 }),
+      listAllActiveSupplierProducts(),
     ]);
     supplierOptions.value = [
       { value: 'all', label: '全部供应商' },
@@ -133,8 +161,10 @@ async function loadOptions() {
       value: item.value,
       label: item.label,
       referencePurchasePrice: item.product.referencePurchasePrice,
+      quantityPrecision: item.product.quantityPrecision,
+      unitName: item.product.unitName,
     }));
-    supplierProducts.value = supplierProductPage.records;
+    supplierProducts.value = allSupplierProducts;
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '采购选项加载失败');
   }
@@ -198,24 +228,58 @@ function handlePageSizeChange(pageSize: number) {
 function resetForm() {
   Object.assign(form, { supplierId: '', warehouseId: '', expectedArrivalDate: '', remark: '', items: [] });
   draftItems.value = [newDraftItem()];
+  editingOrder.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
 
 function openCreateDialog() {
+  dialogMode.value = 'create';
   resetForm();
+  createDialogOpen.value = true;
+}
+
+function openEditDialog(row: PurchaseOrderListItem) {
+  if (row.status !== 'DRAFT' && row.status !== 'SUBMITTED') {
+    toast.warning('仅草稿或已提交采购单可以编辑，审核后不能直接修改');
+    return;
+  }
+  dialogMode.value = 'edit';
+  resetForm();
+  editingOrder.value = row;
+  Object.assign(form, {
+    supplierId: row.supplierId,
+    warehouseId: row.warehouseId,
+    expectedArrivalDate: row.expectedArrivalDate || '',
+    remark: row.remark,
+    items: [],
+  });
+  draftItems.value = row.items.length > 0
+    ? row.items.map(item => ({
+      rowId: `line-${lineSequence++}`,
+      purchaseOrderItemId: item.purchaseOrderItemId,
+      supplierProductId: item.supplierProductId,
+      productId: item.productId,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      selectedSupplierScore: item.selectedSupplierScore,
+      remark: item.remark,
+      unitName: item.unitName,
+    }))
+    : [newDraftItem()];
   createDialogOpen.value = true;
 }
 
 function newDraftItem(): DraftItem {
   return {
     rowId: `line-${lineSequence++}`,
+    purchaseOrderItemId: null,
     supplierProductId: null,
     productId: '',
     quantity: 1,
     unitPrice: 0,
     selectedSupplierScore: 0,
-    expectedArrivalDate: '',
     remark: '',
+    unitName: '',
   };
 }
 
@@ -228,27 +292,111 @@ function removeLine(rowId: string) {
   draftItems.value = draftItems.value.filter(item => item.rowId !== rowId);
 }
 
+function hasActiveSupply(supplierId: string, productId: string) {
+  return activeSupplierProducts.value.some(item => item.supplierId === supplierId && item.productId === productId);
+}
+
+function findSupplierProduct(supplierId: string, productId: string) {
+  return activeSupplierProducts.value
+    .filter(item => item.supplierId === supplierId && item.productId === productId)
+    .sort((a, b) => b.aiScore - a.aiScore)[0] || null;
+}
+
+function bestSupplierProductForProduct(productId: string, otherProductIds: string[] = []) {
+  return activeSupplierProducts.value
+    .filter(item => item.productId === productId)
+    .filter(item => !otherProductIds.length || otherProductIds.every(otherProductId => hasActiveSupply(item.supplierId, otherProductId)))
+    .sort((a, b) => b.aiScore - a.aiScore)[0] || null;
+}
+
+function clearLineProduct(line: DraftItem) {
+  line.productId = '';
+  line.supplierProductId = null;
+  line.unitPrice = 0;
+  line.selectedSupplierScore = 0;
+  line.unitName = '';
+}
+
+function applySupplierProduct(line: DraftItem, supplierProduct: SupplierProductListItem) {
+  line.productId = supplierProduct.productId;
+  line.supplierProductId = supplierProduct.supplierProductId;
+  line.unitPrice = supplierProduct.latestPurchasePrice;
+  line.selectedSupplierScore = supplierProduct.aiScore;
+  line.unitName = supplierProduct.unitName;
+}
+
+function productOptionsForLine(line: DraftItem) {
+  const otherProductIds = draftItems.value
+    .filter(item => item.rowId !== line.rowId)
+    .map(item => item.productId)
+    .filter(Boolean);
+  const allowedProductIds = new Set(
+    activeSupplierProducts.value
+      .filter(item => !form.supplierId || item.supplierId === form.supplierId)
+      .filter(item => otherProductIds.every(productId => hasActiveSupply(item.supplierId, productId)))
+      .map(item => item.productId),
+  );
+  return productOptions.value.filter(item => allowedProductIds.has(String(item.value)));
+}
+
+function handleSupplierChange(value: string | number) {
+  form.supplierId = String(value);
+  draftItems.value.forEach(line => {
+    if (!line.productId) return;
+    const supplierProduct = findSupplierProduct(form.supplierId, line.productId);
+    if (supplierProduct) {
+      applySupplierProduct(line, supplierProduct);
+    } else {
+      clearLineProduct(line);
+    }
+  });
+}
+
 function selectProduct(line: DraftItem, productId: string | number) {
   line.productId = String(productId);
-  const supplierProduct = supplierProducts.value
-    .filter(item => !form.supplierId || item.supplierId === form.supplierId)
-    .sort((a, b) => b.aiScore - a.aiScore)
-    .find(item => item.productId === line.productId);
+  const otherProductIds = draftItems.value
+    .filter(item => item.rowId !== line.rowId)
+    .map(item => item.productId)
+    .filter(Boolean);
+  const supplierProduct = form.supplierId
+    ? findSupplierProduct(form.supplierId, line.productId)
+    : bestSupplierProductForProduct(line.productId, otherProductIds);
   const product = productOptions.value.find(item => item.value === line.productId);
   line.supplierProductId = supplierProduct?.supplierProductId || null;
   line.unitPrice = supplierProduct?.latestPurchasePrice || product?.referencePurchasePrice || 0;
   line.selectedSupplierScore = supplierProduct?.aiScore || 0;
+  line.unitName = supplierProduct?.unitName || product?.unitName || '';
+}
+
+function getProductPrecision(productId: string) {
+  return productOptions.value.find(item => item.value === productId)?.quantityPrecision ?? 2;
+}
+
+function quantityStep(productId: string) {
+  const precision = getProductPrecision(productId);
+  if (precision <= 0) return '1';
+  return `0.${'0'.repeat(Math.max(precision - 1, 0))}1`;
+}
+
+function quantityPrecisionValid(value: number, productId: string) {
+  const precision = getProductPrecision(productId);
+  const decimal = String(value).split('.')[1] || '';
+  return decimal.length <= precision;
 }
 
 function validateForm() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   if (!form.supplierId) formErrors.supplierId = '请选择供应商';
   if (!form.warehouseId) formErrors.warehouseId = '请选择入库仓库';
+  if (dialogMode.value === 'edit' && editingOrder.value?.status === 'SUBMITTED' && !form.expectedArrivalDate) formErrors.expectedArrivalDate = '已提交采购单必须维护预计到货日期';
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   draftItems.value.forEach((item, index) => {
     if (!item.productId) formErrors[`items.${index}.productId`] = '请选择产品';
+    if (item.productId && form.supplierId && !findSupplierProduct(form.supplierId, item.productId)) formErrors[`items.${index}.productId`] = '当前供应商未维护该产品的启用供货关系';
     if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0) formErrors[`items.${index}.quantity`] = '采购数量必须大于 0';
+    if (item.productId && !quantityPrecisionValid(Number(item.quantity), item.productId)) formErrors[`items.${index}.quantity`] = `数量最多保留 ${getProductPrecision(item.productId)} 位小数`;
     if (!Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0) formErrors[`items.${index}.unitPrice`] = '采购单价不能小于 0';
+    if (item.remark.trim().length > 500) formErrors[`items.${index}.remark`] = '明细备注不能超过 500 个字符';
   });
   return Object.keys(formErrors).length === 0;
 }
@@ -260,12 +408,12 @@ function buildPayload(): PurchaseOrderFormPayload {
     expectedArrivalDate: form.expectedArrivalDate || null,
     remark: form.remark.trim(),
     items: draftItems.value.map(item => ({
-      supplierProductId: item.supplierProductId || null,
+      purchaseOrderItemId: item.purchaseOrderItemId || null,
+      supplierProductId: findSupplierProduct(form.supplierId, item.productId)?.supplierProductId || null,
       productId: item.productId,
       quantity: Number(item.quantity),
       unitPrice: Number(item.unitPrice),
       selectedSupplierScore: Number(item.selectedSupplierScore),
-      expectedArrivalDate: item.expectedArrivalDate || form.expectedArrivalDate || null,
       remark: item.remark.trim(),
     })),
   };
@@ -275,8 +423,13 @@ async function submitForm() {
   if (formSubmitting.value || !validateForm()) return;
   formSubmitting.value = true;
   try {
-    await createPurchaseOrder(buildPayload());
-    toast.success('采购订单草稿已创建');
+    if (dialogMode.value === 'edit' && editingOrder.value) {
+      await updatePurchaseOrder(editingOrder.value.purchaseOrderId, buildPayload());
+      toast.success('采购订单草稿已更新');
+    } else {
+      await createPurchaseOrder(buildPayload());
+      toast.success('采购订单草稿已创建');
+    }
     createDialogOpen.value = false;
     await fetchOrders();
   } catch (error) {
@@ -286,8 +439,9 @@ async function submitForm() {
   }
 }
 
-function openDetail(row: PurchaseOrderListItem) {
+function openDetail(row: PurchaseOrderListItem, actionMode: 'view' | 'submit' | 'approve' = 'view') {
   detailRow.value = row;
+  detailActionMode.value = actionMode;
   detailDialogOpen.value = true;
 }
 
@@ -308,8 +462,8 @@ async function runConfirmAction() {
 
 function confirmOrderAction(row: PurchaseOrderListItem, action: 'submit' | 'approve' | 'cancel') {
   const config = {
-    submit: ['提交采购单', '提交后进入待审核状态，不能再作为普通草稿直接编辑。', '提交', 'default'],
-    approve: ['审核采购单', '审核后应由后端生成采购入库流水草稿，库存变动仍以仓库模块确认为准。', '审核通过', 'warning'],
+    submit: ['提交采购单', '提交后进入待审核状态，预计到货日期不能为空；已提交采购单只允许具备审核权限的人继续修改。', '提交', 'default'],
+    approve: ['审核采购单', '审核后后端会生成待确认入库单，采购单本身不得再直接修改；库存变动仍以仓库模块确认本次数量为准。', '审核通过', 'warning'],
     cancel: ['取消采购单', '取消后该采购单保留追溯但不能继续流转。', '确认取消', 'destructive'],
   } as const;
   const [title, description, confirmText, variant] = config[action];
@@ -318,6 +472,27 @@ function confirmOrderAction(row: PurchaseOrderListItem, action: 'submit' | 'appr
     toast.success('采购订单状态已更新');
     await fetchOrders();
   });
+}
+
+function openOrderActionDetail(row: PurchaseOrderListItem, action: 'submit' | 'approve') {
+  openDetail(row, action);
+}
+
+function detailActionHint(row: PurchaseOrderListItem) {
+  if (detailActionMode.value === 'view') return '';
+  if (!row.expectedArrivalDate) return '预计到货日期为空，提交或审核前请先编辑维护。';
+  return detailActionMode.value === 'submit'
+    ? '请先核对采购单头和全部采购明细，再提交进入待审核。'
+    : '请先核对采购单头和全部采购明细，审核通过后将生成待确认入库单。';
+}
+
+function runDetailAction(row: PurchaseOrderListItem) {
+  if (detailActionMode.value === 'view') return;
+  if (!row.expectedArrivalDate) {
+    toast.warning('提交或审核前必须先维护预计到货日期');
+    return;
+  }
+  confirmOrderAction(row, detailActionMode.value as 'submit' | 'approve');
 }
 
 function statusMeta(status: PurchaseOrderStatus) {
@@ -347,19 +522,19 @@ onMounted(() => {
     <div class="page-heading">
       <div>
         <h1 class="page-title">采购订单</h1>
-        <p class="page-description">创建采购草稿、提交审核，并追踪采购入库进度；库存变化统一由出入库流水确认</p>
+        <p class="page-description">创建采购草稿、提交审核，并追踪采购入库进度；库存变化统一由仓库入库单确认</p>
       </div>
     </div>
 
     <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">采购订单</span><strong class="mt-1 text-2xl">{{ summary.orderCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">草稿</span><strong class="mt-1 text-2xl">{{ summary.draftCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">已审核</span><strong class="mt-1 text-2xl text-emerald-700">{{ summary.approvedCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">待入库</span><strong class="mt-1 text-2xl text-amber-700">{{ summary.inboundPendingCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页草稿</span><strong class="mt-1 text-2xl">{{ summary.draftCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页已提交</span><strong class="mt-1 text-2xl text-blue-700">{{ summary.submittedCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页已审核</span><strong class="mt-1 text-2xl text-emerald-700">{{ summary.approvedCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页待入库</span><strong class="mt-1 text-2xl text-amber-700">{{ summary.inboundPendingCount }}</strong></div>
     </div>
 
     <div class="filter-panel">
-      <div class="filter-grid">
+      <div class="filter-grid filter-grid--purchase">
         <div class="space-y-1"><Label class="text-xs">采购单号</Label><Input v-model="query.purchaseNo" placeholder="如 PO202606001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">供应商</Label><AnchoredSelect v-model="query.supplierId" :options="supplierOptions" /></div>
         <div class="space-y-1"><Label class="text-xs">入库仓库</Label><AnchoredSelect v-model="query.warehouseId" :options="warehouseOptions" /></div>
@@ -374,13 +549,13 @@ onMounted(() => {
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
-        <div class="table-toolbar__title"><strong class="text-sm">采购订单列表</strong><span class="text-xs text-muted-foreground">审核动作只推进状态，实际入库由仓库出入库记录承接</span></div>
+        <div class="table-toolbar__title"><strong class="text-sm">采购订单列表</strong><span class="text-xs text-muted-foreground">审核动作只生成待确认入库单，实际入库由仓库确认本次数量</span></div>
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增采购单</Button></div>
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1320px] table-fixed">
-          <colgroup><col class="w-[160px]" /><col class="w-[220px]" /><col class="w-[160px]" /><col class="w-[120px]" /><col class="w-[130px]" /><col class="w-[130px]" /><col class="w-[130px]" /><col class="w-[170px]" /><col class="w-[220px]" /></colgroup>
+        <Table class="min-w-[1360px] table-fixed">
+          <colgroup><col class="w-[150px]" /><col class="w-[240px]" /><col class="w-[150px]" /><col class="w-[115px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[175px]" /><col class="w-[270px]" /></colgroup>
           <TableHeader><TableRow><TableHead>采购单号</TableHead><TableHead>供应商</TableHead><TableHead>入库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计到货</TableHead><TableHead>创建人</TableHead><TableHead>更新时间</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -388,16 +563,17 @@ onMounted(() => {
             <TableRow v-for="row in orders" v-else :key="row.purchaseOrderId">
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.purchaseNo }}</code></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.supplierCode }}</code><div class="mt-1 truncate font-medium">{{ row.supplierName }}</div></TableCell>
-              <TableCell>{{ row.warehouseName }}</TableCell>
+              <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge></TableCell>
               <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.totalAmount) }}</TableCell>
-              <TableCell>{{ row.expectedArrivalDate || '未设置' }}</TableCell>
-              <TableCell>{{ row.createdByName || '系统' }}</TableCell>
+              <TableCell class="text-center text-sm">{{ row.expectedArrivalDate || '未设置' }}</TableCell>
+              <TableCell class="truncate" :title="row.createdByName || '系统'">{{ row.createdByName || '系统' }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
               <TableCell class="text-right">
-                <Button variant="ghost" size="sm" @click="openDetail(row)">详情</Button>
-                <Button v-if="row.status === 'DRAFT'" variant="ghost" size="sm" @click="confirmOrderAction(row, 'submit')">提交</Button>
-                <Button v-if="row.status === 'SUBMITTED'" variant="ghost" size="sm" @click="confirmOrderAction(row, 'approve')">审核</Button>
+                <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" @click="openDetail(row)">详情</Button>
+                <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" @click="openEditDialog(row)">编辑</Button>
+                <Button v-if="row.status === 'DRAFT'" variant="ghost" size="sm" class="text-primary hover:text-primary" @click="openOrderActionDetail(row, 'submit')">提交</Button>
+                <Button v-if="row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-emerald-700 hover:text-emerald-800" @click="openOrderActionDetail(row, 'approve')">审核</Button>
                 <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="confirmOrderAction(row, 'cancel')">取消</Button>
               </TableCell>
             </TableRow>
@@ -408,32 +584,37 @@ onMounted(() => {
     </div>
 
     <Dialog v-model:open="createDialogOpen">
-      <DialogContent class="max-w-5xl">
-        <DialogHeader><DialogTitle>新增采购单草稿</DialogTitle></DialogHeader>
-        <DialogScrollArea class="max-h-[calc(100dvh-12rem)]">
+      <DialogContent class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-5xl">
+        <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增采购单草稿' : '编辑采购单' }}</DialogTitle></DialogHeader>
+        <DialogScrollArea>
           <div class="space-y-4 p-1">
+            <div class="grid grid-cols-3 gap-3 rounded-md border border-border bg-muted/30 p-3 text-sm max-md:grid-cols-1">
+              <div><span class="text-muted-foreground">采购单号</span><div class="mt-1 font-medium">{{ dialogMode === 'edit' && editingOrder ? editingOrder.purchaseNo : '后端自动生成' }}</div></div>
+              <div><span class="text-muted-foreground">订单状态</span><div class="mt-1 font-medium">{{ dialogMode === 'edit' && editingOrder ? statusMeta(editingOrder.status).label : '保存后为草稿' }}</div></div>
+              <div><span class="text-muted-foreground">创建来源</span><div class="mt-1 font-medium">{{ dialogMode === 'edit' && editingOrder ? `${editingOrder.createdByName || '系统'} / ${editingOrder.createTime}` : '当前登录用户' }}</div></div>
+            </div>
             <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
-              <div class="space-y-1"><Label>供应商 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.supplierId" :options="supplierOptions.filter(item => item.value !== 'all')" placeholder="请选择供应商" :invalid="Boolean(formErrors.supplierId)" /><p v-if="formErrors.supplierId" class="form-error">{{ formErrors.supplierId }}</p></div>
+              <div class="space-y-1"><Label>供应商 <span class="text-destructive">*</span></Label><AnchoredSelect :model-value="form.supplierId" :options="selectableSupplierOptions" placeholder="请选择供应商" :invalid="Boolean(formErrors.supplierId)" @update:model-value="handleSupplierChange" /><p v-if="formErrors.supplierId" class="form-error">{{ formErrors.supplierId }}</p></div>
               <div class="space-y-1"><Label>入库仓库 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.warehouseId" :options="warehouseOptions.filter(item => item.value !== 'all')" placeholder="请选择仓库" :invalid="Boolean(formErrors.warehouseId)" /><p v-if="formErrors.warehouseId" class="form-error">{{ formErrors.warehouseId }}</p></div>
-              <div class="space-y-1"><Label>预计到货日期</Label><Input v-model="form.expectedArrivalDate" type="date" /></div>
+              <div class="space-y-1"><Label>预计到货</Label><Input v-model="form.expectedArrivalDate" type="date" /><p v-if="formErrors.expectedArrivalDate" class="form-error">{{ formErrors.expectedArrivalDate }}</p><p v-else class="text-xs text-muted-foreground">示例：2026-06-30</p></div>
             </div>
             <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" rows="2" /><p v-if="formErrors.remark" class="form-error">{{ formErrors.remark }}</p></div>
 
             <div class="rounded-md border border-border">
               <div class="flex min-h-11 items-center justify-between border-b border-border px-3"><strong class="text-sm">采购明细</strong><Button size="sm" variant="outline" type="button" @click="addLine">添加产品</Button></div>
-              <ScrollArea class="w-full">
-                <Table class="min-w-[1100px] table-fixed">
-                  <colgroup><col class="w-[280px]" /><col class="w-[120px]" /><col class="w-[130px]" /><col class="w-[110px]" /><col class="w-[130px]" /><col class="w-[180px]" /><col class="w-[110px]" /></colgroup>
+              <ScrollArea class="w-full purchase-order-line-scroll">
+                <Table class="min-w-[1080px] table-fixed">
+                  <colgroup><col class="w-[280px]" /><col class="w-[150px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[135px]" /><col class="w-[170px]" /><col class="w-[90px]" /></colgroup>
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">采购价</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead class="text-right">小计</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-for="(line, index) in draftItems" :key="line.rowId">
-                      <TableCell><AnchoredSelect :model-value="line.productId" :options="productOptions" placeholder="请选择产品" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="form-error">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
-                      <TableCell><Input v-model.number="line.quantity" type="number" min="0" step="0.0001" class="text-right" /><p v-if="formErrors[`items.${index}.quantity`]" class="form-error">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
-                      <TableCell><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="pl-8 text-right" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="form-error">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
+                      <TableCell class="align-top"><AnchoredSelect :model-value="line.productId" :options="productOptionsForLine(line)" placeholder="请选择产品" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="form-error">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
+                      <TableCell class="align-top"><div class="flex items-center justify-center gap-2"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line.productId)" class="text-center" /><span class="w-10 shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
+                      <TableCell class="align-top"><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="pl-8 text-center" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="form-error">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
                       <TableCell class="text-center tabular-nums">{{ Number(line.selectedSupplierScore || 0).toFixed(1) }}</TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0)) }}</TableCell>
-                      <TableCell><Input v-model="line.remark" placeholder="可选" /></TableCell>
-                      <TableCell class="text-right"><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="draftItems.length === 1" @click="removeLine(line.rowId)">删除</Button></TableCell>
+                      <TableCell class="align-top"><Input v-model="line.remark" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="form-error">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>
+                      <TableCell class="align-top text-center"><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="draftItems.length === 1" @click="removeLine(line.rowId)">删除</Button></TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -442,39 +623,51 @@ onMounted(() => {
             </div>
           </div>
         </DialogScrollArea>
-        <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="createDialogOpen = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中' : '保存草稿' }}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="createDialogOpen = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中' : (dialogMode === 'create' ? '保存草稿' : '保存修改') }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 
     <Dialog v-model:open="detailDialogOpen">
-      <DialogContent class="max-w-4xl">
+      <DialogContent class="flex h-[min(760px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-5xl">
         <DialogHeader><DialogTitle>采购单详情</DialogTitle></DialogHeader>
-        <DialogScrollArea class="max-h-[calc(100dvh-12rem)]">
+        <DialogScrollArea>
           <div v-if="detailRow" class="space-y-4 p-1">
-            <div class="grid grid-cols-3 gap-3 text-sm max-md:grid-cols-1">
-              <div><span class="text-muted-foreground">采购单号</span><div class="mt-1 font-medium">{{ detailRow.purchaseNo }}</div></div>
-              <div><span class="text-muted-foreground">供应商</span><div class="mt-1 font-medium">{{ detailRow.supplierName }}</div></div>
-              <div><span class="text-muted-foreground">入库仓库</span><div class="mt-1 font-medium">{{ detailRow.warehouseName }}</div></div>
-              <div><span class="text-muted-foreground">状态</span><div class="mt-1"><Badge variant="outline" :class="statusMeta(detailRow.status).className">{{ statusMeta(detailRow.status).label }}</Badge></div></div>
-              <div><span class="text-muted-foreground">订单金额</span><div class="mt-1 font-medium">{{ formatMoney(detailRow.totalAmount) }}</div></div>
-              <div><span class="text-muted-foreground">预计到货</span><div class="mt-1 font-medium">{{ detailRow.expectedArrivalDate || '未设置' }}</div></div>
+            <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
+              <div class="purchase-detail-field"><span>采购单号</span><code>{{ detailRow.purchaseNo }}</code></div>
+              <div class="purchase-detail-field"><span>供应商</span><strong>{{ detailRow.supplierName }}</strong><small>{{ detailRow.supplierCode }}</small></div>
+              <div class="purchase-detail-field"><span>入库仓库</span><strong>{{ detailRow.warehouseName }}</strong></div>
+              <div class="purchase-detail-field"><span>状态</span><Badge variant="outline" :class="statusMeta(detailRow.status).className">{{ statusMeta(detailRow.status).label }}</Badge></div>
+              <div class="purchase-detail-field"><span>订单金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
+              <div class="purchase-detail-field"><span>预计到货</span><strong>{{ detailRow.expectedArrivalDate || '未设置' }}</strong></div>
+              <div class="purchase-detail-field"><span>创建人 / 时间</span><strong>{{ detailRow.createdByName || '系统' }}</strong><small>{{ detailRow.createTime }}</small></div>
+              <div class="purchase-detail-field"><span>提交时间</span><strong>{{ detailRow.submittedAt || '未提交' }}</strong></div>
+              <div class="purchase-detail-field"><span>审核信息</span><strong>{{ detailRow.approvedByName || '未审核' }}</strong><small>{{ detailRow.approvedAt || '-' }}</small></div>
+              <div class="purchase-detail-field purchase-detail-field--wide"><span>备注</span><strong>{{ detailRow.remark || '未维护' }}</strong></div>
             </div>
-            <Table class="table-fixed">
-              <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">已入库</TableHead><TableHead class="text-right">单价</TableHead><TableHead class="text-right">金额</TableHead><TableHead class="text-center">推荐分快照</TableHead></TableRow></TableHeader>
+            <ScrollArea class="w-full purchase-order-line-scroll">
+            <Table class="min-w-[920px] table-fixed">
+              <colgroup><col class="w-[240px]" /><col class="w-[100px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[160px]" /></colgroup>
+              <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">数量</TableHead><TableHead class="text-center">已入库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
               <TableBody>
                 <TableRow v-for="item in detailRow.items" :key="item.purchaseOrderItemId">
                   <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell>
-                  <TableCell class="text-right">{{ item.quantity }} {{ item.unitName }}</TableCell>
-                  <TableCell class="text-right">{{ item.inboundQty }} {{ item.unitName }}</TableCell>
-                  <TableCell class="text-right">{{ formatMoney(item.unitPrice) }}</TableCell>
-                  <TableCell class="text-right">{{ formatMoney(item.totalAmount) }}</TableCell>
+                  <TableCell class="text-center tabular-nums">{{ item.quantity }} {{ item.unitName }}</TableCell>
+                  <TableCell class="text-center tabular-nums">{{ item.inboundQty }} {{ item.unitName }}</TableCell>
+                  <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell>
+                  <TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell>
                   <TableCell class="text-center">{{ item.selectedSupplierScore.toFixed(1) }}</TableCell>
+                  <TableCell class="truncate" :title="item.remark">{{ item.remark || '未维护' }}</TableCell>
                 </TableRow>
               </TableBody>
             </Table>
+            </ScrollArea>
           </div>
         </DialogScrollArea>
-        <DialogFooter><Button variant="outline" @click="detailDialogOpen = false">关闭</Button></DialogFooter>
+        <DialogFooter class="items-center justify-between gap-3">
+          <span v-if="detailRow && detailActionMode !== 'view'" class="mr-auto text-xs" :class="detailRow.expectedArrivalDate ? 'text-muted-foreground' : 'text-destructive'">{{ detailActionHint(detailRow) }}</span>
+          <Button variant="outline" :disabled="actionSubmitting" @click="detailDialogOpen = false">关闭</Button>
+          <Button v-if="detailRow && detailActionMode !== 'view'" :disabled="actionSubmitting || !detailRow.expectedArrivalDate" @click="runDetailAction(detailRow)">{{ actionSubmitting ? '处理中' : detailActionMode === 'submit' ? '提交采购单' : '审核通过' }}</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
 

@@ -2,11 +2,6 @@ const {
   runSmoke,
   tableRow,
   assertFixedTableLayout,
-  assertDialogScrollGutter,
-  clickQueryAndAssertLoading,
-  clickPaginationAndAssertLoading,
-  clickRefreshAndAssertLoading,
-  clickResetAndAssertLoading,
 } = require('./smoke-helpers.cjs');
 
 async function selectFilter(page, index, label) {
@@ -15,250 +10,298 @@ async function selectFilter(page, index, label) {
   await page.locator('[data-anchored-select-content][data-state="open"]').getByText(label, { exact: true }).click();
 }
 
-async function selectDialogOption(page, dialog, index, label) {
-  await dialog.getByRole('combobox').nth(index).click();
-  const content = page.locator('[data-anchored-select-content][data-state="open"]');
-  await content.getByText(label, { exact: true }).click();
-  await content.waitFor({ state: 'hidden' });
-  await page.waitForTimeout(180);
+async function clickButton(page, name) {
+  await page.getByRole('button', { name, exact: true }).click();
+  await page.waitForTimeout(250);
+}
+
+async function waitListSettled(page) {
+  await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
+}
+
+async function outerHeaderText(page) {
+  return page.locator('[data-slot="table"]').first().evaluate(element => element.querySelector(':scope > thead')?.innerText ?? '');
+}
+
+async function outerBodyText(page) {
+  return page.locator('[data-slot="table"]').first().evaluate(element => element.querySelector(':scope > tbody')?.innerText ?? '');
+}
+
+async function assertStockBillTableUsable(page, billNo) {
+  const row = tableRow(page, billNo);
+  const layout = await row.evaluate((element) => {
+    const cells = Array.from(element.children);
+    const createdAt = cells[10];
+    const actions = cells[11];
+    const createdAtRect = createdAt.getBoundingClientRect();
+    const actionsRect = actions.getBoundingClientRect();
+    return {
+      createdAtOverflow: createdAt.scrollWidth - createdAt.clientWidth,
+      actionsOverflow: actions.scrollWidth - actions.clientWidth,
+      overlap: createdAtRect.right - actionsRect.left,
+      actionsText: actions.innerText,
+    };
+  });
+  if (layout.createdAtOverflow > 1 || layout.actionsOverflow > 1 || layout.overlap > 1) {
+    throw new Error(`创建时间和操作列布局异常：${JSON.stringify(layout)}`);
+  }
+
+  const tableViewport = page.locator('.stock-bill-table-scroll [data-slot="table-container"]').first();
+  const scrollState = await tableViewport.evaluate((element) => {
+    const header = element.querySelector('thead th');
+    const headerStyle = header ? getComputedStyle(header) : null;
+    return {
+      horizontallyScrollable: element.scrollWidth > element.clientWidth + 4,
+      height: Math.round(element.getBoundingClientRect().height),
+      rowCount: element.querySelectorAll('tbody > tr').length,
+      overflowX: getComputedStyle(element).overflowX,
+      headerPosition: headerStyle ? headerStyle.position : '',
+      headerBackground: headerStyle ? headerStyle.backgroundColor : '',
+    };
+  });
+  const shouldShowPageHeight = scrollState.rowCount >= 8;
+  const transparentHeader = !scrollState.headerBackground || scrollState.headerBackground === 'transparent' || /rgba\([^)]*,\s*0\)/.test(scrollState.headerBackground);
+  if (!scrollState.horizontallyScrollable || !['auto', 'scroll'].includes(scrollState.overflowX) || (shouldShowPageHeight && scrollState.height < 420) || scrollState.headerPosition !== 'sticky' || transparentHeader) {
+    throw new Error(`主表滚动容器高度、横向滚动或固定表头异常：${JSON.stringify(scrollState)}`);
+  }
+}
+
+async function assertDetailFieldGrid(dialog) {
+  const columns = await dialog.locator('.detail-field-grid').evaluate(element =>
+    getComputedStyle(element).gridTemplateColumns.split(' ').length,
+  );
+  if (columns !== 3) throw new Error(`详情字段桌面布局应为 3 列，当前为 ${columns} 列`);
+}
+
+async function assertDistinctTypeBadges(page, labels) {
+  const classes = await page.locator('[data-stock-bill-id]').evaluateAll((rows, expectedLabels) => {
+    const result = {};
+    for (const row of rows) {
+      const rowText = row.innerText;
+      const label = expectedLabels.find(item => rowText.includes(item));
+      if (!label) continue;
+      const badge = Array.from(row.querySelectorAll('[data-slot="badge"]')).find(item => item.textContent?.includes(label));
+      if (badge) result[label] = badge.className;
+    }
+    return result;
+  }, labels);
+  for (const label of labels) {
+    if (!classes[label]) throw new Error(`列表缺少类型标签：${label}`);
+  }
+  if (new Set(Object.values(classes)).size !== labels.length) {
+    throw new Error(`入库/出库类型标签颜色未明显区分：${JSON.stringify(classes)}`);
+  }
+}
+
+async function assertExpandedDetailTable(page, direction) {
+  const detail = page.locator('.stock-bill-detail-row-scroll').first();
+  const state = await detail.evaluate((element) => {
+    const card = element.closest('.stock-bill-detail-card');
+    const headerText = element.querySelector('thead')?.innerText ?? '';
+    return {
+      headerText,
+      cardWidth: card ? Math.round(card.getBoundingClientRect().width) : 0,
+      tableWidth: Math.round(element.querySelector('[data-slot="table"]')?.getBoundingClientRect().width ?? 0),
+    };
+  });
+  const qtyLabel = direction === 'INBOUND' ? '入库量' : '出库量';
+  const pendingLabel = direction === 'INBOUND' ? '剩余未入库' : '剩余未出库';
+  for (const expected of ['产品编码', '产品名称', '单位', qtyLabel, '合格数量', '不合格数量', pendingLabel, '备注']) {
+    if (!state.headerText.includes(expected)) throw new Error(`展开明细表头缺少字段：${expected}`);
+  }
+  if (state.headerText.includes('质检')) throw new Error('展开明细不应再使用“质检”汇总列');
+  if (state.cardWidth > 1040 || state.tableWidth > 1040) {
+    throw new Error(`展开明细表格过宽，字段间距会被拉开：${JSON.stringify(state)}`);
+  }
 }
 
 runSmoke({
-  route: '/warehouse/stock-bills',
-  screenshot: 'smoke-warehouse-stock-bills.png',
+  route: '/warehouse/inbound-bills',
+  screenshot: 'smoke-warehouse-inbound-bills.png',
   async test(page) {
-    await page.getByRole('heading', { name: '出入库记录' }).waitFor();
-    await tableRow(page, 'SB202606140001').waitFor();
-    await assertFixedTableLayout(page, 10);
+    await page.getByRole('heading', { name: '入库单' }).waitFor();
+    await tableRow(page, 'IB202606140001').waitFor();
+    await assertFixedTableLayout(page, 12);
+    await assertStockBillTableUsable(page, 'IB202606140001');
+    await assertDistinctTypeBadges(page, ['采购入库', '销售退货入库', '调整入库']);
+    const inboundHeaderText = await outerHeaderText(page);
+    for (const expected of ['入库单号', '类型', '录入方式', '来源类型', '来源单号', '供应商', '仓库', '入库量', '状态', '负责人', '创建时间', '操作']) {
+      if (!inboundHeaderText.includes(expected)) throw new Error(`入库单列表表头缺少独立列：${expected}`);
+    }
+    for (const forbidden of ['入库单号 / 商品', '类型 / 来源', '往来方', '供应商/客户', '供应商 / 仓库', '状态 / 操作']) {
+      if (inboundHeaderText.includes(forbidden)) throw new Error(`入库单列表不应使用混合表头：${forbidden}`);
+    }
 
     const summaryText = await page.locator('.summary-strip').innerText();
-    for (const expected of ['流水记录\n15', '入库记录\n8', '出库记录\n7', '已确认\n10']) {
-      if (!summaryText.includes(expected)) throw new Error(`出入库摘要不正确：缺少 ${expected}`);
+    for (const expected of ['本页待确认', '本页已确认', '本页已取消', '本页来源生成']) {
+      if (!summaryText.includes(expected)) throw new Error(`入库单摘要缺少 ${expected}`);
     }
-    await clickRefreshAndAssertLoading(page, 'smoke-warehouse-stock-bills-refresh-loading.png');
+    await clickButton(page, '刷新');
 
-    await page.getByPlaceholder('如 SB202606140001').fill('SB202606140002');
-    await clickQueryAndAssertLoading(page, 'smoke-warehouse-stock-bills-query-loading.png');
-    await tableRow(page, 'SB202606140002').waitFor();
-    if (await page.locator('tbody tr').count() !== 1) throw new Error('流水号筛选未独立生效');
-    await clickResetAndAssertLoading(page, 'smoke-warehouse-stock-bills-reset-loading.png');
-
-    await page.getByPlaceholder('如 PO202606001').fill('PO202606001');
-    await clickQueryAndAssertLoading(page);
-    await tableRow(page, 'SB202606140001').waitFor();
-    await tableRow(page, 'SB202606140002').waitFor({ state: 'detached' });
-    await clickResetAndAssertLoading(page);
-
-    await selectFilter(page, 0, 'WH001 华东中心仓');
-    await clickQueryAndAssertLoading(page);
-    const warehouseRows = page.locator('tbody tr');
-    if (await warehouseRows.count() !== 3) throw new Error('仓库筛选未返回预期的 3 条流水');
-    for (const rowText of await warehouseRows.allInnerTexts()) {
-      if (!rowText.includes('华东中心仓')) throw new Error(`仓库筛选混入其他仓库：${rowText}`);
+    await page.getByPlaceholder('如 IB202606140001').fill('IB202606130006');
+    await clickButton(page, '查询');
+    const pendingInboundRow = tableRow(page, 'IB202606130006');
+    await pendingInboundRow.waitFor();
+    await assertStockBillTableUsable(page, 'IB202606130006');
+    const pendingInboundText = await pendingInboundRow.innerText();
+    for (const expected of ['采购入库', '来源生成', '采购订单', '谷仓食品批发', '2 条商品', '待确认']) {
+      if (!pendingInboundText.includes(expected)) throw new Error(`待确认入库单列表缺少 ${expected}`);
     }
-    await clickResetAndAssertLoading(page);
+    for (const forbidden of ['P0003', 'P0009', '本次', '计划', '已处理', '剩余未入库']) {
+      if (pendingInboundText.includes(forbidden)) throw new Error(`入库单列表不应展示订单进度字段：${forbidden}`);
+    }
+    const inboundItem = page.locator('[data-stock-bill-expanded-item-id]').filter({ hasText: '每日坚果混合装' });
+    if (await inboundItem.isVisible().catch(() => false)) throw new Error('入库单明细默认应收起');
+    await pendingInboundRow.getByRole('button', { name: '展开明细' }).click();
+    await inboundItem.waitFor();
+    await waitListSettled(page);
+    await assertExpandedDetailTable(page, 'INBOUND');
+    const inboundItemText = await inboundItem.innerText();
+    for (const expected of ['P0003', '每日坚果混合装', '20 盒', '20 盒']) {
+      if (!inboundItemText.includes(expected)) throw new Error(`入库单商品子行缺少 ${expected}`);
+    }
+    await pendingInboundRow.getByRole('button', { name: '收起明细' }).click();
+    await inboundItem.waitFor({ state: 'hidden' });
+    await pendingInboundRow.getByRole('button', { name: '展开明细' }).click();
+    await inboundItem.waitFor();
+    await page.screenshot({ path: 'smoke-warehouse-inbound-expanded.png', fullPage: true });
+
+    await pendingInboundRow.getByRole('button', { name: '详情' }).click();
+    const inboundDetail = page.getByRole('dialog', { name: '入库单详情' });
+    const inboundDetailText = await inboundDetail.innerText();
+    for (const expected of ['供应商', '采购数量', '累计已入库', '本次入库数量', '剩余未入库', '每日坚果混合装']) {
+      if (!inboundDetailText.includes(expected)) throw new Error(`入库单详情缺少 ${expected}`);
+    }
+    await assertDetailFieldGrid(inboundDetail);
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: 'smoke-warehouse-inbound-detail.png', fullPage: true });
+    await inboundDetail.getByRole('button', { name: 'Close' }).click();
+
+    await pendingInboundRow.getByRole('button', { name: '编辑' }).click();
+    const editInbound = page.getByRole('dialog', { name: '编辑入库单' });
+    const editInboundText = await editInbound.innerText();
+    for (const expected of ['采购数量', '累计已入库', '本次入库数量', '剩余未入库']) {
+      if (!editInboundText.includes(expected)) throw new Error(`入库编辑弹窗缺少 ${expected}`);
+    }
+    for (const expected of ['P0003', '每日坚果混合装']) {
+      if (!editInboundText.includes(expected)) throw new Error(`入库编辑弹窗产品快照缺少 ${expected}`);
+    }
+    const editInboundValues = await editInbound.locator('input').evaluateAll(inputs => inputs.map(input => input.value).join('\n'));
+    for (const expected of ['20']) {
+      if (!editInboundValues.includes(expected)) throw new Error(`入库编辑弹窗输入数据缺少 ${expected}`);
+    }
+    if (await editInbound.getByRole('button', { name: '添加产品' }).isVisible().catch(() => false)) {
+      throw new Error('来源生成的待确认入库单不应允许新增产品');
+    }
+    const pendingEditComboboxCount = await editInbound.getByRole('combobox').count();
+    if (pendingEditComboboxCount !== 0) throw new Error(`待确认入库单不应暴露仓库或产品选择器，当前 ${pendingEditComboboxCount} 个`);
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: 'smoke-warehouse-inbound-edit.png', fullPage: true });
+    await editInbound.getByRole('button', { name: '关闭' }).click();
+
+    await pendingInboundRow.getByRole('button', { name: '确认入库' }).click();
+    const confirmInboundDetail = page.getByRole('dialog', { name: '入库单详情' });
+    const confirmInboundDetailText = await confirmInboundDetail.innerText();
+    if (!confirmInboundDetailText.includes('请先核对完整单头和产品明细') || !confirmInboundDetailText.includes('每日坚果混合装')) {
+      throw new Error('列表确认入库必须先打开详情并展示完整明细');
+    }
+    await confirmInboundDetail.getByRole('button', { name: '确认入库' }).click();
+    const confirmInbound = page.getByRole('alertdialog', { name: '确认入库' });
+    const confirmInboundText = await confirmInbound.innerText();
+    if (!confirmInboundText.includes('本次入库数量') || !confirmInboundText.includes('更新库存余额')) {
+      throw new Error('确认入库弹窗未说明库存影响');
+    }
+    await confirmInbound.getByRole('button', { name: '取消' }).click();
+    await confirmInboundDetail.getByRole('button', { name: '关闭' }).click();
+    await clickButton(page, '重置');
+    await page.getByPlaceholder('如 IB202606140001').fill('IB202606140003');
+    await clickButton(page, '查询');
+    const draftInboundRow = tableRow(page, 'IB202606140003');
+    await draftInboundRow.waitFor();
+    if (!(await draftInboundRow.innerText()).includes('草稿')) throw new Error('草稿入库单状态缺失');
+    await draftInboundRow.getByRole('button', { name: '编辑' }).click();
+    const editDraftInbound = page.getByRole('dialog', { name: '编辑入库单' });
+    if (!((await editDraftInbound.innerText()).includes('添加产品'))) throw new Error('手工草稿入库单应允许维护产品明细');
+    const draftEditComboboxCount = await editDraftInbound.getByRole('combobox').count();
+    if (draftEditComboboxCount < 2) throw new Error(`草稿入库单应允许选择仓库和产品，当前选择器 ${draftEditComboboxCount} 个`);
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: 'smoke-warehouse-inbound-draft-edit.png', fullPage: true });
+    await editDraftInbound.getByRole('button', { name: '关闭' }).click();
+    await draftInboundRow.getByRole('button', { name: '提交确认' }).click();
+    const submitInboundDetail = page.getByRole('dialog', { name: '入库单详情' });
+    const submitInboundDetailText = await submitInboundDetail.innerText();
+    if (!submitInboundDetailText.includes('请先核对完整单头和产品明细') || !submitInboundDetailText.includes('提交确认') || !submitInboundDetailText.includes('库存盘点调整')) {
+      throw new Error('列表提交确认必须先打开详情并展示完整草稿信息');
+    }
+    await submitInboundDetail.getByRole('button', { name: '提交确认' }).click();
+    const submitInbound = page.getByRole('alertdialog', { name: '提交入库单' });
+    if (!(await submitInbound.innerText()).includes('不改变库存')) throw new Error('提交确认弹窗应说明不改变库存');
+    await submitInbound.getByRole('button', { name: '取消' }).click();
+    await submitInboundDetail.getByRole('button', { name: '关闭' }).click();
+    await clickButton(page, '重置');
 
     await selectFilter(page, 1, '采购入库');
-    await selectFilter(page, 3, '已确认');
-    await clickQueryAndAssertLoading(page);
-    await tableRow(page, 'SB202606140001').waitFor();
-    await tableRow(page, 'SB202606130006').waitFor();
-    if (await page.locator('tbody tr').count() !== 2) throw new Error('出入库类型与状态未按 AND 组合筛选');
-    await clickResetAndAssertLoading(page);
+    await selectFilter(page, 3, '待确认');
+    await clickButton(page, '查询');
+    const filteredText = await outerBodyText(page);
+    if (!filteredText.includes('采购入库') || !filteredText.includes('待确认')) throw new Error('入库类型与状态筛选未生效');
 
-    await selectFilter(page, 2, '系统自动录入');
-    await clickQueryAndAssertLoading(page);
-    if (await page.locator('tbody [data-manual-entry-marker]').count() !== 0) throw new Error('系统自动录入筛选混入人工凭证');
-    await tableRow(page, 'SB202606140001').waitFor();
-    await clickResetAndAssertLoading(page);
-
-    await selectFilter(page, 2, '人工调整');
-    await clickQueryAndAssertLoading(page);
-    const adjustmentRows = page.locator('tbody tr');
-    if (await adjustmentRows.count() === 0) throw new Error('人工调整筛选未返回库存调整凭证');
-    for (const row of await adjustmentRows.all()) {
-      await row.locator('[data-manual-entry-marker]').getByText('人工录入', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '出库单', exact: true }).click();
+    await page.getByRole('heading', { name: '出库单' }).waitFor();
+    await tableRow(page, 'OB202606140002').waitFor();
+    await assertFixedTableLayout(page, 12);
+    await assertDistinctTypeBadges(page, ['销售出库', '采购退货出库', '调整出库']);
+    const outboundHeaderText = await outerHeaderText(page);
+    for (const expected of ['出库单号', '类型', '录入方式', '来源类型', '来源单号', '客户', '仓库', '出库量', '状态', '负责人', '创建时间', '操作']) {
+      if (!outboundHeaderText.includes(expected)) throw new Error(`出库单列表表头缺少独立列：${expected}`);
     }
-    await clickResetAndAssertLoading(page);
-
-    const confirmedRow = tableRow(page, 'SB202606140001');
-    await confirmedRow.getByRole('button', { name: '详情' }).click();
-    const confirmedDialog = page.getByRole('dialog', { name: '出入库凭证详情' });
-    await confirmedDialog.getByText('PO202606001', { exact: true }).waitFor();
-    const confirmedText = await confirmedDialog.innerText();
-    for (const expected of ['P0001', '经典原味苏打水', 'P0002', '速溶黑咖啡', '+30', '+12']) {
-      if (!confirmedText.includes(expected)) throw new Error(`已确认入库详情缺少 ${expected}`);
+    for (const forbidden of ['出库单号 / 商品', '类型 / 来源', '往来方', '客户/供应商', '客户 / 仓库', '状态 / 操作']) {
+      if (outboundHeaderText.includes(forbidden)) throw new Error(`出库单列表不应使用混合表头：${forbidden}`);
     }
-    if (await confirmedRow.locator('[data-manual-entry-marker]').count() !== 0) throw new Error('来源生成凭证不应显示人工录入标记');
-    await page.waitForTimeout(180);
-    await page.screenshot({ path: 'smoke-warehouse-stock-bills-detail.png', fullPage: true });
-    await confirmedDialog.getByRole('button', { name: 'Close' }).click();
-
-    await page.getByPlaceholder('如 SB202606140001').fill('SB202606140003');
-    await clickQueryAndAssertLoading(page);
-    const draftRow = tableRow(page, 'SB202606140003');
-    await draftRow.getByRole('button', { name: '详情' }).click();
-    const draftDialog = page.getByRole('dialog', { name: '出入库凭证详情' });
-    const draftText = await draftDialog.innerText();
-    if (!draftText.includes('草稿') || !draftText.includes('未确认')) throw new Error('草稿流水详情状态不正确');
-    const draftItem = draftDialog.locator('[data-stock-bill-item-id]').first();
-    if ((await draftItem.getByRole('cell').nth(6).innerText()).trim() !== '0') throw new Error('草稿流水不应形成实际库存变动');
-    await draftDialog.getByRole('button', { name: 'Close' }).click();
-    await clickResetAndAssertLoading(page);
-
-    await clickPaginationAndAssertLoading(page, '下一页');
-    await tableRow(page, 'SB202606120011').waitFor();
-    await tableRow(page, 'SB202606140001').waitFor({ state: 'detached' });
-    await clickPaginationAndAssertLoading(page, '上一页');
-    await tableRow(page, 'SB202606140001').waitFor();
-
-    await page.getByRole('button', { name: '新增出入库' }).click();
-    const createDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
-    await page.setViewportSize({ width: 1115, height: 838 });
-    await createDialog.getByRole('button', { name: '添加产品' }).click();
-    await assertDialogScrollGutter(createDialog, 8, true);
-    await page.screenshot({ path: 'smoke-warehouse-stock-bills-dialog-scroll-gutter.png', fullPage: true });
-    await createDialog.getByRole('button', { name: '删除产品明细' }).last().click();
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const generatedFields = createDialog.locator('input[readonly]');
-    if (!(await generatedFields.first().inputValue()).includes('系统生成')) throw new Error('新增调整的流水号必须由系统生成');
-    await selectDialogOption(page, createDialog, 1, 'WH001 华东中心仓');
-    await selectDialogOption(page, createDialog, 2, 'P0002 速溶黑咖啡（盒）');
-    const integerQuantity = createDialog.getByRole('spinbutton').first();
-    if (await integerQuantity.getAttribute('step') !== '1') throw new Error('盒装产品数量步长必须为 1');
-    await integerQuantity.fill('1.5');
-    await createDialog.getByRole('button', { name: '保存草稿' }).click();
-    if (!(await createDialog.innerText()).includes('数量必须是整数')) throw new Error('盒装产品未拒绝小数数量');
-    await integerQuantity.fill('2');
-    await createDialog.getByPlaceholder('说明盘点差异或调整依据').fill('盘点补录测试');
-    const draftColumns = await createDialog.locator('.draft-item-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
-    if (draftColumns !== 4) throw new Error(`库存调整明细在宽屏下应为四列，当前为 ${draftColumns} 列`);
-    await page.screenshot({ path: 'smoke-warehouse-stock-bills-create.png', fullPage: true });
-    await createDialog.getByRole('button', { name: '保存草稿' }).click();
-
-    const createdRow = tableRow(page, 'SB202606140016');
-    await createdRow.getByText('调整入库', { exact: true }).waitFor();
-    const createdText = await createdRow.innerText();
-    if (!createdText.includes('库存调整单') || !createdText.includes('草稿')) throw new Error('新增库存调整未形成草稿流水');
-    const createdBillNo = (await createdRow.locator('code').first().innerText()).trim();
-
-    await createdRow.getByRole('button', { name: '编辑' }).click();
-    const editDialog = page.getByRole('dialog', { name: '编辑出入库草稿' });
-    if (await editDialog.locator('input[readonly]').first().inputValue() !== createdBillNo) throw new Error('编辑草稿未显示系统生成的流水号');
-    await editDialog.getByRole('spinbutton').fill('3');
-    await editDialog.getByRole('button', { name: '保存草稿' }).click();
-
-    const editedRow = tableRow(page, createdBillNo);
-    await editedRow.getByRole('button', { name: '确认', exact: true }).click();
-    const confirmDialog = page.getByRole('alertdialog', { name: '确认出入库' });
-    const confirmText = await confirmDialog.innerText();
-    if (!confirmText.includes('立即更新库存余额') || !confirmText.includes('不能再编辑或直接取消')) throw new Error('确认出入库未说明库存与状态影响');
-    await confirmDialog.getByRole('button', { name: '确认执行', exact: true }).click();
-    await editedRow.getByText('已确认', { exact: true }).waitFor();
-    if (await editedRow.getByRole('button', { name: '编辑' }).count() !== 0
-      || await editedRow.getByRole('button', { name: '确认', exact: true }).count() !== 0
-      || await editedRow.getByRole('button', { name: '取消', exact: true }).count() !== 0) {
-      throw new Error('已确认凭证仍允许编辑或再次变更状态');
+    const outboundRow = tableRow(page, 'OB202606140002');
+    await assertStockBillTableUsable(page, 'OB202606140002');
+    const outboundText = await outboundRow.innerText();
+    for (const expected of ['上海星河便利店', '销售出库', '销售订单', '8 箱']) {
+      if (!outboundText.includes(expected)) throw new Error(`出库单列表缺少 ${expected}`);
     }
-    await editedRow.getByRole('button', { name: '详情' }).click();
-    const adjustedDialog = page.getByRole('dialog', { name: '出入库凭证详情' });
-    const adjustedText = await adjustedDialog.innerText();
-    if (!adjustedText.includes('+3') || !adjustedText.includes('盘点补录测试')) throw new Error('编辑后的调整数量未在确认凭证中生效');
-    await adjustedDialog.getByRole('button', { name: 'Close' }).click();
-
-    await page.getByRole('button', { name: '新增出入库' }).click();
-    const kgDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
-    await selectDialogOption(page, kgDialog, 1, 'WH001 华东中心仓');
-    await selectDialogOption(page, kgDialog, 2, 'P0015 散装东北大米（kg）');
-    const kgQuantity = kgDialog.getByRole('spinbutton').first();
-    if (await kgQuantity.getAttribute('step') !== '0.01') throw new Error('kg 产品数量步长必须为 0.01');
-    await kgQuantity.fill('1.234');
-    await kgDialog.getByPlaceholder('说明盘点差异或调整依据').fill('称重盘点测试');
-    await kgDialog.getByRole('button', { name: '保存草稿' }).click();
-    if (!(await kgDialog.innerText()).includes('最多保留 2 位小数')) throw new Error('kg 产品未拒绝三位小数');
-    await kgQuantity.fill('1.25');
-    await kgDialog.getByRole('button', { name: '保存草稿' }).click();
-    const kgRow = tableRow(page, 'SB202606140017');
-    await kgRow.locator('[data-manual-entry-marker]').getByText('人工录入', { exact: true }).waitFor();
-    await kgRow.getByRole('button', { name: '取消', exact: true }).click();
-    await page.getByRole('alertdialog', { name: '取消出入库草稿' }).getByRole('button', { name: '确认取消', exact: true }).click();
-
-    await page.getByRole('button', { name: '库存管理', exact: true }).click();
-    await page.getByRole('heading', { name: '库存管理' }).waitFor();
-    await page.getByPlaceholder('如 P0001').fill('P0002');
-    await clickQueryAndAssertLoading(page);
-    const changedStockRow = tableRow(page, 'P0002');
-    if ((await changedStockRow.getByRole('cell').nth(3).innerText()).trim() !== '10') throw new Error('确认调整入库后库存余额未从 7 更新为 10');
-    await page.getByRole('button', { name: '出入库记录', exact: true }).click();
-    await page.getByRole('heading', { name: '出入库记录' }).waitFor();
-    await tableRow(page, createdBillNo).waitFor();
-
-    await page.getByRole('button', { name: '新增出入库' }).click();
-    const cancelCreateDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
-    await selectDialogOption(page, cancelCreateDialog, 0, '库存调整出库');
-    await selectDialogOption(page, cancelCreateDialog, 1, 'WH001 华东中心仓');
-    await selectDialogOption(page, cancelCreateDialog, 2, 'P0003 每日坚果混合装（盒）');
-    await cancelCreateDialog.getByRole('spinbutton').fill('1');
-    await cancelCreateDialog.getByPlaceholder('说明盘点差异或调整依据').fill('取消流程测试');
-    await cancelCreateDialog.getByRole('button', { name: '保存草稿' }).click();
-    const cancelRow = tableRow(page, 'SB202606140018');
-    const cancelBillNo = (await cancelRow.locator('code').first().innerText()).trim();
-    await cancelRow.getByRole('button', { name: '取消', exact: true }).click();
-    const cancelDialog = page.getByRole('alertdialog', { name: '取消出入库草稿' });
-    if (!(await cancelDialog.innerText()).includes('取消后不改变库存')) throw new Error('取消草稿未说明库存不变');
-    await cancelDialog.getByRole('button', { name: '确认取消', exact: true }).click();
-    await tableRow(page, cancelBillNo).getByText('已取消', { exact: true }).waitFor();
-
-    await page.getByRole('button', { name: '新增出入库' }).click();
-    const supplementDialog = page.getByRole('dialog', { name: '新增出入库凭证' });
-    await selectDialogOption(page, supplementDialog, 0, '补录销售退货入库');
-    await supplementDialog.getByPlaceholder('填写线下单据、送货单或退货单号').fill('SRO-OFFLINE-001');
-    await supplementDialog.getByPlaceholder('说明未登记原业务单据的原因').fill('线下退货单遗漏登记');
-    const readonlyValues = await supplementDialog.locator('input[readonly]').evaluateAll(elements => elements.map(element => element.value));
-    if (!readonlyValues.includes('系统管理员') || !(await supplementDialog.innerText()).includes('不允许代填')) {
-      throw new Error('补录负责人未按当前登录用户只读展示');
+    for (const forbidden of ['本次', '计划', '已处理', '剩余未出库']) {
+      if (outboundText.includes(forbidden)) throw new Error(`出库单列表不应展示订单进度字段：${forbidden}`);
     }
-    await selectDialogOption(page, supplementDialog, 1, 'WH001 华东中心仓');
-    await selectDialogOption(page, supplementDialog, 2, 'P0001 经典原味苏打水（箱）');
-    const supplementQuantities = supplementDialog.getByRole('spinbutton');
-    await supplementQuantities.nth(0).fill('2');
-    await supplementQuantities.nth(1).fill('2');
-    await supplementDialog.getByRole('button', { name: '保存草稿' }).click();
-    const supplementRow = page.getByRole('row').filter({ hasText: 'SRO-OFFLINE-001' }).first();
-    await supplementRow.locator('[data-manual-entry-marker]').getByText('人工录入', { exact: true }).waitFor();
-    await supplementRow.getByText('系统管理员', { exact: true }).first().waitFor();
-    await supplementRow.getByRole('button', { name: '详情' }).click();
-    const supplementDetail = page.getByRole('dialog', { name: '出入库凭证详情' });
-    const supplementText = await supplementDetail.innerText();
-    for (const expected of ['手工补录', 'SRO-OFFLINE-001', '线下退货单遗漏登记', '系统管理员']) {
-      if (!supplementText.includes(expected)) throw new Error(`补录详情缺少 ${expected}`);
+    const outboundItem = page.locator('[data-stock-bill-expanded-item-id]').filter({ hasText: '经典原味苏打水' });
+    if (await outboundItem.isVisible().catch(() => false)) throw new Error('出库单明细默认应收起');
+    await outboundRow.getByRole('button', { name: '展开明细' }).click();
+    await outboundItem.waitFor();
+    await waitListSettled(page);
+    await assertExpandedDetailTable(page, 'OUTBOUND');
+    const outboundItemText = await outboundItem.innerText();
+    for (const expected of ['P0001', '经典原味苏打水', '8 箱']) {
+      if (!outboundItemText.includes(expected)) throw new Error(`出库单商品子行缺少 ${expected}`);
     }
-    await supplementDetail.getByRole('button', { name: 'Close' }).click();
-
-    await selectFilter(page, 2, '人工补录');
-    await clickQueryAndAssertLoading(page);
-    const supplementFilteredRow = page.getByRole('row').filter({ hasText: 'SRO-OFFLINE-001' }).first();
-    await supplementFilteredRow.locator('[data-manual-entry-marker]').getByText('人工录入', { exact: true }).waitFor();
-    for (const rowText of await page.locator('tbody tr').allInnerTexts()) {
-      if (!rowText.includes('SRO-OFFLINE-001')) throw new Error(`人工补录筛选混入其他录入方式：${rowText}`);
+    await outboundRow.getByRole('button', { name: '收起明细' }).click();
+    await outboundItem.waitFor({ state: 'hidden' });
+    await outboundRow.getByRole('button', { name: '展开明细' }).click();
+    await outboundItem.waitFor();
+    await outboundRow.getByRole('button', { name: '详情' }).click();
+    const outboundDetail = page.getByRole('dialog', { name: '出库单详情' });
+    const outboundDetailText = await outboundDetail.innerText();
+    for (const expected of ['客户', '销售数量', '累计已出库', '本次出库数量', '剩余未出库']) {
+      if (!outboundDetailText.includes(expected)) throw new Error(`出库单详情缺少 ${expected}`);
     }
-    await clickResetAndAssertLoading(page);
+    await assertDetailFieldGrid(outboundDetail);
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: 'smoke-warehouse-outbound-detail.png', fullPage: true });
+    await outboundDetail.getByRole('button', { name: 'Close' }).click();
 
     await page.setViewportSize({ width: 1115, height: 838 });
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.getByRole('heading', { name: '出入库记录' }).waitFor();
-    await tableRow(page, 'SB202606140001').waitFor();
+    await page.getByRole('heading', { name: '出库单' }).waitFor();
+    await tableRow(page, 'OB202606140002').waitFor();
     const filterColumns = await page.locator('.filter-grid--stock-bills').evaluate(element =>
       getComputedStyle(element).gridTemplateColumns.split(' ').length,
     );
-    if (filterColumns !== 2) throw new Error(`出入库筛选区在中等宽度下应为两列，当前为 ${filterColumns} 列`);
-    await page.screenshot({ path: 'smoke-warehouse-stock-bills-1115.png', fullPage: true });
-
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.getByRole('heading', { name: '出入库记录' }).waitFor();
-    await tableRow(page, 'SB202606140001').waitFor();
+    if (filterColumns !== 2) throw new Error(`入库/出库筛选区在中等宽度下应为两列，当前为 ${filterColumns} 列`);
+    await page.screenshot({ path: 'smoke-warehouse-outbound-1115.png', fullPage: true });
   },
 }).then(() => {
-  console.log('SMOKE_OK: 出入库记录筛选、新增调整、编辑草稿、确认取消、凭证明细与加载反馈通过');
+  console.log('SMOKE_OK: 入库单/出库单列表、详情、编辑、确认弹窗和响应式布局通过');
 });

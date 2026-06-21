@@ -2,4 +2,30 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.qiheng.erp.system.mapper.SysDeptMapper">
 
+    <select id="selectDeptListWithUserCount" resultType="com.qiheng.erp.system.domain.dto.SysDeptDto">
+        SELECT
+            d.id AS dept_id,
+            d.parent_id,
+            d.ancestors,
+            d.dept_name,
+            d.status,
+            d.create_time ,
+            d.update_time ,
+            (
+                SELECT COUNT(*)
+                FROM sys_user u
+                WHERE u.dept_id = d.id
+                  AND u.deleted = 0
+            ) AS user_count
+        FROM sys_dept d
+        WHERE d.deleted = 0
+        <if test="deptName != null and deptName != ''">
+            AND d.dept_name LIKE CONCAT('%', #{deptName}, '%')
+        </if>
+        <if test="status != null">
+            AND d.status = #{status}
+        </if>
+        ORDER BY d.create_time DESC
+    </select>
+
 </mapper>

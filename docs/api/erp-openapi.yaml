@@ -808,7 +808,7 @@ paths:
       tags:
         - SystemDept
       summary: 查询部门列表
-      description: 返回 `sys_dept` 扁平列表即可，前端根据 `parentId` 构建树形结构和层级路径，不要求后端组装 `children` 或路径字符串。仅传需要生效的筛选参数，多个筛选参数按 AND 条件组合。
+      description: 返回 `sys_dept` 扁平列表即可，前端根据 `parentId` 构建树形结构和层级路径，不要求后端组装 `children` 或路径字符串。仅传需要生效的筛选参数，多个筛选参数按 AND 条件组合。权限：仅需登录态（Sa-Token 有效），不校验具体权限码。
       operationId: systemDeptList
       security:
         - SaTokenAuth: []
@@ -877,6 +877,7 @@ paths:
       tags:
         - SystemDept
       summary: 新增部门
+      description: 权限：需 `system:dept:manage`。
       operationId: systemDeptCreate
       security:
         - SaTokenAuth: []
@@ -910,7 +911,7 @@ paths:
       tags:
         - SystemDept
       summary: 批量修改部门状态
-      description: 停用父级部门时必须在同一事务内级联停用全部下级；员工账号不自动停用。启用下级部门时，其全部上级必须已启用或包含在同一次启用请求中。
+      description: 停用父级部门时必须在同一事务内级联停用全部下级；员工账号不自动停用。启用下级部门时，其全部上级必须已启用或包含在同一次启用请求中。权限：需 `system:dept:manage`。
       operationId: systemDeptBatchStatus
       security:
         - SaTokenAuth: []
@@ -941,7 +942,7 @@ paths:
       tags:
         - SystemDept
       summary: 批量删除部门
-      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户时返回 409，禁止删除。
+      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户时返回 409，禁止删除。权限：需 `system:dept:manage`。
       operationId: systemDeptBatchDelete
       security:
         - SaTokenAuth: []
@@ -972,6 +973,7 @@ paths:
       tags:
         - SystemDept
       summary: 获取部门详情
+      description: 权限：仅需登录态（Sa-Token 有效），不校验具体权限码。
       operationId: systemDeptDetail
       security:
         - SaTokenAuth: []
@@ -995,7 +997,7 @@ paths:
       tags:
         - SystemDept
       summary: 编辑部门
-      description: 修改状态为停用时必须执行与状态接口相同的下级级联规则，不能通过编辑接口绕过；员工账号不自动停用。
+      description: 修改状态为停用时必须执行与状态接口相同的下级级联规则，不能通过编辑接口绕过；员工账号不自动停用。权限：需 `system:dept:manage`。
       operationId: systemDeptUpdate
       security:
         - SaTokenAuth: []
@@ -1027,7 +1029,7 @@ paths:
       tags:
         - SystemDept
       summary: 删除部门
-      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户时返回 409，禁止删除。
+      description: 逻辑删除部门，对应 `sys_dept.deleted = 1`。存在下级部门或已绑定用户时返回 409，禁止删除。权限：需 `system:dept:manage`。
       operationId: systemDeptDelete
       security:
         - SaTokenAuth: []
@@ -1052,7 +1054,7 @@ paths:
       tags:
         - SystemDept
       summary: 修改部门状态
-      description: 停用父级部门时必须在同一事务内级联停用全部下级，员工账号不自动停用；上级部门停用时禁止单独启用下级部门。
+      description: 停用父级部门时必须在同一事务内级联停用全部下级，员工账号不自动停用；上级部门停用时禁止单独启用下级部门。权限：需 `system:dept:manage`。
       operationId: systemDeptStatus
       security:
         - SaTokenAuth: []

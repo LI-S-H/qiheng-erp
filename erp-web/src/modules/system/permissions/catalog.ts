@@ -23,6 +23,7 @@ export const permissionActionOptions: Array<{ value: PermissionAction; label: st
 const initialRows: Array<Omit<SystemPermissionListItem, 'permissionId' | 'createTime' | 'updateTime'>> = [
   ['system:user:query', '用户查询', 'system', 'query', 1, 10, '查看用户账号及其部门、角色信息', 2],
   ['system:user:manage', '用户维护', 'system', 'manage', 1, 20, '新增、编辑、启停和删除用户账号', 2],
+  ['system:dept:manage', '部门维护', 'system', 'manage', 1, 25, '新增、编辑、启停和删除部门', 1],
   ['system:role:query', '角色查询', 'system', 'query', 1, 30, '查看角色及权限绑定信息', 2],
   ['system:role:manage', '角色维护', 'system', 'manage', 1, 40, '维护角色和角色权限', 2],
   ['product:query', '产品查询', 'product', 'query', 1, 50, '查看产品与分类信息', 3],

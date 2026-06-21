@@ -2,14 +2,14 @@
 
 ## 设计目标
 
-销售模块先支撑客户维护、销售订单创建、库存锁定、销售出库溯源和销售汇总查询。MVP 阶段不单独设计销售出库单表，销售出库统一使用仓库模块的出入库流水 `stock_bill` / `stock_bill_item`，类型为 `SALES_OUT`。
+销售模块先支撑客户维护、销售订单创建、库存锁定、销售出库溯源和销售汇总查询。MVP 阶段不在销售模块单独设计销售出库单表，销售出库统一使用仓库模块的 `outbound_bill` / `outbound_bill_item`，类型为 `SALES_OUT`；确认后再生成库存流水 `stock_bill` / `stock_bill_item`。
 
 ## 简化原则
 
 - MVP 设计 3 张表：`customer`、`sales_order`、`sales_order_item`。
-- 销售出库不在销售模块单独建表，统一使用仓库模块 `stock_bill` / `stock_bill_item`。
+- 销售出库不在销售模块单独建表，统一使用仓库模块 `outbound_bill` / `outbound_bill_item`。
 - 销售订单主表冗余客户、仓库名称，明细冗余产品信息，减少列表查询联表。
-- 销售退货后续复用仓库模块 `SALES_RETURN` 出入库流水；如果退货流程复杂，再补销售退货单表。
+- 销售退货后续复用仓库模块 `SALES_RETURN` 入库单；如果退货流程复杂，再补销售退货单表。
 - MVP 暂不设计收款单、发票、对账、复杂价格策略、审批流。
 - 评分和百分率字段如后续加入，统一遵守 `database-design-conventions.md`：用 `int` 存放大 100 倍后的整数。
 - 销售订单明细是订单事实明细，不使用 `deleted`；删除草稿明细时直接物理删除，已审核订单通过订单状态控制。
@@ -59,7 +59,7 @@
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
-关系说明：销售订单审核后，可生成仓库模块 `stock_bill`，其中 `source_type = SALES_ORDER`，`source_id = sales_order.id`，`source_no = sales_order.sales_no`。
+关系说明：销售订单审核后，可生成仓库模块 `outbound_bill`，其中 `source_type = SALES_ORDER`，`source_id = sales_order.id`，`source_no = sales_order.sales_no`，并快照客户、出库仓库、销售数量、累计已出库数量和剩余未出库数量。
 
 ## 表：sales_order_item（销售订单明细表）
 
@@ -81,7 +81,7 @@
 | update_time    | datetime      | 更新时间    |
 | remark         | varchar(500)  | 备注      |
 
-关系说明：仓库出入库流水明细 `stock_bill_item.source_item_id` 关联本表，用于从销售出库动作追溯到销售订单明细。
+关系说明：仓库出库单明细 `outbound_bill_item.source_item_id` 关联本表；出库确认后生成的 `stock_bill_item.business_source_item_id` 继续关联本表，用于从库存流水反查销售订单明细。
 
 ## 表间关系
 
@@ -89,8 +89,10 @@
 - `sales_order.warehouse_id` -> `warehouse.id`
 - `sales_order_item.sales_order_id` -> `sales_order.id`
 - `sales_order_item.product_id` -> `product.id`
-- `stock_bill.source_id` -> `sales_order.id`，当 `source_type = SALES_ORDER`
-- `stock_bill_item.source_item_id` -> `sales_order_item.id`，当 `stock_bill.bill_type = SALES_OUT`
+- `outbound_bill.source_id` -> `sales_order.id`，当 `source_type = SALES_ORDER`
+- `outbound_bill_item.source_item_id` -> `sales_order_item.id`，当 `outbound_bill.outbound_type = SALES_OUT`
+- `stock_bill.business_source_id` -> `sales_order.id`，当 `business_source_type = SALES_ORDER`
+- `stock_bill_item.business_source_item_id` -> `sales_order_item.id`，当 `stock_bill.bill_type = SALES_OUT`
 
 ## MVP 业务规则
 
@@ -98,8 +100,8 @@
 - 销售订单保存后不直接扣减库存。
 - 提交或审核销售订单时，服务层校验可用库存 `warehouse_stock.stock_qty - warehouse_stock.locked_qty`。
 - 库存锁定成功后，更新 `warehouse_stock.locked_qty` 和 `sales_order_item.locked_qty`。
-- 销售订单审核后生成仓库模块 `SALES_OUT` 出入库流水草稿。
-- 确认销售出库后，扣减 `warehouse_stock.stock_qty` 和 `warehouse_stock.locked_qty`，并回写 `sales_order_item.outbound_qty`。
+- 销售订单审核后生成仓库模块 `SALES_OUT` 待确认出库单，不直接扣减库存。
+- 仓库人员确认本次出库数量后，生成 `stock_bill` 库存流水，扣减 `warehouse_stock.stock_qty` 和 `warehouse_stock.locked_qty`，并回写 `sales_order_item.outbound_qty`。
 - 当明细 `outbound_qty < quantity` 时订单为 `PARTIAL_OUTBOUND`，全部出库后为 `OUTBOUND_DONE`。
 - 取消未出库订单时，需要释放已锁定库存。
 - 销售退货后续使用 `SALES_RETURN` 入库流水；如需退货申请、退款、质检等复杂流程，再补销售退货单表。
@@ -110,9 +112,9 @@
 - 可以创建销售订单并选择客户、仓库和产品明细。
 - 销售订单提交或审核时可以锁定库存。
 - 库存不足时不能锁定库存。
-- 审核销售订单后能生成 `SALES_OUT` 出入库流水草稿。
+- 审核销售订单后能生成 `SALES_OUT` 待确认出库单。
 - 确认出库后能扣减库存、释放锁定库存，并回写销售明细已出库数量。
-- 销售出库流水可以通过 `source_id/source_no` 反查销售订单。
+- 销售出库单和库存流水可以通过 `source_id/source_no`、`business_source_id/business_source_no` 反查销售订单。
 - AI 销售汇总 Tool 可以按销售订单和销售明细统计销售金额、销售数量。
 
 ## 扩展点：部门数据范围权限（待后续实现）

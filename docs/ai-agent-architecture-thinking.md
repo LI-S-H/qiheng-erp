@@ -129,7 +129,7 @@ flowchart TD
     O --> ES["ExternalSignalTool / Agent Tool<br/>外部因素"]
 
     SF --> ST["销售历史 Tool / PythonTool / 节假日 MCP / 天气 MCP"]
-    WS --> WT["库存余额 Tool / 出入库流水 Tool"]
+    WS --> WT["库存余额 Tool / 入库单出库单与库存流水 Tool"]
     SS --> SPT["供应商报价 / 履约 / 距离 / 质量 Tool"]
     ES --> ET["天气 MCP / 节假日 MCP / 地图距离 MCP / 物流风险 Tool"]
 
@@ -153,7 +153,7 @@ flowchart TD
 | `ERP Assistant` | 统一聊天入口、识别用户意图 | 少量路由工具 | 路由到采购、库存、销售等任务 |
 | `PurchaseDecisionOrchestrator` | 编排采购决策流程 | 子 Agent 调用能力 | 汇总后的采购建议 |
 | `SalesForecastAgent` | 预测未来销量 | 销售历史、PythonTool、节假日、天气 | 销量预测信号 |
-| `WarehouseSignalAgent` | 计算库存风险 | 库存余额、锁定库存、出入库流水 | 库存状态信号 |
+| `WarehouseSignalAgent` | 计算库存风险 | 库存余额、锁定库存、入库单、出库单、库存流水 | 库存状态信号 |
 | `SupplierScoreAgent` | 计算供应商得分 | 报价、距离、交付、质量、履约历史 | 供应商评分列表 |
 | `ExternalSignalTool / ExternalSignalAgent` | 统一外部因素 | 天气、节假日、距离、物流风险 MCP | 外部风险信号 |
 

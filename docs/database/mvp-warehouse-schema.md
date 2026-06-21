@@ -1,19 +1,22 @@
-# MVP 仓库库存库表设计：出入库流水版
+# MVP 仓库库存库表设计：入库单/出库单/库存流水分层版
 
 ## 设计目标
 
-仓库库存模块先支撑采购入库、销售出库、退货、库存调整和库存查询。MVP 阶段不再单独设计库存流水表，而是把出入库单作为库存流水凭证，出入库单明细记录每个产品的库存变动前、变动数量和变动后数量。
+仓库库存模块先支撑采购入库、销售出库、退货、库存调整和库存查询。本版将“待仓库处理的业务单据”和“已经改变库存的库存事实”拆开：
+
+- `inbound_bill` / `inbound_bill_item` 表示入库单，承接采购入库、销售退货入库和调整入库。
+- `outbound_bill` / `outbound_bill_item` 表示出库单，承接销售出库、采购退货出库和调整出库。
+- `stock_bill` / `stock_bill_item` 表示确认后的库存流水凭证，只记录已经发生库存变化的事实。
+- 采购订单或销售订单审核后只生成 `PENDING_CONFIRM` 的入库单/出库单，不直接写入库存流水，也不改变 `warehouse_stock.stock_qty`。
+- 仓库人员在入库单/出库单中手工填写或确认本次数量后，系统才生成库存流水、更新库存余额，并回写来源单据明细的累计已入库/已出库数量。
 
 ## 简化原则
 
-- MVP 设计 4 张表：`warehouse`、`warehouse_stock`、`stock_bill`、`stock_bill_item`。
-- `stock_bill` 是出入库流水主表，记录单据类型、来源单据、仓库、状态和确认信息。
-- `stock_bill_item` 是出入库流水明细，记录产品、数量、变动前库存、变动后库存。
-- 暂不设计单独 `stock_flow` 表，避免出入库单和库存流水重复。
-- 暂不设计库位、批次、序列号、保质期。
-- 采购入库、销售出库、采购退货、销售退货、库存调整都复用统一出入库流水结构。
-- 评分和百分率字段如后续加入，统一遵守 `database-design-conventions.md`：用 `int` 存放大 100 倍后的整数。
-- 库存余额和出入库流水属于库存事实数据，不使用 `deleted`；作废或取消通过出入库流水主表 `status` 表达。
+- MVP 设计 8 张表：`warehouse`、`warehouse_stock`、`inbound_bill`、`inbound_bill_item`、`outbound_bill`、`outbound_bill_item`、`stock_bill`、`stock_bill_item`。
+- 暂不设计库位、批次、序列号、保质期和物流模块；是否到货/是否可出库先由仓库人员在线下确认后录入本次数量。
+- 入库单和出库单允许分批处理，同一采购订单或销售订单可以生成多张确认后的库存流水。
+- 不同产品单位不得在列表或摘要中直接汇总数量；只有同单位明细才允许展示合计数量。
+- 数量字段统一遵守 `database-design-conventions.md`：数据库按 100 倍整数存储，接口和前端使用真实业务值。
 
 ## 表：warehouse（仓库表）
 
@@ -31,8 +34,6 @@
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
-关系说明：`warehouse_stock.warehouse_id`、`stock_bill.warehouse_id` 关联本表。
-
 ## 表：warehouse_stock（库存余额表）
 
 | 字段 | 类型 | 说明 |
@@ -45,122 +46,213 @@
 | product_code | varchar(64) | 产品编码，冗余 |
 | product_name | varchar(200) | 产品名称，冗余 |
 | unit_name | varchar(32) | 单位名称，冗余 |
-| stock_qty | bigint | 当前库存数量，按 100 倍整数存储，例如 12.50 存为 1250 |
+| stock_qty | bigint | 当前库存数量，按 100 倍整数存储 |
 | locked_qty | bigint | 锁定库存数量，按 100 倍整数存储，销售单占用时使用 |
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |
 
-关系说明：建议唯一约束 `(warehouse_id, product_id)`，一个仓库里一个产品只有一条库存余额。
+关系说明：唯一约束 `(warehouse_id, product_id)`，一个仓库内一个产品只有一条库存余额。
 
-## 表：stock_bill（出入库流水主表）
+## 表：inbound_bill（入库单主表）
+
+| 字段                    | 类型           | 说明                                                         |
+| --------------------- | ------------ | ---------------------------------------------------------- |
+| id                    | bigint PK    | 入库单ID                                                      |
+| inbound_no            | varchar(64)  | 入库单号，唯一，建议 `IByyyyMMddNNNN`                                |
+| inbound_type          | varchar(32)  | 类型：`PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`                |
+| source_type           | varchar(32)  | 来源类型：`PURCHASE_ORDER`、`SALES_RETURN_ORDER`、`STOCK_ADJUST`  |
+| source_id             | bigint       | 来源单据ID；人工补录可为空                                             |
+| source_no             | varchar(64)  | 来源单据号                                                      |
+| source_party_id       | bigint       | 来源对象ID；采购入库为供应商，销售退货为客户，调整入库为受影响仓库                         |
+| source_party_name     | varchar(200) | 来源供应商、客户或调整仓库名称快照                                      |
+| entry_mode            | varchar(32)  | `SOURCE_GENERATED`、`MANUAL_SUPPLEMENT`、`MANUAL_ADJUSTMENT` |
+| warehouse_id          | bigint       | 仓库ID                                                       |
+| warehouse_name        | varchar(100) | 仓库名称快照                                                     |
+| status                | varchar(32)  | `DRAFT`、`PENDING_CONFIRM`、`CONFIRMED`、`CANCELLED`          |
+| expected_arrival_date | date         | 单头预计到货日期；来源采购订单带入，提交/审核后不能为空                               |
+| confirmed_by_id       | bigint       | 确认人ID                                                      |
+| confirmed_by_name     | varchar(100) | 确认人姓名                                                      |
+| confirmed_at          | datetime     | 确认时间                                                       |
+| created_by_id         | bigint       | 创建人ID                                                      |
+| created_by_name       | varchar(100) | 创建人姓名                                                      |
+| responsible_by_id     | bigint       | 业务负责人ID                                                    |
+| responsible_by_name   | varchar(100) | 业务负责人姓名快照                                                  |
+| create_time           | datetime     | 创建时间                                                       |
+| update_time           | datetime     | 更新时间                                                       |
+| manual_reason         | varchar(500) | 手工补录或调整原因                                                  |
+| remark                | varchar(500) | 备注                                                         |
+
+## 表：inbound_bill_item（入库单明细表）
+
+| 字段                 | 类型           | 说明                                     |
+| ------------------ | ------------ | -------------------------------------- |
+| id                 | bigint PK    | 明细ID                                   |
+| inbound_bill_id    | bigint       | 入库单ID                                  |
+| inbound_no         | varchar(64)  | 入库单号冗余                                 |
+| source_item_id     | bigint       | 来源明细ID；采购入库关联 `purchase_order_item.id` |
+| product_id         | bigint       | 产品ID                                   |
+| product_code       | varchar(64)  | 产品编码快照                                 |
+| product_name       | varchar(200) | 产品名称快照                                 |
+| unit_name          | varchar(32)  | 单位名称快照                                 |
+| quantity_precision | tinyint      | 数量小数位快照，0-2                            |
+| plan_qty           | bigint       | 来源单据计划数量，例如采购数量，按 100 倍整数存储            |
+| processed_qty      | bigint       | 本入库单生成前来源明细累计已入库数量快照                   |
+| current_qty        | bigint       | 本次入库数量，仓库人员确认时填写，按 100 倍整数存储           |
+| pending_qty        | bigint       | 确认本入库单后来源明细预计剩余未入库数量快照                 |
+| qualified_qty      | bigint       | 合格数量，采购入库和销售退货入库使用                     |
+| defective_qty      | bigint       | 不合格数量，采购入库和销售退货入库使用                    |
+| stock_bill_item_id | bigint       | 确认后生成的库存流水明细ID；未确认为空                   |
+| create_time        | datetime     | 创建时间                                   |
+| update_time        | datetime     | 更新时间                                   |
+| remark             | varchar(500) | 备注                                     |
+
+说明：明细不再维护独立预计到货日期；同一入库单对应同一批到货预期，预计到货日期放在主表。
+
+## 表：outbound_bill（出库单主表）
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| id | bigint PK | 出入库流水ID |
-| bill_no | varchar(64) | 出入库流水号，唯一 |
-| bill_type | varchar(32) | 类型：`PURCHASE_IN`、`SALES_OUT`、`PURCHASE_RETURN`、`SALES_RETURN`、`ADJUST_IN`、`ADJUST_OUT` |
-| source_type | varchar(32) | 来源类型：`PURCHASE_ORDER`、`SALES_ORDER`、`PURCHASE_RETURN_ORDER`、`SALES_RETURN_ORDER`、`STOCK_ADJUST` |
-| source_id | bigint | 来源单据ID |
+| id | bigint PK | 出库单ID |
+| outbound_no | varchar(64) | 出库单号，唯一，建议 `OByyyyMMddNNNN` |
+| outbound_type | varchar(32) | 类型：`SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT` |
+| source_type | varchar(32) | 来源类型：`SALES_ORDER`、`PURCHASE_RETURN_ORDER`、`STOCK_ADJUST` |
+| source_id | bigint | 来源单据ID；人工补录可为空 |
 | source_no | varchar(64) | 来源单据号 |
-| entry_mode | varchar(32) | 录入方式审计分类：`SOURCE_GENERATED`、`MANUAL_SUPPLEMENT`、`MANUAL_ADJUSTMENT`；用于追溯业务来源，不另设冗余“是否手工”字段 |
+| source_party_id | bigint | 来源对象ID；销售出库为客户，采购退货为供应商，调整出库为受影响仓库 |
+| source_party_name | varchar(200) | 来源客户、供应商或调整仓库名称快照 |
+| entry_mode | varchar(32) | `SOURCE_GENERATED`、`MANUAL_SUPPLEMENT`、`MANUAL_ADJUSTMENT` |
 | warehouse_id | bigint | 仓库ID |
-| warehouse_name | varchar(100) | 仓库名称，冗余 |
-| status | varchar(32) | 状态：`DRAFT`、`CONFIRMED`、`CANCELLED` |
+| warehouse_name | varchar(100) | 仓库名称快照 |
+| status | varchar(32) | `DRAFT`、`PENDING_CONFIRM`、`CONFIRMED`、`CANCELLED` |
 | confirmed_by_id | bigint | 确认人ID |
 | confirmed_by_name | varchar(100) | 确认人姓名 |
 | confirmed_at | datetime | 确认时间 |
 | created_by_id | bigint | 创建人ID |
 | created_by_name | varchar(100) | 创建人姓名 |
-| responsible_by_id | bigint | 业务负责人ID；手工单据由后端取当前登录用户 |
+| responsible_by_id | bigint | 业务负责人ID |
 | responsible_by_name | varchar(100) | 业务负责人姓名快照 |
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |
-| manual_reason | varchar(500) | 手工补录或库存调整原因；来源生成凭证为空 |
+| manual_reason | varchar(500) | 手工补录或调整原因 |
 | remark | varchar(500) | 备注 |
 
-关系说明：采购入库来源采购订单，销售出库来源销售订单；后续销售退货、采购退货也复用本表，只是 `bill_type` 和 `source_type` 不同。
-
-## 表：stock_bill_item（出入库流水明细表）
+## 表：outbound_bill_item（出库单明细表）
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | bigint PK | 明细ID |
-| bill_id | bigint | 出入库流水ID |
-| bill_no | varchar(64) | 出入库流水号，冗余 |
-| source_item_id | bigint | 来源单据明细ID |
+| outbound_bill_id | bigint | 出库单ID |
+| outbound_no | varchar(64) | 出库单号冗余 |
+| source_item_id | bigint | 来源明细ID；销售出库关联 `sales_order_item.id` |
 | product_id | bigint | 产品ID |
-| product_code | varchar(64) | 产品编码，冗余 |
-| product_name | varchar(200) | 产品名称，冗余 |
-| unit_name | varchar(32) | 单位名称，冗余 |
-| quantity_precision | tinyint | 产品数量小数位快照，0-2 |
-| quantity | bigint | 本次出入库数量，正数，按 100 倍整数存储 |
-| qualified_qty | bigint | 合格数量，按 100 倍整数存储，采购入库和销售退货入库时用于质量统计 |
-| defective_qty | bigint | 不合格数量，按 100 倍整数存储，采购入库和销售退货入库时用于质量统计 |
-| before_qty | bigint | 变动前库存，按 100 倍整数存储 |
-| change_qty | bigint | 库存变动数量，入库为正，出库为负，按 100 倍整数存储 |
-| after_qty | bigint | 变动后库存，按 100 倍整数存储 |
+| product_code | varchar(64) | 产品编码快照 |
+| product_name | varchar(200) | 产品名称快照 |
+| unit_name | varchar(32) | 单位名称快照 |
+| quantity_precision | tinyint | 数量小数位快照，0-2 |
+| plan_qty | bigint | 来源单据计划数量，例如销售数量，按 100 倍整数存储 |
+| processed_qty | bigint | 本出库单生成前来源明细累计已出库数量快照 |
+| current_qty | bigint | 本次出库数量，仓库人员确认时填写，按 100 倍整数存储 |
+| pending_qty | bigint | 确认本出库单后来源明细预计剩余未出库数量快照 |
+| stock_bill_item_id | bigint | 确认后生成的库存流水明细ID；未确认为空 |
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |
 | remark | varchar(500) | 备注 |
 
-关系说明：明细通过 `source_item_id` 关联采购订单明细、销售订单明细或退货单明细，便于从库存动作反查业务来源。
+## 表：stock_bill（库存流水凭证主表）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | bigint PK | 库存流水凭证ID |
+| bill_no | varchar(64) | 库存流水号，唯一，确认入库单/出库单时生成 |
+| bill_type | varchar(32) | `PURCHASE_IN`、`SALES_OUT`、`PURCHASE_RETURN`、`SALES_RETURN`、`ADJUST_IN`、`ADJUST_OUT` |
+| direction | varchar(16) | `INBOUND` 或 `OUTBOUND` |
+| source_bill_type | varchar(32) | `INBOUND_BILL` 或 `OUTBOUND_BILL` |
+| source_bill_id | bigint | 入库单或出库单ID |
+| source_bill_no | varchar(64) | 入库单号或出库单号 |
+| business_source_type | varchar(32) | 原业务来源类型 |
+| business_source_id | bigint | 原业务单据ID |
+| business_source_no | varchar(64) | 原业务单据号 |
+| warehouse_id | bigint | 仓库ID |
+| warehouse_name | varchar(100) | 仓库名称快照 |
+| status | varchar(32) | 固定为 `CONFIRMED`，冲销另建反向单据 |
+| confirmed_by_id | bigint | 确认人ID |
+| confirmed_by_name | varchar(100) | 确认人姓名 |
+| confirmed_at | datetime | 确认时间 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
+| remark | varchar(500) | 备注 |
+
+## 表：stock_bill_item（库存流水凭证明细表）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | bigint PK | 明细ID |
+| bill_id | bigint | 库存流水凭证ID |
+| bill_no | varchar(64) | 库存流水号冗余 |
+| source_bill_item_id | bigint | 入库单明细或出库单明细ID |
+| business_source_item_id | bigint | 原业务来源明细ID |
+| product_id | bigint | 产品ID |
+| product_code | varchar(64) | 产品编码快照 |
+| product_name | varchar(200) | 产品名称快照 |
+| unit_name | varchar(32) | 单位名称快照 |
+| quantity_precision | tinyint | 数量小数位快照，0-2 |
+| quantity | bigint | 本次入库/出库数量，正数 |
+| qualified_qty | bigint | 合格数量，入库质检使用；前端按独立列展示 |
+| defective_qty | bigint | 不合格数量，入库质检使用；前端按独立列展示 |
+| before_qty | bigint | 变动前库存 |
+| change_qty | bigint | 库存变动数量，入库为正，出库为负 |
+| after_qty | bigint | 变动后库存 |
+| create_time | datetime | 创建时间 |
+| update_time | datetime | 更新时间 |
+| remark | varchar(500) | 备注 |
 
 ## 表间关系
 
 - `warehouse_stock.warehouse_id` -> `warehouse.id`
 - `warehouse_stock.product_id` -> `product.id`
-- `stock_bill.warehouse_id` -> `warehouse.id`
-- `stock_bill_item.bill_id` -> `stock_bill.id`
-- `stock_bill_item.product_id` -> `product.id`
+- `inbound_bill.warehouse_id` -> `warehouse.id`
+- `inbound_bill_item.inbound_bill_id` -> `inbound_bill.id`
+- `outbound_bill.warehouse_id` -> `warehouse.id`
+- `outbound_bill_item.outbound_bill_id` -> `outbound_bill.id`
+- `stock_bill.source_bill_id` 根据 `source_bill_type` 指向 `inbound_bill.id` 或 `outbound_bill.id`
+- `stock_bill_item.source_bill_item_id` 根据 `stock_bill.source_bill_type` 指向入库单明细或出库单明细
+- `inbound_bill_item.source_item_id` 可指向 `purchase_order_item.id` 或后续销售退货明细ID
+- `outbound_bill_item.source_item_id` 可指向 `sales_order_item.id` 或后续采购退货明细ID
 
 ## MVP 业务规则
 
-- 仓库编码由后端在创建仓库时统一生成，并由唯一索引保证不重复；前端不提交仓库编码。编码生成后不可修改，避免 `warehouse_stock.warehouse_code` 冗余字段发生大范围级联更新。
-- 仓库名称允许修改；修改时后端必须在同一事务内同步当前库存余额表 `warehouse_stock.warehouse_name`，已生成的 `stock_bill.warehouse_name` 继续保留业务发生时的历史快照。
-- 停用仓库后不能再用于新建采购、销售、退货或库存调整业务，但历史单据和现有库存余额继续保留并可查询。
-- 删除仓库使用逻辑删除；存在 `warehouse_stock` 库存余额或 `stock_bill` 出入库记录时禁止删除，后端返回 `409 Conflict`。
-- 采购订单确认后可生成 `PURCHASE_IN` 入库流水，确认后增加库存，并在明细中记录 `qualified_qty`、`defective_qty`、`before_qty`、`change_qty`、`after_qty`。
-- 销售订单审核后可生成 `SALES_OUT` 出库流水，确认后扣减库存，并在明细中记录库存变化。
+- 采购订单提交和审核时，单头预计到货日期不能为空；采购订单明细不再维护独立预计到货日期。
+- 存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时禁止删除仓库，后端返回 `409 Conflict`。
+- 采购订单审核通过后生成 `PURCHASE_IN` 入库单，状态为 `PENDING_CONFIRM`，带入供应商、入库仓库、本次入库数量，并在明细中保留采购数量、生成本单前已入库数量和确认本单后剩余未入库数量；此时不改变库存。
+- 销售订单审核通过后生成 `SALES_OUT` 出库单，状态为 `PENDING_CONFIRM`，带入客户、出库仓库、本次出库数量，并在明细中保留销售数量、生成本单前已出库数量和确认本单后剩余未出库数量；此时不扣减库存。
+- 来源采购、销售或退货单据审核通过后生成的是待确认入库单/出库单，不是草稿；只有人工补录和库存调整从仓库页面新增时才先进入 `DRAFT`。
+- 由于 MVP 暂无物流模块，系统不自动判断货物是否已到达；仓库人员只能在实物到货或确认可出库后，手工填写本次入库/出库数量并确认。
+- 入库单/出库单允许分批处理：确认本次数量小于剩余数量时，来源订单进入 `PARTIAL_INBOUND` 或对应销售部分出库状态；剩余数量可继续生成下一张待确认入库单/出库单。
+- 手工补录和库存调整新建后先为 `DRAFT`，通过提交确认动作进入 `PENDING_CONFIRM`；提交确认不改变库存，只表示单据进入仓库确认队列。
+- `DRAFT` 和 `PENDING_CONFIRM` 状态允许编辑，但普通采购/销售创建人只能编辑草稿；草稿可修改仓库、手工来源信息、产品明细、本次数量、合格数量、不合格数量和备注，来源生成单据不能增删或更换产品；单据提交后需要具备审核/仓库确认权限的用户才能编辑本次数量、合格数量、不合格数量和备注，仓库、来源信息和产品结构锁定。
+- 提交或确认入库单/出库单前，前端必须强制展示完整详情和全部产品明细，并从详情页发起二次确认；列表操作不得直接执行提交或确认。
+- `CONFIRMED` 后不允许任何修改或取消；发现错误时必须通过反向入库/出库或库存调整纠正，保留完整流水链路。
+- 确认入库单时，后端必须在同一事务内锁定入库单、库存余额和来源采购明细，生成 `stock_bill` / `stock_bill_item`，更新 `warehouse_stock.stock_qty`，并累加 `purchase_order_item.inbound_qty`。
+- 确认出库单时，后端必须在同一事务内锁定出库单、库存余额和来源销售明细，生成 `stock_bill` / `stock_bill_item`，扣减 `warehouse_stock.stock_qty`，并同步扣减销售锁定库存。
 - 销售单占用库存时只更新 `warehouse_stock.locked_qty`；确认出库后再扣减 `stock_qty` 和 `locked_qty`。
-- 销售退货后续使用 `SALES_RETURN` 入库流水，确认后增加库存。
-- 采购退货后续使用 `PURCHASE_RETURN` 出库流水，确认后扣减库存。
-- 库存调整使用 `ADJUST_IN` 或 `ADJUST_OUT` 出入库流水。
-- 出入库流水号由后端统一生成，并由 `uk_stock_bill_no` 唯一索引兜底。正常采购、销售和退货流水由对应业务单据生成，`entry_mode=SOURCE_GENERATED`。
-- 当采购、销售或退货业务因线下操作、系统故障等原因遗漏登记时，允许在出入库页面手工补录四类业务凭证，`entry_mode=MANUAL_SUPPLEMENT`。补录必须填写原业务单号和补录原因，`source_id` 为空，`source_type` 按出入库类型推导；列表显示低权重“人工录入”提示，详情保留录入方式、补录原因和负责人用于追溯。
-- 库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`，仅允许 `ADJUST_IN`、`ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`，调整单号由后端生成，调整原因必填。列表同样显示“人工录入”提示；只有 `entry_mode=SOURCE_GENERATED` 的正常业务来源凭证不显示人工标记。
-- 所有手工补录和库存调整的 `responsible_by_id/name` 必须由后端根据当前登录用户写入，前端只读展示且不得提交或代填；来源生成凭证的负责人由来源业务单据负责人带入。
-- 产品数量必须符合 `product.quantity_precision`；凭证明细保存 `quantity_precision` 快照。数据库统一使用 100 倍整数存储数量，Service 层入库前乘 100、返回接口前除以 100；前端和 OpenAPI 始终使用真实业务值。离散单位精度为 0 时，本次数量、合格数量和不合格数量均只能为整数。
-- 出入库状态只允许 `DRAFT -> CONFIRMED` 或 `DRAFT -> CANCELLED`。`DRAFT` 和 `CANCELLED` 不改变库存余额；确认时后端锁定草稿和库存记录，在同一事务内更新 `warehouse_stock`、明细 `before_qty/change_qty/after_qty` 以及采购或销售来源明细的已出入库数量。
-- 确认和取消接口必须幂等；重复确认不得再次增减库存，重复取消不得重复写状态。并发状态冲突由后端返回 `409 Conflict`。
-- 仅 `DRAFT` 可以编辑。来源业务单据生成的草稿只能维护实际数量、质量数量和备注，不能更换来源、仓库、类型或产品；库存调整草稿允许维护产品明细。`CONFIRMED` 和 `CANCELLED` 均不可编辑。
-- 已确认凭证不能直接取消或改回草稿；发现错误时新增相反方向的库存调整凭证纠正，保留原始凭证和完整库存变动链路。
-- 出入库记录列表按主表分页，明细数量可按 `stock_bill_item.bill_id` 聚合；不同产品单位不得在列表或摘要中直接汇总数量。
+- 手工补录使用 `entry_mode=MANUAL_SUPPLEMENT`，必须填写原业务单号和补录原因，`source_id` 可为空。
+- 库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`，只允许 `ADJUST_IN` 或 `ADJUST_OUT`，调整原因必填，`source_party_id/name` 保存受影响仓库 ID 和名称快照；库存调整是单仓库余额增减，不自动生成反向入库单或出库单，跨仓移动应由后续库存调拨单承载。
+- 所有手工补录和库存调整的 `responsible_by_id/name` 必须由后端根据当前登录用户写入，前端只读展示且不得提交或代填。
+- 产品数量必须符合 `product.quantity_precision`；离散单位精度为 0 时，本次数量、合格数量和不合格数量均只能为整数。
+- 确认和取消接口必须幂等；并发状态冲突由后端返回 `409 Conflict`。
 - 可用库存由服务层计算：`stock_qty - locked_qty`。
-- `warehouse_stock` 不增加单一库存状态字段；库存健康和占用情况是可同时成立的独立维度，统一在查询时根据数量派生，避免状态值与库存事实不一致。
-- 库存健康分为：正常库存（`available_qty > safety_stock_qty`）、低库存（`0 < available_qty <= safety_stock_qty`）、无可用库存（`stock_qty > 0` 且 `available_qty = 0`）、零库存（`stock_qty = 0`）。
-- 占用情况分为：未锁定（`locked_qty = 0`）、部分锁定（`0 < locked_qty < stock_qty`）、全部锁定（`stock_qty > 0` 且 `locked_qty = stock_qty`）。
-- 其中 `available_qty` 表示服务层计算的 `stock_qty - locked_qty`；库存预警先不落表，并关联 `product.safety_stock_qty` 实时判断。
+- `warehouse_stock` 不增加单一库存状态字段；库存健康和占用情况在查询时根据数量派生，避免状态值与库存事实不一致。
 
 ## 测试场景
 
-- 可以按仓库编码、名称、联系人、联系电话和状态组合查询仓库。
-- 可以新增、编辑、启用和停用仓库；新增时展示系统生成提示，编辑时仓库编码保持只读。
-- 并发创建仓库时仍由仓库编码唯一索引兜底，后端发生冲突后重新生成，不要求用户处理编码重复。
-- 有库存余额或出入库记录的仓库不能删除；无引用仓库可以逻辑删除。
-- 采购订单可以生成采购入库流水，确认后库存增加。
-- 销售订单可以生成销售出库流水，确认后库存减少。
-- 出入库流水明细可以看到每个产品的合格数量、不合格数量、变动前、变动数量、变动后库存。
-- 出入库流水可以通过 `source_id/source_no` 反查采购单、销售单或退货单。
-- 出入库记录可以按流水号、来源单号、仓库、出入库类型、录入方式和状态独立查询；录入方式直接精确匹配 `stock_bill.entry_mode` 的三种值，多个条件按 AND 组合，并可查看完整产品明细。
-- 库存调整不新增独立页面，统一在出入库记录页面通过 `entryMode=MANUAL_ADJUSTMENT` 筛选调整凭证，并允许按调整流水号、调整单号、仓库、`ADJUST_IN/ADJUST_OUT` 调整方向和状态组合查询。
-- 可以在出入库记录页面新增调整入库、调整出库，或补录遗漏的采购入库、销售出库、采购退货、销售退货草稿；补录记录显示明确标识、原业务单号、原因和负责人。
-- 可以在出入库记录页面新增、编辑、确认和取消调整草稿。
-- 箱、瓶等数量精度为 0 的产品使用输入箭头时按 1 增减，并拒绝小数；可拆分单位按产品设置的小数位增减和校验。
-- 草稿可以编辑并确认或取消；已确认和已取消凭证不能编辑，已确认错误使用反向调整纠正。
-- 草稿和取消流水的实际变动数量为 0，已确认入库为正数、已确认出库为负数。
-- 销售退货和采购退货可以通过同一套出入库流水类型扩展。
-- 库存列表可以按仓库、产品编码、产品名称查询。
-- 库存列表可以分别按库存健康和占用情况查询；两个维度可组合筛选，并与其他有效条件按 AND 组合。
-- 同一条库存可以同时是低库存和部分锁定，也可以同时是无可用库存和全部锁定，页面不得用单一状态互相覆盖。
-- 库存摘要只统计记录数、去重仓库数、去重产品数和低库存记录数，不跨单位汇总产品数量。
+- 采购订单审核后，只能看到待确认入库单，库存余额和库存流水不会立即变化。
+- 入库单列表列名使用“入库量”，来源对象主列固定显示为“供应商”，库存调整显示受影响仓库名称，只显示本次入库数量摘要；商品展开行与详情必须按字段独立显示采购数量、生成本单前累计已入库、本次入库数量、合格数量、不合格数量和确认本单后剩余未入库数量，非质检适用类型的合格/不合格列显示为不适用。
+- 入库单确认后，库存增加，库存流水生成，采购订单明细累计已入库数量增加。
+- 部分入库时采购订单显示部分入库，剩余数量可继续生成下一张入库单。
+- 销售订单审核后，只能看到待确认出库单，库存余额不会立即扣减。
+- 出库单列表列名使用“出库量”，来源对象主列固定显示为“客户”，库存调整显示受影响仓库名称，只显示本次出库数量摘要；商品展开行与详情必须按字段独立显示销售数量、生成本单前累计已出库、本次出库数量和确认本单后剩余未出库数量；为保持入库/出库页面列结构一致，合格/不合格列可显示为不适用。
+- 出库单确认后，库存减少，库存流水生成，销售订单明细累计已出库数量增加。
+- 已确认入库单、出库单和库存流水都不能编辑或取消。
+- 草稿和待确认入库单/出库单的实际库存变动数量为 0；库存流水只保留已确认事实。
+- 库存列表可以按仓库、产品编码、产品名称、库存健康和占用情况组合查询。
 - AI 查询库存时读取 `warehouse_stock`，并校验 `ai:query:stock` 或 `warehouse:query` 权限。

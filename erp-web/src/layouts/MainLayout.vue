@@ -75,7 +75,8 @@ const menus: MenuItem[] = [
     children: [
       { index: '/warehouse/warehouses', title: '仓库管理' },
       { index: '/warehouse/stocks', title: '库存管理' },
-      { index: '/warehouse/stock-bills', title: '出入库记录' },
+      { index: '/warehouse/inbound-bills', title: '入库单' },
+      { index: '/warehouse/outbound-bills', title: '出库单' },
     ],
   },
   {

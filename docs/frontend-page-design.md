@@ -45,11 +45,12 @@ erp-web
 - 列表页的四项概览合并为单条摘要栏，筛选区和表格各保留一个容器，减少卡片堆叠和页面碎片感
 - 页面优先使用列表页、筛选区、表单弹窗、详情抽屉、状态标签和确认弹窗，服务高频业务处理
 - 中等宽度下筛选区自动切换为规整两列；筛选下拉使用 shadcn `Popover + Command` 组合并固定从触发框下方等宽展开；输入焦点仅显示柔和模糊辉光
-- 用户与角色列表底栏保持 `52px` 轻量尺寸，左侧提供总数和每页条数选择，中间使用 shadcn 原生分页组件，右侧展示总页数
+- 分页底栏保持 `52px` 轻量尺寸。需要精确页码的页面可展示总数和总页数；仓库、库存余额等无总数分页页面只展示本页条数、每页条数、上一页、当前页和下一页，不要求后端额外统计总记录数
 - 页面跳转保留短时加载遮罩与淡入反馈，侧栏子菜单使用基于内容高度的折叠动画，避免固定最大高度造成布局卡顿
 - 所有弹窗受视口最大高度约束，长表单和权限列表必须支持纵向滚动，不能截断底部操作区
 - 表格工具栏复用 shadcn `Button` 与 `Tooltip`，可操作按钮悬停时加深背景或边框，禁用批量操作提示需要先选择数据
 - 所有 shadcn 文字按钮统一使用 `13px` 常规字重，行内操作、工具栏和弹窗按钮仅通过组件变体与尺寸区分操作层级
+- 行内操作颜色按语义统一：详情使用青色强调，编辑使用默认文字色，启用/提交/确认等正向动作使用主色或绿色，停用使用琥珀色，取消/删除使用危险色；采购和仓库模块不得出现整组操作按钮全黑或额外图标混用。
 - 新增和编辑表单提交前统一执行 `trim`、必填、长度、格式与数组非空校验；账号、角色编码等唯一字段冲突回填到对应字段，不只显示全局提示
 - 查询操作使用短防抖并忽略过期响应，保存、确认、重置密码等异步动作在处理中禁用触发按钮，避免重复请求
 - 视觉上避免营销页式大面积装饰，重点突出信息密度、可读性和操作确定性
@@ -568,7 +569,7 @@ POST   /products/batch/delete
 - 仓库编码由后端创建时统一生成并由唯一索引兜底；新增弹窗只显示“保存后由系统生成”，创建和编辑请求都不提交 `warehouseCode`，编辑时仅只读展示已有编码。
 - 仓库名称修改时，后端在同一事务内同步 `warehouse_stock.warehouse_name`；历史 `stock_bill.warehouse_name` 继续作为业务发生时的快照保留。
 - 停用仓库前提示该仓库不能继续用于新建采购、销售、退货和库存调整业务，历史单据与现有库存不受影响；编辑弹窗内停用时底层表单进入 `inert` 状态。
-- 删除只允许无库存余额且无出入库记录的仓库；前端显示通用风险说明，后端执行最终关联校验并在存在引用时返回 `409 Conflict`。
+- 删除只允许无库存余额且无入库单、出库单和库存流水记录的仓库；前端显示通用风险说明，后端执行最终关联校验并在存在引用时返回 `409 Conflict`。
 - 查询使用 250ms 防抖，分页使用 180ms 防抖；点击后立即显示数据区加载层并锁定重复操作，写操作统一使用提交锁。
 
 ### 14.3 字段映射
@@ -596,7 +597,7 @@ PATCH  /warehouse/warehouses/batch/status
 POST   /warehouse/warehouses/batch/delete
 ```
 
-查询接口需要 `warehouse:query`，写接口需要 `warehouse:manage`。仓库编码由后端生成并由唯一索引兜底，删除引用保护返回 `409 Conflict`。
+查询接口需要 `warehouse:query`，写接口需要 `warehouse:manage`。仓库编码由后端生成并由唯一索引兜底，删除引用保护返回 `409 Conflict`。仓库管理列表使用无总数分页，后端不需要为了底部分页额外查询总记录数；顶部摘要只展示本页启用、停用、联系方式完整和联系方式待补等业务指标。
 
 ## 15. 仓库库存模块：库存管理
 
@@ -611,7 +612,7 @@ POST   /warehouse/warehouses/batch/delete
 - 库存健康和占用情况是两个独立派生维度，不在 `warehouse_stock` 增加单一状态字段。同一条库存可同时显示“低库存 + 部分锁定”或“无可用库存 + 全部锁定”。
 - 风险行使用低饱和背景辅助识别：低库存和无可用库存使用浅黄色，零库存使用浅红色；状态标签仍保留对应文字，不能只依赖颜色表达。
 - 仓库使用 `warehouseId` 精确筛选，产品编码和产品名称分别使用包含匹配，库存健康和占用情况分别使用明确派生条件筛选，多个条件按 AND 组合，不提供跨字段 `keyword`。
-- 不同产品的单位可能不同，摘要区只展示库存记录数、涉及仓库数、涉及产品数和低库存记录数，不跨产品汇总库存数量。
+- 不同产品的单位可能不同，摘要区只展示涉及仓库数、涉及产品数、低库存记录数、锁定记录数等当前页业务信号，不展示当前页库存记录数，也不跨产品汇总库存数量。
 - 页面展示 `warehouse_stock` 中的仓库、产品和单位快照；产品或仓库名称变更时由后端按数据库规则维护当前余额快照，历史出入库凭证仍保留业务发生时快照。
 - 查询、重置、刷新和分页均使用短防抖，点击后立即显示数据区加载层并锁定重复操作。
 
@@ -637,90 +638,152 @@ POST   /warehouse/warehouses/batch/delete
 GET /warehouse/stocks
 ```
 
-接口需要 `warehouse:query` 权限。响应摘要基于当前全部筛选结果计算，不得只统计当前分页记录。
+接口需要 `warehouse:query` 权限。库存余额采用无总数分页，后端不需要返回精确 `total`，也不需要为了列表执行额外 `COUNT(*)`；顶部响应摘要只基于当前页 `records` 派生业务指标，不展示当前页记录数。
 
-## 16. 仓库库存模块：出入库记录
+## 16. 仓库库存模块：入库单与出库单
 
 ### 16.1 页面范围
 
-出入库记录页面路径为 `/warehouse/stock-bills`，用于处理出入库草稿并追溯采购入库、销售出库、采购退货、销售退货和库存调整形成的库存凭证。页面包含流水摘要、字段级筛选、分页列表、刷新、新增出入库、编辑草稿、确认、取消和凭证明细弹窗。
+入库单页面路径为 `/warehouse/inbound-bills`，出库单页面路径为 `/warehouse/outbound-bills`。两个页面复用同一套页面组件，但在导航、标题、筛选类型、确认按钮和数量文案上按方向区分。
+
+入库单承接采购入库、销售退货入库和调整入库；出库单承接销售出库、采购退货出库和调整出库。采购订单或销售订单审核后只生成 `PENDING_CONFIRM` 的入库单/出库单，不直接改变库存；仓库人员确认本次数量后才生成库存流水并更新 `warehouse_stock`。
 
 ### 16.2 页面与数据边界
 
-- 主列表来源于 `stock_bill`；明细条数由后端按 `stock_bill_item.bill_id` 聚合，详情按流水 ID 查询全部 `stock_bill_item`。
-- 流水号和来源单号分别使用包含匹配，仓库、出入库类型、录入方式和状态使用精确匹配；录入方式提供系统自动录入、人工补录、人工调整三项，多个有效条件按 AND 组合，不提供跨字段 `keyword`。
-- 入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`，出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`；状态严格使用数据库值 `DRAFT`、`CONFIRMED`、`CANCELLED`。
-- 摘要只统计流水数、入库流水数、出库流水数和已确认流水数。不同产品可能使用不同单位，列表和摘要不得跨明细汇总数量。
-- 详情展示 `quantity`、`qualified_qty`、`defective_qty`、`before_qty`、`change_qty` 和 `after_qty`；入库变动为正、出库变动为负，草稿和取消流水不应形成实际库存变动。
+- 入库单主列表来源于 `inbound_bill`，明细来源于 `inbound_bill_item`；出库单主列表来源于 `outbound_bill`，明细来源于 `outbound_bill_item`。
+- 入库单和出库单都必须展示来源对象，但页面文案不能使用泛化“往来方”：入库单主列表来源对象列固定命名为“供应商”，出库单主列表来源对象列固定命名为“客户”；库存调整单的来源对象显示为“调整仓库”，取受影响仓库名称快照。
+- 列表采用“单据父行 + 商品明细区”的主从表格：父行只按入库单/出库单主表字段拆成独立列，展示单号、类型、录入方式、来源类型、来源单号、供应商或客户、仓库、状态、负责人、创建时间和操作；不得把“类型/来源”“供应商或客户/仓库”“状态/操作”等不同字段混在同一列。字段较多时通过横向滚动承载，不压缩为组合文案。
+- 商品明细区默认全部收起，父行提供展开/收起明细控制；展开后使用紧凑明细表展示产品编码、产品名称、单位、本次入库量或出库量、合格数量、不合格数量、确认本单后的剩余未入库/未出库和明细备注。合格数量和不合格数量必须按 `qualified_qty`、`defective_qty` 拆成独立列，不得拼接成“质检”汇总字段；非采购入库、非销售退货入库的单据类型在质检数量列显示 `-`。
+- 入库单/出库单属于宽表时，表格区域自身必须有可滚动视口，表头固定在当前表格顶部且背景必须为不透明实底色，只滚动数据行；每页 10 条主单在默认明细收起时应尽量完整展示，超过一页高度后才使用表格内纵向滚动。
+- 父行的入库量/出库量只展示同单位总量或“若干条商品”，不得把产品编码、产品名称和多个明细数量拼进父行数量列；商品明细由前端在当前页按需调用详情接口补齐，不要求列表接口额外返回完整明细。
+- 详情必须展示本单对来源订单明细的影响：计划数量、生成本单前累计已处理、本次数量和确认本单后剩余未处理。入库页面文案为采购数量、累计已入库、本次入库数量、确认后剩余未入库；出库页面文案为销售数量、累计已出库、本次出库数量、确认后剩余未出库。
+- 单据号和来源单号分别使用包含匹配，仓库、类型、录入方式和状态使用精确匹配；录入方式提供来源生成、人工补录、人工调整三项，多个有效条件按 AND 组合，不提供跨字段 `keyword`。
+- 入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`，出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`；状态严格使用数据库值 `DRAFT`、`PENDING_CONFIRM`、`CONFIRMED`、`CANCELLED`。
+- 顶部摘要复用全站列表页的单条摘要栏样式，只统计当前页单据数、待确认数、已确认数和已取消数。不同产品可能使用不同单位，父行入库量/出库量只可展示单一单位合计或商品条数，不得跨单位形成虚假的总数。
+- 详情展示 `plan_qty`、`processed_qty`、`current_qty`、`pending_qty`、`qualified_qty`、`defective_qty`；其中 `pending_qty` 表示确认本单后来源订单明细预计剩余未入库/未出库数量。确认后可展示关联库存流水的 `before_qty`、`change_qty` 和 `after_qty`。
 - 仓库名称、产品编码、产品名称和单位使用业务发生时保存的快照字段，后续主数据改名不回写历史凭证。
-- 正常采购、销售和退货流水由来源单据生成；原业务遗漏登记时，新增按钮允许补录对应四类出入库草稿。补录必须填写原业务单号和补录原因，列表统一显示“人工录入”提示，详情展示具体“手工补录”方式，`source_id` 为空，来源类型由出入库类型推导。
-- 库存调整允许创建 `ADJUST_IN` 或 `ADJUST_OUT` 草稿，来源类型固定为 `STOCK_ADJUST`，流水号和调整单号由后端生成，调整原因必填。
+- 正常采购、销售和退货单由来源单据审核后生成 `PENDING_CONFIRM` 入库单或出库单，不生成草稿；原业务遗漏登记时，新增按钮允许按方向补录对应入库单或出库单草稿。补录必须填写原业务单号和补录原因，列表通过“录入方式”列展示来源生成、人工补录或人工调整，详情展示具体录入方式，`source_id` 为空，来源类型由单据类型推导。
+- 库存调整按方向进入入库单或出库单页面：调整入库使用 `ADJUST_IN`，调整出库使用 `ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`，调整单号由后端生成，调整原因必填，来源对象快照保存受影响仓库名称。
 - 手工补录和库存调整的负责人由后端按当前登录用户写入，页面只读展示，不允许人工代填；列表中的创建信息排列在确认信息前。
 - 数量输入按产品 `quantity_precision` 控制步长和校验。箱、瓶等精度为 0 的产品按 1 增减且拒绝小数；kg 等精度为 2 的产品按 0.01 增减。接口传业务真实值，后端按 100 倍整数写入数据库。
-- 仅 `DRAFT` 行显示编辑、确认和取消。来源业务单据生成的草稿只能编辑实际数量、质量数量和备注；手工补录和库存调整草稿允许增删产品明细。确认和取消都使用独立写接口、提交锁和二次确认。
-- 状态不使用普通下拉任意修改，只允许 `DRAFT -> CONFIRMED` 或 `DRAFT -> CANCELLED`。确认接口在事务中更新库存和来源单据；已确认凭证出现错误时新增反向调整，不直接修改历史状态。
+- 编辑弹窗必须按状态控制字段：`DRAFT` 可修改仓库；手工补录和库存调整草稿可维护产品明细、来源/调整原因、数量和备注；来源生成单据不能增删或更换产品。进入 `PENDING_CONFIRM` 后仓库、来源信息和产品结构锁定，只允许有权限人员调整本次数量、合格数量、不合格数量和备注。`CONFIRMED` 后不允许任何修改。
+- 点击提交确认、确认入库或确认出库时，列表按钮只能打开详情弹窗；详情必须展示完整单头和全部明细，并在详情底部提供对应动作按钮，再弹出二次确认。不得在列表上直接执行提交或确认。
+- 明细备注过长时列表和详情只显示摘要，通过组件库 Tooltip 或等价悬浮层展示完整内容。
+- `DRAFT` 行显示编辑、提交确认和取消；`PENDING_CONFIRM` 行显示编辑、确认入库/出库和取消。来源业务单据生成的待确认单只能编辑本次数量、质量数量和备注；手工补录和库存调整草稿允许增删产品明细。
+- 状态不使用普通下拉任意修改，只允许 `DRAFT -> PENDING_CONFIRM`、`PENDING_CONFIRM -> CONFIRMED` 或 `DRAFT/PENDING_CONFIRM -> CANCELLED`。提交确认前必须校验仓库、来源/原因、产品明细、本次数量和质检数量，不改变库存；确认接口在事务中更新库存、生成库存流水并回写来源单据；已确认单据出现错误时新增反向调整，不直接修改历史状态。
 - 查询、重置、刷新和分页均使用短防抖，点击后立即显示数据区加载层并锁定重复操作；详情加载使用独立状态。
 
 ### 16.3 字段映射
 
 | 页面字段 | 后端来源 |
 |---|---|
-| 流水ID、流水号 | `stock_bill.id`、`stock_bill.bill_no`，BIGINT ID 按字符串传输 |
-| 出入库类型 | `stock_bill.bill_type` |
-| 来源类型、ID、单号 | `stock_bill.source_type`、`source_id`、`source_no` |
-| 录入方式 | `stock_bill.entry_mode`：来源生成、手工补录、手工调整 |
-| 仓库ID、名称 | `stock_bill.warehouse_id`、`warehouse_name` |
-| 状态 | `stock_bill.status` |
-| 明细数 | 按 `stock_bill_item.bill_id` 聚合 |
-| 确认人、确认时间 | `stock_bill.confirmed_by_id`、`confirmed_by_name`、`confirmed_at` |
-| 创建人、创建时间 | `stock_bill.created_by_id`、`created_by_name`、`create_time` |
-| 负责人、补录/调整原因 | `stock_bill.responsible_by_id`、`responsible_by_name`、`manual_reason` |
-| 产品及单位精度快照 | `stock_bill_item.product_id`、`product_code`、`product_name`、`unit_name`、`quantity_precision` |
-| 本次、合格、不合格数量 | `stock_bill_item.quantity`、`qualified_qty`、`defective_qty` |
-| 变动前、变动量、变动后 | `stock_bill_item.before_qty`、`change_qty`、`after_qty` |
+| 入库单ID、单号 | `inbound_bill.id`、`inbound_bill.inbound_no`，BIGINT ID 按字符串传输 |
+| 出库单ID、单号 | `outbound_bill.id`、`outbound_bill.outbound_no`，BIGINT ID 按字符串传输 |
+| 入库/出库类型 | `inbound_bill.inbound_type`、`outbound_bill.outbound_type` |
+| 来源类型、ID、单号 | `source_type`、`source_id`、`source_no` |
+| 供应商/客户/调整仓库 | `source_party_id`、`source_party_name`；库存调整时保存受影响仓库 ID 和名称快照 |
+| 录入方式 | `entry_mode`：来源生成、人工补录、人工调整 |
+| 仓库ID、名称 | `warehouse_id`、`warehouse_name` |
+| 状态 | `status` |
+| 明细数 | 按入库单或出库单明细聚合 |
+| 确认人、确认时间 | `confirmed_by_id`、`confirmed_by_name`、`confirmed_at` |
+| 创建人、创建时间 | `created_by_id`、`created_by_name`、`create_time` |
+| 负责人、补录/调整原因 | `responsible_by_id`、`responsible_by_name`、`manual_reason` |
+| 产品及单位精度快照 | 明细表 `product_id`、`product_code`、`product_name`、`unit_name`、`quantity_precision` |
+| 计划、累计、本次、剩余数量 | `plan_qty`、`processed_qty`、`current_qty`、`pending_qty` |
+| 合格、不合格数量 | `qualified_qty`、`defective_qty` |
 
 ### 16.4 接口
 
 ```text
-GET /warehouse/stock-bills
-POST /warehouse/stock-bills
+GET /warehouse/inbound-bills
+POST /warehouse/inbound-bills
+GET /warehouse/outbound-bills
+POST /warehouse/outbound-bills
 GET /warehouse/stock-bills/{stockBillId}
 PUT /warehouse/stock-bills/{stockBillId}
+POST /warehouse/stock-bills/{stockBillId}/submit
 POST /warehouse/stock-bills/{stockBillId}/confirm
 POST /warehouse/stock-bills/{stockBillId}/cancel
 ```
 
-查询和详情需要 `warehouse:query` 权限，新增、编辑、确认和取消需要 `warehouse:manage` 权限。列表摘要基于当前全部筛选结果计算，详情必须返回完整主表信息和全部明细。
+## 17. 仓库库存模块：库存调整（合并至入库单/出库单）
 
-## 17. 仓库库存模块：库存调整（合并至出入库记录）
-
-库存调整不新增独立页面，统一在出入库记录页面（`/warehouse/stock-bills`）中通过 `entryMode=MANUAL_ADJUSTMENT` 筛选调整凭证，用于处理盘盈、盘亏、破损、账实差异和其他需要人工修正库存的场景。
+库存调整不新增独立页面。调整入库在入库单页面（`/warehouse/inbound-bills`）中创建 `ADJUST_IN`，调整出库在出库单页面（`/warehouse/outbound-bills`）中创建 `ADJUST_OUT`，并通过 `entryMode=MANUAL_ADJUSTMENT` 筛选调整单据。
 
 ### 17.1 数据与接口边界
 
-- 不新增库存调整专表，复用 `stock_bill` 与 `stock_bill_item`，查询调整凭证时提交 `entryMode=MANUAL_ADJUSTMENT`。
-- 调整类型只允许 `ADJUST_IN` 和 `ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`；调整流水号和调整单号由后端生成。
-- 出入库记录页面同时展示来源生成凭证、人工补录凭证和库存调整凭证，通过录入方式筛选区分。
-- 摘要基于全部筛选结果统计流水记录数、入库记录数、出库记录数和已确认数，不跨不同产品单位汇总数量。
+- 不新增库存调整专表，复用 `inbound_bill` / `outbound_bill` 与对应明细；确认后生成 `stock_bill` / `stock_bill_item`。库存调整是单仓库库存增减，不自动生成反向入库单或出库单；如果业务需要 A 仓到 B 仓移动，应后续新增“库存调拨单”来关联调出和调入两边。
+- 调整类型只允许 `ADJUST_IN` 和 `ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`；调整流水号和调整单号由后端生成；`source_party_id/name` 记录受影响仓库 ID 和名称快照，前端显示为“调整仓库”。
+- 入库单/出库单页面同时展示来源生成单据、人工补录单据和库存调整单据，通过录入方式筛选区分。
+- 摘要基于当前页 `records` 统计待确认、已确认、已取消和来源生成等业务指标，不展示当前页单据数，不跨不同产品单位汇总数量；分页器是否展示总数由对应列表契约决定。
 
 ### 17.2 页面操作
 
-- 新增出入库时可选调整入库和调整出库，负责人由后端按当前登录用户写入，前端只读展示；调整原因和至少一条产品明细必填。
+- 新增入库单时可选调整入库，新增出库单时可选调整出库，负责人由后端按当前登录用户写入，前端只读展示；调整原因和至少一条产品明细必填。
 - 数量输入继续按产品 `quantity_precision` 控制，接口传业务真实值，后端按 100 倍整数持久化。
-- 草稿允许编辑产品、数量、明细备注、调整原因和凭证备注；仓库、调整方向、流水号和调整单号创建后不可修改。
-- 确认使用独立动作和二次确认，后端在事务内校验库存并更新余额；取消只允许草稿执行且不改变库存。
-- 已确认调整不能直接取消或改回草稿，发现错误时创建相反方向的库存调整保留完整追溯链路。
+- 草稿允许编辑仓库、产品、数量、明细备注、调整原因和凭证备注；调整方向、流水号和调整单号创建后不可修改。
+- 草稿提交确认后进入待确认状态但不改变库存；确认使用独立动作和二次确认，后端在事务内校验库存、更新余额并生成库存流水；取消只允许草稿或待确认状态执行且不改变库存。
+- 已确认调整不能直接取消或改回草稿，发现错误时创建相反方向的库存调整保留完整追溯链路；该反向调整由用户显式创建，不由系统在确认原调整时自动生成。
 - 长表单和详情使用共享 `DialogScrollArea`，查询、刷新、重置和分页使用统一防抖加载层。
 
 ### 17.3 接口
 
-库存调整复用出入库凭证接口，不新增重复端点：
+库存调整复用入库单/出库单接口，不新增重复端点：
 
 ```text
-GET /warehouse/stock-bills?entryMode=MANUAL_ADJUSTMENT
+GET /warehouse/inbound-bills?entryMode=MANUAL_ADJUSTMENT
+GET /warehouse/outbound-bills?entryMode=MANUAL_ADJUSTMENT
 POST /warehouse/stock-bills
 GET /warehouse/stock-bills/{stockBillId}
 PUT /warehouse/stock-bills/{stockBillId}
+POST /warehouse/stock-bills/{stockBillId}/submit
 POST /warehouse/stock-bills/{stockBillId}/confirm
 POST /warehouse/stock-bills/{stockBillId}/cancel
 ```
+
+## 18. 采购业务模块：供应商、供货产品与采购订单
+
+### 18.1 页面范围
+
+采购业务模块包含 `/purchase/suppliers` 供应商管理、`/purchase/supplier-products` 供货产品和 `/purchase/orders` 采购订单三个页面。三个页面都必须复用全站列表页结构：单条摘要栏、紧凑筛选区、固定表头表格、弹窗表单、详情弹窗和语义化行内操作。
+
+### 18.2 页面与数据边界
+
+- 供应商管理主表字段来自 `supplier`；供货产品主表字段来自 `supplier_product`，同时展示供应商和产品快照；采购订单主表字段来自 `purchase_order`，采购明细来自 `purchase_order_item`。
+- 查询区使用全站 `filter-grid` 紧凑布局，采购模块统一使用与产品、系统权限模块接近的筛选控件宽度；供应商编码、供应商名称、产品名称、采购单号等独立参数按接口字段提交，不提供跨字段 `keyword`。
+- 详情弹窗优先使用 shadcn-vue 的 `Dialog`、`DialogScrollArea`、`Badge`、`Table` 和全局详情字段样式，不手写临时大块布局。字段按数据库表拆分显示，不把多个业务字段拼成一个混合列。
+- 供应商详情和供货产品详情要用分组字段块展示基础信息、联系信息、评分、创建/更新时间和备注；长备注只在字段块内自动换行或摘要展示，避免撑破弹窗。
+- 采购订单列表列宽按数据含义分配：采购单号、供应商、入库仓库、状态、订单金额、预计到货、创建人、更新时间和操作必须分列；字段较多时允许横向滚动，但不能把供应商、仓库、状态或操作混在同一列。
+- 采购订单新增/编辑弹窗只在单头维护 `expectedArrivalDate`，标签显示为“预计到货”，下方展示日期示例；采购明细不再出现预计到货字段。
+- 采购订单单头供应商和明细产品必须按启用的 `supplier_product` 双向过滤：先选供应商时，明细产品下拉只展示该供应商维护的启用供货产品；先选产品时，供应商下拉只展示能供应当前全部明细产品的供应商；切换供应商时要同步更新或清空不匹配明细，避免生成虚假的供应商-产品组合。
+- 采购订单表单必须能取得当前启用的 `supplier_product` 关系全集；数据量超过单页时前端应继续分页加载，或由后端提供等价的启用供货关系选项接口，不能只按第一页结果过滤供应商和产品。
+- 采购明细表格复用组件库表格，产品、数量、采购价、推荐分、小计、备注等列必须和数据居中或按语义对齐；数值列居中或右对齐，不能出现表头和数据错位。
+- `DRAFT` 采购单允许采购创建权限编辑；`SUBMITTED` 采购单仍可由具备审核/审批权限的人编辑供应商、入库仓库、预计到货、备注和明细；`APPROVED`、`PARTIAL_INBOUND`、`INBOUND_DONE`、`CANCELLED` 不允许直接编辑。
+- 提交和审核不能在列表上直接执行。点击“提交”或“审核”时必须先打开采购单详情弹窗，展示完整单头和全部采购明细；详情底部提供对应动作按钮，再弹出二次确认。预计到货为空时，详情底部显示明确提示并禁用提交/审核按钮。
+- 采购订单提交时前端先校验单头预计到货、供应商、入库仓库和明细；后端仍必须在提交和审核接口中重复校验。审核通过只生成仓库模块待确认入库单，不直接改变库存。
+- 采购订单、供应商和供货产品都是分页列表，顶部摘要只展示当前页业务指标，不展示当前页记录数，也不得把“全筛选范围统计”放进摘要栏；分页器总数仅用于页码导航，不参与摘要。
+
+### 18.3 接口
+
+```text
+GET /purchase/suppliers
+POST /purchase/suppliers
+GET /purchase/suppliers/{supplierId}
+PUT /purchase/suppliers/{supplierId}
+PATCH /purchase/suppliers/{supplierId}/status
+GET /purchase/supplier-products
+POST /purchase/supplier-products
+GET /purchase/supplier-products/{supplierProductId}
+PUT /purchase/supplier-products/{supplierProductId}
+PATCH /purchase/supplier-products/{supplierProductId}/status
+GET /purchase/orders
+POST /purchase/orders
+GET /purchase/orders/{purchaseOrderId}
+PUT /purchase/orders/{purchaseOrderId}
+POST /purchase/orders/{purchaseOrderId}/submit
+POST /purchase/orders/{purchaseOrderId}/approve
+POST /purchase/orders/{purchaseOrderId}/cancel
+```
+
+供应商和供货产品查询需要 `supplier:query` 权限，维护 MVP 阶段复用 `purchase:create` 权限；采购订单查询需要 `purchase:query` 权限，创建、编辑、提交、取消需要 `purchase:create` 权限，审核需要审核/审批权限。详情接口必须返回完整主表信息和全部明细，供提交/审核前预览使用。

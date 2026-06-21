@@ -7,7 +7,7 @@
 ## 简化原则
 
 - MVP 设计 4 张表：`supplier`、`supplier_product`、`purchase_order`、`purchase_order_item`。
-- 采购入库单不在采购模块单独建表，统一使用仓库模块 `stock_bill` / `stock_bill_item`，类型为 `PURCHASE_IN`。
+- 采购入库单不在采购模块单独建表，统一使用仓库模块 `inbound_bill` / `inbound_bill_item`，类型为 `PURCHASE_IN`；确认后再生成库存流水 `stock_bill` / `stock_bill_item`。
 - `supplier_product` 用来记录“某供应商可以供应某产品”的价格、交期和评分，是 AI 选择供应商的核心基础表。
 - 采购订单主表冗余供应商、仓库名称，明细冗余产品信息，减少列表查询联表。
 - MVP 暂不设计供应商合同、报价历史、付款单、发票、审批流。
@@ -54,83 +54,82 @@
 
 ## 表：supplier_product（供应商供货产品表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 供应商供货产品ID |
-| supplier_id | bigint | 供应商ID |
-| supplier_code | varchar(64) | 供应商编码，冗余 |
-| supplier_name | varchar(200) | 供应商名称，冗余 |
-| product_id | bigint | 产品ID |
-| product_code | varchar(64) | 产品编码，冗余 |
-| product_name | varchar(200) | 产品名称，冗余 |
-| unit_name | varchar(32) | 单位名称，冗余 |
-| supplier_product_code | varchar(100) | 供应商侧产品编码 |
-| latest_purchase_price | decimal(18,2) | 最近采购单价 |
-| min_order_qty | decimal(18,4) | 最小起订量 |
-| lead_time_days | int | 预计交期天数 |
-| delivery_score | int | 该产品维度交付评分，放大 100 倍保存 |
-| quality_score | int | 该产品维度质量评分，放大 100 倍保存 |
-| price_score | int | 该产品维度价格评分，放大 100 倍保存 |
-| ai_score | int | AI/规则综合推荐分，放大 100 倍保存 |
-| last_purchase_at | datetime | 最近采购时间 |
-| status | tinyint | 状态：1 启用，0 禁用 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| deleted | tinyint | 逻辑删除 |
-| remark | varchar(500) | 备注 |
+| 字段                    | 类型            | 说明                    |
+| --------------------- | ------------- | --------------------- |
+| id                    | bigint PK     | 供应商供货产品ID             |
+| supplier_id           | bigint        | 供应商ID                 |
+| supplier_code         | varchar(64)   | 供应商编码，冗余              |
+| supplier_name         | varchar(200)  | 供应商名称，冗余              |
+| product_id            | bigint        | 产品ID                  |
+| product_code          | varchar(64)   | 产品编码，冗余               |
+| product_name          | varchar(200)  | 产品名称，冗余               |
+| unit_name             | varchar(32)   | 单位名称，冗余               |
+| supplier_product_code | varchar(100)  | 供应商侧产品编码              |
+| latest_purchase_price | decimal(18,2) | 最近采购单价                |
+| min_order_qty         | decimal(18,4) | 最小起订量                 |
+| lead_time_days        | int           | 预计交期天数                |
+| delivery_score        | int           | 该产品维度交付评分，放大 100 倍保存  |
+| quality_score         | int           | 该产品维度质量评分，放大 100 倍保存  |
+| price_score           | int           | 该产品维度价格评分，放大 100 倍保存  |
+| ai_score              | int           | AI/规则综合推荐分，放大 100 倍保存 |
+| last_purchase_at      | datetime      | 最近采购时间                |
+| status                | tinyint       | 状态：1 启用，0 禁用          |
+| create_time           | datetime      | 创建时间                  |
+| update_time           | datetime      | 更新时间                  |
+| deleted               | tinyint       | 逻辑删除                  |
+| remark                | varchar(500)  | 备注                    |
 
 关系说明：建议唯一约束 `(supplier_id, product_id)`。采购建议或采购下单时，可以按 `product_id` 找到可供货供应商，再综合 `ai_score`、价格、交期、质量等字段选择供应商。
 
 ## 表：purchase_order（采购订单主表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 采购订单ID |
-| purchase_no | varchar(64) | 采购单号，唯一 |
-| supplier_id | bigint | 供应商ID |
-| supplier_code | varchar(64) | 供应商编码，冗余 |
-| supplier_name | varchar(200) | 供应商名称，冗余 |
-| warehouse_id | bigint | 目标入库仓库ID |
-| warehouse_name | varchar(100) | 目标入库仓库名称，冗余 |
-| status | varchar(32) | 状态：`DRAFT`、`SUBMITTED`、`APPROVED`、`PARTIAL_INBOUND`、`INBOUND_DONE`、`CANCELLED` |
-| total_amount | decimal(18,2) | 订单总金额 |
-| expected_arrival_date | date | 预计到货日期 |
-| created_by_id | bigint | 创建人ID |
-| created_by_name | varchar(100) | 创建人姓名 |
-| submitted_at | datetime | 提交时间 |
-| approved_by_id | bigint | 审核人ID |
-| approved_by_name | varchar(100) | 审核人姓名 |
-| approved_at | datetime | 审核时间 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| deleted | tinyint | 逻辑删除 |
-| remark | varchar(500) | 备注 |
+| 字段                    | 类型            | 说明                                                                             |
+| --------------------- | ------------- | ------------------------------------------------------------------------------ |
+| id                    | bigint PK     | 采购订单ID                                                                         |
+| purchase_no           | varchar(64)   | 采购单号，唯一                                                                        |
+| supplier_id           | bigint        | 供应商ID                                                                          |
+| supplier_code         | varchar(64)   | 供应商编码，冗余                                                                       |
+| supplier_name         | varchar(200)  | 供应商名称，冗余                                                                       |
+| warehouse_id          | bigint        | 目标入库仓库ID                                                                       |
+| warehouse_name        | varchar(100)  | 目标入库仓库名称，冗余                                                                    |
+| status                | varchar(32)   | 状态：`DRAFT`、`SUBMITTED`、`APPROVED`、`PARTIAL_INBOUND`、`INBOUND_DONE`、`CANCELLED` |
+| total_amount          | decimal(18,2) | 订单总金额                                                                          |
+| expected_arrival_date | date          | 预计到货日期；草稿阶段可为空，提交和审核前必须校验非空                                                    |
+| created_by_id         | bigint        | 创建人ID                                                                          |
+| created_by_name       | varchar(100)  | 创建人姓名                                                                          |
+| submitted_at          | datetime      | 提交时间                                                                           |
+| approved_by_id        | bigint        | 审核人ID                                                                          |
+| approved_by_name      | varchar(100)  | 审核人姓名                                                                          |
+| approved_at           | datetime      | 审核时间                                                                           |
+| create_time           | datetime      | 创建时间                                                                           |
+| update_time           | datetime      | 更新时间                                                                           |
+| deleted               | tinyint       | 逻辑删除                                                                           |
+| remark                | varchar(500)  | 备注                                                                             |
 
-关系说明：采购订单审核后，可生成仓库模块 `stock_bill`，其中 `source_type = PURCHASE_ORDER`，`source_id = purchase_order.id`，`source_no = purchase_order.purchase_no`。
+关系说明：采购订单审核后，可生成仓库模块 `inbound_bill`，其中 `source_type = PURCHASE_ORDER`，`source_id = purchase_order.id`，`source_no = purchase_order.purchase_no`，并快照供应商、入库仓库、采购数量、累计已入库数量和剩余未入库数量。
 
 ## 表：purchase_order_item（采购订单明细表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 明细ID |
-| purchase_order_id | bigint | 采购订单ID |
-| purchase_no | varchar(64) | 采购单号，冗余 |
-| supplier_product_id | bigint | 供应商供货产品ID |
-| product_id | bigint | 产品ID |
-| product_code | varchar(64) | 产品编码，冗余 |
-| product_name | varchar(200) | 产品名称，冗余 |
-| unit_name | varchar(32) | 单位名称，冗余 |
-| quantity | decimal(18,4) | 采购数量 |
-| inbound_qty | decimal(18,4) | 已入库数量 |
-| unit_price | decimal(18,2) | 采购单价 |
-| total_amount | decimal(18,2) | 明细金额 |
-| selected_supplier_score | int | 下单时供应商推荐分快照，放大 100 倍保存 |
-| expected_arrival_date | date | 明细预计到货日期 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| remark | varchar(500) | 备注 |
+| 字段                      | 类型            | 说明                     |
+| ----------------------- | ------------- | ---------------------- |
+| id                      | bigint PK     | 明细ID                   |
+| purchase_order_id       | bigint        | 采购订单ID                 |
+| purchase_no             | varchar(64)   | 采购单号，冗余                |
+| supplier_product_id     | bigint        | 供应商供货产品ID              |
+| product_id              | bigint        | 产品ID                   |
+| product_code            | varchar(64)   | 产品编码，冗余                |
+| product_name            | varchar(200)  | 产品名称，冗余                |
+| unit_name               | varchar(32)   | 单位名称，冗余                |
+| quantity                | decimal(18,4) | 采购数量                   |
+| inbound_qty             | decimal(18,4) | 已入库数量                  |
+| unit_price              | decimal(18,2) | 采购单价                   |
+| total_amount            | decimal(18,2) | 明细金额                   |
+| selected_supplier_score | int           | 下单时供应商推荐分快照，放大 100 倍保存 |
+| create_time             | datetime      | 创建时间                   |
+| update_time             | datetime      | 更新时间                   |
+| remark                  | varchar(500)  | 备注                     |
 
-关系说明：仓库出入库流水明细 `stock_bill_item.source_item_id` 关联本表，用于从采购入库动作追溯到采购订单明细。
+关系说明：仓库入库单明细 `inbound_bill_item.source_item_id` 关联本表；入库确认后生成的 `stock_bill_item.business_source_item_id` 继续关联本表，用于从库存流水反查采购订单明细。
 
 ## 表间关系
 
@@ -141,16 +140,23 @@
 - `purchase_order_item.purchase_order_id` -> `purchase_order.id`
 - `purchase_order_item.supplier_product_id` -> `supplier_product.id`
 - `purchase_order_item.product_id` -> `product.id`
-- `stock_bill.source_id` -> `purchase_order.id`，当 `source_type = PURCHASE_ORDER`
-- `stock_bill_item.source_item_id` -> `purchase_order_item.id`，当 `stock_bill.bill_type = PURCHASE_IN`
+- `inbound_bill.source_id` -> `purchase_order.id`，当 `source_type = PURCHASE_ORDER`
+- `inbound_bill_item.source_item_id` -> `purchase_order_item.id`，当 `inbound_bill.inbound_type = PURCHASE_IN`
+- `stock_bill.business_source_id` -> `purchase_order.id`，当 `business_source_type = PURCHASE_ORDER`
+- `stock_bill_item.business_source_item_id` -> `purchase_order_item.id`，当 `stock_bill.bill_type = PURCHASE_IN`
 
 ## MVP 业务规则
 
 - 采购订单草稿可以由用户手动创建，也可以后续由 AI 采购建议生成草稿。
 - 采购订单只能选择启用状态的供应商和产品。
 - 采购明细建议优先选择 `supplier_product` 中评分最高且状态启用的供应商供货产品。
+- MVP 阶段一张采购订单代表同一批到货承诺，预计到货日期只保存在 `purchase_order.expected_arrival_date`，采购明细不再单独维护预计到货日期。
+- 草稿可以暂存为空预计到货日期；提交和审核采购订单时，后端必须重新校验 `expected_arrival_date`、供应商、入库仓库、产品明细、数量和价格均有效。
+- `DRAFT` 状态可由创建/采购权限用户编辑；`SUBMITTED` 状态仍允许修改供应商、入库仓库、预计到货日期、备注和明细，但必须由具备审核/审批权限的用户执行，避免普通创建人提交后绕过审核改单。
+- `APPROVED` 后采购订单主表和明细不允许直接修改；如需纠正，只能通过后续反向业务、冲销或专门的反审流程处理，并保留审计记录。
+- `PARTIAL_INBOUND`、`INBOUND_DONE` 已经产生入库事实，不允许直接修改采购订单主表或明细；如需纠正，应通过仓库入库单、冲销或反向业务单据处理。
 - `selected_supplier_score` 记录下单时的推荐分快照，避免供应商评分后续变化导致历史采购单解释不清。
-- 采购订单审核后生成仓库模块 `PURCHASE_IN` 出入库流水草稿，确认入库后更新库存和明细 `inbound_qty`。
+- 采购订单审核后生成仓库模块 `PURCHASE_IN` 待确认入库单，不直接改变库存，也不生成库存流水；仓库人员确认本次入库数量后，才生成 `stock_bill` 库存流水、更新库存和明细 `inbound_qty`。
 - 当明细 `inbound_qty < quantity` 时订单为 `PARTIAL_INBOUND`，全部入库后为 `INBOUND_DONE`。
 - 供应商评分字段 MVP 可人工维护；后续通过交付准时率、到货合格率、价格稳定性、售后响应等数据自动刷新。
 
@@ -161,8 +167,8 @@
 推荐计算规则：
 
 - 价格分 `price_score`：同一产品维度下，按最近采购单价与该产品最低采购价对比，业务公式为 `最低采购价 / 当前供应商采购价 * 100`，最高不超过 100；落库时再乘以 100。
-- 交付分 `delivery_score`：按采购明细预计到货日期和出入库流水确认时间判断准时率，业务公式为 `准时入库次数 / 总入库次数 * 100`；落库时再乘以 100。
-- 质量分 `quality_score`：按出入库流水明细的合格数量和不合格数量计算，业务公式为 `合格数量 / (合格数量 + 不合格数量) * 100`；落库时再乘以 100。
+- 交付分 `delivery_score`：按采购单头预计到货日期和入库单确认时间判断准时率，业务公式为 `准时入库次数 / 总入库次数 * 100`；落库时再乘以 100。
+- 质量分 `quality_score`：按入库单明细或库存流水明细的合格数量和不合格数量计算，业务公式为 `合格数量 / (合格数量 + 不合格数量) * 100`；落库时再乘以 100。
 - 综合分 `ai_score`：MVP 先按 `价格分 * 30% + 交付分 * 30% + 质量分 * 30% + 服务分 * 10%` 计算；落库值是最终分数乘以 100，服务分没有自动数据时先取供应商人工维护的 `service_score`。
 - 供应商总分 `supplier.overall_score`：按该供应商所有启用 `supplier_product.ai_score` 平均计算。
 
@@ -178,7 +184,7 @@
 - 可以维护某供应商能供应哪些产品，以及价格、交期、评分。
 - 创建采购订单时可以选择供应商、仓库和产品明细。
 - 采购明细可以保存供应商推荐分快照。
-- 审核采购订单后能生成 `PURCHASE_IN` 出入库流水草稿。
+- 审核采购订单后能生成 `PURCHASE_IN` 待确认入库单。
 - 确认入库后能更新库存，并回写采购明细已入库数量。
 - 确认入库时记录合格数量和不合格数量，供应商评分刷新任务可以据此计算质量分。
 - AI 后续可以按产品查询候选供应商，并按 `ai_score` 等字段选择推荐供应商。

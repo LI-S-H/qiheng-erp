@@ -28,7 +28,7 @@ const initialRows: Array<Omit<SystemPermissionListItem, 'permissionId' | 'create
   ['product:query', '产品查询', 'product', 'query', 1, 50, '查看产品与分类信息', 3],
   ['product:manage', '产品维护', 'product', 'manage', 1, 60, '维护产品与分类信息', 1],
   ['warehouse:query', '库存查询', 'warehouse', 'query', 1, 70, '查看仓库和库存信息', 2],
-  ['warehouse:manage', '库存维护', 'warehouse', 'manage', 1, 80, '执行出入库和库存调整', 2],
+  ['warehouse:manage', '库存维护', 'warehouse', 'manage', 1, 80, '维护入库单、出库单和库存调整', 2],
   ['supplier:query', '供应商查询', 'supplier', 'query', 1, 90, '查看供应商及供货产品', 2],
   ['purchase:query', '采购查询', 'purchase', 'query', 1, 100, '查看采购订单', 2],
   ['purchase:create', '采购创建', 'purchase', 'create', 1, 110, '创建采购订单', 1],

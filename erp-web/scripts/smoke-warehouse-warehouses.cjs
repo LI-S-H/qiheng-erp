@@ -17,6 +17,14 @@ runSmoke({
     await page.getByRole('heading', { name: '仓库管理' }).waitFor();
     await tableRow(page, 'WH001').waitFor();
     await assertFixedTableLayout(page, 9);
+    const summaryText = await page.locator('.summary-strip').innerText();
+    for (const expected of ['本页启用\n8', '本页停用\n2', '联系方式完整\n10', '联系方式待补\n0']) {
+      if (!summaryText.includes(expected)) throw new Error(`仓库摘要不正确：缺少 ${expected}`);
+    }
+    const paginationText = await page.locator('[data-table-pagination]').innerText();
+    if (!paginationText.includes('不统计总数') || paginationText.includes('共 12 条')) {
+      throw new Error(`仓库分页应使用无总数模式，当前为：${paginationText}`);
+    }
     await clickRefreshAndAssertLoading(page, 'smoke-warehouse-refresh-loading.png');
 
     await page.getByPlaceholder('请输入仓库名称').first().fill('华东');
@@ -73,11 +81,11 @@ runSmoke({
     const referencedRow = tableRow(page, 'WH001');
     await referencedRow.getByRole('button', { name: '删除' }).click();
     const referencedDelete = page.getByRole('alertdialog', { name: '删除仓库' });
-    if (!(await referencedDelete.innerText()).includes('库存余额或出入库记录')) {
+    if (!(await referencedDelete.innerText()).includes('库存余额、入库单、出库单或库存流水')) {
       throw new Error('删除仓库确认未说明库存和流水引用保护');
     }
     await referencedDelete.getByRole('button', { name: '删除', exact: true }).click();
-    await page.getByText('仓库存在库存余额或出入库记录，无法删除', { exact: true }).waitFor();
+    await page.getByText('仓库存在库存余额、入库单、出库单或库存流水，无法删除', { exact: true }).waitFor();
     await referencedRow.waitFor();
 
     const editableRow = tableRow(page, 'WH002');

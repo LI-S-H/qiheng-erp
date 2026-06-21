@@ -262,7 +262,7 @@ flowchart TD
 读取 warehouse_stock
 读取 product.safety_stock_qty
 读取近期销售速度
-读取出入库流水
+读取入库单、出库单和库存流水
 调用 Python 分析工具计算滞销和风险
 生成库存建议
 保存建议结果

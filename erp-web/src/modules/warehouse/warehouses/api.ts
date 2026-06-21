@@ -62,9 +62,11 @@ function normalizeWarehouse(item: WarehouseListItem): WarehouseListItem {
 }
 
 function normalizeWarehousePage(page: PageResult<WarehouseListItem>): PageResult<WarehouseListItem> {
+  const records = page.records.map(normalizeWarehouse);
+  const total = Number(page.total);
   return {
-    records: page.records.map(normalizeWarehouse),
-    total: normalizeFiniteNumber(page.total, 'total'),
+    records,
+    total: Number.isFinite(total) ? total : records.length,
     pageNum: normalizeFiniteNumber(page.pageNum, 'pageNum'),
     pageSize: normalizeFiniteNumber(page.pageSize, 'pageSize'),
   };
@@ -161,7 +163,7 @@ export async function updateWarehouseStatus(warehouseId: string, status: Warehou
 export async function deleteWarehouse(warehouseId: string) {
   if (useMockApi) {
     const target = mockWarehouses.find(item => item.warehouseId === warehouseId);
-    if (target?.referenced) throw new Error('仓库存在库存余额或出入库记录，无法删除');
+    if (target?.referenced) throw new Error('仓库存在库存余额、入库单、出库单或库存流水，无法删除');
     mockWarehouses = mockWarehouses.filter(item => item.warehouseId !== warehouseId);
     return null;
   }
@@ -184,7 +186,7 @@ export async function batchUpdateWarehouseStatus(payload: WarehouseBatchStatusPa
 export function batchDeleteWarehouses(payload: WarehouseBatchIdsPayload) {
   if (useMockApi) {
     if (mockWarehouses.some(item => payload.warehouseIds.includes(item.warehouseId) && item.referenced)) {
-      return Promise.reject(new Error('所选仓库中存在已有库存余额或出入库记录的数据'));
+      return Promise.reject(new Error('所选仓库中存在已有库存余额、入库单、出库单或库存流水的数据'));
     }
     mockWarehouses = mockWarehouses.filter(item => !payload.warehouseIds.includes(item.warehouseId));
     return Promise.resolve(null);

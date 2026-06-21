@@ -23,8 +23,12 @@ runSmoke({
     await assertFixedTableLayout(page, 10);
 
     const summaryText = await page.locator('.summary-strip').innerText();
-    for (const expected of ['库存记录\n15', '涉及仓库\n8', '涉及产品\n14', '低库存记录\n5']) {
+    for (const expected of ['本页仓库\n4', '本页产品\n9', '本页低库存\n4', '本页已锁定\n7']) {
       if (!summaryText.includes(expected)) throw new Error(`库存摘要不正确：缺少 ${expected}`);
+    }
+    const paginationText = await page.locator('[data-table-pagination]').innerText();
+    if (!paginationText.includes('不统计总数') || paginationText.includes('共 15 条')) {
+      throw new Error(`库存分页应使用无总数模式，当前为：${paginationText}`);
     }
     await clickRefreshAndAssertLoading(page, 'smoke-warehouse-stocks-refresh-loading.png');
 

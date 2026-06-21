@@ -90,7 +90,7 @@ async function assertFixedTableLayout(page, expectedColumns) {
   const table = page.locator('[data-slot="table"]').first();
   const state = await table.evaluate(element => ({
     tableLayout: getComputedStyle(element).tableLayout,
-    columnCount: element.querySelectorAll('colgroup col').length,
+    columnCount: element.querySelector(':scope > colgroup')?.querySelectorAll('col').length ?? 0,
   }));
   if (state.tableLayout !== 'fixed' || state.columnCount !== expectedColumns) {
     throw new Error(`表格列宽未固定：${JSON.stringify(state)}`);

@@ -113,20 +113,23 @@ function normalizeStock(item: WarehouseStockListItem): WarehouseStockListItem {
 
 function normalizeSummary(summary: WarehouseStockSummary): WarehouseStockSummary {
   return {
-    stockRecordCount: normalizeFiniteNumber(summary.stockRecordCount, 'stockRecordCount'),
     warehouseCount: normalizeFiniteNumber(summary.warehouseCount, 'warehouseCount'),
     productCount: normalizeFiniteNumber(summary.productCount, 'productCount'),
     lowStockCount: normalizeFiniteNumber(summary.lowStockCount, 'lowStockCount'),
+    noAvailableCount: normalizeFiniteNumber(summary.noAvailableCount, 'noAvailableCount'),
+    lockedCount: normalizeFiniteNumber(summary.lockedCount, 'lockedCount'),
   };
 }
 
 function normalizeStockPage(page: WarehouseStockPage): WarehouseStockPage {
+  const records = page.records.map(normalizeStock);
+  const total = Number(page.total);
   return {
-    records: page.records.map(normalizeStock),
-    total: normalizeFiniteNumber(page.total, 'total'),
+    records,
+    total: Number.isFinite(total) ? total : records.length,
     pageNum: normalizeFiniteNumber(page.pageNum, 'pageNum'),
     pageSize: normalizeFiniteNumber(page.pageSize, 'pageSize'),
-    summary: normalizeSummary(page.summary),
+    summary: normalizeSummary(buildSummary(records)),
   };
 }
 
@@ -147,10 +150,11 @@ function matchesReservationState(item: WarehouseStockListItem, state: WarehouseS
 
 function buildSummary(records: WarehouseStockListItem[]): WarehouseStockSummary {
   return {
-    stockRecordCount: records.length,
     warehouseCount: new Set(records.map(item => item.warehouseId)).size,
     productCount: new Set(records.map(item => item.productId)).size,
     lowStockCount: records.filter(item => item.availableQty > 0 && item.availableQty <= item.safetyStockQty).length,
+    noAvailableCount: records.filter(item => item.availableQty === 0).length,
+    lockedCount: records.filter(item => item.lockedQty > 0).length,
   };
 }
 
@@ -165,14 +169,13 @@ function filterStocks(params: WarehouseStockQuery): WarehouseStockPage {
       && matchesReservationState(item, params.reservationState);
   });
   filtered = filtered.sort((a, b) => a.warehouseCode.localeCompare(b.warehouseCode) || a.productCode.localeCompare(b.productCode));
-  const summary = buildSummary(filtered);
   const start = (params.pageNum - 1) * params.pageSize;
   return normalizeStockPage({
     records: filtered.slice(start, start + params.pageSize),
     total: filtered.length,
     pageNum: params.pageNum,
     pageSize: params.pageSize,
-    summary,
+    summary: buildSummary(filtered.slice(start, start + params.pageSize)),
   });
 }
 

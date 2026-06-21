@@ -13,6 +13,9 @@ import ProductManageView from '@/modules/product/products/views/ProductManageVie
 import WarehouseManageView from '@/modules/warehouse/warehouses/views/WarehouseManageView.vue';
 import WarehouseStockManageView from '@/modules/warehouse/stocks/views/WarehouseStockManageView.vue';
 import StockBillManageView from '@/modules/warehouse/stock-bills/views/StockBillManageView.vue';
+import SupplierManageView from '@/modules/purchase/suppliers/views/SupplierManageView.vue';
+import SupplierProductManageView from '@/modules/purchase/supplier-products/views/SupplierProductManageView.vue';
+import PurchaseOrderManageView from '@/modules/purchase/orders/views/PurchaseOrderManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -116,29 +119,49 @@ const routes: RouteRecordRaw[] = [
           title: '库存管理',
         },
       },
+      { path: 'warehouse/stock-bills', redirect: '/warehouse/inbound-bills' },
       {
-        path: 'warehouse/stock-bills',
-        name: 'warehouse-stock-bills',
+        path: 'warehouse/inbound-bills',
+        name: 'warehouse-inbound-bills',
         component: StockBillManageView,
         meta: {
-          title: '出入库记录',
+          title: '入库单',
+          stockDirection: 'INBOUND',
+        },
+      },
+      {
+        path: 'warehouse/outbound-bills',
+        name: 'warehouse-outbound-bills',
+        component: StockBillManageView,
+        meta: {
+          title: '出库单',
+          stockDirection: 'OUTBOUND',
         },
       },
       { path: 'purchase', redirect: '/purchase/suppliers' },
       {
         path: 'purchase/suppliers',
         name: 'purchase-suppliers',
-        ...placeholder('供应商管理', '采购业务', '维护供应商编码 名称 联系方式 付款条件 状态和评分信息'),
+        component: SupplierManageView,
+        meta: {
+          title: '供应商管理',
+        },
       },
       {
         path: 'purchase/supplier-products',
         name: 'purchase-supplier-products',
-        ...placeholder('供货产品', '采购业务', '维护供应商可供产品 采购价 起订量 交期和推荐分'),
+        component: SupplierProductManageView,
+        meta: {
+          title: '供货产品',
+        },
       },
       {
         path: 'purchase/orders',
         name: 'purchase-orders',
-        ...placeholder('采购订单', '采购业务', '创建和跟踪采购订单 提交 审核 入库进度和订单状态'),
+        component: PurchaseOrderManageView,
+        meta: {
+          title: '采购订单',
+        },
       },
       { path: 'sales', redirect: '/sales/customers' },
       {

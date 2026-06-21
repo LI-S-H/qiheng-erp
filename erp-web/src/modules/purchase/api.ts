@@ -1,0 +1,695 @@
+import { getResult, http, postResult } from '@/api/http';
+import type { PageResult } from '@/shared/types/api';
+import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { listProducts } from '@/modules/product/products/api';
+import { listWarehouses } from '@/modules/warehouse/warehouses/api';
+import type { ProductListItem } from '@/modules/product/products/types';
+import type { WarehouseListItem } from '@/modules/warehouse/warehouses/types';
+import type {
+  PurchaseOrderFormPayload,
+  PurchaseOrderItem,
+  PurchaseOrderListItem,
+  PurchaseOrderPage,
+  PurchaseOrderQuery,
+  PurchaseOrderStatus,
+  PurchaseOrderSummary,
+  SupplierBatchIdsPayload,
+  SupplierBatchStatusPayload,
+  SupplierFormPayload,
+  SupplierListItem,
+  SupplierOption,
+  SupplierProductBatchIdsPayload,
+  SupplierProductBatchStatusPayload,
+  SupplierProductFormPayload,
+  SupplierProductListItem,
+  SupplierProductQuery,
+  SupplierQuery,
+} from './types';
+
+const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
+
+const supplierSeed = [
+  ['S001', '华东饮品供应链', '陆明', '021-6628-1001', '上海市嘉定区安亭镇', '月结30天', 92.6, 94.2, 96.1, 88.4, 91.5, 3.8, 96.5, 98.2, 1, true],
+  ['S002', '晨岛咖啡贸易', '林珊', '0571-6628-1002', '杭州市钱塘区', '预付30% 到货结清', 88.3, 89.7, 93.4, 84.2, 86.9, 5.2, 91.1, 96.4, 1, true],
+  ['S003', '谷仓食品批发', '周可', '025-6628-1003', '南京市江宁区', '月结45天', 90.8, 92.4, 95.2, 87.6, 89.3, 4.6, 94.8, 97.9, 1, true],
+  ['S004', '文仪办公渠道', '朱婷', '020-6628-1004', '广州市天河区', '月结30天', 86.2, 85.4, 90.5, 88.1, 83.6, 6.1, 88.7, 95.2, 1, true],
+  ['S005', '森纸纸业集团', '宋元', '0512-6628-1005', '苏州市工业园区', '月结60天', 94.1, 95.8, 97.2, 91.6, 92.4, 3.3, 97.4, 98.9, 1, true],
+  ['S006', '拓联数码配件', '陈意', '0755-6628-1006', '深圳市龙华区', '现款现货', 79.8, 78.2, 82.4, 84.6, 75.8, 8.4, 82.1, 90.7, 0, false],
+] as const;
+
+let mockSuppliers: Array<SupplierListItem & { referenced: boolean }> = supplierSeed.map((item, index) => ({
+  supplierId: `1940000000000000${String(index + 1).padStart(3, '0')}`,
+  supplierCode: item[0],
+  supplierName: item[1],
+  contactName: item[2],
+  contactPhone: item[3],
+  address: item[4],
+  paymentTerms: item[5],
+  overallScore: item[6],
+  deliveryScore: item[7],
+  qualityScore: item[8],
+  priceScore: item[9],
+  serviceScore: item[10],
+  avgDeliveryDays: item[11],
+  onTimeRate: item[12],
+  qualifiedRate: item[13],
+  status: item[14],
+  remark: index < 3 ? '常用供应商，可用于采购建议候选' : '',
+  createTime: `2026-06-${String(2 + index).padStart(2, '0')} 09:10:00`,
+  updateTime: `2026-06-${String(12 + (index % 4)).padStart(2, '0')} 15:30:00`,
+  referenced: item[15],
+}));
+
+type SupplierProductSeed = [string, string, string, number, number, number, number, number, number, number, string | null, 0 | 1, boolean];
+
+const supplierProductSeed: SupplierProductSeed[] = [
+  ['S001', 'P0001', 'HD-SD330', 35.2, 10, 3, 94.2, 96.1, 88.4, 92.3, '2026-06-13 10:20:00', 1, true],
+  ['S002', 'P0002', 'CD-CF50', 40.5, 8, 5, 89.7, 93.4, 84.2, 88.9, '2026-06-10 11:20:00', 1, true],
+  ['S003', 'P0003', 'GC-NUT30', 65.8, 6, 4, 92.4, 95.2, 87.6, 91.8, '2026-06-11 14:10:00', 1, true],
+  ['S003', 'P0004', 'GC-CK06', 55.6, 5, 4, 92.4, 95.2, 87.6, 91.4, '2026-06-09 09:40:00', 1, true],
+  ['S004', 'P0005', 'WY-PEN12', 11.6, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
+  ['S005', 'P0007', 'SZ-A4-70G', 89.4, 12, 3, 95.8, 97.2, 91.6, 94.8, '2026-06-12 13:50:00', 1, true],
+  ['S006', 'P0013', 'TL-HUB8', 121.5, 2, 8, 78.2, 82.4, 84.6, 81.3, null, 0, false],
+];
+
+let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean }> = supplierProductSeed.map((item, index) => {
+  const supplier = mockSuppliers.find(s => s.supplierCode === item[0])!;
+  const product = mockProductSnapshot(item[1]);
+  return {
+    supplierProductId: `1941000000000000${String(index + 1).padStart(3, '0')}`,
+    supplierId: supplier.supplierId,
+    supplierCode: supplier.supplierCode,
+    supplierName: supplier.supplierName,
+    productId: product.productId,
+    productCode: product.productCode,
+    productName: product.productName,
+    unitName: product.unitName,
+    supplierProductCode: item[2],
+    latestPurchasePrice: item[3],
+    minOrderQty: item[4],
+    leadTimeDays: item[5],
+    deliveryScore: item[6],
+    qualityScore: item[7],
+    priceScore: item[8],
+    aiScore: item[9],
+    lastPurchaseAt: item[10],
+    status: item[11],
+    remark: index < 3 ? '采购建议优先候选' : '',
+    createTime: `2026-06-${String(3 + index).padStart(2, '0')} 10:00:00`,
+    updateTime: `2026-06-${String(12 + (index % 4)).padStart(2, '0')} 16:10:00`,
+    referenced: item[12],
+  };
+});
+
+let mockOrders: PurchaseOrderListItem[] = [
+  buildOrderSeed('PO202606001', 'S001', 'WH001', 'APPROVED', '2026-06-24', [['HD-SD330', 24, 35.2]], '采购主管', true),
+  buildOrderSeed('PO202606002', 'S005', 'WH008', 'PARTIAL_INBOUND', '2026-06-22', [['SZ-A4-70G', 18, 89.4]], '采购主管', true),
+  buildOrderSeed('PO202606003', 'S004', 'WH002', 'DRAFT', '2026-06-28', [['WY-PEN12', 30, 11.6]], '系统管理员', false),
+];
+
+let nextSupplierSequence = supplierSeed.length + 1;
+let nextSupplierProductSequence = mockSupplierProducts.length + 1;
+let nextPurchaseOrderSequence = mockOrders.length + 1;
+
+function nowText() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function mockProductSnapshot(productCode: string) {
+  const productMap: Record<string, Pick<ProductListItem, 'productId' | 'productCode' | 'productName' | 'unitName'>> = {
+    P0001: { productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', unitName: '箱' },
+    P0002: { productId: '1920000000000000002', productCode: 'P0002', productName: '速溶黑咖啡', unitName: '盒' },
+    P0003: { productId: '1920000000000000003', productCode: 'P0003', productName: '每日坚果混合装', unitName: '盒' },
+    P0004: { productId: '1920000000000000004', productCode: 'P0004', productName: '海盐苏打饼干', unitName: '箱' },
+    P0005: { productId: '1920000000000000005', productCode: 'P0005', productName: '中性签字笔', unitName: '盒' },
+    P0007: { productId: '1920000000000000007', productCode: 'P0007', productName: 'A4复印纸', unitName: '箱' },
+    P0013: { productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', unitName: '个' },
+  };
+  return productMap[productCode] || productMap.P0001;
+}
+
+function buildOrderSeed(
+  purchaseNo: string,
+  supplierCode: string,
+  warehouseCode: string,
+  status: PurchaseOrderStatus,
+  expectedArrivalDate: string,
+  lines: Array<[string, number, number]>,
+  createdByName: string,
+  submitted: boolean,
+): PurchaseOrderListItem {
+  const supplier = mockSuppliers.find(item => item.supplierCode === supplierCode)!;
+  const warehouses: Record<string, { warehouseId: string; warehouseName: string }> = {
+    WH001: { warehouseId: '1930000000000000001', warehouseName: '华东中心仓' },
+    WH002: { warehouseId: '1930000000000000002', warehouseName: '华南中心仓' },
+    WH008: { warehouseId: '1930000000000000008', warehouseName: '南京备货仓' },
+  };
+  const warehouse = warehouses[warehouseCode] || warehouses.WH001;
+  const purchaseOrderId = `1942000000000000${purchaseNo.slice(-3)}`;
+  const items = lines.map((line, index) => {
+    const supplierProduct = mockSupplierProducts.find(item => item.supplierProductCode === line[0]);
+    const product = supplierProduct || mockSupplierProducts[0];
+    return normalizeOrderItem({
+      purchaseOrderItemId: `${purchaseOrderId}${index + 1}`,
+      purchaseOrderId,
+      purchaseNo,
+      supplierProductId: product.supplierProductId,
+      productId: product.productId,
+      productCode: product.productCode,
+      productName: product.productName,
+      unitName: product.unitName,
+      quantity: line[1],
+      inboundQty: status === 'PARTIAL_INBOUND' ? Math.floor(line[1] / 2) : 0,
+      unitPrice: line[2],
+      totalAmount: line[1] * line[2],
+      selectedSupplierScore: product.aiScore,
+      remark: '',
+    });
+  });
+  const timestamp = '2026-06-12 10:30:00';
+  return {
+    purchaseOrderId,
+    purchaseNo,
+    supplierId: supplier.supplierId,
+    supplierCode: supplier.supplierCode,
+    supplierName: supplier.supplierName,
+    warehouseId: warehouse.warehouseId,
+    warehouseName: warehouse.warehouseName,
+    status,
+    totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
+    expectedArrivalDate,
+    createdById: '1900000000000000001',
+    createdByName,
+    submittedAt: submitted ? timestamp : null,
+    approvedById: status === 'APPROVED' || status === 'PARTIAL_INBOUND' ? '1900000000000000001' : null,
+    approvedByName: status === 'APPROVED' || status === 'PARTIAL_INBOUND' ? '采购主管' : '',
+    approvedAt: status === 'APPROVED' || status === 'PARTIAL_INBOUND' ? '2026-06-13 09:20:00' : null,
+    createTime: timestamp,
+    updateTime: timestamp,
+    remark: '',
+    items,
+  };
+}
+
+function generateCode(prefix: string, sequence: number, width = 3) {
+  return `${prefix}${String(sequence).padStart(width, '0')}`;
+}
+
+function normalizeSupplier(item: SupplierListItem): SupplierListItem {
+  return {
+    ...item,
+    supplierId: normalizeStringId(item.supplierId, 'supplierId'),
+    supplierCode: String(item.supplierCode),
+    supplierName: String(item.supplierName),
+    contactName: String(item.contactName),
+    contactPhone: String(item.contactPhone),
+    address: String(item.address),
+    paymentTerms: String(item.paymentTerms),
+    overallScore: normalizeFiniteNumber(item.overallScore, 'overallScore'),
+    deliveryScore: normalizeFiniteNumber(item.deliveryScore, 'deliveryScore'),
+    qualityScore: normalizeFiniteNumber(item.qualityScore, 'qualityScore'),
+    priceScore: normalizeFiniteNumber(item.priceScore, 'priceScore'),
+    serviceScore: normalizeFiniteNumber(item.serviceScore, 'serviceScore'),
+    avgDeliveryDays: normalizeFiniteNumber(item.avgDeliveryDays, 'avgDeliveryDays'),
+    onTimeRate: normalizeFiniteNumber(item.onTimeRate, 'onTimeRate'),
+    qualifiedRate: normalizeFiniteNumber(item.qualifiedRate, 'qualifiedRate'),
+    status: normalizeBinaryStatus(item.status),
+    remark: String(item.remark),
+  };
+}
+
+function normalizeSupplierProduct(item: SupplierProductListItem): SupplierProductListItem {
+  return {
+    ...item,
+    supplierProductId: normalizeStringId(item.supplierProductId, 'supplierProductId'),
+    supplierId: normalizeStringId(item.supplierId, 'supplierId'),
+    productId: normalizeStringId(item.productId, 'productId'),
+    latestPurchasePrice: normalizeFiniteNumber(item.latestPurchasePrice, 'latestPurchasePrice'),
+    minOrderQty: normalizeFiniteNumber(item.minOrderQty, 'minOrderQty'),
+    leadTimeDays: normalizeFiniteNumber(item.leadTimeDays, 'leadTimeDays'),
+    deliveryScore: normalizeFiniteNumber(item.deliveryScore, 'deliveryScore'),
+    qualityScore: normalizeFiniteNumber(item.qualityScore, 'qualityScore'),
+    priceScore: normalizeFiniteNumber(item.priceScore, 'priceScore'),
+    aiScore: normalizeFiniteNumber(item.aiScore, 'aiScore'),
+    lastPurchaseAt: item.lastPurchaseAt || null,
+    status: normalizeBinaryStatus(item.status),
+  };
+}
+
+function normalizeOrderItem(item: PurchaseOrderItem): PurchaseOrderItem {
+  return {
+    ...item,
+    purchaseOrderItemId: normalizeStringId(item.purchaseOrderItemId, 'purchaseOrderItemId'),
+    purchaseOrderId: normalizeStringId(item.purchaseOrderId, 'purchaseOrderId'),
+    supplierProductId: normalizeNullableStringId(item.supplierProductId, 'supplierProductId'),
+    productId: normalizeStringId(item.productId, 'productId'),
+    quantity: normalizeFiniteNumber(item.quantity, 'quantity'),
+    inboundQty: normalizeFiniteNumber(item.inboundQty, 'inboundQty'),
+    unitPrice: normalizeFiniteNumber(item.unitPrice, 'unitPrice'),
+    totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
+    selectedSupplierScore: normalizeFiniteNumber(item.selectedSupplierScore, 'selectedSupplierScore'),
+  };
+}
+
+function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
+  return {
+    ...item,
+    purchaseOrderId: normalizeStringId(item.purchaseOrderId, 'purchaseOrderId'),
+    supplierId: normalizeStringId(item.supplierId, 'supplierId'),
+    warehouseId: normalizeStringId(item.warehouseId, 'warehouseId'),
+    totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
+    createdById: normalizeNullableStringId(item.createdById, 'createdById'),
+    approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
+    items: item.items.map(normalizeOrderItem),
+  };
+}
+
+function normalizePage<T>(page: PageResult<T>, mapper: (item: T) => T): PageResult<T> {
+  return {
+    records: page.records.map(mapper),
+    total: normalizeFiniteNumber(page.total, 'total'),
+    pageNum: normalizeFiniteNumber(page.pageNum, 'pageNum'),
+    pageSize: normalizeFiniteNumber(page.pageSize, 'pageSize'),
+  };
+}
+
+function pageSlice<T>(records: T[], pageNum: number, pageSize: number) {
+  return records.slice((pageNum - 1) * pageSize, (pageNum - 1) * pageSize + pageSize);
+}
+
+function filterSuppliers(params: SupplierQuery): PageResult<SupplierListItem> {
+  let filtered = [...mockSuppliers];
+  const supplierCode = params.supplierCode?.trim().toLocaleLowerCase();
+  const supplierName = params.supplierName?.trim().toLocaleLowerCase();
+  const contactName = params.contactName?.trim().toLocaleLowerCase();
+  if (supplierCode) filtered = filtered.filter(item => item.supplierCode.toLocaleLowerCase().includes(supplierCode));
+  if (supplierName) filtered = filtered.filter(item => item.supplierName.toLocaleLowerCase().includes(supplierName));
+  if (contactName) filtered = filtered.filter(item => item.contactName.toLocaleLowerCase().includes(contactName));
+  if (params.status !== '' && params.status !== 'all' && params.status !== undefined) filtered = filtered.filter(item => item.status === params.status);
+  filtered.sort((a, b) => b.overallScore - a.overallScore);
+  return { records: pageSlice(filtered, params.pageNum, params.pageSize).map(({ referenced: _, ...item }) => item), total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize };
+}
+
+function filterSupplierProducts(params: SupplierProductQuery): PageResult<SupplierProductListItem> {
+  let filtered = [...mockSupplierProducts];
+  const productCode = params.productCode?.trim().toLocaleLowerCase();
+  const productName = params.productName?.trim().toLocaleLowerCase();
+  if (params.supplierId && params.supplierId !== 'all') filtered = filtered.filter(item => item.supplierId === params.supplierId);
+  if (productCode) filtered = filtered.filter(item => item.productCode.toLocaleLowerCase().includes(productCode));
+  if (productName) filtered = filtered.filter(item => item.productName.toLocaleLowerCase().includes(productName));
+  if (params.status !== '' && params.status !== 'all' && params.status !== undefined) filtered = filtered.filter(item => item.status === params.status);
+  filtered.sort((a, b) => b.aiScore - a.aiScore);
+  return { records: pageSlice(filtered, params.pageNum, params.pageSize).map(({ referenced: _, ...item }) => item), total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize };
+}
+
+function resolveOrderSupplierProduct(supplierId: string, line: PurchaseOrderFormPayload['items'][number]) {
+  const exact = line.supplierProductId
+    ? mockSupplierProducts.find(item => item.supplierProductId === line.supplierProductId && item.supplierId === supplierId && item.productId === line.productId && item.status === 1)
+    : null;
+  return exact || mockSupplierProducts.find(item => item.supplierId === supplierId && item.productId === line.productId && item.status === 1);
+}
+
+function buildOrderSummary(records: PurchaseOrderListItem[]): PurchaseOrderSummary {
+  return {
+    draftCount: records.filter(item => item.status === 'DRAFT').length,
+    submittedCount: records.filter(item => item.status === 'SUBMITTED').length,
+    approvedCount: records.filter(item => item.status === 'APPROVED').length,
+    inboundPendingCount: records.filter(item => item.status === 'APPROVED' || item.status === 'PARTIAL_INBOUND').length,
+  };
+}
+
+function filterOrders(params: PurchaseOrderQuery): PurchaseOrderPage {
+  let filtered = [...mockOrders];
+  const purchaseNo = params.purchaseNo?.trim().toLocaleLowerCase();
+  if (purchaseNo) filtered = filtered.filter(item => item.purchaseNo.toLocaleLowerCase().includes(purchaseNo));
+  if (params.supplierId && params.supplierId !== 'all') filtered = filtered.filter(item => item.supplierId === params.supplierId);
+  if (params.warehouseId && params.warehouseId !== 'all') filtered = filtered.filter(item => item.warehouseId === params.warehouseId);
+  if (params.status && params.status !== 'all') filtered = filtered.filter(item => item.status === params.status);
+  filtered.sort((a, b) => b.createTime.localeCompare(a.createTime));
+  const records = pageSlice(filtered, params.pageNum, params.pageSize);
+  return { records, total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize, summary: buildOrderSummary(records) };
+}
+
+export function listSuppliers(params: SupplierQuery) {
+  if (useMockApi) return Promise.resolve(normalizePage(filterSuppliers(params), normalizeSupplier));
+  const { supplierCode, supplierName, contactName, status, ...rest } = params;
+  return getResult<PageResult<SupplierListItem>>('/purchase/suppliers', {
+    ...rest,
+    ...(supplierCode?.trim() ? { supplierCode: supplierCode.trim() } : {}),
+    ...(supplierName?.trim() ? { supplierName: supplierName.trim() } : {}),
+    ...(contactName?.trim() ? { contactName: contactName.trim() } : {}),
+    ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
+  }).then(page => normalizePage(page, normalizeSupplier));
+}
+
+export function listSupplierOptions(): Promise<SupplierOption[]> {
+  if (useMockApi) {
+    return Promise.resolve(mockSuppliers.map(item => ({
+      supplierId: item.supplierId,
+      supplierCode: item.supplierCode,
+      supplierName: item.supplierName,
+      status: item.status,
+    })));
+  }
+  return getResult<SupplierOption[]>('/purchase/suppliers/options');
+}
+
+export function createSupplier(payload: SupplierFormPayload) {
+  if (useMockApi) {
+    const timestamp = nowText();
+    const created: SupplierListItem & { referenced: boolean } = {
+      supplierId: String(Date.now()),
+      supplierCode: generateCode('S', nextSupplierSequence++),
+      ...payload,
+      createTime: timestamp,
+      updateTime: timestamp,
+      referenced: false,
+    };
+    mockSuppliers = [...mockSuppliers, created];
+    return Promise.resolve(normalizeSupplier(created));
+  }
+  return postResult<SupplierListItem, SupplierFormPayload>('/purchase/suppliers', payload).then(normalizeSupplier);
+}
+
+export async function updateSupplier(supplierId: string, payload: SupplierFormPayload) {
+  if (useMockApi) {
+    mockSuppliers = mockSuppliers.map(item => item.supplierId === supplierId ? { ...item, ...payload, updateTime: nowText() } : item);
+    const supplier = mockSuppliers.find(item => item.supplierId === supplierId);
+    return supplier ? normalizeSupplier(supplier) : null;
+  }
+  const response = await http.put(`/purchase/suppliers/${supplierId}`, payload);
+  return normalizeSupplier(response.data.data as SupplierListItem);
+}
+
+export async function updateSupplierStatus(supplierId: string, status: 0 | 1) {
+  if (useMockApi) {
+    mockSuppliers = mockSuppliers.map(item => item.supplierId === supplierId ? { ...item, status, updateTime: nowText() } : item);
+    if (status === 0) mockSupplierProducts = mockSupplierProducts.map(item => item.supplierId === supplierId ? { ...item, status: 0, updateTime: nowText() } : item);
+    return null;
+  }
+  const response = await http.patch(`/purchase/suppliers/${supplierId}/status`, { status });
+  return response.data.data as null;
+}
+
+export function deleteSupplier(supplierId: string) {
+  if (useMockApi) {
+    const target = mockSuppliers.find(item => item.supplierId === supplierId);
+    if (target?.referenced) return Promise.reject(new Error('供应商已被供货产品或采购订单引用，无法删除'));
+    mockSuppliers = mockSuppliers.filter(item => item.supplierId !== supplierId);
+    return Promise.resolve(null);
+  }
+  return http.delete(`/purchase/suppliers/${supplierId}`).then(response => response.data.data as null);
+}
+
+export function batchUpdateSupplierStatus(payload: SupplierBatchStatusPayload) {
+  if (useMockApi) {
+    mockSuppliers = mockSuppliers.map(item => payload.supplierIds.includes(item.supplierId) ? { ...item, status: payload.status, updateTime: nowText() } : item);
+    return Promise.resolve(null);
+  }
+  return http.patch('/purchase/suppliers/batch/status', payload).then(response => response.data.data as null);
+}
+
+export function batchDeleteSuppliers(payload: SupplierBatchIdsPayload) {
+  if (useMockApi) {
+    if (mockSuppliers.some(item => payload.supplierIds.includes(item.supplierId) && item.referenced)) {
+      return Promise.reject(new Error('所选供应商中存在已被业务引用的数据'));
+    }
+    mockSuppliers = mockSuppliers.filter(item => !payload.supplierIds.includes(item.supplierId));
+    return Promise.resolve(null);
+  }
+  return postResult<null, SupplierBatchIdsPayload>('/purchase/suppliers/batch/delete', payload);
+}
+
+export function listSupplierProducts(params: SupplierProductQuery) {
+  if (useMockApi) return Promise.resolve(normalizePage(filterSupplierProducts(params), normalizeSupplierProduct));
+  const { supplierId, productCode, productName, status, ...rest } = params;
+  return getResult<PageResult<SupplierProductListItem>>('/purchase/supplier-products', {
+    ...rest,
+    ...(supplierId && supplierId !== 'all' ? { supplierId } : {}),
+    ...(productCode?.trim() ? { productCode: productCode.trim() } : {}),
+    ...(productName?.trim() ? { productName: productName.trim() } : {}),
+    ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
+  }).then(page => normalizePage(page, normalizeSupplierProduct));
+}
+
+export function createSupplierProduct(payload: SupplierProductFormPayload) {
+  if (useMockApi) {
+    const supplier = mockSuppliers.find(item => item.supplierId === payload.supplierId);
+    if (!supplier || supplier.status === 0) return Promise.reject(new Error('请选择启用状态的供应商'));
+    const product = mockProductSnapshotById(payload.productId);
+    if (mockSupplierProducts.some(item => item.supplierId === payload.supplierId && item.productId === payload.productId)) {
+      return Promise.reject(new Error('该供应商已维护此产品的供货关系'));
+    }
+    const timestamp = nowText();
+    const created: SupplierProductListItem & { referenced: boolean } = {
+      supplierProductId: `1941000000000009${String(nextSupplierProductSequence++).padStart(2, '0')}`,
+      supplierCode: supplier.supplierCode,
+      supplierName: supplier.supplierName,
+      productCode: product.productCode,
+      productName: product.productName,
+      unitName: product.unitName,
+      lastPurchaseAt: null,
+      createTime: timestamp,
+      updateTime: timestamp,
+      referenced: false,
+      ...payload,
+    };
+    mockSupplierProducts = [...mockSupplierProducts, created];
+    return Promise.resolve(normalizeSupplierProduct(created));
+  }
+  return postResult<SupplierProductListItem, SupplierProductFormPayload>('/purchase/supplier-products', payload).then(normalizeSupplierProduct);
+}
+
+export async function updateSupplierProduct(supplierProductId: string, payload: SupplierProductFormPayload) {
+  if (useMockApi) {
+    const supplier = mockSuppliers.find(item => item.supplierId === payload.supplierId);
+    const product = mockProductSnapshotById(payload.productId);
+    mockSupplierProducts = mockSupplierProducts.map(item => item.supplierProductId === supplierProductId ? {
+      ...item,
+      ...payload,
+      supplierCode: supplier?.supplierCode || item.supplierCode,
+      supplierName: supplier?.supplierName || item.supplierName,
+      productCode: product.productCode,
+      productName: product.productName,
+      unitName: product.unitName,
+      updateTime: nowText(),
+    } : item);
+    const result = mockSupplierProducts.find(item => item.supplierProductId === supplierProductId);
+    return result ? normalizeSupplierProduct(result) : null;
+  }
+  const response = await http.put(`/purchase/supplier-products/${supplierProductId}`, payload);
+  return normalizeSupplierProduct(response.data.data as SupplierProductListItem);
+}
+
+export function deleteSupplierProduct(supplierProductId: string) {
+  if (useMockApi) {
+    const target = mockSupplierProducts.find(item => item.supplierProductId === supplierProductId);
+    if (target?.referenced) return Promise.reject(new Error('供货产品已被采购订单引用，无法删除'));
+    mockSupplierProducts = mockSupplierProducts.filter(item => item.supplierProductId !== supplierProductId);
+    return Promise.resolve(null);
+  }
+  return http.delete(`/purchase/supplier-products/${supplierProductId}`).then(response => response.data.data as null);
+}
+
+export function batchUpdateSupplierProductStatus(payload: SupplierProductBatchStatusPayload) {
+  if (useMockApi) {
+    mockSupplierProducts = mockSupplierProducts.map(item => payload.supplierProductIds.includes(item.supplierProductId) ? { ...item, status: payload.status, updateTime: nowText() } : item);
+    return Promise.resolve(null);
+  }
+  return http.patch('/purchase/supplier-products/batch/status', payload).then(response => response.data.data as null);
+}
+
+export function batchDeleteSupplierProducts(payload: SupplierProductBatchIdsPayload) {
+  if (useMockApi) {
+    if (mockSupplierProducts.some(item => payload.supplierProductIds.includes(item.supplierProductId) && item.referenced)) {
+      return Promise.reject(new Error('所选供货产品中存在已被采购订单引用的数据'));
+    }
+    mockSupplierProducts = mockSupplierProducts.filter(item => !payload.supplierProductIds.includes(item.supplierProductId));
+    return Promise.resolve(null);
+  }
+  return postResult<null, SupplierProductBatchIdsPayload>('/purchase/supplier-products/batch/delete', payload);
+}
+
+export function listPurchaseOrders(params: PurchaseOrderQuery) {
+  if (useMockApi) {
+    const page = filterOrders(params);
+    const normalized = normalizePage(page, normalizeOrder);
+    return Promise.resolve({ ...normalized, summary: buildOrderSummary(normalized.records) });
+  }
+  const { purchaseNo, supplierId, warehouseId, status, ...rest } = params;
+  return getResult<PurchaseOrderPage>('/purchase/orders', {
+    ...rest,
+    ...(purchaseNo?.trim() ? { purchaseNo: purchaseNo.trim() } : {}),
+    ...(supplierId && supplierId !== 'all' ? { supplierId } : {}),
+    ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
+    ...(status && status !== 'all' ? { status } : {}),
+  }).then(page => {
+    const normalized = normalizePage(page, normalizeOrder);
+    return { ...normalized, summary: buildOrderSummary(normalized.records) };
+  });
+}
+
+export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
+  if (useMockApi) {
+    const supplier = mockSuppliers.find(item => item.supplierId === payload.supplierId);
+    if (!supplier || supplier.status === 0) return Promise.reject(new Error('请选择启用状态的供应商'));
+    const warehouse = mockWarehouseSnapshot(payload.warehouseId);
+    const purchaseOrderId = String(Date.now());
+    const purchaseNo = `PO202606${String(nextPurchaseOrderSequence++).padStart(3, '0')}`;
+    const timestamp = nowText();
+    const items = payload.items.map((line, index) => {
+      const supplierProduct = resolveOrderSupplierProduct(payload.supplierId, line);
+      if (!supplierProduct) throw new Error('当前供应商未维护所选产品的启用供货关系');
+      const product = supplierProduct;
+      return normalizeOrderItem({
+        purchaseOrderItemId: `${purchaseOrderId}${index + 1}`,
+        purchaseOrderId,
+        purchaseNo,
+        supplierProductId: supplierProduct?.supplierProductId || null,
+        productId: product.productId,
+        productCode: product.productCode,
+        productName: product.productName,
+        unitName: product.unitName,
+        quantity: line.quantity,
+        inboundQty: 0,
+        unitPrice: line.unitPrice,
+        totalAmount: line.quantity * line.unitPrice,
+        selectedSupplierScore: line.selectedSupplierScore,
+        remark: line.remark.trim(),
+      });
+    });
+    const created: PurchaseOrderListItem = normalizeOrder({
+      purchaseOrderId,
+      purchaseNo,
+      supplierId: supplier.supplierId,
+      supplierCode: supplier.supplierCode,
+      supplierName: supplier.supplierName,
+      warehouseId: warehouse.warehouseId,
+      warehouseName: warehouse.warehouseName,
+      status: 'DRAFT',
+      totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
+      expectedArrivalDate: payload.expectedArrivalDate || null,
+      createdById: '1900000000000000001',
+      createdByName: '系统管理员',
+      submittedAt: null,
+      approvedById: null,
+      approvedByName: '',
+      approvedAt: null,
+      createTime: timestamp,
+      updateTime: timestamp,
+      remark: payload.remark.trim(),
+      items,
+    });
+    mockOrders = [created, ...mockOrders];
+    return Promise.resolve(created);
+  }
+  return postResult<PurchaseOrderListItem, PurchaseOrderFormPayload>('/purchase/orders', payload).then(normalizeOrder);
+}
+
+export async function updatePurchaseOrder(purchaseOrderId: string, payload: PurchaseOrderFormPayload) {
+  if (useMockApi) {
+    const existing = mockOrders.find(item => item.purchaseOrderId === purchaseOrderId);
+    if (!existing) return Promise.reject(new Error('采购订单不存在'));
+    if (existing.status !== 'DRAFT' && existing.status !== 'SUBMITTED') return Promise.reject(new Error('仅草稿或已提交采购单可以编辑'));
+    const supplier = mockSuppliers.find(item => item.supplierId === payload.supplierId);
+    if (!supplier || supplier.status === 0) return Promise.reject(new Error('请选择启用状态的供应商'));
+    const warehouse = mockWarehouseSnapshot(payload.warehouseId);
+    const timestamp = nowText();
+    const items = payload.items.map((line, index) => {
+      const supplierProduct = resolveOrderSupplierProduct(payload.supplierId, line);
+      if (!supplierProduct) throw new Error('当前供应商未维护所选产品的启用供货关系');
+      const product = supplierProduct;
+      return normalizeOrderItem({
+        purchaseOrderItemId: line.purchaseOrderItemId || `${purchaseOrderId}${index + 1}`,
+        purchaseOrderId,
+        purchaseNo: existing.purchaseNo,
+        supplierProductId: supplierProduct?.supplierProductId || null,
+        productId: product.productId,
+        productCode: product.productCode,
+        productName: product.productName,
+        unitName: product.unitName,
+        quantity: line.quantity,
+        inboundQty: 0,
+        unitPrice: line.unitPrice,
+        totalAmount: line.quantity * line.unitPrice,
+        selectedSupplierScore: line.selectedSupplierScore,
+        remark: line.remark.trim(),
+      });
+    });
+    const updated = normalizeOrder({
+      ...existing,
+      supplierId: supplier.supplierId,
+      supplierCode: supplier.supplierCode,
+      supplierName: supplier.supplierName,
+      warehouseId: warehouse.warehouseId,
+      warehouseName: warehouse.warehouseName,
+      totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
+      expectedArrivalDate: payload.expectedArrivalDate || null,
+      updateTime: timestamp,
+      remark: payload.remark.trim(),
+      items,
+    });
+    mockOrders = mockOrders.map(item => (item.purchaseOrderId === purchaseOrderId ? updated : item));
+    return Promise.resolve(updated);
+  }
+  const response = await http.put(`/purchase/orders/${purchaseOrderId}`, payload);
+  return normalizeOrder(response.data.data as PurchaseOrderListItem);
+}
+
+export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'submit' | 'approve' | 'cancel') {
+  if (useMockApi) {
+    const timestamp = nowText();
+    mockOrders = mockOrders.map(item => {
+      if (item.purchaseOrderId !== purchaseOrderId) return item;
+      if (action === 'submit' && item.status !== 'DRAFT') throw new Error('仅草稿采购单可以提交');
+      if (action === 'approve' && item.status !== 'SUBMITTED') throw new Error('仅已提交采购单可以审核');
+      if (action === 'cancel' && item.status !== 'DRAFT' && item.status !== 'SUBMITTED') throw new Error('仅草稿或已提交采购单可以取消');
+      if ((action === 'submit' || action === 'approve') && !item.expectedArrivalDate) throw new Error('提交或审核采购订单前必须维护预计到货日期');
+      return {
+        ...item,
+        status: action === 'submit' ? 'SUBMITTED' : action === 'approve' ? 'APPROVED' : 'CANCELLED',
+        submittedAt: action === 'submit' ? timestamp : item.submittedAt,
+        approvedById: action === 'approve' ? '1900000000000000001' : item.approvedById,
+        approvedByName: action === 'approve' ? '采购主管' : item.approvedByName,
+        approvedAt: action === 'approve' ? timestamp : item.approvedAt,
+        updateTime: timestamp,
+      };
+    });
+    return Promise.resolve(null);
+  }
+  return postResult<null, Record<string, never>>(`/purchase/orders/${purchaseOrderId}/${action}`, {});
+}
+
+function mockProductSnapshotById(productId: string) {
+  const existing = mockSupplierProducts.find(item => item.productId === productId);
+  if (existing) return existing;
+  const byStatic = Object.values({
+    P0001: mockProductSnapshot('P0001'),
+    P0002: mockProductSnapshot('P0002'),
+    P0003: mockProductSnapshot('P0003'),
+    P0004: mockProductSnapshot('P0004'),
+    P0005: mockProductSnapshot('P0005'),
+    P0007: mockProductSnapshot('P0007'),
+    P0013: mockProductSnapshot('P0013'),
+  }).find(item => item.productId === productId);
+  return byStatic || mockProductSnapshot('P0001');
+}
+
+function mockWarehouseSnapshot(warehouseId: string): Pick<WarehouseListItem, 'warehouseId' | 'warehouseName'> {
+  const warehouses: Record<string, Pick<WarehouseListItem, 'warehouseId' | 'warehouseName'>> = {
+    '1930000000000000001': { warehouseId: '1930000000000000001', warehouseName: '华东中心仓' },
+    '1930000000000000002': { warehouseId: '1930000000000000002', warehouseName: '华南中心仓' },
+    '1930000000000000008': { warehouseId: '1930000000000000008', warehouseName: '南京备货仓' },
+  };
+  return warehouses[warehouseId] || { warehouseId, warehouseName: '目标仓库' };
+}
+
+export async function listEnabledProductOptions() {
+  const page = await listProducts({ pageNum: 1, pageSize: 100, status: 1 });
+  return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}`, product: item }));
+}
+
+export async function listEnabledWarehouseOptions() {
+  const page = await listWarehouses({ pageNum: 1, pageSize: 100, status: 1 });
+  return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}`, warehouse: item }));
+}

@@ -136,6 +136,7 @@ const promptState = reactive({
 });
 
 const enabledCount = computed(() => users.value.filter(u => u.status === 1).length);
+const disabledCount = computed(() => users.value.filter(u => u.status === 0).length);
 const adminCount = computed(() => users.value.filter(u => u.isAdmin).length);
 const roleBoundCount = computed(() => users.value.filter(u => u.roleIds.length > 0).length);
 
@@ -497,19 +498,19 @@ function handleDelete(row: SystemUserListItem) {
     <!-- Metrics -->
     <div class="summary-strip">
       <div class="summary-item">
-        <span class="text-xs text-muted-foreground">用户总数</span>
-        <strong class="text-2xl mt-1">{{ total }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">启用账号</span>
+        <span class="text-xs text-muted-foreground">本页启用</span>
         <strong class="text-2xl mt-1">{{ enabledCount }}</strong>
       </div>
       <div class="summary-item">
-        <span class="text-xs text-muted-foreground">超级管理员</span>
+        <span class="text-xs text-muted-foreground">本页停用</span>
+        <strong class="text-2xl mt-1">{{ disabledCount }}</strong>
+      </div>
+      <div class="summary-item">
+        <span class="text-xs text-muted-foreground">本页超级管理员</span>
         <strong class="text-2xl mt-1">{{ adminCount }}</strong>
       </div>
       <div class="summary-item">
-        <span class="text-xs text-muted-foreground">已绑定角色</span>
+        <span class="text-xs text-muted-foreground">本页绑定角色</span>
         <strong class="text-2xl mt-1">{{ roleBoundCount }}</strong>
       </div>
     </div>

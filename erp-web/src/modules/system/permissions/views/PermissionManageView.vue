@@ -82,6 +82,7 @@ const confirmState = reactive({
 });
 
 const enabledCount = computed(() => permissions.value.filter(item => item.status === 1).length);
+const disabledCount = computed(() => permissions.value.filter(item => item.status === 0).length);
 const moduleCount = computed(() => new Set(permissions.value.map(item => item.moduleCode)).size);
 const boundRoleCount = computed(() => permissions.value.reduce((sum, item) => sum + item.roleCount, 0));
 const allSelected = computed(() => permissions.value.length > 0 && permissions.value.every(item => selectedIds.value.has(item.permissionId)));
@@ -379,10 +380,10 @@ function handleBatchDelete() {
     </div>
 
     <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">权限码总数</span><strong class="mt-1 text-2xl">{{ total }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">当前页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">当前页模块</span><strong class="mt-1 text-2xl">{{ moduleCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">当前页角色引用</span><strong class="mt-1 text-2xl">{{ boundRoleCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页模块</span><strong class="mt-1 text-2xl">{{ moduleCount }}</strong></div>
+      <div class="summary-item"><span class="text-xs text-muted-foreground">本页角色引用</span><strong class="mt-1 text-2xl">{{ boundRoleCount }}</strong></div>
     </div>
 
     <div class="filter-panel">

@@ -9,8 +9,8 @@
             d.ancestors,
             d.dept_name,
             d.status,
-            d.create_time ,
-            d.update_time ,
+            d.create_time AS created_at,
+            d.update_time AS updated_at,
             (
                 SELECT COUNT(*)
                 FROM sys_user u
@@ -26,6 +26,54 @@
             AND d.status = #{status}
         </if>
         ORDER BY d.create_time DESC
+    </select>
+
+    <!--
+        级联停用：自己 + 所有下级（基于 ancestors 命中）
+        入参 deptId 走 MySQL 隐式 bigint 比较；id 与 ancestors 字段都是 varchar
+        MySQL 8 在比较时会把常量字面量按字段类型转换，这里 deptId 为字符串，需要在调用方传字符串避免精度问题
+    -->
+    <update id="disableDeptsCascade">
+        UPDATE sys_dept
+        SET status = 0
+        WHERE deleted = 0
+          AND id IN (
+              SELECT descendant_id FROM (
+                  SELECT d1.id AS descendant_id
+                  FROM sys_dept d1
+                  WHERE d1.deleted = 0
+                    AND (
+                        d1.id IN
+                        <foreach collection="deptIds" item="id" open="(" separator="," close=")">
+                            #{id}
+                        </foreach>
+                        <foreach collection="deptIds" item="id">
+                            OR FIND_IN_SET(#{id}, d1.ancestors) > 0
+                        </foreach>
+                    )
+              ) AS temp
+          )
+    </update>
+
+    <update id="enableDepts">
+        UPDATE sys_dept
+        SET status = 1
+        WHERE deleted = 0
+          AND id IN
+          <foreach collection="deptIds" item="id" open="(" separator="," close=")">
+              #{id}
+          </foreach>
+    </update>
+
+    <select id="countDisabledByIds" resultType="int">
+        SELECT COUNT(*)
+        FROM sys_dept
+        WHERE deleted = 0
+          AND status = 0
+          AND id IN
+          <foreach collection="ids" item="id" open="(" separator="," close=")">
+              #{id}
+          </foreach>
     </select>
 
 </mapper>

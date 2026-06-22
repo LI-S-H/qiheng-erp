@@ -2,10 +2,16 @@ package com.qiheng.erp.system.controller;
 
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.Result;
+import com.qiheng.erp.system.domain.dto.BatchDeleteDto;
+import com.qiheng.erp.system.domain.dto.BatchStatusUpdateDto;
+import com.qiheng.erp.system.domain.dto.StatusUpdateDto;
 import com.qiheng.erp.system.domain.dto.SysDeptDto;
 import com.qiheng.erp.system.domain.entity.SysDept;
 import com.qiheng.erp.system.service.ISysDeptService;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -45,7 +51,7 @@ public class SysDeptController {
         List<SysDeptDto> list = sysDeptService.listWithUserCount(deptName, status);
         return Result.ok(list);
     }
-    
+
     /**
      * 保存部门
      * @param dept 部门信息
@@ -54,13 +60,55 @@ public class SysDeptController {
     @PostMapping
     public Result<SysDeptDto> save(@RequestBody SysDept dept) {
         log.info("保存部门: {}", dept);
-        //鉴权
         StpUtil.checkPermission("system:dept:manage");
         SysDeptDto dto = sysDeptService.saveDept(dept);
         return Result.ok(dto);
     }
 
+    /**
+     * 修改部门状态
+     * @param deptId
+     * @param request 状态修改请求
+     * @return
+     */
+    @PatchMapping("/{deptId}/status")
+    public Result<Void> updateStatus(
+            @PathVariable Long deptId,
+            @Valid @RequestBody StatusUpdateDto request)
+    {
+        StpUtil.checkPermission("system:dept:manage");
+        log.info("updateStatus deptId: {}, status: {}", deptId, request.getStatus());
+        sysDeptService.updateStatus(deptId, request.getStatus());
+        return Result.ok();
+    }
 
-       
-       
+    /**
+     * 批量修改部门状态
+     * @param requests 批量状态修改请求
+     * @return
+     */
+    @PatchMapping("/batch/status")
+    public Result<Void> batchUpdateStatus(
+        @Valid @RequestBody BatchStatusUpdateDto requests)
+    {
+        StpUtil.checkPermission("system:dept:manage");
+        log.info("batchUpdateStatus requests: {}", requests);
+        sysDeptService.batchUpdateStatus(requests.getDeptIds(), requests.getStatus());
+        return Result.ok();
+    }
+
+    /**
+     * 批量删除部门
+     * @param
+     * @return
+     */
+    @PostMapping("/batch/delete")
+    public Result<Void> batchDelete(@Valid @RequestBody BatchDeleteDto request){
+        StpUtil.checkPermission("system:dept:manage");
+        log.info("batchDelete deptIds: {}", request.getDeptIds());
+        sysDeptService.batchDelete(request.getDeptIds());
+        return Result.ok();
+    }
+
+
 }

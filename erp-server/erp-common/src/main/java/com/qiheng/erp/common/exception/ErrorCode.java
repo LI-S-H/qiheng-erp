@@ -30,6 +30,8 @@ public enum ErrorCode {
     DEPT_HAS_USERS(30005, "部门下存在用户，无法删除"),
     PERMISSION_CODE_DUPLICATE(30006, "权限码已存在"),
     USER_NOT_FOUND(30007, "用户不存在"),
+    DEPT_NOT_FOUND(30008, "部门不存在"),
+    PARENT_DEPT_DISABLED(30009, "上级部门已停用，不能启用当前部门"),
 
     // 产品模块 4xxxx
     CATEGORY_NAME_DUPLICATE(40001, "同级别下分类名称已存在"),
@@ -37,6 +39,7 @@ public enum ErrorCode {
     CATEGORY_HAS_CHILDREN(40003, "分类存在子分类，无法删除"),
     CATEGORY_HAS_PRODUCTS(40004, "分类下存在产品，无法删除"),
     PRODUCT_CODE_DUPLICATE(40005, "产品编码已存在"),
+    CHILD_DEPT_EXISTS(40006, "部门下存在子部门，无法删除"),
 
     // 仓库模块 5xxxx
     WAREHOUSE_CODE_DUPLICATE(50001, "仓库编码已存在"),

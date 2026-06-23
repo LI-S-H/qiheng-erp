@@ -2,25 +2,38 @@ package com.qiheng.erp.system.service.impl;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
+import com.qiheng.erp.common.annotation.DistributedLock;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.PasswordUtil;
 import com.qiheng.erp.system.domain.dto.SysUserPageDto;
+import com.qiheng.erp.system.domain.dto.SysUserStatusUpdateDto;
+import com.qiheng.erp.system.domain.dto.UserPasswordUpdateDto;
 import com.qiheng.erp.system.domain.dto.UserRoleDto;
 import com.qiheng.erp.system.domain.entity.SysDept;
 import com.qiheng.erp.system.domain.entity.SysRole;
 import com.qiheng.erp.system.domain.entity.SysUser;
 import com.qiheng.erp.system.domain.entity.SysUserRole;
 import com.qiheng.erp.system.domain.vo.SysUserVo;
-import com.qiheng.erp.system.mapper.SysRoleMapper;
 import com.qiheng.erp.system.mapper.SysUserMapper;
 import com.qiheng.erp.system.mapper.SysUserRoleMapper;
+import com.qiheng.erp.system.service.ISysUserRoleService;
 import com.qiheng.erp.system.service.ISysUserService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 
@@ -42,7 +55,13 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     private SysUserRoleMapper sysUserRoleMapper;
 
     @Autowired
-    private SysRoleMapper sysRoleMapper;
+    private PasswordUtil passwordUtil;
+
+    @Autowired
+    private ISysUserRoleService sysUserRoleService;
+
+    @Autowired
+    private RedissonClient redissonClient;
 
     /**
      * 用户分页查询
@@ -137,4 +156,177 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             }
         });
     }
+
+    /**
+     * 用户新增
+     * @param sysUser 用户实体
+     * @return 新增结果
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public SysUserVo saveUser(SysUser sysUser) {
+        //补全信息
+        sysUser.setPasswordHash(passwordUtil.encode(sysUser.getPassword()));
+        //新增
+        sysUserMapper.insert(sysUser);
+        //补全中间表
+        List<SysUserRole> userRoles = sysUser.getRoleIds().stream().map(roleId ->
+                new SysUserRole().setUserId(sysUser.getId()).setRoleId(roleId)
+        ).toList();
+        //批量新增
+        sysUserRoleService.saveBatch(userRoles);
+        //查询新增用户详情并填充角色信息和部门信息
+        return getDetailById(sysUser.getId());
+    }
+
+    /**
+     * 批量更新用户状态
+     * @param dto
+     */
+    @Override
+    public void updateStatus(SysUserStatusUpdateDto dto) {
+        //构建更新条件
+        LambdaUpdateWrapper<SysUser> wrapper = new LambdaUpdateWrapper<SysUser>()
+                .set(SysUser::getStatus, dto.getStatus())
+                .in(SysUser::getId, dto.getUserIds());
+        //执行更新
+        sysUserMapper.update(wrapper);
+    }
+
+    /**
+     * 更新用户状态
+     * @param userId
+     * @param status
+     */
+    @Override
+    public void updateStatusById(Long userId, Integer status) {
+        //构建更新条件
+        LambdaUpdateWrapper<SysUser> wrapper = new LambdaUpdateWrapper<SysUser>()
+                .set(SysUser::getStatus, status)
+                .eq(SysUser::getId, userId);
+        //执行更新
+        sysUserMapper.update(wrapper);
+    }
+
+    /**
+     * 批量更新用户密码
+     * @param dto
+     */
+    @Override
+    public void updatePasswordByIds(UserPasswordUpdateDto dto) {
+        //构建更新条件
+        LambdaUpdateWrapper<SysUser> wrapper = new LambdaUpdateWrapper<SysUser>()
+                .set(SysUser::getPasswordHash, passwordUtil.encode(dto.getPassword()))
+                .in(SysUser::getId, dto.getUserIds());
+        //执行更新
+        sysUserMapper.update(wrapper);
+    }
+
+    /**
+     * 更新用户密码
+     * @param userId 用户ID
+     * @param password 明文密码
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void updatePasswordById(Long userId, String password) {
+        //构建更新条件
+        LambdaUpdateWrapper<SysUser> wrapper = new LambdaUpdateWrapper<SysUser>()
+                .set(SysUser::getPasswordHash, passwordUtil.encode(password))
+                .eq(SysUser::getId, userId);
+        //执行更新
+        sysUserMapper.update(wrapper);
+    }
+
+    /**
+     * 更新用户
+     * @param userId
+     * @param sysUser
+     * @return
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    @DistributedLock(key = "'sys:user:' + #userId")
+    public SysUserVo updateUser(Long userId, SysUser sysUser) {
+        //查询用户是否存在
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND.getCode(), "用户不存在");
+        }
+        //更新用户信息
+        sysUser.setId(userId);
+        sysUserMapper.updateById(sysUser);
+        //更新用户角色关系
+        sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, userId));
+        List<SysUserRole> userRoles = sysUser.getRoleIds().stream().map(roleId ->
+                new SysUserRole().setUserId(userId).setRoleId(roleId)
+        ).toList();
+        sysUserRoleService.saveBatch(userRoles);
+        //查询更新后的用户详情并填充角色信息和部门信息
+        return getDetailById(userId);
+    }
+
+    /**
+     * 更新用户角色
+     * @param userId 用户ID
+     * @param roleIds 更新角色ID列表
+     */
+    @DistributedLock(key ="'sys:user:' + #userId")
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void updateRoles(Long userId,List<String> roleIds) {
+        //查询用户是否存在
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND.getCode(), "用户不存在");
+        }
+        //删除用户角色关系
+        sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, userId));
+        //批量新增
+        List<SysUserRole> userRoles = roleIds.stream().map(roleId ->
+                new SysUserRole().setUserId(userId).setRoleId(Long.parseLong(roleId))
+        ).toList();
+        sysUserRoleService.saveBatch(userRoles);
+    }
+
+    /**
+     * 批量删除用户
+     * @param ids 用户ID列表
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void deleteBatch(List<String> ids) {
+        //加分布式锁
+        List<RLock> locks = new ArrayList<>();
+        for (String id : ids) {
+            RLock lock = redissonClient.getLock("sys:user:" + id);
+            try {
+                if (!lock.tryLock(3,30, TimeUnit.SECONDS)) {
+                    locks.forEach(l -> {
+                        if (l.isHeldByCurrentThread())
+                            l.unlock();
+                    });
+                    throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作失败，请稍后再试");
+                }
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            locks.add(lock);
+        }
+        //删除用户角色关系
+        sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getUserId, ids));
+        //删除用户
+        removeByIds(ids);
+        //注册事务同步，确保在事务提交后释放锁
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                locks.forEach(lock -> {
+                    if (lock.isHeldByCurrentThread()) lock.unlock();
+                });
+            }
+        });
+    }
+
+
 }

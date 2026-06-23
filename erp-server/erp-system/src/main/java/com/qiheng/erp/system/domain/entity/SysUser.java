@@ -4,7 +4,12 @@ import com.baomidou.mybatisplus.annotation.*;
 
 import java.time.LocalDateTime;
 import java.io.Serializable;
+import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
@@ -30,25 +35,34 @@ public class SysUser implements Serializable {
     @TableId(value = "id", type = IdType.ASSIGN_ID)
     private Long id;
 
+    @NotBlank(message = "登录账号不能为空")
     @Schema(description = "登录账号")
     @TableField("username")
     private String username;
 
     @Schema(description = "密码哈希")
     @TableField("password_hash")
+    @JsonIgnore
     private String passwordHash;
 
+    @NotBlank(message = "登录密码不能为空")
+    @Schema(description = "登录密码")
+    @TableField(exist = false)
+    private String password;
+
+    @NotBlank(message = "用户姓名不能为空")
     @Schema(description = "用户姓名")
     @TableField("real_name")
     private String realName;
 
+    @NotNull(message = "所属部门不能为空")
     @Schema(description = "所属部门ID")
     @TableField("dept_id")
     private Long deptId;
 
-    @Schema(description = "是否超级管理员：1是，0否")
+    @Schema(description = "是否超级管理员")
     @TableField("is_admin")
-    private Integer isAdmin;
+    private Boolean isAdmin;
 
     @Schema(description = "状态：1启用，0禁用")
     @TableField("status")
@@ -75,5 +89,8 @@ public class SysUser implements Serializable {
     @TableField("version")
     private Integer version;
 
+    @Schema(description = "角色ID列表")
+    @TableField(exist = false)
+    private List<Long> roleIds;
 
 }

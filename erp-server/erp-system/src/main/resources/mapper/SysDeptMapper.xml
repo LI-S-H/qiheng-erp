@@ -9,8 +9,8 @@
             d.ancestors,
             d.dept_name,
             d.status,
-            d.create_time AS created_at,
-            d.update_time AS updated_at,
+            d.create_time,
+            d.update_time,
             (
                 SELECT COUNT(*)
                 FROM sys_user u

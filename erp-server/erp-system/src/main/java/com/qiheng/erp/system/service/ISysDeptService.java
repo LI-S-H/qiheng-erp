@@ -3,6 +3,7 @@ package com.qiheng.erp.system.service;
 import com.qiheng.erp.system.domain.dto.SysDeptDto;
 import com.qiheng.erp.system.domain.entity.SysDept;
 import com.baomidou.mybatisplus.extension.service.IService;
+import jakarta.validation.Valid;
 
 import java.util.List;
 
@@ -55,4 +56,25 @@ public interface ISysDeptService extends IService<SysDept> {
      * @param deptIds 部门ID列表
      */
     void batchDelete(List<String> deptIds);
+
+    /**
+     * 删除部门
+     * @param deptId 部门ID
+     */
+    void delete(Long deptId);
+
+    /**
+     * 查询部门详情
+     * @param deptId 部门ID
+     * @return 部门详情
+     */
+    SysDeptDto getDetails(Long deptId);
+
+    /**
+     * 更新部门信息
+     * @param deptId 部门ID
+     * @param request 部门信息
+     * @return 更新后的部门信息
+     */
+    SysDeptDto updateDept(Long deptId, @Valid SysDeptDto request);
 }

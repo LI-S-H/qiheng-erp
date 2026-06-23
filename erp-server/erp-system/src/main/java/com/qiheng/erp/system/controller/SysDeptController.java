@@ -2,6 +2,7 @@ package com.qiheng.erp.system.controller;
 
 
 import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.core.bean.BeanUtil;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.Result;
@@ -77,7 +78,7 @@ public class SysDeptController {
             @Valid @RequestBody StatusUpdateDto request)
     {
         StpUtil.checkPermission("system:dept:manage");
-        log.info("updateStatus deptId: {}, status: {}", deptId, request.getStatus());
+        log.info("修改部门状态，deptId: {}, status: {}", deptId, request.getStatus());
         sysDeptService.updateStatus(deptId, request.getStatus());
         return Result.ok();
     }
@@ -92,7 +93,7 @@ public class SysDeptController {
         @Valid @RequestBody BatchStatusUpdateDto requests)
     {
         StpUtil.checkPermission("system:dept:manage");
-        log.info("batchUpdateStatus requests: {}", requests);
+        log.info("批量修改部门状态，requests: {}", requests);
         sysDeptService.batchUpdateStatus(requests.getDeptIds(), requests.getStatus());
         return Result.ok();
     }
@@ -105,10 +106,53 @@ public class SysDeptController {
     @PostMapping("/batch/delete")
     public Result<Void> batchDelete(@Valid @RequestBody BatchDeleteDto request){
         StpUtil.checkPermission("system:dept:manage");
-        log.info("batchDelete deptIds: {}", request.getDeptIds());
+        log.info("批量删除部门，deptIds: {}", request.getDeptIds());
         sysDeptService.batchDelete(request.getDeptIds());
         return Result.ok();
     }
 
+    /**
+     * 删除部门
+     * @param deptId 部门ID
+     * @return
+     */
+    @DeleteMapping("/{deptId}")
+    public Result<Void> delete(@PathVariable Long deptId) {
+        StpUtil.checkPermission("system:dept:manage");
+        log.info("删除部门，deptId: {}", deptId);
+        sysDeptService.delete(deptId);
+        return Result.ok();
+    }
 
+    /**
+     * 查询部门详情
+     * @param deptId 部门ID
+     * @return 部门详情
+     */
+    @GetMapping("/{deptId}")
+    public Result<SysDeptDto> get(@PathVariable Long deptId) {
+        if (deptId == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR);
+        }
+        log.info("查询部门详情，deptId: {}", deptId);
+        SysDeptDto dto = sysDeptService.getDetails(deptId);
+        return Result.ok(dto);
+    }
+
+    /**
+     * 更新部门信息
+     * @param deptId 部门ID
+     * @param request 部门信息
+     * @return
+     */
+    @PutMapping("/{deptId}")
+    public Result<SysDeptDto> update(
+            @PathVariable Long deptId,
+            @Valid @RequestBody SysDeptDto request)
+    {
+        StpUtil.checkPermission("system:dept:manage");
+        log.info("更新部门信息，deptId: {}, request: {}", deptId, request);
+        SysDeptDto dto = sysDeptService.updateDept(deptId, request);
+        return Result.ok(dto);
+    }
 }

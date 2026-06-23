@@ -6,6 +6,7 @@ import com.qiheng.erp.common.result.Result;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -58,6 +61,26 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining("; "));
         log.error("参数校验异常: {}", message);
         return Result.fail(ErrorCode.PARAM_ERROR.getCode(), message);
+    }
+
+    /**
+     * 唯一键冲突异常
+     */
+    @ExceptionHandler(DuplicateKeyException.class)
+    @ResponseStatus(HttpStatus.OK)
+    public Result<Void> handleDuplicateKeyException(DuplicateKeyException e) {
+        String message = extractDuplicateMessage(e.getMessage());
+        log.warn("数据重复: {}", message);
+        return Result.fail(ErrorCode.DATA_DUPLICATE.getCode(), message);
+    }
+
+    private String extractDuplicateMessage(String errorMsg) {
+        Pattern pattern = Pattern.compile("Duplicate entry '(.*?)' for key");
+        Matcher matcher = pattern.matcher(errorMsg);
+        if (matcher.find()) {
+            return "数据重复，值 '" + matcher.group(1) + "' 已存在";
+        }
+        return ErrorCode.DATA_DUPLICATE.getMessage();
     }
 
     /**

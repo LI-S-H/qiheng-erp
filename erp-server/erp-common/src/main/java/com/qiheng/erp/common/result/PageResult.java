@@ -14,14 +14,14 @@ public class PageResult<T> implements Serializable {
     //数据
     private List<T> records;
     //总数据数
-    private long total;
+    private int total;
     //当前页码
-    private long pageNum;
+    private int pageNum;
     //每页数据数
-    private long pageSize;
+    private int pageSize;
 
 
-    public static <T> PageResult<T> of(List<T> records, long total, long pageNum, long pageSize) {
+    public static <T> PageResult<T> of(List<T> records, int total, int pageNum, int pageSize) {
         PageResult<T> result = new PageResult<>();
         result.setRecords(records);
         result.setTotal(total);

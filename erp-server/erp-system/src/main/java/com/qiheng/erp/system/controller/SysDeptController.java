@@ -12,6 +12,8 @@ import com.qiheng.erp.system.domain.dto.StatusUpdateDto;
 import com.qiheng.erp.system.domain.dto.SysDeptDto;
 import com.qiheng.erp.system.domain.entity.SysDept;
 import com.qiheng.erp.system.service.ISysDeptService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +32,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/system/depts")
 @Slf4j
+@Tag(name = "部门管理")
 public class SysDeptController {
 
     @Autowired
@@ -43,6 +46,7 @@ public class SysDeptController {
      * @param status   状态筛选
      * @return 部门列表（含 userCount）
      */
+    @Operation(summary = "查询部门列表")
     @GetMapping
     public Result<List<SysDeptDto>> list(
             @RequestParam(required = false) String deptName,
@@ -58,6 +62,7 @@ public class SysDeptController {
      * @param dept 部门信息
      * @return 保存后的部门信息（含 deptId）
      */
+    @Operation(summary = "保存部门")
     @PostMapping
     public Result<SysDeptDto> save(@RequestBody SysDept dept) {
         log.info("保存部门: {}", dept);
@@ -72,6 +77,7 @@ public class SysDeptController {
      * @param request 状态修改请求
      * @return
      */
+    @Operation(summary = "修改部门状态")
     @PatchMapping("/{deptId}/status")
     public Result<Void> updateStatus(
             @PathVariable Long deptId,
@@ -88,6 +94,7 @@ public class SysDeptController {
      * @param requests 批量状态修改请求
      * @return
      */
+    @Operation(summary = "批量修改部门状态")
     @PatchMapping("/batch/status")
     public Result<Void> batchUpdateStatus(
         @Valid @RequestBody BatchStatusUpdateDto requests)
@@ -103,6 +110,7 @@ public class SysDeptController {
      * @param
      * @return
      */
+    @Operation(summary = "批量删除部门")
     @PostMapping("/batch/delete")
     public Result<Void> batchDelete(@Valid @RequestBody BatchDeleteDto request){
         StpUtil.checkPermission("system:dept:manage");
@@ -116,6 +124,7 @@ public class SysDeptController {
      * @param deptId 部门ID
      * @return
      */
+    @Operation(summary = "删除部门")
     @DeleteMapping("/{deptId}")
     public Result<Void> delete(@PathVariable Long deptId) {
         StpUtil.checkPermission("system:dept:manage");
@@ -129,6 +138,7 @@ public class SysDeptController {
      * @param deptId 部门ID
      * @return 部门详情
      */
+    @Operation(summary = "查询部门详情")
     @GetMapping("/{deptId}")
     public Result<SysDeptDto> get(@PathVariable Long deptId) {
         if (deptId == null) {
@@ -145,6 +155,7 @@ public class SysDeptController {
      * @param request 部门信息
      * @return
      */
+    @Operation(summary = "更新部门信息")
     @PutMapping("/{deptId}")
     public Result<SysDeptDto> update(
             @PathVariable Long deptId,

@@ -181,7 +181,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     /**
      * 批量更新用户状态
-     * @param dto
+     * @param dto 更新状态条件
      */
     @Override
     public void updateStatus(SysUserStatusUpdateDto dto) {
@@ -195,8 +195,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     /**
      * 更新用户状态
-     * @param userId
-     * @param status
+     * @param userId 用户ID
+     * @param status 状态
      */
     @Override
     public void updateStatusById(Long userId, Integer status) {
@@ -210,7 +210,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     /**
      * 批量更新用户密码
-     * @param dto
+     * @param dto 更新密码条件
      */
     @Override
     public void updatePasswordByIds(UserPasswordUpdateDto dto) {
@@ -240,9 +240,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     /**
      * 更新用户
-     * @param userId
-     * @param sysUser
-     * @return
+     * @param userId 用户ID
+     * @param sysUser 用户实体
+     * @return 更新结果
      */
     @Transactional(rollbackFor = Exception.class)
     @Override

@@ -9,7 +9,6 @@ import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.system.domain.dto.SysUserPageDto;
 import com.qiheng.erp.system.domain.dto.SysUserStatusUpdateDto;
 import com.qiheng.erp.system.domain.dto.UserPasswordUpdateDto;
-import com.qiheng.erp.system.domain.dto.UserRoleDto;
 import com.qiheng.erp.system.domain.entity.SysUser;
 import com.qiheng.erp.system.domain.vo.SysUserVo;
 import com.qiheng.erp.system.service.ISysUserService;

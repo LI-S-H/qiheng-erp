@@ -4,7 +4,6 @@ import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.system.domain.dto.SysUserPageDto;
 import com.qiheng.erp.system.domain.dto.SysUserStatusUpdateDto;
 import com.qiheng.erp.system.domain.dto.UserPasswordUpdateDto;
-import com.qiheng.erp.system.domain.dto.UserRoleDto;
 import com.qiheng.erp.system.domain.entity.SysUser;
 import com.qiheng.erp.system.domain.vo.SysUserVo;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -47,42 +46,42 @@ public interface ISysUserService extends IService<SysUser> {
 
     /**
      * 批量更新用户状态
-     * @param dto
+     * @param dto 更新状态DTO
      */
     void updateStatus(@Valid SysUserStatusUpdateDto dto);
 
     /**
      * 更新用户状态
-     * @param userId
-     * @param status
+     * @param userId 用户ID
+     * @param status 状态值
      */
     void updateStatusById(Long userId, Integer status);
 
     /**
      * 批量更新用户密码
-     * @param dto
+     * @param dto 更新密码DTO
      */
     void updatePasswordByIds(@Valid UserPasswordUpdateDto dto);
 
     /**
      * 更新用户密码
-     * @param userId
-     * @param password
+     * @param userId 用户ID
+     * @param password 登录密码
      */
     void updatePasswordById(Long userId, String password);
 
     /**
      * 更新用户
-     * @param userId
-     * @param sysUser
-     * @return
+     * @param userId 用户ID
+     * @param sysUser 用户实体
+     * @return 更新结果VO
      */
     SysUserVo updateUser(Long userId, SysUser sysUser);
 
     /**
      * 更新用户角色
-     * @param userId
-     * @param dto
+     * @param userId 用户ID
+     * @param roleIds 角色ID列表
      */
     void updateRoles(Long userId, List<String> roleIds);
 

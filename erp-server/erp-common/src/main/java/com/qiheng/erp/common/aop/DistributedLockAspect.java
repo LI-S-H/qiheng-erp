@@ -45,7 +45,7 @@ public class DistributedLockAspect {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作被中断");
         }
         if (!acquired) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作频繁，请稍后重试");
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "该数据正在被其他用户操作，请稍后再试");
         }
         try {
             return joinPoint.proceed();

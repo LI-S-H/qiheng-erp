@@ -301,7 +301,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         for (String id : ids) {
             RLock lock = redissonClient.getLock("sys:user:" + id);
             try {
-                if (!lock.tryLock(3,30, TimeUnit.SECONDS)) {
+                if (!lock.tryLock(0,30, TimeUnit.SECONDS)) {
                     locks.forEach(l -> {
                         if (l.isHeldByCurrentThread())
                             l.unlock();

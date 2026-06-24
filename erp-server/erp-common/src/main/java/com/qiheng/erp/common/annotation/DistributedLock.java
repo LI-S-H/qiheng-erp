@@ -10,7 +10,7 @@ public @interface DistributedLock {
 
     String key();
 
-    long waitTime() default 3;
+    long waitTime() default 0;
 
     long leaseTime() default 30;
 

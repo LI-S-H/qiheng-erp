@@ -16,50 +16,50 @@
 
 ## 表：customer（客户表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 客户ID |
-| customer_code | varchar(64) | 客户编码，唯一 |
-| customer_name | varchar(200) | 客户名称 |
-| contact_name | varchar(100) | 联系人 |
-| contact_phone | varchar(32) | 联系电话 |
-| address | varchar(255) | 地址 |
-| credit_limit | decimal(18,2) | 信用额度，MVP 先仅记录不做强拦截 |
-| status | tinyint | 状态：1 启用，0 禁用 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| deleted | tinyint | 逻辑删除 |
-| remark | varchar(500) | 备注 |
+| 字段            | 类型            | 说明                 |
+| ------------- | ------------- | ------------------ |
+| id            | bigint PK     | 客户ID               |
+| customer_code | varchar(64)   | 客户编码，唯一            |
+| customer_name | varchar(200)  | 客户名称               |
+| contact_name  | varchar(100)  | 联系人                |
+| contact_phone | varchar(32)   | 联系电话               |
+| address       | varchar(255)  | 地址                 |
+| credit_limit  | decimal(18,2) | 信用额度，MVP 先仅记录不做强拦截 |
+| status        | tinyint       | 状态：1 启用，0 禁用       |
+| create_time   | datetime      | 创建时间               |
+| update_time   | datetime      | 更新时间               |
+| deleted       | tinyint       | 逻辑删除               |
+| remark        | varchar(500)  | 备注                 |
 
 关系说明：`sales_order.customer_id` 关联本表。客户手机号属于敏感字段，后续字段权限完善后需要支持脱敏。
 
 ## 表：sales_order（销售订单主表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 销售订单ID |
-| sales_no | varchar(64) | 销售单号，唯一 |
-| customer_id | bigint | 客户ID |
-| customer_code | varchar(64) | 客户编码，冗余 |
-| customer_name | varchar(200) | 客户名称，冗余 |
-| warehouse_id | bigint | 出库仓库ID |
-| warehouse_name | varchar(100) | 出库仓库名称，冗余 |
-| status | varchar(32) | 状态：`DRAFT`、`SUBMITTED`、`APPROVED`、`PARTIAL_OUTBOUND`、`OUTBOUND_DONE`、`CANCELLED` |
-| total_amount | decimal(18,2) | 订单总金额 |
-| expected_delivery_date | date | 预计发货日期 |
-| locked_at | datetime | 库存锁定时间 |
-| created_by_id | bigint | 创建人ID |
-| created_by_name | varchar(100) | 创建人姓名 |
-| submitted_at | datetime | 提交时间 |
-| approved_by_id | bigint | 审核人ID |
-| approved_by_name | varchar(100) | 审核人姓名 |
-| approved_at | datetime | 审核时间 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| deleted | tinyint | 逻辑删除 |
-| remark | varchar(500) | 备注 |
+| 字段                     | 类型            | 说明                                                                               |
+| ---------------------- | ------------- | -------------------------------------------------------------------------------- |
+| id                     | bigint PK     | 销售订单ID                                                                           |
+| sales_no               | varchar(64)   | 销售单号，唯一                                                                          |
+| customer_id            | bigint        | 客户ID                                                                             |
+| customer_code          | varchar(64)   | 客户编码，冗余                                                                          |
+| customer_name          | varchar(200)  | 客户名称，冗余                                                                          |
+| warehouse_id           | bigint        | 出库仓库ID                                                                           |
+| warehouse_name         | varchar(100)  | 出库仓库名称，冗余                                                                        |
+| status                 | varchar(32)   | 状态：`DRAFT`、`SUBMITTED`、`APPROVED`、`PARTIAL_OUTBOUND`、`OUTBOUND_DONE`、`CANCELLED` |
+| total_amount           | decimal(18,2) | 订单总金额                                                                            |
+| expected_delivery_date | date          | 预计发货日期                                                                           |
+| locked_at              | datetime      | 库存锁定时间                                                                           |
+| created_by_id          | bigint        | 创建人ID                                                                            |
+| created_by_name        | varchar(100)  | 创建人姓名                                                                            |
+| submitted_at           | datetime      | 提交时间                                                                             |
+| approved_by_id         | bigint        | 审核人ID                                                                            |
+| approved_by_name       | varchar(100)  | 审核人姓名                                                                            |
+| approved_at            | datetime      | 审核时间                                                                             |
+| create_time            | datetime      | 创建时间                                                                             |
+| update_time            | datetime      | 更新时间                                                                             |
+| deleted                | tinyint       | 逻辑删除                                                                             |
+| remark                 | varchar(500)  | 备注                                                                               |
 
-关系说明：销售订单审核后，可生成仓库模块 `outbound_bill`，其中 `source_type = SALES_ORDER`，`source_id = sales_order.id`，`source_no = sales_order.sales_no`，并快照客户、出库仓库、销售数量、累计已出库数量和剩余未出库数量。
+关系说明：销售订单审核后，可生成仓库模块 `outbound_bill`，其中 `source_type = SALES_ORDER`，`source_id = sales_order.id`，`source_no = sales_order.sales_no`，并快照客户、出库仓库、销售数量和累计已出库数量。待确认出库单的本次出库数量初始为 0 或空业务值，由仓库人员按实物发货填写；剩余未出库数量由后端按 `销售数量 - 累计已出库数量 - 本次出库数量` 计算，不允许前端或用户手动维护。
 
 ## 表：sales_order_item（销售订单明细表）
 
@@ -100,8 +100,9 @@
 - 销售订单保存后不直接扣减库存。
 - 提交或审核销售订单时，服务层校验可用库存 `warehouse_stock.stock_qty - warehouse_stock.locked_qty`。
 - 库存锁定成功后，更新 `warehouse_stock.locked_qty` 和 `sales_order_item.locked_qty`。
-- 销售订单审核后生成仓库模块 `SALES_OUT` 待确认出库单，不直接扣减库存。
-- 仓库人员确认本次出库数量后，生成 `stock_bill` 库存流水，扣减 `warehouse_stock.stock_qty` 和 `warehouse_stock.locked_qty`，并回写 `sales_order_item.outbound_qty`。
+- 销售订单审核后生成仓库模块 `SALES_OUT` 待确认出库单，不直接扣减库存；本次出库数量初始为 0 或空业务值。
+- 仓库人员按实物发货填写并确认本次出库数量后，生成 `stock_bill` 库存流水，扣减 `warehouse_stock.stock_qty` 和 `warehouse_stock.locked_qty`，并回写 `sales_order_item.outbound_qty`。
+- 确认销售出库时，后端必须校验本次出库数量大于 0 且不超过来源明细剩余未出库数量；确认后的剩余未出库数量由后端计算，不作为前端提交字段。
 - 当明细 `outbound_qty < quantity` 时订单为 `PARTIAL_OUTBOUND`，全部出库后为 `OUTBOUND_DONE`。
 - 取消未出库订单时，需要释放已锁定库存。
 - 销售退货后续使用 `SALES_RETURN` 入库流水；如需退货申请、退款、质检等复杂流程，再补销售退货单表。

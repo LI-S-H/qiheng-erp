@@ -10,7 +10,7 @@ import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -380,8 +380,8 @@ onMounted(fetchSuppliers);
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1420px] table-fixed">
-          <colgroup><col class="w-[48px]" /><col class="w-[180px]" /><col class="w-[210px]" /><col class="w-[170px]" /><col class="w-[130px]" /><col class="w-[100px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[160px]" /><col class="w-[220px]" /></colgroup>
+        <Table class="business-data-table min-w-[1378px] table-fixed">
+          <colgroup><col class="w-[48px]" /><col class="w-[96px]" /><col class="w-[270px]" /><col class="w-[170px]" /><col class="w-[96px]" /><col class="w-[86px]" /><col class="w-[96px]" /><col class="w-[96px]" /><col class="w-[190px]" /><col class="w-[230px]" /></colgroup>
           <TableHeader><TableRow><TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>编码</TableHead><TableHead>供应商</TableHead><TableHead>联系人</TableHead><TableHead class="text-center">综合评分</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-center">准时率</TableHead><TableHead class="text-center">合格率</TableHead><TableHead>付款条件</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && suppliers.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -410,11 +410,11 @@ onMounted(fetchSuppliers);
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-3xl">
-        <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增供应商' : '编辑供应商' }}</DialogTitle></DialogHeader>
+      <DialogContent class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-3xl">
+        <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增供应商' : '编辑供应商' }}</DialogTitle><DialogDescription>供应商档案会被供货关系和采购订单引用，请准确维护联系人、评分和结算信息。</DialogDescription></DialogHeader>
         <DialogScrollArea>
-          <div class="grid grid-cols-2 gap-4 p-1 max-sm:grid-cols-1">
-            <div class="space-y-1"><Label>供应商编码</Label><Input v-model="form.supplierCode" disabled placeholder="后端自动生成" /></div>
+          <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
+            <div class="space-y-1"><Label>供应商编码</Label><Input v-model="form.supplierCode" readonly class="bg-muted/55 text-muted-foreground" placeholder="保存后由系统生成" /><p class="text-xs text-muted-foreground">系统生成，创建后不可修改</p></div>
             <div class="space-y-1"><Label>供应商名称 <span class="text-destructive">*</span></Label><Input v-model="form.supplierName" :aria-invalid="Boolean(formErrors.supplierName)" /><p v-if="formErrors.supplierName" class="form-error">{{ formErrors.supplierName }}</p></div>
             <div class="space-y-1"><Label>联系人</Label><Input v-model="form.contactName" /><p v-if="formErrors.contactName" class="form-error">{{ formErrors.contactName }}</p></div>
             <div class="space-y-1"><Label>联系电话</Label><Input v-model="form.contactPhone" /><p v-if="formErrors.contactPhone" class="form-error">{{ formErrors.contactPhone }}</p></div>
@@ -435,8 +435,8 @@ onMounted(fetchSuppliers);
     </Dialog>
 
     <Dialog v-model:open="detailVisible">
-      <DialogContent class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-4xl">
-        <DialogHeader><DialogTitle>供应商详情</DialogTitle></DialogHeader>
+      <DialogContent class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-4xl">
+        <DialogHeader><DialogTitle>供应商详情</DialogTitle><DialogDescription>核对供应商主数据、绩效评分和历史引用信息。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div v-if="detailRow" class="space-y-4 p-1">
             <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-md:grid-cols-1">

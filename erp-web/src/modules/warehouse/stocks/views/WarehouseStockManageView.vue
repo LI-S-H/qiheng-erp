@@ -201,15 +201,15 @@ onMounted(() => {
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1280px] table-fixed">
+        <Table class="min-w-[1250px] table-fixed">
           <colgroup><col class="w-[170px]" /><col class="w-[220px]" /><col class="w-[70px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[115px]" /><col class="w-[105px]" /><col class="w-[150px]" /></colgroup>
           <TableHeader><TableRow><TableHead>仓库</TableHead><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">当前库存</TableHead><TableHead class="text-right">锁定库存</TableHead><TableHead class="text-right">可用库存</TableHead><TableHead class="text-right">安全库存</TableHead><TableHead class="text-center">库存健康</TableHead><TableHead class="text-center">占用情况</TableHead><TableHead>更新时间</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
             <TableRow v-else-if="stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无符合条件的库存记录</TableCell></TableRow>
             <TableRow v-for="row in stocks" v-else :key="row.stockId" :data-stock-id="row.stockId" :class="stockRowClass(row)">
-              <TableCell><div class="flex flex-col gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.warehouseCode }}</code><span class="truncate font-medium" :title="row.warehouseName">{{ row.warehouseName }}</span></div></TableCell>
-              <TableCell><div class="flex flex-col gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.productCode }}</code><span class="truncate font-medium" :title="row.productName">{{ row.productName }}</span></div></TableCell>
+              <TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.warehouseCode }}</code><span class="max-w-full truncate font-medium" :title="row.warehouseName">{{ row.warehouseName }}</span></div></TableCell>
+              <TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.productCode }}</code><span class="max-w-full truncate font-medium" :title="row.productName">{{ row.productName }}</span></div></TableCell>
               <TableCell class="text-center">{{ row.unitName }}</TableCell>
               <TableCell class="text-right font-medium tabular-nums">{{ formatQty(row.stockQty) }}</TableCell>
               <TableCell class="text-right tabular-nums" :class="row.lockedQty > 0 ? 'text-blue-700' : 'text-muted-foreground'">{{ formatQty(row.lockedQty) }}</TableCell>

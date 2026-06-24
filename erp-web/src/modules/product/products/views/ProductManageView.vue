@@ -427,7 +427,7 @@ function formatQty(value: number) {
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1320px] table-fixed">
+        <Table class="min-w-[1384px] table-fixed">
           <colgroup><col class="w-[44px]" /><col class="w-[130px]" /><col class="w-[220px]" /><col class="w-[170px]" /><col class="w-[150px]" /><col class="w-[90px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[100px]" /><col class="w-[190px]" /></colgroup>
           <TableHeader><TableRow>
             <TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>产品编码</TableHead><TableHead>产品名称</TableHead><TableHead>分类</TableHead><TableHead>品牌 / 规格</TableHead><TableHead>单位</TableHead><TableHead>参考价格</TableHead><TableHead>安全库存</TableHead><TableHead>状态</TableHead><TableHead class="text-center">操作</TableHead>

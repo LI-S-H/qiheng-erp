@@ -106,7 +106,7 @@
 | deleted               | tinyint       | 逻辑删除                                                                           |
 | remark                | varchar(500)  | 备注                                                                             |
 
-关系说明：采购订单审核后，可生成仓库模块 `inbound_bill`，其中 `source_type = PURCHASE_ORDER`，`source_id = purchase_order.id`，`source_no = purchase_order.purchase_no`，并快照供应商、入库仓库、采购数量、累计已入库数量和剩余未入库数量。
+关系说明：采购订单审核后，可生成仓库模块 `inbound_bill`，其中 `source_type = PURCHASE_ORDER`，`source_id = purchase_order.id`，`source_no = purchase_order.purchase_no`，并快照供应商、入库仓库、采购数量和累计已入库数量。待确认入库单的本次入库数量初始为 0 或空业务值，由仓库人员按实物到货填写；剩余未入库数量由后端按 `采购数量 - 累计已入库数量 - 本次入库数量` 计算，不允许前端或用户手动维护。
 
 ## 表：purchase_order_item（采购订单明细表）
 
@@ -156,7 +156,8 @@
 - `APPROVED` 后采购订单主表和明细不允许直接修改；如需纠正，只能通过后续反向业务、冲销或专门的反审流程处理，并保留审计记录。
 - `PARTIAL_INBOUND`、`INBOUND_DONE` 已经产生入库事实，不允许直接修改采购订单主表或明细；如需纠正，应通过仓库入库单、冲销或反向业务单据处理。
 - `selected_supplier_score` 记录下单时的推荐分快照，避免供应商评分后续变化导致历史采购单解释不清。
-- 采购订单审核后生成仓库模块 `PURCHASE_IN` 待确认入库单，不直接改变库存，也不生成库存流水；仓库人员确认本次入库数量后，才生成 `stock_bill` 库存流水、更新库存和明细 `inbound_qty`。
+- 采购订单审核后生成仓库模块 `PURCHASE_IN` 待确认入库单，不直接改变库存，也不生成库存流水；本次入库数量初始为 0 或空业务值，仓库人员按实物到货填写并确认后，才生成 `stock_bill` 库存流水、更新库存和明细 `inbound_qty`。
+- 确认采购入库时，后端必须校验本次入库数量大于 0 且不超过来源明细剩余未入库数量；确认后的剩余未入库数量由后端计算，不作为前端提交字段。
 - 当明细 `inbound_qty < quantity` 时订单为 `PARTIAL_INBOUND`，全部入库后为 `INBOUND_DONE`。
 - 供应商评分字段 MVP 可人工维护；后续通过交付准时率、到货合格率、价格稳定性、售后响应等数据自动刷新。
 

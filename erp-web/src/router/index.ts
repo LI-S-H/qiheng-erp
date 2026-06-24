@@ -16,6 +16,8 @@ import StockBillManageView from '@/modules/warehouse/stock-bills/views/StockBill
 import SupplierManageView from '@/modules/purchase/suppliers/views/SupplierManageView.vue';
 import SupplierProductManageView from '@/modules/purchase/supplier-products/views/SupplierProductManageView.vue';
 import PurchaseOrderManageView from '@/modules/purchase/orders/views/PurchaseOrderManageView.vue';
+import CustomerManageView from '@/modules/sales/customers/views/CustomerManageView.vue';
+import SalesOrderManageView from '@/modules/sales/orders/views/SalesOrderManageView.vue';
 import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
 
 function placeholder(title: string, module: string, description: string) {
@@ -167,12 +169,18 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'sales/customers',
         name: 'sales-customers',
-        ...placeholder('客户管理', '销售业务', '维护客户编码 名称 联系方式 地址 信用额度和启用状态'),
+        component: CustomerManageView,
+        meta: {
+          title: '客户管理',
+        },
       },
       {
         path: 'sales/orders',
         name: 'sales-orders',
-        ...placeholder('销售订单', '销售业务', '创建和跟踪销售订单 库存锁定 出库进度和订单状态'),
+        component: SalesOrderManageView,
+        meta: {
+          title: '销售订单',
+        },
       },
       { path: 'ai', redirect: '/ai/rag' },
       {

@@ -157,7 +157,7 @@ runSmoke({
     await waitListSettled(page);
     await assertExpandedDetailTable(page, 'INBOUND');
     const inboundItemText = await inboundItem.innerText();
-    for (const expected of ['P0003', '每日坚果混合装', '20 盒', '20 盒']) {
+    for (const expected of ['P0003', '每日坚果混合装', '0 盒', '40 盒']) {
       if (!inboundItemText.includes(expected)) throw new Error(`入库单商品子行缺少 ${expected}`);
     }
     await pendingInboundRow.getByRole('button', { name: '收起明细' }).click();
@@ -187,7 +187,7 @@ runSmoke({
       if (!editInboundText.includes(expected)) throw new Error(`入库编辑弹窗产品快照缺少 ${expected}`);
     }
     const editInboundValues = await editInbound.locator('input').evaluateAll(inputs => inputs.map(input => input.value).join('\n'));
-    for (const expected of ['20']) {
+    for (const expected of ['0']) {
       if (!editInboundValues.includes(expected)) throw new Error(`入库编辑弹窗输入数据缺少 ${expected}`);
     }
     if (await editInbound.getByRole('button', { name: '添加产品' }).isVisible().catch(() => false)) {
@@ -206,12 +206,7 @@ runSmoke({
       throw new Error('列表确认入库必须先打开详情并展示完整明细');
     }
     await confirmInboundDetail.getByRole('button', { name: '确认入库' }).click();
-    const confirmInbound = page.getByRole('alertdialog', { name: '确认入库' });
-    const confirmInboundText = await confirmInbound.innerText();
-    if (!confirmInboundText.includes('本次入库数量') || !confirmInboundText.includes('更新库存余额')) {
-      throw new Error('确认入库弹窗未说明库存影响');
-    }
-    await confirmInbound.getByRole('button', { name: '取消' }).click();
+    await page.getByText(/请先填写本次入库数量/).waitFor();
     await confirmInboundDetail.getByRole('button', { name: '关闭' }).click();
     await clickButton(page, '重置');
     await page.getByPlaceholder('如 IB202606140001').fill('IB202606140003');
@@ -274,7 +269,7 @@ runSmoke({
     await waitListSettled(page);
     await assertExpandedDetailTable(page, 'OUTBOUND');
     const outboundItemText = await outboundItem.innerText();
-    for (const expected of ['P0001', '经典原味苏打水', '8 箱']) {
+    for (const expected of ['P0001', '经典原味苏打水', '0 箱', '8 箱']) {
       if (!outboundItemText.includes(expected)) throw new Error(`出库单商品子行缺少 ${expected}`);
     }
     await outboundRow.getByRole('button', { name: '收起明细' }).click();

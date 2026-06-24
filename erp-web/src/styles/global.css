@@ -287,6 +287,27 @@ a {
   flex-wrap: wrap;
 }
 
+.erp-data-table [data-slot="table-head"],
+.erp-data-table [data-slot="table-cell"],
+.business-data-table [data-slot="table-head"],
+.business-data-table [data-slot="table-cell"] {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.erp-data-table [data-slot="table-cell"] > *,
+.business-data-table [data-slot="table-cell"] > * {
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.erp-data-table [data-slot="table-head"] .text-left,
+.erp-data-table [data-slot="table-head"] .text-right,
+.erp-data-table [data-slot="table-cell"] .text-left,
+.erp-data-table [data-slot="table-cell"] .text-right {
+  text-align: center;
+}
+
 .muted-text {
   font-size: 14px;
   line-height: 1.7;
@@ -403,6 +424,10 @@ a {
     grid-template-columns: repeat(4, minmax(160px, 1fr));
   }
 
+  .filter-grid--sales {
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+  }
+
   .filter-grid--roles .filter-actions,
   .filter-grid--depts .filter-actions {
     grid-column: auto;
@@ -411,7 +436,8 @@ a {
   .filter-grid--users .filter-actions,
   .filter-grid--permissions .filter-actions,
   .filter-grid--products .filter-actions,
-  .filter-grid--purchase .filter-actions {
+  .filter-grid--purchase .filter-actions,
+  .filter-grid--sales .filter-actions {
     grid-column: 4;
   }
 }

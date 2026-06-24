@@ -36,6 +36,10 @@ tags:
     description: 采购管理 - 供货产品管理
   - name: PurchaseOrder
     description: 采购管理 - 采购订单管理
+  - name: SalesCustomer
+    description: 销售管理 - 客户管理
+  - name: SalesOrder
+    description: 销售管理 - 销售订单管理
 paths:
   /auth/login:
     post:
@@ -2013,6 +2017,472 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
+  /sales/customers:
+    get:
+      tags: [SalesCustomer]
+      summary: 分页查询客户
+      description: |
+        查询未删除的 `customer` 数据。客户编码、客户名称和联系人分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
+        不接收含义不明确的 `keyword` 参数；`creditLimit` 按金额真实值返回，对应数据库 `customer.credit_limit`。
+        本接口需要 `sales:query` 权限。
+      operationId: salesCustomerPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: customerCode
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 客户编码，对应 `customer.customer_code`，使用包含匹配
+        - name: customerName
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: 客户名称，对应 `customer.customer_name`，使用包含匹配
+        - name: contactName
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: 联系人，对应 `customer.contact_name`，使用包含匹配
+        - name: status
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+          description: 状态，对应 `customer.status`，1 启用，0 停用，使用精确匹配
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SalesCustomerPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [SalesCustomer]
+      summary: 新增客户
+      description: 客户编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交客户编码；信用额度仅记录，不在 MVP 阶段强拦截销售下单。本接口需要 `sales:create` 权限。
+      operationId: salesCustomerCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesCustomerFormRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SalesCustomer' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/customers/options:
+    get:
+      tags: [SalesCustomer]
+      summary: 获取启用客户选项
+      description: 只返回未删除且启用的客户，用于销售订单表单下拉。本接口需要 `sales:query` 权限。
+      operationId: salesCustomerOptions
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SalesCustomerOption' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /sales/customers/batch/status:
+    patch:
+      tags: [SalesCustomer]
+      summary: 批量修改客户状态
+      description: 停用客户后不得用于新建销售订单，但历史订单继续保留客户快照。本接口需要 `sales:create` 权限。
+      operationId: salesCustomerBatchStatus
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesCustomerBatchStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/customers/batch/delete:
+    post:
+      tags: [SalesCustomer]
+      summary: 批量删除客户
+      description: 批量逻辑删除客户；任一客户存在销售订单时整批返回 409，避免破坏销售追溯链路。本接口需要 `sales:create` 权限。
+      operationId: salesCustomerBatchDelete
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesCustomerBatchDeleteRequest' }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/customers/{customerId}:
+    get:
+      tags: [SalesCustomer]
+      summary: 获取客户详情
+      description: 本接口需要 `sales:query` 权限。
+      operationId: salesCustomerDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SalesCustomer' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [SalesCustomer]
+      summary: 编辑客户
+      description: 编辑请求不接收 `customerCode`；客户名称修改时，后端同步当前可编辑销售订单快照，历史已审核订单继续保留下单时客户快照。本接口需要 `sales:create` 权限。
+      operationId: salesCustomerUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesCustomerFormRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SalesCustomer' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [SalesCustomer]
+      summary: 删除客户
+      description: 逻辑删除客户；存在 `sales_order` 销售订单时返回 409。本接口需要 `sales:create` 权限。
+      operationId: salesCustomerDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/customers/{customerId}/status:
+    patch:
+      tags: [SalesCustomer]
+      summary: 修改客户状态
+      description: 停用后客户不能用于新建销售订单，历史订单不受影响。本接口需要 `sales:create` 权限。
+      operationId: salesCustomerStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesCustomerStatusRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/orders:
+    get:
+      tags: [SalesOrder]
+      summary: 分页查询销售订单
+      description: |
+        查询未删除的 `sales_order` 数据，并返回按 `sales_order_item.sales_order_id` 查询的明细数组。销售单号使用包含匹配，客户、仓库和状态使用精确匹配，多个有效条件按 AND 组合。
+        不接收含义不明确的 `keyword` 参数。列表摘要只展示当前页 `records` 派生的状态、出库等业务指标，不展示当前页行数；不得要求后端为了摘要额外全量聚合。
+        本接口需要 `sales:query` 权限。
+      operationId: salesOrderPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: salesNo
+          in: query
+          schema: { type: string, maxLength: 64 }
+          description: 销售单号，对应 `sales_order.sales_no`，使用包含匹配
+        - name: customerId
+          in: query
+          schema: { type: string }
+          description: 客户 ID，对应 `sales_order.customer_id`，使用精确匹配
+        - name: warehouseId
+          in: query
+          schema: { type: string }
+          description: 出库仓库 ID，对应 `sales_order.warehouse_id`，使用精确匹配
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_OUTBOUND, OUTBOUND_DONE, CANCELLED]
+          description: 销售订单状态，对应 `sales_order.status`，使用精确匹配
+        - name: pageNum
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SalesOrderPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [SalesOrder]
+      summary: 新增销售订单草稿
+      description: |
+        销售单号、客户和产品快照、订单总金额、创建人和审计字段由后端维护，前端不提交；创建后状态为 `DRAFT`，不锁定库存、不生成出库单或库存流水。
+        草稿阶段 `expectedDeliveryDate` 可为空；提交或审核前，后端必须校验单头预计发货日期非空。
+        明细数量和金额使用业务真实值传输，数据库按 decimal 保存；后端必须校验客户、仓库、产品启用状态、产品数量精度，并重算主表 `total_amount`。
+        本接口需要 `sales:create` 权限。
+      operationId: salesOrderCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesOrderCreateRequest' }
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SalesOrder' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/orders/{salesOrderId}:
+    get:
+      tags: [SalesOrder]
+      summary: 获取销售订单详情
+      description: 返回 `sales_order` 主表信息及按 `sales_order_item.sales_order_id` 查询的全部明细。本接口需要 `sales:query` 权限。
+      operationId: salesOrderDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SalesOrderId'
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SalesOrderDetail' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [SalesOrder]
+      summary: 编辑销售订单
+      description: |
+        `DRAFT` 状态可由销售创建权限编辑；`SUBMITTED` 状态仍允许具备审核/审批权限的用户编辑客户、出库仓库、预计发货日期、备注和明细。
+        `APPROVED`、`PARTIAL_OUTBOUND`、`OUTBOUND_DONE`、`CANCELLED` 不允许通过本接口修改；已产生出库事实的业务纠正应通过仓库出入库、冲销或反向业务单据处理。
+        销售单号、状态、已锁定数量、已出库数量、创建人、提交人、审核人和审计字段由后端维护，前端不得提交。
+        明细传入 `salesOrderItemId` 表示更新已有明细，不传表示新增明细，被移除的旧草稿明细由后端物理删除。
+        后端必须重新校验权限、客户、仓库、产品、数量精度和价格，并重算主表 `total_amount`。本接口需要 `sales:create` 或审核/审批权限。
+      operationId: salesOrderUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SalesOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesOrderUpdateRequest' }
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SalesOrder' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/orders/{salesOrderId}/submit:
+    post:
+      tags: [SalesOrder]
+      summary: 提交销售订单
+      description: |
+        仅允许 `DRAFT -> SUBMITTED`。前端调用本接口前必须先通过详情数据向操作人展示完整销售单头和销售明细，并在二次确认后提交。
+        提交时后端重新校验单头预计发货日期非空、客户、仓库、产品、数量价格和可用库存 `warehouse_stock.stock_qty - warehouse_stock.locked_qty`；锁定成功后更新 `warehouse_stock.locked_qty`、`sales_order_item.locked_qty` 和 `sales_order.locked_at`。
+        本接口需要 `sales:create` 权限并保证重复请求幂等。
+      operationId: salesOrderSubmit
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SalesOrderId'
+      responses:
+        "200":
+          description: 提交成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/orders/{salesOrderId}/approve:
+    post:
+      tags: [SalesOrder]
+      summary: 审核销售订单
+      description: |
+        仅允许 `SUBMITTED -> APPROVED`。前端调用本接口前必须先通过详情数据向审核人展示完整销售单头和销售明细，并在二次确认后审核通过。
+        审核前后端必须重新校验预计发货日期、客户、仓库、产品、明细数量价格和库存锁定结果；如尚未锁定库存，审核流程必须在同一事务内先完成库存锁定。
+        审核通过后，后端在同一事务内生成仓库模块 `SALES_OUT` 待确认出库单，`source_type = SALES_ORDER`、`source_id = sales_order.id`、`source_no = sales_order.sales_no`，并带入客户、出库仓库、销售数量、累计已出库和剩余未出库数量。
+        销售订单审核后不直接扣减库存，也不生成库存流水；需要审核/审批权限并保证重复请求幂等。
+      operationId: salesOrderApprove
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SalesOrderId'
+      responses:
+        "200":
+          description: 审核成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /sales/orders/{salesOrderId}/cancel:
+    post:
+      tags: [SalesOrder]
+      summary: 取消销售订单
+      description: 仅允许 `DRAFT` 或 `SUBMITTED` 状态取消；若订单已锁定库存，后端必须在同一事务内释放 `warehouse_stock.locked_qty` 和 `sales_order_item.locked_qty`。已审核或已产生出库事实的销售订单不得直接取消。本接口需要 `sales:create` 权限并保证重复请求幂等。
+      operationId: salesOrderCancel
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SalesOrderId'
+      responses:
+        "200":
+          description: 取消成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
   /warehouse/stocks:
     get:
       tags: [WarehouseStock]
@@ -2083,7 +2553,8 @@ paths:
       description: |
         查询 `inbound_bill` 入库单主表，并按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要。
         入库单承接采购入库、销售退货入库和调整入库；采购订单审核后生成 `PENDING_CONFIRM` 入库单，但不直接改变库存。
-        入库列表主列固定显示供应商，库存调整显示调整仓库，不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
+        来源生成的待确认入库单初始本次入库量为 0 或空业务值，由仓库人员在确认前按实物到货数量填写；确认后剩余未入库由后端按采购数量、累计已入库和本次入库量计算。
+        入库列表主列固定显示供应商，库存调整显示调整仓库，不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库、本次入库量和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
         本接口需要 `warehouse:query` 权限。
       operationId: inboundBillPage
       security:
@@ -2175,7 +2646,8 @@ paths:
       description: |
         查询 `outbound_bill` 出库单主表，并按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要。
         出库单承接销售出库、采购退货出库和调整出库；销售订单审核后生成 `PENDING_CONFIRM` 出库单，但不直接扣减库存。
-        出库列表主列固定显示客户，库存调整显示调整仓库，不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
+        来源生成的待确认出库单初始本次出库量为 0 或空业务值，由仓库人员在确认前按实物发货数量填写；确认后剩余未出库由后端按销售数量、累计已出库和本次出库量计算。
+        出库列表主列固定显示客户，库存调整显示调整仓库，不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库、本次出库量和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
         本接口需要 `warehouse:query` 权限。
       operationId: outboundBillPage
       security:
@@ -2456,6 +2928,7 @@ paths:
       description: |
         仅允许 `PENDING_CONFIRM -> CONFIRMED`。前端必须先展示入库单/出库单详情及全部产品明细，再在详情页提供确认按钮并进行二次确认。
         后端必须锁定入库单/出库单和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，生成 `stock_bill` / `stock_bill_item`，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已入库/已出库数量。
+        来源生成的待确认单确认时，后端必须校验本次入库/出库数量大于 0 且不超过来源明细剩余数量，并重新计算确认后的剩余未入库/未出库数量；`pendingQty` 是只读结果，前端不得作为提交字段传入。
         已确认单据不得直接改回草稿或取消；错误凭证通过反向库存调整纠正。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
       operationId: stockBillConfirm
       security:
@@ -3265,6 +3738,20 @@ components:
       schema:
         type: string
       description: 采购订单 ID，对应 `purchase_order.id`，BIGINT 按字符串传输
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 客户 ID，对应 `customer.id`，BIGINT 按字符串传输
+    SalesOrderId:
+      name: salesOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 销售订单 ID，对应 `sales_order.id`，BIGINT 按字符串传输
   responses:
     BadRequest:
       description: 请求参数错误
@@ -4412,6 +4899,188 @@ components:
         selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100 }
         remark: { type: string, maxLength: 500 }
 
+    SalesCustomerPage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/SalesCustomer' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    SalesCustomer:
+      type: object
+      required: [customerId, customerCode, customerName, contactName, contactPhone, address, creditLimit, status, remark, createTime, updateTime]
+      properties:
+        customerId: { type: string, description: 对应 `customer.id`，BIGINT 按字符串传输 }
+        customerCode: { type: string, minLength: 1, maxLength: 64, readOnly: true, description: 对应 `customer.customer_code`，由后端生成、全局唯一且创建后不可修改 }
+        customerName: { type: string, minLength: 1, maxLength: 200, description: 对应 `customer.customer_name` }
+        contactName: { type: string, maxLength: 100, description: 对应 `customer.contact_name` }
+        contactPhone: { type: string, maxLength: 32, description: 对应 `customer.contact_phone` }
+        address: { type: string, maxLength: 255, description: 对应 `customer.address` }
+        creditLimit: { type: number, format: double, minimum: 0, description: 对应 `customer.credit_limit`，MVP 仅记录不强拦截 }
+        status: { type: integer, enum: [0, 1], description: 对应 `customer.status`，1 启用，0 停用 }
+        remark: { type: string, maxLength: 500, description: 对应 `customer.remark` }
+        createTime: { type: string, description: 对应 `customer.create_time` }
+        updateTime: { type: string, description: 对应 `customer.update_time` }
+
+    SalesCustomerFormRequest:
+      type: object
+      required: [customerName, contactName, contactPhone, address, creditLimit, status, remark]
+      properties:
+        customerName: { type: string, minLength: 1, maxLength: 200 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        creditLimit: { type: number, format: double, minimum: 0 }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    SalesCustomerStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: integer, enum: [0, 1] }
+
+    SalesCustomerBatchStatusRequest:
+      type: object
+      required: [customerIds, status]
+      properties:
+        customerIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+        status: { type: integer, enum: [0, 1] }
+
+    SalesCustomerBatchDeleteRequest:
+      type: object
+      required: [customerIds]
+      properties:
+        customerIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string }
+
+    SalesCustomerOption:
+      type: object
+      required: [customerId, customerCode, customerName, status]
+      properties:
+        customerId: { type: string, description: 对应 `customer.id`，BIGINT 按字符串传输 }
+        customerCode: { type: string, maxLength: 64 }
+        customerName: { type: string, maxLength: 200 }
+        status: { type: integer, enum: [0, 1] }
+
+    SalesOrderPage:
+      type: object
+      required: [records, total, pageNum, pageSize, summary]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/SalesOrder' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        summary: { $ref: '#/components/schemas/SalesOrderSummary' }
+
+    SalesOrderSummary:
+      type: object
+      required: [draftCount, submittedCount, approvedCount, outboundPendingCount]
+      properties:
+        draftCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 DRAFT 的订单数 }
+        submittedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 SUBMITTED 的订单数 }
+        approvedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 APPROVED 的订单数 }
+        outboundPendingCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 APPROVED 或 PARTIAL_OUTBOUND 的待出库订单数 }
+
+    SalesOrder:
+      type: object
+      required: [salesOrderId, salesNo, customerId, customerCode, customerName, warehouseId, warehouseName, status, totalAmount, expectedDeliveryDate, lockedAt, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, remark, items]
+      properties:
+        salesOrderId: { type: string, description: 对应 `sales_order.id`，BIGINT 按字符串传输 }
+        salesNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `sales_order.sales_no`，由后端生成、全局唯一 }
+        customerId: { type: string, description: 对应 `sales_order.customer_id`，BIGINT 按字符串传输 }
+        customerCode: { type: string, maxLength: 64, description: 对应 `sales_order.customer_code` 客户快照 }
+        customerName: { type: string, maxLength: 200, description: 对应 `sales_order.customer_name` 客户快照 }
+        warehouseId: { type: string, description: 对应 `sales_order.warehouse_id`，BIGINT 按字符串传输 }
+        warehouseName: { type: string, maxLength: 100, description: 对应 `sales_order.warehouse_name` 仓库快照 }
+        status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_OUTBOUND, OUTBOUND_DONE, CANCELLED], description: 对应 `sales_order.status` }
+        totalAmount: { type: number, format: double, minimum: 0, description: 对应 `sales_order.total_amount` }
+        expectedDeliveryDate: { type: string, nullable: true, description: 对应 `sales_order.expected_delivery_date`；草稿可为空，提交和审核前必须非空 }
+        lockedAt: { type: string, nullable: true, description: 对应 `sales_order.locked_at`，库存锁定成功后由后端写入 }
+        createdById: { type: string, nullable: true, description: 对应 `sales_order.created_by_id`，BIGINT 按字符串传输 }
+        createdByName: { type: string, maxLength: 100, description: 对应 `sales_order.created_by_name` }
+        submittedAt: { type: string, nullable: true, description: 对应 `sales_order.submitted_at` }
+        approvedById: { type: string, nullable: true, description: 对应 `sales_order.approved_by_id`，BIGINT 按字符串传输 }
+        approvedByName: { type: string, maxLength: 100, description: 对应 `sales_order.approved_by_name` }
+        approvedAt: { type: string, nullable: true, description: 对应 `sales_order.approved_at` }
+        createTime: { type: string, description: 对应 `sales_order.create_time` }
+        updateTime: { type: string, description: 对应 `sales_order.update_time` }
+        remark: { type: string, maxLength: 500, description: 对应 `sales_order.remark` }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SalesOrderItem' }
+
+    SalesOrderDetail:
+      allOf:
+        - $ref: '#/components/schemas/SalesOrder'
+
+    SalesOrderItem:
+      type: object
+      required: [salesOrderItemId, salesOrderId, salesNo, productId, productCode, productName, unitName, quantity, lockedQty, outboundQty, unitPrice, totalAmount, remark]
+      properties:
+        salesOrderItemId: { type: string, description: 对应 `sales_order_item.id`，BIGINT 按字符串传输 }
+        salesOrderId: { type: string, description: 对应 `sales_order_item.sales_order_id`，BIGINT 按字符串传输 }
+        salesNo: { type: string, maxLength: 64, description: 对应 `sales_order_item.sales_no` }
+        productId: { type: string, description: 对应 `sales_order_item.product_id`，BIGINT 按字符串传输 }
+        productCode: { type: string, maxLength: 64, description: 对应 `sales_order_item.product_code` 产品快照 }
+        productName: { type: string, maxLength: 200, description: 对应 `sales_order_item.product_name` 产品快照 }
+        unitName: { type: string, maxLength: 32, description: 对应 `sales_order_item.unit_name` 产品单位快照 }
+        quantity: { type: number, format: double, exclusiveMinimum: 0, description: 对应 `sales_order_item.quantity` }
+        lockedQty: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.locked_qty`，提交或审核锁定库存后由后端写入 }
+        outboundQty: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.outbound_qty`，仓库确认出库后回写 }
+        unitPrice: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.unit_price` }
+        totalAmount: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.total_amount` }
+        remark: { type: string, maxLength: 500, description: 对应 `sales_order_item.remark` }
+
+    SalesOrderCreateRequest:
+      type: object
+      required: [customerId, warehouseId, expectedDeliveryDate, remark, items]
+      properties:
+        customerId: { type: string, description: 启用客户 ID；后端保存客户编码和名称快照 }
+        warehouseId: { type: string, description: 启用出库仓库 ID；后端保存仓库名称快照 }
+        expectedDeliveryDate: { type: string, nullable: true, description: 对应 `sales_order.expected_delivery_date`；草稿可为空，提交和审核前必须非空 }
+        remark: { type: string, maxLength: 500 }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SalesOrderDraftItemRequest' }
+
+    SalesOrderUpdateRequest:
+      type: object
+      required: [customerId, warehouseId, expectedDeliveryDate, remark, items]
+      properties:
+        customerId: { type: string, description: 客户 ID；`DRAFT` 可由销售创建权限修改，`SUBMITTED` 仅允许审核/审批权限修改，后端重新保存客户编码和名称快照 }
+        warehouseId: { type: string, description: 出库仓库 ID；`DRAFT` 可由销售创建权限修改，`SUBMITTED` 仅允许审核/审批权限修改，后端重新保存仓库名称快照 }
+        expectedDeliveryDate: { type: string, nullable: true, description: 对应 `sales_order.expected_delivery_date`；草稿可为空，提交和审核前必须非空 }
+        remark: { type: string, maxLength: 500, description: 对应 `sales_order.remark` }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SalesOrderDraftItemRequest' }
+
+    SalesOrderDraftItemRequest:
+      type: object
+      required: [productId, quantity, unitPrice, remark]
+      properties:
+        salesOrderItemId: { type: string, nullable: true, description: 编辑草稿时传已有明细 ID，对应 `sales_order_item.id`；新增明细或创建订单时不传 }
+        productId: { type: string, description: 启用产品 ID；后端保存产品编码、名称和单位快照 }
+        quantity: { type: number, format: double, exclusiveMinimum: 0 }
+        unitPrice: { type: number, format: double, minimum: 0 }
+        remark: { type: string, maxLength: 500 }
+
     WarehouseStockPage:
       type: object
       required: [records, pageNum, pageSize, summary]
@@ -4542,8 +5211,8 @@ components:
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应 `stock_bill_item.quantity_precision`，产品数量精度快照 }
         planQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 来源单据计划数量；库存调整可为 null }
         processedQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 生成本单前来源明细累计已入库或已出库数量；库存调整可为 null }
-        pendingQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 确认本单后来源明细预计剩余未入库或未出库数量；库存调整可为 null；前端展开明细独立展示为剩余未入库或剩余未出库列 }
-        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 本次入库/出库业务真实值；数据库 `stock_bill_item.quantity` 按 100 倍整数存储；前端展开明细独立展示为入库量或出库量列 }
+        pendingQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 确认本单后来源明细预计剩余未入库或未出库数量，由后端按 planQty - processedQty - quantity 计算；库存调整可为 null；前端展开明细独立展示为剩余未入库或剩余未出库列，不允许用户手动提交 }
+        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 本次入库/出库业务真实值；来源生成的待确认单初始为 0 或空业务值，由仓库人员确认前填写，确认时必须大于 0 且不能超过来源剩余数量；数据库 `stock_bill_item.quantity` 按 100 倍整数存储；前端展开明细独立展示为入库量或出库量列 }
         qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 合格数量业务真实值；数据库 `stock_bill_item.qualified_qty` 按 100 倍整数存储；前端展开明细独立展示，不得与不合格数量拼接为一个质检字段 }
         defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 不合格数量业务真实值；数据库 `stock_bill_item.defective_qty` 按 100 倍整数存储；前端展开明细独立展示，不得与合格数量拼接为一个质检字段 }
         beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.before_qty` 按 100 倍整数存储 }

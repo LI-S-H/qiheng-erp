@@ -110,7 +110,10 @@ function buildMockBills(): StockBillDetail[] {
     const timestamp = seed.createTime;
     const items: StockBillItem[] = seed.items.map((item, itemIndex) => {
       const [productCode, productName, unitName, planQty, processedQty, pendingQty, quantity, beforeQty] = item;
-      const changeQty = confirmed ? direction * quantity : 0;
+      const sourceGeneratedWaiting = seed.sourceType !== 'STOCK_ADJUST' && seed.status === 'PENDING_CONFIRM';
+      const currentQuantity = sourceGeneratedWaiting ? 0 : quantity;
+      const currentPendingQty = sourceGeneratedWaiting && planQty !== null && processedQty !== null ? Math.max(0, planQty - processedQty) : pendingQty;
+      const changeQty = confirmed ? direction * currentQuantity : 0;
       const afterQty = confirmed ? beforeQty + changeQty : beforeQty;
       const isQualityInbound = seed.billType === 'PURCHASE_IN' || seed.billType === 'SALES_RETURN';
       const defectiveQty = isQualityInbound && confirmed && itemIndex === 0 && billIndex % 3 === 0 ? 1 : 0;
@@ -126,9 +129,9 @@ function buildMockBills(): StockBillDetail[] {
         quantityPrecision: 0,
         planQty,
         processedQty,
-        pendingQty,
-        quantity,
-        qualifiedQty: isQualityInbound ? quantity - defectiveQty : 0,
+        pendingQty: currentPendingQty,
+        quantity: currentQuantity,
+        qualifiedQty: isQualityInbound ? currentQuantity - defectiveQty : 0,
         defectiveQty,
         beforeQty,
         changeQty,
@@ -519,6 +522,11 @@ export async function confirmStockBill(stockBillId: string) {
     if (existing.status !== 'PENDING_CONFIRM') throw new Error('草稿必须先提交为待确认后才能确认入库/出库');
     const current = existing;
     validateDraftItems(current.items, current.billType);
+    current.items.forEach(item => {
+      if (current.entryMode !== 'SOURCE_GENERATED' || item.planQty === null || item.processedQty === null) return;
+      const remainingBefore = Math.max(0, item.planQty - item.processedQty);
+      if (item.quantity > remainingBefore) throw new Error(`产品 ${item.productCode} 的本次数量不能超过来源剩余数量`);
+    });
     const { warehouses, products } = await loadMockMasterData();
     const warehouse = warehouses.find(item => item.warehouseId === current.warehouseId);
     if (!warehouse) throw new Error('当前仓库已停用，不能确认出入库');

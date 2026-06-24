@@ -10,7 +10,7 @@ import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -398,8 +398,8 @@ onMounted(() => {
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1420px] table-fixed">
-          <colgroup><col class="w-[48px]" /><col class="w-[220px]" /><col class="w-[230px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[220px]" /></colgroup>
+        <Table class="business-data-table min-w-[1124px] table-fixed">
+          <colgroup><col class="w-[44px]" /><col class="w-[135px]" /><col class="w-[180px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[82px]" /><col class="w-[76px]" /><col class="w-[82px]" /><col class="w-[75px]" /><col class="w-[225px]" /></colgroup>
           <TableHeader><TableRow><TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>供应商</TableHead><TableHead>产品</TableHead><TableHead>供应商侧编码</TableHead><TableHead class="text-right">最近采购价</TableHead><TableHead class="text-right">起订量</TableHead><TableHead class="text-center">交期</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -423,10 +423,10 @@ onMounted(() => {
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-3xl">
-        <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增供货产品' : '编辑供货产品' }}</DialogTitle></DialogHeader>
+      <DialogContent class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-3xl">
+        <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增供货产品' : '编辑供货产品' }}</DialogTitle><DialogDescription>供货产品用于采购候选和价格建议，请维护供应商、产品、采购价、起订量和交期。</DialogDescription></DialogHeader>
         <DialogScrollArea>
-          <div class="grid grid-cols-2 gap-4 p-1 max-sm:grid-cols-1">
+          <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
             <div class="space-y-1"><Label>供应商 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.supplierId" :options="supplierOptions.filter(item => item.value !== 'all')" placeholder="请选择供应商" :invalid="Boolean(formErrors.supplierId)" /><p v-if="formErrors.supplierId" class="form-error">{{ formErrors.supplierId }}</p></div>
             <div class="space-y-1"><Label>产品 <span class="text-destructive">*</span></Label><AnchoredSelect :model-value="form.productId" :options="productOptions" placeholder="请选择产品" :invalid="Boolean(formErrors.productId)" @update:model-value="syncProductPrice" /><p v-if="formErrors.productId" class="form-error">{{ formErrors.productId }}</p></div>
             <div class="space-y-1"><Label>供应商侧编码</Label><Input v-model="form.supplierProductCode" /><p v-if="formErrors.supplierProductCode" class="form-error">{{ formErrors.supplierProductCode }}</p></div>
@@ -446,8 +446,8 @@ onMounted(() => {
     </Dialog>
 
     <Dialog v-model:open="detailVisible">
-      <DialogContent class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-background shadow-xl sm:max-w-4xl">
-        <DialogHeader><DialogTitle>供货产品详情</DialogTitle></DialogHeader>
+      <DialogContent class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-4xl">
+        <DialogHeader><DialogTitle>供货产品详情</DialogTitle><DialogDescription>核对供应商供货关系、采购价格、交期和评分。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div v-if="detailRow" class="space-y-4 p-1">
             <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-md:grid-cols-1">

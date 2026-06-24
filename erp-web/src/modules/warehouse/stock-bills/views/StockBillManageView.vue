@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useDebounceFn } from '@vueuse/core';
+import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
@@ -676,6 +677,13 @@ function getSubmitValidationError(row: StockBillDetail) {
 
 function handleConfirm(row: StockBillListItem | StockBillDetail) {
   if (row.status !== 'PENDING_CONFIRM') return;
+  if ('items' in row) {
+    const validationError = getConfirmValidationError(row);
+    if (validationError) {
+      toast.warning(validationError);
+      return;
+    }
+  }
   const currentLabel = billDirection(row.billType) === 'INBOUND' ? '本次入库数量' : '本次出库数量';
   openConfirmDialog({
     title: pageText.value.confirmTitle,
@@ -689,6 +697,22 @@ function handleConfirm(row: StockBillListItem | StockBillDetail) {
       await fetchRecords();
     },
   });
+}
+
+function getConfirmValidationError(row: StockBillDetail) {
+  const currentLabel = billDirection(row.billType) === 'INBOUND' ? '本次入库数量' : '本次出库数量';
+  for (const item of row.items) {
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) return `产品 ${item.productCode} 请先填写${currentLabel}`;
+    if (row.entryMode === 'SOURCE_GENERATED' && item.planQty !== null && item.processedQty !== null) {
+      const remainingBefore = Math.max(0, item.planQty - item.processedQty);
+      if (item.quantity > remainingBefore) return `产品 ${item.productCode} 的${currentLabel}不能超过剩余数量 ${formatQty(remainingBefore)}`;
+    }
+    if (isQualityBillType(row.billType)) {
+      if (!Number.isFinite(item.qualifiedQty) || !Number.isFinite(item.defectiveQty) || item.qualifiedQty < 0 || item.defectiveQty < 0) return `产品 ${item.productCode} 的合格数量和不合格数量不能小于 0`;
+      if (Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) return `产品 ${item.productCode} 的合格数量与不合格数量之和必须等于${currentLabel}`;
+    }
+  }
+  return '';
 }
 
 function handleSubmit(row: StockBillListItem | StockBillDetail) {
@@ -896,67 +920,65 @@ onMounted(async () => {
                     </div>
                   </TableCell>
                 </TableRow>
-                <template v-if="!isRowDetailCollapsed(row)">
-                  <TableRow v-if="isRowDetailLoading(row)" class="bg-background" :data-stock-bill-detail-loading-id="row.stockBillId">
-                    <TableCell colspan="12" class="h-12 text-center text-muted-foreground"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</TableCell>
-                  </TableRow>
-                  <TableRow v-else-if="detailLoadErrors[row.stockBillId]" class="bg-background" :data-stock-bill-detail-error-id="row.stockBillId">
-                    <TableCell colspan="12" class="h-12 text-center text-destructive">{{ detailLoadErrors[row.stockBillId] }}</TableCell>
-                  </TableRow>
-                  <TableRow v-else-if="expandedItems(row).length === 0" class="bg-background" :data-stock-bill-detail-empty-id="row.stockBillId">
-                    <TableCell colspan="12" class="h-12 text-center text-muted-foreground">暂无商品明细</TableCell>
-                  </TableRow>
-                  <TableRow v-else class="bg-background">
-                    <TableCell colspan="12" class="px-4 py-3">
-                      <div class="stock-bill-detail-card overflow-hidden rounded-md border bg-background">
-                        <div class="stock-bill-detail-row-scroll w-full">
-                          <Table class="min-w-[880px] table-fixed">
-                          <colgroup>
-                            <col class="w-[104px]" />
-                            <col class="w-[160px]" />
-                            <col class="w-[56px]" />
-                            <col class="w-[104px]" />
-                            <col class="w-[96px]" />
-                            <col class="w-[104px]" />
-                            <col class="w-[116px]" />
-                            <col class="w-[140px]" />
-                          </colgroup>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>产品编码</TableHead>
-                              <TableHead>产品名称</TableHead>
-                              <TableHead class="text-center">单位</TableHead>
-                              <TableHead class="text-right">{{ pageText.listQtyLabel }}</TableHead>
-                              <TableHead class="text-right">合格数量</TableHead>
-                              <TableHead class="text-right">不合格数量</TableHead>
-                              <TableHead class="text-right">{{ pageText.pendingQtyLabel }}</TableHead>
-                              <TableHead>备注</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            <TableRow v-for="item in expandedItems(row)" :key="item.stockBillItemId" :data-stock-bill-expanded-item-id="item.stockBillItemId">
-                              <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
-                              <TableCell class="truncate font-medium" :title="item.productName">{{ item.productName }}</TableCell>
-                              <TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell>
-                              <TableCell class="text-right font-medium tabular-nums">{{ itemQuantityText(item) }}</TableCell>
-                              <TableCell class="text-right tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
-                              <TableCell class="text-right tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(row.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
-                              <TableCell class="text-right tabular-nums">{{ remainingQtyText(item) }}</TableCell>
-                              <TableCell class="truncate text-muted-foreground">
-                                <Tooltip v-if="item.remark">
-                                  <TooltipTrigger as-child><span class="block truncate">{{ shortText(item.remark) }}</span></TooltipTrigger>
-                                  <TooltipContent class="max-w-xs">{{ item.remark }}</TooltipContent>
-                                </Tooltip>
-                                <span v-else>-</span>
-                              </TableCell>
-                            </TableRow>
-                          </TableBody>
-                          </Table>
+                <TableRow class="stock-bill-detail-host-row bg-background" :data-stock-bill-detail-host-id="row.stockBillId">
+                  <TableCell colspan="12" class="h-0 px-4 py-0">
+                    <CollapsibleRoot :open="!isRowDetailCollapsed(row)" :unmount-on-hide="false">
+                      <CollapsibleContent class="stock-bill-detail-drawer" :data-stock-bill-detail-id="row.stockBillId">
+                        <div class="stock-bill-detail-drawer__inner">
+                          <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.stockBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
+                          <div v-else-if="detailLoadErrors[row.stockBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.stockBillId">{{ detailLoadErrors[row.stockBillId] }}</div>
+                          <div v-else-if="expandedItems(row).length === 0" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-empty-id="row.stockBillId">暂无商品明细</div>
+                          <div v-else class="stock-bill-detail-card overflow-hidden rounded-md border bg-background">
+                            <div class="stock-bill-detail-row-scroll w-full">
+                              <Table class="min-w-[880px] table-fixed">
+                                <colgroup>
+                                  <col class="w-[104px]" />
+                                  <col class="w-[160px]" />
+                                  <col class="w-[56px]" />
+                                  <col class="w-[104px]" />
+                                  <col class="w-[96px]" />
+                                  <col class="w-[104px]" />
+                                  <col class="w-[116px]" />
+                                  <col class="w-[140px]" />
+                                </colgroup>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>产品编码</TableHead>
+                                    <TableHead>产品名称</TableHead>
+                                    <TableHead class="text-center">单位</TableHead>
+                                    <TableHead class="text-right">{{ pageText.listQtyLabel }}</TableHead>
+                                    <TableHead class="text-right">合格数量</TableHead>
+                                    <TableHead class="text-right">不合格数量</TableHead>
+                                    <TableHead class="text-right">{{ pageText.pendingQtyLabel }}</TableHead>
+                                    <TableHead>备注</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  <TableRow v-for="item in expandedItems(row)" :key="item.stockBillItemId" :data-stock-bill-expanded-item-id="item.stockBillItemId">
+                                    <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
+                                    <TableCell class="truncate font-medium" :title="item.productName">{{ item.productName }}</TableCell>
+                                    <TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell>
+                                    <TableCell class="text-right font-medium tabular-nums">{{ itemQuantityText(item) }}</TableCell>
+                                    <TableCell class="text-right tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
+                                    <TableCell class="text-right tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(row.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
+                                    <TableCell class="text-right tabular-nums">{{ remainingQtyText(item) }}</TableCell>
+                                    <TableCell class="truncate text-muted-foreground">
+                                      <Tooltip v-if="item.remark">
+                                        <TooltipTrigger as-child><span class="block truncate">{{ shortText(item.remark) }}</span></TooltipTrigger>
+                                        <TooltipContent class="max-w-xs">{{ item.remark }}</TooltipContent>
+                                      </Tooltip>
+                                      <span v-else>-</span>
+                                    </TableCell>
+                                  </TableRow>
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                </template>
+                      </CollapsibleContent>
+                    </CollapsibleRoot>
+                  </TableCell>
+                </TableRow>
               </template>
             </template>
           </TableBody>
@@ -1017,7 +1039,7 @@ onMounted(async () => {
               </div>
               <p v-if="formErrors.items" class="mb-2 text-xs text-destructive">{{ formErrors.items }}</p>
               <div class="stock-bill-form-table-scroll rounded-md border">
-                  <Table class="min-w-[1160px] table-fixed">
+                <Table class="min-w-[1180px] table-fixed">
                   <colgroup>
                     <col class="w-[270px]" />
                     <col class="w-[105px]" />
@@ -1163,7 +1185,8 @@ onMounted(async () => {
   border-bottom: 1px solid var(--border);
 }
 
-.stock-bill-table-scroll :deep([data-slot="table-container"]) {
+.stock-bill-table-scroll > :deep([data-slot="table-container"]) {
+  min-height: min(52vh, 430px);
   max-height: min(74vh, 760px);
   overflow: auto;
   padding-bottom: 10px;
@@ -1179,6 +1202,55 @@ onMounted(async () => {
   width: min(100%, 900px);
   border-left: 3px solid var(--primary);
   background: color-mix(in srgb, var(--muted) 36%, white);
+}
+
+.stock-bill-detail-drawer {
+  overflow: hidden;
+  will-change: height;
+}
+
+.stock-bill-detail-host-row :deep([data-slot='table-cell']) {
+  height: 0;
+}
+
+.stock-bill-detail-drawer[data-state="open"] {
+  animation: stock-bill-collapsible-down 170ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.stock-bill-detail-drawer[data-state="closed"] {
+  animation: stock-bill-collapsible-up 145ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.stock-bill-detail-drawer__inner {
+  min-height: 0;
+  padding-block: 12px;
+}
+
+.stock-bill-detail-message {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes stock-bill-collapsible-down {
+  from {
+    height: 0;
+  }
+
+  to {
+    height: var(--reka-collapsible-content-height);
+  }
+}
+
+@keyframes stock-bill-collapsible-up {
+  from {
+    height: var(--reka-collapsible-content-height);
+  }
+
+  to {
+    height: 0;
+  }
 }
 
 .stock-bill-detail-row-scroll :deep([data-slot="table"]) {
@@ -1206,10 +1278,22 @@ onMounted(async () => {
   vertical-align: middle;
 }
 
+.stock-bill-detail-row-scroll :deep([data-slot="table-head"]),
+.stock-bill-detail-row-scroll :deep([data-slot="table-cell"]),
+.stock-bill-detail-row-scroll :deep([data-slot="table-cell"] .text-center),
+.stock-bill-detail-row-scroll :deep([data-slot="table-cell"] .text-right) {
+  text-align: left !important;
+}
+
 .stock-bill-detail-row-scroll :deep([data-slot="table-cell"] > *),
 .stock-bill-dialog-table-scroll :deep([data-slot="table-cell"] > *) {
   margin-right: auto;
   margin-left: auto;
+}
+
+.stock-bill-detail-row-scroll :deep([data-slot="table-cell"] > *) {
+  margin-right: 0;
+  margin-left: 0;
 }
 
 .stock-bill-form-table-scroll :deep(input) {
@@ -1300,6 +1384,18 @@ onMounted(async () => {
 :global(.stock-bill-dialog-table-scroll [data-slot="table-head"]),
 :global(.stock-bill-form-table-scroll [data-slot="table-head"]) {
   z-index: 20;
+}
+
+:global(.stock-bill-detail-row-scroll thead),
+:global(.stock-bill-detail-row-scroll thead tr),
+:global(.stock-bill-detail-row-scroll [data-slot="table-head"]) {
+  border-bottom-color: color-mix(in srgb, var(--primary) 24%, var(--border));
+  background-color: color-mix(in srgb, var(--primary) 9%, white);
+}
+
+:global(.stock-bill-detail-row-scroll [data-slot="table-head"]) {
+  color: color-mix(in srgb, var(--primary) 78%, var(--foreground));
+  font-weight: 600 !important;
 }
 
 .stock-bill-table-scroll :deep([data-slot="table-container"]::-webkit-scrollbar),

@@ -19,6 +19,8 @@ import com.qiheng.erp.system.domain.entity.SysRole;
 import com.qiheng.erp.system.domain.entity.SysUser;
 import com.qiheng.erp.system.domain.entity.SysUserRole;
 import com.qiheng.erp.system.domain.vo.SysUserVo;
+import com.qiheng.erp.system.manager.SessionManager;
+import com.qiheng.erp.system.mapper.SysRoleMapper;
 import com.qiheng.erp.system.mapper.SysUserMapper;
 import com.qiheng.erp.system.mapper.SysUserRoleMapper;
 import com.qiheng.erp.system.service.ISysUserRoleService;
@@ -31,6 +33,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -55,6 +59,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     private SysUserRoleMapper sysUserRoleMapper;
 
     @Autowired
+    private SysRoleMapper sysRoleMapper;
+
+    @Autowired
     private PasswordUtil passwordUtil;
 
     @Autowired
@@ -62,6 +69,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     @Autowired
     private RedissonClient redissonClient;
+
+    @Autowired
+    private SessionManager sessionManager;
 
     /**
      * 用户分页查询
@@ -191,6 +201,10 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 .in(SysUser::getId, dto.getUserIds());
         //执行更新
         sysUserMapper.update(wrapper);
+        //停用用户时，强制踢下线
+        if (dto.getStatus() == 0) {
+            sessionManager.kickOffline(dto.getUserIds().stream().map(Long::valueOf).toList());
+        }
     }
 
     /**
@@ -206,6 +220,10 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 .eq(SysUser::getId, userId);
         //执行更新
         sysUserMapper.update(wrapper);
+        //停用用户时，强制踢下线
+        if (status == 0) {
+            sessionManager.kickOffline(userId);
+        }
     }
 
     /**
@@ -220,6 +238,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 .in(SysUser::getId, dto.getUserIds());
         //执行更新
         sysUserMapper.update(wrapper);
+        //重置密码后，强制踢下线，用户需用新密码重新登录
+        sessionManager.kickOffline(dto.getUserIds().stream().map(Long::valueOf).toList());
     }
 
     /**
@@ -236,6 +256,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 .eq(SysUser::getId, userId);
         //执行更新
         sysUserMapper.update(wrapper);
+        //踢下线用户，强制其重新登录，使用新密码登录
+        sessionManager.kickOffline(userId);
     }
 
     /**
@@ -262,6 +284,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 new SysUserRole().setUserId(userId).setRoleId(roleId)
         ).toList();
         sysUserRoleService.saveBatch(userRoles);
+        //刷新用户Session
+        sessionManager.refreshUserSession(userId);
         //查询更新后的用户详情并填充角色信息和部门信息
         return getDetailById(userId);
     }
@@ -280,6 +304,14 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         if (user == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND.getCode(), "用户不存在");
         }
+        //校验角色状态：直接查是否有停用的角色
+        List<Long> roleIdLongs = roleIds.stream().map(Long::valueOf).toList();
+        Long disabledCount = sysRoleMapper.selectCount(new LambdaQueryWrapper<SysRole>()
+                .in(SysRole::getId, roleIdLongs)
+                .eq(SysRole::getStatus, 0));
+        if (disabledCount > 0) {
+            throw new BizException(ErrorCode.ROLE_DISABLED);
+        }
         //删除用户角色关系
         sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, userId));
         //批量新增
@@ -287,6 +319,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 new SysUserRole().setUserId(userId).setRoleId(Long.parseLong(roleId))
         ).toList();
         sysUserRoleService.saveBatch(userRoles);
+        //刷新用户Session
+        sessionManager.refreshUserSession(userId);
     }
 
     /**
@@ -317,6 +351,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getUserId, ids));
         //删除用户
         removeByIds(ids);
+        //踢下线用户Session
+        sessionManager.kickOffline(ids.stream().map(Long::valueOf).toList());
         //注册事务同步，确保在事务提交后释放锁
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -327,6 +363,4 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             }
         });
     }
-
-
 }

@@ -32,6 +32,7 @@ public enum ErrorCode {
     USER_NOT_FOUND(30007, "用户不存在"),
     DEPT_NOT_FOUND(30008, "部门不存在"),
     PARENT_DEPT_DISABLED(30009, "上级部门已停用，不能启用当前部门"),
+    ROLE_DISABLED(30010, "部分角色已停用或不存在，无法分配,刷新后重试"),
 
     // 产品模块 4xxxx
     CATEGORY_NAME_DUPLICATE(40001, "同级别下分类名称已存在"),

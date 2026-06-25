@@ -16,4 +16,12 @@ public interface LoginUserService {
      * @return 登录用户信息，包含部门名、角色编码和权限码；账号不存在或已删除返回 null
      */
     LoginUser findByUsername(String username);
+
+    /**
+     * 根据用户ID查询登录用户信息
+     *
+     * @param userId 用户ID
+     * @return 登录用户信息
+     */
+    LoginUser findByUserId(Long userId);
 }

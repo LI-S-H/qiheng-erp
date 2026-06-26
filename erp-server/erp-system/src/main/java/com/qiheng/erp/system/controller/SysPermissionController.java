@@ -10,7 +10,6 @@ import com.qiheng.erp.system.domain.dto.SysPermissionBatchStatusDto;
 import com.qiheng.erp.system.domain.dto.SysPermissionPageDto;
 import com.qiheng.erp.system.domain.entity.SysPermission;
 import com.qiheng.erp.system.domain.vo.SysPermissionVo;
-import com.qiheng.erp.system.manager.SessionManager;
 import com.qiheng.erp.system.service.ISysPermissionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

@@ -11,13 +11,13 @@ import lombok.Data;
 import java.util.List;
 
 @Data
-@Schema(description = "批量状态修改请求")
-public class BatchStatusUpdateDto {
+@Schema(description = "批量修改权限码状态请求")
+public class SysPermissionBatchStatusDto {
 
-    @NotEmpty(message = "部门ID列表不能为空")
-    @Size(max = 100, message = "单次最多操作100条")
-    @Schema(description = "部门ID列表")
-    private List<Long> deptIds;
+    @NotEmpty(message = "权限码ID列表不能为空")
+    @Size(min = 1, message = "至少选择1条")
+    @Schema(description = "权限码ID列表")
+    private List<String> permissionIds;
 
     @NotNull(message = "状态不能为空")
     @Min(value = 0, message = "状态值只能为0或1")

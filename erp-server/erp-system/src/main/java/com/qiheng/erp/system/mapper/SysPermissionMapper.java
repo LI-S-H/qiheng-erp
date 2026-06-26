@@ -1,7 +1,7 @@
 package com.qiheng.erp.system.mapper;
 
+import com.github.yulichang.base.MPJBaseMapper;
 import com.qiheng.erp.system.domain.entity.SysPermission;
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**
  * <p>
@@ -11,6 +11,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
  * @author Li
  * @since 2026-06-17
  */
-public interface SysPermissionMapper extends BaseMapper<SysPermission> {
+public interface SysPermissionMapper extends MPJBaseMapper<SysPermission> {
 
 }

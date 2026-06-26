@@ -9,7 +9,7 @@ import java.util.List;
 
 @Data
 @Schema(description = "批量删除部门请求")
-public class BatchDeleteDto {
+public class SysDeptBatchDeleteDto {
 
     @NotEmpty(message = "部门ID列表不能为空")
     @Size(max = 100, message = "单次最多删除100条")

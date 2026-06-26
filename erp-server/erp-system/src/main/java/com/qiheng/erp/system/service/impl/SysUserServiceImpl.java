@@ -266,7 +266,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
      */
     @Transactional(rollbackFor = Exception.class)
     @Override
-    @DistributedLock(key = "'sys:user:' + #userId")
+    @DistributedLock(key = "'sys:user:lock' + #userId")
     public SysUserVo updateUser(Long userId, SysUser sysUser) {
         //查询用户是否存在
         SysUser user = sysUserMapper.selectById(userId);
@@ -293,7 +293,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
      * @param userId 用户ID
      * @param roleIds 更新角色ID列表
      */
-    @DistributedLock(key ="'sys:user:' + #userId")
+    @DistributedLock(key ="'sys:user:lock' + #userId")
     @Transactional(rollbackFor = Exception.class)
     @Override
     public void updateRoles(Long userId,List<String> roleIds) {
@@ -331,7 +331,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         //加分布式锁
         List<RLock> locks = new ArrayList<>();
         for (String id : ids) {
-            RLock lock = redissonClient.getLock("sys:user:" + id);
+            RLock lock = redissonClient.getLock("sys:user:lock:" + id);
             try {
                 if (!lock.tryLock(0,30, TimeUnit.SECONDS)) {
                     locks.forEach(l -> {

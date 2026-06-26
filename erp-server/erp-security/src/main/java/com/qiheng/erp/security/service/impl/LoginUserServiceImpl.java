@@ -84,6 +84,7 @@ public class LoginUserServiceImpl implements LoginUserService {
                         .select(SysRole::getPermissionCodes)
                         .innerJoin(SysUserRole.class, SysUserRole::getRoleId, SysRole::getId)
                         .eq(SysUserRole::getUserId, userId)
+                        .eq(SysRole::getStatus,1)
         );
         // 3. 封装角色编码列表
         return getLoginUser(loginUser, sysRoles);

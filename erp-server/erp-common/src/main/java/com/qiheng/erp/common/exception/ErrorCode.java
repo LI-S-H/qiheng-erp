@@ -33,6 +33,8 @@ public enum ErrorCode {
     DEPT_NOT_FOUND(30008, "部门不存在"),
     PARENT_DEPT_DISABLED(30009, "上级部门已停用，不能启用当前部门"),
     ROLE_DISABLED(30010, "部分角色已停用或不存在，无法分配,刷新后重试"),
+    PERMISSION_NOT_FOUND(30011, "权限码不存在"),
+    PERMISSION_IN_USE(30012, "权限码正在使用中，无法删除"),
 
     // 产品模块 4xxxx
     CATEGORY_NAME_DUPLICATE(40001, "同级别下分类名称已存在"),

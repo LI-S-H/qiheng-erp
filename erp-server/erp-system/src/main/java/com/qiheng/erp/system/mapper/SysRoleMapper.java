@@ -1,9 +1,10 @@
 package com.qiheng.erp.system.mapper;
 
 import com.github.yulichang.base.MPJBaseMapper;
-import com.github.yulichang.interfaces.MPJBaseJoin;
 import com.qiheng.erp.system.domain.entity.SysRole;
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /**
  * <p>
@@ -13,4 +14,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
  * @author Li
  * @since 2026-06-17
  */
-public interface SysRoleMapper extends MPJBaseMapper<SysRole> { }
+public interface SysRoleMapper extends MPJBaseMapper<SysRole> {
+
+    List<SysRole> selectByPermissionCodes(@Param("permissionCodes") List<String> permissionCodes);
+}

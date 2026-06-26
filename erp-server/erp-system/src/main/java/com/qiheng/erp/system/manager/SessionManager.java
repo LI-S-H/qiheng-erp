@@ -2,6 +2,7 @@ package com.qiheng.erp.system.manager;
 
 import java.util.List;
 
+
 /**
  * Session 管理器接口，负责在线用户的 Session 生命周期管理
  * <p>
@@ -60,4 +61,5 @@ public interface SessionManager {
      * @param userIds 用户ID列表
      */
     void kickOffline(List<Long> userIds);
+
 }

@@ -110,7 +110,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
      * @param status  目标状态：1启用，0禁用
      */
     @Override
-    @DistributedLock(key = "'role:lock:global'")
+    @DistributedLock(key = "'sys:role:lock:global'")
     @Transactional(rollbackFor = Exception.class)
     public void batchUpdateStatus(List<String> roleIds, Integer status) {
         List<Long> ids = roleIds.stream().map(Long::valueOf).toList();
@@ -159,7 +159,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
      * @param list 角色ID列表
      */
     @Override
-    @DistributedLock(key = "'role:lock:global'")
+    @DistributedLock(key = "'sys:role:lock:global'")
     @Transactional(rollbackFor = Exception.class)
     public void deleteByIds(List<String> list) {
         List<Long> ids = list.stream().map(Long::valueOf).toList();
@@ -201,7 +201,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @DistributedLock(key = "'role:lock:global'")
+    @DistributedLock(key = "'sys:role:lock:global'")
     public SysRoleVo updateRole(Long roleId, SysRole sysRole) {
         //查出受影响的用户ID，用于后续刷新Session
         List<Long> userIds = sysUserRoleMapper.selectList(
@@ -221,7 +221,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @DistributedLock(key = "'role:lock:global'")
+    @DistributedLock(key = "'sys:role:lock:global'")
     public void updatePermissionCodes(Long roleId, List<String> list) {
         //查出受影响的用户ID，用于后续刷新Session
         List<Long> userIds = sysUserRoleMapper.selectList(

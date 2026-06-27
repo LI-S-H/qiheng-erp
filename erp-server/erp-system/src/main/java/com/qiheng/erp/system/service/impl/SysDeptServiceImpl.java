@@ -231,7 +231,7 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
 
         // 校验2：启用时，检查上级部门是否停用
         if (statusChanged && newStatus == 1) {
-            validateCanEnable(dept, newParentId);
+            validateCanEnable(newParentId);
         }
 
         // ===== 校验全部通过，安全执行修改 =====
@@ -320,7 +320,7 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
      * @param dept        当前部门
      * @param newParentId 新上级部门ID
      */
-    private void validateCanEnable(SysDept dept, Long newParentId) {
+    private void validateCanEnable(Long newParentId) {
         if (newParentId == 0) {
             return;
         }

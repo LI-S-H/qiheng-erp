@@ -3,6 +3,7 @@ package com.qiheng.erp.system.service;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.system.domain.dto.SysRolePageDto;
 import com.qiheng.erp.system.domain.entity.SysRole;
+import com.qiheng.erp.system.domain.vo.RoleOptionVo;
 import com.qiheng.erp.system.domain.vo.SysRoleVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 import jakarta.validation.Valid;
@@ -78,4 +79,10 @@ public interface ISysRoleService extends IService<SysRole> {
      * @param list 权限码列表
      */
     void updatePermissionCodes(Long roleId, List<String> list);
+
+    /**
+     * 查询角色权限码选项分组列表
+     * @return 角色权限码选项分组列表
+     */
+    List<RoleOptionVo> getPermissionCodeOptions();
 }

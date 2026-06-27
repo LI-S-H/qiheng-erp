@@ -2,6 +2,7 @@ package com.qiheng.erp.system.domain.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 
+import java.io.Serial;
 import java.time.LocalDateTime;
 import java.io.Serializable;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -24,6 +25,7 @@ import lombok.experimental.Accessors;
 @Schema(description = "部门表")
 public class SysDept implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     @Schema(description = "部门ID")

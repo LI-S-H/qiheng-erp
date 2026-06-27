@@ -3,6 +3,7 @@ package com.qiheng.erp.system.service;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.system.domain.dto.SysPermissionPageDto;
 import com.qiheng.erp.system.domain.entity.SysPermission;
+import com.qiheng.erp.system.domain.vo.PermissionOptionGroupVo;
 import com.qiheng.erp.system.domain.vo.SysPermissionVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 import jakarta.validation.Valid;
@@ -66,4 +67,10 @@ public interface ISysPermissionService extends IService<SysPermission> {
      * @param status 状态值，0-停用，1-启用
      */
     void batchUpdateStatus(List<String> permissionIds, Integer status);
+
+    /**
+     * 查询权限码选项（按模块分组）
+     * @return 权限码选项分组列表
+     */
+    List<PermissionOptionGroupVo> options();
 }

@@ -11,6 +11,7 @@ import com.qiheng.erp.system.domain.dto.SysPermissionPageDto;
 import com.qiheng.erp.system.domain.entity.SysPermission;
 import com.qiheng.erp.system.domain.entity.SysRole;
 import com.qiheng.erp.system.domain.entity.SysUserRole;
+import com.qiheng.erp.system.domain.vo.PermissionOptionGroupVo;
 import com.qiheng.erp.system.domain.vo.SysPermissionVo;
 import com.qiheng.erp.system.manager.SessionManager;
 import com.qiheng.erp.system.mapper.SysPermissionMapper;
@@ -23,8 +24,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -292,5 +295,39 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
                     .stream().map(SysUserRole::getUserId).distinct().toList();
             sessionManager.refreshUserSession(userIds);
         }
+    }
+
+    /**
+     * 查询权限码选项
+     * 用于在前端展示权限码选项，每个选项分组下包含多个权限码选项
+     * @return 权限码选项分组列表
+     */
+    @Override
+    public List<PermissionOptionGroupVo> options() {
+        // 查询所有启用的权限码
+        List<SysPermission> permissions = sysPermissionMapper.selectList(
+                new LambdaQueryWrapper<SysPermission>()
+                        .eq(SysPermission::getStatus, 1)
+                        .orderByAsc(SysPermission::getSortOrder)
+        );
+
+        // 按模块分组
+        Map<String, List<SysPermission>> grouped = permissions.stream()
+                .collect(Collectors.groupingBy(SysPermission::getModuleCode, LinkedHashMap::new, Collectors.toList()));
+
+        return grouped.entrySet().stream().map(entry -> {
+            //1. 为每个分组创建一个 PermissionOptionGroup 对象
+            PermissionOptionGroupVo group = new PermissionOptionGroupVo();
+            group.setGroup(entry.getKey());
+            //2. 为每个分组创建一个 PermissionCodeItem 对象列表
+            List<PermissionOptionGroupVo.PermissionCodeItem> codes = entry.getValue().stream().map(p -> {
+                PermissionOptionGroupVo.PermissionCodeItem item = new PermissionOptionGroupVo.PermissionCodeItem();
+                item.setCode(p.getPermissionCode());
+                item.setLabel(p.getPermissionName());
+                return item;
+            }).toList();
+            group.setCodes(codes);
+            return group;
+        }).toList();
     }
 }

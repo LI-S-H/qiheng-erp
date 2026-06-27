@@ -9,6 +9,7 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.system.domain.dto.SysDeptDto;
 import com.qiheng.erp.system.domain.entity.SysDept;
 import com.qiheng.erp.system.domain.entity.SysUser;
+import com.qiheng.erp.system.domain.vo.DeptOptionVo;
 import com.qiheng.erp.system.mapper.SysDeptMapper;
 import com.qiheng.erp.system.mapper.SysUserMapper;
 import com.qiheng.erp.system.service.ISysDeptService;
@@ -32,9 +33,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> implements ISysDeptService {
-
-    private static final String DEPT_LOCK_KEY = "dept:lock:global";
-
     @Autowired
     private SysDeptMapper sysDeptMapper;
 
@@ -265,6 +263,26 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
                 .eq(SysUser::getDeptId, deptId)
                 .eq(SysUser::getStatus, 1))));
         return dto;
+    }
+
+
+    /**
+     * 查询部门下拉选项列表
+     * @return 部门下拉选项列表
+     */
+    @Override
+    public List<DeptOptionVo> getDeptOptions() {
+        LambdaQueryWrapper<SysDept> query = new LambdaQueryWrapper<SysDept>()
+                .select(SysDept::getId, SysDept::getDeptName, SysDept::getParentId, SysDept::getStatus)
+                .eq(SysDept::getStatus, 1)
+                .orderByAsc(SysDept::getId);
+        return sysDeptMapper.selectList(query).stream()
+                .map(dept -> {
+                    DeptOptionVo vo = BeanUtil.copyProperties(dept, DeptOptionVo.class);
+                    vo.setDeptId(String.valueOf(dept.getId()));
+                    return vo;
+                })
+                .collect(Collectors.toList());
     }
 
     /**

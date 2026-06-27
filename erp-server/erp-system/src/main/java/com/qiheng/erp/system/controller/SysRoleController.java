@@ -9,6 +9,7 @@ import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.system.domain.dto.SysRoleBatchStatusDto;
 import com.qiheng.erp.system.domain.dto.SysRolePageDto;
 import com.qiheng.erp.system.domain.entity.SysRole;
+import com.qiheng.erp.system.domain.vo.RoleOptionVo;
 import com.qiheng.erp.system.domain.vo.SysRoleVo;
 import com.qiheng.erp.system.service.ISysRoleService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -182,5 +183,18 @@ public class SysRoleController {
         log.info("修改角色权限码，参数: roleId={}, permissionCodes={}", roleId, list);
         sysRoleService.updatePermissionCodes(roleId, list);
         return Result.ok();
+    }
+
+    /**
+     * 查询角色权限码选项
+     * @return 角色权限码选项分组列表
+     */
+    @GetMapping("/options")
+    @Operation(summary = "查询角色权限码选项")
+    public Result<List<RoleOptionVo>> options() {
+        StpUtil.checkPermission("system:role:query");
+        log.info("查询角色权限码选项");
+        List<RoleOptionVo> voList = sysRoleService.getPermissionCodeOptions();
+        return Result.ok(voList);
     }
 }

@@ -9,6 +9,7 @@ import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.system.domain.dto.SysPermissionBatchStatusDto;
 import com.qiheng.erp.system.domain.dto.SysPermissionPageDto;
 import com.qiheng.erp.system.domain.entity.SysPermission;
+import com.qiheng.erp.system.domain.vo.PermissionOptionGroupVo;
 import com.qiheng.erp.system.domain.vo.SysPermissionVo;
 import com.qiheng.erp.system.service.ISysPermissionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -158,5 +159,18 @@ public class SysPermissionController {
         sysPermissionService.batchUpdateStatus(dto.getPermissionIds(), dto.getStatus());
         return Result.ok();
 
+    }
+
+    /**
+     * 查询权限码选项
+     * 用于在前端展示权限码选项，每个选项分组下包含多个权限码选项
+     * @return 权限码选项分组列表
+     */
+    @GetMapping("/options")
+    @Operation(summary = "查询权限码选项")
+    public Result<List<PermissionOptionGroupVo>> options() {
+        StpUtil.checkPermission("system:permission:query");
+        log.info("查询权限码选项");
+        return Result.ok(sysPermissionService.options());
     }
 }

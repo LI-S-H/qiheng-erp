@@ -10,6 +10,7 @@ import com.qiheng.erp.system.domain.dto.SysDeptBatchStatusUpdateDto;
 import com.qiheng.erp.system.domain.dto.StatusUpdateDto;
 import com.qiheng.erp.system.domain.dto.SysDeptDto;
 import com.qiheng.erp.system.domain.entity.SysDept;
+import com.qiheng.erp.system.domain.vo.DeptOptionVo;
 import com.qiheng.erp.system.service.ISysDeptService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -164,5 +165,17 @@ public class SysDeptController {
         log.info("更新部门信息，deptId: {}, request: {}", deptId, request);
         SysDeptDto dto = sysDeptService.updateDept(deptId, request);
         return Result.ok(dto);
+    }
+
+    /**
+     * 查询部门下拉选项列表
+     * @return 部门下拉选项列表
+     */
+    @GetMapping("/options")
+    @Operation(summary = "查询部门下拉选项")
+    public Result<List<DeptOptionVo>> options() {
+        log.info("查询部门下拉选项");
+        List<DeptOptionVo> voList = sysDeptService.getDeptOptions();
+        return Result.ok(voList);
     }
 }

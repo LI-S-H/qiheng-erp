@@ -1,5 +1,6 @@
 package com.qiheng.erp.system.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -7,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.system.domain.vo.RoleOptionVo;
 import com.qiheng.erp.system.manager.SessionManager;
 import com.qiheng.erp.system.domain.dto.SysRolePageDto;
 import com.qiheng.erp.system.domain.entity.SysRole;
@@ -233,6 +235,24 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
                 .setPermissionCodes(list));
         //刷新受影响用户的Session，使其权限快照实时生效
         sessionManager.refreshUserSession(userIds);
+    }
+
+    /**
+     * 查询角色权限码选项分组列表
+     * @return 角色权限码选项分组列表
+     */
+    @Override
+    public List<RoleOptionVo> getPermissionCodeOptions() {
+        LambdaQueryWrapper<SysRole> wrapper = new LambdaQueryWrapper<SysRole>()
+                .select(SysRole::getId, SysRole::getRoleCode,SysRole::getRoleName,SysRole::getStatus)
+                .eq(SysRole::getStatus, 1)
+                .orderByAsc(SysRole::getCreateTime);
+        List<SysRole> list = sysRoleMapper.selectList(wrapper);
+        return list.stream().map(role -> {
+            RoleOptionVo vo = BeanUtil.copyProperties(role, RoleOptionVo.class);
+            vo.setRoleId(role.getId().toString());
+            return vo;
+        }).toList();
     }
 
 }

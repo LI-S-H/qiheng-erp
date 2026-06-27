@@ -316,8 +316,6 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
 
     /**
      * 校验是否可以启用（基于新上级链路，不修改任何数据）
-     *
-     * @param dept        当前部门
      * @param newParentId 新上级部门ID
      */
     private void validateCanEnable(Long newParentId) {

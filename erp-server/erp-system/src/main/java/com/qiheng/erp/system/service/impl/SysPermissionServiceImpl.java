@@ -7,6 +7,7 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.RedisUtil;
 import com.qiheng.erp.system.domain.dto.SysPermissionPageDto;
 import com.qiheng.erp.system.domain.entity.SysPermission;
 import com.qiheng.erp.system.domain.entity.SysRole;
@@ -23,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +42,9 @@ import java.util.stream.Collectors;
 @Service
 public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysPermission> implements ISysPermissionService {
 
+    private static final String CACHE_KEY = "system:options:permissions";
+    private static final Duration CACHE_TTL = Duration.ofHours(1);
+
     @Autowired
     private SysPermissionMapper sysPermissionMapper;
     @Autowired
@@ -48,6 +53,8 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
     private SysUserRoleMapper sysUserRoleMapper;
     @Autowired
     private SessionManager sessionManager;
+    @Autowired
+    private RedisUtil redisUtil;
 
     /**
      * 分页查询权限码列表
@@ -133,6 +140,7 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
         SysPermissionVo vo = getSysPermissionVo(sysPermission);
         // 新增权限码，引用该权限码的角色数量为0
         vo.setRoleCount(0);
+        redisUtil.delete(CACHE_KEY);
         return vo;
     }
 
@@ -161,6 +169,7 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
             deleteRolePermission(List.of(oldPermission));
         }
         // 转换为VO
+        redisUtil.delete(CACHE_KEY);
         SysPermissionVo vo = getSysPermissionVo(sysPermission);
         // 查询所有角色，统计该权限码的使用次数，并填充引用该权限码的角色数量
         return fillRoleCount(vo);
@@ -219,6 +228,7 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
         }
         // 删除权限码
         sysPermissionMapper.deleteByIds(permissionIds);
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -242,6 +252,7 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
             // 停用权限码，删除角色权限码,并刷新受影响用户会话
             deleteRolePermission(List.of(permission));
         }
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -266,6 +277,7 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
         if (status == 0) {
             deleteRolePermission(permissions);
         }
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -304,7 +316,10 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
      */
     @Override
     public List<PermissionOptionGroupVo> options() {
-        // 查询所有启用的权限码
+        List<PermissionOptionGroupVo> cached = redisUtil.getList(CACHE_KEY, PermissionOptionGroupVo.class);
+        if (cached != null) {
+            return cached;
+        }
         List<SysPermission> permissions = sysPermissionMapper.selectList(
                 new LambdaQueryWrapper<SysPermission>()
                         .eq(SysPermission::getStatus, 1)
@@ -315,11 +330,9 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
         Map<String, List<SysPermission>> grouped = permissions.stream()
                 .collect(Collectors.groupingBy(SysPermission::getModuleCode, LinkedHashMap::new, Collectors.toList()));
 
-        return grouped.entrySet().stream().map(entry -> {
-            //1. 为每个分组创建一个 PermissionOptionGroup 对象
+        List<PermissionOptionGroupVo> result = grouped.entrySet().stream().map(entry -> {
             PermissionOptionGroupVo group = new PermissionOptionGroupVo();
             group.setGroup(entry.getKey());
-            //2. 为每个分组创建一个 PermissionCodeItem 对象列表
             List<PermissionOptionGroupVo.PermissionCodeItem> codes = entry.getValue().stream().map(p -> {
                 PermissionOptionGroupVo.PermissionCodeItem item = new PermissionOptionGroupVo.PermissionCodeItem();
                 item.setCode(p.getPermissionCode());
@@ -329,5 +342,7 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
             group.setCodes(codes);
             return group;
         }).toList();
+        redisUtil.setList(CACHE_KEY, result, CACHE_TTL);
+        return result;
     }
 }

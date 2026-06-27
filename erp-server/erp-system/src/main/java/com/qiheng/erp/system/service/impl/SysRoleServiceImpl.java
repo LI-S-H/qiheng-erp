@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.RedisUtil;
 import com.qiheng.erp.system.domain.vo.RoleOptionVo;
 import com.qiheng.erp.system.manager.SessionManager;
 import com.qiheng.erp.system.domain.dto.SysRolePageDto;
@@ -22,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -35,12 +37,17 @@ import java.util.List;
 @Service
 public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> implements ISysRoleService {
 
+    private static final String CACHE_KEY = "system:options:roles";
+    private static final Duration CACHE_TTL = Duration.ofHours(1);
+
     @Autowired
     private SysRoleMapper sysRoleMapper;
     @Autowired
     private SysUserRoleMapper sysUserRoleMapper;
     @Autowired
     private SessionManager sessionManager;
+    @Autowired
+    private RedisUtil redisUtil;
 
     /**
      * 分页查询角色列表
@@ -102,6 +109,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     @Override
     public SysRoleVo add(SysRole sysRole) {
         sysRoleMapper.insert(sysRole);
+        redisUtil.delete(CACHE_KEY);
         return getDetailById(sysRole.getId());
     }
 
@@ -130,6 +138,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             //刷新受影响用户的Session，使其权限快照实时生效
             sessionManager.refreshUserSession(userIds);
         }
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -154,6 +163,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             //刷新受影响用户的Session，使其权限快照实时生效
             sessionManager.refreshUserSession(userIds);
         }
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -175,6 +185,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getRoleId, ids));
         //刷新受影响用户的Session，使其权限快照实时生效
         sessionManager.refreshUserSession(userIds);
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -194,6 +205,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getRoleId, roleId));
         //刷新受影响用户的Session，使其权限快照实时生效
         sessionManager.refreshUserSession(userIds);
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -213,6 +225,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         sysRoleMapper.updateById(sysRole);
         //刷新受影响用户的Session，使其权限快照实时生效
         sessionManager.refreshUserSession(userIds);
+        redisUtil.delete(CACHE_KEY);
         return getDetailById(roleId);
     }
 
@@ -235,6 +248,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
                 .setPermissionCodes(list));
         //刷新受影响用户的Session，使其权限快照实时生效
         sessionManager.refreshUserSession(userIds);
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -243,16 +257,22 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
      */
     @Override
     public List<RoleOptionVo> getPermissionCodeOptions() {
+        List<RoleOptionVo> cached = redisUtil.getList(CACHE_KEY, RoleOptionVo.class);
+        if (cached != null) {
+            return cached;
+        }
         LambdaQueryWrapper<SysRole> wrapper = new LambdaQueryWrapper<SysRole>()
-                .select(SysRole::getId, SysRole::getRoleCode,SysRole::getRoleName,SysRole::getStatus)
+                .select(SysRole::getId, SysRole::getRoleCode, SysRole::getRoleName, SysRole::getStatus)
                 .eq(SysRole::getStatus, 1)
                 .orderByAsc(SysRole::getCreateTime);
         List<SysRole> list = sysRoleMapper.selectList(wrapper);
-        return list.stream().map(role -> {
+        List<RoleOptionVo> result = list.stream().map(role -> {
             RoleOptionVo vo = BeanUtil.copyProperties(role, RoleOptionVo.class);
             vo.setRoleId(role.getId().toString());
             return vo;
         }).toList();
+        redisUtil.setList(CACHE_KEY, result, CACHE_TTL);
+        return result;
     }
 
 }

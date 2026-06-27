@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.annotation.DistributedLock;
+import com.qiheng.erp.common.util.RedisUtil;
 import com.qiheng.erp.system.domain.dto.SysDeptDto;
 import com.qiheng.erp.system.domain.entity.SysDept;
 import com.qiheng.erp.system.domain.entity.SysUser;
@@ -19,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -33,11 +35,17 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> implements ISysDeptService {
+    private static final String CACHE_KEY = "system:options:depts";
+    private static final Duration CACHE_TTL = Duration.ofHours(1);
+
     @Autowired
     private SysDeptMapper sysDeptMapper;
 
     @Autowired
     private SysUserMapper sysUserMapper;
+
+    @Autowired
+    private RedisUtil redisUtil;
 
     /**
      * 查询部门列表（含 userCount）
@@ -76,6 +84,7 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
             dept.setAncestors(parent.getAncestors() + "," + dept.getParentId());
         }
         saveOrUpdate(dept);
+        redisUtil.delete(CACHE_KEY);
         SysDeptDto dto = BeanUtil.copyProperties(dept, SysDeptDto.class);
         dto.setDeptId(String.valueOf(dept.getId()));
         dto.setCreateTime(dept.getCreateTime());
@@ -122,6 +131,7 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
         if (status == 0) {
             List<String> idStrings = deptIds.stream().map(String::valueOf).toList();
             sysDeptMapper.disableDeptsCascade(idStrings);
+            redisUtil.delete(CACHE_KEY);
             return;
         }
         Set<Long> ancestorIds = parseAncestorIds(depts);
@@ -134,6 +144,7 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
             }
         }
         sysDeptMapper.enableDepts(deptIds);
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -175,6 +186,7 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
         }
         //删除部门
         sysDeptMapper.deleteByIds(deptIds);
+        redisUtil.delete(CACHE_KEY);
     }
 
     /**
@@ -253,6 +265,8 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被修改，请刷新后重试");
         }
+        // 清除缓存
+        redisUtil.delete(CACHE_KEY);
 
         SysDept updated = sysDeptMapper.selectById(deptId);
         SysDeptDto dto = BeanUtil.copyProperties(updated, SysDeptDto.class);
@@ -272,17 +286,23 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
      */
     @Override
     public List<DeptOptionVo> getDeptOptions() {
+        List<DeptOptionVo> cached = redisUtil.getList(CACHE_KEY, DeptOptionVo.class);
+        if (cached != null) {
+            return cached;
+        }
         LambdaQueryWrapper<SysDept> query = new LambdaQueryWrapper<SysDept>()
                 .select(SysDept::getId, SysDept::getDeptName, SysDept::getParentId, SysDept::getStatus)
                 .eq(SysDept::getStatus, 1)
                 .orderByAsc(SysDept::getId);
-        return sysDeptMapper.selectList(query).stream()
+        List<DeptOptionVo> result = sysDeptMapper.selectList(query).stream()
                 .map(dept -> {
                     DeptOptionVo vo = BeanUtil.copyProperties(dept, DeptOptionVo.class);
                     vo.setDeptId(String.valueOf(dept.getId()));
                     return vo;
                 })
                 .collect(Collectors.toList());
+        redisUtil.setList(CACHE_KEY, result, CACHE_TTL);
+        return result;
     }
 
     /**

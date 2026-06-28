@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.TableId;
 import java.io.Serializable;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -40,46 +41,57 @@ public class Product implements Serializable {
 
     @Schema(description = "产品名称")
     @TableField("product_name")
+    @NotNull(message = "产品名称不能为空")
     private String productName;
 
     @Schema(description = "产品分类ID")
     @TableField("category_id")
+    @NotNull(message = "产品分类ID不能为空")
     private Long categoryId;
 
     @Schema(description = "品牌名称")
     @TableField("brand_name")
+    @NotNull(message = "品牌名称不能为空")
     private String brandName;
 
     @Schema(description = "单位名称")
     @TableField("unit_name")
+    @NotNull(message = "单位名称不能为空")
     private String unitName;
 
     @Schema(description = "数量小数位：0-2，离散单位通常为0")
     @TableField("quantity_precision")
+    @NotNull(message = "数量小数位不能为空")
     private Integer quantityPrecision;
 
     @Schema(description = "规格型号")
     @TableField("specification")
+    @NotNull(message = "规格型号不能为空")
     private String specification;
 
     @Schema(description = "条码")
     @TableField("barcode")
+    @NotNull(message = "条码不能为空")
     private String barcode;
 
     @Schema(description = "参考采购价")
     @TableField("reference_purchase_price")
+    @NotNull(message = "参考采购价不能为空")
     private BigDecimal referencePurchasePrice;
 
     @Schema(description = "参考销售价")
     @TableField("reference_sale_price")
+    @NotNull(message = "参考销售价不能为空")
     private BigDecimal referenceSalePrice;
 
     @Schema(description = "安全库存数量，按100倍整数存储，例如12.50存1250")
     @TableField("safety_stock_qty")
-    private Long safetyStockQty;
+    @NotNull(message = "安全库存数量不能为空")
+    private BigDecimal safetyStockQty;
 
     @Schema(description = "状态：1启用，0禁用")
     @TableField("status")
+    @NotNull(message = "状态不能为空")
     private Integer status;
 
     @Schema(description = "创建时间")

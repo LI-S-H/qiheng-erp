@@ -162,6 +162,7 @@ function buildMockBills(): StockBillDetail[] {
       createdById: '1900000000000000001',
       createdByName: '系统管理员',
       responsibleById: '1900000000000000001',
+      version: 0,
       responsibleByName: '系统管理员',
       createTime: timestamp,
       updateTime: timestamp,
@@ -205,6 +206,7 @@ function normalizeStockBill(item: StockBillListItem): StockBillListItem {
     createdByName: String(item.createdByName),
     responsibleById: normalizeStringId(item.responsibleById, 'responsibleById'),
     responsibleByName: String(item.responsibleByName),
+    version: normalizeFiniteNumber(item.version, 'version'),
     createTime: String(item.createTime),
     updateTime: String(item.updateTime),
   };
@@ -308,6 +310,10 @@ function normalizeStockBillPage(page: StockBillPage): StockBillPage {
 
 function nowText() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function assertOptimisticVersion(current: number, expected: number | undefined) {
+  if (expected !== undefined && current !== expected) throw new Error('数据已被其他人修改，请刷新后重试');
 }
 
 function dateKey() {
@@ -425,6 +431,7 @@ export async function createStockBill(payload: StockBillCreatePayload) {
       createdByName: '系统管理员',
       responsibleById: '1900000000000000001',
       responsibleByName: '系统管理员',
+      version: 0,
       createTime: timestamp,
       updateTime: timestamp,
       manualReason,
@@ -440,6 +447,7 @@ export async function createStockBill(payload: StockBillCreatePayload) {
 export async function updateStockBill(stockBillId: string, payload: StockBillUpdatePayload) {
   if (useMockApi) {
     const current = requireDraft(stockBillId);
+    assertOptimisticVersion(current.version, payload.version);
     validateDraftItems(payload.items, current.billType, new Map(current.items.map(item => [item.productId, item.quantityPrecision])));
     const sourceGenerated = current.entryMode === 'SOURCE_GENERATED';
     const structureLocked = sourceGenerated || current.status === 'PENDING_CONFIRM';
@@ -504,6 +512,7 @@ export async function updateStockBill(stockBillId: string, payload: StockBillUpd
       itemCount: items.length,
       ...buildQuantitySummary(items),
       remark: payload.remark.trim(),
+      version: current.version + 1,
       updateTime: timestamp,
     };
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? updated : item);
@@ -513,10 +522,11 @@ export async function updateStockBill(stockBillId: string, payload: StockBillUpd
   return normalizeStockBillDetail(response.data.data as StockBillDetail);
 }
 
-export async function confirmStockBill(stockBillId: string) {
+export async function confirmStockBill(stockBillId: string, version: number) {
   if (useMockApi) {
     const existing = mockBills.find(item => item.stockBillId === stockBillId);
     if (!existing) throw new Error('入库单或出库单不存在');
+    assertOptimisticVersion(existing.version, version);
     if (existing.status === 'CONFIRMED') return normalizeStockBillDetail(existing);
     if (existing.status === 'CANCELLED') throw new Error('已取消的入库单或出库单不能确认');
     if (existing.status !== 'PENDING_CONFIRM') throw new Error('草稿必须先提交为待确认后才能确认入库/出库');
@@ -569,43 +579,46 @@ export async function confirmStockBill(stockBillId: string) {
       confirmedById: '1900000000000000001',
       confirmedByName: '系统管理员',
       confirmedAt: timestamp,
+      version: current.version + 1,
       updateTime: timestamp,
       items,
     };
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? confirmed : item);
     return normalizeStockBillDetail(confirmed);
   }
-  return postResult<StockBillDetail, Record<string, never>>(`/warehouse/stock-bills/${stockBillId}/confirm`, {}).then(normalizeStockBillDetail);
+  return postResult<StockBillDetail, { version: number }>(`/warehouse/stock-bills/${stockBillId}/confirm`, { version }).then(normalizeStockBillDetail);
 }
 
-export async function submitStockBill(stockBillId: string) {
+export async function submitStockBill(stockBillId: string, version: number) {
   if (useMockApi) {
     const existing = mockBills.find(item => item.stockBillId === stockBillId);
     if (!existing) throw new Error('入库单或出库单不存在');
+    assertOptimisticVersion(existing.version, version);
     if (existing.status === 'PENDING_CONFIRM') return normalizeStockBillDetail(existing);
     if (existing.status !== 'DRAFT') throw new Error('只有草稿状态的入库单/出库单可以提交确认');
     validateDraftItems(existing.items, existing.billType);
     const timestamp = nowText();
-    const submitted: StockBillDetail = { ...existing, status: 'PENDING_CONFIRM', updateTime: timestamp };
+    const submitted: StockBillDetail = { ...existing, status: 'PENDING_CONFIRM', version: existing.version + 1, updateTime: timestamp };
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? submitted : item);
     return normalizeStockBillDetail(submitted);
   }
-  return postResult<StockBillDetail, Record<string, never>>(`/warehouse/stock-bills/${stockBillId}/submit`, {}).then(normalizeStockBillDetail);
+  return postResult<StockBillDetail, { version: number }>(`/warehouse/stock-bills/${stockBillId}/submit`, { version }).then(normalizeStockBillDetail);
 }
 
-export async function cancelStockBill(stockBillId: string) {
+export async function cancelStockBill(stockBillId: string, version: number) {
   if (useMockApi) {
     const existing = mockBills.find(item => item.stockBillId === stockBillId);
     if (!existing) throw new Error('入库单或出库单不存在');
+    assertOptimisticVersion(existing.version, version);
     if (existing.status === 'CANCELLED') return normalizeStockBillDetail(existing);
     if (existing.status === 'CONFIRMED') throw new Error('已确认凭证不能直接取消，请创建反向库存调整');
     const current = existing;
     const timestamp = nowText();
-    const cancelled: StockBillDetail = { ...current, status: 'CANCELLED', updateTime: timestamp };
+    const cancelled: StockBillDetail = { ...current, status: 'CANCELLED', version: current.version + 1, updateTime: timestamp };
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? cancelled : item);
     return normalizeStockBillDetail(cancelled);
   }
-  return postResult<StockBillDetail, Record<string, never>>(`/warehouse/stock-bills/${stockBillId}/cancel`, {}).then(normalizeStockBillDetail);
+  return postResult<StockBillDetail, { version: number }>(`/warehouse/stock-bills/${stockBillId}/cancel`, { version }).then(normalizeStockBillDetail);
 }
 
 export function listStockBills(params: StockBillQuery) {

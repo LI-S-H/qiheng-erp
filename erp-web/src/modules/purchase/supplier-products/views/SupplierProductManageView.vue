@@ -175,6 +175,14 @@ function toggleSelect(id: string, value: boolean | 'indeterminate') {
   selectedIds.value = next;
 }
 
+function selectedVersionMap() {
+  return Object.fromEntries(
+    records.value
+      .filter(item => selectedIds.value.has(item.supplierProductId))
+      .map(item => [item.supplierProductId, item.version]),
+  );
+}
+
 function resetForm() {
   Object.assign(form, {
     supplierId: '',
@@ -215,6 +223,7 @@ function openEditDialog(row: SupplierProductListItem) {
     priceScore: row.priceScore,
     aiScore: row.aiScore,
     status: row.status,
+    version: row.version,
     remark: row.remark,
   });
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
@@ -260,6 +269,7 @@ function payload(): SupplierProductFormPayload {
     priceScore: Number(form.priceScore),
     aiScore: Number(form.aiScore),
     status: form.status,
+    ...(dialogMode.value === 'edit' ? { version: Number(form.version) } : {}),
     remark: form.remark.trim(),
   };
 }
@@ -309,7 +319,7 @@ async function runConfirmAction() {
 
 function confirmStatus(row: SupplierProductListItem, status: 0 | 1) {
   showConfirm(status === 1 ? '启用供货产品' : '停用供货产品', status === 1 ? '启用后可作为采购订单候选产品。' : '停用后不能作为新采购订单候选。', status === 1 ? '启用' : '停用', status === 1 ? 'default' : 'warning', async () => {
-    await batchUpdateSupplierProductStatus({ supplierProductIds: [row.supplierProductId], status });
+    await batchUpdateSupplierProductStatus({ supplierProductIds: [row.supplierProductId], versionBySupplierProductId: { [row.supplierProductId]: row.version }, status });
     toast.success('供货产品状态已更新');
     await fetchRecords();
   });
@@ -317,7 +327,7 @@ function confirmStatus(row: SupplierProductListItem, status: 0 | 1) {
 
 function confirmDelete(row: SupplierProductListItem) {
   showConfirm('删除供货产品', '已被采购订单引用的供货产品会被后端拒绝删除。是否继续？', '删除', 'destructive', async () => {
-    await deleteSupplierProduct(row.supplierProductId);
+    await deleteSupplierProduct(row.supplierProductId, row.version);
     toast.success('供货产品已删除');
     await fetchRecords();
   });
@@ -326,7 +336,7 @@ function confirmDelete(row: SupplierProductListItem) {
 function confirmBatchStatus(status: 0 | 1) {
   if (selectedIds.value.size === 0) return;
   showConfirm(status === 1 ? '批量启用供货产品' : '批量停用供货产品', `将处理 ${selectedIds.value.size} 条供货关系。`, status === 1 ? '启用' : '停用', status === 1 ? 'default' : 'warning', async () => {
-    await batchUpdateSupplierProductStatus({ supplierProductIds: [...selectedIds.value], status });
+    await batchUpdateSupplierProductStatus({ supplierProductIds: [...selectedIds.value], versionBySupplierProductId: selectedVersionMap(), status });
     toast.success('批量状态已更新');
     await fetchRecords();
   });
@@ -335,7 +345,7 @@ function confirmBatchStatus(status: 0 | 1) {
 function confirmBatchDelete() {
   if (selectedIds.value.size === 0) return;
   showConfirm('批量删除供货产品', '存在采购订单引用时，后端应整批返回 409。', '删除', 'destructive', async () => {
-    await batchDeleteSupplierProducts({ supplierProductIds: [...selectedIds.value] });
+    await batchDeleteSupplierProducts({ supplierProductIds: [...selectedIds.value], versionBySupplierProductId: selectedVersionMap() });
     toast.success('供货产品已批量删除');
     await fetchRecords();
   });

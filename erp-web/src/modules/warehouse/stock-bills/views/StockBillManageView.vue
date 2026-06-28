@@ -626,7 +626,7 @@ async function submitForm() {
       await createStockBill(payload);
       toast.success(`${pageText.value.formTitle}草稿已创建`);
     } else if (editingDetail.value) {
-      const payload: StockBillUpdatePayload = { warehouseId: form.warehouseId, sourceNo: form.sourceNo.trim(), manualReason: form.manualReason.trim(), items: buildItemPayloads(), remark: form.remark.trim() };
+      const payload: StockBillUpdatePayload = { version: editingDetail.value.version, warehouseId: form.warehouseId, sourceNo: form.sourceNo.trim(), manualReason: form.manualReason.trim(), items: buildItemPayloads(), remark: form.remark.trim() };
       await updateStockBill(editingDetail.value.stockBillId, payload);
       toast.success(`${pageText.value.formTitle}已保存`);
     }
@@ -691,7 +691,7 @@ function handleConfirm(row: StockBillListItem | StockBillDetail) {
     confirmText: '确认执行',
     variant: 'warning',
     onConfirm: async () => {
-      await confirmStockBill(row.stockBillId);
+      await confirmStockBill(row.stockBillId, row.version);
       toast.success(`${row.billNo} 已确认`);
       detailVisible.value = false;
       await fetchRecords();
@@ -730,7 +730,7 @@ function handleSubmit(row: StockBillListItem | StockBillDetail) {
     confirmText: '确认提交',
     variant: 'warning',
     onConfirm: async () => {
-      await submitStockBill(row.stockBillId);
+      await submitStockBill(row.stockBillId, row.version);
       toast.success(`${row.billNo} 已提交待确认`);
       detailVisible.value = false;
       await fetchRecords();
@@ -745,7 +745,7 @@ function handleCancel(row: StockBillListItem) {
     confirmText: '确认取消',
     variant: 'destructive',
     onConfirm: async () => {
-      await cancelStockBill(row.stockBillId);
+      await cancelStockBill(row.stockBillId, row.version);
       toast.success(`${row.billNo} 已取消`);
       await fetchRecords();
     },

@@ -403,6 +403,7 @@ function validateForm() {
 
 function buildPayload(): PurchaseOrderFormPayload {
   return {
+    ...(dialogMode.value === 'edit' && editingOrder.value ? { version: editingOrder.value.version } : {}),
     supplierId: form.supplierId,
     warehouseId: form.warehouseId,
     expectedArrivalDate: form.expectedArrivalDate || null,
@@ -468,7 +469,7 @@ function confirmOrderAction(row: PurchaseOrderListItem, action: 'submit' | 'appr
   } as const;
   const [title, description, confirmText, variant] = config[action];
   showConfirm(title, description, confirmText, variant, async () => {
-    await updatePurchaseOrderStatus(row.purchaseOrderId, action);
+    await updatePurchaseOrderStatus(row.purchaseOrderId, action, row.version);
     toast.success('采购订单状态已更新');
     await fetchOrders();
   });

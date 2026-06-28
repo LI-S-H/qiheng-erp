@@ -155,6 +155,14 @@ function toggleSelect(customerId: string, value: boolean | 'indeterminate') {
   selectedIds.value = next;
 }
 
+function selectedVersionMap() {
+  return Object.fromEntries(
+    customers.value
+      .filter(item => selectedIds.value.has(item.customerId))
+      .map(item => [item.customerId, item.version]),
+  );
+}
+
 function resetForm() {
   Object.assign(form, {
     customerCode: '',
@@ -211,6 +219,7 @@ function toPayload(): CustomerFormPayload {
     address: form.address.trim(),
     creditLimit: Number(form.creditLimit),
     status: form.status,
+    ...(dialogMode.value === 'edit' ? { version: Number(form.version) } : {}),
     remark: form.remark.trim(),
   };
 }
@@ -261,7 +270,7 @@ async function runConfirmAction() {
 
 function confirmStatus(row: CustomerListItem, status: 0 | 1) {
   showConfirm(status === 1 ? '启用客户' : '停用客户', status === 1 ? '启用后可重新出现在新建销售订单客户下拉中，并允许作为订单客户提交。' : '停用后不会出现在新建销售订单客户下拉中，也不能作为订单客户提交；历史订单保留客户快照。', status === 1 ? '启用' : '停用', status === 1 ? 'default' : 'warning', async () => {
-    await updateCustomerStatus(row.customerId, status);
+    await updateCustomerStatus(row.customerId, status, row.version);
     toast.success(status === 1 ? '客户已启用' : '客户已停用');
     await fetchCustomers();
   });
@@ -269,7 +278,7 @@ function confirmStatus(row: CustomerListItem, status: 0 | 1) {
 
 function confirmDelete(row: CustomerListItem) {
   showConfirm('删除客户', '已被销售订单引用的客户会被后端拒绝删除。是否继续？', '删除', 'destructive', async () => {
-    await deleteCustomer(row.customerId);
+    await deleteCustomer(row.customerId, row.version);
     toast.success('客户已删除');
     await fetchCustomers();
   });
@@ -278,7 +287,7 @@ function confirmDelete(row: CustomerListItem) {
 function confirmBatchStatus(status: 0 | 1) {
   if (selectedIds.value.size === 0) return;
   showConfirm(status === 1 ? '批量启用客户' : '批量停用客户', status === 1 ? `将处理 ${selectedIds.value.size} 个客户。启用后可重新用于新建销售订单。` : `将处理 ${selectedIds.value.size} 个客户。停用后这些客户不再出现在新建销售订单客户下拉中，也不能作为订单客户提交；历史订单保留客户快照。`, status === 1 ? '启用' : '停用', status === 1 ? 'default' : 'warning', async () => {
-    await batchUpdateCustomerStatus({ customerIds: [...selectedIds.value], status });
+    await batchUpdateCustomerStatus({ customerIds: [...selectedIds.value], versionByCustomerId: selectedVersionMap(), status });
     toast.success('批量状态已更新');
     await fetchCustomers();
   });
@@ -287,7 +296,7 @@ function confirmBatchStatus(status: 0 | 1) {
 function confirmBatchDelete() {
   if (selectedIds.value.size === 0) return;
   showConfirm('批量删除客户', '已被销售订单引用的客户会被后端拒绝删除，存在任一冲突时整批不应删除。', '删除', 'destructive', async () => {
-    await batchDeleteCustomers({ customerIds: [...selectedIds.value] });
+    await batchDeleteCustomers({ customerIds: [...selectedIds.value], versionByCustomerId: selectedVersionMap() });
     toast.success('客户已批量删除');
     await fetchCustomers();
   });

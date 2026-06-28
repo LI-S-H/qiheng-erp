@@ -12,6 +12,7 @@ export interface CustomerListItem {
   address: string;
   creditLimit: number;
   status: CustomerStatus;
+  version: number;
   remark: string;
   createTime: string;
   updateTime: string;
@@ -33,11 +34,13 @@ export interface CustomerFormPayload {
   address: string;
   creditLimit: number;
   status: CustomerStatus;
+  version?: number;
   remark: string;
 }
 
 export interface CustomerBatchIdsPayload {
   customerIds: string[];
+  versionByCustomerId: Record<string, number>;
 }
 
 export interface CustomerBatchStatusPayload extends CustomerBatchIdsPayload {
@@ -87,6 +90,7 @@ export interface SalesOrderListItem {
   approvedAt: string | null;
   createTime: string;
   updateTime: string;
+  version: number;
   remark: string;
   items: SalesOrderItem[];
 }
@@ -120,6 +124,7 @@ export interface SalesOrderDraftItemPayload {
 }
 
 export interface SalesOrderFormPayload {
+  version?: number;
   customerId: string;
   warehouseId: string;
   expectedDeliveryDate?: string | null;

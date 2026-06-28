@@ -20,6 +20,7 @@ export interface SupplierListItem {
   onTimeRate: number;
   qualifiedRate: number;
   status: PurchaseStatus;
+  version: number;
   remark: string;
   createTime: string;
   updateTime: string;
@@ -49,11 +50,13 @@ export interface SupplierFormPayload {
   onTimeRate: number;
   qualifiedRate: number;
   status: PurchaseStatus;
+  version?: number;
   remark: string;
 }
 
 export interface SupplierBatchIdsPayload {
   supplierIds: string[];
+  versionBySupplierId: Record<string, number>;
 }
 
 export interface SupplierBatchStatusPayload extends SupplierBatchIdsPayload {
@@ -86,6 +89,7 @@ export interface SupplierProductListItem {
   aiScore: number;
   lastPurchaseAt: string | null;
   status: PurchaseStatus;
+  version: number;
   remark: string;
   createTime: string;
   updateTime: string;
@@ -112,11 +116,13 @@ export interface SupplierProductFormPayload {
   priceScore: number;
   aiScore: number;
   status: PurchaseStatus;
+  version?: number;
   remark: string;
 }
 
 export interface SupplierProductBatchIdsPayload {
   supplierProductIds: string[];
+  versionBySupplierProductId: Record<string, number>;
 }
 
 export interface SupplierProductBatchStatusPayload extends SupplierProductBatchIdsPayload {
@@ -159,6 +165,7 @@ export interface PurchaseOrderListItem {
   approvedAt: string | null;
   createTime: string;
   updateTime: string;
+  version: number;
   remark: string;
   items: PurchaseOrderItem[];
 }
@@ -194,6 +201,7 @@ export interface PurchaseOrderDraftItemPayload {
 }
 
 export interface PurchaseOrderFormPayload {
+  version?: number;
   supplierId: string;
   warehouseId: string;
   expectedArrivalDate?: string | null;

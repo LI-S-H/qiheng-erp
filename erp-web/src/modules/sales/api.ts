@@ -40,6 +40,7 @@ let mockCustomers: Array<CustomerListItem & { referenced: boolean }> = customerS
   address: item[4],
   creditLimit: item[5],
   status: item[6],
+  version: 0,
   remark: index < 3 ? '重点销售客户，订单创建时需关注信用额度' : '',
   createTime: `2026-06-${String(4 + index).padStart(2, '0')} 09:20:00`,
   updateTime: `2026-06-${String(14 + (index % 4)).padStart(2, '0')} 15:20:00`,
@@ -57,6 +58,10 @@ let nextSalesOrderSequence = mockOrders.length + 1;
 
 function nowText() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function assertOptimisticVersion(current: number, expected: number | undefined) {
+  if (expected !== undefined && current !== expected) throw new Error('数据已被其他人修改，请刷新后重试');
 }
 
 function generateCode(prefix: string, sequence: number, width = 3) {
@@ -148,6 +153,7 @@ function buildOrderSeed(
     approvedAt: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? '2026-06-13 09:30:00' : null,
     createTime: timestamp,
     updateTime: timestamp,
+    version: 0,
     remark: '',
     items,
   };
@@ -164,6 +170,7 @@ function normalizeCustomer(item: CustomerListItem): CustomerListItem {
     address: String(item.address),
     creditLimit: normalizeFiniteNumber(item.creditLimit, 'creditLimit'),
     status: normalizeBinaryStatus(item.status),
+    version: normalizeFiniteNumber(item.version, 'version'),
     remark: String(item.remark),
   };
 }
@@ -193,6 +200,7 @@ function normalizeOrder(item: SalesOrderListItem): SalesOrderListItem {
     expectedDeliveryDate: item.expectedDeliveryDate || null,
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
     approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
+    version: normalizeFiniteNumber(item.version, 'version'),
     items: item.items.map(normalizeOrderItem),
   };
 }
@@ -275,6 +283,7 @@ export function createCustomer(payload: CustomerFormPayload) {
       customerId: String(Date.now()),
       customerCode: generateCode('C', nextCustomerSequence++),
       ...payload,
+      version: 0,
       createTime: timestamp,
       updateTime: timestamp,
       referenced: false,
@@ -287,7 +296,11 @@ export function createCustomer(payload: CustomerFormPayload) {
 
 export async function updateCustomer(customerId: string, payload: CustomerFormPayload) {
   if (useMockApi) {
-    mockCustomers = mockCustomers.map(item => item.customerId === customerId ? { ...item, ...payload, updateTime: nowText() } : item);
+    mockCustomers = mockCustomers.map(item => {
+      if (item.customerId !== customerId) return item;
+      assertOptimisticVersion(item.version, payload.version);
+      return { ...item, ...payload, version: item.version + 1, updateTime: nowText() };
+    });
     const customer = mockCustomers.find(item => item.customerId === customerId);
     return customer ? normalizeCustomer(customer) : null;
   }
@@ -295,28 +308,37 @@ export async function updateCustomer(customerId: string, payload: CustomerFormPa
   return normalizeCustomer(response.data.data as CustomerListItem);
 }
 
-export async function updateCustomerStatus(customerId: string, status: 0 | 1) {
+export async function updateCustomerStatus(customerId: string, status: 0 | 1, version: number) {
   if (useMockApi) {
-    mockCustomers = mockCustomers.map(item => item.customerId === customerId ? { ...item, status, updateTime: nowText() } : item);
+    mockCustomers = mockCustomers.map(item => {
+      if (item.customerId !== customerId) return item;
+      assertOptimisticVersion(item.version, version);
+      return { ...item, status, version: item.version + 1, updateTime: nowText() };
+    });
     return null;
   }
-  const response = await http.patch(`/sales/customers/${customerId}/status`, { status });
+  const response = await http.patch(`/sales/customers/${customerId}/status`, { status, version });
   return response.data.data as null;
 }
 
-export function deleteCustomer(customerId: string) {
+export function deleteCustomer(customerId: string, version: number) {
   if (useMockApi) {
     const target = mockCustomers.find(item => item.customerId === customerId);
+    if (target) assertOptimisticVersion(target.version, version);
     if (target?.referenced) return Promise.reject(new Error('客户已被销售订单引用，无法删除'));
     mockCustomers = mockCustomers.filter(item => item.customerId !== customerId);
     return Promise.resolve(null);
   }
-  return http.delete(`/sales/customers/${customerId}`).then(response => response.data.data as null);
+  return http.delete(`/sales/customers/${customerId}`, { data: { version } }).then(response => response.data.data as null);
 }
 
 export function batchUpdateCustomerStatus(payload: CustomerBatchStatusPayload) {
   if (useMockApi) {
-    mockCustomers = mockCustomers.map(item => payload.customerIds.includes(item.customerId) ? { ...item, status: payload.status, updateTime: nowText() } : item);
+    payload.customerIds.forEach(customerId => {
+      const item = mockCustomers.find(candidate => candidate.customerId === customerId);
+      if (item) assertOptimisticVersion(item.version, payload.versionByCustomerId[customerId]);
+    });
+    mockCustomers = mockCustomers.map(item => payload.customerIds.includes(item.customerId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: nowText() } : item);
     return Promise.resolve(null);
   }
   return http.patch('/sales/customers/batch/status', payload).then(response => response.data.data as null);
@@ -324,6 +346,10 @@ export function batchUpdateCustomerStatus(payload: CustomerBatchStatusPayload) {
 
 export function batchDeleteCustomers(payload: CustomerBatchIdsPayload) {
   if (useMockApi) {
+    payload.customerIds.forEach(customerId => {
+      const item = mockCustomers.find(candidate => candidate.customerId === customerId);
+      if (item) assertOptimisticVersion(item.version, payload.versionByCustomerId[customerId]);
+    });
     if (mockCustomers.some(item => payload.customerIds.includes(item.customerId) && item.referenced)) {
       return Promise.reject(new Error('所选客户中存在已被销售订单引用的数据'));
     }
@@ -402,6 +428,7 @@ export function createSalesOrder(payload: SalesOrderFormPayload) {
       approvedAt: null,
       createTime: timestamp,
       updateTime: timestamp,
+      version: 0,
       remark: payload.remark.trim(),
       items,
     });
@@ -415,6 +442,7 @@ export async function updateSalesOrder(salesOrderId: string, payload: SalesOrder
   if (useMockApi) {
     const existing = mockOrders.find(item => item.salesOrderId === salesOrderId);
     if (!existing) return Promise.reject(new Error('销售订单不存在'));
+    assertOptimisticVersion(existing.version, payload.version);
     if (existing.status !== 'DRAFT' && existing.status !== 'SUBMITTED') return Promise.reject(new Error('仅草稿或已提交销售单可以编辑'));
     const customer = mockCustomers.find(item => item.customerId === payload.customerId);
     if (!customer || customer.status === 0) return Promise.reject(new Error('请选择启用状态的客户'));
@@ -429,6 +457,7 @@ export async function updateSalesOrder(salesOrderId: string, payload: SalesOrder
       warehouseName: warehouse.warehouseName,
       totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
       expectedDeliveryDate: payload.expectedDeliveryDate || null,
+      version: existing.version + 1,
       updateTime: nowText(),
       remark: payload.remark.trim(),
       items,
@@ -440,11 +469,12 @@ export async function updateSalesOrder(salesOrderId: string, payload: SalesOrder
   return normalizeOrder(response.data.data as SalesOrderListItem);
 }
 
-export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 'approve' | 'cancel') {
+export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 'approve' | 'cancel', version: number) {
   if (useMockApi) {
     const timestamp = nowText();
     mockOrders = mockOrders.map(item => {
       if (item.salesOrderId !== salesOrderId) return item;
+      assertOptimisticVersion(item.version, version);
       if (action === 'submit' && item.status !== 'DRAFT') throw new Error('仅草稿销售单可以提交');
       if (action === 'approve' && item.status !== 'SUBMITTED') throw new Error('仅已提交销售单可以审核');
       if (action === 'cancel' && item.status !== 'DRAFT' && item.status !== 'SUBMITTED') throw new Error('仅草稿或已提交销售单可以取消');
@@ -458,13 +488,14 @@ export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 
         approvedById: action === 'approve' ? '1900000000000000001' : item.approvedById,
         approvedByName: action === 'approve' ? '销售主管' : item.approvedByName,
         approvedAt: action === 'approve' ? timestamp : item.approvedAt,
+        version: item.version + 1,
         updateTime: timestamp,
         items: lockedItems,
       };
     });
     return Promise.resolve(null);
   }
-  return postResult<null, Record<string, never>>(`/sales/orders/${salesOrderId}/${action}`, {});
+  return postResult<null, { version: number }>(`/sales/orders/${salesOrderId}/${action}`, { version });
 }
 
 export async function listEnabledSalesProductOptions() {

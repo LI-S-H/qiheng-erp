@@ -16,6 +16,7 @@ export interface WarehouseStockListItem {
   lockedQty: number;
   availableQty: number;
   safetyStockQty: number;
+  version: number;
   updateTime: string;
 }
 

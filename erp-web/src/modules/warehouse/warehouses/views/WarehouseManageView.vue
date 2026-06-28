@@ -29,13 +29,14 @@ import {
   updateWarehouseStatus,
 } from '../api';
 import type {
+  WarehouseFormPayload,
   WarehouseListItem,
   WarehouseQuery,
   WarehouseStatus,
   WarehouseUpdatePayload,
 } from '../types';
 
-interface WarehouseFormModel extends WarehouseUpdatePayload { warehouseCode: string }
+interface WarehouseFormModel extends WarehouseFormPayload { warehouseCode: string; version?: number }
 
 const statusFilterOptions = [
   { value: 'all', label: '全部状态' },
@@ -159,6 +160,14 @@ function toggleSelect(warehouseId: string, value: boolean | 'indeterminate') {
   selectedIds.value = next;
 }
 
+function selectedVersionMap() {
+  return Object.fromEntries(
+    warehouses.value
+      .filter(item => selectedIds.value.has(item.warehouseId))
+      .map(item => [item.warehouseId, item.version]),
+  );
+}
+
 function resetForm() {
   Object.assign(form, {
     warehouseCode: '', warehouseName: '', contactName: '', contactPhone: '', address: '', status: 1, remark: '',
@@ -185,6 +194,7 @@ function openEditDialog(row: WarehouseListItem) {
     contactPhone: row.contactPhone,
     address: row.address,
     status: row.status,
+    version: row.version,
     remark: row.remark,
   });
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
@@ -211,7 +221,7 @@ function showConfirm(title: string, description: string, confirmText: string, va
 
 async function submitForm() {
   if (formSubmitting.value || !validateForm()) return;
-  const updatePayload: WarehouseUpdatePayload = {
+  const basePayload: WarehouseFormPayload = {
     warehouseName: form.warehouseName.trim(),
     contactName: form.contactName.trim(),
     contactPhone: form.contactPhone.trim(),
@@ -219,19 +229,20 @@ async function submitForm() {
     status: form.status,
     remark: form.remark.trim(),
   };
+  const updatePayload: WarehouseUpdatePayload = { ...basePayload, version: Number(form.version) };
   if (dialogMode.value === 'edit' && editingOriginalStatus.value === 1 && updatePayload.status === 0) {
-    showConfirm('确认停用仓库', warehouseDisableWarning, '确认停用', 'warning', () => persistForm(updatePayload));
+    showConfirm('确认停用仓库', warehouseDisableWarning, '确认停用', 'warning', () => persistForm(basePayload, updatePayload));
     return;
   }
-  await persistForm(updatePayload);
+  await persistForm(basePayload, updatePayload);
 }
 
-async function persistForm(updatePayload: WarehouseUpdatePayload) {
+async function persistForm(createPayload: WarehouseFormPayload, updatePayload: WarehouseUpdatePayload) {
   if (formSubmitting.value) return;
   formSubmitting.value = true;
   try {
     if (dialogMode.value === 'create') {
-      await createWarehouse(updatePayload);
+      await createWarehouse(createPayload);
       toast.success('仓库已创建');
     } else {
       await updateWarehouse(editingWarehouseId.value, updatePayload);
@@ -262,7 +273,7 @@ function handleStatusChange(row: WarehouseListItem, status: WarehouseStatus) {
   const action = status === 1 ? '启用' : '停用';
   showConfirm(`${action}仓库`, status === 0 ? warehouseDisableWarning : `确认启用「${row.warehouseName}」吗？`, action, status === 0 ? 'warning' : 'default', async () => {
     try {
-      await updateWarehouseStatus(row.warehouseId, status);
+      await updateWarehouseStatus(row.warehouseId, status, row.version);
       toast.success(`仓库已${action}`);
       await fetchWarehouses();
     } catch (error) {
@@ -274,7 +285,7 @@ function handleStatusChange(row: WarehouseListItem, status: WarehouseStatus) {
 function handleDelete(row: WarehouseListItem) {
   showConfirm('删除仓库', `确认删除「${row.warehouseName}」吗？存在库存余额、入库单、出库单或库存流水的仓库无法删除。`, '删除', 'destructive', async () => {
     try {
-      await deleteWarehouse(row.warehouseId);
+      await deleteWarehouse(row.warehouseId, row.version);
       toast.success('仓库已删除');
       await fetchWarehouses();
     } catch (error) {
@@ -288,7 +299,7 @@ function handleBatchStatus(status: WarehouseStatus) {
   const action = status === 1 ? '启用' : '停用';
   showConfirm(`批量${action}`, status === 0 ? warehouseDisableWarning : `确认启用已选的 ${selectedIds.value.size} 个仓库吗？`, action, status === 0 ? 'warning' : 'default', async () => {
     try {
-      await batchUpdateWarehouseStatus({ warehouseIds: [...selectedIds.value], status });
+      await batchUpdateWarehouseStatus({ warehouseIds: [...selectedIds.value], versionByWarehouseId: selectedVersionMap(), status });
       toast.success(`已批量${action}`);
       await fetchWarehouses();
     } catch (error) {
@@ -301,7 +312,7 @@ function handleBatchDelete() {
   if (!selectedIds.value.size) return;
   showConfirm('批量删除', `确认删除已选的 ${selectedIds.value.size} 个仓库吗？存在库存余额、入库单、出库单或库存流水时整批操作将被拒绝。`, '删除', 'destructive', async () => {
     try {
-      await batchDeleteWarehouses({ warehouseIds: [...selectedIds.value] });
+      await batchDeleteWarehouses({ warehouseIds: [...selectedIds.value], versionByWarehouseId: selectedVersionMap() });
       toast.success('仓库已批量删除');
       await fetchWarehouses();
     } catch (error) {

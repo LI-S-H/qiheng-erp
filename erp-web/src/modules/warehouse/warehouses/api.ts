@@ -35,6 +35,7 @@ let mockWarehouses: Array<WarehouseListItem & { referenced: boolean }> = warehou
   contactPhone: item[3],
   address: item[4],
   status: item[5],
+  version: 0,
   remark: index < 4 ? '区域主仓，承担日常收发与调拨' : '',
   createTime: `2026-06-${String(1 + (index % 8)).padStart(2, '0')} 09:30:00`,
   updateTime: `2026-06-${String(10 + (index % 4)).padStart(2, '0')} 15:20:00`,
@@ -43,6 +44,10 @@ let mockWarehouses: Array<WarehouseListItem & { referenced: boolean }> = warehou
 
 function nowText() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function assertOptimisticVersion(current: number, expected: number | undefined) {
+  if (expected !== undefined && current !== expected) throw new Error('数据已被其他人修改，请刷新后重试');
 }
 
 function normalizeWarehouse(item: WarehouseListItem): WarehouseListItem {
@@ -55,6 +60,7 @@ function normalizeWarehouse(item: WarehouseListItem): WarehouseListItem {
     contactPhone: String(item.contactPhone),
     address: String(item.address),
     status: normalizeBinaryStatus(item.status),
+    version: normalizeFiniteNumber(item.version, 'version'),
     remark: String(item.remark),
     createTime: String(item.createTime),
     updateTime: String(item.updateTime),
@@ -127,6 +133,7 @@ export function createWarehouse(payload: WarehouseCreatePayload) {
       warehouseId: String(Date.now()),
       ...payload,
       warehouseCode: generateMockWarehouseCode(),
+      version: 0,
       createTime: timestamp,
       updateTime: timestamp,
       referenced: false,
@@ -139,9 +146,11 @@ export function createWarehouse(payload: WarehouseCreatePayload) {
 
 export async function updateWarehouse(warehouseId: string, payload: WarehouseUpdatePayload) {
   if (useMockApi) {
-    mockWarehouses = mockWarehouses.map(item => item.warehouseId === warehouseId
-      ? { ...item, ...payload, updateTime: nowText() }
-      : item);
+    mockWarehouses = mockWarehouses.map(item => {
+      if (item.warehouseId !== warehouseId) return item;
+      assertOptimisticVersion(item.version, payload.version);
+      return { ...item, ...payload, version: item.version + 1, updateTime: nowText() };
+    });
     const warehouse = mockWarehouses.find(item => item.warehouseId === warehouseId);
     return warehouse ? normalizeWarehouse(warehouse) : null;
   }
@@ -149,33 +158,40 @@ export async function updateWarehouse(warehouseId: string, payload: WarehouseUpd
   return normalizeWarehouse(response.data.data as WarehouseListItem);
 }
 
-export async function updateWarehouseStatus(warehouseId: string, status: WarehouseListItem['status']) {
+export async function updateWarehouseStatus(warehouseId: string, status: WarehouseListItem['status'], version: number) {
   if (useMockApi) {
-    mockWarehouses = mockWarehouses.map(item => item.warehouseId === warehouseId
-      ? { ...item, status, updateTime: nowText() }
-      : item);
+    mockWarehouses = mockWarehouses.map(item => {
+      if (item.warehouseId !== warehouseId) return item;
+      assertOptimisticVersion(item.version, version);
+      return { ...item, status, version: item.version + 1, updateTime: nowText() };
+    });
     return null;
   }
-  const response = await http.patch(`/warehouse/warehouses/${warehouseId}/status`, { status });
+  const response = await http.patch(`/warehouse/warehouses/${warehouseId}/status`, { status, version });
   return response.data.data as null;
 }
 
-export async function deleteWarehouse(warehouseId: string) {
+export async function deleteWarehouse(warehouseId: string, version: number) {
   if (useMockApi) {
     const target = mockWarehouses.find(item => item.warehouseId === warehouseId);
+    if (target) assertOptimisticVersion(target.version, version);
     if (target?.referenced) throw new Error('仓库存在库存余额、入库单、出库单或库存流水，无法删除');
     mockWarehouses = mockWarehouses.filter(item => item.warehouseId !== warehouseId);
     return null;
   }
-  const response = await http.delete(`/warehouse/warehouses/${warehouseId}`);
+  const response = await http.delete(`/warehouse/warehouses/${warehouseId}`, { data: { version } });
   return response.data.data as null;
 }
 
 export async function batchUpdateWarehouseStatus(payload: WarehouseBatchStatusPayload) {
   if (useMockApi) {
     const updateTime = nowText();
+    payload.warehouseIds.forEach(warehouseId => {
+      const item = mockWarehouses.find(candidate => candidate.warehouseId === warehouseId);
+      if (item) assertOptimisticVersion(item.version, payload.versionByWarehouseId[warehouseId]);
+    });
     mockWarehouses = mockWarehouses.map(item => payload.warehouseIds.includes(item.warehouseId)
-      ? { ...item, status: payload.status, updateTime }
+      ? { ...item, status: payload.status, version: item.version + 1, updateTime }
       : item);
     return null;
   }
@@ -185,6 +201,10 @@ export async function batchUpdateWarehouseStatus(payload: WarehouseBatchStatusPa
 
 export function batchDeleteWarehouses(payload: WarehouseBatchIdsPayload) {
   if (useMockApi) {
+    payload.warehouseIds.forEach(warehouseId => {
+      const item = mockWarehouses.find(candidate => candidate.warehouseId === warehouseId);
+      if (item) assertOptimisticVersion(item.version, payload.versionByWarehouseId[warehouseId]);
+    });
     if (mockWarehouses.some(item => payload.warehouseIds.includes(item.warehouseId) && item.referenced)) {
       return Promise.reject(new Error('所选仓库中存在已有库存余额、入库单、出库单或库存流水的数据'));
     }

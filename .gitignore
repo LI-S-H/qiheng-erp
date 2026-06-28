@@ -42,6 +42,13 @@ erp-web/smoke-*.png
 erp-web/.tmp-edge-profile/
 erp-web/.tmp-edge-menu-profile/
 erp-web/scripts/capture-*.cjs
+erp-web/output/
+erp-web/qa-artifacts/
+erp-web/playwright-report/
+erp-web/test-results/
+**/playwright-report/
+**/test-results/
+**/.playwright/
 
 # IDE 和系统文件
 .vscode/

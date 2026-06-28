@@ -1514,6 +1514,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/SupplierId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 获取成功
@@ -1567,6 +1572,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/SupplierId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 删除成功
@@ -1741,6 +1751,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/SupplierProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 获取成功
@@ -1794,6 +1809,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/SupplierProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 删除成功
@@ -1958,6 +1978,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 提交成功
@@ -1983,6 +2008,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 审核成功
@@ -2005,6 +2035,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/PurchaseOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 取消成功
@@ -2176,6 +2211,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 获取成功
@@ -2229,6 +2269,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 删除成功
@@ -2423,6 +2468,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/SalesOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 提交成功
@@ -2449,6 +2499,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/SalesOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 审核成功
@@ -2471,6 +2526,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/SalesOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 取消成功
@@ -2904,6 +2964,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/StockBillId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 提交成功
@@ -2935,6 +3000,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/StockBillId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 确认成功
@@ -2962,6 +3032,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/StockBillId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 取消成功
@@ -3116,6 +3191,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/WarehouseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 获取成功
@@ -3168,6 +3248,11 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/WarehouseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 删除成功
@@ -4624,6 +4709,12 @@ components:
           type: integer
           enum: [0, 1]
 
+    OptimisticLockVersionRequest:
+      type: object
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 0, description: Current row version for optimistic locking. }
+
     PurchaseSupplierPage:
       type: object
       required: [records, total, pageNum, pageSize]
@@ -4637,7 +4728,7 @@ components:
 
     PurchaseSupplier:
       type: object
-      required: [supplierId, supplierCode, supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, remark, createTime, updateTime]
+      required: [supplierId, supplierCode, supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, version, remark, createTime, updateTime]
       properties:
         supplierId: { type: string, description: 对应 `supplier.id`，BIGINT 按字符串传输 }
         supplierCode: { type: string, minLength: 1, maxLength: 64, readOnly: true, description: 对应 `supplier.supplier_code`，由后端生成、全局唯一且创建后不可修改 }
@@ -4655,6 +4746,7 @@ components:
         onTimeRate: { type: number, format: double, minimum: 0, maximum: 100, description: 准时率展示值；数据库 `supplier.on_time_rate` 按 100 倍整数存储 }
         qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100, description: 合格率展示值；数据库 `supplier.qualified_rate` 按 100 倍整数存储 }
         status: { type: integer, enum: [0, 1], description: 对应 `supplier.status`，1 启用，0 停用 }
+        version: { type: integer, minimum: 0, description: Current `supplier.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `supplier.remark` }
         createTime: { type: string, description: 对应 `supplier.create_time` }
         updateTime: { type: string, description: 对应 `supplier.update_time` }
@@ -4677,34 +4769,44 @@ components:
         onTimeRate: { type: number, format: double, minimum: 0, maximum: 100 }
         qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100 }
         status: { type: integer, enum: [0, 1] }
+        version: { type: integer, minimum: 0, description: Required when editing an existing supplier; omit on create. }
         remark: { type: string, maxLength: 500 }
 
     PurchaseSupplierStatusRequest:
       type: object
-      required: [status]
+      required: [version, status]
       properties:
+        version: { type: integer, minimum: 0, description: Current `supplier.version` for optimistic locking. }
         status: { type: integer, enum: [0, 1] }
 
     PurchaseSupplierBatchStatusRequest:
       type: object
-      required: [supplierIds, status]
+      required: [supplierIds, versionBySupplierId, status]
       properties:
         supplierIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: { type: string }
+        versionBySupplierId:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: Map of supplierId to current `supplier.version` for optimistic locking.
         status: { type: integer, enum: [0, 1] }
 
     PurchaseSupplierBatchDeleteRequest:
       type: object
-      required: [supplierIds]
+      required: [versionBySupplierId, supplierIds]
       properties:
         supplierIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: { type: string }
+        versionBySupplierId:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: Map of supplierId to current `supplier.version` for optimistic locking.
 
     PurchaseSupplierOption:
       type: object
@@ -4728,7 +4830,7 @@ components:
 
     PurchaseSupplierProduct:
       type: object
-      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, supplierProductCode, latestPurchasePrice, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, lastPurchaseAt, status, remark, createTime, updateTime]
+      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, supplierProductCode, latestPurchasePrice, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, lastPurchaseAt, status, version, remark, createTime, updateTime]
       properties:
         supplierProductId: { type: string, description: 对应 `supplier_product.id`，BIGINT 按字符串传输 }
         supplierId: { type: string, description: 对应 `supplier_product.supplier_id`，BIGINT 按字符串传输 }
@@ -4748,6 +4850,7 @@ components:
         aiScore: { type: number, format: double, minimum: 0, maximum: 100, description: 推荐分展示值；数据库 `supplier_product.ai_score` 按 100 倍整数存储 }
         lastPurchaseAt: { type: string, nullable: true, description: 对应 `supplier_product.last_purchase_at` }
         status: { type: integer, enum: [0, 1], description: 对应 `supplier_product.status`，1 启用，0 停用 }
+        version: { type: integer, minimum: 0, description: Current `supplier_product.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `supplier_product.remark` }
         createTime: { type: string, description: 对应 `supplier_product.create_time` }
         updateTime: { type: string, description: 对应 `supplier_product.update_time` }
@@ -4767,28 +4870,37 @@ components:
         priceScore: { type: number, format: double, minimum: 0, maximum: 100 }
         aiScore: { type: number, format: double, minimum: 0, maximum: 100 }
         status: { type: integer, enum: [0, 1] }
+        version: { type: integer, minimum: 0, description: Required when editing an existing supplier product; omit on create. }
         remark: { type: string, maxLength: 500 }
 
     PurchaseSupplierProductBatchStatusRequest:
       type: object
-      required: [supplierProductIds, status]
+      required: [supplierProductIds, versionBySupplierProductId, status]
       properties:
         supplierProductIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: { type: string }
+        versionBySupplierProductId:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: Map of supplierProductId to current `supplier_product.version` for optimistic locking.
         status: { type: integer, enum: [0, 1] }
 
     PurchaseSupplierProductBatchDeleteRequest:
       type: object
-      required: [supplierProductIds]
+      required: [versionBySupplierProductId, supplierProductIds]
       properties:
         supplierProductIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: { type: string }
+        versionBySupplierProductId:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: Map of supplierProductId to current `supplier_product.version` for optimistic locking.
 
     PurchaseOrderPage:
       type: object
@@ -4813,7 +4925,7 @@ components:
 
     PurchaseOrder:
       type: object
-      required: [purchaseOrderId, purchaseNo, supplierId, supplierCode, supplierName, warehouseId, warehouseName, status, totalAmount, expectedArrivalDate, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, remark, items]
+      required: [purchaseOrderId, purchaseNo, supplierId, supplierCode, supplierName, warehouseId, warehouseName, status, totalAmount, expectedArrivalDate, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, version, remark, items]
       properties:
         purchaseOrderId: { type: string, description: 对应 `purchase_order.id`，BIGINT 按字符串传输 }
         purchaseNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `purchase_order.purchase_no`，由后端生成、全局唯一 }
@@ -4833,6 +4945,7 @@ components:
         approvedAt: { type: string, nullable: true, description: 对应 `purchase_order.approved_at` }
         createTime: { type: string, description: 对应 `purchase_order.create_time` }
         updateTime: { type: string, description: 对应 `purchase_order.update_time` }
+        version: { type: integer, minimum: 0, description: Current `purchase_order.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `purchase_order.remark` }
         items:
           type: array
@@ -4876,8 +4989,9 @@ components:
 
     PurchaseOrderUpdateRequest:
       type: object
-      required: [supplierId, warehouseId, expectedArrivalDate, remark, items]
+      required: [version, supplierId, warehouseId, expectedArrivalDate, remark, items]
       properties:
+        version: { type: integer, minimum: 0, description: Current `purchase_order.version` for optimistic locking. }
         supplierId: { type: string, description: 供应商 ID；`DRAFT` 可由采购创建权限修改，`SUBMITTED` 仅允许审核/审批权限修改，后端重新保存供应商编码和名称快照 }
         warehouseId: { type: string, description: 入库仓库 ID；`DRAFT` 可由采购创建权限修改，`SUBMITTED` 仅允许审核/审批权限修改，后端重新保存仓库名称快照 }
         expectedArrivalDate: { type: string, nullable: true, description: 对应 `purchase_order.expected_arrival_date`；草稿可为空，提交和审核前必须非空 }
@@ -4912,7 +5026,7 @@ components:
 
     SalesCustomer:
       type: object
-      required: [customerId, customerCode, customerName, contactName, contactPhone, address, creditLimit, status, remark, createTime, updateTime]
+      required: [customerId, customerCode, customerName, contactName, contactPhone, address, creditLimit, status, version, remark, createTime, updateTime]
       properties:
         customerId: { type: string, description: 对应 `customer.id`，BIGINT 按字符串传输 }
         customerCode: { type: string, minLength: 1, maxLength: 64, readOnly: true, description: 对应 `customer.customer_code`，由后端生成、全局唯一且创建后不可修改 }
@@ -4922,6 +5036,7 @@ components:
         address: { type: string, maxLength: 255, description: 对应 `customer.address` }
         creditLimit: { type: number, format: double, minimum: 0, description: 对应 `customer.credit_limit`，MVP 仅记录不强拦截 }
         status: { type: integer, enum: [0, 1], description: 对应 `customer.status`，1 启用，0 停用 }
+        version: { type: integer, minimum: 0, description: Current `customer.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `customer.remark` }
         createTime: { type: string, description: 对应 `customer.create_time` }
         updateTime: { type: string, description: 对应 `customer.update_time` }
@@ -4936,34 +5051,44 @@ components:
         address: { type: string, maxLength: 255 }
         creditLimit: { type: number, format: double, minimum: 0 }
         status: { type: integer, enum: [0, 1] }
+        version: { type: integer, minimum: 0, description: Required when editing an existing customer; omit on create. }
         remark: { type: string, maxLength: 500 }
 
     SalesCustomerStatusRequest:
       type: object
-      required: [status]
+      required: [version, status]
       properties:
+        version: { type: integer, minimum: 0, description: Current `customer.version` for optimistic locking. }
         status: { type: integer, enum: [0, 1] }
 
     SalesCustomerBatchStatusRequest:
       type: object
-      required: [customerIds, status]
+      required: [customerIds, versionByCustomerId, status]
       properties:
         customerIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: { type: string }
+        versionByCustomerId:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: Map of customerId to current `customer.version` for optimistic locking.
         status: { type: integer, enum: [0, 1] }
 
     SalesCustomerBatchDeleteRequest:
       type: object
-      required: [customerIds]
+      required: [versionByCustomerId, customerIds]
       properties:
         customerIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: { type: string }
+        versionByCustomerId:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: Map of customerId to current `customer.version` for optimistic locking.
 
     SalesCustomerOption:
       type: object
@@ -4997,7 +5122,7 @@ components:
 
     SalesOrder:
       type: object
-      required: [salesOrderId, salesNo, customerId, customerCode, customerName, warehouseId, warehouseName, status, totalAmount, expectedDeliveryDate, lockedAt, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, remark, items]
+      required: [salesOrderId, salesNo, customerId, customerCode, customerName, warehouseId, warehouseName, status, totalAmount, expectedDeliveryDate, lockedAt, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, version, remark, items]
       properties:
         salesOrderId: { type: string, description: 对应 `sales_order.id`，BIGINT 按字符串传输 }
         salesNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `sales_order.sales_no`，由后端生成、全局唯一 }
@@ -5018,6 +5143,7 @@ components:
         approvedAt: { type: string, nullable: true, description: 对应 `sales_order.approved_at` }
         createTime: { type: string, description: 对应 `sales_order.create_time` }
         updateTime: { type: string, description: 对应 `sales_order.update_time` }
+        version: { type: integer, minimum: 0, description: Current `sales_order.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `sales_order.remark` }
         items:
           type: array
@@ -5060,8 +5186,9 @@ components:
 
     SalesOrderUpdateRequest:
       type: object
-      required: [customerId, warehouseId, expectedDeliveryDate, remark, items]
+      required: [version, customerId, warehouseId, expectedDeliveryDate, remark, items]
       properties:
+        version: { type: integer, minimum: 0, description: Current `sales_order.version` for optimistic locking. }
         customerId: { type: string, description: 客户 ID；`DRAFT` 可由销售创建权限修改，`SUBMITTED` 仅允许审核/审批权限修改，后端重新保存客户编码和名称快照 }
         warehouseId: { type: string, description: 出库仓库 ID；`DRAFT` 可由销售创建权限修改，`SUBMITTED` 仅允许审核/审批权限修改，后端重新保存仓库名称快照 }
         expectedDeliveryDate: { type: string, nullable: true, description: 对应 `sales_order.expected_delivery_date`；草稿可为空，提交和审核前必须非空 }
@@ -5121,8 +5248,9 @@ components:
 
     StockBillUpdateRequest:
       type: object
-      required: [warehouseId, sourceNo, manualReason, items, remark]
+      required: [version, warehouseId, sourceNo, manualReason, items, remark]
       properties:
+        version: { type: integer, minimum: 0, description: Current `stock_bill.version` for optimistic locking. }
         warehouseId: { type: string, description: 仓库 ID；仅 `DRAFT` 状态允许修改，`PENDING_CONFIRM` 必须保持原值 }
         sourceNo: { type: string, maxLength: 64, description: 手工补录草稿可维护原业务单号；其他录入方式保持原值 }
         manualReason: { type: string, maxLength: 500, description: 手工补录或调整草稿必填；来源生成草稿保持原值 }
@@ -5157,7 +5285,7 @@ components:
 
     StockBill:
       type: object
-      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, sourcePartyName, entryMode, warehouseId, warehouseName, status, itemCount, quantitySummary, totalCurrentQty, quantityUnitName, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, createTime, updateTime]
+      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, sourcePartyName, entryMode, warehouseId, warehouseName, status, itemCount, quantitySummary, totalCurrentQty, quantityUnitName, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, version, createTime, updateTime]
       properties:
         stockBillId: { type: string, description: 入库单、出库单或库存流水 ID，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 入库单号、出库单号或库存流水号 }
@@ -5181,6 +5309,7 @@ components:
         createdByName: { type: string, maxLength: 100, description: 对应 `stock_bill.created_by_name` }
         responsibleById: { type: string, description: 对应 `stock_bill.responsible_by_id`；手工单据由后端取当前登录用户 }
         responsibleByName: { type: string, maxLength: 100, description: 对应 `stock_bill.responsible_by_name` }
+        version: { type: integer, minimum: 0, description: Current `stock_bill.version` for optimistic locking. }
         createTime: { type: string, description: 对应 `stock_bill.create_time` }
         updateTime: { type: string, description: 对应 `stock_bill.update_time` }
 
@@ -5224,7 +5353,7 @@ components:
 
     WarehouseStock:
       type: object
-      required: [stockId, warehouseId, warehouseCode, warehouseName, productId, productCode, productName, unitName, stockQty, lockedQty, availableQty, safetyStockQty, updateTime]
+      required: [stockId, warehouseId, warehouseCode, warehouseName, productId, productCode, productName, unitName, stockQty, lockedQty, availableQty, safetyStockQty, version, updateTime]
       properties:
         stockId:
           type: string
@@ -5244,6 +5373,7 @@ components:
         lockedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 锁定库存业务真实值；数据库 `warehouse_stock.locked_qty` 按 100 倍整数存储 }
         availableQty: { type: number, format: double, minimum: 0, description: 服务层计算 `stock_qty - locked_qty` }
         safetyStockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 安全库存业务真实值；数据库 `product.safety_stock_qty` 按 100 倍整数存储 }
+        version: { type: integer, minimum: 0, description: Current `warehouse_stock.version` for optimistic locking/diagnostics. }
         updateTime: { type: string, description: 对应 `warehouse_stock.update_time` }
 
     WarehouseStockSummary:
@@ -5270,7 +5400,7 @@ components:
 
     Warehouse:
       type: object
-      required: [warehouseId, warehouseCode, warehouseName, contactName, contactPhone, address, status, remark, createTime, updateTime]
+      required: [warehouseId, warehouseCode, warehouseName, contactName, contactPhone, address, status, version, remark, createTime, updateTime]
       properties:
         warehouseId:
           type: string
@@ -5286,6 +5416,7 @@ components:
         contactPhone: { type: string, maxLength: 32 }
         address: { type: string, maxLength: 255 }
         status: { type: integer, enum: [0, 1] }
+        version: { type: integer, minimum: 0, description: Current `warehouse.version` for optimistic locking. }
         remark: { type: string, maxLength: 500 }
         createTime: { type: string }
         updateTime: { type: string }
@@ -5303,8 +5434,9 @@ components:
 
     WarehouseUpdateRequest:
       type: object
-      required: [warehouseName, contactName, contactPhone, address, status, remark]
+      required: [version, warehouseName, contactName, contactPhone, address, status, remark]
       properties:
+        version: { type: integer, minimum: 0, description: Current `warehouse.version` for optimistic locking. }
         warehouseName: { type: string, minLength: 1, maxLength: 100 }
         contactName: { type: string, maxLength: 100 }
         contactPhone: { type: string, maxLength: 32 }
@@ -5314,30 +5446,39 @@ components:
 
     WarehouseStatusRequest:
       type: object
-      required: [status]
+      required: [version, status]
       properties:
+        version: { type: integer, minimum: 0, description: Current `warehouse.version` for optimistic locking. }
         status: { type: integer, enum: [0, 1] }
 
     WarehouseBatchStatusRequest:
       type: object
-      required: [warehouseIds, status]
+      required: [warehouseIds, versionByWarehouseId, status]
       properties:
         warehouseIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: { type: string }
+        versionByWarehouseId:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: Map of warehouseId to current `warehouse.version` for optimistic locking.
         status: { type: integer, enum: [0, 1] }
 
     WarehouseBatchDeleteRequest:
       type: object
-      required: [warehouseIds]
+      required: [versionByWarehouseId, warehouseIds]
       properties:
         warehouseIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: { type: string }
+        versionByWarehouseId:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          description: Map of warehouseId to current `warehouse.version` for optimistic locking.
 
     ProductPage:
       type: object

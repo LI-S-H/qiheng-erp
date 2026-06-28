@@ -8,6 +8,7 @@ export interface WarehouseListItem {
   contactPhone: string;
   address: string;
   status: WarehouseStatus;
+  version: number;
   remark: string;
   createTime: string;
   updateTime: string;
@@ -33,10 +34,11 @@ export interface WarehouseFormPayload {
 }
 
 export type WarehouseCreatePayload = WarehouseFormPayload;
-export type WarehouseUpdatePayload = WarehouseFormPayload;
+export type WarehouseUpdatePayload = WarehouseFormPayload & { version: number };
 
 export interface WarehouseBatchIdsPayload {
   warehouseIds: string[];
+  versionByWarehouseId: Record<string, number>;
 }
 
 export interface WarehouseBatchStatusPayload extends WarehouseBatchIdsPayload {

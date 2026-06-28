@@ -54,6 +54,7 @@ let mockSuppliers: Array<SupplierListItem & { referenced: boolean }> = supplierS
   onTimeRate: item[12],
   qualifiedRate: item[13],
   status: item[14],
+  version: 0,
   remark: index < 3 ? '常用供应商，可用于采购建议候选' : '',
   createTime: `2026-06-${String(2 + index).padStart(2, '0')} 09:10:00`,
   updateTime: `2026-06-${String(12 + (index % 4)).padStart(2, '0')} 15:30:00`,
@@ -94,6 +95,7 @@ let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean 
     aiScore: item[9],
     lastPurchaseAt: item[10],
     status: item[11],
+    version: 0,
     remark: index < 3 ? '采购建议优先候选' : '',
     createTime: `2026-06-${String(3 + index).padStart(2, '0')} 10:00:00`,
     updateTime: `2026-06-${String(12 + (index % 4)).padStart(2, '0')} 16:10:00`,
@@ -113,6 +115,10 @@ let nextPurchaseOrderSequence = mockOrders.length + 1;
 
 function nowText() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function assertOptimisticVersion(current: number, expected: number | undefined) {
+  if (expected !== undefined && current !== expected) throw new Error('数据已被其他人修改，请刷新后重试');
 }
 
 function mockProductSnapshot(productCode: string) {
@@ -186,6 +192,7 @@ function buildOrderSeed(
     approvedAt: status === 'APPROVED' || status === 'PARTIAL_INBOUND' ? '2026-06-13 09:20:00' : null,
     createTime: timestamp,
     updateTime: timestamp,
+    version: 0,
     remark: '',
     items,
   };
@@ -214,6 +221,7 @@ function normalizeSupplier(item: SupplierListItem): SupplierListItem {
     onTimeRate: normalizeFiniteNumber(item.onTimeRate, 'onTimeRate'),
     qualifiedRate: normalizeFiniteNumber(item.qualifiedRate, 'qualifiedRate'),
     status: normalizeBinaryStatus(item.status),
+    version: normalizeFiniteNumber(item.version, 'version'),
     remark: String(item.remark),
   };
 }
@@ -233,6 +241,7 @@ function normalizeSupplierProduct(item: SupplierProductListItem): SupplierProduc
     aiScore: normalizeFiniteNumber(item.aiScore, 'aiScore'),
     lastPurchaseAt: item.lastPurchaseAt || null,
     status: normalizeBinaryStatus(item.status),
+    version: normalizeFiniteNumber(item.version, 'version'),
   };
 }
 
@@ -260,6 +269,7 @@ function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
     totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
     approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
+    version: normalizeFiniteNumber(item.version, 'version'),
     items: item.items.map(normalizeOrderItem),
   };
 }
@@ -361,6 +371,7 @@ export function createSupplier(payload: SupplierFormPayload) {
       supplierId: String(Date.now()),
       supplierCode: generateCode('S', nextSupplierSequence++),
       ...payload,
+      version: 0,
       createTime: timestamp,
       updateTime: timestamp,
       referenced: false,
@@ -373,7 +384,11 @@ export function createSupplier(payload: SupplierFormPayload) {
 
 export async function updateSupplier(supplierId: string, payload: SupplierFormPayload) {
   if (useMockApi) {
-    mockSuppliers = mockSuppliers.map(item => item.supplierId === supplierId ? { ...item, ...payload, updateTime: nowText() } : item);
+    mockSuppliers = mockSuppliers.map(item => {
+      if (item.supplierId !== supplierId) return item;
+      assertOptimisticVersion(item.version, payload.version);
+      return { ...item, ...payload, version: item.version + 1, updateTime: nowText() };
+    });
     const supplier = mockSuppliers.find(item => item.supplierId === supplierId);
     return supplier ? normalizeSupplier(supplier) : null;
   }
@@ -381,29 +396,40 @@ export async function updateSupplier(supplierId: string, payload: SupplierFormPa
   return normalizeSupplier(response.data.data as SupplierListItem);
 }
 
-export async function updateSupplierStatus(supplierId: string, status: 0 | 1) {
+export async function updateSupplierStatus(supplierId: string, status: 0 | 1, version: number) {
   if (useMockApi) {
-    mockSuppliers = mockSuppliers.map(item => item.supplierId === supplierId ? { ...item, status, updateTime: nowText() } : item);
-    if (status === 0) mockSupplierProducts = mockSupplierProducts.map(item => item.supplierId === supplierId ? { ...item, status: 0, updateTime: nowText() } : item);
+    const timestamp = nowText();
+    mockSuppliers = mockSuppliers.map(item => {
+      if (item.supplierId !== supplierId) return item;
+      assertOptimisticVersion(item.version, version);
+      return { ...item, status, version: item.version + 1, updateTime: timestamp };
+    });
+    if (status === 0) mockSupplierProducts = mockSupplierProducts.map(item => item.supplierId === supplierId ? { ...item, status: 0, version: item.version + 1, updateTime: timestamp } : item);
     return null;
   }
-  const response = await http.patch(`/purchase/suppliers/${supplierId}/status`, { status });
+  const response = await http.patch(`/purchase/suppliers/${supplierId}/status`, { status, version });
   return response.data.data as null;
 }
 
-export function deleteSupplier(supplierId: string) {
+export function deleteSupplier(supplierId: string, version: number) {
   if (useMockApi) {
     const target = mockSuppliers.find(item => item.supplierId === supplierId);
+    if (target) assertOptimisticVersion(target.version, version);
     if (target?.referenced) return Promise.reject(new Error('供应商已被供货产品或采购订单引用，无法删除'));
     mockSuppliers = mockSuppliers.filter(item => item.supplierId !== supplierId);
     return Promise.resolve(null);
   }
-  return http.delete(`/purchase/suppliers/${supplierId}`).then(response => response.data.data as null);
+  return http.delete(`/purchase/suppliers/${supplierId}`, { data: { version } }).then(response => response.data.data as null);
 }
 
 export function batchUpdateSupplierStatus(payload: SupplierBatchStatusPayload) {
   if (useMockApi) {
-    mockSuppliers = mockSuppliers.map(item => payload.supplierIds.includes(item.supplierId) ? { ...item, status: payload.status, updateTime: nowText() } : item);
+    const timestamp = nowText();
+    payload.supplierIds.forEach(supplierId => {
+      const item = mockSuppliers.find(candidate => candidate.supplierId === supplierId);
+      if (item) assertOptimisticVersion(item.version, payload.versionBySupplierId[supplierId]);
+    });
+    mockSuppliers = mockSuppliers.map(item => payload.supplierIds.includes(item.supplierId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: timestamp } : item);
     return Promise.resolve(null);
   }
   return http.patch('/purchase/suppliers/batch/status', payload).then(response => response.data.data as null);
@@ -411,6 +437,10 @@ export function batchUpdateSupplierStatus(payload: SupplierBatchStatusPayload) {
 
 export function batchDeleteSuppliers(payload: SupplierBatchIdsPayload) {
   if (useMockApi) {
+    payload.supplierIds.forEach(supplierId => {
+      const item = mockSuppliers.find(candidate => candidate.supplierId === supplierId);
+      if (item) assertOptimisticVersion(item.version, payload.versionBySupplierId[supplierId]);
+    });
     if (mockSuppliers.some(item => payload.supplierIds.includes(item.supplierId) && item.referenced)) {
       return Promise.reject(new Error('所选供应商中存在已被业务引用的数据'));
     }
@@ -453,6 +483,7 @@ export function createSupplierProduct(payload: SupplierProductFormPayload) {
       updateTime: timestamp,
       referenced: false,
       ...payload,
+      version: 0,
     };
     mockSupplierProducts = [...mockSupplierProducts, created];
     return Promise.resolve(normalizeSupplierProduct(created));
@@ -464,6 +495,8 @@ export async function updateSupplierProduct(supplierProductId: string, payload: 
   if (useMockApi) {
     const supplier = mockSuppliers.find(item => item.supplierId === payload.supplierId);
     const product = mockProductSnapshotById(payload.productId);
+    const current = mockSupplierProducts.find(item => item.supplierProductId === supplierProductId);
+    if (current) assertOptimisticVersion(current.version, payload.version);
     mockSupplierProducts = mockSupplierProducts.map(item => item.supplierProductId === supplierProductId ? {
       ...item,
       ...payload,
@@ -472,6 +505,7 @@ export async function updateSupplierProduct(supplierProductId: string, payload: 
       productCode: product.productCode,
       productName: product.productName,
       unitName: product.unitName,
+      version: item.version + 1,
       updateTime: nowText(),
     } : item);
     const result = mockSupplierProducts.find(item => item.supplierProductId === supplierProductId);
@@ -481,19 +515,25 @@ export async function updateSupplierProduct(supplierProductId: string, payload: 
   return normalizeSupplierProduct(response.data.data as SupplierProductListItem);
 }
 
-export function deleteSupplierProduct(supplierProductId: string) {
+export function deleteSupplierProduct(supplierProductId: string, version: number) {
   if (useMockApi) {
     const target = mockSupplierProducts.find(item => item.supplierProductId === supplierProductId);
+    if (target) assertOptimisticVersion(target.version, version);
     if (target?.referenced) return Promise.reject(new Error('供货产品已被采购订单引用，无法删除'));
     mockSupplierProducts = mockSupplierProducts.filter(item => item.supplierProductId !== supplierProductId);
     return Promise.resolve(null);
   }
-  return http.delete(`/purchase/supplier-products/${supplierProductId}`).then(response => response.data.data as null);
+  return http.delete(`/purchase/supplier-products/${supplierProductId}`, { data: { version } }).then(response => response.data.data as null);
 }
 
 export function batchUpdateSupplierProductStatus(payload: SupplierProductBatchStatusPayload) {
   if (useMockApi) {
-    mockSupplierProducts = mockSupplierProducts.map(item => payload.supplierProductIds.includes(item.supplierProductId) ? { ...item, status: payload.status, updateTime: nowText() } : item);
+    const timestamp = nowText();
+    payload.supplierProductIds.forEach(supplierProductId => {
+      const item = mockSupplierProducts.find(candidate => candidate.supplierProductId === supplierProductId);
+      if (item) assertOptimisticVersion(item.version, payload.versionBySupplierProductId[supplierProductId]);
+    });
+    mockSupplierProducts = mockSupplierProducts.map(item => payload.supplierProductIds.includes(item.supplierProductId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: timestamp } : item);
     return Promise.resolve(null);
   }
   return http.patch('/purchase/supplier-products/batch/status', payload).then(response => response.data.data as null);
@@ -501,6 +541,10 @@ export function batchUpdateSupplierProductStatus(payload: SupplierProductBatchSt
 
 export function batchDeleteSupplierProducts(payload: SupplierProductBatchIdsPayload) {
   if (useMockApi) {
+    payload.supplierProductIds.forEach(supplierProductId => {
+      const item = mockSupplierProducts.find(candidate => candidate.supplierProductId === supplierProductId);
+      if (item) assertOptimisticVersion(item.version, payload.versionBySupplierProductId[supplierProductId]);
+    });
     if (mockSupplierProducts.some(item => payload.supplierProductIds.includes(item.supplierProductId) && item.referenced)) {
       return Promise.reject(new Error('所选供货产品中存在已被采购订单引用的数据'));
     }
@@ -577,6 +621,7 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
       approvedAt: null,
       createTime: timestamp,
       updateTime: timestamp,
+      version: 0,
       remark: payload.remark.trim(),
       items,
     });
@@ -590,6 +635,7 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
   if (useMockApi) {
     const existing = mockOrders.find(item => item.purchaseOrderId === purchaseOrderId);
     if (!existing) return Promise.reject(new Error('采购订单不存在'));
+    assertOptimisticVersion(existing.version, payload.version);
     if (existing.status !== 'DRAFT' && existing.status !== 'SUBMITTED') return Promise.reject(new Error('仅草稿或已提交采购单可以编辑'));
     const supplier = mockSuppliers.find(item => item.supplierId === payload.supplierId);
     if (!supplier || supplier.status === 0) return Promise.reject(new Error('请选择启用状态的供应商'));
@@ -625,6 +671,7 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
       warehouseName: warehouse.warehouseName,
       totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
       expectedArrivalDate: payload.expectedArrivalDate || null,
+      version: existing.version + 1,
       updateTime: timestamp,
       remark: payload.remark.trim(),
       items,
@@ -636,11 +683,12 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
   return normalizeOrder(response.data.data as PurchaseOrderListItem);
 }
 
-export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'submit' | 'approve' | 'cancel') {
+export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'submit' | 'approve' | 'cancel', version: number) {
   if (useMockApi) {
     const timestamp = nowText();
     mockOrders = mockOrders.map(item => {
       if (item.purchaseOrderId !== purchaseOrderId) return item;
+      assertOptimisticVersion(item.version, version);
       if (action === 'submit' && item.status !== 'DRAFT') throw new Error('仅草稿采购单可以提交');
       if (action === 'approve' && item.status !== 'SUBMITTED') throw new Error('仅已提交采购单可以审核');
       if (action === 'cancel' && item.status !== 'DRAFT' && item.status !== 'SUBMITTED') throw new Error('仅草稿或已提交采购单可以取消');
@@ -652,12 +700,13 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'subm
         approvedById: action === 'approve' ? '1900000000000000001' : item.approvedById,
         approvedByName: action === 'approve' ? '采购主管' : item.approvedByName,
         approvedAt: action === 'approve' ? timestamp : item.approvedAt,
+        version: item.version + 1,
         updateTime: timestamp,
       };
     });
     return Promise.resolve(null);
   }
-  return postResult<null, Record<string, never>>(`/purchase/orders/${purchaseOrderId}/${action}`, {});
+  return postResult<null, { version: number }>(`/purchase/orders/${purchaseOrderId}/${action}`, { version });
 }
 
 function mockProductSnapshotById(productId: string) {

@@ -30,6 +30,7 @@ export interface StockBillListItem {
   createdByName: string;
   responsibleById: string;
   responsibleByName: string;
+  version: number;
   createTime: string;
   updateTime: string;
 }
@@ -108,6 +109,7 @@ export interface StockBillCreatePayload {
 }
 
 export interface StockBillUpdatePayload {
+  version: number;
   warehouseId: string;
   sourceNo: string;
   manualReason: string;

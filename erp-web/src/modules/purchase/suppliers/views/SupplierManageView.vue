@@ -163,6 +163,14 @@ function toggleSelect(supplierId: string, value: boolean | 'indeterminate') {
   selectedIds.value = next;
 }
 
+function selectedVersionMap() {
+  return Object.fromEntries(
+    suppliers.value
+      .filter(item => selectedIds.value.has(item.supplierId))
+      .map(item => [item.supplierId, item.version]),
+  );
+}
+
 function resetForm() {
   Object.assign(form, {
     supplierCode: '',
@@ -248,6 +256,7 @@ function toPayload(): SupplierFormPayload {
     onTimeRate: Number(form.onTimeRate),
     qualifiedRate: Number(form.qualifiedRate),
     status: form.status,
+    ...(dialogMode.value === 'edit' ? { version: Number(form.version) } : {}),
     remark: form.remark.trim(),
   };
 }
@@ -298,7 +307,7 @@ async function runConfirmAction() {
 
 function confirmStatus(row: SupplierListItem, status: 0 | 1) {
   showConfirm(status === 1 ? '启用供应商' : '停用供应商', status === 1 ? '启用后可重新作为采购候选供应商。' : '停用后不能用于新建采购订单。', status === 1 ? '启用' : '停用', status === 1 ? 'default' : 'warning', async () => {
-    await updateSupplierStatus(row.supplierId, status);
+    await updateSupplierStatus(row.supplierId, status, row.version);
     toast.success(status === 1 ? '供应商已启用' : '供应商已停用');
     await fetchSuppliers();
   });
@@ -306,7 +315,7 @@ function confirmStatus(row: SupplierListItem, status: 0 | 1) {
 
 function confirmDelete(row: SupplierListItem) {
   showConfirm('删除供应商', '已被供货产品或采购订单引用的供应商会被后端拒绝删除。是否继续？', '删除', 'destructive', async () => {
-    await deleteSupplier(row.supplierId);
+    await deleteSupplier(row.supplierId, row.version);
     toast.success('供应商已删除');
     await fetchSuppliers();
   });
@@ -315,7 +324,7 @@ function confirmDelete(row: SupplierListItem) {
 function confirmBatchStatus(status: 0 | 1) {
   if (selectedIds.value.size === 0) return;
   showConfirm(status === 1 ? '批量启用供应商' : '批量停用供应商', `将处理 ${selectedIds.value.size} 个供应商。停用会影响后续采购候选，但不影响历史订单。`, status === 1 ? '启用' : '停用', status === 1 ? 'default' : 'warning', async () => {
-    await batchUpdateSupplierStatus({ supplierIds: [...selectedIds.value], status });
+    await batchUpdateSupplierStatus({ supplierIds: [...selectedIds.value], versionBySupplierId: selectedVersionMap(), status });
     toast.success('批量状态已更新');
     await fetchSuppliers();
   });
@@ -324,7 +333,7 @@ function confirmBatchStatus(status: 0 | 1) {
 function confirmBatchDelete() {
   if (selectedIds.value.size === 0) return;
   showConfirm('批量删除供应商', '已被业务引用的供应商会被后端拒绝删除，存在任一冲突时整批不应删除。', '删除', 'destructive', async () => {
-    await batchDeleteSuppliers({ supplierIds: [...selectedIds.value] });
+    await batchDeleteSuppliers({ supplierIds: [...selectedIds.value], versionBySupplierId: selectedVersionMap() });
     toast.success('供应商已批量删除');
     await fetchSuppliers();
   });

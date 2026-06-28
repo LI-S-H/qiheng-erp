@@ -302,6 +302,7 @@ function validateForm() {
 
 function buildPayload(): SalesOrderFormPayload {
   return {
+    ...(dialogMode.value === 'edit' && editingOrder.value ? { version: editingOrder.value.version } : {}),
     customerId: form.customerId,
     warehouseId: form.warehouseId,
     expectedDeliveryDate: form.expectedDeliveryDate || null,
@@ -365,7 +366,7 @@ function confirmOrderAction(row: SalesOrderListItem, action: 'submit' | 'approve
   } as const;
   const [title, description, confirmText, variant] = config[action];
   showConfirm(title, description, confirmText, variant, async () => {
-    await updateSalesOrderStatus(row.salesOrderId, action);
+    await updateSalesOrderStatus(row.salesOrderId, action, row.version);
     toast.success('销售订单状态已更新');
     detailDialogOpen.value = false;
     await fetchOrders();

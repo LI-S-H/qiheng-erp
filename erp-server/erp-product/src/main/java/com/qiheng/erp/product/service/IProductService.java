@@ -8,6 +8,8 @@ import com.qiheng.erp.product.domain.vo.ProductVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 import jakarta.validation.Valid;
 
+import java.util.List;
+
 /**
  * <p>
  * 产品表 服务类
@@ -50,4 +52,17 @@ public interface IProductService extends IService<Product> {
      * @param status 状态
      */
     void updateStatus(Long productId, Integer status);
+
+    /**
+     * 更新产品
+     * @param product 产品实体
+     * @return 产品VO
+     */
+    ProductVo update(Product product);
+
+    /**
+     * 批量删除产品
+     * @param ids 产品ID列表
+     */
+    void deleteBatch(List<String> ids);
 }

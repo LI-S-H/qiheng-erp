@@ -109,10 +109,4 @@ public class Product implements Serializable {
     @Schema(description = "备注")
     @TableField("remark")
     private String remark;
-
-    @Schema(description = "乐观锁版本号")
-    @TableField("version")
-    private Integer version;
-
-
 }

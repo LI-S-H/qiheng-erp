@@ -1,24 +1,31 @@
 package com.qiheng.erp.product.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.domain.entity.ProductCategory;
 import com.qiheng.erp.product.domain.vo.ProductVo;
+import com.qiheng.erp.product.mapper.ProductCategoryMapper;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.product.service.IProductService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 
 /**
  * <p>
@@ -33,6 +40,9 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     @Autowired
     private ProductMapper productMapper;
+
+    @Autowired
+    private ProductCategoryMapper productCategoryMapper;
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
@@ -158,7 +168,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
      * @param productId 产品ID
      * @param status 状态
      */
-    @DistributedLock(key = "'product:lock:global'")
+    @DistributedLock(key = "'product:lock:' + #productId")
     @Override
     public void updateStatus(Long productId, Integer status) {
         LambdaUpdateWrapper<Product> updateWrapper = new LambdaUpdateWrapper<Product>()
@@ -167,6 +177,51 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         productMapper.update(null, updateWrapper);
     }
 
+    /**
+     * 批量删除产品
+     * @param ids 产品ID列表
+     */
+    @DistributedLock(key = "'product:lock:global'")
+    @Override
+    public void deleteBatch(List<String> ids) {
+        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<Product>()
+                .in(Product::getId, ids)
+                .eq(Product::getStatus, 1);
+        Long count = productMapper.selectCount(wrapper);
+        if (count > 0) {
+            throw new BizException(ErrorCode.STATUS_INVALID);
+        }
+        //TODO 检查是否存在库存记录
+        productMapper.deleteByIds(ids);
+    }
 
+    /**
+     * 更新产品
+     * @param product 产品实体
+     * @return 产品VO
+     */
+    @DistributedLock(key = "'product:lock:' + #product.id")
+    @Override
+    public ProductVo update(Product product) {
+        product.setProductCode(null);
+        if (product.getCategoryId() != null) {
+            //校验分类是否存在且状态正常
+            ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
+            if (category == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND);
+            }
+            if (category.getStatus() == 0) {
+                throw new BizException(ErrorCode.CATEGORY_DISABLED);
+            }
+        }
+        if (product.getSafetyStockQty() != null) {
+            product.setSafetyStockQty(
+                    // 保存时将安全库存数量x100
+                    product.getSafetyStockQty().multiply(BigDecimal.valueOf(100)).setScale(0, RoundingMode.HALF_UP)
+            );
+        }
+        productMapper.updateById(product);
+        return getDetailById(product.getId());
+    }
 
 }

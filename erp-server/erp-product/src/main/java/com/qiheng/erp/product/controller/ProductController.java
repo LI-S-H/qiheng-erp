@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -103,5 +104,50 @@ public class ProductController {
         log.info("更新产品状态，参数: {}, {}", productId, s);
         productService.updateStatus(productId, s);
         return Result.ok();
+    }
+
+    /**
+     * 批量删除产品
+     * @param productIds 产品ID列表参数DTO
+     * @return 无
+     */
+    @PostMapping("/batch/delete")
+    @Operation(summary = "批量删除产品")
+    public Result<Void> deleteBatch(@RequestBody Map<String, List<String>> productIds) {
+        StpUtil.checkPermission("product:manage");
+        List<String> ids = productIds.get("productIds");
+        log.info("批量删除产品，参数: {}", ids);
+        productService.deleteBatch(ids);
+        return Result.ok();
+    }
+
+    /**
+     * 删除产品
+     * @param productId 产品ID
+     * @return 无
+     */
+    @DeleteMapping("/{productId}")
+    @Operation(summary = "删除产品")
+    public Result<Void> deleteById(@PathVariable Long productId) {
+        StpUtil.checkPermission("product:manage");
+        log.info("删除产品，参数: {}", productId);
+        productService.deleteBatch(List.of(String.valueOf(productId)));
+        return Result.ok();
+    }
+
+    /**
+     * 更新产品
+     * @param productId 产品ID
+     * @param product 产品实体
+     * @return 产品VO
+     */
+    @PutMapping("/{productId}")
+    @Operation(summary = "更新产品")
+    public Result<ProductVo> update(@PathVariable("productId") Long productId, @RequestBody Product product) {
+        StpUtil.checkPermission("product:manage");
+        log.info("更新产品，参数: {}, {}", productId, product);
+        product.setId(productId);
+        ProductVo vo = productService.update(product);
+        return Result.ok(vo);
     }
 }

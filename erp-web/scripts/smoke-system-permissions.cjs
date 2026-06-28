@@ -8,7 +8,7 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '权限码配置' }).waitFor();
     await page.getByText('system:user:query', { exact: true }).waitFor();
-    await assertFixedTableLayout(page, 9);
+    await assertFixedTableLayout(page, 10);
     await clickRefreshAndAssertLoading(page, 'smoke-system-permissions-refresh-loading.png');
 
     const filterComboboxes = page.locator('.filter-panel').getByRole('combobox');

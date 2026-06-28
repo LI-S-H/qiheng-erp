@@ -52,6 +52,24 @@ const statusFilterOptions = [
 const moduleFilterOptions = [{ value: 'all', label: '全部模块' }, ...permissionModuleOptions];
 const actionFilterOptions = [{ value: 'all', label: '全部类型' }, ...permissionActionOptions];
 const permissionCodePattern = /^[a-z][a-z0-9]*(?::[a-z][a-z0-9]*){1,3}$/;
+const moduleBadgeClasses: Record<string, string> = {
+  system: 'border-sky-200 bg-sky-50 text-sky-700',
+  product: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  warehouse: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+  supplier: 'border-violet-200 bg-violet-50 text-violet-700',
+  purchase: 'border-amber-200 bg-amber-50 text-amber-700',
+  customer: 'border-pink-200 bg-pink-50 text-pink-700',
+  sales: 'border-rose-200 bg-rose-50 text-rose-700',
+  ai: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+};
+const actionBadgeClasses: Record<PermissionAction, string> = {
+  query: 'border-slate-200 bg-slate-100 text-slate-600',
+  create: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  update: 'border-amber-200 bg-amber-50 text-amber-700',
+  delete: 'border-red-200 bg-red-50 text-red-700',
+  manage: 'border-purple-200 bg-purple-50 text-purple-700',
+  execute: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+};
 
 const permissions = ref<SystemPermissionListItem[]>([]);
 const total = ref(0);
@@ -162,6 +180,14 @@ function getActionLabel(action: PermissionAction) {
 
 function getModuleName(moduleCode: string) {
   return permissionModuleOptions.find(item => item.value === moduleCode)?.label || moduleCode;
+}
+
+function getModuleBadgeClass(moduleCode: string) {
+  return moduleBadgeClasses[moduleCode] || 'border-slate-200 bg-slate-100 text-slate-600';
+}
+
+function getActionBadgeClass(action: PermissionAction) {
+  return actionBadgeClasses[action];
 }
 
 function toggleSelectAll(value: boolean | 'indeterminate') {
@@ -432,12 +458,13 @@ function handleBatchDelete() {
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1154px] table-fixed">
+        <Table class="min-w-[1220px] table-fixed">
           <colgroup>
             <col class="w-[44px]" />
             <col class="w-[190px]" />
             <col class="w-[220px]" />
-            <col class="w-[160px]" />
+            <col class="w-[120px]" />
+            <col class="w-[100px]" />
             <col class="w-[90px]" />
             <col class="w-[80px]" />
             <col class="w-[70px]" />
@@ -446,18 +473,19 @@ function handleBatchDelete() {
           </colgroup>
           <TableHeader><TableRow>
             <TableHead class="w-[44px]"><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead>
-            <TableHead>权限码</TableHead><TableHead>权限名称</TableHead><TableHead class="text-center">模块 / 类型</TableHead>
+            <TableHead>权限码</TableHead><TableHead>权限名称</TableHead><TableHead class="text-center">所属模块</TableHead><TableHead class="text-center">操作类型</TableHead>
             <TableHead class="text-center">角色引用</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-center">排序</TableHead>
             <TableHead>更新时间</TableHead><TableHead class="w-[190px] text-center">操作</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="permissions.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+            <TableRow v-if="loading"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
+            <TableRow v-else-if="permissions.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
             <TableRow v-for="row in permissions" v-else :key="row.permissionId">
               <TableCell><Checkbox :model-value="selectedIds.has(row.permissionId)" @update:model-value="toggleSelect(row.permissionId, $event)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium text-foreground">{{ row.permissionCode }}</code></TableCell>
               <TableCell><div class="flex max-w-[220px] flex-col"><span>{{ row.permissionName }}</span><span class="truncate text-xs text-muted-foreground">{{ row.description || '暂无说明' }}</span></div></TableCell>
-              <TableCell class="text-center"><div class="flex items-center justify-center gap-1"><Badge variant="outline">{{ getModuleName(row.moduleCode) }}</Badge><Badge variant="secondary">{{ getActionLabel(row.actionType) }}</Badge></div></TableCell>
+              <TableCell class="text-center"><Badge variant="outline" :class="getModuleBadgeClass(row.moduleCode)">{{ getModuleName(row.moduleCode) }}</Badge></TableCell>
+              <TableCell class="text-center"><Badge variant="outline" :class="getActionBadgeClass(row.actionType)">{{ getActionLabel(row.actionType) }}</Badge></TableCell>
               <TableCell class="text-center"><span :class="row.roleCount ? 'font-medium text-primary' : 'text-muted-foreground'">{{ row.roleCount }}</span></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
               <TableCell class="text-center">{{ row.sortOrder }}</TableCell>

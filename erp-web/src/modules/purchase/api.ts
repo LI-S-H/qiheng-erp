@@ -283,6 +283,12 @@ function normalizePage<T>(page: PageResult<T>, mapper: (item: T) => T): PageResu
   };
 }
 
+function keywordField(keyword: string, codeField: string, nameField: string) {
+  const value = keyword.trim();
+  if (!value) return {};
+  return /^[A-Za-z0-9_-]+$/.test(value) ? { [codeField]: value } : { [nameField]: value };
+}
+
 function pageSlice<T>(records: T[], pageNum: number, pageSize: number) {
   return records.slice((pageNum - 1) * pageSize, (pageNum - 1) * pageSize + pageSize);
 }
@@ -362,6 +368,21 @@ export function listSupplierOptions(): Promise<SupplierOption[]> {
     })));
   }
   return getResult<SupplierOption[]>('/purchase/suppliers/options');
+}
+
+export async function searchSupplierOptions(keyword = '', pageSize = 10): Promise<SupplierOption[]> {
+  const page = await listSuppliers({
+    pageNum: 1,
+    pageSize,
+    status: 1,
+    ...keywordField(keyword, 'supplierCode', 'supplierName'),
+  });
+  return page.records.map(item => ({
+    supplierId: item.supplierId,
+    supplierCode: item.supplierCode,
+    supplierName: item.supplierName,
+    status: item.status,
+  }));
 }
 
 export function createSupplier(payload: SupplierFormPayload) {
@@ -733,12 +754,22 @@ function mockWarehouseSnapshot(warehouseId: string): Pick<WarehouseListItem, 'wa
   return warehouses[warehouseId] || { warehouseId, warehouseName: '目标仓库' };
 }
 
-export async function listEnabledProductOptions() {
-  const page = await listProducts({ pageNum: 1, pageSize: 100, status: 1 });
+export async function listEnabledProductOptions(keyword = '', pageSize = 10) {
+  const page = await listProducts({
+    pageNum: 1,
+    pageSize,
+    status: 1,
+    ...keywordField(keyword, 'productCode', 'productName'),
+  });
   return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}`, product: item }));
 }
 
-export async function listEnabledWarehouseOptions() {
-  const page = await listWarehouses({ pageNum: 1, pageSize: 100, status: 1 });
+export async function listEnabledWarehouseOptions(keyword = '', pageSize = 10) {
+  const page = await listWarehouses({
+    pageNum: 1,
+    pageSize,
+    status: 1,
+    ...keywordField(keyword, 'warehouseCode', 'warehouseName'),
+  });
   return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}`, warehouse: item }));
 }

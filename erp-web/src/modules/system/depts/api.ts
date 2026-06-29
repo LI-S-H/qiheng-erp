@@ -60,7 +60,7 @@ function ensureValidParent(deptId: string, parentId: string) {
 
 // ── API functions ──
 
-export function listSystemDepts(params: SystemDeptQuery) {
+export function listSystemDepts(params: SystemDeptQuery = {}) {
   if (useMockApi) {
     let result = mockFlatDepts.map(item => ({ ...item, children: undefined }));
     if (params.deptName || params.status !== '' && params.status !== 'all' && params.status !== undefined) {

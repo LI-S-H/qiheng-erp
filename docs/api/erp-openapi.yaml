@@ -812,7 +812,7 @@ paths:
       tags:
         - SystemDept
       summary: 查询部门列表
-      description: 返回 `sys_dept` 扁平列表即可，前端根据 `parentId` 构建树形结构和层级路径，不要求后端组装 `children` 或路径字符串。仅传需要生效的筛选参数，多个筛选参数按 AND 条件组合。权限：仅需登录态（Sa-Token 有效），不校验具体权限码。
+      description: 返回 `sys_dept` 扁平列表即可，前端根据 `parentId` 构建树形结构和层级路径，不要求后端组装 `children` 或路径字符串。仅传需要生效的筛选参数，多个筛选参数按 AND 条件组合；前端必须将有效筛选条件作为查询参数传给后端，不得全量拉取后再本地筛选。权限：仅需登录态（Sa-Token 有效），不校验具体权限码。
       operationId: systemDeptList
       security:
         - SaTokenAuth: []
@@ -823,14 +823,14 @@ paths:
           schema:
             type: string
             maxLength: 100
-          description: 部门名称筛选，对应 `sys_dept.dept_name`
+          description: 部门名称筛选，对应 `sys_dept.dept_name`；提交前前端去除首尾空格，空字符串不传
         - name: status
           in: query
           required: false
           schema:
             type: integer
             enum: [0, 1]
-          description: 状态，1 启用，0 停用；不筛选状态时不传该参数
+          description: 状态，1 启用，0 停用；不筛选状态时不传该参数，前端“全部”选项不得传 `all`
       responses:
         "200":
           description: 查询成功
@@ -1436,7 +1436,7 @@ paths:
     get:
       tags: [PurchaseSupplier]
       summary: 获取启用供应商选项
-      description: 只返回未删除且启用的供应商，用于供货产品和采购订单表单下拉。本接口需要 `supplier:query` 权限。
+      description: 只返回未删除且启用的供应商，用于兼容小规模 options 场景。本接口需要 `supplier:query` 权限。供货产品、采购订单等业务表单和筛选不得依赖本接口全量加载；应使用 `GET /purchase/suppliers` 按供应商编码或名称普通分页搜索，默认 `pageSize=10`。
       operationId: purchaseSupplierOptions
       security:
         - SaTokenAuth: []
@@ -1622,7 +1622,7 @@ paths:
       description: |
         查询未删除的 `supplier_product` 数据。供应商使用 `supplierId` 精确匹配，产品编码和产品名称分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
         不接收含义不明确的 `keyword` 参数。评分字段接口按 0-100 业务值返回，数据库按放大 100 倍整数保存。
-        采购订单表单需要按 `status=1` 分页取得启用供货关系全集，用于供应商与产品双向过滤；后端必须保证分页 total 准确，或后续提供等价的启用供货关系选项接口。
+        采购订单明细产品选择按已选 `supplierId`、`productCode` / `productName` 与 `status=1` 请求第一页候选，默认 `pageSize=10`；前端不得预加载全量启用供货关系后再本地过滤。
         本接口需要 `supplier:query` 权限。
       operationId: purchaseSupplierProductPage
       security:
@@ -2133,7 +2133,7 @@ paths:
     get:
       tags: [SalesCustomer]
       summary: 获取启用客户选项
-      description: 只返回未删除且启用的客户，用于销售订单表单下拉。本接口需要 `sales:query` 权限。
+      description: 只返回未删除且启用的客户，用于兼容小规模 options 场景。本接口需要 `sales:query` 权限。销售订单表单和筛选不得依赖本接口全量加载；应使用 `GET /sales/customers` 按客户编码或名称普通分页搜索，默认 `pageSize=10`。
       operationId: salesCustomerOptions
       security:
         - SaTokenAuth: []
@@ -3526,11 +3526,27 @@ paths:
       summary: 查询产品分类列表
       description: |
         返回 `product_category` 未删除数据的扁平数组，并通过一次可执行的聚合查询返回每个分类直接关联的 `productCount`。
-        后端不组装 `children`、上级分类名称或层级路径；前端根据 `parentId` 构建分类树、计算路径并完成名称和状态筛选。
+        后端不组装 `children`、上级分类名称或层级路径；前端根据 `parentId` 构建分类树、计算路径。
+        支持 `categoryName`、`status` 两个独立查询参数：分类名称使用包含匹配，状态使用精确匹配；多个有效条件按 AND 组合。
+        前端必须把有效筛选条件作为查询参数传给后端，不能拉取全量分类后再按名称或状态二次筛选；空字符串、`all` 和未选择状态不得发送。
+        命中分类的祖先会与命中行一同返回，便于前端按 `parentId` 计算层级路径；后端不返回预组装的层级路径。
         本接口需要 `product:query` 权限。
       operationId: productCategoryList
       security:
         - SaTokenAuth: []
+      parameters:
+        - name: categoryName
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+          description: 分类名称，对应 `product_category.category_name`，提交前由前端去除首尾空格，使用包含匹配；不传表示不过滤名称，前端不得发送空字符串
+        - name: status
+          in: query
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: 分类状态，对应 `product_category.status`，精确匹配；不传表示不过滤状态，前端的“全部状态”只作为展示选项，不得发送 `all`
       responses:
         "200":
           description: 查询成功

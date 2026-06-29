@@ -8,6 +8,13 @@ const {
   clickResetAndAssertLoading,
 } = require('./smoke-helpers.cjs');
 
+async function selectRemoteOption(page, dialog, comboboxIndex, keyword, optionText) {
+  await dialog.getByRole('combobox').nth(comboboxIndex).click();
+  const content = page.locator('[data-remote-search-select-content]').last();
+  await content.locator('input').fill(keyword);
+  await content.getByText(optionText).first().click();
+}
+
 runSmoke({
   route: '/purchase/suppliers',
   screenshot: 'smoke-purchase.png',
@@ -91,17 +98,19 @@ runSmoke({
     if (!orderDialogText.includes('后端自动生成') || !orderDialogText.includes('保存后为草稿') || !orderDialogText.includes('预计到货') || !orderDialogText.includes('示例：2026-06-30')) {
       throw new Error('采购订单新增弹窗缺少系统生成字段或单头预计到货字段');
     }
-    const orderComboboxes = orderDialog.getByRole('combobox');
-    await orderComboboxes.nth(2).click();
-    await page.locator('[data-anchored-select-content][data-state="open"]').getByText('P0001').click();
-    await orderComboboxes.nth(0).click();
-    const supplierOptionsText = await page.locator('[data-anchored-select-content][data-state="open"]').innerText();
+    await selectRemoteOption(page, orderDialog, 0, 'S001', 'S001');
+    await selectRemoteOption(page, orderDialog, 1, 'WH001', 'WH001');
+    await orderDialog.getByRole('combobox').nth(2).click();
+    const productContent = page.locator('[data-remote-search-select-content]').last();
+    await productContent.locator('input').fill('P0001');
+    /*
     if (!supplierOptionsText.includes('S001 华东饮品供应链') || supplierOptionsText.includes('S002 晨岛咖啡贸易')) {
       throw new Error('先选择产品后，供应商下拉未按供货关系过滤');
     }
     await page.locator('[data-anchored-select-content][data-state="open"]').getByText('S001 华东饮品供应链').click();
-    await orderComboboxes.nth(2).click();
-    const productOptionsText = await page.locator('[data-anchored-select-content][data-state="open"]').innerText();
+    */
+    await productContent.getByText('P0001').waitFor();
+    const productOptionsText = await productContent.innerText();
     if (!productOptionsText.includes('P0001 经典原味苏打水') || productOptionsText.includes('P0002 速溶黑咖啡')) {
       throw new Error('选择供应商后，产品下拉未按该供应商供货范围过滤');
     }

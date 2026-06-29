@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +51,7 @@ const query = reactive<WarehouseStockQuery>({
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const hasNextPage = computed(() => stocks.value.length >= query.pageSize);
+const selectedWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
 const inventoryHealthOptions: Array<{ value: InventoryHealth | 'all'; label: string }> = [
   { value: 'all', label: '全部健康状态' },
   { value: 'NORMAL', label: '正常库存' },
@@ -64,13 +66,36 @@ const reservationStateOptions: Array<{ value: ReservationState | 'all'; label: s
   { value: 'FULLY_LOCKED', label: '全部锁定' },
 ];
 
+function warehouseKeywordQuery(keyword: string) {
+  const value = keyword.trim();
+  if (!value) return {};
+  return /^[A-Za-z0-9_-]+$/.test(value) ? { warehouseCode: value } : { warehouseName: value };
+}
+
+function mergeWarehouseOptions(options: Array<{ value: string; label: string }>) {
+  const cache = new Map(warehouseOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  warehouseOptions.value = [
+    { value: 'all', label: '全部仓库' },
+    ...Array.from(cache.values()).filter(item => item.value !== 'all'),
+  ];
+}
+
+async function fetchWarehouseSearchOptions(keyword: string) {
+  const page = await listWarehouses({
+    pageNum: 1,
+    pageSize: 10,
+    ...warehouseKeywordQuery(keyword),
+  });
+  const options = page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
+  mergeWarehouseOptions(options);
+  return options;
+}
+
 async function loadWarehouseOptions() {
   try {
-    const page = await listWarehouses({ pageNum: 1, pageSize: 100 });
-    warehouseOptions.value = [
-      { value: 'all', label: '全部仓库' },
-      ...page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` })),
-    ];
+    const page = await listWarehouses({ pageNum: 1, pageSize: 10 });
+    mergeWarehouseOptions(page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` })));
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '仓库选项加载失败');
   }
@@ -179,7 +204,7 @@ onMounted(() => {
 
     <div class="filter-panel">
       <div class="filter-grid filter-grid--stocks">
-        <div class="space-y-1"><Label class="text-xs">仓库</Label><AnchoredSelect v-model="query.warehouseId" :options="warehouseOptions" placeholder="全部仓库" /></div>
+        <div class="space-y-1"><Label class="text-xs">仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
         <div class="space-y-1"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P0001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">库存健康</Label><AnchoredSelect v-model="query.inventoryHealth" :options="inventoryHealthOptions" placeholder="全部健康状态" /></div>

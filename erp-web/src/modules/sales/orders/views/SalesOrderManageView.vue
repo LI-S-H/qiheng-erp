@@ -7,6 +7,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -18,10 +19,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import {
   createSalesOrder,
-  listCustomerOptions,
   listEnabledSalesProductOptions,
   listEnabledSalesWarehouseOptions,
   listSalesOrders,
+  searchCustomerOptions,
   updateSalesOrder,
   updateSalesOrderStatus,
 } from '../../api';
@@ -115,29 +116,99 @@ const confirmState = reactive({
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const totalAmount = computed(() => draftItems.value.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0));
+const selectedCustomerLabel = computed(() => customerOptions.value.find(item => item.value === form.customerId)?.label || (editingOrder.value?.customerId === form.customerId ? `${editingOrder.value.customerCode} ${editingOrder.value.customerName}` : ''));
+const selectedWarehouseLabel = computed(() => warehouseOptions.value.find(item => item.value === form.warehouseId)?.label || (editingOrder.value?.warehouseId === form.warehouseId ? editingOrder.value.warehouseName : ''));
+const queryCustomerLabel = computed(() => query.customerId === 'all' ? '全部客户' : customerOptions.value.find(item => item.value === query.customerId)?.label || '');
+const queryWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
+
+function selectedProductLabel(productId: string) {
+  return productOptions.value.find(item => item.value === productId)?.label
+    || (() => {
+      const item = editingOrder.value?.items.find(candidate => candidate.productId === productId && candidate.productCode);
+      return item ? `${item.productCode} ${item.productName}` : '';
+    })()
+    || '';
+}
+
+function mergeCustomerOptions(options: Option[]) {
+  const cache = new Map(customerOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  customerOptions.value = [
+    { value: 'all', label: '全部客户' },
+    ...Array.from(cache.values()).filter(item => item.value !== 'all'),
+  ];
+}
+
+function mergeWarehouseOptions(options: Option[]) {
+  const cache = new Map(warehouseOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  warehouseOptions.value = [
+    { value: 'all', label: '全部仓库' },
+    ...Array.from(cache.values()).filter(item => item.value !== 'all'),
+  ];
+}
+
+function mergeProductOptions(options: Array<Option & { referenceSalePrice: number; quantityPrecision: number; unitName: string }>) {
+  const cache = new Map(productOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  productOptions.value = Array.from(cache.values());
+}
+
+async function fetchCustomerSearchOptions(keyword: string) {
+  const customers = await searchCustomerOptions(keyword, 10);
+  const options = customers.map(item => ({ value: item.customerId, label: `${item.customerCode} ${item.customerName}`, disabled: item.status === 0 }));
+  mergeCustomerOptions(options);
+  return options;
+}
+
+async function fetchWarehouseSearchOptions(keyword: string) {
+  const warehouses = await listEnabledSalesWarehouseOptions(keyword, 10);
+  const options = warehouses.map(item => ({ value: item.value, label: item.label }));
+  mergeWarehouseOptions(options);
+  return options;
+}
+
+async function fetchProductSearchOptions(keyword: string) {
+  const products = await listEnabledSalesProductOptions(keyword, 10);
+  const options = products.map(item => ({
+    value: item.value,
+    label: item.label,
+    referenceSalePrice: item.product.referenceSalePrice,
+    quantityPrecision: item.product.quantityPrecision,
+    unitName: item.product.unitName,
+  }));
+  mergeProductOptions(options);
+  return options;
+}
+
+function cacheOrderOptions(row: SalesOrderListItem) {
+  mergeCustomerOptions([{ value: row.customerId, label: `${row.customerCode} ${row.customerName}` }]);
+  mergeWarehouseOptions([{ value: row.warehouseId, label: row.warehouseName }]);
+  mergeProductOptions(row.items.map(item => ({
+    value: item.productId,
+    label: `${item.productCode} ${item.productName}`,
+    referenceSalePrice: item.unitPrice,
+    quantityPrecision: 2,
+    unitName: item.unitName,
+  })));
+}
 
 async function loadOptions() {
   try {
     const [customers, warehouses, products] = await Promise.all([
-      listCustomerOptions(),
-      listEnabledSalesWarehouseOptions(),
-      listEnabledSalesProductOptions(),
+      searchCustomerOptions('', 10),
+      listEnabledSalesWarehouseOptions('', 10),
+      listEnabledSalesProductOptions('', 10),
     ]);
-    customerOptions.value = [
-      { value: 'all', label: '全部客户' },
-      ...customers.map(item => ({ value: item.customerId, label: `${item.customerCode} ${item.customerName}`, disabled: item.status === 0 })),
-    ];
-    warehouseOptions.value = [
-      { value: 'all', label: '全部仓库' },
-      ...warehouses.map(item => ({ value: item.value, label: item.label })),
-    ];
-    productOptions.value = products.map(item => ({
+    mergeCustomerOptions(customers.map(item => ({ value: item.customerId, label: `${item.customerCode} ${item.customerName}`, disabled: item.status === 0 })));
+    mergeWarehouseOptions(warehouses.map(item => ({ value: item.value, label: item.label })));
+    mergeProductOptions(products.map(item => ({
       value: item.value,
       label: item.label,
       referenceSalePrice: item.product.referenceSalePrice,
       quantityPrecision: item.product.quantityPrecision,
       unitName: item.product.unitName,
-    }));
+    })));
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '销售选项加载失败');
   }
@@ -231,6 +302,7 @@ function openEditDialog(row: SalesOrderListItem) {
   dialogMode.value = 'edit';
   resetForm();
   editingOrder.value = row;
+  cacheOrderOptions(row);
   Object.assign(form, {
     customerId: row.customerId,
     warehouseId: row.warehouseId,
@@ -451,8 +523,8 @@ onMounted(() => {
     <div class="filter-panel">
       <div class="filter-grid filter-grid--sales">
         <div class="space-y-1"><Label class="text-xs">销售单号</Label><Input v-model="query.salesNo" placeholder="如 SO202606001" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">客户</Label><AnchoredSelect v-model="query.customerId" :options="customerOptions" /></div>
-        <div class="space-y-1"><Label class="text-xs">出库仓库</Label><AnchoredSelect v-model="query.warehouseId" :options="warehouseOptions" /></div>
+        <div class="space-y-1"><Label class="text-xs">客户</Label><RemoteSearchSelect v-model="query.customerId" :selected-label="queryCustomerLabel" :fetch-options="fetchCustomerSearchOptions" placeholder="全部客户" search-placeholder="输入客户编码或名称" clearable clear-value="all" clear-label="全部客户" /></div>
+        <div class="space-y-1"><Label class="text-xs">出库仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="queryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
         <div class="space-y-1"><Label class="text-xs">订单状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
         <div class="filter-actions">
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
@@ -509,8 +581,8 @@ onMounted(() => {
               <div><span class="text-muted-foreground">创建来源</span><div class="mt-1 font-medium">{{ dialogMode === 'edit' && editingOrder ? `${editingOrder.createdByName || '系统'} / ${editingOrder.createTime}` : '当前登录用户' }}</div></div>
             </div>
             <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
-              <div class="space-y-1"><Label>客户 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.customerId" :options="customerOptions.filter(item => item.value !== 'all')" placeholder="请选择客户" :invalid="Boolean(formErrors.customerId)" /><p v-if="formErrors.customerId" class="form-error">{{ formErrors.customerId }}</p></div>
-              <div class="space-y-1"><Label>出库仓库 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.warehouseId" :options="warehouseOptions.filter(item => item.value !== 'all')" placeholder="请选择仓库" :invalid="Boolean(formErrors.warehouseId)" /><p v-if="formErrors.warehouseId" class="form-error">{{ formErrors.warehouseId }}</p></div>
+              <div class="space-y-1"><Label>客户 <span class="text-destructive">*</span></Label><RemoteSearchSelect v-model="form.customerId" :selected-label="selectedCustomerLabel" :fetch-options="fetchCustomerSearchOptions" placeholder="请选择客户" search-placeholder="输入客户编码或名称" :invalid="Boolean(formErrors.customerId)" /><p v-if="formErrors.customerId" class="form-error">{{ formErrors.customerId }}</p></div>
+              <div class="space-y-1"><Label>出库仓库 <span class="text-destructive">*</span></Label><RemoteSearchSelect v-model="form.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="请选择仓库" search-placeholder="输入仓库编码或名称" :invalid="Boolean(formErrors.warehouseId)" /><p v-if="formErrors.warehouseId" class="form-error">{{ formErrors.warehouseId }}</p></div>
               <div class="space-y-1"><Label>预计发货</Label><Input v-model="form.expectedDeliveryDate" type="date" /><p v-if="formErrors.expectedDeliveryDate" class="form-error">{{ formErrors.expectedDeliveryDate }}</p><p v-else class="text-xs text-muted-foreground">示例：2026-06-30</p></div>
             </div>
             <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" rows="2" /><p v-if="formErrors.remark" class="form-error">{{ formErrors.remark }}</p></div>
@@ -518,12 +590,12 @@ onMounted(() => {
             <div class="rounded-md border border-border">
               <div class="flex min-h-11 items-center justify-between border-b border-border px-3"><strong class="text-sm">销售明细</strong><Button size="sm" variant="outline" type="button" @click="addLine">添加产品</Button></div>
               <ScrollArea class="w-full purchase-order-line-scroll">
-                <Table class="min-w-[990px] table-fixed">
-                  <colgroup><col class="w-[300px]" /><col class="w-[150px]" /><col class="w-[145px]" /><col class="w-[135px]" /><col class="w-[170px]" /><col class="w-[90px]" /></colgroup>
+                <Table class="min-w-[830px] table-fixed">
+                  <colgroup><col class="w-[230px]" /><col class="w-[115px]" /><col class="w-[120px]" /><col class="w-[115px]" /><col class="w-[170px]" /><col class="w-[80px]" /></colgroup>
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">销售价</TableHead><TableHead class="text-right">小计</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-for="(line, index) in draftItems" :key="line.rowId">
-                      <TableCell class="align-top"><AnchoredSelect :model-value="line.productId" :options="productOptions" placeholder="请选择产品" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="form-error">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
+                      <TableCell class="align-top"><RemoteSearchSelect :model-value="line.productId" :selected-label="selectedProductLabel(line.productId)" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="form-error">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="flex items-center justify-center gap-2"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line.productId)" class="text-center" /><span class="w-10 shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="pl-8 text-center" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="form-error">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0)) }}</TableCell>

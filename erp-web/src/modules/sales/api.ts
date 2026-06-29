@@ -214,6 +214,12 @@ function normalizePage<T>(page: PageResult<T>, mapper: (item: T) => T): PageResu
   };
 }
 
+function keywordField(keyword: string, codeField: string, nameField: string) {
+  const value = keyword.trim();
+  if (!value) return {};
+  return /^[A-Za-z0-9_-]+$/.test(value) ? { [codeField]: value } : { [nameField]: value };
+}
+
 function pageSlice<T>(records: T[], pageNum: number, pageSize: number) {
   return records.slice((pageNum - 1) * pageSize, (pageNum - 1) * pageSize + pageSize);
 }
@@ -274,6 +280,21 @@ export function listCustomerOptions(): Promise<CustomerOption[]> {
     })));
   }
   return getResult<CustomerOption[]>('/sales/customers/options');
+}
+
+export async function searchCustomerOptions(keyword = '', pageSize = 10): Promise<CustomerOption[]> {
+  const page = await listCustomers({
+    pageNum: 1,
+    pageSize,
+    status: 1,
+    ...keywordField(keyword, 'customerCode', 'customerName'),
+  });
+  return page.records.map(item => ({
+    customerId: item.customerId,
+    customerCode: item.customerCode,
+    customerName: item.customerName,
+    status: item.status,
+  }));
 }
 
 export function createCustomer(payload: CustomerFormPayload) {
@@ -498,12 +519,22 @@ export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 
   return postResult<null, { version: number }>(`/sales/orders/${salesOrderId}/${action}`, { version });
 }
 
-export async function listEnabledSalesProductOptions() {
-  const page = await listProducts({ pageNum: 1, pageSize: 100, status: 1 });
+export async function listEnabledSalesProductOptions(keyword = '', pageSize = 10) {
+  const page = await listProducts({
+    pageNum: 1,
+    pageSize,
+    status: 1,
+    ...keywordField(keyword, 'productCode', 'productName'),
+  });
   return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}`, product: item }));
 }
 
-export async function listEnabledSalesWarehouseOptions() {
-  const page = await listWarehouses({ pageNum: 1, pageSize: 100, status: 1 });
+export async function listEnabledSalesWarehouseOptions(keyword = '', pageSize = 10) {
+  const page = await listWarehouses({
+    pageNum: 1,
+    pageSize,
+    status: 1,
+    ...keywordField(keyword, 'warehouseCode', 'warehouseName'),
+  });
   return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}`, warehouse: item }));
 }

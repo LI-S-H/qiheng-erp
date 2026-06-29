@@ -353,8 +353,8 @@ function validateDraftItems(items: StockBillDraftItemPayload[], billType: StockB
 
 async function loadMockMasterData() {
   const [warehouses, products] = await Promise.all([
-    listWarehouses({ status: 1, pageNum: 1, pageSize: 100 }),
-    listProducts({ status: 1, pageNum: 1, pageSize: 100 }),
+    listWarehouses({ status: 1, pageNum: 1, pageSize: 10 }),
+    listProducts({ status: 1, pageNum: 1, pageSize: 10 }),
   ]);
   return { warehouses: warehouses.records, products: products.records };
 }

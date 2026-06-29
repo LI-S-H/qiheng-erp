@@ -5,6 +5,7 @@ import type {
   ProductCategoryBatchStatusPayload,
   ProductCategoryFormPayload,
   ProductCategoryListItem,
+  ProductCategoryQuery,
   ProductCategoryStatus,
 } from './types';
 
@@ -92,9 +93,29 @@ function normalizeCategory(item: ProductCategoryListItem): ProductCategoryListIt
   };
 }
 
-export function listProductCategories() {
-  if (useMockApi) return Promise.resolve(mockFlatCategories.map(normalizeCategory));
-  return getResult<ProductCategoryListItem[]>('/product/categories').then(items => items.map(normalizeCategory));
+function resolveCategoryQueryStatus(status: ProductCategoryQuery['status']): ProductCategoryStatus | null {
+  if (status === '' || status === 'all' || status === null || status === undefined) return null;
+  return Number(status) as ProductCategoryStatus;
+}
+
+function filterMockCategories(params?: ProductCategoryQuery): ProductCategoryListItem[] {
+  const categoryName = params?.categoryName?.trim().toLowerCase() || '';
+  const status = resolveCategoryQueryStatus(params?.status);
+  return mockFlatCategories.filter(item => {
+    const matchName = !categoryName || item.categoryName.toLowerCase().includes(categoryName);
+    const matchStatus = status === null || item.status === status;
+    return matchName && matchStatus;
+  });
+}
+
+export function listProductCategories(params?: ProductCategoryQuery) {
+  if (useMockApi) return Promise.resolve(filterMockCategories(params).map(normalizeCategory));
+  const categoryName = params?.categoryName?.trim() || '';
+  const status = resolveCategoryQueryStatus(params?.status);
+  return getResult<ProductCategoryListItem[]>('/product/categories', {
+    ...(categoryName ? { categoryName } : {}),
+    ...(status !== null ? { status } : {}),
+  }).then(items => items.map(normalizeCategory));
 }
 
 export function getProductCategory(categoryId: string) {

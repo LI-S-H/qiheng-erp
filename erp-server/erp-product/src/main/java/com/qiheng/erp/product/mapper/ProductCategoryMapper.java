@@ -1,7 +1,7 @@
 package com.qiheng.erp.product.mapper;
 
+import com.github.yulichang.base.MPJBaseMapper;
 import com.qiheng.erp.product.domain.entity.ProductCategory;
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**
  * <p>
@@ -11,6 +11,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
  * @author Li
  * @since 2026-06-28
  */
-public interface ProductCategoryMapper extends BaseMapper<ProductCategory> {
+public interface ProductCategoryMapper extends MPJBaseMapper<ProductCategory> {
 
 }

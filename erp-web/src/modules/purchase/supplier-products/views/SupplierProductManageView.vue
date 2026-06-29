@@ -7,6 +7,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -23,8 +24,8 @@ import {
   createSupplierProduct,
   deleteSupplierProduct,
   listEnabledProductOptions,
-  listSupplierOptions,
   listSupplierProducts,
+  searchSupplierOptions,
   updateSupplierProduct,
 } from '../../api';
 import type { SupplierProductFormPayload, SupplierProductListItem, SupplierProductQuery } from '../../types';
@@ -96,15 +97,58 @@ const disabledCount = computed(() => records.value.filter(item => item.status ==
 const highRecommendCount = computed(() => records.value.filter(item => item.aiScore >= 90).length);
 const avgLeadDays = computed(() => records.value.length ? records.value.reduce((sum, item) => sum + item.leadTimeDays, 0) / records.value.length : 0);
 const allSelected = computed(() => records.value.length > 0 && records.value.every(item => selectedIds.value.has(item.supplierProductId)));
+const selectedSupplierLabel = computed(() => supplierOptions.value.find(item => item.value === form.supplierId)?.label || (detailRow.value?.supplierId === form.supplierId ? `${detailRow.value.supplierCode} ${detailRow.value.supplierName}` : ''));
+const selectedProductLabel = computed(() => productOptions.value.find(item => item.value === form.productId)?.label || (detailRow.value?.productId === form.productId ? `${detailRow.value.productCode} ${detailRow.value.productName}` : ''));
+const querySupplierLabel = computed(() => query.supplierId === 'all' ? '全部供应商' : supplierOptions.value.find(item => item.value === query.supplierId)?.label || '');
+
+function mergeSupplierOptions(options: Array<{ value: string; label: string; disabled?: boolean }>) {
+  const cache = new Map(supplierOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  supplierOptions.value = [
+    { value: 'all', label: '全部供应商' },
+    ...Array.from(cache.values()).filter(item => item.value !== 'all'),
+  ];
+}
+
+function mergeProductOptions(options: ProductOption[]) {
+  const cache = new Map(productOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  productOptions.value = Array.from(cache.values());
+}
+
+async function fetchSupplierSearchOptions(keyword: string) {
+  const suppliers = await searchSupplierOptions(keyword, 10);
+  const options = suppliers.map(item => ({ value: item.supplierId, label: `${item.supplierCode} ${item.supplierName}`, disabled: item.status === 0 }));
+  mergeSupplierOptions(options);
+  return options;
+}
+
+async function fetchProductSearchOptions(keyword: string) {
+  const products = await listEnabledProductOptions(keyword, 10) as ProductOption[];
+  mergeProductOptions(products);
+  return products;
+}
+
+function cacheSupplierProductRow(row: SupplierProductListItem) {
+  mergeSupplierOptions([{ value: row.supplierId, label: `${row.supplierCode} ${row.supplierName}`, disabled: row.status === 0 }]);
+  mergeProductOptions([{
+    value: row.productId,
+    label: `${row.productCode} ${row.productName}`,
+    product: {
+      productId: row.productId,
+      productCode: row.productCode,
+      productName: row.productName,
+      unitName: row.unitName,
+      referencePurchasePrice: row.latestPurchasePrice,
+    },
+  }]);
+}
 
 async function loadOptions() {
   try {
-    const [suppliers, products] = await Promise.all([listSupplierOptions(), listEnabledProductOptions()]);
-    supplierOptions.value = [
-      { value: 'all', label: '全部供应商' },
-      ...suppliers.map(item => ({ value: item.supplierId, label: `${item.supplierCode} ${item.supplierName}`, disabled: item.status === 0 })),
-    ];
-    productOptions.value = products as ProductOption[];
+    const [suppliers, products] = await Promise.all([searchSupplierOptions('', 10), listEnabledProductOptions('', 10)]);
+    mergeSupplierOptions(suppliers.map(item => ({ value: item.supplierId, label: `${item.supplierCode} ${item.supplierName}`, disabled: item.status === 0 })));
+    mergeProductOptions(products as ProductOption[]);
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '供应商或产品选项加载失败');
   }
@@ -204,6 +248,7 @@ function resetForm() {
 function openCreateDialog() {
   dialogMode.value = 'create';
   editingId.value = '';
+  detailRow.value = null;
   resetForm();
   dialogVisible.value = true;
 }
@@ -211,6 +256,8 @@ function openCreateDialog() {
 function openEditDialog(row: SupplierProductListItem) {
   dialogMode.value = 'edit';
   editingId.value = row.supplierProductId;
+  detailRow.value = row;
+  cacheSupplierProductRow(row);
   Object.assign(form, {
     supplierId: row.supplierId,
     productId: row.productId,
@@ -383,7 +430,7 @@ onMounted(() => {
 
     <div class="filter-panel">
       <div class="filter-grid filter-grid--purchase">
-        <div class="space-y-1"><Label class="text-xs">供应商</Label><AnchoredSelect v-model="query.supplierId" :options="supplierOptions" /></div>
+        <div class="space-y-1"><Label class="text-xs">供应商</Label><RemoteSearchSelect v-model="query.supplierId" :selected-label="querySupplierLabel" :fetch-options="fetchSupplierSearchOptions" placeholder="全部供应商" search-placeholder="输入供应商编码或名称" clearable clear-value="all" clear-label="全部供应商" /></div>
         <div class="space-y-1"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P0001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
@@ -437,8 +484,8 @@ onMounted(() => {
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增供货产品' : '编辑供货产品' }}</DialogTitle><DialogDescription>供货产品用于采购候选和价格建议，请维护供应商、产品、采购价、起订量和交期。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
-            <div class="space-y-1"><Label>供应商 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.supplierId" :options="supplierOptions.filter(item => item.value !== 'all')" placeholder="请选择供应商" :invalid="Boolean(formErrors.supplierId)" /><p v-if="formErrors.supplierId" class="form-error">{{ formErrors.supplierId }}</p></div>
-            <div class="space-y-1"><Label>产品 <span class="text-destructive">*</span></Label><AnchoredSelect :model-value="form.productId" :options="productOptions" placeholder="请选择产品" :invalid="Boolean(formErrors.productId)" @update:model-value="syncProductPrice" /><p v-if="formErrors.productId" class="form-error">{{ formErrors.productId }}</p></div>
+            <div class="space-y-1"><Label>供应商 <span class="text-destructive">*</span></Label><RemoteSearchSelect v-model="form.supplierId" :selected-label="selectedSupplierLabel" :fetch-options="fetchSupplierSearchOptions" placeholder="请选择供应商" search-placeholder="输入供应商编码或名称" :invalid="Boolean(formErrors.supplierId)" /><p v-if="formErrors.supplierId" class="form-error">{{ formErrors.supplierId }}</p></div>
+            <div class="space-y-1"><Label>产品 <span class="text-destructive">*</span></Label><RemoteSearchSelect :model-value="form.productId" :selected-label="selectedProductLabel" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors.productId)" @update:model-value="syncProductPrice" /><p v-if="formErrors.productId" class="form-error">{{ formErrors.productId }}</p></div>
             <div class="space-y-1"><Label>供应商侧编码</Label><Input v-model="form.supplierProductCode" /><p v-if="formErrors.supplierProductCode" class="form-error">{{ formErrors.supplierProductCode }}</p></div>
             <div class="space-y-1"><Label>状态</Label><AnchoredSelect v-model="form.status" :options="statusOptions.filter(item => item.value !== 'all')" /></div>
             <div class="space-y-1"><Label>最近采购价</Label><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="form.latestPurchasePrice" type="number" min="0" step="0.01" class="pl-8" /></div><p v-if="formErrors.latestPurchasePrice" class="form-error">{{ formErrors.latestPurchasePrice }}</p></div>

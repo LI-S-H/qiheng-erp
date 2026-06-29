@@ -68,7 +68,7 @@ interface CategoryParentOption {
   children?: CategoryParentOption[];
 }
 
-const categories = ref<ProductCategoryListItem[]>([]);
+const filteredListResponse = ref<ProductCategoryListItem[]>([]);
 const loading = ref(false);
 const queryPending = ref(false);
 const formSubmitting = ref(false);
@@ -93,14 +93,12 @@ const confirmState = reactive({
   onConfirm: (() => {}) as (() => void | Promise<void>),
 });
 
+const categories = computed(() => buildCategoryTree(filteredListResponse.value));
 const flatCategories = computed(() => flattenCategoryTree(categories.value));
 const enabledCount = computed(() => flatCategories.value.filter(item => item.status === 1).length);
 const childCategoryCount = computed(() => flatCategories.value.filter(item => item.parentId !== ROOT_PARENT_ID).length);
 const productTotal = computed(() => flatCategories.value.reduce((total, item) => total + item.productCount, 0));
-const filteredCategories = computed(() => filterCategoryTree(categories.value, appliedQuery));
-const filteredFlatCategories = computed(() => flattenCategoryTree(filteredCategories.value));
-const isFiltering = computed(() => Boolean(appliedQuery.categoryName?.trim() || !isBlankStatus(appliedQuery.status)));
-const visibleCategories = computed(() => flattenVisibleCategoryTree(filteredCategories.value));
+const visibleCategories = computed(() => flattenVisibleCategoryTree(categories.value));
 const selectedRows = computed(() => flatCategories.value.filter(item => selectedIds.value.has(item.categoryId)));
 const queryBusy = computed(() => queryPending.value || loading.value);
 const allSelected = computed(() =>
@@ -121,15 +119,25 @@ const dialogTitle = computed(() => {
   return '新增分类';
 });
 
-async function fetchCategories() {
+function toCategoryQueryParams(queryParams: ProductCategoryQuery): ProductCategoryQuery | undefined {
+  const categoryName = queryParams.categoryName?.trim() || '';
+  const status = isBlankStatus(queryParams.status) ? undefined : queryParams.status;
+  if (!categoryName && status === undefined) return undefined;
+  return {
+    ...(categoryName ? { categoryName } : {}),
+    ...(status !== undefined ? { status } : {}),
+  };
+}
+
+async function fetchCategories(queryParams: ProductCategoryQuery = appliedQuery) {
   const sequence = ++fetchSequence;
   loading.value = true;
   try {
-    const result = await listProductCategories();
+    const params = toCategoryQueryParams(queryParams);
+    const result = await listProductCategories(params);
     if (sequence !== fetchSequence) return;
-    const tree = buildCategoryTree(result);
-    categories.value = tree;
-    expandedCategoryIds.value = new Set(collectExpandableCategoryIds(tree));
+    filteredListResponse.value = result;
+    expandedCategoryIds.value = new Set(collectExpandableCategoryIds(buildCategoryTree(result)));
     selectedIds.value = new Set();
   } catch {
   } finally {
@@ -137,7 +145,7 @@ async function fetchCategories() {
   }
 }
 
-onMounted(fetchCategories);
+onMounted(() => { void fetchCategories(); });
 
 function buildCategoryTree(items: ProductCategoryListItem[]) {
   const itemMap = new Map<string, ProductCategoryListItem>();
@@ -170,7 +178,7 @@ function flattenVisibleCategoryTree(tree: ProductCategoryListItem[], level = 0):
   const result: VisibleCategoryRow[] = [];
   tree.forEach(item => {
     result.push({ ...item, children: undefined, level });
-    if (item.children?.length && (isFiltering.value || expandedCategoryIds.value.has(item.categoryId))) {
+    if (item.children?.length && expandedCategoryIds.value.has(item.categoryId)) {
       result.push(...flattenVisibleCategoryTree(item.children, level + 1));
     }
   });
@@ -183,20 +191,6 @@ function collectExpandableCategoryIds(tree: ProductCategoryListItem[]): string[]
     if (item.children?.length) result.push(item.categoryId, ...collectExpandableCategoryIds(item.children));
   });
   return result;
-}
-
-function filterCategoryTree(tree: ProductCategoryListItem[], params: ProductCategoryQuery): ProductCategoryListItem[] {
-  const categoryName = params.categoryName?.trim().toLocaleLowerCase();
-  const status = normalizeQueryStatus(params.status);
-  return tree.map(item => {
-    const children = item.children ? filterCategoryTree(item.children, params) : [];
-    const matchesName = !categoryName || item.categoryName.toLocaleLowerCase().includes(categoryName);
-    const matchesStatus = status === null || item.status === status;
-    if ((matchesName && matchesStatus) || children.length > 0) {
-      return { ...item, children: children.length ? children : undefined };
-    }
-    return null;
-  }).filter(Boolean) as ProductCategoryListItem[];
 }
 
 function buildParentOptions(tree: ProductCategoryListItem[], excludedIds: Set<string>): CategoryParentOption[] {
@@ -243,21 +237,21 @@ function getCategoryPath(category: ProductCategoryListItem) {
   return names.join(' / ');
 }
 
-function getCategoryPathIds(categoryId: string) {
+function getCategoryPathIds(categoryId: string, rows = flatCategories.value) {
   const ids: string[] = [];
-  let current = flatCategories.value.find(item => item.categoryId === categoryId);
+  let current = rows.find(item => item.categoryId === categoryId);
   let guard = 0;
   while (current && guard < 50) {
     ids.unshift(current.categoryId);
     if (current.parentId === ROOT_PARENT_ID) break;
-    current = flatCategories.value.find(item => item.categoryId === current?.parentId);
+    current = rows.find(item => item.categoryId === current?.parentId);
     guard += 1;
   }
   return ids;
 }
 
-function getCategoryDescendants(categoryId: string) {
-  const category = findCategory(categoryId);
+function getCategoryDescendants(categoryId: string, tree = categories.value) {
+  const category = findCategory(categoryId, tree);
   return category?.children?.length ? flattenCategoryTree(category.children) : [];
 }
 
@@ -269,12 +263,8 @@ function isBlankStatus(status: ProductCategoryQuery['status'] | null) {
   return status === '' || status === 'all' || status === null || status === undefined;
 }
 
-function normalizeQueryStatus(status: ProductCategoryQuery['status'] | null): ProductCategoryStatus | null {
-  return isBlankStatus(status) ? null : Number(status) as ProductCategoryStatus;
-}
-
 function isCategoryExpanded(row: ProductCategoryListItem) {
-  return isFiltering.value || expandedCategoryIds.value.has(row.categoryId);
+  return expandedCategoryIds.value.has(row.categoryId);
 }
 
 function toggleCategory(row: ProductCategoryListItem) {
@@ -289,6 +279,7 @@ const debouncedSearch = useDebounceFn(() => {
   appliedQuery.status = query.status;
   selectedIds.value = new Set();
   queryPending.value = false;
+  void fetchCategories();
 }, 250);
 
 function handleSearch() {
@@ -385,7 +376,7 @@ async function persistForm(payload: ProductCategoryFormPayload) {
       toast.success(dialogMode.value === 'child' ? '下级分类已新增' : '分类已新增');
     }
     dialogVisible.value = false;
-    fetchCategories();
+    void fetchCategories();
   } catch (error) {
     const message = getApiErrorMessage(error);
     if (message === '同级分类名称已存在') formErrors.categoryName = message;
@@ -484,7 +475,7 @@ function confirmBatchStatus(status: ProductCategoryStatus) {
       try {
         await batchUpdateProductCategoryStatus({ categoryIds: rows.map(item => item.categoryId), status });
         toast.success(`已批量${actionName}`);
-        fetchCategories();
+        void fetchCategories();
       } catch {
       }
     },
@@ -504,7 +495,7 @@ function confirmDelete(row: ProductCategoryListItem) {
     try {
       await deleteProductCategory(row.categoryId);
       toast.success('分类已删除');
-      fetchCategories();
+      void fetchCategories();
     } catch {
     }
   });
@@ -524,7 +515,7 @@ function confirmBatchDelete() {
     try {
       await batchDeleteProductCategories({ categoryIds: rows.map(item => item.categoryId) });
       toast.success('已批量删除');
-      fetchCategories();
+      void fetchCategories();
     } catch {
     }
   });
@@ -675,7 +666,7 @@ function confirmBatchDelete() {
       </ScrollArea>
 
       <div class="flex min-h-[52px] items-center justify-between border-t border-border px-4">
-        <span class="text-xs text-muted-foreground">共 {{ filteredFlatCategories.length }} 条</span>
+        <span class="text-xs text-muted-foreground">命中 {{ filteredListResponse.length }} 条</span>
         <span class="text-xs text-muted-foreground">层级视图</span>
       </div>
     </div>

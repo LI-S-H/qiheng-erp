@@ -1,7 +1,10 @@
 package com.qiheng.erp.product.service;
 
 import com.qiheng.erp.product.domain.entity.ProductCategory;
+import com.qiheng.erp.product.domain.vo.ProductCategoryListVo;
 import com.baomidou.mybatisplus.extension.service.IService;
+
+import java.util.List;
 
 /**
  * <p>
@@ -13,4 +16,5 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface IProductCategoryService extends IService<ProductCategory> {
 
+    List<ProductCategoryListVo> listWithProductCount(String categoryName, Integer status);
 }

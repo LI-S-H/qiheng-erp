@@ -450,7 +450,7 @@ a {
   gap: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--card);
+  background: color-mix(in srgb, var(--muted) 34%, transparent);
   padding: 14px;
 }
 
@@ -481,7 +481,7 @@ a {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--card);
+  background: color-mix(in srgb, var(--muted) 34%, transparent);
 }
 
 .purchase-score-grid > div {
@@ -509,8 +509,11 @@ a {
 
 .purchase-order-line-scroll [data-slot="table-head"],
 .purchase-order-line-scroll [data-slot="table-cell"] {
-  text-align: center;
-  vertical-align: middle;
+  height: 40px;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: center !important;
+  vertical-align: middle !important;
 }
 
 .purchase-order-line-scroll [data-slot="table-cell"] > * {
@@ -518,8 +521,19 @@ a {
   margin-left: auto;
 }
 
+.purchase-order-line-scroll [data-slot="table-cell"] .text-left,
+.purchase-order-line-scroll [data-slot="table-cell"] .text-right {
+  text-align: center !important;
+}
+
 .purchase-order-line-scroll input {
+  height: 32px;
   text-align: center;
+}
+
+.purchase-order-line-scroll [role="combobox"] {
+  min-height: 32px;
+  font-size: 12px;
 }
 
 @media (max-width: 900px) {

@@ -55,7 +55,7 @@ interface VisibleDeptRow extends SystemDeptListItem {
   level: number;
 }
 
-const depts = ref<SystemDeptListItem[]>([]);
+const deptListResponse = ref<SystemDeptListItem[]>([]);
 const loading = ref(false);
 const queryPending = ref(false);
 const formSubmitting = ref(false);
@@ -78,14 +78,12 @@ const confirmState = reactive({
   onConfirm: (() => {}) as (() => void | Promise<void>),
 });
 
+const depts = computed(() => buildDeptTree(deptListResponse.value));
 const flatDepts = computed(() => flattenDeptTree(depts.value));
 const enabledCount = computed(() => flatDepts.value.filter(d => d.status === 1).length);
 const childDeptCount = computed(() => flatDepts.value.filter(d => d.parentId !== ROOT_PARENT_ID).length);
 const employeeTotal = computed(() => flatDepts.value.reduce((t, d) => t + d.userCount, 0));
-const filteredDepts = computed(() => filterDeptTree(depts.value, appliedQuery));
-const filteredFlatDepts = computed(() => flattenDeptTree(filteredDepts.value));
-const isFiltering = computed(() => Boolean(appliedQuery.deptName?.trim() || !isBlankStatus(appliedQuery.status)));
-const visibleDepts = computed(() => flattenVisibleDeptTree(filteredDepts.value));
+const visibleDepts = computed(() => flattenVisibleDeptTree(depts.value));
 const parentOptions = computed(() => [
   {
     deptId: ROOT_PARENT_ID, deptName: ROOT_PARENT_LABEL, parentId: '', status: 1 as DeptStatus,
@@ -101,14 +99,24 @@ const dialogTitle = computed(() => {
   return '新增部门';
 });
 
-async function fetchDepts() {
+function toDeptQueryParams(params: SystemDeptQuery): SystemDeptQuery | undefined {
+  const deptName = params.deptName?.trim() || '';
+  const status = isBlankStatus(params.status) ? undefined : params.status;
+  if (!deptName && status === undefined) return undefined;
+  return {
+    ...(deptName ? { deptName } : {}),
+    ...(status !== undefined ? { status } : {}),
+  };
+}
+
+async function fetchDepts(params: SystemDeptQuery = appliedQuery) {
   const sequence = ++fetchSequence;
   loading.value = true;
   try {
-    const result = await listSystemDepts({});
+    const result = await listSystemDepts(toDeptQueryParams(params));
     if (sequence !== fetchSequence) return;
     const tree = buildDeptTree(result);
-    depts.value = tree;
+    deptListResponse.value = result;
     expandedDeptIds.value = new Set(collectExpandableDeptIds(tree));
   } catch {
   } finally {
@@ -150,7 +158,7 @@ function flattenVisibleDeptTree(tree: SystemDeptListItem[], level = 0): VisibleD
   const result: VisibleDeptRow[] = [];
   tree.forEach(item => {
     result.push({ ...item, children: undefined, level });
-    if (item.children?.length && (isFiltering.value || expandedDeptIds.value.has(item.deptId))) {
+    if (item.children?.length && expandedDeptIds.value.has(item.deptId)) {
       result.push(...flattenVisibleDeptTree(item.children, level + 1));
     }
   });
@@ -161,20 +169,6 @@ function collectExpandableDeptIds(tree: SystemDeptListItem[]): string[] {
   const result: string[] = [];
   tree.forEach(item => { if (item.children?.length) { result.push(item.deptId, ...collectExpandableDeptIds(item.children)); } });
   return result;
-}
-
-function filterDeptTree(tree: SystemDeptListItem[], params: SystemDeptQuery): SystemDeptListItem[] {
-  const deptName = params.deptName?.trim().toLowerCase();
-  const queryStatus = normalizeQueryStatus(params.status);
-  return tree.map(item => {
-    const children: SystemDeptListItem[] = item.children ? filterDeptTree(item.children, params) : [];
-    const matchName = !deptName || item.deptName.toLowerCase().includes(deptName);
-    const matchStatus = queryStatus === null || item.status === queryStatus;
-    if ((matchName && matchStatus) || children.length > 0) {
-      return { ...item, children: children.length > 0 ? children : undefined };
-    }
-    return null;
-  }).filter(Boolean) as SystemDeptListItem[];
 }
 
 function buildParentOptionTree(tree: SystemDeptListItem[], excludeDeptId = ''): DeptParentOption[] {
@@ -224,13 +218,8 @@ function isBlankStatus(status: SystemDeptQuery['status'] | null) {
   return status === '' || status === 'all' || status === null || status === undefined;
 }
 
-function normalizeQueryStatus(status: SystemDeptQuery['status'] | null): DeptStatus | null {
-  if (isBlankStatus(status)) return null;
-  return Number(status) as DeptStatus;
-}
-
 function isDeptExpanded(row: SystemDeptListItem) {
-  return isFiltering.value || expandedDeptIds.value.has(row.deptId);
+  return expandedDeptIds.value.has(row.deptId);
 }
 
 function toggleDept(row: SystemDeptListItem) {
@@ -253,6 +242,7 @@ const debouncedSearch = useDebounceFn(() => {
   appliedQuery.status = query.status;
   selectedIds.value = new Set();
   queryPending.value = false;
+  void fetchDepts();
 }, 250);
 
 function handleSearch() {
@@ -675,7 +665,7 @@ function confirmBatchDelete() {
 
       <!-- Tree summary bar -->
       <div class="flex items-center justify-between min-h-[52px] px-4 border-t border-border">
-        <span class="text-xs text-muted-foreground">共 {{ filteredFlatDepts.length }} 条</span>
+        <span class="text-xs text-muted-foreground">命中 {{ deptListResponse.length }} 条</span>
         <span class="text-xs text-muted-foreground">层级视图</span>
       </div>
     </div>

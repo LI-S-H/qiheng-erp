@@ -7,6 +7,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -21,8 +22,8 @@ import {
   listEnabledProductOptions,
   listEnabledWarehouseOptions,
   listPurchaseOrders,
-  listSupplierOptions,
   listSupplierProducts,
+  searchSupplierOptions,
   updatePurchaseOrder,
   updatePurchaseOrderStatus,
 } from '../../api';
@@ -119,52 +120,144 @@ const confirmState = reactive({
 const queryBusy = computed(() => loading.value || queryPending.value);
 const totalAmount = computed(() => draftItems.value.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0));
 const activeSupplierProducts = computed(() => supplierProducts.value.filter(item => item.status === 1));
-const selectedProductIds = computed(() => Array.from(new Set(draftItems.value.map(item => item.productId).filter(Boolean))));
-const selectableSupplierOptions = computed(() => {
-  return supplierOptions.value
-    .filter(item => item.value !== 'all')
-    .filter(item => selectedProductIds.value.length === 0 || selectedProductIds.value.every(productId => hasActiveSupply(String(item.value), productId)));
-});
+const selectedSupplierLabel = computed(() => supplierOptions.value.find(item => item.value === form.supplierId)?.label || (editingOrder.value?.supplierId === form.supplierId ? `${editingOrder.value.supplierCode} ${editingOrder.value.supplierName}` : ''));
+const selectedWarehouseLabel = computed(() => warehouseOptions.value.find(item => item.value === form.warehouseId)?.label || (editingOrder.value?.warehouseId === form.warehouseId ? editingOrder.value.warehouseName : ''));
+const querySupplierLabel = computed(() => query.supplierId === 'all' ? '全部供应商' : supplierOptions.value.find(item => item.value === query.supplierId)?.label || '');
+const queryWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
 
-async function listAllActiveSupplierProducts() {
-  const pageSize = 200;
-  const records: SupplierProductListItem[] = [];
-  let pageNum = 1;
-  let total = 0;
-  do {
-    const page = await listSupplierProducts({ pageNum, pageSize, status: 1 });
-    records.push(...page.records);
-    total = page.total;
-    pageNum += 1;
-    if (page.records.length === 0) break;
-  } while (records.length < total);
-  return records;
+function selectedProductLabel(productId: string) {
+  return productOptions.value.find(item => item.value === productId)?.label
+    || (() => {
+      const item = editingOrder.value?.items.find(candidate => candidate.productId === productId && candidate.productCode);
+      return item ? `${item.productCode} ${item.productName}` : '';
+    })()
+    || '';
+}
+
+function keywordQuery(keyword: string) {
+  const value = keyword.trim();
+  if (!value) return {};
+  return /^[A-Za-z0-9_-]+$/.test(value) ? { productCode: value } : { productName: value };
+}
+
+function mergeSupplierOptions(options: Option[]) {
+  const cache = new Map(supplierOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  supplierOptions.value = [
+    { value: 'all', label: '全部供应商' },
+    ...Array.from(cache.values()).filter(item => item.value !== 'all'),
+  ];
+}
+
+function mergeWarehouseOptions(options: Option[]) {
+  const cache = new Map(warehouseOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  warehouseOptions.value = [
+    { value: 'all', label: '全部仓库' },
+    ...Array.from(cache.values()).filter(item => item.value !== 'all'),
+  ];
+}
+
+function mergeProductOptions(options: Array<Option & { referencePurchasePrice: number; quantityPrecision: number; unitName: string }>) {
+  const cache = new Map(productOptions.value.map(item => [item.value, item]));
+  options.forEach(item => cache.set(item.value, item));
+  productOptions.value = Array.from(cache.values());
+}
+
+function mergeSupplierProducts(records: SupplierProductListItem[]) {
+  const cache = new Map(supplierProducts.value.map(item => [item.supplierProductId, item]));
+  records.forEach(item => cache.set(item.supplierProductId, item));
+  supplierProducts.value = Array.from(cache.values());
+}
+
+async function fetchSupplierSearchOptions(keyword: string) {
+  const suppliers = await searchSupplierOptions(keyword, 10);
+  const options = suppliers.map(item => ({ value: item.supplierId, label: `${item.supplierCode} ${item.supplierName}`, disabled: item.status === 0 }));
+  mergeSupplierOptions(options);
+  return options;
+}
+
+async function fetchWarehouseSearchOptions(keyword: string) {
+  const warehouses = await listEnabledWarehouseOptions(keyword, 10);
+  const options = warehouses.map(item => ({ value: item.value, label: item.label }));
+  mergeWarehouseOptions(options);
+  return options;
+}
+
+async function fetchPurchaseProductSearchOptions(keyword: string) {
+  const page = await listSupplierProducts({
+    pageNum: 1,
+    pageSize: 10,
+    status: 1,
+    ...(form.supplierId ? { supplierId: form.supplierId } : {}),
+    ...keywordQuery(keyword),
+  });
+  mergeSupplierProducts(page.records);
+  const options = page.records.map(item => ({
+    value: item.productId,
+    label: `${item.productCode} ${item.productName}`,
+    referencePurchasePrice: item.latestPurchasePrice,
+    quantityPrecision: 2,
+    unitName: item.unitName,
+  }));
+  mergeProductOptions(options);
+  return options;
+}
+
+function cacheOrderOptions(row: PurchaseOrderListItem) {
+  mergeSupplierOptions([{ value: row.supplierId, label: `${row.supplierCode} ${row.supplierName}` }]);
+  mergeWarehouseOptions([{ value: row.warehouseId, label: row.warehouseName }]);
+  mergeProductOptions(row.items.map(item => ({
+    value: item.productId,
+    label: `${item.productCode} ${item.productName}`,
+    referencePurchasePrice: item.unitPrice,
+    quantityPrecision: 2,
+    unitName: item.unitName,
+  })));
+  mergeSupplierProducts(row.items
+    .filter(item => item.supplierProductId)
+    .map(item => ({
+      supplierProductId: item.supplierProductId || '',
+      supplierId: row.supplierId,
+      supplierCode: row.supplierCode,
+      supplierName: row.supplierName,
+      productId: item.productId,
+      productCode: item.productCode,
+      productName: item.productName,
+      unitName: item.unitName,
+      supplierProductCode: '',
+      latestPurchasePrice: item.unitPrice,
+      minOrderQty: 1,
+      leadTimeDays: 0,
+      deliveryScore: item.selectedSupplierScore,
+      qualityScore: item.selectedSupplierScore,
+      priceScore: item.selectedSupplierScore,
+      aiScore: item.selectedSupplierScore,
+      lastPurchaseAt: null,
+      status: 1,
+      version: 0,
+      remark: '',
+      createTime: row.createTime,
+      updateTime: row.updateTime,
+    })));
 }
 
 async function loadOptions() {
   try {
-    const [suppliers, warehouses, products, allSupplierProducts] = await Promise.all([
-      listSupplierOptions(),
-      listEnabledWarehouseOptions(),
-      listEnabledProductOptions(),
-      listAllActiveSupplierProducts(),
+    const [suppliers, warehouses, products] = await Promise.all([
+      searchSupplierOptions('', 10),
+      listEnabledWarehouseOptions('', 10),
+      listEnabledProductOptions('', 10),
     ]);
-    supplierOptions.value = [
-      { value: 'all', label: '全部供应商' },
-      ...suppliers.map(item => ({ value: item.supplierId, label: `${item.supplierCode} ${item.supplierName}`, disabled: item.status === 0 })),
-    ];
-    warehouseOptions.value = [
-      { value: 'all', label: '全部仓库' },
-      ...warehouses.map(item => ({ value: item.value, label: item.label })),
-    ];
-    productOptions.value = products.map(item => ({
+    mergeSupplierOptions(suppliers.map(item => ({ value: item.supplierId, label: `${item.supplierCode} ${item.supplierName}`, disabled: item.status === 0 })));
+    mergeWarehouseOptions(warehouses.map(item => ({ value: item.value, label: item.label })));
+    mergeProductOptions(products.map(item => ({
       value: item.value,
       label: item.label,
       referencePurchasePrice: item.product.referencePurchasePrice,
       quantityPrecision: item.product.quantityPrecision,
       unitName: item.product.unitName,
-    }));
-    supplierProducts.value = allSupplierProducts;
+    })));
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '采购选项加载失败');
   }
@@ -246,6 +339,7 @@ function openEditDialog(row: PurchaseOrderListItem) {
   dialogMode.value = 'edit';
   resetForm();
   editingOrder.value = row;
+  cacheOrderOptions(row);
   Object.assign(form, {
     supplierId: row.supplierId,
     warehouseId: row.warehouseId,
@@ -323,20 +417,6 @@ function applySupplierProduct(line: DraftItem, supplierProduct: SupplierProductL
   line.unitPrice = supplierProduct.latestPurchasePrice;
   line.selectedSupplierScore = supplierProduct.aiScore;
   line.unitName = supplierProduct.unitName;
-}
-
-function productOptionsForLine(line: DraftItem) {
-  const otherProductIds = draftItems.value
-    .filter(item => item.rowId !== line.rowId)
-    .map(item => item.productId)
-    .filter(Boolean);
-  const allowedProductIds = new Set(
-    activeSupplierProducts.value
-      .filter(item => !form.supplierId || item.supplierId === form.supplierId)
-      .filter(item => otherProductIds.every(productId => hasActiveSupply(item.supplierId, productId)))
-      .map(item => item.productId),
-  );
-  return productOptions.value.filter(item => allowedProductIds.has(String(item.value)));
 }
 
 function handleSupplierChange(value: string | number) {
@@ -537,8 +617,8 @@ onMounted(() => {
     <div class="filter-panel">
       <div class="filter-grid filter-grid--purchase">
         <div class="space-y-1"><Label class="text-xs">采购单号</Label><Input v-model="query.purchaseNo" placeholder="如 PO202606001" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">供应商</Label><AnchoredSelect v-model="query.supplierId" :options="supplierOptions" /></div>
-        <div class="space-y-1"><Label class="text-xs">入库仓库</Label><AnchoredSelect v-model="query.warehouseId" :options="warehouseOptions" /></div>
+        <div class="space-y-1"><Label class="text-xs">供应商</Label><RemoteSearchSelect v-model="query.supplierId" :selected-label="querySupplierLabel" :fetch-options="fetchSupplierSearchOptions" placeholder="全部供应商" search-placeholder="输入供应商编码或名称" clearable clear-value="all" clear-label="全部供应商" /></div>
+        <div class="space-y-1"><Label class="text-xs">入库仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="queryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
         <div class="space-y-1"><Label class="text-xs">订单状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
         <div class="filter-actions">
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
@@ -595,8 +675,8 @@ onMounted(() => {
               <div><span class="text-muted-foreground">创建来源</span><div class="mt-1 font-medium">{{ dialogMode === 'edit' && editingOrder ? `${editingOrder.createdByName || '系统'} / ${editingOrder.createTime}` : '当前登录用户' }}</div></div>
             </div>
             <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
-              <div class="space-y-1"><Label>供应商 <span class="text-destructive">*</span></Label><AnchoredSelect :model-value="form.supplierId" :options="selectableSupplierOptions" placeholder="请选择供应商" :invalid="Boolean(formErrors.supplierId)" @update:model-value="handleSupplierChange" /><p v-if="formErrors.supplierId" class="form-error">{{ formErrors.supplierId }}</p></div>
-              <div class="space-y-1"><Label>入库仓库 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.warehouseId" :options="warehouseOptions.filter(item => item.value !== 'all')" placeholder="请选择仓库" :invalid="Boolean(formErrors.warehouseId)" /><p v-if="formErrors.warehouseId" class="form-error">{{ formErrors.warehouseId }}</p></div>
+              <div class="space-y-1"><Label>供应商 <span class="text-destructive">*</span></Label><RemoteSearchSelect :model-value="form.supplierId" :selected-label="selectedSupplierLabel" :fetch-options="fetchSupplierSearchOptions" placeholder="请选择供应商" search-placeholder="输入供应商编码或名称" :invalid="Boolean(formErrors.supplierId)" @update:model-value="handleSupplierChange" /><p v-if="formErrors.supplierId" class="form-error">{{ formErrors.supplierId }}</p></div>
+              <div class="space-y-1"><Label>入库仓库 <span class="text-destructive">*</span></Label><RemoteSearchSelect v-model="form.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="请选择仓库" search-placeholder="输入仓库编码或名称" :invalid="Boolean(formErrors.warehouseId)" /><p v-if="formErrors.warehouseId" class="form-error">{{ formErrors.warehouseId }}</p></div>
               <div class="space-y-1"><Label>预计到货</Label><Input v-model="form.expectedArrivalDate" type="date" /><p v-if="formErrors.expectedArrivalDate" class="form-error">{{ formErrors.expectedArrivalDate }}</p><p v-else class="text-xs text-muted-foreground">示例：2026-06-30</p></div>
             </div>
             <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" rows="2" /><p v-if="formErrors.remark" class="form-error">{{ formErrors.remark }}</p></div>
@@ -604,12 +684,12 @@ onMounted(() => {
             <div class="rounded-md border border-border">
               <div class="flex min-h-11 items-center justify-between border-b border-border px-3"><strong class="text-sm">采购明细</strong><Button size="sm" variant="outline" type="button" @click="addLine">添加产品</Button></div>
               <ScrollArea class="w-full purchase-order-line-scroll">
-                <Table class="min-w-[1080px] table-fixed">
-                  <colgroup><col class="w-[280px]" /><col class="w-[150px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[135px]" /><col class="w-[170px]" /><col class="w-[90px]" /></colgroup>
+                <Table class="min-w-[900px] table-fixed">
+                  <colgroup><col class="w-[235px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[90px]" /><col class="w-[115px]" /><col class="w-[145px]" /><col class="w-[75px]" /></colgroup>
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">采购价</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead class="text-right">小计</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-for="(line, index) in draftItems" :key="line.rowId">
-                      <TableCell class="align-top"><AnchoredSelect :model-value="line.productId" :options="productOptionsForLine(line)" placeholder="请选择产品" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="form-error">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
+                      <TableCell class="align-top"><RemoteSearchSelect :model-value="line.productId" :selected-label="selectedProductLabel(line.productId)" :fetch-options="fetchPurchaseProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="form-error">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="flex items-center justify-center gap-2"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line.productId)" class="text-center" /><span class="w-10 shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="pl-8 text-center" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="form-error">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
                       <TableCell class="text-center tabular-nums">{{ Number(line.selectedSupplierScore || 0).toFixed(1) }}</TableCell>

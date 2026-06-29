@@ -14,6 +14,14 @@ async function selectFilter(page, index, label) {
   await page.locator('[data-anchored-select-content][data-state="open"]').getByText(label, { exact: true }).click();
 }
 
+async function selectRemoteFilter(page, index, keyword, label) {
+  const trigger = page.locator('.filter-panel').getByRole('combobox').nth(index);
+  await trigger.click();
+  const content = page.locator('[data-remote-search-select-content]').last();
+  await content.getByPlaceholder('输入仓库编码或名称').fill(keyword);
+  await content.getByText(label, { exact: true }).click();
+}
+
 runSmoke({
   route: '/warehouse/stocks',
   screenshot: 'smoke-warehouse-stocks.png',
@@ -38,7 +46,7 @@ runSmoke({
     await tableRow(page, 'P0001').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page, 'smoke-warehouse-stocks-reset-loading.png');
 
-    await selectFilter(page, 0, 'WH002 华南中心仓');
+    await selectRemoteFilter(page, 0, 'WH002', 'WH002 华南中心仓');
     await clickQueryAndAssertLoading(page);
     const warehouseRows = page.locator('tbody tr');
     if (await warehouseRows.count() !== 3) throw new Error('仓库筛选未返回预期的 3 条库存记录');

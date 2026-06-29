@@ -9,6 +9,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -163,6 +164,8 @@ const summaryCards = computed(() => [
   { label: pageText.value.cancelledLabel, value: summary.cancelledCount },
   { label: pageText.value.sourceGeneratedLabel, value: summary.sourceGeneratedCount },
 ]);
+const selectedQueryWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
+const selectedFormWarehouseLabel = computed(() => formWarehouseOptions.value.find(item => item.value === form.warehouseId)?.label || (editingDetail.value?.warehouseId === form.warehouseId ? editingDetail.value.warehouseName : ''));
 
 const allBillTypeOptions: Array<{ value: StockBillType; label: string }> = [
   { value: 'PURCHASE_IN', label: '采购入库' },
@@ -329,22 +332,78 @@ function newDraftItem(): DraftFormItem {
   return { key: `${Date.now()}-${Math.random()}`, productId: '', quantity: 1, qualifiedQty: qualityFieldsVisible.value ? 1 : 0, defectiveQty: 0, remark: '' };
 }
 
+function productKeywordQuery(keyword: string) {
+  const value = keyword.trim();
+  if (!value) return {};
+  return /^[A-Za-z0-9_-]+$/.test(value) ? { productCode: value } : { productName: value };
+}
+
+function warehouseKeywordQuery(keyword: string) {
+  const value = keyword.trim();
+  if (!value) return {};
+  return /^[A-Za-z0-9_-]+$/.test(value) ? { warehouseCode: value } : { warehouseName: value };
+}
+
+function mergeWarehouses(records: WarehouseListItem[]) {
+  const cache = new Map(warehouses.value.map(item => [item.warehouseId, item]));
+  records.forEach(item => cache.set(item.warehouseId, item));
+  warehouses.value = Array.from(cache.values());
+  warehouseOptions.value = [
+    { value: 'all', label: '全部仓库' },
+    ...warehouses.value.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` })),
+  ];
+  formWarehouseOptions.value = warehouses.value
+    .filter(item => item.status === 1)
+    .map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
+}
+
+function mergeProducts(records: ProductListItem[]) {
+  const cache = new Map(products.value.map(item => [item.productId, item]));
+  records.forEach(item => cache.set(item.productId, item));
+  products.value = Array.from(cache.values());
+  productOptions.value = products.value.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}（${item.unitName}）` }));
+}
+
+async function fetchWarehouseSearchOptions(keyword: string) {
+  const page = await listWarehouses({
+    pageNum: 1,
+    pageSize: 10,
+    ...warehouseKeywordQuery(keyword),
+  });
+  mergeWarehouses(page.records);
+  return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
+}
+
+async function fetchFormWarehouseSearchOptions(keyword: string) {
+  const page = await listWarehouses({
+    status: 1,
+    pageNum: 1,
+    pageSize: 10,
+    ...warehouseKeywordQuery(keyword),
+  });
+  mergeWarehouses(page.records);
+  return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
+}
+
+async function fetchProductSearchOptions(keyword: string) {
+  const page = await listProducts({
+    status: 1,
+    pageNum: 1,
+    pageSize: 10,
+    ...productKeywordQuery(keyword),
+  });
+  mergeProducts(page.records);
+  return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}（${item.unitName}）` }));
+}
+
 async function loadFormOptions() {
   try {
     const [warehousePage, productPage] = await Promise.all([
-      listWarehouses({ pageNum: 1, pageSize: 100 }),
-      listProducts({ status: 1, pageNum: 1, pageSize: 100 }),
+      listWarehouses({ pageNum: 1, pageSize: 10 }),
+      listProducts({ status: 1, pageNum: 1, pageSize: 10 }),
     ]);
-    warehouses.value = warehousePage.records;
-    products.value = productPage.records;
-    warehouseOptions.value = [
-      { value: 'all', label: '全部仓库' },
-      ...warehousePage.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` })),
-    ];
-    formWarehouseOptions.value = warehousePage.records
-      .filter(item => item.status === 1)
-      .map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
-    productOptions.value = productPage.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}（${item.unitName}）` }));
+    mergeWarehouses(warehousePage.records);
+    mergeProducts(productPage.records);
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || `${pageText.value.title}表单选项加载失败`);
   }
@@ -454,6 +513,13 @@ async function openEditDialog(row: StockBillListItem) {
     const current = await getStockBillDetail(row.stockBillId);
     if (current.status !== 'DRAFT' && current.status !== 'PENDING_CONFIRM') throw new Error('只有草稿或待确认状态可以编辑');
     editingDetail.value = current;
+    mergeProducts(current.items.map(item => ({
+      productId: item.productId,
+      productCode: item.productCode,
+      productName: item.productName,
+      unitName: item.unitName,
+      quantityPrecision: item.quantityPrecision,
+    } as ProductListItem)));
     form.billType = current.billType;
     form.sourceNo = current.sourceNo;
     form.warehouseId = current.warehouseId;
@@ -804,7 +870,7 @@ onMounted(async () => {
         </div>
         <div class="space-y-1">
           <Label>仓库</Label>
-          <AnchoredSelect v-model="query.warehouseId" :options="warehouseOptions" />
+          <RemoteSearchSelect v-model="query.warehouseId" :selected-label="selectedQueryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" />
         </div>
         <div class="space-y-1">
           <Label>类型</Label>
@@ -1005,7 +1071,7 @@ onMounted(async () => {
               </div>
               <div class="space-y-1">
                 <Label>仓库 <span class="text-destructive">*</span></Label>
-                <AnchoredSelect v-if="warehouseEditable" v-model="form.warehouseId" :options="formWarehouseOptions" />
+                <RemoteSearchSelect v-if="warehouseEditable" v-model="form.warehouseId" :selected-label="selectedFormWarehouseLabel" :fetch-options="fetchFormWarehouseSearchOptions" placeholder="请选择仓库" search-placeholder="输入仓库编码或名称" :invalid="Boolean(formErrors.warehouseId)" />
                 <Input v-else :model-value="editingDetail?.warehouseName" readonly class="bg-muted/55 text-muted-foreground" />
                 <p v-if="formErrors.warehouseId" class="text-xs text-destructive">{{ formErrors.warehouseId }}</p>
               </div>
@@ -1020,7 +1086,7 @@ onMounted(async () => {
               </div>
               <div class="space-y-1">
                 <Label>{{ editingDetail ? sourcePartyLabel(editingDetail.billType) : (isAdjustmentForm ? '调整仓库' : '来源对象') }}</Label>
-                <Input :model-value="editingDetail ? sourcePartyDisplay(editingDetail) : (isAdjustmentForm ? sourcePartyDisplay({ billType: formBillType, sourcePartyName: '', warehouseName: formWarehouseOptions.find(option => option.value === form.warehouseId)?.label || '' }) : '手工补录')" readonly class="bg-muted/55 text-muted-foreground" />
+                <Input :model-value="editingDetail ? sourcePartyDisplay(editingDetail) : (isAdjustmentForm ? sourcePartyDisplay({ billType: formBillType, sourcePartyName: '', warehouseName: selectedFormWarehouseLabel }) : '手工补录')" readonly class="bg-muted/55 text-muted-foreground" />
               </div>
               <div class="space-y-1"><Label>负责人</Label><Input :model-value="editingDetail?.responsibleByName || authStore.displayName" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">由后端按当前登录用户写入，不允许代填</p></div>
             </div>
@@ -1039,16 +1105,16 @@ onMounted(async () => {
               </div>
               <p v-if="formErrors.items" class="mb-2 text-xs text-destructive">{{ formErrors.items }}</p>
               <div class="stock-bill-form-table-scroll rounded-md border">
-                <Table class="min-w-[1180px] table-fixed">
+                <Table class="min-w-[980px] table-fixed">
                   <colgroup>
-                    <col class="w-[270px]" />
-                    <col class="w-[105px]" />
-                    <col class="w-[105px]" />
-                    <col class="w-[135px]" />
-                    <col class="w-[125px]" />
-                    <col class="w-[115px]" />
-                    <col class="w-[115px]" />
-                    <col class="w-[210px]" />
+                    <col class="w-[220px]" />
+                    <col class="w-[90px]" />
+                    <col class="w-[90px]" />
+                    <col class="w-[120px]" />
+                    <col class="w-[110px]" />
+                    <col class="w-[100px]" />
+                    <col class="w-[100px]" />
+                    <col class="w-[150px]" />
                   </colgroup>
                   <TableHeader>
                     <TableRow>
@@ -1065,7 +1131,7 @@ onMounted(async () => {
                   <TableBody>
                     <TableRow v-for="(item, index) in form.items" :key="item.key">
                       <TableCell class="align-top">
-                        <AnchoredSelect v-if="structureEditable" v-model="item.productId" :options="productOptions" @update:model-value="handleProductChange(item, index)" />
+                        <RemoteSearchSelect v-if="structureEditable" v-model="item.productId" :selected-label="productLabel(item)" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" @update:model-value="handleProductChange(item, index)" />
                         <div v-else class="stock-bill-product-snapshot" :title="productLabel(item)">
                           <code>{{ productDisplay(item).code }}</code>
                           <span>{{ productDisplay(item).name }}</span>
@@ -1274,8 +1340,11 @@ onMounted(async () => {
 .stock-bill-dialog-table-scroll :deep([data-slot="table-cell"]),
 .stock-bill-form-table-scroll :deep([data-slot="table-head"]),
 .stock-bill-form-table-scroll :deep([data-slot="table-cell"]) {
-  text-align: center;
-  vertical-align: middle;
+  height: 40px;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: center !important;
+  vertical-align: middle !important;
 }
 
 .stock-bill-detail-row-scroll :deep([data-slot="table-head"]),
@@ -1297,7 +1366,18 @@ onMounted(async () => {
 }
 
 .stock-bill-form-table-scroll :deep(input) {
+  height: 32px;
   text-align: center;
+}
+
+.stock-bill-form-table-scroll :deep([role="combobox"]) {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.stock-bill-form-table-scroll :deep([data-slot="table-cell"] .text-left),
+.stock-bill-form-table-scroll :deep([data-slot="table-cell"] .text-right) {
+  text-align: center !important;
 }
 
 .stock-bill-product-snapshot {

@@ -994,7 +994,7 @@ onMounted(async () => {
                           <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.stockBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
                           <div v-else-if="detailLoadErrors[row.stockBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.stockBillId">{{ detailLoadErrors[row.stockBillId] }}</div>
                           <div v-else-if="expandedItems(row).length === 0" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-empty-id="row.stockBillId">暂无商品明细</div>
-                          <div v-else class="stock-bill-detail-card overflow-hidden rounded-md border bg-background">
+                          <div v-else class="stock-bill-detail-card detail-table-floating overflow-hidden rounded-md bg-background">
                             <div class="stock-bill-detail-row-scroll w-full">
                               <Table class="min-w-[880px] table-fixed">
                                 <colgroup>
@@ -1195,7 +1195,7 @@ onMounted(async () => {
             </div>
             <div>
               <div class="mb-2 flex items-center justify-between"><h3 class="text-sm font-semibold">产品明细</h3><span class="text-xs text-muted-foreground">共 {{ detail.items.length }} 条</span></div>
-              <div class="overflow-hidden rounded-lg border">
+              <div class="detail-table-floating">
                 <div class="stock-bill-dialog-table-scroll w-full">
                   <Table class="min-w-[1210px] table-fixed">
                     <colgroup><col class="w-[190px]" /><col class="w-[65px]" /><col class="w-[95px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[155px]" /><col class="w-[95px]" /><col class="w-[105px]" /><col class="w-[90px]" /><col class="w-[90px]" /><col class="w-[100px]" /></colgroup>

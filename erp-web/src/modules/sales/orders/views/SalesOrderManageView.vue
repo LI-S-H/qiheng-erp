@@ -630,7 +630,7 @@ onMounted(() => {
               <div class="purchase-detail-field"><span>审核信息</span><strong>{{ detailRow.approvedByName || '未审核' }}</strong><small>{{ detailRow.approvedAt || '-' }}</small></div>
               <div class="purchase-detail-field purchase-detail-field--wide"><span>备注</span><strong>{{ detailRow.remark || '未维护' }}</strong></div>
             </div>
-            <ScrollArea class="w-full purchase-order-line-scroll">
+            <ScrollArea class="w-full purchase-order-line-scroll detail-table-floating">
               <Table class="min-w-[940px] table-fixed">
                 <colgroup><col class="w-[240px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[160px]" /></colgroup>
                 <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">销售数量</TableHead><TableHead class="text-center">已锁定</TableHead><TableHead class="text-center">已出库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>

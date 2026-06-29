@@ -469,6 +469,53 @@ a {
   transform: translateY(-1px);
 }
 
+.detail-field,
+.stock-bill-detail-card {
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 4%),
+    0 10px 24px rgb(15 23 42 / 5%);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.detail-field:hover,
+.stock-bill-detail-card:hover,
+.purchase-score-grid:hover {
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
+  box-shadow:
+    0 2px 6px rgb(15 23 42 / 6%),
+    0 16px 32px rgb(15 23 42 / 8%);
+  transform: translateY(-1px);
+}
+
+.detail-table-floating {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 4%),
+    0 12px 28px rgb(15 23 42 / 6%);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.detail-table-floating:hover {
+  border-color: color-mix(in srgb, var(--primary) 20%, var(--border));
+  box-shadow:
+    0 2px 6px rgb(15 23 42 / 6%),
+    0 18px 36px rgb(15 23 42 / 9%);
+  transform: translateY(-1px);
+}
+
+.detail-table-floating [data-slot="table-container"] {
+  background: var(--card);
+}
+
 .purchase-detail-field--wide {
   grid-column: 1 / -1;
 }
@@ -500,6 +547,10 @@ a {
   box-shadow:
     0 1px 2px rgb(15 23 42 / 4%),
     0 10px 24px rgb(15 23 42 / 5%);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .purchase-score-grid > div {

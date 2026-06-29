@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 @Data
 @Schema(description = "产品分类列表响应")
-public class ProductCategoryListVo {
+public class ProductCategoryVo {
 
     @Schema(description = "分类ID")
     private String categoryId;

@@ -24,7 +24,7 @@ const stockSeed: WarehouseStockListItem[] = [
   { stockId: '1940000000000000012', warehouseId: '1930000000000000005', warehouseCode: 'WH005', warehouseName: '武汉中转仓', productId: '1920000000000000012', productCode: 'P0012', productName: '无痕粘钩', unitName: '卡', stockQty: 11, lockedQty: 1, availableQty: 10, safetyStockQty: 15, version: 0, updateTime: '2026-06-13 15:18:00' },
   { stockId: '1940000000000000013', warehouseId: '1930000000000000006', warehouseCode: 'WH006', warehouseName: '西安中转仓', productId: '1920000000000000006', productCode: 'P0006', productName: '彩色便利贴', unitName: '本', stockQty: 63, lockedQty: 0, availableQty: 63, safetyStockQty: 20, version: 0, updateTime: '2026-06-13 14:35:00' },
   { stockId: '1940000000000000014', warehouseId: '1930000000000000007', warehouseCode: 'WH007', warehouseName: '杭州电商仓', productId: '1920000000000000014', productCode: 'P0014', productName: '无线办公鼠标', unitName: '个', stockQty: 8, lockedQty: 8, availableQty: 0, safetyStockQty: 8, version: 0, updateTime: '2026-06-13 13:10:00' },
-  { stockId: '1940000000000000015', warehouseId: '1930000000000000008', warehouseCode: 'WH008', warehouseName: '南京备货仓', productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', unitName: '个', stockQty: 17, lockedQty: 4, availableQty: 13, safetyStockQty: 4, version: 0, updateTime: '2026-06-13 11:55:00' },
+  { stockId: '1940000000000000015', warehouseId: '1930000000000000008', warehouseCode: 'WH008', warehouseName: '南京备货仓', productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', unitName: '个', stockQty: 4, lockedQty: 4, availableQty: 0, safetyStockQty: 4, version: 0, updateTime: '2026-06-13 11:55:00' },
 ];
 
 let mockStocks = stockSeed.map(item => ({ ...item }));

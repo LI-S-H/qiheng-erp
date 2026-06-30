@@ -103,7 +103,7 @@ runSmoke({
 
     await page.getByRole('button', { name: '查看详情销售商品排行' }).click();
     const productDialog = page.getByRole('dialog', { name: '销售商品排行详情' });
-    await productDialog.getByText('快干印台').waitFor();
+    await productDialog.getByText('热敏标签纸').waitFor();
     await page.keyboard.press('Escape');
     await productDialog.waitFor({ state: 'hidden' });
 
@@ -118,14 +118,14 @@ runSmoke({
     }
     await stockExceptionTodo.getByRole('button', { name: '完成处理' }).click();
     const completeConfirm = page.getByRole('alertdialog', { name: '确认完成异常处理' });
-    await completeConfirm.getByText('SO20260630018', { exact: true }).waitFor();
+    await completeConfirm.getByText('OB202606100015', { exact: true }).waitFor();
     await completeConfirm.getByText('STOCK_DEDUCT_TX_FAILED').waitFor();
     await completeConfirm.getByRole('button', { name: '取消' }).click();
     await completeConfirm.waitFor({ state: 'hidden' });
 
     const salesApproveTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '销售单待审核' });
     await salesApproveTodo.getByRole('button', { name: '查看详情' }).click();
-    await salesApproveTodo.getByText('SO20260630033').waitFor();
+    await salesApproveTodo.getByText('SO202606004').waitFor();
     await salesApproveTodo.getByText('授信占用偏高').waitFor();
 
     const priceReviewTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '采购价偏离参考价' });
@@ -140,7 +140,7 @@ runSmoke({
 
     const creditReviewTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '客户信用待复核' });
     await creditReviewTodo.getByRole('button', { name: '查看详情' }).click();
-    await creditReviewTodo.getByText('华北连锁零售（C003）').waitFor();
+    await creditReviewTodo.getByText('杭州蓝湖办公采购（C002）').waitFor();
     if ((await creditReviewTodo.getByText('授信额度').count()) < 2) {
       throw new Error('客户信用复核应展示授信额度证据指标');
     }

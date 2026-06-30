@@ -68,9 +68,9 @@ const supplierProductSeed: SupplierProductSeed[] = [
   ['S002', 'P0002', 'CD-CF50', 40.5, 8, 5, 89.7, 93.4, 84.2, 88.9, '2026-06-10 11:20:00', 1, true],
   ['S003', 'P0003', 'GC-NUT30', 65.8, 6, 4, 92.4, 95.2, 87.6, 91.8, '2026-06-11 14:10:00', 1, true],
   ['S003', 'P0004', 'GC-CK06', 55.6, 5, 4, 92.4, 95.2, 87.6, 91.4, '2026-06-09 09:40:00', 1, true],
-  ['S004', 'P0005', 'WY-PEN12', 11.6, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
+  ['S004', 'P0005', 'WY-PEN12', 13.8, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
   ['S005', 'P0007', 'SZ-A4-70G', 89.4, 12, 3, 95.8, 97.2, 91.6, 94.8, '2026-06-12 13:50:00', 1, true],
-  ['S006', 'P0013', 'TL-HUB8', 121.5, 2, 8, 78.2, 82.4, 84.6, 81.3, null, 0, false],
+  ['S006', 'P0013', 'TL-HUB8', 148.8, 2, 8, 78.2, 82.4, 84.6, 81.3, null, 0, false],
 ];
 
 let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean }> = supplierProductSeed.map((item, index) => {
@@ -106,7 +106,11 @@ let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean 
 let mockOrders: PurchaseOrderListItem[] = [
   buildOrderSeed('PO202606001', 'S001', 'WH001', 'APPROVED', '2026-06-24', [['HD-SD330', 24, 35.2]], '采购主管', true),
   buildOrderSeed('PO202606002', 'S005', 'WH008', 'PARTIAL_INBOUND', '2026-06-22', [['SZ-A4-70G', 18, 89.4]], '采购主管', true),
-  buildOrderSeed('PO202606003', 'S004', 'WH002', 'DRAFT', '2026-06-28', [['WY-PEN12', 30, 11.6]], '系统管理员', false),
+  buildOrderSeed('PO202606003', 'S004', 'WH005', 'DRAFT', '2026-06-28', [['WY-PEN12', 30, 13.8]], '系统管理员', false),
+  buildOrderSeed('PO202606004', 'S003', 'WH003', 'SUBMITTED', '2026-06-30', [['GC-NUT30', 16, 65.8]], '采购专员', true),
+  buildOrderSeed('PO202606005', 'S001', 'WH001', 'SUBMITTED', '2026-06-30', [['HD-SD330', 12, 35.2], ['CD-CF50', 10, 40.5]], '采购专员', true),
+  buildOrderSeed('PO202606006', 'S004', 'WH005', 'INBOUND_DONE', '2026-06-20', [['WY-PEN12', 20, 13.8]], '采购主管', true),
+  buildOrderSeed('PO202606007', 'S002', 'WH001', 'CANCELLED', '2026-06-26', [['CD-CF50', 8, 40.5]], '系统管理员', true),
 ];
 
 let nextSupplierSequence = supplierSeed.length + 1;
@@ -148,6 +152,8 @@ function buildOrderSeed(
   const warehouses: Record<string, { warehouseId: string; warehouseName: string }> = {
     WH001: { warehouseId: '1930000000000000001', warehouseName: '华东中心仓' },
     WH002: { warehouseId: '1930000000000000002', warehouseName: '华南中心仓' },
+    WH003: { warehouseId: '1930000000000000003', warehouseName: '华北中心仓' },
+    WH005: { warehouseId: '1930000000000000005', warehouseName: '武汉中转仓' },
     WH008: { warehouseId: '1930000000000000008', warehouseName: '南京备货仓' },
   };
   const warehouse = warehouses[warehouseCode] || warehouses.WH001;
@@ -165,7 +171,7 @@ function buildOrderSeed(
       productName: product.productName,
       unitName: product.unitName,
       quantity: line[1],
-      inboundQty: status === 'PARTIAL_INBOUND' ? Math.floor(line[1] / 2) : 0,
+      inboundQty: status === 'PARTIAL_INBOUND' ? Math.floor(line[1] / 2) : status === 'INBOUND_DONE' ? line[1] : 0,
       unitPrice: line[2],
       totalAmount: line[1] * line[2],
       selectedSupplierScore: product.aiScore,
@@ -187,9 +193,9 @@ function buildOrderSeed(
     createdById: '1900000000000000001',
     createdByName,
     submittedAt: submitted ? timestamp : null,
-    approvedById: status === 'APPROVED' || status === 'PARTIAL_INBOUND' ? '1900000000000000001' : null,
-    approvedByName: status === 'APPROVED' || status === 'PARTIAL_INBOUND' ? '采购主管' : '',
-    approvedAt: status === 'APPROVED' || status === 'PARTIAL_INBOUND' ? '2026-06-13 09:20:00' : null,
+    approvedById: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '1900000000000000001' : null,
+    approvedByName: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '采购主管' : '',
+    approvedAt: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '2026-06-13 09:20:00' : null,
     createTime: timestamp,
     updateTime: timestamp,
     version: 0,
@@ -749,6 +755,8 @@ function mockWarehouseSnapshot(warehouseId: string): Pick<WarehouseListItem, 'wa
   const warehouses: Record<string, Pick<WarehouseListItem, 'warehouseId' | 'warehouseName'>> = {
     '1930000000000000001': { warehouseId: '1930000000000000001', warehouseName: '华东中心仓' },
     '1930000000000000002': { warehouseId: '1930000000000000002', warehouseName: '华南中心仓' },
+    '1930000000000000003': { warehouseId: '1930000000000000003', warehouseName: '华北中心仓' },
+    '1930000000000000005': { warehouseId: '1930000000000000005', warehouseName: '武汉中转仓' },
     '1930000000000000008': { warehouseId: '1930000000000000008', warehouseName: '南京备货仓' },
   };
   return warehouses[warehouseId] || { warehouseId, warehouseName: '目标仓库' };

@@ -51,6 +51,10 @@ let mockOrders: SalesOrderListItem[] = [
   buildOrderSeed('SO202606001', 'C001', 'WH001', 'APPROVED', '2026-06-27', [['P0001', 12, 49.9], ['P0003', 8, 99]], '销售主管', true),
   buildOrderSeed('SO202606002', 'C003', 'WH002', 'PARTIAL_OUTBOUND', '2026-06-24', [['P0005', 20, 19.9]], '销售主管', true),
   buildOrderSeed('SO202606003', 'C004', 'WH008', 'DRAFT', '2026-06-30', [['P0007', 6, 119]], '系统管理员', false),
+  buildOrderSeed('SO202606004', 'C002', 'WH001', 'SUBMITTED', '2026-06-30', [['P0002', 10, 69]], '销售专员', true),
+  buildOrderSeed('SO202606005', 'C003', 'WH002', 'SUBMITTED', '2026-06-30', [['P0007', 8, 119]], '销售专员', true),
+  buildOrderSeed('SO202606006', 'C001', 'WH001', 'OUTBOUND_DONE', '2026-06-20', [['P0001', 6, 49.9]], '销售主管', true),
+  buildOrderSeed('SO202606007', 'C004', 'WH008', 'CANCELLED', '2026-06-26', [['P0003', 4, 99]], '系统管理员', true),
 ];
 
 let nextCustomerSequence = customerSeed.length + 1;

@@ -14,7 +14,7 @@
 
 ## 当前表清单
 
-MVP 阶段共设计 25 张表。
+MVP 阶段共设计 26 张表。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
@@ -43,30 +43,30 @@ MVP 阶段共设计 25 张表。
 | AI | `ai_document` | 知识库文档 |
 | AI | `ai_document_chunk` | 文档切片和向量 key |
 | AI | `ai_interaction_log` | AI 问答、Tool 调用和权限审计 |
+| 系统 | `system_exception` | AI/MCP、消息队列、第三方回调、定时任务和补偿任务异常记录 |
 
-## 工作台待办任务表扩展建议
+## 系统异常记录表扩展建议
 
-工作台待办不建议全部做成“每次查询当前状态后临时判断是否完成”。采购单待审核、销售单待审核、待确认入库、待确认出库、库存低于安全线这类状态型待办可以实时聚合，业务状态完成后自动消失；但库存扣减失败、库存补偿失败、第三方同步失败、AI 高风险建议待确认等异常型待办必须可追溯，建议后续新增 `dashboard_todo_task` 表持久化。
+工作台待办不建议全部做成“每次查询当前状态后临时判断是否完成”。采购单待审核、销售单待审核、待确认入库、待确认出库、库存低于安全线这类状态型待办可以实时聚合，业务状态完成后自动消失；但 AI/MCP 工具调用失败、消息队列死信、第三方回调失败、定时任务失败、数据补偿失败等系统级问题必须可追溯，建议后续新增 `system_exception` 表持久化。工作台只把未解决的系统异常聚合成一条“系统异常”待办，并在详情里展示异常记录摘要，不在工作台直接完成。
 
 建议字段：
 
 | 字段 | 说明 |
 |---|---|
-| `id` | 待办任务主键，对应接口 `todoId` |
-| `business_type` / `business_label` | 事件源编码和展示标签，例如 `EXCEPTION`、`AI` |
-| `title` / `description` | 工作台展示标题和业务影响说明 |
-| `priority` | 优先级：`HIGH`、`MEDIUM`、`LOW` |
-| `sort_weight` | 排序权重，数值越小越靠前，由异常严重程度、影响范围、是否人工处理和发生时间计算 |
-| `source_type` / `source_no` | 来源业务类型和来源单号，例如销售出库单、采购单、AI 建议编号 |
+| `id` | 系统异常记录主键，对应详情中的异常记录 ID |
+| `exception_no` | 稳定异常编号，例如 `AI-MCP-20260701-001`、`DLQ-ORDER-STOCK-00023` |
+| `exception_type` | 异常类型：`MCP_TOOL_FAILED`、`MQ_DEAD_LETTER`、`EXT_CALLBACK_FAILED`、`JOB_FAILED`、`COMPENSATION_FAILED` |
+| `source_module` | 来源模块，例如 `AI`、`MQ`、`LOGISTICS`、`SCHEDULER` |
+| `source_no` | 来源业务单号、消息 ID、任务编码或第三方回调幂等键 |
+| `severity` | 严重级别：`HIGH`、`MEDIUM`、`LOW` |
 | `error_code` / `error_message` | 异常码和可展示错误信息 |
-| `resolve_hint` | 处理建议 |
-| `required_permission` | 处理所需权限码，例如 `dashboard:todo:handle` 或具体业务权限 |
-| `assignee_user_id` / `assignee_role_code` / `assignee_dept_id` | 可处理人范围；异常任务只返回给命中的用户、角色或部门 |
-| `status` | `PENDING`、`DONE`、`IGNORED` |
-| `occurred_at` | 异常或人工任务发生时间 |
-| `completed_by` / `completed_at` / `complete_remark` | 人工完成记录 |
+| `detail_summary` | 业务可读的问题摘要，工作台详情直接展示 |
+| `resolve_hint` | 处理建议，例如重试、检查第三方配置、消费死信队列或重跑补偿任务 |
+| `status` | `PENDING`、`PROCESSING`、`RESOLVED`、`IGNORED` |
+| `occurred_at` / `last_retry_at` | 发生时间和最近重试时间 |
+| `handled_by` / `handled_at` / `handle_remark` | 异常中心或后台任务更新状态时写入的处理记录 |
 
-这样处理的好处是异常事件不会因为库存状态后来被修复、接口重试成功或聚合口径变化而丢失；业务人员可以在工作台查看错误信息，确认补偿或修复完成后再手动完成，后端也能保留审计痕迹。异常任务必须按处理权限和指派范围过滤，不能像普通业务聚合待办一样发给所有员工；普通业务聚合待办仍按采购、销售、仓储等模块权限实时统计返回。
+这样处理的好处是系统异常不会因为接口重试成功、消息重新消费或补偿任务完成而丢失审计痕迹；业务人员在工作台只看到一条“系统异常”摘要，有权限的处理人员再通过异常中心或后台任务更新记录状态。普通业务聚合待办仍按采购、销售、仓储等模块权限实时统计返回，系统异常则按处理权限、指派范围或运维角色过滤，不能广播给所有普通员工。
 
 ## 面试表达视角
 

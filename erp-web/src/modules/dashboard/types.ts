@@ -24,7 +24,7 @@ export interface DashboardTodoItem {
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
   sortWeight: number;
   sourceMode: 'AGGREGATED' | 'PERSISTED';
-  completionMode: 'AUTO' | 'MANUAL';
+  completionMode: 'AUTO' | 'MANUAL' | 'TRACKED';
   status: 'PENDING' | 'DONE' | 'IGNORED';
   errorCode: string | null;
   errorMessage: string | null;

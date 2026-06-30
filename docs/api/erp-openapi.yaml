@@ -50,14 +50,15 @@ paths:
       description: |
         返回当前登录用户可见范围内的经营概览数据，用于工作台首屏展示销售、采购、库存、待办和履约风险。
         后端应按当前用户权限裁剪模块数据：没有采购、销售、仓储等查询权限时，对应指标、待办和列表返回空数组或 0 值，不泄露无权业务数据。
-        金额指标来自可执行聚合查询；库存风险来自 `warehouse_stock`、产品安全库存和锁定库存的查询时派生结果；待办分为两类：采购/销售/出入库/库存风险等状态类待办按业务状态动态聚合，业务完成后自动消失；库存扣减失败、外部同步异常、AI 建议复核等异常/人工修复类待办应落入独立待办任务表，保留错误信息、来源单号、处理建议和完成记录。
+        金额指标来自可执行聚合查询；库存风险来自 `warehouse_stock`、产品安全库存和锁定库存的查询时派生结果；待办分为三类：采购/销售/出入库/库存风险等状态类待办按业务状态动态聚合，业务完成后自动消失；价格偏离、客户信用等复核类待办展示证据并跳转对应业务页面；系统异常统一来自数据库异常记录表，聚合为一条 `SYSTEM_EXCEPTION` 待办并展示具体异常详情，不在工作台直接完成。
         本接口为工作台汇总接口，不接收含义不明的 `keyword`，不要求前端自行并发调用多个业务列表接口后拼装经营指标。
         `todos`、`topProducts`、`supplierPerformance`、`stockAlerts` 返回完整工作台明细数组；前端主页面只截取摘要展示，点击对应“详情”按钮时在同页弹窗展示同一数组的完整内容，不额外请求详情接口。经营趋势和订单流转只在主卡展示，不提供详情弹窗。
         当前前端展示规则：经营趋势接口返回近 30 天数据，前端提供 7 天、15 天、30 天切换并在同一卡片内展示，切换只改变前端截取范围和图表过渡效果，不新增请求；业务待办主卡展示前 8 条，订单流转展示全部阶段，销售商品排行主卡展示前 5 名，供应商履约主卡展示前 5 名；详情弹窗展示接口返回的完整明细记录，其中库存预警详情使用窄幅列表卡片承载完整字段，避免横向滚动。
-        `todos` 是可扩展事件流，不限于采购、销售、仓储和系统四类。库存扣减失败、库存补偿失败、外部接口同步异常、AI 建议待确认等需要人工修复或人工复核的事件都可以进入 `todos`；前端使用 `businessLabel` 展示类型标签，对未知 `businessType` 使用通用异常图标兜底。`completionMode=AUTO` 的待办不提供人工完成能力，可通过 `evidence[]` 展开少量代表性单据摘要并跳转对应业务页面；`completionMode=MANUAL` 的待办不展示无效详情按钮，前端二次确认后通过 `POST /dashboard/todos/{todoId}/complete` 标记完成。
+        `todos` 是可扩展事件流，不限于采购、销售、仓储和系统四类。普通业务待办使用 `completionMode=AUTO`，可通过 `evidence[]` 展开少量代表性单据摘要并跳转对应业务页面；系统异常使用 `completionMode=TRACKED`，只展示数据库异常记录详情，不展示“完成处理”按钮。历史 `completionMode=MANUAL` 仅为兼容旧待办完成接口，不建议用于新的系统异常。
         待办排序由后端完成并返回 `sortWeight`，前端只做兜底排序。推荐顺序：先按 `sortWeight` 升序，再按 `priority`（HIGH > MEDIUM > LOW），同优先级下人工异常任务优先于普通业务聚合，最后按发生时间倒序。异常/人工修复类待办不能广播给普通员工，只返回给具备处理权限、被指派用户、被指派角色或被指派部门范围内的人员；普通业务聚合待办按模块权限返回。
         工作台只展示复核证据，不在本接口提供产品、仓库、客户、供应商选择器。若待办详情或跳转页面需要选择产品、仓库、客户、供应商，应复用各模块已有分页查询和共享选择组件，例如 `/products`、`/warehouses`、`/sales/customers`、`/purchase/suppliers`，禁止在工作台接口固定返回大量下拉选项。
         后端建议至少返回：业务待办 20 条以内、销售商品排行 10 条以内、供应商履约 10 条以内、库存预警 20 条以内，避免工作台接口过重；超出范围时应按业务优先级、异常严重程度、影响金额或发生时间排序后截断。若异常待办未来明显超过工作台承载范围，应新增独立异常/任务中心分页接口，工作台只展示高优先级摘要。
+        系统异常统一聚合为一条 `businessType=SYSTEM_EXCEPTION`、`completionMode=TRACKED` 的工作台待办，主卡只显示总数和最高优先级；具体异常记录通过 `evidence[]` 展示，例如 AI/MCP 工具调用失败、消息队列死信、第三方回调失败、定时任务失败和数据补偿失败。此类数据来自数据库异常记录表，工作台只提供“查看详情”，不展示“完成处理”；异常状态由后台重试、补偿任务或异常中心更新。
       operationId: dashboardOverview
       security:
         - SaTokenAuth: []
@@ -127,24 +128,50 @@ paths:
                               value: 1小时
                               tone: neutral
                       route: /sales/orders
-                    - todoId: todo-stock-deduct-failed
-                      businessType: EXCEPTION
-                      businessLabel: 异常
-                      title: 库存扣减失败
-                      description: 出库确认时库存扣减事务失败，需要人工排查并重试
-                      count: 2
+                    - todoId: todo-system-exceptions
+                      businessType: SYSTEM_EXCEPTION
+                      businessLabel: 系统
+                      title: 系统异常
+                      description: 当前有 4 条系统异常记录需要关注，主要来自 AI/MCP 工具调用、消息队列死信、第三方回调和定时任务失败。
+                      count: 4
                       priority: HIGH
                       sortWeight: 10
                       sourceMode: PERSISTED
-                      completionMode: MANUAL
+                      completionMode: TRACKED
                       status: PENDING
-                      errorCode: STOCK_DEDUCT_TX_FAILED
-                      errorMessage: 销售出库单 SO20260630018 确认后库存扣减事务回滚，库存流水未生成。
-                      sourceNo: SO20260630018
-                      occurredAt: "2026-06-30 09:08:00"
-                      resolveHint: 核对出库单状态与库存流水，完成补偿或回滚确认后点击完成处理。
-                      evidence: []
-                      route: /warehouse/stocks
+                      errorCode: null
+                      errorMessage: null
+                      sourceNo: system_exception
+                      occurredAt: "2026-07-01 09:20:00"
+                      resolveHint: null
+                      evidence:
+                        - itemId: AI-MCP-20260701-001
+                          primaryText: AI-MCP-20260701-001
+                          secondaryText: AI 模块调用库存预测 MCP 工具超时，未生成补货建议，等待后台重试或检查工具连接。
+                          metrics:
+                            - label: 类型
+                              value: MCP超时
+                              tone: risk
+                            - label: 来源
+                              value: AI助手
+                              tone: neutral
+                            - label: 时间
+                              value: "09:18"
+                              tone: watch
+                        - itemId: DLQ-ORDER-STOCK-00023
+                          primaryText: DLQ-ORDER-STOCK-00023
+                          secondaryText: 订单审核后生成出库任务的消息进入死信队列，需由后台消费补偿后恢复流程。
+                          metrics:
+                            - label: 类型
+                              value: 死信队列
+                              tone: risk
+                            - label: 来源
+                              value: 消息队列
+                              tone: neutral
+                            - label: 时间
+                              value: "09:05"
+                              tone: watch
+                      route: /dashboard
                     - todoId: todo-price-review
                       businessType: PURCHASE
                       businessLabel: 采购
@@ -209,12 +236,54 @@ paths:
                       onTimeRate: 96.5
         "401": { $ref: '#/components/responses/Unauthorized' }
 
+  /dashboard/system-exceptions/{exceptionId}/status:
+    patch:
+      tags: [Dashboard]
+      summary: 更新系统异常记录状态
+      description: |
+        用于异常中心、后台补偿任务或具备系统异常处理权限的页面更新异常记录状态。工作台只展示 `SYSTEM_EXCEPTION` 聚合待办和异常详情，不直接提供“完成处理”入口。
+        异常记录建议来自独立的 `system_exception` 表，覆盖 AI/MCP 工具调用失败、消息队列死信、第三方回调失败、定时任务失败和数据补偿失败等系统级问题。
+      operationId: dashboardSystemExceptionStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: exceptionId
+          in: path
+          required: true
+          description: 系统异常记录 ID 或稳定异常编号
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardSystemExceptionStatusRequest'
+            example:
+              status: RESOLVED
+              remark: 已由死信队列补偿任务重新消费成功。
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+              example:
+                code: 0
+                message: success
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
   /dashboard/todos/{todoId}/complete:
     post:
+      deprecated: true
       tags: [Dashboard]
       summary: 手动完成工作台待办
       description: |
-        仅用于 `completionMode=MANUAL` 的持久化待办任务，例如库存扣减失败、库存补偿失败、外部同步异常、AI 建议复核等需要人工确认闭环的事项。前端调用本接口前必须展示确认弹窗，提示用户确认已完成补偿、重试或人工修复，避免误点关闭异常任务。
+        历史兼容接口，仅用于旧版 `completionMode=MANUAL` 待办任务，不用于新的系统异常。系统异常统一使用 `SYSTEM_EXCEPTION` + `TRACKED` 展示，并由 `/dashboard/system-exceptions/{exceptionId}/status` 或后台补偿任务更新异常记录状态。
         采购单待审核、销售单待审核、待确认入库、待确认出库、库存低于安全线等 `completionMode=AUTO` 的状态类待办不应调用本接口；它们由对应业务状态变更后在 `/dashboard/overview` 中自动消失或数量变化。
         后端建议通过独立待办任务表实现手动完成：保存 `todo_id`、来源业务、来源单号、错误码、错误信息、处理建议、状态、处理人、处理时间和处理备注，避免每次只查询当前库存状态导致异常事件丢失。
       operationId: dashboardTodoComplete
@@ -4112,7 +4181,7 @@ components:
           type: array
           description: |
             当前用户需要优先处理的业务待办完整数组。前端主卡展示前 8 条，详情弹窗展示本接口返回的全部待办。
-            待办可以来自单据状态机、库存异常、库存扣减失败、库存补偿失败、外部接口同步异常、价格偏离、客户信用、AI 建议或其他需要人工审核/人工复核/人工修复的业务事件。
+            待办可以来自单据状态机、库存风险、价格偏离、客户信用、系统异常或其他需要人工审核/人工复核/系统追踪的业务事件。AI/MCP 调用失败、消息队列死信、第三方回调失败、定时任务失败和数据补偿失败等系统问题应统一聚合为 `SYSTEM_EXCEPTION` 待办。
           items: { $ref: '#/components/schemas/DashboardTodoItem' }
         stockAlerts:
           type: array
@@ -4163,8 +4232,8 @@ components:
         count: { type: integer, minimum: 0, description: 待处理数量 }
         priority: { type: string, enum: [HIGH, MEDIUM, LOW], description: 优先级 }
         sortWeight: { type: integer, minimum: 0, description: 排序权重，数值越小越靠前；由后端综合优先级、异常严重程度、影响范围、是否人工处理和发生时间计算，前端只做兜底排序 }
-        sourceMode: { type: string, enum: [AGGREGATED, PERSISTED], description: 待办来源方式；`AGGREGATED` 表示由业务状态、价格偏离、信用风险或库存风险实时聚合，`PERSISTED` 表示异常/人工修复类任务已持久化到待办任务表 }
-        completionMode: { type: string, enum: [AUTO, MANUAL], description: 完成方式；`AUTO` 由前端展示“前往完成”，处理对应业务后自动消失；`MANUAL` 需要调用手动完成接口闭环，前端展示“完成处理” }
+        sourceMode: { type: string, enum: [AGGREGATED, PERSISTED], description: 待办来源方式；`AGGREGATED` 表示由业务状态、价格偏离、信用风险或库存风险实时聚合，`PERSISTED` 表示待办或系统异常已持久化到业务任务表或 `system_exception` 表 }
+        completionMode: { type: string, enum: [AUTO, MANUAL, TRACKED], description: 完成方式；`AUTO` 由前端展示“前往完成”，处理对应业务后自动消失；`MANUAL` 是历史人工完成模式；`TRACKED` 表示来自系统异常记录表，工作台只展示详情，不提供完成按钮，状态由异常中心、后台重试或补偿任务更新 }
         status: { type: string, enum: [PENDING, DONE, IGNORED], description: 待办状态；工作台通常只返回 `PENDING`，详情弹窗按该字段展示处理状态 }
         errorCode: { type: string, nullable: true, description: 异常类待办错误码；非异常待办返回 `null` }
         errorMessage: { type: string, nullable: true, description: 异常类待办错误信息；用于详情弹窗展示，不再要求前端跳转后台页面才能看到原因 }
@@ -4204,6 +4273,19 @@ components:
           type: string
           maxLength: 500
           description: 人工完成备注，记录处理结论、补偿动作或确认依据；为空时后端可按默认文案记录
+
+    DashboardSystemExceptionStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [PROCESSING, RESOLVED, IGNORED]
+          description: 系统异常记录处理状态；工作台聚合待办通常只展示未解决记录，状态变更后由 `/dashboard/overview` 自动刷新数量
+        remark:
+          type: string
+          maxLength: 500
+          description: 处理备注，记录重试、补偿、忽略或人工确认依据
 
     DashboardStockAlert:
       type: object

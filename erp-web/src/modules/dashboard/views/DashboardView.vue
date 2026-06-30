@@ -143,7 +143,7 @@ const detailTitle = computed(() => {
 
 const detailDescription = computed(() => {
   const descriptions: Record<DetailType, string> = {
-    todos: '展示当前用户可见的全部工作台待办。单据状态类待办随业务完成自动消失，异常类待办保留错误信息并支持人工确认完成。',
+    todos: '展示当前用户可见的全部工作台待办。单据状态类待办随业务完成自动消失，系统异常来自数据库记录表，工作台只展示详情与处理建议。',
     products: '展示近 30 日销售额完整排行，主页面默认显示前 5 名。',
     suppliers: '展示核心供应商履约完整排行，主页面默认显示前 5 名。',
     stockAlerts: '展示全部库存风险 SKU，主页面与详情使用同一批预警数据。',
@@ -221,6 +221,7 @@ function todoIcon(todo: DashboardTodoItem) {
     WAREHOUSE: Boxes,
     INVENTORY: Boxes,
     SYSTEM: ShieldCheck,
+    SYSTEM_EXCEPTION: AlertTriangle,
     AI: ShieldCheck,
     EXCEPTION: AlertTriangle,
   };
@@ -246,6 +247,7 @@ function businessLabel(todo: DashboardTodoItem) {
     WAREHOUSE: '仓储',
     INVENTORY: '库存',
     SYSTEM: '系统',
+    SYSTEM_EXCEPTION: '系统',
     AI: '智能',
     EXCEPTION: '异常',
   };
@@ -260,6 +262,22 @@ function statusText(status: DashboardTodoItem['status']) {
 
 function isManualTodo(todo: DashboardTodoItem) {
   return todo.completionMode === 'MANUAL';
+}
+
+function isTrackedTodo(todo: DashboardTodoItem) {
+  return todo.completionMode === 'TRACKED' || todo.businessType === 'SYSTEM_EXCEPTION';
+}
+
+function todoSourceLabel(todo: DashboardTodoItem) {
+  return isTrackedTodo(todo) ? '记录来源' : '来源单号';
+}
+
+function todoSourceText(todo: DashboardTodoItem) {
+  return isTrackedTodo(todo) ? (todo.sourceNo || 'system_exception') : (todo.sourceNo || '-');
+}
+
+function todoOccurredAtLabel(todo: DashboardTodoItem) {
+  return isTrackedTodo(todo) ? '最近发生' : '发生时间';
 }
 
 function todoEvidenceToneClass(tone: 'neutral' | 'watch' | 'risk') {
@@ -621,7 +639,7 @@ onBeforeUnmount(() => {
             </DialogHeader>
 
             <div v-if="activeDetail === 'todos'" class="dashboard-detail-scroll dashboard-detail-list">
-              <div v-for="todo in sortedTodos" :key="todo.todoId" class="dashboard-detail-todo">
+              <div v-for="todo in sortedTodos" :key="todo.todoId" class="dashboard-detail-todo" :class="{ 'dashboard-detail-todo--system': isTrackedTodo(todo) }">
                 <span class="dashboard-todo__icon">
                   <component :is="todoIcon(todo)" class="h-4 w-4" />
                 </span>
@@ -633,12 +651,15 @@ onBeforeUnmount(() => {
                     <Badge v-if="isManualTodo(todo)" variant="outline" class="border-blue-200 bg-blue-50 text-blue-700">
                       需人工处理
                     </Badge>
+                    <Badge v-else-if="isTrackedTodo(todo)" variant="outline" class="border-slate-200 bg-slate-50 text-slate-700">
+                      数据库记录
+                    </Badge>
                   </div>
                   <p>{{ todo.description }}</p>
-                  <div v-if="isManualTodo(todo)" class="dashboard-detail-todo__meta">
+                  <div v-if="isManualTodo(todo) || isTrackedTodo(todo)" class="dashboard-detail-todo__meta">
                     <span><small>状态</small><strong>{{ statusText(todo.status) }}</strong></span>
-                    <span><small>来源单号</small><strong>{{ todo.sourceNo || '-' }}</strong></span>
-                    <span><small>发生时间</small><strong>{{ todo.occurredAt || '-' }}</strong></span>
+                    <span><small>{{ todoSourceLabel(todo) }}</small><strong>{{ todoSourceText(todo) }}</strong></span>
+                    <span><small>{{ todoOccurredAtLabel(todo) }}</small><strong>{{ todo.occurredAt || '-' }}</strong></span>
                   </div>
                   <div v-else class="dashboard-detail-todo__summary">
                     <span><small>待处理数量</small><strong>{{ todo.count }}</strong></span>
@@ -666,10 +687,11 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="dashboard-detail-action">
                   <span class="dashboard-detail-count">{{ todo.count }}</span>
-                  <Button v-if="!isManualTodo(todo) && todo.evidence.length > 0" size="sm" variant="outline" @click="toggleTodoEvidence(todo)">
+                  <Button v-if="todo.evidence.length > 0" size="sm" variant="outline" @click="toggleTodoEvidence(todo)">
                     {{ expandedTodoId === todo.todoId ? '收起详情' : '查看详情' }}
                   </Button>
                   <Button
+                    v-if="!isTrackedTodo(todo)"
                     size="sm"
                     :variant="isManualTodo(todo) ? 'default' : 'outline'"
                     @click="isManualTodo(todo) ? requestCompleteTodo(todo) : goToTodoRoute(todo)"
@@ -1396,6 +1418,16 @@ circle.dashboard-trend--margin {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-detail-todo--system .dashboard-detail-evidence__row {
+  grid-template-columns: minmax(190px, 0.8fr) minmax(300px, 1.35fr);
+}
+
+.dashboard-detail-todo--system .dashboard-detail-evidence__row small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .dashboard-detail-evidence__metrics {

@@ -18,6 +18,7 @@ const defaultTodoLabels: Record<string, string> = {
   SALES: '销售',
   WAREHOUSE: '仓储',
   SYSTEM: '系统',
+  SYSTEM_EXCEPTION: '系统',
   INVENTORY: '库存',
   EXCEPTION: '异常',
   AI: '智能',
@@ -64,7 +65,12 @@ const mockOverview: DashboardOverview = {
     { date: '06-30', salesAmount: 286430, purchaseAmount: 172600, grossMarginAmount: 92100 },
   ],
   todos: [
-    { todoId: 'todo-stock-deduct-failed', businessType: 'EXCEPTION', businessLabel: '异常', title: '库存扣减失败', description: '出库确认时库存扣减事务失败，需要人工排查并重试。', count: 1, priority: 'HIGH', sortWeight: 10, sourceMode: 'PERSISTED', completionMode: 'MANUAL', status: 'PENDING', errorCode: 'STOCK_DEDUCT_TX_FAILED', errorMessage: '销售出库单 OB202606100015 确认后库存扣减事务回滚，库存流水未生成。', sourceNo: 'OB202606100015', occurredAt: '2026-06-30 09:08:00', resolveHint: '核对出库单状态与库存流水，完成补偿或回滚确认后点击完成处理。', evidence: [], route: '/warehouse/stocks' },
+    { todoId: 'todo-system-exceptions', businessType: 'SYSTEM_EXCEPTION', businessLabel: '系统', title: '系统异常', description: '当前有 4 条系统异常记录需要关注，主要来自 AI/MCP 工具调用、消息队列死信、第三方回调和定时任务失败。', count: 4, priority: 'HIGH', sortWeight: 10, sourceMode: 'PERSISTED', completionMode: 'TRACKED', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: 'system_exception', occurredAt: '2026-07-01 09:20:00', resolveHint: null, evidence: [
+      { itemId: 'AI-MCP-20260701-001', primaryText: 'AI-MCP-20260701-001', secondaryText: 'AI 模块调用库存预测 MCP 工具超时，未生成补货建议，等待后台重试或检查工具连接。', metrics: [{ label: '类型', value: 'MCP超时', tone: 'risk' }, { label: '来源', value: 'AI助手', tone: 'neutral' }, { label: '时间', value: '09:18', tone: 'watch' }] },
+      { itemId: 'DLQ-ORDER-STOCK-00023', primaryText: 'DLQ-ORDER-STOCK-00023', secondaryText: '订单审核后生成出库任务的消息进入死信队列，需由后台消费补偿后恢复流程。', metrics: [{ label: '类型', value: '死信队列', tone: 'risk' }, { label: '来源', value: '消息队列', tone: 'neutral' }, { label: '时间', value: '09:05', tone: 'watch' }] },
+      { itemId: 'EXT-CALLBACK-20260701-006', primaryText: 'EXT-CALLBACK-20260701-006', secondaryText: '第三方物流回调连续超时，发货状态暂未同步，后台会按回调幂等键重试。', metrics: [{ label: '类型', value: '回调超时', tone: 'watch' }, { label: '来源', value: '物流接口', tone: 'neutral' }, { label: '时间', value: '08:42', tone: 'neutral' }] },
+      { itemId: 'JOB-DASHBOARD-SNAPSHOT', primaryText: 'JOB-DASHBOARD-SNAPSHOT', secondaryText: '经营快照定时任务执行失败，本次趋势缓存沿用上一批次数据，等待下一次调度或人工重跑。', metrics: [{ label: '类型', value: '任务失败', tone: 'watch' }, { label: '来源', value: '定时任务', tone: 'neutral' }, { label: '时间', value: '07:30', tone: 'neutral' }] },
+    ], route: '/dashboard' },
     { todoId: 'todo-purchase-approve', businessType: 'PURCHASE', businessLabel: '采购', title: '采购单待审核', description: '还有 2 张采购单需要审核，处理后会自动完成待办。', count: 2, priority: 'HIGH', sortWeight: 20, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往采购订单完成审核，审核通过或驳回后该待办自动更新。', evidence: [
       { itemId: 'po-202606004', primaryText: 'PO202606004', secondaryText: '谷仓食品批发 · 巴旦木补货，待采购负责人审核', metrics: [{ label: '金额', value: '￥0.1万', tone: 'neutral' }, { label: '品项', value: '1', tone: 'neutral' }, { label: '等待', value: '3小时', tone: 'watch' }] },
       { itemId: 'po-202606005', primaryText: 'PO202606005', secondaryText: '华东饮品供应链 · 饮品与咖啡补货，待确认采购价格', metrics: [{ label: '金额', value: '￥0.08万', tone: 'neutral' }, { label: '品项', value: '2', tone: 'neutral' }, { label: '等待', value: '2小时', tone: 'neutral' }] },
@@ -77,7 +83,6 @@ const mockOverview: DashboardOverview = {
       { itemId: 'stock-P0013-W008', primaryText: 'USB-C扩展坞（P0013）', secondaryText: '南京备货仓 · 可用库存为 0，已影响销售出库', metrics: [{ label: '可用', value: '0 个', tone: 'risk' }, { label: '安全线', value: '4 个', tone: 'neutral' }, { label: '建议补货', value: '8 个', tone: 'risk' }] },
       { itemId: 'stock-P0008-W002', primaryText: '热敏标签纸（P0008）', secondaryText: '华南中心仓 · 当前无可用库存，需补货或调拨', metrics: [{ label: '可用', value: '0 卷', tone: 'risk' }, { label: '安全线', value: '40 卷', tone: 'neutral' }, { label: '建议补货', value: '40 卷', tone: 'risk' }] },
     ], route: '/warehouse/stocks' },
-    { todoId: 'todo-sync-exception', businessType: 'EXCEPTION', businessLabel: '异常', title: '外部同步异常', description: '第三方接口回传失败，需确认数据是否补偿成功。', count: 1, priority: 'MEDIUM', sortWeight: 40, sourceMode: 'PERSISTED', completionMode: 'MANUAL', status: 'PENDING', errorCode: 'EXT_SYNC_CALLBACK_TIMEOUT', errorMessage: '供应商回传接口连续 3 次超时，入库单 IB202606130006 到货状态未同步。', sourceNo: 'IB202606130006', occurredAt: '2026-06-30 08:05:00', resolveHint: '确认第三方回传结果并完成数据补偿后点击完成处理。', evidence: [], route: '/warehouse/inbound-bills' },
     { todoId: 'todo-inbound', businessType: 'WAREHOUSE', businessLabel: '仓储', title: '待确认入库', description: '还有 2 张入库单等待仓库确认。', count: 2, priority: 'MEDIUM', sortWeight: 50, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往入库单完成确认，确认入库后该待办自动更新。', evidence: [
       { itemId: 'ib-202606130006', primaryText: 'IB202606130006', secondaryText: '关联 PO202606002 · 华北中心仓，等待仓库确认入库', metrics: [{ label: '品项', value: '2', tone: 'neutral' }, { label: '预计到货', value: '今日', tone: 'watch' }, { label: '等待', value: '2小时', tone: 'watch' }] },
       { itemId: 'ib-202606120009', primaryText: 'IB202606120009', secondaryText: '关联 PO202606003 · 武汉中转仓，待收货质检', metrics: [{ label: '品项', value: '1', tone: 'neutral' }, { label: '预计到货', value: '今日', tone: 'neutral' }, { label: '等待', value: '1小时', tone: 'neutral' }] },
@@ -93,7 +98,6 @@ const mockOverview: DashboardOverview = {
       { itemId: 'credit-C002', primaryText: '杭州蓝湖办公采购（C002）', secondaryText: 'SO202606004 · 授信占用偏高', metrics: [{ label: '授信额度', value: '￥9.0万', tone: 'neutral' }, { label: '已占用', value: '￥8.7万', tone: 'watch' }, { label: '逾期', value: '0天', tone: 'neutral' }] },
       { itemId: 'credit-C003', primaryText: '南京星火校园超市（C003）', secondaryText: 'SO202606005 · 账期客户', metrics: [{ label: '授信额度', value: '￥12.0万', tone: 'neutral' }, { label: '已占用', value: '￥11.6万', tone: 'watch' }, { label: '逾期', value: '3天', tone: 'watch' }] },
     ], route: '/sales/customers' },
-    { todoId: 'todo-ai-exception', businessType: 'AI', businessLabel: '智能', title: '智能助手异常建议', description: 'AI 经营建议触发人工确认，需复核后再执行。', count: 4, priority: 'LOW', sortWeight: 90, sourceMode: 'PERSISTED', completionMode: 'MANUAL', status: 'PENDING', errorCode: 'AI_RECOMMEND_REVIEW', errorMessage: '智能补货建议命中高金额阈值，需要业务人员确认后再生成采购计划。', sourceNo: 'AI-RCMD-20260630-004', occurredAt: '2026-06-30 07:58:00', resolveHint: '复核建议依据和采购预算，确认无需继续提醒后点击完成处理。', evidence: [], route: '/ai/assistant' },
   ],
   stockAlerts: [
     { stockId: '1940000000000000015', productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', warehouseId: '1930000000000000008', warehouseName: '南京备货仓', unitName: '个', availableQty: 0, safetyStockQty: 4, suggestedPurchaseQty: 8, severity: 'HIGH', latestOutboundAt: '2026-06-13 11:55:00' },
@@ -152,7 +156,7 @@ function normalizeTrendPoint(item: DashboardTrendPoint): DashboardTrendPoint {
 function normalizeTodo(item: DashboardTodoItem): DashboardTodoItem {
   const businessType = String(item.businessType || 'SYSTEM');
   const sourceMode = item.sourceMode === 'PERSISTED' ? 'PERSISTED' : 'AGGREGATED';
-  const completionMode = item.completionMode === 'MANUAL' ? 'MANUAL' : 'AUTO';
+  const completionMode = item.completionMode === 'MANUAL' || item.completionMode === 'TRACKED' ? item.completionMode : 'AUTO';
   const status = item.status === 'DONE' || item.status === 'IGNORED' ? item.status : 'PENDING';
   const priorityFallback = item.priority === 'HIGH' ? 100 : item.priority === 'MEDIUM' ? 200 : 300;
   const sourceFallback = completionMode === 'MANUAL' ? 0 : 20;

@@ -69,10 +69,10 @@ runSmoke({
       throw new Error('业务待办主卡应展示至少 8 条摘要');
     }
     const firstTodoText = await page.locator('.dashboard-todo').first().innerText();
-    if (!firstTodoText.includes('库存扣减失败')) {
+    if (!firstTodoText.includes('系统异常')) {
       throw new Error(`业务待办应优先展示高优异常任务，当前第一条为：${firstTodoText}`);
     }
-    await page.getByRole('button', { name: /库存扣减失败/ }).waitFor();
+    await page.getByRole('button', { name: /系统异常/ }).waitFor();
     await page.getByText('库存预警').waitFor();
     if (await page.getByRole('button', { name: '查看详情订单流转' }).count()) {
       throw new Error('订单流转不应再展示详情按钮');
@@ -109,19 +109,16 @@ runSmoke({
 
     await page.getByRole('button', { name: '查看详情业务待办' }).click();
     const todoDialog = page.getByRole('dialog', { name: '业务待办详情' });
-    await todoDialog.getByText('外部同步异常').waitFor();
-    await todoDialog.getByText('智能助手异常建议').waitFor();
-    await todoDialog.getByText('STOCK_DEDUCT_TX_FAILED').waitFor();
-    const stockExceptionTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '库存扣减失败' });
-    if (await stockExceptionTodo.getByRole('button', { name: '查看详情' }).count()) {
-      throw new Error('异常类待办不应展示无效的查看详情按钮');
+    const systemExceptionTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '系统异常' });
+    await systemExceptionTodo.locator('strong', { hasText: '系统异常' }).waitFor();
+    await systemExceptionTodo.getByText('数据库记录').waitFor();
+    await systemExceptionTodo.getByRole('button', { name: '查看详情' }).click();
+    await systemExceptionTodo.getByText('AI-MCP-20260701-001').waitFor();
+    await systemExceptionTodo.getByText('DLQ-ORDER-STOCK-00023').waitFor();
+    await systemExceptionTodo.getByText('MCP超时').waitFor();
+    if (await systemExceptionTodo.getByRole('button', { name: '完成处理' }).count()) {
+      throw new Error('系统异常来自数据库记录，不应在工作台展示完成处理按钮');
     }
-    await stockExceptionTodo.getByRole('button', { name: '完成处理' }).click();
-    const completeConfirm = page.getByRole('alertdialog', { name: '确认完成异常处理' });
-    await completeConfirm.getByText('OB202606100015', { exact: true }).waitFor();
-    await completeConfirm.getByText('STOCK_DEDUCT_TX_FAILED').waitFor();
-    await completeConfirm.getByRole('button', { name: '取消' }).click();
-    await completeConfirm.waitFor({ state: 'hidden' });
 
     const salesApproveTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '销售单待审核' });
     await salesApproveTodo.getByRole('button', { name: '查看详情' }).click();
@@ -151,7 +148,6 @@ runSmoke({
       throw new Error('业务待办详情不应再展示自动完成按钮');
     }
     await todoDialog.getByRole('button', { name: '查看详情' }).first().waitFor();
-    await todoDialog.getByRole('button', { name: '完成处理' }).first().waitFor();
     await page.keyboard.press('Escape');
     await todoDialog.waitFor({ state: 'hidden' });
     await page.waitForTimeout(600);

@@ -444,9 +444,9 @@ if (updateRequestStart < 0 || updateRequestEnd < 0 || updateRequest.includes('pe
 }
 
 const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)].length;
-if (tableCount !== 25) throw new Error(`数据库设计文档声明 25 张表，当前 DDL 实际为 ${tableCount} 张`);
-if (!databaseOverview.includes('共设计 25 张表') || !databaseOverview.includes('`sys_permission`')) {
-  throw new Error('数据库总览未同步 25 张表或 sys_permission 权限目录表');
+if (tableCount !== 26) throw new Error(`数据库设计文档声明 26 张表，当前 DDL 实际为 ${tableCount} 张`);
+if (!databaseOverview.includes('共设计 26 张表') || !databaseOverview.includes('`sys_permission`')) {
+  throw new Error('数据库总览未同步 26 张表或 sys_permission 权限目录表');
 }
 
 const stalePermissionDescriptions = [
@@ -460,4 +460,4 @@ for (const document of [databaseOverview, permissionSchema, projectPlan]) {
   }
 }
 
-console.log(`OPENAPI_OK: ${references.length} 个引用完整，25 张数据库表、系统权限、产品与仓库库存契约已对齐`);
+console.log(`OPENAPI_OK: ${references.length} 个引用完整，26 张数据库表、系统权限、产品与仓库库存契约已对齐`);

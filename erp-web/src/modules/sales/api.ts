@@ -48,13 +48,13 @@ let mockCustomers: Array<CustomerListItem & { referenced: boolean }> = customerS
 }));
 
 let mockOrders: SalesOrderListItem[] = [
-  buildOrderSeed('SO202606001', 'C001', 'WH001', 'APPROVED', '2026-06-27', [['P0001', 12, 49.9], ['P0003', 8, 99]], '销售主管', true),
-  buildOrderSeed('SO202606002', 'C003', 'WH002', 'PARTIAL_OUTBOUND', '2026-06-24', [['P0005', 20, 19.9]], '销售主管', true),
-  buildOrderSeed('SO202606003', 'C004', 'WH008', 'DRAFT', '2026-06-30', [['P0007', 6, 119]], '系统管理员', false),
-  buildOrderSeed('SO202606004', 'C002', 'WH001', 'SUBMITTED', '2026-06-30', [['P0002', 10, 69]], '销售专员', true),
-  buildOrderSeed('SO202606005', 'C003', 'WH002', 'SUBMITTED', '2026-06-30', [['P0007', 8, 119]], '销售专员', true),
-  buildOrderSeed('SO202606006', 'C001', 'WH001', 'OUTBOUND_DONE', '2026-06-20', [['P0001', 6, 49.9]], '销售主管', true),
-  buildOrderSeed('SO202606007', 'C004', 'WH008', 'CANCELLED', '2026-06-26', [['P0003', 4, 99]], '系统管理员', true),
+  buildOrderSeed('SO202606001', 'C001', 'WH001', 'APPROVED', '2026-06-27', [['P000001', 12, 49.9], ['P000003', 8, 99]], '销售主管', true),
+  buildOrderSeed('SO202606002', 'C003', 'WH002', 'PARTIAL_OUTBOUND', '2026-06-24', [['P000005', 20, 19.9]], '销售主管', true),
+  buildOrderSeed('SO202606003', 'C004', 'WH008', 'DRAFT', '2026-06-30', [['P000007', 6, 119]], '系统管理员', false),
+  buildOrderSeed('SO202606004', 'C002', 'WH001', 'SUBMITTED', '2026-06-30', [['P000002', 10, 69]], '销售专员', true),
+  buildOrderSeed('SO202606005', 'C003', 'WH002', 'SUBMITTED', '2026-06-30', [['P000007', 8, 119]], '销售专员', true),
+  buildOrderSeed('SO202606006', 'C001', 'WH001', 'OUTBOUND_DONE', '2026-06-20', [['P000001', 6, 49.9]], '销售主管', true),
+  buildOrderSeed('SO202606007', 'C004', 'WH008', 'CANCELLED', '2026-06-26', [['P000003', 4, 99]], '系统管理员', true),
 ];
 
 let nextCustomerSequence = customerSeed.length + 1;
@@ -74,21 +74,21 @@ function generateCode(prefix: string, sequence: number, width = 3) {
 
 function mockProductSnapshot(productCode: string) {
   const productMap: Record<string, Pick<ProductListItem, 'productId' | 'productCode' | 'productName' | 'unitName' | 'referenceSalePrice' | 'quantityPrecision'>> = {
-    P0001: { productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', unitName: '箱', referenceSalePrice: 49.9, quantityPrecision: 0 },
-    P0002: { productId: '1920000000000000002', productCode: 'P0002', productName: '速溶黑咖啡', unitName: '盒', referenceSalePrice: 69, quantityPrecision: 0 },
-    P0003: { productId: '1920000000000000003', productCode: 'P0003', productName: '每日坚果混合装', unitName: '盒', referenceSalePrice: 99, quantityPrecision: 0 },
-    P0005: { productId: '1920000000000000005', productCode: 'P0005', productName: '中性签字笔', unitName: '盒', referenceSalePrice: 19.9, quantityPrecision: 0 },
-    P0007: { productId: '1920000000000000007', productCode: 'P0007', productName: 'A4复印纸', unitName: '箱', referenceSalePrice: 119, quantityPrecision: 0 },
-    P0015: { productId: '1920000000000000015', productCode: 'P0015', productName: '散装东北大米', unitName: 'kg', referenceSalePrice: 7.9, quantityPrecision: 2 },
+    P000001: { productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', referenceSalePrice: 49.9, quantityPrecision: 0 },
+    P000002: { productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', referenceSalePrice: 69, quantityPrecision: 0 },
+    P000003: { productId: '1920000000000000003', productCode: 'P000003', productName: '每日坚果混合装', unitName: '盒', referenceSalePrice: 99, quantityPrecision: 0 },
+    P000005: { productId: '1920000000000000005', productCode: 'P000005', productName: '中性签字笔', unitName: '盒', referenceSalePrice: 19.9, quantityPrecision: 0 },
+    P000007: { productId: '1920000000000000007', productCode: 'P000007', productName: 'A4复印纸', unitName: '箱', referenceSalePrice: 119, quantityPrecision: 0 },
+    P000015: { productId: '1920000000000000015', productCode: 'P000015', productName: '散装东北大米', unitName: 'kg', referenceSalePrice: 7.9, quantityPrecision: 2 },
   };
-  return productMap[productCode] || productMap.P0001;
+  return productMap[productCode] || productMap.P000001;
 }
 
 function mockProductSnapshotById(productId: string) {
-  const byStatic = ['P0001', 'P0002', 'P0003', 'P0005', 'P0007', 'P0015']
+  const byStatic = ['P000001', 'P000002', 'P000003', 'P000005', 'P000007', 'P000015']
     .map(mockProductSnapshot)
     .find(item => item.productId === productId);
-  return byStatic || mockProductSnapshot('P0001');
+  return byStatic || mockProductSnapshot('P000001');
 }
 
 function mockWarehouseSnapshot(warehouseId: string): Pick<WarehouseListItem, 'warehouseId' | 'warehouseName'> {

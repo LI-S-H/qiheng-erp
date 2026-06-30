@@ -189,8 +189,8 @@ paths:
                       occurredAt: null
                       resolveHint: 前往采购订单核对供应商报价；如确认为长期价格变化，再维护产品参考采购价。
                       evidence:
-                        - itemId: price-P0013
-                          primaryText: USB-C扩展坞（P0013）
+                        - itemId: price-P000013
+                          primaryText: USB-C扩展坞（P000013）
                           secondaryText: 拓联数码配件 · PO20260630021
                           metrics:
                             - label: 参考采购价
@@ -206,7 +206,7 @@ paths:
                   stockAlerts:
                     - stockId: "1939000000000000003"
                       productId: "1920000000000000013"
-                      productCode: P0013
+                      productCode: P000013
                       productName: USB-C扩展坞
                       warehouseId: "1930000000000000008"
                       warehouseName: 南京备货仓
@@ -222,7 +222,7 @@ paths:
                       salesCount: 12
                   topProducts:
                     - productId: "1920000000000000001"
-                      productCode: P0001
+                      productCode: P000001
                       productName: 经典原味苏打水
                       salesAmount: 126800
                       salesQty: 360

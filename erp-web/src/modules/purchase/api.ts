@@ -64,13 +64,13 @@ let mockSuppliers: Array<SupplierListItem & { referenced: boolean }> = supplierS
 type SupplierProductSeed = [string, string, string, number, number, number, number, number, number, number, string | null, 0 | 1, boolean];
 
 const supplierProductSeed: SupplierProductSeed[] = [
-  ['S001', 'P0001', 'HD-SD330', 35.2, 10, 3, 94.2, 96.1, 88.4, 92.3, '2026-06-13 10:20:00', 1, true],
-  ['S002', 'P0002', 'CD-CF50', 40.5, 8, 5, 89.7, 93.4, 84.2, 88.9, '2026-06-10 11:20:00', 1, true],
-  ['S003', 'P0003', 'GC-NUT30', 65.8, 6, 4, 92.4, 95.2, 87.6, 91.8, '2026-06-11 14:10:00', 1, true],
-  ['S003', 'P0004', 'GC-CK06', 55.6, 5, 4, 92.4, 95.2, 87.6, 91.4, '2026-06-09 09:40:00', 1, true],
-  ['S004', 'P0005', 'WY-PEN12', 13.8, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
-  ['S005', 'P0007', 'SZ-A4-70G', 89.4, 12, 3, 95.8, 97.2, 91.6, 94.8, '2026-06-12 13:50:00', 1, true],
-  ['S006', 'P0013', 'TL-HUB8', 148.8, 2, 8, 78.2, 82.4, 84.6, 81.3, null, 0, false],
+  ['S001', 'P000001', 'HD-SD330', 35.2, 10, 3, 94.2, 96.1, 88.4, 92.3, '2026-06-13 10:20:00', 1, true],
+  ['S002', 'P000002', 'CD-CF50', 40.5, 8, 5, 89.7, 93.4, 84.2, 88.9, '2026-06-10 11:20:00', 1, true],
+  ['S003', 'P000003', 'GC-NUT30', 65.8, 6, 4, 92.4, 95.2, 87.6, 91.8, '2026-06-11 14:10:00', 1, true],
+  ['S003', 'P000004', 'GC-CK06', 55.6, 5, 4, 92.4, 95.2, 87.6, 91.4, '2026-06-09 09:40:00', 1, true],
+  ['S004', 'P000005', 'WY-PEN12', 13.8, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
+  ['S005', 'P000007', 'SZ-A4-70G', 89.4, 12, 3, 95.8, 97.2, 91.6, 94.8, '2026-06-12 13:50:00', 1, true],
+  ['S006', 'P000013', 'TL-HUB8', 148.8, 2, 8, 78.2, 82.4, 84.6, 81.3, null, 0, false],
 ];
 
 let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean }> = supplierProductSeed.map((item, index) => {
@@ -127,15 +127,15 @@ function assertOptimisticVersion(current: number, expected: number | undefined) 
 
 function mockProductSnapshot(productCode: string) {
   const productMap: Record<string, Pick<ProductListItem, 'productId' | 'productCode' | 'productName' | 'unitName'>> = {
-    P0001: { productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', unitName: '箱' },
-    P0002: { productId: '1920000000000000002', productCode: 'P0002', productName: '速溶黑咖啡', unitName: '盒' },
-    P0003: { productId: '1920000000000000003', productCode: 'P0003', productName: '每日坚果混合装', unitName: '盒' },
-    P0004: { productId: '1920000000000000004', productCode: 'P0004', productName: '海盐苏打饼干', unitName: '箱' },
-    P0005: { productId: '1920000000000000005', productCode: 'P0005', productName: '中性签字笔', unitName: '盒' },
-    P0007: { productId: '1920000000000000007', productCode: 'P0007', productName: 'A4复印纸', unitName: '箱' },
-    P0013: { productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', unitName: '个' },
+    P000001: { productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱' },
+    P000002: { productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒' },
+    P000003: { productId: '1920000000000000003', productCode: 'P000003', productName: '每日坚果混合装', unitName: '盒' },
+    P000004: { productId: '1920000000000000004', productCode: 'P000004', productName: '海盐苏打饼干', unitName: '箱' },
+    P000005: { productId: '1920000000000000005', productCode: 'P000005', productName: '中性签字笔', unitName: '盒' },
+    P000007: { productId: '1920000000000000007', productCode: 'P000007', productName: 'A4复印纸', unitName: '箱' },
+    P000013: { productId: '1920000000000000013', productCode: 'P000013', productName: 'USB-C扩展坞', unitName: '个' },
   };
-  return productMap[productCode] || productMap.P0001;
+  return productMap[productCode] || productMap.P000001;
 }
 
 function buildOrderSeed(
@@ -740,15 +740,15 @@ function mockProductSnapshotById(productId: string) {
   const existing = mockSupplierProducts.find(item => item.productId === productId);
   if (existing) return existing;
   const byStatic = Object.values({
-    P0001: mockProductSnapshot('P0001'),
-    P0002: mockProductSnapshot('P0002'),
-    P0003: mockProductSnapshot('P0003'),
-    P0004: mockProductSnapshot('P0004'),
-    P0005: mockProductSnapshot('P0005'),
-    P0007: mockProductSnapshot('P0007'),
-    P0013: mockProductSnapshot('P0013'),
+    P000001: mockProductSnapshot('P000001'),
+    P000002: mockProductSnapshot('P000002'),
+    P000003: mockProductSnapshot('P000003'),
+    P000004: mockProductSnapshot('P000004'),
+    P000005: mockProductSnapshot('P000005'),
+    P000007: mockProductSnapshot('P000007'),
+    P000013: mockProductSnapshot('P000013'),
   }).find(item => item.productId === productId);
-  return byStatic || mockProductSnapshot('P0001');
+  return byStatic || mockProductSnapshot('P000001');
 }
 
 function mockWarehouseSnapshot(warehouseId: string): Pick<WarehouseListItem, 'warehouseId' | 'warehouseName'> {

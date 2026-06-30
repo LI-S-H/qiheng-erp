@@ -5,7 +5,7 @@ runSmoke({
   screenshot: 'smoke-product-products.png',
   async test(page) {
     await page.getByRole('heading', { name: '产品档案' }).waitFor();
-    await tableRow(page, 'P0001').waitFor();
+    await tableRow(page, 'P000001').waitFor();
     await assertFixedTableLayout(page, 10);
     await page.getByText('经典原味苏打水', { exact: true }).waitFor();
     await page.getByText('饮料冲调', { exact: true }).first().waitFor();
@@ -13,10 +13,10 @@ runSmoke({
 
     await page.getByPlaceholder('请输入产品名称').first().fill('A4');
     await clickQueryAndAssertLoading(page, 'smoke-product-products-query-loading.png');
-    await tableRow(page, 'P0007').waitFor();
-    await tableRow(page, 'P0001').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000007').waitFor();
+    await tableRow(page, 'P000001').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page, 'smoke-product-products-reset-loading.png');
-    await tableRow(page, 'P0001').waitFor();
+    await tableRow(page, 'P000001').waitFor();
 
     const filterPanel = page.locator('.filter-grid--products');
     const categoryTrigger = filterPanel.getByRole('combobox').first();
@@ -28,21 +28,21 @@ runSmoke({
       await page.getByRole('button', { name: '查询', exact: true }).click();
     };
     await selectCategory('办公用品');
-    await tableRow(page, 'P0005').waitFor();
-    await tableRow(page, 'P0007').waitFor();
-    await tableRow(page, 'P0008').waitFor();
-    await tableRow(page, 'P0001').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000005').waitFor();
+    await tableRow(page, 'P000007').waitFor();
+    await tableRow(page, 'P000008').waitFor();
+    await tableRow(page, 'P000001').waitFor({ state: 'detached' });
     await selectCategory('办公用品 / 办公纸品');
-    await tableRow(page, 'P0007').waitFor();
-    await tableRow(page, 'P0008').waitFor();
-    await tableRow(page, 'P0005').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000007').waitFor();
+    await tableRow(page, 'P000008').waitFor();
+    await tableRow(page, 'P000005').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page);
 
     await page.getByPlaceholder('请输入品牌名称').fill('森纸');
     await page.getByPlaceholder('请输入完整条码').fill('6901000000073');
     await page.getByRole('button', { name: '查询', exact: true }).click();
-    await tableRow(page, 'P0007').waitFor();
-    await tableRow(page, 'P0008').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000007').waitFor();
+    await tableRow(page, 'P000008').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page);
 
     const queryInput = page.getByPlaceholder('请输入产品名称').first();
@@ -51,10 +51,10 @@ runSmoke({
     const queryInputShadow = await queryInput.evaluate(element => getComputedStyle(element).boxShadow);
 
     await clickPaginationAndAssertLoading(page, '下一页');
-    await tableRow(page, 'P0011').waitFor();
-    await tableRow(page, 'P0001').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000011').waitFor();
+    await tableRow(page, 'P000001').waitFor({ state: 'detached' });
     await clickPaginationAndAssertLoading(page, '上一页');
-    await tableRow(page, 'P0001').waitFor();
+    await tableRow(page, 'P000001').waitFor();
 
     const pageSizeTrigger = page.locator('[data-table-pagination]').getByRole('combobox');
     const pageSizeMetrics = await pageSizeTrigger.evaluate(element => ({
@@ -117,12 +117,12 @@ runSmoke({
     await page.getByText('产品已创建', { exact: true }).waitFor();
     await page.getByPlaceholder('请输入产品名称').first().fill('系统编码测试产品');
     await page.getByRole('button', { name: '查询', exact: true }).click();
-    const uncategorizedRow = tableRow(page, 'P0016');
+    const uncategorizedRow = tableRow(page, 'P000016');
     await uncategorizedRow.waitFor();
     await uncategorizedRow.getByText('未分类', { exact: true }).waitFor();
     await clickResetAndAssertLoading(page);
 
-    const referencedRow = tableRow(page, 'P0001');
+    const referencedRow = tableRow(page, 'P000001');
     await referencedRow.getByRole('button', { name: '删除' }).click();
     const referencedDelete = page.getByRole('alertdialog', { name: '删除产品' });
     if (!(await referencedDelete.innerText()).includes('已被库存或业务单据引用的产品将无法删除')) {
@@ -132,11 +132,11 @@ runSmoke({
     await page.getByText('产品已被库存或业务单据引用，无法删除', { exact: true }).waitFor();
     await referencedRow.waitFor();
 
-    const editableRow = tableRow(page, 'P0002');
+    const editableRow = tableRow(page, 'P000002');
     await editableRow.getByRole('button', { name: '编辑' }).click();
     const editDialog = page.getByRole('dialog', { name: '编辑产品' });
     const editCodeDisplay = editDialog.locator('[data-product-code-display]');
-    if (await editCodeDisplay.inputValue() !== 'P0002' || !await editCodeDisplay.evaluate(element => element.hasAttribute('readonly'))) {
+    if (await editCodeDisplay.inputValue() !== 'P000002' || !await editCodeDisplay.evaluate(element => element.hasAttribute('readonly'))) {
       throw new Error('编辑产品时产品编码必须只读且保持原值');
     }
     await editDialog.getByLabel('停用').click();
@@ -152,13 +152,13 @@ runSmoke({
     await stopDialog.getByRole('button', { name: '取消', exact: true }).click();
     await page.getByRole('dialog', { name: '编辑产品' }).getByRole('button', { name: '取消', exact: true }).click();
 
-    const removableRow = tableRow(page, 'P0010');
+    const removableRow = tableRow(page, 'P000010');
     await removableRow.getByRole('button', { name: '删除' }).click();
     await page.getByRole('alertdialog', { name: '删除产品' }).getByRole('button', { name: '删除', exact: true }).click();
     await removableRow.waitFor({ state: 'detached' });
 
     await clickPaginationAndAssertLoading(page, '下一页');
-    const disabledCategoryRow = tableRow(page, 'P0013');
+    const disabledCategoryRow = tableRow(page, 'P000013');
     await disabledCategoryRow.getByRole('button', { name: '启用' }).click();
     await page.getByRole('alertdialog', { name: '启用产品' }).getByRole('button', { name: '启用', exact: true }).click();
     await page.getByText('停用分类下不能保存启用产品', { exact: true }).waitFor();
@@ -167,7 +167,7 @@ runSmoke({
     await page.setViewportSize({ width: 1115, height: 838 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '产品档案' }).waitFor();
-    await tableRow(page, 'P0001').waitFor();
+    await tableRow(page, 'P000001').waitFor();
     const filterColumns = await page.locator('.filter-grid--products').evaluate(element =>
       getComputedStyle(element).gridTemplateColumns.split(' ').length,
     );
@@ -177,6 +177,6 @@ runSmoke({
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '产品档案' }).waitFor();
-    await tableRow(page, 'P0001').waitFor();
+    await tableRow(page, 'P000001').waitFor();
   },
 });

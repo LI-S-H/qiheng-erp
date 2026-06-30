@@ -116,6 +116,21 @@ runSmoke({
     await systemExceptionTodo.getByText('AI-MCP-20260701-001').waitFor();
     await systemExceptionTodo.getByText('DLQ-ORDER-STOCK-00023').waitFor();
     await systemExceptionTodo.getByText('MCP超时').waitFor();
+    const systemExceptionLayout = await todoDialog.locator('.dashboard-detail-scroll').evaluate(scroll => {
+      const dialog = scroll.closest('[role="dialog"]');
+      const todo = scroll.querySelector('.dashboard-detail-todo--system');
+      const dialogRect = dialog.getBoundingClientRect();
+      const scrollRect = scroll.getBoundingClientRect();
+      const todoRect = todo.getBoundingClientRect();
+      return {
+        scrollOverflow: scroll.scrollWidth - scroll.clientWidth,
+        scrollRightGap: dialogRect.right - scrollRect.right,
+        todoRightOverflow: todoRect.right - scrollRect.right,
+      };
+    });
+    if (systemExceptionLayout.scrollOverflow > 2 || systemExceptionLayout.todoRightOverflow > 2 || systemExceptionLayout.scrollRightGap < -2) {
+      throw new Error(`系统异常展开详情不应向右撑开弹窗：${JSON.stringify(systemExceptionLayout)}`);
+    }
     if (await systemExceptionTodo.getByRole('button', { name: '完成处理' }).count()) {
       throw new Error('系统异常来自数据库记录，不应在工作台展示完成处理按钮');
     }
@@ -127,7 +142,7 @@ runSmoke({
 
     const priceReviewTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '采购价偏离参考价' });
     await priceReviewTodo.getByRole('button', { name: '查看详情' }).click();
-    await priceReviewTodo.getByText('USB-C扩展坞（P0013）').waitFor();
+    await priceReviewTodo.getByText('USB-C扩展坞（P000013）').waitFor();
     if ((await priceReviewTodo.getByText('参考采购价').count()) < 2) {
       throw new Error('采购价格复核应展示参考采购价证据指标');
     }

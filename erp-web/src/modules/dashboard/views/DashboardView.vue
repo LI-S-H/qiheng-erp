@@ -1388,12 +1388,15 @@ circle.dashboard-trend--margin {
 
 .dashboard-detail-evidence {
   display: grid;
+  min-width: 0;
   gap: 8px;
+  overflow: hidden;
 }
 
 .dashboard-detail-evidence__row {
   display: grid;
-  grid-template-columns: minmax(170px, 0.9fr) minmax(260px, 1.3fr);
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr);
+  min-width: 0;
   gap: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1421,18 +1424,20 @@ circle.dashboard-trend--margin {
 }
 
 .dashboard-detail-todo--system .dashboard-detail-evidence__row {
-  grid-template-columns: minmax(190px, 0.8fr) minmax(300px, 1.35fr);
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
 }
 
 .dashboard-detail-todo--system .dashboard-detail-evidence__row small {
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .dashboard-detail-evidence__metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1452,8 +1457,12 @@ circle.dashboard-trend--margin {
 }
 
 .dashboard-detail-evidence__metrics strong {
+  min-width: 0;
+  overflow: hidden;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-detail-todo__meta span {

@@ -102,16 +102,16 @@ runSmoke({
     await selectRemoteOption(page, orderDialog, 1, 'WH001', 'WH001');
     await orderDialog.getByRole('combobox').nth(2).click();
     const productContent = page.locator('[data-remote-search-select-content]').last();
-    await productContent.locator('input').fill('P0001');
+    await productContent.locator('input').fill('P000001');
     /*
     if (!supplierOptionsText.includes('S001 华东饮品供应链') || supplierOptionsText.includes('S002 晨岛咖啡贸易')) {
       throw new Error('先选择产品后，供应商下拉未按供货关系过滤');
     }
     await page.locator('[data-anchored-select-content][data-state="open"]').getByText('S001 华东饮品供应链').click();
     */
-    await productContent.getByText('P0001').waitFor();
+    await productContent.getByText('P000001').waitFor();
     const productOptionsText = await productContent.innerText();
-    if (!productOptionsText.includes('P0001 经典原味苏打水') || productOptionsText.includes('P0002 速溶黑咖啡')) {
+    if (!productOptionsText.includes('P000001 经典原味苏打水') || productOptionsText.includes('P000002 速溶黑咖啡')) {
       throw new Error('选择供应商后，产品下拉未按该供应商供货范围过滤');
     }
     await orderDialog.getByRole('button', { name: '取消', exact: true }).click();

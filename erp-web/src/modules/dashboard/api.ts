@@ -1,0 +1,236 @@
+import { getResult } from '@/api/http';
+import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import type {
+  DashboardMetric,
+  DashboardOrderStage,
+  DashboardOverview,
+  DashboardStockAlert,
+  DashboardSupplierPerformance,
+  DashboardTodoItem,
+  DashboardTopProduct,
+  DashboardTrendPoint,
+} from './types';
+
+const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
+
+const defaultTodoLabels: Record<string, string> = {
+  PURCHASE: '采购',
+  SALES: '销售',
+  WAREHOUSE: '仓储',
+  SYSTEM: '系统',
+  INVENTORY: '库存',
+  EXCEPTION: '异常',
+  AI: '智能',
+};
+
+const mockOverview: DashboardOverview = {
+  refreshedAt: '2026-06-30 09:30:00',
+  metrics: [
+    { label: '今日销售额', value: 286430, unit: '元', changeRate: 12.8, compareText: '较昨日', status: 'good' },
+    { label: '本月毛利额', value: 842600, unit: '元', changeRate: 6.4, compareText: '较上月同期', status: 'good' },
+    { label: '待处理订单', value: 28, unit: '单', changeRate: -8.1, compareText: '较昨日', status: 'watch' },
+    { label: '库存风险 SKU', value: 16, unit: '个', changeRate: 18.6, compareText: '较昨日', status: 'risk' },
+  ],
+  trend: [
+    { date: '06-01', salesAmount: 186200, purchaseAmount: 112400, grossMarginAmount: 54200 },
+    { date: '06-02', salesAmount: 193600, purchaseAmount: 116800, grossMarginAmount: 56800 },
+    { date: '06-03', salesAmount: 201400, purchaseAmount: 121300, grossMarginAmount: 59300 },
+    { date: '06-04', salesAmount: 198700, purchaseAmount: 119600, grossMarginAmount: 58100 },
+    { date: '06-05', salesAmount: 208900, purchaseAmount: 126500, grossMarginAmount: 62400 },
+    { date: '06-06', salesAmount: 214300, purchaseAmount: 129800, grossMarginAmount: 64700 },
+    { date: '06-07', salesAmount: 205600, purchaseAmount: 122700, grossMarginAmount: 61200 },
+    { date: '06-08', salesAmount: 211800, purchaseAmount: 128200, grossMarginAmount: 63500 },
+    { date: '06-09', salesAmount: 219500, purchaseAmount: 133100, grossMarginAmount: 66200 },
+    { date: '06-10', salesAmount: 226300, purchaseAmount: 137600, grossMarginAmount: 69100 },
+    { date: '06-11', salesAmount: 221700, purchaseAmount: 134200, grossMarginAmount: 67400 },
+    { date: '06-12', salesAmount: 232600, purchaseAmount: 141500, grossMarginAmount: 71300 },
+    { date: '06-13', salesAmount: 238900, purchaseAmount: 144600, grossMarginAmount: 73200 },
+    { date: '06-14', salesAmount: 229400, purchaseAmount: 139800, grossMarginAmount: 70400 },
+    { date: '06-15', salesAmount: 236700, purchaseAmount: 143900, grossMarginAmount: 72900 },
+    { date: '06-16', salesAmount: 241200, purchaseAmount: 147300, grossMarginAmount: 74800 },
+    { date: '06-17', salesAmount: 249800, purchaseAmount: 151600, grossMarginAmount: 78100 },
+    { date: '06-18', salesAmount: 245300, purchaseAmount: 149200, grossMarginAmount: 76200 },
+    { date: '06-19', salesAmount: 253600, purchaseAmount: 154700, grossMarginAmount: 79600 },
+    { date: '06-20', salesAmount: 260400, purchaseAmount: 158900, grossMarginAmount: 82300 },
+    { date: '06-21', salesAmount: 248100, purchaseAmount: 150600, grossMarginAmount: 77500 },
+    { date: '06-22', salesAmount: 255900, purchaseAmount: 156300, grossMarginAmount: 80700 },
+    { date: '06-23', salesAmount: 263500, purchaseAmount: 160200, grossMarginAmount: 83500 },
+    { date: '06-24', salesAmount: 218000, purchaseAmount: 132000, grossMarginAmount: 68200 },
+    { date: '06-25', salesAmount: 244000, purchaseAmount: 146500, grossMarginAmount: 75600 },
+    { date: '06-26', salesAmount: 231800, purchaseAmount: 125400, grossMarginAmount: 72400 },
+    { date: '06-27', salesAmount: 269200, purchaseAmount: 158600, grossMarginAmount: 86200 },
+    { date: '06-28', salesAmount: 252700, purchaseAmount: 141300, grossMarginAmount: 80100 },
+    { date: '06-29', salesAmount: 276900, purchaseAmount: 167800, grossMarginAmount: 88400 },
+    { date: '06-30', salesAmount: 286430, purchaseAmount: 172600, grossMarginAmount: 92100 },
+  ],
+  todos: [
+    { todoId: 'todo-stock-deduct-failed', businessType: 'EXCEPTION', businessLabel: '异常', title: '库存扣减失败', description: '出库确认时库存扣减事务失败，需要人工排查并重试。', count: 2, priority: 'HIGH', sortWeight: 10, sourceMode: 'PERSISTED', completionMode: 'MANUAL', status: 'PENDING', errorCode: 'STOCK_DEDUCT_TX_FAILED', errorMessage: '销售出库单 SO20260630018 确认后库存扣减事务回滚，库存流水未生成。', sourceNo: 'SO20260630018', occurredAt: '2026-06-30 09:08:00', resolveHint: '核对出库单状态与库存流水，完成补偿或回滚确认后点击完成处理。', evidence: [], route: '/warehouse/stocks' },
+    { todoId: 'todo-purchase-approve', businessType: 'PURCHASE', businessLabel: '采购', title: '采购单待审核', description: '还有 7 张采购单需要审核，处理后会自动完成待办。', count: 7, priority: 'HIGH', sortWeight: 20, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往采购订单完成审核，审核通过或驳回后该待办自动更新。', evidence: [], route: '/purchase/orders' },
+    { todoId: 'todo-sales-approve', businessType: 'SALES', businessLabel: '销售', title: '销售单待审核', description: '还有 12 张销售单需要审核，处理后会自动完成待办。', count: 12, priority: 'HIGH', sortWeight: 21, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往销售订单完成审核，审核通过后进入库存锁定和发货准备。', evidence: [], route: '/sales/orders' },
+    { todoId: 'todo-stock-risk-review', businessType: 'INVENTORY', businessLabel: '库存', title: '库存异常待复核', description: '还有 6 个 SKU 可用库存低于安全线，需要复核补货或调拨。', count: 6, priority: 'HIGH', sortWeight: 30, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往库存余额查看低库存 SKU，补货计划生成或库存恢复后自动更新。', evidence: [], route: '/warehouse/stocks' },
+    { todoId: 'todo-sync-exception', businessType: 'EXCEPTION', businessLabel: '异常', title: '外部同步异常', description: '第三方接口回传失败，需确认数据是否补偿成功。', count: 1, priority: 'MEDIUM', sortWeight: 40, sourceMode: 'PERSISTED', completionMode: 'MANUAL', status: 'PENDING', errorCode: 'EXT_SYNC_CALLBACK_TIMEOUT', errorMessage: '供应商回传接口连续 3 次超时，采购到货状态未同步。', sourceNo: 'PO20260630007', occurredAt: '2026-06-30 08:05:00', resolveHint: '确认第三方回传结果并完成数据补偿后点击完成处理。', evidence: [], route: '/system/permissions' },
+    { todoId: 'todo-inbound', businessType: 'WAREHOUSE', businessLabel: '仓储', title: '待确认入库', description: '还有 5 张已审批采购单等待到货入库。', count: 5, priority: 'MEDIUM', sortWeight: 50, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往入库单完成确认，确认入库后该待办自动更新。', evidence: [], route: '/warehouse/inbound-bills' },
+    { todoId: 'todo-outbound', businessType: 'WAREHOUSE', businessLabel: '仓储', title: '待确认出库', description: '还有 4 张已审批销售单等待发货出库。', count: 4, priority: 'MEDIUM', sortWeight: 51, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往出库单完成确认，确认出库后该待办自动更新。', evidence: [], route: '/warehouse/outbound-bills' },
+    { todoId: 'todo-price-review', businessType: 'PURCHASE', businessLabel: '采购', title: '采购价偏离参考价', description: '有 3 个产品最近采购价高于产品参考采购价，需要确认是临时涨价还是需要调整参考价。', count: 3, priority: 'MEDIUM', sortWeight: 60, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往采购订单核对供应商报价；如确认为长期价格变化，再维护产品参考采购价。', evidence: [
+      { itemId: 'price-P0013', primaryText: 'USB-C扩展坞（P0013）', secondaryText: '拓联数码配件 · PO20260630021', metrics: [{ label: '参考采购价', value: '￥186.00', tone: 'neutral' }, { label: '最近采购价', value: '￥218.00', tone: 'risk' }, { label: '偏离', value: '+17.2%', tone: 'risk' }] },
+      { itemId: 'price-P0005', primaryText: '中性签字笔（P0005）', secondaryText: '文仪办公渠道 · PO20260630016', metrics: [{ label: '参考采购价', value: '￥1.80', tone: 'neutral' }, { label: '最近采购价', value: '￥2.05', tone: 'watch' }, { label: '偏离', value: '+13.9%', tone: 'watch' }] },
+    ], route: '/purchase/orders' },
+    { todoId: 'todo-credit-review', businessType: 'SALES', businessLabel: '销售', title: '客户信用待复核', description: '有 2 个客户的应收或授信占用触发风险提醒，需要确认是否继续放行订单。', count: 2, priority: 'MEDIUM', sortWeight: 61, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往客户或销售订单核对应收、逾期和授信占用，复核完成后自动更新。', evidence: [
+      { itemId: 'credit-C003', primaryText: '华北连锁零售（C003）', secondaryText: 'SO20260630033 · 账期客户', metrics: [{ label: '授信额度', value: '￥30.0万', tone: 'neutral' }, { label: '已占用', value: '￥32.6万', tone: 'risk' }, { label: '逾期', value: '12天', tone: 'risk' }] },
+      { itemId: 'credit-C008', primaryText: '南京办公集采（C008）', secondaryText: 'SO20260630027 · 月结客户', metrics: [{ label: '授信额度', value: '￥18.0万', tone: 'neutral' }, { label: '已占用', value: '￥17.4万', tone: 'watch' }, { label: '逾期', value: '0天', tone: 'neutral' }] },
+    ], route: '/sales/customers' },
+    { todoId: 'todo-ai-exception', businessType: 'AI', businessLabel: '智能', title: '智能助手异常建议', description: 'AI 经营建议触发人工确认，需复核后再执行。', count: 4, priority: 'LOW', sortWeight: 90, sourceMode: 'PERSISTED', completionMode: 'MANUAL', status: 'PENDING', errorCode: 'AI_RECOMMEND_REVIEW', errorMessage: '智能补货建议命中高金额阈值，需要业务人员确认后再生成采购计划。', sourceNo: 'AI-RCMD-20260630-004', occurredAt: '2026-06-30 07:58:00', resolveHint: '复核建议依据和采购预算，确认无需继续提醒后点击完成处理。', evidence: [], route: '/ai/assistant' },
+  ],
+  stockAlerts: [
+    { stockId: '1939000000000000001', productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', unitName: '箱', availableQty: 18, safetyStockQty: 40, suggestedPurchaseQty: 60, severity: 'HIGH', latestOutboundAt: '2026-06-30 08:40:00' },
+    { stockId: '1939000000000000002', productId: '1920000000000000005', productCode: 'P0005', productName: '中性签字笔', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', unitName: '盒', availableQty: 26, safetyStockQty: 50, suggestedPurchaseQty: 80, severity: 'MEDIUM', latestOutboundAt: '2026-06-29 17:25:00' },
+    { stockId: '1939000000000000003', productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', warehouseId: '1930000000000000008', warehouseName: '南京备货仓', unitName: '个', availableQty: 0, safetyStockQty: 12, suggestedPurchaseQty: 24, severity: 'HIGH', latestOutboundAt: '2026-06-30 10:05:00' },
+  ],
+  orderStages: [
+    { stage: '草稿', purchaseCount: 5, salesCount: 7 },
+    { stage: '待审核', purchaseCount: 7, salesCount: 12 },
+    { stage: '已审核', purchaseCount: 11, salesCount: 15 },
+    { stage: '部分出入库', purchaseCount: 4, salesCount: 6 },
+    { stage: '已完成', purchaseCount: 18, salesCount: 24 },
+  ],
+  topProducts: [
+    { productId: '1920000000000000001', productCode: 'P0001', productName: '经典原味苏打水', salesAmount: 126800, salesQty: 360, availableQty: 18 },
+    { productId: '1920000000000000007', productCode: 'P0007', productName: 'A4复印纸', salesAmount: 98400, salesQty: 220, availableQty: 86 },
+    { productId: '1920000000000000002', productCode: 'P0002', productName: '速溶黑咖啡', salesAmount: 87600, salesQty: 194, availableQty: 64 },
+    { productId: '1920000000000000013', productCode: 'P0013', productName: 'USB-C扩展坞', salesAmount: 75800, salesQty: 72, availableQty: 0 },
+    { productId: '1920000000000000003', productCode: 'P0003', productName: '每日坚果混合装', salesAmount: 69400, salesQty: 128, availableQty: 42 },
+    { productId: '1920000000000000004', productCode: 'P0004', productName: '海盐苏打饼干', salesAmount: 53600, salesQty: 104, availableQty: 55 },
+    { productId: '1920000000000000005', productCode: 'P0005', productName: '中性签字笔', salesAmount: 43800, salesQty: 410, availableQty: 26 },
+    { productId: '1920000000000000008', productCode: 'P0008', productName: '快干印台', salesAmount: 31200, salesQty: 84, availableQty: 93 },
+  ],
+  supplierPerformance: [
+    { supplierId: '1940000000000000001', supplierCode: 'S001', supplierName: '华东饮品供应链', deliveryScore: 94.2, qualityScore: 96.1, onTimeRate: 96.5 },
+    { supplierId: '1940000000000000005', supplierCode: 'S005', supplierName: '森纸纸业集团', deliveryScore: 95.8, qualityScore: 97.2, onTimeRate: 97.4 },
+    { supplierId: '1940000000000000003', supplierCode: 'S003', supplierName: '谷仓食品批发', deliveryScore: 92.4, qualityScore: 95.2, onTimeRate: 94.8 },
+    { supplierId: '1940000000000000002', supplierCode: 'S002', supplierName: '晨岛咖啡贸易', deliveryScore: 89.7, qualityScore: 93.4, onTimeRate: 91.1 },
+    { supplierId: '1940000000000000004', supplierCode: 'S004', supplierName: '文仪办公渠道', deliveryScore: 85.4, qualityScore: 90.5, onTimeRate: 88.7 },
+    { supplierId: '1940000000000000006', supplierCode: 'S006', supplierName: '拓联数码配件', deliveryScore: 78.2, qualityScore: 82.4, onTimeRate: 82.1 },
+  ],
+};
+
+function normalizeMetric(item: DashboardMetric): DashboardMetric {
+  return {
+    ...item,
+    value: normalizeFiniteNumber(item.value, 'value'),
+    changeRate: normalizeFiniteNumber(item.changeRate, 'changeRate'),
+  };
+}
+
+function normalizeTrendPoint(item: DashboardTrendPoint): DashboardTrendPoint {
+  return {
+    ...item,
+    salesAmount: normalizeFiniteNumber(item.salesAmount, 'salesAmount'),
+    purchaseAmount: normalizeFiniteNumber(item.purchaseAmount, 'purchaseAmount'),
+    grossMarginAmount: normalizeFiniteNumber(item.grossMarginAmount, 'grossMarginAmount'),
+  };
+}
+
+function normalizeTodo(item: DashboardTodoItem): DashboardTodoItem {
+  const businessType = String(item.businessType || 'SYSTEM');
+  const sourceMode = item.sourceMode === 'PERSISTED' ? 'PERSISTED' : 'AGGREGATED';
+  const completionMode = item.completionMode === 'MANUAL' ? 'MANUAL' : 'AUTO';
+  const status = item.status === 'DONE' || item.status === 'IGNORED' ? item.status : 'PENDING';
+  const priorityFallback = item.priority === 'HIGH' ? 100 : item.priority === 'MEDIUM' ? 200 : 300;
+  const sourceFallback = completionMode === 'MANUAL' ? 0 : 20;
+  return {
+    ...item,
+    todoId: normalizeStringId(item.todoId, 'todoId'),
+    businessType,
+    businessLabel: String(item.businessLabel || defaultTodoLabels[businessType] || businessType || '其他'),
+    title: String(item.title || ''),
+    description: String(item.description || ''),
+    count: normalizeFiniteNumber(item.count, 'count'),
+    sortWeight: normalizeFiniteNumber(item.sortWeight ?? priorityFallback + sourceFallback, 'sortWeight'),
+    sourceMode,
+    completionMode,
+    status,
+    errorCode: item.errorCode ? String(item.errorCode) : null,
+    errorMessage: item.errorMessage ? String(item.errorMessage) : null,
+    sourceNo: normalizeNullableStringId(item.sourceNo, 'sourceNo'),
+    occurredAt: normalizeNullableStringId(item.occurredAt, 'occurredAt'),
+    resolveHint: item.resolveHint ? String(item.resolveHint) : null,
+    evidence: Array.isArray(item.evidence)
+      ? item.evidence.map(evidence => ({
+        itemId: normalizeStringId(evidence.itemId, 'itemId'),
+        primaryText: String(evidence.primaryText || ''),
+        secondaryText: String(evidence.secondaryText || ''),
+        metrics: Array.isArray(evidence.metrics)
+          ? evidence.metrics.map(metric => ({
+            label: String(metric.label || ''),
+            value: String(metric.value || ''),
+            tone: metric.tone === 'risk' || metric.tone === 'watch' ? metric.tone : 'neutral',
+          }))
+          : [],
+      }))
+      : [],
+    route: String(item.route || '/dashboard'),
+  };
+}
+
+function normalizeStockAlert(item: DashboardStockAlert): DashboardStockAlert {
+  return {
+    ...item,
+    stockId: normalizeStringId(item.stockId, 'stockId'),
+    productId: normalizeStringId(item.productId, 'productId'),
+    warehouseId: normalizeStringId(item.warehouseId, 'warehouseId'),
+    availableQty: normalizeFiniteNumber(item.availableQty, 'availableQty'),
+    safetyStockQty: normalizeFiniteNumber(item.safetyStockQty, 'safetyStockQty'),
+    suggestedPurchaseQty: normalizeFiniteNumber(item.suggestedPurchaseQty, 'suggestedPurchaseQty'),
+    latestOutboundAt: normalizeNullableStringId(item.latestOutboundAt, 'latestOutboundAt'),
+  };
+}
+
+function normalizeOrderStage(item: DashboardOrderStage): DashboardOrderStage {
+  return {
+    ...item,
+    purchaseCount: normalizeFiniteNumber(item.purchaseCount, 'purchaseCount'),
+    salesCount: normalizeFiniteNumber(item.salesCount, 'salesCount'),
+  };
+}
+
+function normalizeTopProduct(item: DashboardTopProduct): DashboardTopProduct {
+  return {
+    ...item,
+    productId: normalizeStringId(item.productId, 'productId'),
+    salesAmount: normalizeFiniteNumber(item.salesAmount, 'salesAmount'),
+    salesQty: normalizeFiniteNumber(item.salesQty, 'salesQty'),
+    availableQty: normalizeFiniteNumber(item.availableQty, 'availableQty'),
+  };
+}
+
+function normalizeSupplierPerformance(item: DashboardSupplierPerformance): DashboardSupplierPerformance {
+  return {
+    ...item,
+    supplierId: normalizeStringId(item.supplierId, 'supplierId'),
+    deliveryScore: normalizeFiniteNumber(item.deliveryScore, 'deliveryScore'),
+    qualityScore: normalizeFiniteNumber(item.qualityScore, 'qualityScore'),
+    onTimeRate: normalizeFiniteNumber(item.onTimeRate, 'onTimeRate'),
+  };
+}
+
+function normalizeOverview(data: DashboardOverview): DashboardOverview {
+  return {
+    refreshedAt: String(data.refreshedAt),
+    metrics: data.metrics.map(normalizeMetric),
+    trend: data.trend.map(normalizeTrendPoint),
+    todos: data.todos.map(normalizeTodo),
+    stockAlerts: data.stockAlerts.map(normalizeStockAlert),
+    orderStages: data.orderStages.map(normalizeOrderStage),
+    topProducts: data.topProducts.map(normalizeTopProduct),
+    supplierPerformance: data.supplierPerformance.map(normalizeSupplierPerformance),
+  };
+}
+
+export async function getDashboardOverview() {
+  if (useMockApi) {
+    await new Promise(resolve => window.setTimeout(resolve, 220));
+    return normalizeOverview(mockOverview);
+  }
+
+  return getResult<DashboardOverview>('/dashboard/overview').then(normalizeOverview);
+}

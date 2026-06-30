@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-screen bg-background text-foreground">
     <!-- Sidebar -->
-    <aside class="flex w-[224px] shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
+    <aside class="app-sidebar flex w-[224px] shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
       <!-- Brand -->
       <div class="flex h-16 items-center gap-3 px-4 text-sidebar-foreground border-b border-sidebar-border">
         <img class="h-9 w-9 rounded-lg" :src="logoUrl" alt="启衡 ERP" />
@@ -339,3 +339,11 @@ onBeforeUnmount(() => {
     />
   </div>
 </template>
+
+<style scoped>
+@media (max-width: 760px) {
+  .app-sidebar {
+    display: none;
+  }
+}
+</style>

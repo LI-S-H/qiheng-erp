@@ -18,6 +18,7 @@
     "smoke:warehouse-warehouses": "node scripts/smoke-warehouse-warehouses.cjs",
     "smoke:warehouse-stocks": "node scripts/smoke-warehouse-stocks.cjs",
     "smoke:warehouse-stock-bills": "node scripts/smoke-warehouse-stock-bills.cjs",
+    "smoke:dashboard": "node scripts/smoke-dashboard.cjs",
     "smoke:purchase": "node scripts/smoke-purchase.cjs",
     "smoke:sales": "node scripts/smoke-sales.cjs",
     "check:openapi": "node scripts/check-openapi.cjs",

@@ -44,6 +44,30 @@ MVP 阶段共设计 25 张表。
 | AI | `ai_document_chunk` | 文档切片和向量 key |
 | AI | `ai_interaction_log` | AI 问答、Tool 调用和权限审计 |
 
+## 工作台待办任务表扩展建议
+
+工作台待办不建议全部做成“每次查询当前状态后临时判断是否完成”。采购单待审核、销售单待审核、待确认入库、待确认出库、库存低于安全线这类状态型待办可以实时聚合，业务状态完成后自动消失；但库存扣减失败、库存补偿失败、第三方同步失败、AI 高风险建议待确认等异常型待办必须可追溯，建议后续新增 `dashboard_todo_task` 表持久化。
+
+建议字段：
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 待办任务主键，对应接口 `todoId` |
+| `business_type` / `business_label` | 事件源编码和展示标签，例如 `EXCEPTION`、`AI` |
+| `title` / `description` | 工作台展示标题和业务影响说明 |
+| `priority` | 优先级：`HIGH`、`MEDIUM`、`LOW` |
+| `sort_weight` | 排序权重，数值越小越靠前，由异常严重程度、影响范围、是否人工处理和发生时间计算 |
+| `source_type` / `source_no` | 来源业务类型和来源单号，例如销售出库单、采购单、AI 建议编号 |
+| `error_code` / `error_message` | 异常码和可展示错误信息 |
+| `resolve_hint` | 处理建议 |
+| `required_permission` | 处理所需权限码，例如 `dashboard:todo:handle` 或具体业务权限 |
+| `assignee_user_id` / `assignee_role_code` / `assignee_dept_id` | 可处理人范围；异常任务只返回给命中的用户、角色或部门 |
+| `status` | `PENDING`、`DONE`、`IGNORED` |
+| `occurred_at` | 异常或人工任务发生时间 |
+| `completed_by` / `completed_at` / `complete_remark` | 人工完成记录 |
+
+这样处理的好处是异常事件不会因为库存状态后来被修复、接口重试成功或聚合口径变化而丢失；业务人员可以在工作台查看错误信息，确认补偿或修复完成后再手动完成，后端也能保留审计痕迹。异常任务必须按处理权限和指派范围过滤，不能像普通业务聚合待办一样发给所有员工；普通业务聚合待办仍按采购、销售、仓储等模块权限实时统计返回。
+
 ## 面试表达视角
 
 这套表设计在面试里可以重点表达成一句话：

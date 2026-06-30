@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.TableId;
 import java.io.Serializable;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
@@ -37,14 +38,17 @@ public class ProductCategory implements Serializable {
 
     @Schema(description = "上级分类ID，顶级为0")
     @TableField("parent_id")
+    @NotNull(message = "上级分类ID不能为空")
     private Long parentId;
 
     @Schema(description = "分类名称")
     @TableField("category_name")
+    @NotNull(message = "分类名称不能为空")
     private String categoryName;
 
     @Schema(description = "状态：1启用，0禁用")
     @TableField("status")
+    @NotNull(message = "状态不能为空")
     private Integer status;
 
     @Schema(description = "创建时间")

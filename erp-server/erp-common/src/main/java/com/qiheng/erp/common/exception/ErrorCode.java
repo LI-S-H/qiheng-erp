@@ -43,6 +43,11 @@ public enum ErrorCode {
     CATEGORY_HAS_PRODUCTS(40004, "分类下存在产品，无法删除"),
     PRODUCT_CODE_DUPLICATE(40005, "产品编码已存在"),
     CHILD_DEPT_EXISTS(40006, "部门下存在子部门，无法删除"),
+    CATEGORY_ERROR(40007, "分类错误"),
+    CATEGORY_NOT_FOUND(40008, "分类不存在"),
+    PARENT_NOT_FOUND(40009, "上级分类不存在"),
+    PARENT_DISABLED(40010, "上级分类已停用"),
+    CATEGORY_CYCLE_REFERENCE(40011, "分类存在循环引用"),
 
     // 仓库模块 5xxxx
     WAREHOUSE_CODE_DUPLICATE(50001, "仓库编码已存在"),

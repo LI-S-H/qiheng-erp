@@ -75,8 +75,7 @@ public class DistributedLockAspect {
         //解析表达式
         Expression expression = spelParser.parseExpression(keyExpression);
         //解析表达式值
-        String lockKey = expression.getValue(context, String.class);
         //返回解析后的锁键
-        return lockKey;
+        return expression.getValue(context, String.class);
     }
 }

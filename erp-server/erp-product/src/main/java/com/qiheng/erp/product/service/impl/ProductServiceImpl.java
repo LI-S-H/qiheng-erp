@@ -18,6 +18,8 @@ import com.qiheng.erp.product.mapper.ProductCategoryMapper;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.product.service.IProductService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -47,6 +50,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
+    @Autowired
+    private RedissonClient redissonClient;
     /**
      * 产品分页查询
      * @param dto 分页查询参数DTO
@@ -95,12 +100,18 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
      * @return 产品VO
      */
     @Override
+    @DistributedLock(key ="'product:category:global'",waitTime = 5,leaseTime = 10,timeUnit = TimeUnit.SECONDS)
     public ProductVo add(Product product) {
         product.setProductCode(generateProductCode());
         if (product.getSafetyStockQty() != null) {
             product.setSafetyStockQty(
                     product.getSafetyStockQty().multiply(BigDecimal.valueOf(100)).setScale(0, RoundingMode.HALF_UP)
             );
+        }
+        // 校验分类是否存在且状态正常
+        ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
+        if (category == null || category.getStatus() != 1) {
+            throw new BizException(ErrorCode.CATEGORY_ERROR);
         }
         productMapper.insert(product);
         return getDetailById(product.getId());
@@ -200,20 +211,40 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
      * @param product 产品实体
      * @return 产品VO
      */
-    @DistributedLock(key = "'product:lock:' + #product.id")
+    @DistributedLock(key = "'product:lock:global'")
     @Override
     public ProductVo update(Product product) {
         product.setProductCode(null);
         if (product.getCategoryId() != null) {
-            //校验分类是否存在且状态正常
-            ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
-            if (category == null) {
-                throw new BizException(ErrorCode.DATA_NOT_FOUND);
+            // 校验分类是否存在
+            RLock categoryLock = redissonClient.getLock("product:category:global");
+            boolean acquired;
+            try {
+                // 尝试获取分类锁
+                acquired = categoryLock.tryLock(5, 10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                // 如果线程在等待锁的过程中被中断，重新设置中断状态并抛出异常
+                Thread.currentThread().interrupt();
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作被中断");
             }
-            if (category.getStatus() == 0) {
-                throw new BizException(ErrorCode.CATEGORY_DISABLED);
+            if (!acquired) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "分类正在被其他用户操作，请稍后再试");
+            }
+            try {
+                ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
+                if (category == null) {
+                    throw new BizException(ErrorCode.DATA_NOT_FOUND);
+                }
+                if (category.getStatus() == 0) {
+                    throw new BizException(ErrorCode.CATEGORY_DISABLED);
+                }
+            } finally {
+                if (categoryLock.isHeldByCurrentThread()) {
+                    categoryLock.unlock();
+                }
             }
         }
+
         if (product.getSafetyStockQty() != null) {
             product.setSafetyStockQty(
                     // 保存时将安全库存数量x100

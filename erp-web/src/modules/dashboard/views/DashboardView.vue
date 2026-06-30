@@ -24,6 +24,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { getDashboardOverview } from '../api';
@@ -35,6 +45,8 @@ const router = useRouter();
 const loading = ref(false);
 const overview = ref<DashboardOverview | null>(null);
 const activeDetail = ref<DetailType | null>(null);
+const expandedTodoId = ref<string | null>(null);
+const pendingCompleteTodo = ref<DashboardTodoItem | null>(null);
 const trendDayOptions = [7, 15, 30] as const;
 const selectedTrendDays = ref<(typeof trendDayOptions)[number]>(7);
 const trendTransitioning = ref(false);
@@ -258,20 +270,27 @@ function todoEvidenceToneClass(tone: 'neutral' | 'watch' | 'risk') {
 
 function openDetail(type: DetailType) {
   activeDetail.value = type;
+  expandedTodoId.value = null;
 }
 
-function showTodoDetail(todo: DashboardTodoItem) {
-  const message = todo.errorMessage || todo.resolveHint || todo.description;
-  toast.info(`${todo.title}：${message}`);
+function toggleTodoEvidence(todo: DashboardTodoItem) {
+  expandedTodoId.value = expandedTodoId.value === todo.todoId ? null : todo.todoId;
 }
 
-function completeTodo(todo: DashboardTodoItem) {
-  if (todo.completionMode !== 'MANUAL') {
-    toast.info('处理完对应业务后，该待办会自动完成。');
-    return;
-  }
+function requestCompleteTodo(todo: DashboardTodoItem) {
+  pendingCompleteTodo.value = todo;
+}
 
-  toast.success(`已保留手动完成入口：后续接入 POST /dashboard/todos/${todo.todoId}/complete。`);
+function setCompleteConfirmOpen(open: boolean) {
+  if (!open) pendingCompleteTodo.value = null;
+}
+
+function confirmCompleteTodo() {
+  const todo = pendingCompleteTodo.value;
+  if (!todo) return;
+
+  toast.success(`已确认完成「${todo.title}」处理，后续接入 POST /dashboard/todos/${todo.todoId}/complete。`);
+  pendingCompleteTodo.value = null;
 }
 
 function goToTodoRoute(todo: DashboardTodoItem) {
@@ -369,7 +388,7 @@ onBeforeUnmount(() => {
                     </g>
                   </g>
                   <g class="dashboard-trend-labels">
-                    <text v-for="label in trendAxisLabels" :key="label.key" :x="label.x" y="244" text-anchor="middle">{{ label.date }}</text>
+                    <text v-for="label in trendAxisLabels" :key="label.key" :x="label.x" y="238" text-anchor="middle">{{ label.date }}</text>
                   </g>
                 </g>
               </svg>
@@ -625,7 +644,7 @@ onBeforeUnmount(() => {
                     <span><small>待处理数量</small><strong>{{ todo.count }}</strong></span>
                     <span><small>完成方式</small><strong>处理对应业务后自动完成</strong></span>
                   </div>
-                  <div v-if="todo.evidence.length > 0" class="dashboard-detail-evidence">
+                  <div v-if="todo.evidence.length > 0 && expandedTodoId === todo.todoId" class="dashboard-detail-evidence">
                     <div v-for="item in todo.evidence" :key="item.itemId" class="dashboard-detail-evidence__row">
                       <div class="min-w-0">
                         <strong>{{ item.primaryText }}</strong>
@@ -647,11 +666,13 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="dashboard-detail-action">
                   <span class="dashboard-detail-count">{{ todo.count }}</span>
-                  <Button v-if="isManualTodo(todo)" size="sm" variant="outline" @click="showTodoDetail(todo)">查看详情</Button>
+                  <Button v-if="!isManualTodo(todo) && todo.evidence.length > 0" size="sm" variant="outline" @click="toggleTodoEvidence(todo)">
+                    {{ expandedTodoId === todo.todoId ? '收起详情' : '查看详情' }}
+                  </Button>
                   <Button
                     size="sm"
                     :variant="isManualTodo(todo) ? 'default' : 'outline'"
-                    @click="isManualTodo(todo) ? completeTodo(todo) : goToTodoRoute(todo)"
+                    @click="isManualTodo(todo) ? requestCompleteTodo(todo) : goToTodoRoute(todo)"
                   >
                     {{ isManualTodo(todo) ? '完成处理' : '前往完成' }}
                   </Button>
@@ -718,6 +739,27 @@ onBeforeUnmount(() => {
             </div>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog :open="!!pendingCompleteTodo" @update:open="setCompleteConfirmOpen">
+          <AlertDialogContent size="sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认完成异常处理</AlertDialogTitle>
+              <AlertDialogDescription>
+                请确认已完成补偿、重试或人工修复后再完成处理。完成后该异常待办会在下一次工作台刷新时从待处理列表移除。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div v-if="pendingCompleteTodo" class="dashboard-confirm-card">
+              <strong>{{ pendingCompleteTodo.title }}</strong>
+              <span>{{ pendingCompleteTodo.sourceNo || pendingCompleteTodo.todoId }}</span>
+              <small v-if="pendingCompleteTodo.errorCode">{{ pendingCompleteTodo.errorCode }}</small>
+              <p v-if="pendingCompleteTodo.errorMessage">{{ pendingCompleteTodo.errorMessage }}</p>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction @click="confirmCompleteTodo">确认完成</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   </section>
@@ -847,13 +889,15 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-trend-labels text {
-  fill: #667085;
-  font-size: 10px;
+  fill: #344054;
+  font-size: 9px;
+  font-weight: 600;
 }
 
 .dashboard-trend-axis text {
-  fill: #98a2b3;
-  font-size: 11px;
+  fill: #475467;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .dashboard-trend-points text {
@@ -1479,6 +1523,37 @@ circle.dashboard-trend--margin {
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+
+.dashboard-confirm-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  background: #fff1f2;
+  padding: 10px 12px;
+}
+
+.dashboard-confirm-card strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.dashboard-confirm-card span,
+.dashboard-confirm-card small {
+  width: fit-content;
+  border-radius: 6px;
+  background: white;
+  padding: 2px 6px;
+  color: #be123c;
+  font-size: 11px;
+}
+
+.dashboard-confirm-card p {
+  margin: 0;
+  color: #9f1239;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .dashboard-detail-rank__index {

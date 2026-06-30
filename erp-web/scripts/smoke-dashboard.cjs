@@ -96,6 +96,7 @@ runSmoke({
     const quickTodoDialog = page.getByRole('dialog', { name: '业务待办详情' });
     await quickTodoDialog.getByText('销售单待审核').waitFor();
     await quickTodoDialog.getByText('处理对应业务后自动完成').first().waitFor();
+    await quickTodoDialog.getByRole('button', { name: '查看详情' }).first().waitFor();
     await quickTodoDialog.getByRole('button', { name: '前往完成' }).first().waitFor();
     await page.keyboard.press('Escape');
     await quickTodoDialog.waitFor({ state: 'hidden' });
@@ -111,15 +112,36 @@ runSmoke({
     await todoDialog.getByText('外部同步异常').waitFor();
     await todoDialog.getByText('智能助手异常建议').waitFor();
     await todoDialog.getByText('STOCK_DEDUCT_TX_FAILED').waitFor();
-    await todoDialog.getByText('USB-C扩展坞（P0013）').waitFor();
-    if ((await todoDialog.getByText('参考采购价').count()) < 2) {
+    const stockExceptionTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '库存扣减失败' });
+    if (await stockExceptionTodo.getByRole('button', { name: '查看详情' }).count()) {
+      throw new Error('异常类待办不应展示无效的查看详情按钮');
+    }
+    await stockExceptionTodo.getByRole('button', { name: '完成处理' }).click();
+    const completeConfirm = page.getByRole('alertdialog', { name: '确认完成异常处理' });
+    await completeConfirm.getByText('SO20260630018', { exact: true }).waitFor();
+    await completeConfirm.getByText('STOCK_DEDUCT_TX_FAILED').waitFor();
+    await completeConfirm.getByRole('button', { name: '取消' }).click();
+    await completeConfirm.waitFor({ state: 'hidden' });
+
+    const salesApproveTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '销售单待审核' });
+    await salesApproveTodo.getByRole('button', { name: '查看详情' }).click();
+    await salesApproveTodo.getByText('SO20260630033').waitFor();
+    await salesApproveTodo.getByText('授信占用偏高').waitFor();
+
+    const priceReviewTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '采购价偏离参考价' });
+    await priceReviewTodo.getByRole('button', { name: '查看详情' }).click();
+    await priceReviewTodo.getByText('USB-C扩展坞（P0013）').waitFor();
+    if ((await priceReviewTodo.getByText('参考采购价').count()) < 2) {
       throw new Error('采购价格复核应展示参考采购价证据指标');
     }
-    if ((await todoDialog.getByText('最近采购价').count()) < 2) {
+    if ((await priceReviewTodo.getByText('最近采购价').count()) < 2) {
       throw new Error('采购价格复核应展示最近采购价证据指标');
     }
-    await todoDialog.getByText('华北连锁零售（C003）').waitFor();
-    if ((await todoDialog.getByText('授信额度').count()) < 2) {
+
+    const creditReviewTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '客户信用待复核' });
+    await creditReviewTodo.getByRole('button', { name: '查看详情' }).click();
+    await creditReviewTodo.getByText('华北连锁零售（C003）').waitFor();
+    if ((await creditReviewTodo.getByText('授信额度').count()) < 2) {
       throw new Error('客户信用复核应展示授信额度证据指标');
     }
     if (await todoDialog.getByRole('button', { name: '前往处理' }).count()) {

@@ -295,6 +295,68 @@ function toggleTodoEvidence(todo: DashboardTodoItem) {
   expandedTodoId.value = expandedTodoId.value === todo.todoId ? null : todo.todoId;
 }
 
+function setTodoEvidenceTransitionState(element: HTMLElement, height: string, opacity: string, transform: string) {
+  element.style.height = height;
+  element.style.opacity = opacity;
+  element.style.transform = transform;
+}
+
+function finishTodoEvidenceTransition(element: HTMLElement, done?: () => void) {
+  let finished = false;
+  const complete = () => {
+    if (finished) return;
+    finished = true;
+    element.removeEventListener('transitionend', handleTransitionEnd);
+    done?.();
+  };
+  const handleTransitionEnd = (event: TransitionEvent) => {
+    if (event.target === element && event.propertyName === 'height') complete();
+  };
+
+  element.addEventListener('transitionend', handleTransitionEnd);
+  window.setTimeout(complete, 240);
+}
+
+function beforeTodoEvidenceEnter(el: Element) {
+  setTodoEvidenceTransitionState(el as HTMLElement, '0px', '0', 'translateY(-4px)');
+}
+
+function enterTodoEvidence(el: Element, done: () => void) {
+  const element = el as HTMLElement;
+  finishTodoEvidenceTransition(element, done);
+  window.requestAnimationFrame(() => {
+    setTodoEvidenceTransitionState(element, `${element.scrollHeight}px`, '1', 'translateY(0)');
+  });
+}
+
+function afterTodoEvidenceEnter(el: Element) {
+  const element = el as HTMLElement;
+  element.style.height = 'auto';
+  element.style.opacity = '';
+  element.style.transform = '';
+}
+
+function beforeTodoEvidenceLeave(el: Element) {
+  const element = el as HTMLElement;
+  setTodoEvidenceTransitionState(element, `${element.scrollHeight}px`, '1', 'translateY(0)');
+  void element.offsetHeight;
+}
+
+function leaveTodoEvidence(el: Element, done: () => void) {
+  const element = el as HTMLElement;
+  finishTodoEvidenceTransition(element, done);
+  window.requestAnimationFrame(() => {
+    setTodoEvidenceTransitionState(element, '0px', '0', 'translateY(-4px)');
+  });
+}
+
+function afterTodoEvidenceLeave(el: Element) {
+  const element = el as HTMLElement;
+  element.style.height = '';
+  element.style.opacity = '';
+  element.style.transform = '';
+}
+
 function requestCompleteTodo(todo: DashboardTodoItem) {
   pendingCompleteTodo.value = todo;
 }
@@ -665,20 +727,38 @@ onBeforeUnmount(() => {
                     <span><small>待处理数量</small><strong>{{ todo.count }}</strong></span>
                     <span><small>完成方式</small><strong>处理对应业务后自动完成</strong></span>
                   </div>
-                  <div v-if="todo.evidence.length > 0 && expandedTodoId === todo.todoId" class="dashboard-detail-evidence">
-                    <div v-for="item in todo.evidence" :key="item.itemId" class="dashboard-detail-evidence__row">
-                      <div class="min-w-0">
-                        <strong>{{ item.primaryText }}</strong>
-                        <small>{{ item.secondaryText }}</small>
-                      </div>
-                      <div class="dashboard-detail-evidence__metrics">
-                        <span v-for="metric in item.metrics" :key="`${item.itemId}-${metric.label}`">
-                          <small>{{ metric.label }}</small>
-                          <strong :class="todoEvidenceToneClass(metric.tone)">{{ metric.value }}</strong>
-                        </span>
+                  <Transition
+                    name="dashboard-detail-evidence-collapse"
+                    :css="false"
+                    @before-enter="beforeTodoEvidenceEnter"
+                    @enter="enterTodoEvidence"
+                    @after-enter="afterTodoEvidenceEnter"
+                    @before-leave="beforeTodoEvidenceLeave"
+                    @leave="leaveTodoEvidence"
+                    @after-leave="afterTodoEvidenceLeave"
+                  >
+                    <div
+                      v-if="todo.evidence.length > 0 && expandedTodoId === todo.todoId"
+                      class="dashboard-detail-evidence-collapse"
+                    >
+                      <div class="dashboard-detail-evidence-collapse__inner">
+                        <div class="dashboard-detail-evidence">
+                          <div v-for="item in todo.evidence" :key="item.itemId" class="dashboard-detail-evidence__row">
+                            <div class="min-w-0">
+                              <strong>{{ item.primaryText }}</strong>
+                              <small>{{ item.secondaryText }}</small>
+                            </div>
+                            <div class="dashboard-detail-evidence__metrics">
+                              <span v-for="metric in item.metrics" :key="`${item.itemId}-${metric.label}`">
+                                <small>{{ metric.label }}</small>
+                                <strong :class="todoEvidenceToneClass(metric.tone)">{{ metric.value }}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </Transition>
                   <div v-if="todo.errorMessage || todo.resolveHint" class="dashboard-detail-todo__error">
                     <code v-if="todo.errorCode">{{ todo.errorCode }}</code>
                     <p v-if="todo.errorMessage">{{ todo.errorMessage }}</p>
@@ -1390,6 +1470,25 @@ circle.dashboard-trend--margin {
   display: grid;
   min-width: 0;
   gap: 8px;
+  overflow: hidden;
+}
+
+.dashboard-detail-evidence-collapse {
+  min-width: 0;
+  height: auto;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    height 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 140ms ease,
+    transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: height, opacity, transform;
+}
+
+.dashboard-detail-evidence-collapse__inner {
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 

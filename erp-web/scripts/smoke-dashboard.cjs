@@ -116,6 +116,20 @@ runSmoke({
     await systemExceptionTodo.getByText('AI-MCP-20260701-001').waitFor();
     await systemExceptionTodo.getByText('DLQ-ORDER-STOCK-00023').waitFor();
     await systemExceptionTodo.getByText('MCP超时').waitFor();
+    const evidenceCollapseTransition = await systemExceptionTodo.locator('.dashboard-detail-evidence-collapse').evaluate(element => {
+      const style = window.getComputedStyle(element);
+      return {
+        property: style.transitionProperty,
+        duration: style.transitionDuration,
+      };
+    });
+    if (
+      !evidenceCollapseTransition.property.includes('height')
+      || !evidenceCollapseTransition.property.includes('opacity')
+      || !evidenceCollapseTransition.property.includes('transform')
+    ) {
+      throw new Error(`业务待办详情展开应包含折叠缓动：${JSON.stringify(evidenceCollapseTransition)}`);
+    }
     const systemExceptionLayout = await todoDialog.locator('.dashboard-detail-scroll').evaluate(scroll => {
       const dialog = scroll.closest('[role="dialog"]');
       const todo = scroll.querySelector('.dashboard-detail-todo--system');

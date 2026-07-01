@@ -93,10 +93,16 @@ runSmoke({
     await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 });
 
     await page.getByRole('button', { name: /销售单待审核/ }).click();
-    const quickTodoDialog = page.getByRole('dialog', { name: '业务待办详情' });
-    await quickTodoDialog.getByText('销售单待审核').waitFor();
+    const quickTodoDialog = page.getByRole('dialog', { name: '销售单待审核详情' });
+    await quickTodoDialog.locator('.dashboard-detail-todo').getByText('销售单待审核', { exact: true }).waitFor();
+    if ((await quickTodoDialog.locator('.dashboard-detail-todo').count()) !== 1) {
+      throw new Error('从业务待办单条摘要进入时，应只展示当前待办详情');
+    }
+    if (await quickTodoDialog.locator('.dashboard-detail-todo').filter({ hasText: '系统异常' }).count()) {
+      throw new Error('从销售单待审核摘要进入时，不应展示系统异常等其他待办');
+    }
     await quickTodoDialog.getByText('处理对应业务后自动完成').first().waitFor();
-    await quickTodoDialog.getByRole('button', { name: '查看详情' }).first().waitFor();
+    await quickTodoDialog.getByRole('button', { name: '收起详情' }).first().waitFor();
     await quickTodoDialog.getByRole('button', { name: '前往完成' }).first().waitFor();
     await page.keyboard.press('Escape');
     await quickTodoDialog.waitFor({ state: 'hidden' });
@@ -124,7 +130,8 @@ runSmoke({
       };
     });
     if (
-      !evidenceCollapseTransition.property.includes('height')
+      !evidenceCollapseTransition.property.includes('grid-template-rows')
+      || !evidenceCollapseTransition.property.includes('margin-top')
       || !evidenceCollapseTransition.property.includes('opacity')
       || !evidenceCollapseTransition.property.includes('transform')
     ) {

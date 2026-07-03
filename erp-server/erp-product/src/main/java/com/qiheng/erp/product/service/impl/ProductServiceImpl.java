@@ -27,8 +27,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -59,6 +60,13 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
      */
     @Override
     public PageResult<ProductVo> page(ProductPageDto dto) {
+        // 如果指定了分类ID，查询该分类及所有子分类的ID
+        Set<Long> categoryIds = null;
+        if (dto.getCategoryId() != null) {
+            categoryIds = new HashSet<>();
+            collectChildCategoryIds(dto.getCategoryId(), categoryIds);
+        }
+
         MPJLambdaWrapper<Product> wrapper = new MPJLambdaWrapper<Product>()
                 .selectAs(Product::getId, ProductVo::getProductId)
                 .select(Product::getProductCode)
@@ -80,7 +88,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
                 .leftJoin(ProductCategory.class, ProductCategory::getId, Product::getCategoryId)
                 .like(StrUtil.isNotBlank(dto.getProductCode()), Product::getProductCode, dto.getProductCode())
                 .like(StrUtil.isNotBlank(dto.getProductName()), Product::getProductName, dto.getProductName())
-                .eq(dto.getCategoryId() != null, Product::getCategoryId, dto.getCategoryId())
+                .in(categoryIds != null, Product::getCategoryId, categoryIds)
                 .like(StrUtil.isNotBlank(dto.getBrandName()), Product::getBrandName, dto.getBrandName())
                 .like(StrUtil.isNotBlank(dto.getBarcode()), Product::getBarcode, dto.getBarcode())
                 .eq(dto.getStatus() != null, Product::getStatus, dto.getStatus())
@@ -92,6 +100,33 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
             }
         });
         return PageResult.of(result.getRecords(), (int) result.getTotal(), (int) result.getCurrent(), (int) result.getSize());
+    }
+
+    private void collectChildCategoryIds(Long parentId, Set<Long> categoryIds) {
+        // 一次性查出所有启用分类
+        List<ProductCategory> allCategories = productCategoryMapper.selectList(new LambdaQueryWrapper<>());
+        // 构建 parentId -> List<childId> 映射表
+        Map<Long, List<Long>> parentChildMap = allCategories.stream()
+                .collect(Collectors.groupingBy(ProductCategory::getParentId,
+                        Collectors.mapping(ProductCategory::getId, Collectors.toList())));
+        categoryIds.add(parentId);
+        collectChildIdsFromMap(parentId, parentChildMap, categoryIds);
+    }
+
+    /**
+     * 递归查询所有子分类ID
+     * @param parentId 父分类ID
+     * @param parentChildMap parentId -> List<childId> 映射表
+     * @param result 子分类ID集合
+     */
+    private void collectChildIdsFromMap(Long parentId, Map<Long, List<Long>> parentChildMap, Set<Long> result) {
+        List<Long> children = parentChildMap.get(parentId);
+        if (children != null) {
+            for (Long childId : children) {
+                result.add(childId);
+                collectChildIdsFromMap(childId, parentChildMap, result);
+            }
+        }
     }
 
     /**

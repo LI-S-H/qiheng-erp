@@ -222,12 +222,11 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
         // 查询出所有引用该权限码的角色
         List<String> permCodes = permissions.stream().map(SysPermission::getPermissionCode).toList();
         List<SysRole> roles = sysRoleMapper.selectByPermissionCodes(permCodes);
-        // 如果有角色引用该权限码，抛出异常
-        if (!roles.isEmpty()) {
-            throw new BizException(ErrorCode.PERMISSION_IN_USE);
-        }
+        // 从引用该权限码的角色中移除该权限码，并刷新受影响用户会话
+        deleteRolePermission(permissions);
         // 删除权限码
         sysPermissionMapper.deleteByIds(permissionIds);
+        // 刷新缓存
         redisUtil.delete(CACHE_KEY);
     }
 

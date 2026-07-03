@@ -44,7 +44,7 @@
         <easyexcel.version>4.0.3</easyexcel.version>
         <guava.version>33.4.8-jre</guava.version>
         <minio.version>8.5.17</minio.version>
-        <redisson.version>3.46.0</redisson.version>
+        <redisson.version>3.48.0</redisson.version>
         <spring-ai.version>1.1.2</spring-ai.version>
         <spring-ai-alibaba.version>1.1.2.0</spring-ai-alibaba.version>
         <spring-ai-alibaba-extensions.version>1.1.2.1</spring-ai-alibaba-extensions.version>
@@ -214,6 +214,11 @@
             <dependency>
                 <groupId>org.redisson</groupId>
                 <artifactId>redisson-spring-boot-starter</artifactId>
+                <version>${redisson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson-spring-data-35</artifactId>
                 <version>${redisson.version}</version>
             </dependency>
         </dependencies>

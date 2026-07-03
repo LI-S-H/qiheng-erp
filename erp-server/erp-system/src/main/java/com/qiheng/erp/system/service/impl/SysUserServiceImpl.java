@@ -78,6 +78,17 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
      */
     @Override
     public PageResult<SysUserVo> page(SysUserPageDto dto) {
+        // 如果指定了角色ID，先查出拥有该角色的用户ID集合
+        Set<Long> userIds = null;
+        if (dto.getRoleId() != null) {
+            userIds = sysUserRoleMapper.selectList(
+                    new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getRoleId, dto.getRoleId())
+            ).stream().map(SysUserRole::getUserId).collect(Collectors.toSet());
+            if (userIds.isEmpty()) {
+                // 没有用户拥有该角色，直接返回空结果
+                return PageResult.of(List.of(), 0, (int) dto.toPage().getCurrent(), (int) dto.toPage().getSize());
+            }
+        }
         //构建查询条件
         MPJLambdaWrapper<SysUser> wrapper = new MPJLambdaWrapper<SysUser>()
                 .selectAs(SysUser::getId, SysUserVo::getUserId)
@@ -95,6 +106,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
                 .like(StrUtil.isNotBlank(dto.getRealName()), SysUser::getRealName, dto.getRealName())
                 .eq(dto.getDeptId() != null, SysUser::getDeptId, dto.getDeptId())
                 .eq(dto.getStatus() != null, SysUser::getStatus, dto.getStatus())
+                .in(userIds != null, SysUser::getId, userIds)
                 .orderByDesc(SysUser::getCreateTime);
         //执行查询
         Page<SysUserVo> result = sysUserMapper.selectJoinPage(dto.toPage(), SysUserVo.class, wrapper);
@@ -173,18 +185,38 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Transactional(rollbackFor = Exception.class)
     @Override
     public SysUserVo saveUser(SysUser sysUser) {
-        //补全信息
         sysUser.setPasswordHash(passwordUtil.encode(sysUser.getPassword()));
-        //新增
+        // 判断角色中是否包含超级管理员角色
+        judgeAndSetAdmin(sysUser);
+        // 新增用户
         sysUserMapper.insert(sysUser);
-        //补全中间表
         List<SysUserRole> userRoles = sysUser.getRoleIds().stream().map(roleId ->
                 new SysUserRole().setUserId(sysUser.getId()).setRoleId(roleId)
         ).toList();
-        //批量新增
+        // 新增用户角色关系
         sysUserRoleService.saveBatch(userRoles);
-        //查询新增用户详情并填充角色信息和部门信息
         return getDetailById(sysUser.getId());
+    }
+
+    /**
+     * 判断并设置超级管理员角色
+     * @param sysUser 用户实体
+     */
+    private void judgeAndSetAdmin(SysUser sysUser) {
+        List<SysRole> roles = sysRoleMapper.selectByIds(sysUser.getRoleIds());
+        boolean hasSuperAdmin = roles.stream()
+                .anyMatch(role -> role.getPermissionCodes() != null && role.getPermissionCodes().contains("*"));
+        if (hasSuperAdmin) {
+            // 只保留超级管理员角色
+            List<Long> superAdminRoleIds = roles.stream()
+                    .filter(role -> role.getPermissionCodes() != null && role.getPermissionCodes().contains("*"))
+                    .map(SysRole::getId)
+                    .toList();
+            sysUser.setRoleIds(superAdminRoleIds);
+            sysUser.setIsAdmin(true);
+        } else {
+            sysUser.setIsAdmin(false);
+        }
     }
 
     /**
@@ -268,23 +300,25 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Override
     @DistributedLock(key = "'sys:user:lock' + #userId")
     public SysUserVo updateUser(Long userId, SysUser sysUser) {
-        //查询用户是否存在
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND.getCode(), "用户不存在");
         }
-        //更新用户信息
         sysUser.setId(userId);
+        // 判断角色中是否包含超级管理员角色
+        if (sysUser.getRoleIds() != null && !sysUser.getRoleIds().isEmpty()) {
+            judgeAndSetAdmin(sysUser);
+        }
         sysUserMapper.updateById(sysUser);
-        //更新用户角色关系
+        // 更新用户角色关系
         sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, userId));
-        List<SysUserRole> userRoles = sysUser.getRoleIds().stream().map(roleId ->
-                new SysUserRole().setUserId(userId).setRoleId(roleId)
-        ).toList();
-        sysUserRoleService.saveBatch(userRoles);
-        //刷新用户Session
+        if (sysUser.getRoleIds() != null && !sysUser.getRoleIds().isEmpty()) {
+            List<SysUserRole> userRoles = sysUser.getRoleIds().stream().map(roleId ->
+                    new SysUserRole().setUserId(userId).setRoleId(roleId)
+            ).toList();
+            sysUserRoleService.saveBatch(userRoles);
+        }
         sessionManager.refreshUserSession(userId);
-        //查询更新后的用户详情并填充角色信息和部门信息
         return getDetailById(userId);
     }
 
@@ -297,27 +331,44 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Transactional(rollbackFor = Exception.class)
     @Override
     public void updateRoles(Long userId,List<String> roleIds) {
-        //查询用户是否存在
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND.getCode(), "用户不存在");
         }
-        //校验角色状态：直接查是否有停用的角色
         List<Long> roleIdLongs = roleIds.stream().map(Long::valueOf).toList();
+        // 查询传入的角色
+        List<SysRole> roles = sysRoleMapper.selectByIds(roleIdLongs);
+        // 判断是否包含超级管理员角色（permissionCodes包含"*"的角色）
+        boolean hasSuperAdmin = roles.stream()
+                .anyMatch(role -> role.getPermissionCodes() != null && role.getPermissionCodes().contains("*"));
+        if (hasSuperAdmin) {
+            // 只保留超级管理员角色
+            roleIds = roles.stream()
+                    .filter(role -> role.getPermissionCodes() != null && role.getPermissionCodes().contains("*"))
+                    .map(role -> role.getId().toString())
+                    .toList();
+            // 设置 isAdmin = true
+            sysUserMapper.updateById(new SysUser().setId(userId).setIsAdmin(true));
+        } else {
+            // 非超级管理员，设置 isAdmin = false
+            sysUserMapper.updateById(new SysUser().setId(userId).setIsAdmin(false));
+        }
+        // 校验角色状态
+        List<Long> finalRoleIdLongs = roleIds.stream().map(Long::valueOf).toList();
         Long disabledCount = sysRoleMapper.selectCount(new LambdaQueryWrapper<SysRole>()
-                .in(SysRole::getId, roleIdLongs)
+                .in(SysRole::getId, finalRoleIdLongs)
                 .eq(SysRole::getStatus, 0));
         if (disabledCount > 0) {
             throw new BizException(ErrorCode.ROLE_DISABLED);
         }
-        //删除用户角色关系
+        // 删除用户角色关系
         sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, userId));
-        //批量新增
+        // 批量新增
         List<SysUserRole> userRoles = roleIds.stream().map(roleId ->
                 new SysUserRole().setUserId(userId).setRoleId(Long.parseLong(roleId))
         ).toList();
         sysUserRoleService.saveBatch(userRoles);
-        //刷新用户Session
+        // 刷新用户Session
         sessionManager.refreshUserSession(userId);
     }
 

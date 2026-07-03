@@ -3,6 +3,7 @@ package com.qiheng.erp.system.domain.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -14,7 +15,7 @@ public class SysDeptDto {
     @Schema(description = "部门ID")
     private String deptId;
 
-    @NotEmpty(message = "上级部门ID不能为空")
+    @NotNull(message = "上级部门ID不能为空")
     @Schema(description = "上级部门ID，顶级为0")
     private String parentId;
 
@@ -25,7 +26,7 @@ public class SysDeptDto {
     @Schema(description = "部门名称")
     private String deptName;
 
-    @NotEmpty(message = "状态不能为空")
+    @NotNull(message = "状态不能为空")
     @Schema(description = "状态：1启用，0禁用")
     private Integer status;
 

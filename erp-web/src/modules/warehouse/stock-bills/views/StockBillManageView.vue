@@ -166,6 +166,7 @@ const summaryCards = computed(() => [
 ]);
 const selectedQueryWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
 const selectedFormWarehouseLabel = computed(() => formWarehouseOptions.value.find(item => item.value === form.warehouseId)?.label || (editingDetail.value?.warehouseId === form.warehouseId ? editingDetail.value.warehouseName : ''));
+const warehouseFieldLabel = computed(() => isInboundPage.value ? '入库仓库' : '出库仓库');
 
 const allBillTypeOptions: Array<{ value: StockBillType; label: string }> = [
   { value: 'PURCHASE_IN', label: '采购入库' },
@@ -229,7 +230,7 @@ function billDirection(billType: StockBillType): StockBillDirection {
 }
 
 function sourcePartyLabel(billType: StockBillType) {
-  if (billType === 'ADJUST_IN' || billType === 'ADJUST_OUT') return '调整仓库';
+  if (billType === 'ADJUST_IN' || billType === 'ADJUST_OUT') return '来源对象';
   if (billType === 'PURCHASE_IN' || billType === 'PURCHASE_RETURN') return '供应商';
   if (billType === 'SALES_OUT' || billType === 'SALES_RETURN') return '客户';
   return '来源对象';
@@ -237,7 +238,7 @@ function sourcePartyLabel(billType: StockBillType) {
 
 function sourcePartyDisplay(row: Pick<StockBillListItem, 'billType' | 'sourcePartyName' | 'warehouseName'> | null | undefined) {
   if (!row) return '-';
-  if (row.billType === 'ADJUST_IN' || row.billType === 'ADJUST_OUT') return row.warehouseName || '-';
+  if (row.billType === 'ADJUST_IN' || row.billType === 'ADJUST_OUT') return '-';
   return row.sourcePartyName || '-';
 }
 
@@ -692,7 +693,14 @@ async function submitForm() {
       await createStockBill(payload);
       toast.success(`${pageText.value.formTitle}草稿已创建`);
     } else if (editingDetail.value) {
-      const payload: StockBillUpdatePayload = { version: editingDetail.value.version, warehouseId: form.warehouseId, sourceNo: form.sourceNo.trim(), manualReason: form.manualReason.trim(), items: buildItemPayloads(), remark: form.remark.trim() };
+      const payload: StockBillUpdatePayload = {
+        version: editingDetail.value.version,
+        warehouseId: form.warehouseId,
+        sourceNo: form.sourceNo.trim(),
+        manualReason: form.manualReason.trim(),
+        items: buildItemPayloads(),
+        remark: form.remark.trim(),
+      };
       await updateStockBill(editingDetail.value.stockBillId, payload);
       toast.success(`${pageText.value.formTitle}已保存`);
     }
@@ -1070,7 +1078,7 @@ onMounted(async () => {
                 <Input v-else :model-value="billTypeMap[formBillType].label" readonly class="bg-muted/55 text-muted-foreground" />
               </div>
               <div class="space-y-1">
-                <Label>仓库 <span class="text-destructive">*</span></Label>
+                <Label>{{ warehouseFieldLabel }} <span class="text-destructive">*</span></Label>
                 <RemoteSearchSelect v-if="warehouseEditable" v-model="form.warehouseId" :selected-label="selectedFormWarehouseLabel" :fetch-options="fetchFormWarehouseSearchOptions" placeholder="请选择仓库" search-placeholder="输入仓库编码或名称" :invalid="Boolean(formErrors.warehouseId)" />
                 <Input v-else :model-value="editingDetail?.warehouseName" readonly class="bg-muted/55 text-muted-foreground" />
                 <p v-if="formErrors.warehouseId" class="text-xs text-destructive">{{ formErrors.warehouseId }}</p>
@@ -1084,9 +1092,9 @@ onMounted(async () => {
                 <Input v-else :model-value="dialogMode === 'create' ? '保存后由系统生成' : form.sourceNo" readonly class="bg-muted/55 text-muted-foreground" />
                 <p v-if="formErrors.sourceNo" class="text-xs text-destructive">{{ formErrors.sourceNo }}</p>
               </div>
-              <div class="space-y-1">
-                <Label>{{ editingDetail ? sourcePartyLabel(editingDetail.billType) : (isAdjustmentForm ? '调整仓库' : '来源对象') }}</Label>
-                <Input :model-value="editingDetail ? sourcePartyDisplay(editingDetail) : (isAdjustmentForm ? sourcePartyDisplay({ billType: formBillType, sourcePartyName: '', warehouseName: selectedFormWarehouseLabel }) : '手工补录')" readonly class="bg-muted/55 text-muted-foreground" />
+              <div v-if="!isAdjustmentForm" class="space-y-1">
+                <Label>{{ editingDetail ? sourcePartyLabel(editingDetail.billType) : '来源对象' }}</Label>
+                <Input :model-value="editingDetail ? sourcePartyDisplay(editingDetail) : '手工补录'" readonly class="bg-muted/55 text-muted-foreground" />
               </div>
               <div class="space-y-1"><Label>负责人</Label><Input :model-value="editingDetail?.responsibleByName || authStore.displayName" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">由后端按当前登录用户写入，不允许代填</p></div>
             </div>
@@ -1187,7 +1195,7 @@ onMounted(async () => {
               <div class="detail-field"><span>录入方式</span><strong>{{ entryModeMap[detail.entryMode] }}</strong></div>
               <div class="detail-field"><span>来源类型</span><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></div>
               <div class="detail-field"><span>来源单号</span><code>{{ detail.sourceNo || '-' }}</code></div>
-              <div class="detail-field"><span>{{ sourcePartyLabel(detail.billType) }}</span><strong>{{ sourcePartyDisplay(detail) }}</strong></div>
+              <div v-if="!adjustmentTypes.has(detail.billType)" class="detail-field"><span>{{ sourcePartyLabel(detail.billType) }}</span><strong>{{ sourcePartyDisplay(detail) }}</strong></div>
               <div class="detail-field"><span>负责人</span><strong>{{ detail.responsibleByName }}</strong></div>
               <div class="detail-field"><span>创建人 / 时间</span><strong>{{ detail.createdByName || '系统' }}</strong><small>{{ detail.createTime }}</small></div>
               <div class="detail-field"><span>确认人 / 时间</span><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></div>

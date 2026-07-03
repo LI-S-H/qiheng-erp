@@ -12,6 +12,8 @@ servers:
 tags:
   - name: Dashboard
     description: 工作台 - 经营概览、待办、库存风险和关键排行
+  - name: AIAssistant
+    description: 智能助手 - 智能经营助手、经营任务中心和受控 AI Workflow 入口
   - name: Auth
     description: 登录、退出和当前用户接口
   - name: SystemUser
@@ -317,6 +319,325 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
+
+  /ai/assistant/overview:
+    get:
+      tags: [AIAssistant]
+      summary: 获取智能经营助手概览
+      description: |
+        返回智能经营助手首屏需要的会话列表和参数化快捷任务。页面不再展示“能力边界”“当前上下文”、顶部智能体标签或知识库问答入口。
+        推荐后端采用 Spring AI Alibaba 的多智能体能力：主控智能体负责意图识别、任务拆解和结果汇总，数据分析、采购建议、库存分析、销量预测、供应商评估等专家智能体负责各自领域分析。
+        实际业务数据查询仍必须由受控 Tool 经过权限校验和 ERP Service 完成，专家智能体不能直接执行自由 SQL 或直接修改正式业务数据。
+      operationId: aiAssistantOverview
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiAssistantOverview' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /ai/assistant/messages:
+    post:
+      tags: [AIAssistant]
+      summary: 发送智能经营助手消息
+      description: |
+        统一的经营助手对话入口。后端基于 Spring AI Alibaba 实现多智能体协同：主控智能体路由到数据分析、采购建议、库存分析、销量预测、供应商评估等专家智能体，并在 `agentTraces` 中返回本轮协同轨迹。
+        `conversationId` 为空时创建新会话；不为空时追加到已有会话。后端应记录必要的 AI 交互日志，但不再提供独立“AI 调用审计”业务菜单页面。
+        回复可以包含 `message.content` 文本和 `message.charts` 图表规格。后端不返回图表图片，只返回图表类型、字段映射和业务数据行；前端按统一样式动态渲染折线图、柱状图或饼图。
+        如果使用流式传输，客户端通过 `Accept: text/event-stream` 请求，后端按 `AiChatStreamEvent` 事件推送：先推 `MESSAGE_DELTA` 文本增量，最后通过 `MESSAGE_FINAL` 返回完整 `AiChatMessage`（包含 charts、sources、actionCards），避免模型在流中自由拼装不可校验图表数据。
+        需要进入业务动作的回复通过 `actionCards` 表达下一步。前端遵循“AI 建议 -> 用户预览 -> 生成草稿 -> 人工确认 -> 正式单据”的边界；后端不得让智能体直接修改正式业务数据。
+      operationId: aiAssistantSendMessage
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiChatRequest'
+            example:
+              conversationId: null
+              message: 帮我分析当前库存风险，并给出需要优先补货的商品
+      responses:
+        "200":
+          description: 回复成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiChatResponse' }
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                delta:
+                  summary: 流式事件示例
+                  value: |
+                    event: MESSAGE_DELTA
+                    data: {"requestId":"req-001","conversationId":"conv-today","contentDelta":"正在分析 USB-C扩展坞库存..."}
+
+                    event: MESSAGE_FINAL
+                    data: {"requestId":"req-001","conversationId":"conv-today","message":{"messageId":"msg-001","role":"assistant","content":"建议生成补货草稿。","createdAt":"2026-07-01 10:30:00","charts":[],"actionCards":[],"sources":[],"agentTraces":[],"taskCard":null}}
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /ai/assistant/conversations:
+    post:
+      tags: [AIAssistant]
+      summary: 新建经营助手会话
+      description: 创建一个空会话。后端返回会话摘要，前端切换到该会话并显示过渡加载。
+      operationId: aiAssistantConversationCreate
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiConversationSummary' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /ai/assistant/conversations/{conversationId}:
+    patch:
+      tags: [AIAssistant]
+      summary: 修改经营助手会话名称
+      operationId: aiAssistantConversationUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string }
+          description: 会话 ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiConversationUpdateRequest' }
+            example:
+              title: 今日补货讨论
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiConversationSummary' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [AIAssistant]
+      summary: 删除经营助手会话
+      operationId: aiAssistantConversationDelete
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string }
+          description: 会话 ID
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /ai/scheduled-tasks:
+    get:
+      tags: [AIAssistant]
+      summary: 获取经营任务中心数据
+      description: |
+        返回经营任务中心首屏数据，包括任务摘要、内置模板、已配置任务和最近执行记录。任务由后端调度器触发多智能体协同分析，执行结果直接在本页面展示。
+        任务配置必须允许指定商品范围、仓库范围、接收人和分析目标。例如采购补货建议任务应明确关注商品，不能只有一个泛化定时器。
+      operationId: aiScheduledTaskPage
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiScheduledTaskPage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [AIAssistant]
+      summary: 新增经营任务
+      description: 新增用户自定义经营任务。任务可以由内置模板带入，也可以完全自定义；保存后进入调度配置，不立即写入业务单据。
+      operationId: aiScheduledTaskCreate
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiScheduledTaskUpdateRequest'
+      responses:
+        "200":
+          description: 新增成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiScheduledTask' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /ai/scheduled-tasks/{taskId}:
+    patch:
+      tags: [AIAssistant]
+      summary: 编辑经营任务配置
+      description: |
+        修改经营任务的可编辑配置，包括任务名称、执行频率、cron、关注商品、关注仓库、接收人和分析目标。
+        不允许通过本接口修改系统生成字段、执行结果、审计字段或任务执行状态；启停状态使用 `/ai/scheduled-tasks/{taskId}/status`。
+      operationId: aiScheduledTaskUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+          description: AI 定时任务 ID，BIGINT 或稳定任务编码按字符串传输
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiScheduledTaskUpdateRequest'
+            example:
+              taskName: 采购补货建议
+              frequency: DAILY
+              cronExpression: "0 0 10 * * ?"
+              productScope: [A4复印纸, USB-C扩展坞, 热敏标签纸]
+              warehouseScope: [华东中心仓, 华南中心仓]
+              recipients: [采购主管]
+              analysisGoal: 根据指定商品的销量预测、当前库存、安全库存、在途采购和供应商评分给出补货建议。
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiScheduledTask' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /ai/scheduled-tasks/{taskId}/run:
+    post:
+      tags: [AIAssistant]
+      summary: 立即执行经营任务
+      description: 手动触发一次定时经营任务。后端应创建执行记录并调度多智能体协同分析；执行结果写入最近执行记录并返回任务最新状态，不直接生成正式业务单据。
+      operationId: aiScheduledTaskRun
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+          description: AI 定时任务 ID，BIGINT 或稳定任务编码按字符串传输
+      responses:
+        "200":
+          description: 执行成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiScheduledTask' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /ai/scheduled-tasks/{taskId}/status:
+    patch:
+      tags: [AIAssistant]
+      summary: 修改经营任务状态
+      description: 启用或停用内置经营任务。状态变更是调度配置动作，不代表业务事实变更；后端需要记录操作人和更新时间。
+      operationId: aiScheduledTaskStatus
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+          description: AI 定时任务 ID，BIGINT 或稳定任务编码按字符串传输
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiScheduledTaskStatusRequest'
+            example:
+              status: ENABLED
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiScheduledTask' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
 
   /auth/login:
     post:
@@ -2891,7 +3212,7 @@ paths:
         查询 `inbound_bill` 入库单主表，并按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要。
         入库单承接采购入库、销售退货入库和调整入库；采购订单审核后生成 `PENDING_CONFIRM` 入库单，但不直接改变库存。
         来源生成的待确认入库单初始本次入库量为 0 或空业务值，由仓库人员在确认前按实物到货数量填写；确认后剩余未入库由后端按采购数量、累计已入库和本次入库量计算。
-        入库列表主列固定显示供应商，库存调整显示调整仓库，不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库、本次入库量和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
+        入库列表主列固定显示供应商；库存调整没有来源对象时不展示来源对象字段，且不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库、本次入库量和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
         本接口需要 `warehouse:query` 权限。
       operationId: inboundBillPage
       security:
@@ -2984,7 +3305,7 @@ paths:
         查询 `outbound_bill` 出库单主表，并按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要。
         出库单承接销售出库、采购退货出库和调整出库；销售订单审核后生成 `PENDING_CONFIRM` 出库单，但不直接扣减库存。
         来源生成的待确认出库单初始本次出库量为 0 或空业务值，由仓库人员在确认前按实物发货数量填写；确认后剩余未出库由后端按销售数量、累计已出库和本次出库量计算。
-        出库列表主列固定显示客户，库存调整显示调整仓库，不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库、本次出库量和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
+        出库列表主列固定显示客户；库存调整没有来源对象时不展示来源对象字段，且不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库、本次出库量和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
         本接口需要 `warehouse:query` 权限。
       operationId: outboundBillPage
       security:
@@ -4162,6 +4483,453 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResult'
   schemas:
+    AiAssistantOverview:
+      type: object
+      required: [refreshedAt, quickPrompts, conversations]
+      properties:
+        refreshedAt: { type: string, description: 概览刷新时间，后端生成 }
+        quickPrompts:
+          type: array
+          description: 参数化快捷任务。前端点击后展示参数弹窗，确认后发送由后端可识别的完整提示词，但对话中只显示任务卡片。调拨类快捷任务不得要求用户填写预测天数，应基于已完成销量预测、库存缺口和跨仓可用库存生成调出仓、调入仓和调拨数量建议。
+          items: { $ref: '#/components/schemas/AiQuickPrompt' }
+        conversations:
+          type: array
+          description: 当前用户最近的会话摘要，用于左侧会话管理
+          items: { $ref: '#/components/schemas/AiConversationSummary' }
+
+    AiConversationSummary:
+      type: object
+      required: [conversationId, title, description, updatedAt]
+      properties:
+        conversationId: { type: string, description: 会话 ID }
+        title: { type: string, description: 会话标题 }
+        description: { type: string, description: 会话摘要 }
+        updatedAt: { type: string, description: 最近更新时间 }
+
+    AiConversationUpdateRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 40, description: 会话标题；前端提交前 trim }
+
+    AiAgentProfile:
+      type: object
+      required: [agentCode, agentName, role, description, status]
+      properties:
+        agentCode: { type: string, description: 智能体编码 }
+        agentName: { type: string, description: 智能体名称 }
+        role:
+          type: string
+          enum: [ROUTER, ANALYSIS, PURCHASE, INVENTORY, SALES, SUPPLIER]
+          description: 智能体角色；主控智能体使用 `ROUTER`
+        description: { type: string, description: 智能体职责说明 }
+        status: { type: string, enum: [ONLINE, BUSY, IDLE], description: 展示状态 }
+
+    AiQuickPrompt:
+      type: object
+      required: [promptId, title, description, intentCode, promptTemplate, fields]
+      description: |
+        快捷分析入口配置。每个入口应落到明确业务下一步，例如库存筛选、采购草稿、调拨草稿、锁定库存复核或预测报告。
+        `transfer`/调拨类入口的 `fields` 只采集调拨商品和参与仓库，不采集 `DAYS`；预测窗口由销量预测智能体结果或后端任务上下文提供。
+      properties:
+        promptId: { type: string, description: 快捷提示稳定标识 }
+        title: { type: string, description: 快捷提示标题 }
+        description: { type: string, description: 快捷提示说明 }
+        intentCode: { type: string, description: 建议触发的多智能体任务编码，仅用于后端路由或观测，不允许前端绕过后端校验直接执行 }
+        promptTemplate: { type: string, description: 后端可识别的提示词模板，使用 `{{fieldKey}}` 占位 }
+        fields:
+          type: array
+          description: 前端需要用户填写的参数字段；调拨类快捷任务禁止返回预测天数字段
+          items: { $ref: '#/components/schemas/AiPromptField' }
+
+    AiPromptField:
+      type: object
+      required: [fieldKey, label, fieldType, required, placeholder, defaultValue]
+      properties:
+        fieldKey: { type: string, description: 字段键，对应 promptTemplate 占位符 }
+        label: { type: string, description: 表单标签 }
+        fieldType: { type: string, enum: [PRODUCT_MULTI, WAREHOUSE_MULTI, DAYS, TEXT], description: 字段控件类型 }
+        required: { type: boolean, description: 是否必填 }
+        placeholder: { type: string, description: 占位提示 }
+        defaultValue:
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string }
+          description: 默认值；多选字段使用字符串数组
+
+    AiContextSource:
+      type: object
+      required: [sourceId, sourceType, title, description, freshness]
+      properties:
+        sourceId: { type: string, description: 上下文来源稳定标识 }
+        sourceType: { type: string, enum: [TOOL, WORKFLOW, KNOWLEDGE, TASK], description: 来源类型 }
+        title: { type: string, description: 来源标题 }
+        description: { type: string, description: 来源说明 }
+        freshness: { type: string, description: 数据新鲜度或索引状态文案 }
+
+    AiChartSpec:
+      type: object
+      required: [chartId, type, title, description, xField, yFields, nameField, valueField, data]
+      description: |
+        AI 回复或任务执行结果附带的图表规格。后端只返回图表语义、字段映射和已经由业务 Tool/Service 计算出的数据行，不返回图片或前端样式。
+        `line`/`bar` 使用 `xField` 和 `yFields`；`pie` 使用 `nameField` 和 `valueField`。字段名必须能在 `data` 行中找到。
+        `fieldLabels` 用于声明图例名称，例如 `{ "forecastQty": "预测销量", "safetyStockQty": "安全库存" }`；`yUnit` 用于声明 Y 轴单位，例如 `件`、`卷`、`%`、`元`。折线图和柱状图的 Y 轴刻度、网格线、柱形底线和折线样式由前端统一渲染；后端只负责保证数值字段为可解析数字。锁定库存处理建议应优先返回按来源单据或商品展开的 `bar` 数据，不使用饼图掩盖具体处理对象。
+      properties:
+        chartId: { type: string, description: 图表稳定 ID }
+        type: { type: string, enum: [line, bar, pie], description: 图表类型 }
+        title: { type: string, description: 图表标题 }
+        description: { type: string, description: 图表说明或口径备注，可为空字符串 }
+        xField:
+          type: string
+          nullable: true
+          description: 折线图/柱状图横轴字段；饼图返回 `null`
+        yFields:
+          type: array
+          description: 折线图/柱状图数值字段，可支持多条折线；饼图返回空数组
+          items: { type: string }
+        fieldLabels:
+          type: object
+          additionalProperties: { type: string }
+          description: 可选。数值字段到中文图例名称的映射；未返回时前端可按字段名兜底展示
+        yUnit:
+          type: string
+          nullable: true
+          description: 可选。Y 轴单位，例如 `件`、`卷`、`%`、`元`；前端用于坐标轴单位和数值格式化
+        nameField:
+          type: string
+          nullable: true
+          description: 饼图分类字段；折线图/柱状图返回 `null`
+        valueField:
+          type: string
+          nullable: true
+          description: 饼图数值字段；折线图/柱状图通常返回 `null`
+        data:
+          type: array
+          description: 图表数据行。每行只允许字符串、数字或 null；数字必须由后端业务服务计算，不能由大模型编造
+          items:
+            type: object
+            additionalProperties: true
+
+    AiChatStreamEvent:
+      type: object
+      required: [requestId, eventType, conversationId]
+      description: |
+        智能经营助手流式响应事件。`MESSAGE_DELTA` 只承载文本增量；`MESSAGE_FINAL` 必须承载完整 `AiChatMessage`，前端以最终消息中的 charts/sources/actionCards 为准渲染结构化内容。
+      properties:
+        requestId: { type: string, description: 本次请求 ID }
+        eventType: { type: string, enum: [MESSAGE_DELTA, MESSAGE_FINAL, ERROR], description: 流式事件类型 }
+        conversationId: { type: string, description: 会话 ID }
+        contentDelta: { type: string, description: 文本增量，仅 MESSAGE_DELTA 使用 }
+        message:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AiChatMessage'
+          description: 完整助手消息，仅 MESSAGE_FINAL 使用
+        errorMessage: { type: string, description: 错误信息，仅 ERROR 使用 }
+
+    AiChatRequest:
+      type: object
+      required: [message]
+      properties:
+        conversationId:
+          type: string
+          nullable: true
+          description: 会话 ID；新会话传 `null`，已有会话传后端返回值
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: 用户输入的经营问题或指令；前端提交前 trim，空字符串不提交
+
+    AiChatResponse:
+      type: object
+      required: [conversationId, message]
+      properties:
+        conversationId: { type: string, description: 会话 ID }
+        message: { $ref: '#/components/schemas/AiChatMessage' }
+
+    AiChatMessage:
+      type: object
+      required: [messageId, role, content, createdAt, charts, actionCards, sources, agentTraces, taskCard]
+      properties:
+        messageId: { type: string, description: 消息 ID }
+        role: { type: string, enum: [assistant, user], description: 消息角色 }
+        content: { type: string, description: 消息正文；后端应返回经过权限裁剪和必要脱敏后的内容 }
+        createdAt: { type: string, description: 消息创建时间 }
+        charts:
+          type: array
+          description: 随消息附带的图表规格；后端返回数据和字段映射，前端负责渲染。没有图表时返回空数组。流式场景下只在 `MESSAGE_FINAL` 返回完整数组
+          items: { $ref: '#/components/schemas/AiChartSpec' }
+        actionCards:
+          type: array
+          description: 助手建议的可执行动作。写业务数据的动作只能是草稿、预览或跳转，不能直接提交正式业务单据；调拨建议在独立调拨单接口接入前可落到调出/调入库存草稿
+          items: { $ref: '#/components/schemas/AiActionCard' }
+        sources:
+          type: array
+          description: 本轮回复实际使用的 Tool、知识库或任务上下文来源；页面可不展示，但后端应保留用于追溯
+          items: { $ref: '#/components/schemas/AiContextSource' }
+        agentTraces:
+          type: array
+          description: 本轮多智能体协同轨迹，用于展示主控智能体如何分派专家智能体
+          items: { $ref: '#/components/schemas/AiAgentTrace' }
+        taskCard:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AiTaskCard'
+          description: 用户通过常用任务发起分析时的对话卡片；普通文本消息返回 `null`
+
+    AiTaskCard:
+      type: object
+      required: [title, description, parameters]
+      properties:
+        title: { type: string, description: 任务卡片标题 }
+        description: { type: string, description: 任务卡片说明 }
+        parameters:
+          type: array
+          description: 前端展示的参数摘要，不包含完整隐藏提示词
+          items:
+            type: object
+            required: [label, value]
+            properties:
+              label: { type: string }
+              value: { type: string }
+
+    AiAgentTrace:
+      type: object
+      required: [traceId, agentCode, agentName, summary, status]
+      properties:
+        traceId: { type: string, description: 协同轨迹 ID }
+        agentCode: { type: string, description: 智能体编码 }
+        agentName: { type: string, description: 智能体名称 }
+        summary: { type: string, description: 该智能体本轮处理摘要 }
+        status: { type: string, enum: [PLANNED, RUNNING, DONE, FAILED], description: 协同步骤状态 }
+
+    AiActionCard:
+      type: object
+      required: [actionId, title, description, actionType, route, riskLevel]
+      properties:
+        actionId: { type: string, description: 动作稳定标识 }
+        title: { type: string, description: 动作标题 }
+        description: { type: string, description: 动作说明 }
+        actionType: { type: string, enum: [NAVIGATE, WORKFLOW, PREVIEW], description: 动作类型；`WORKFLOW` 保留为兼容命名，实际表示触发受控多智能体任务 }
+        route:
+          type: string
+          nullable: true
+          description: 前端内部跳转路由；非跳转动作返回 `null`
+        riskLevel: { type: string, enum: [LOW, MEDIUM, HIGH], description: 动作风险等级；中高风险动作前端应展示确认或进入业务草稿页面 }
+
+    AiScheduledTaskPage:
+      type: object
+      required: [refreshedAt, summary, templates, tasks, recentExecutions]
+      properties:
+        refreshedAt: { type: string, description: 任务中心刷新时间 }
+        summary: { $ref: '#/components/schemas/AiScheduledTaskSummary' }
+        templates:
+          type: array
+          description: 内置任务模板，前端可一键带入新增任务表单
+          items: { $ref: '#/components/schemas/AiScheduledTaskTemplate' }
+        tasks:
+          type: array
+          description: 当前已配置的经营任务
+          items: { $ref: '#/components/schemas/AiScheduledTask' }
+        recentExecutions:
+          type: array
+          description: 最近执行记录，用于前端展示运行结果和失败状态
+          items: { $ref: '#/components/schemas/AiTaskExecution' }
+
+    AiScheduledTaskSummary:
+      type: object
+      required: [totalCount, enabledCount, failedCount, nextRunCount]
+      properties:
+        totalCount: { type: integer, minimum: 0, description: 任务总数 }
+        enabledCount: { type: integer, minimum: 0, description: 已启用任务数 }
+        failedCount: { type: integer, minimum: 0, description: 最近处于失败状态的任务数 }
+        nextRunCount: { type: integer, minimum: 0, description: 已排入后续调度的任务数 }
+
+    AiScheduledTaskTemplate:
+      type: object
+      required: [templateId, taskName, category, frequency, description, defaultCronExpression, agentCodes, defaultProductScope, defaultWarehouseScope, defaultAnalysisGoal, outputFormat]
+      properties:
+        templateId: { type: string, description: 模板 ID }
+        taskName: { type: string, description: 模板任务名称 }
+        category: { $ref: '#/components/schemas/AiScheduledTaskCategory' }
+        frequency: { $ref: '#/components/schemas/AiScheduledTaskFrequency' }
+        description: { type: string, description: 模板说明 }
+        defaultCronExpression: { type: string, description: 默认 cron 表达式 }
+        agentCodes:
+          type: array
+          description: 默认参与的智能体编码
+          items: { type: string }
+        defaultProductScope:
+          type: array
+          description: 模板默认关注商品
+          items: { type: string }
+        defaultWarehouseScope:
+          type: array
+          description: 模板默认关注仓库
+          items: { type: string }
+        defaultAnalysisGoal: { type: string, description: 模板默认分析目标 }
+        outputFormat: { $ref: '#/components/schemas/AiScheduledTaskOutputFormat' }
+
+    AiScheduledTask:
+      type: object
+      required: [taskId, taskName, category, frequency, cronExpression, productScope, warehouseScope, analysisGoal, nextRunAt, lastRunAt, lastResultSummary, recipients, status, agentCodes, painPoint, outputFormat, editable]
+      properties:
+        taskId: { type: string, description: AI 任务 ID，BIGINT 或稳定编码按字符串传输 }
+        taskName: { type: string, description: 任务名称 }
+        category: { $ref: '#/components/schemas/AiScheduledTaskCategory' }
+        frequency: { $ref: '#/components/schemas/AiScheduledTaskFrequency' }
+        cronExpression: { type: string, description: cron 表达式，由后端调度器解析 }
+        productScope:
+          type: array
+          description: 任务关注商品范围；采购、库存、销量类任务建议明确商品，`全部商品` 表示不限制
+          items: { type: string }
+        warehouseScope:
+          type: array
+          description: 任务关注仓库范围；`全部仓库` 表示不限制
+          items: { type: string }
+        analysisGoal: { type: string, description: 分析目标，由用户配置；后端用于构造多智能体任务上下文 }
+        nextRunAt: { type: string, description: 下次执行时间 }
+        lastRunAt:
+          type: string
+          nullable: true
+          description: 最近执行时间；从未执行返回 `null`
+        lastResultSummary: { type: string, description: 最近执行结果摘要，不保存大量明细 }
+        recipients:
+          type: array
+          description: 接收人、角色或岗位名称；正式实现可由后端保存角色/用户 ID，前端展示名称
+          items: { type: string }
+        status: { type: string, enum: [ENABLED, DISABLED, RUNNING, FAILED], description: 任务状态 }
+        agentCodes:
+          type: array
+          description: 参与该任务的智能体编码
+          items: { type: string }
+        painPoint: { type: string, description: 任务解决的 ERP 使用者痛点，用于页面解释 }
+        outputFormat: { $ref: '#/components/schemas/AiScheduledTaskOutputFormat' }
+        editable: { type: boolean, description: 当前用户是否可编辑该任务配置 }
+
+    AiTaskExecution:
+      type: object
+      required: [executionId, taskId, taskName, startedAt, finishedAt, status, resultSummary, agents, findings, suggestions, metrics, sections, charts, nextActions]
+      properties:
+        executionId: { type: string, description: 执行记录 ID }
+        taskId: { type: string, description: 任务 ID }
+        taskName: { type: string, description: 任务名称快照 }
+        startedAt: { type: string, description: 开始时间 }
+        finishedAt:
+          type: string
+          nullable: true
+          description: 结束时间；执行中返回 `null`
+        status: { type: string, enum: [SUCCESS, FAILED, RUNNING], description: 执行状态 }
+        resultSummary: { type: string, description: 执行结果摘要 }
+        agents:
+          type: array
+          description: 本次实际参与的智能体名称快照
+          items: { type: string }
+        findings:
+          type: array
+          description: 关键发现，页面在执行结果详情中展示
+          items: { type: string }
+        suggestions:
+          type: array
+          description: 建议动作，页面在执行结果详情中展示
+          items: { type: string }
+        metrics:
+          type: array
+          description: 执行报告顶部指标
+          items: { $ref: '#/components/schemas/AiTaskExecutionMetric' }
+        sections:
+          type: array
+          description: 兼容字段；新页面优先展示 resultSummary/findings/suggestions 拼接后的智能体汇报文本，复杂结构后续可逐步下线
+          items: { $ref: '#/components/schemas/AiTaskExecutionSection' }
+        charts:
+          type: array
+          description: 任务结果附带图表规格；没有图表时返回空数组
+          items: { $ref: '#/components/schemas/AiChartSpec' }
+        nextActions:
+          type: array
+          description: 报告建议用户跳转处理的业务入口
+          items: { $ref: '#/components/schemas/AiTaskExecutionAction' }
+
+    AiTaskExecutionMetric:
+      type: object
+      required: [label, value, tone]
+      properties:
+        label: { type: string, description: 指标名称 }
+        value: { type: string, description: 指标展示值 }
+        tone: { type: string, enum: [neutral, good, watch, risk], description: 指标视觉语义 }
+
+    AiTaskExecutionSection:
+      type: object
+      required: [sectionId, title, items]
+      properties:
+        sectionId: { type: string, description: 分段 ID }
+        title: { type: string, description: 分段标题 }
+        items:
+          type: array
+          description: 分段条目，允许较长文本
+          items: { type: string }
+
+    AiTaskExecutionAction:
+      type: object
+      required: [actionId, title, description, route]
+      properties:
+        actionId: { type: string, description: 动作 ID }
+        title: { type: string, description: 动作标题 }
+        description: { type: string, description: 动作说明 }
+        route:
+          type: string
+          nullable: true
+          description: 前端路由；仅跳转到业务模块，不直接写业务数据
+
+    AiScheduledTaskUpdateRequest:
+      type: object
+      required: [taskName, category, frequency, cronExpression, productScope, warehouseScope, recipients, analysisGoal, outputFormat]
+      properties:
+        taskName: { type: string, minLength: 1, maxLength: 100, description: 任务名称 }
+        category: { $ref: '#/components/schemas/AiScheduledTaskCategory' }
+        frequency: { $ref: '#/components/schemas/AiScheduledTaskFrequency' }
+        cronExpression: { type: string, minLength: 1, maxLength: 100, description: cron 表达式 }
+        productScope:
+          type: array
+          description: 关注商品名称或编码列表，前端由用户输入拆分；后端可进一步校验并解析为产品 ID
+          items: { type: string }
+        warehouseScope:
+          type: array
+          description: 关注仓库名称或编码列表，前端由用户输入拆分；后端可进一步校验并解析为仓库 ID
+          items: { type: string }
+        recipients:
+          type: array
+          description: 接收人、角色或岗位名称
+          items: { type: string }
+        analysisGoal: { type: string, minLength: 1, maxLength: 1000, description: 分析目标 }
+        outputFormat: { $ref: '#/components/schemas/AiScheduledTaskOutputFormat' }
+
+    AiScheduledTaskStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ENABLED, DISABLED]
+          description: 目标任务状态；前端启停开关只提交这两个状态，`RUNNING` 和 `FAILED` 由后端执行状态产生
+
+    AiScheduledTaskCategory:
+      type: string
+      enum: [REPORT, INVENTORY, PURCHASE, SALES, SUPPLIER]
+      description: 经营任务分类
+
+    AiScheduledTaskFrequency:
+      type: string
+      enum: [DAILY, WEEKLY, MONTHLY]
+      description: 经营任务频率
+
+    AiScheduledTaskOutputFormat:
+      type: string
+      enum: [CHAT_CARD, REPORT, NOTIFICATION]
+      description: 任务输出形态；页面报告用于任务中心完整阅读，对话卡片用于助手会话摘要，通知摘要用于后续消息推送
+
     DashboardOverview:
       type: object
       required: [refreshedAt, metrics, trend, todos, stockAlerts, orderStages, topProducts, supplierPerformance]
@@ -5758,7 +6526,7 @@ components:
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 原业务来源类型 }
         sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输 }
         sourceNo: { type: string, maxLength: 64, description: 原业务来源单号 }
-        sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；`PURCHASE_IN`、`PURCHASE_RETURN` 表示供应商，`SALES_OUT`、`SALES_RETURN` 表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示调整仓库名称快照；前端不得再显示为泛化“往来方” }
+        sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；`PURCHASE_IN`、`PURCHASE_RETURN` 表示供应商，`SALES_OUT`、`SALES_RETURN` 表示客户；`ADJUST_IN`、`ADJUST_OUT` 库存调整没有来源对象时返回空字符串，前端不展示来源对象字段 }
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 区分来源生成、手工补录和手工调整 }
         warehouseId: { type: string, description: 仓库 ID，BIGINT 按字符串传输 }
         warehouseName: { type: string, maxLength: 100, description: 仓库名称快照 }

@@ -7,6 +7,7 @@ import {
   ShoppingCart,
   Tag,
   MessageCircle,
+  CalendarClock,
   Bell,
   LogOut,
 } from 'lucide-vue-next';
@@ -106,9 +107,8 @@ const menus: MenuItem[] = [
     icon: MessageCircle,
     permission: 'ai:query:stock',
     children: [
-      { index: '/ai/rag', title: '知识库问答' },
       { index: '/ai/assistant', title: '智能经营助手' },
-      { index: '/ai/audit-logs', title: 'AI 调用审计' },
+      { index: '/ai/tasks', title: '经营任务中心', icon: CalendarClock },
     ],
   },
 ];

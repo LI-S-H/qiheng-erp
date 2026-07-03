@@ -27,6 +27,7 @@ const props = withDefaults(defineProps<{
   fetchOptions: (keyword: string) => Promise<RemoteSearchOption[]>;
   debounceMs?: number;
   maxResults?: number;
+  compact?: boolean;
 }>(), {
   selectedLabel: '',
   placeholder: '请选择',
@@ -37,6 +38,7 @@ const props = withDefaults(defineProps<{
   clearLabel: '全部',
   debounceMs: 250,
   maxResults: 10,
+  compact: false,
 });
 
 const emit = defineEmits<{
@@ -112,38 +114,45 @@ watch(keyword, () => {
         :aria-expanded="open"
         :aria-invalid="invalid"
         :disabled="disabled"
-        class="h-9 w-full justify-between px-3 font-normal"
+        class="w-full justify-between font-normal"
         :class="[
+          compact ? 'h-8 px-2 text-xs' : 'h-9 px-3',
           !normalizedValue ? 'text-muted-foreground' : '',
           invalid ? 'border-destructive focus-visible:ring-destructive' : '',
         ]"
       >
         <span class="truncate">{{ triggerLabel }}</span>
-        <ChevronsUpDown class="ml-2 size-4 shrink-0 opacity-50" />
+        <ChevronsUpDown class="ml-2 shrink-0 opacity-50" :class="compact ? 'size-3.5' : 'size-4'" />
       </Button>
     </PopoverTrigger>
-    <PopoverContent align="start" data-remote-search-select-content class="w-[--reka-popover-trigger-width] p-0">
-      <div class="border-b p-2">
+    <PopoverContent
+      align="start"
+      data-remote-search-select-content
+      class="w-[--reka-popover-trigger-width] p-0"
+      :class="compact ? 'text-xs' : ''"
+    >
+      <div class="border-b" :class="compact ? 'p-1.5' : 'p-2'">
         <div class="relative">
-          <Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input v-model="keyword" class="h-8 pl-8" :placeholder="searchPlaceholder" />
+          <Search class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" :class="compact ? 'size-3.5' : 'size-4'" />
+          <Input v-model="keyword" :class="compact ? 'h-7 pl-7 text-xs' : 'h-8 pl-8'" :placeholder="searchPlaceholder" />
         </div>
       </div>
       <div class="max-h-64 overflow-auto p-1">
         <button
           v-if="clearable"
           type="button"
-          class="flex min-h-9 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+          class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
+          :class="compact ? 'min-h-8 text-xs' : 'min-h-9 text-sm'"
           @click="selectClear"
         >
-          <Check class="size-4 shrink-0" :class="String(clearValue) === normalizedValue ? 'opacity-100' : 'opacity-0'" />
+          <Check class="shrink-0" :class="[compact ? 'size-3.5' : 'size-4', String(clearValue) === normalizedValue ? 'opacity-100' : 'opacity-0']" />
           <span class="truncate">{{ clearLabel }}</span>
         </button>
-        <div v-if="loading" class="flex h-20 items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 class="size-4 animate-spin" />
+        <div v-if="loading" class="flex items-center justify-center gap-2 text-muted-foreground" :class="compact ? 'h-16 text-xs' : 'h-20 text-sm'">
+          <Loader2 class="animate-spin" :class="compact ? 'size-3.5' : 'size-4'" />
           <span>加载中</span>
         </div>
-        <div v-else-if="options.length === 0" class="flex h-20 items-center justify-center px-3 text-center text-sm text-muted-foreground">
+        <div v-else-if="options.length === 0" class="flex items-center justify-center px-3 text-center text-muted-foreground" :class="compact ? 'h-16 text-xs' : 'h-20 text-sm'">
           {{ emptyText }}
         </div>
         <template v-else>
@@ -151,11 +160,12 @@ watch(keyword, () => {
             v-for="option in options"
             :key="String(option.value)"
             type="button"
-            class="flex min-h-9 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+            class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+            :class="compact ? 'min-h-8 text-xs' : 'min-h-9 text-sm'"
             :disabled="option.disabled"
             @click="selectOption(option)"
           >
-            <Check class="size-4 shrink-0" :class="String(option.value) === normalizedValue ? 'opacity-100' : 'opacity-0'" />
+            <Check class="shrink-0" :class="[compact ? 'size-3.5' : 'size-4', String(option.value) === normalizedValue ? 'opacity-100' : 'opacity-0']" />
             <span class="truncate">{{ option.label }}</span>
           </button>
         </template>

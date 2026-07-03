@@ -3,6 +3,9 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 const baseUrl = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5173';
+const devServerUrl = new URL(baseUrl);
+const devServerHost = devServerUrl.hostname || '127.0.0.1';
+const devServerPort = devServerUrl.port || '5173';
 
 function createCleanEnv() {
   const clean = {};
@@ -26,7 +29,7 @@ async function ensureDevServer() {
 
   const child = spawn(
     process.execPath,
-    [path.join(process.cwd(), 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173', '--strictPort'],
+    [path.join(process.cwd(), 'node_modules/vite/bin/vite.js'), '--host', devServerHost, '--port', devServerPort, '--strictPort'],
     { cwd: process.cwd(), env: createCleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] },
   );
 

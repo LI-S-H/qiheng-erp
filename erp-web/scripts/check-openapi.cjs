@@ -332,7 +332,7 @@ for (const fragment of [
   '按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要',
   '入库列表主列固定显示供应商',
   '出库列表主列固定显示客户',
-  '库存调整显示调整仓库，不自动生成反向入库单或出库单',
+  '库存调整没有来源对象时不展示来源对象字段，且不自动生成反向入库单或出库单',
   'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
   'enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]',
   'enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]',

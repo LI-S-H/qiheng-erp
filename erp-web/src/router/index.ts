@@ -18,18 +18,8 @@ import SupplierProductManageView from '@/modules/purchase/supplier-products/view
 import PurchaseOrderManageView from '@/modules/purchase/orders/views/PurchaseOrderManageView.vue';
 import CustomerManageView from '@/modules/sales/customers/views/CustomerManageView.vue';
 import SalesOrderManageView from '@/modules/sales/orders/views/SalesOrderManageView.vue';
-import ModulePlaceholderView from '@/shared/views/ModulePlaceholderView.vue';
-
-function placeholder(title: string, module: string, description: string) {
-  return {
-    component: ModulePlaceholderView,
-    meta: {
-      title,
-      module,
-      description,
-    },
-  };
-}
+import AiAssistantView from '@/modules/ai/views/AiAssistantView.vue';
+import AiScheduledTasksView from '@/modules/ai/views/AiScheduledTasksView.vue';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -182,21 +172,22 @@ const routes: RouteRecordRaw[] = [
           title: '销售订单',
         },
       },
-      { path: 'ai', redirect: '/ai/rag' },
-      {
-        path: 'ai/rag',
-        name: 'ai-rag',
-        ...placeholder('知识库问答', '智能助手', '管理企业文档和 RAG 问答入口'),
-      },
+      { path: 'ai', redirect: '/ai/assistant' },
       {
         path: 'ai/assistant',
         name: 'ai-assistant',
-        ...placeholder('智能经营助手', '智能助手', '承载自然语言业务查询 业务建议 运维建议 决策辅助和后续标准 Workflow 入口'),
+        component: AiAssistantView,
+        meta: {
+          title: '智能经营助手',
+        },
       },
       {
-        path: 'ai/audit-logs',
-        name: 'ai-audit-logs',
-        ...placeholder('AI 调用审计', '智能助手', '查看用户问题 Tool 参数 权限结果和返回摘要'),
+        path: 'ai/tasks',
+        name: 'ai-tasks',
+        component: AiScheduledTasksView,
+        meta: {
+          title: '经营任务中心',
+        },
       },
     ],
   },

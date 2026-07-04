@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, type PropType } from 'vue';
-import { ChevronRight, ChevronDown, Check } from 'lucide-vue-next';
+import { computed } from 'vue';
+import { ChevronRight, Check } from 'lucide-vue-next';
+import CollapseReveal from './CollapseReveal.vue';
 
 interface TreeNode {
   deptId: string;
@@ -13,7 +14,7 @@ interface TreeNode {
 const props = defineProps<{
   node: TreeNode;
   level: number;
-  selectedId: string;
+  selectedId: string | null;
   expandedIds: Set<string>;
 }>();
 
@@ -29,8 +30,7 @@ const isSelected = computed(() => props.node.deptId === props.selectedId);
 
 <template>
   <div>
-    <button
-      type="button"
+    <div
       class="flex w-full items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer"
       :style="{ paddingLeft: `${props.level * 16 + 8}px` }"
       :class="{ 'bg-accent font-medium': isSelected }"
@@ -42,14 +42,16 @@ const isSelected = computed(() => props.node.deptId === props.selectedId);
         class="p-0.5 hover:bg-accent rounded shrink-0"
         @click.stop="emit('toggle', props.node.deptId)"
       >
-        <ChevronDown v-if="isExpanded" class="h-3.5 w-3.5" />
-        <ChevronRight v-else class="h-3.5 w-3.5" />
+        <ChevronRight
+          class="h-3.5 w-3.5 transition-transform duration-200 ease-out"
+          :class="{ 'rotate-90': isExpanded }"
+        />
       </button>
       <span v-else class="w-4 shrink-0" />
       <Check v-if="isSelected" class="h-3.5 w-3.5 text-primary shrink-0" />
       <span class="flex-1 text-left truncate">{{ props.node.deptName }}</span>
-    </button>
-    <div v-if="hasChildren && isExpanded">
+    </div>
+    <CollapseReveal v-if="hasChildren" :open="isExpanded">
       <TreeSelectNode
         v-for="child in props.node.children"
         :key="child.deptId"
@@ -60,6 +62,6 @@ const isSelected = computed(() => props.node.deptId === props.selectedId);
         @toggle="emit('toggle', $event)"
         @select="emit('select', $event)"
       />
-    </div>
+    </CollapseReveal>
   </div>
 </template>

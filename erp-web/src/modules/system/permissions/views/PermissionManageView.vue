@@ -329,6 +329,12 @@ async function runConfirmAction() {
   }
 }
 
+function showBackendActionError(error: unknown) {
+  if (error && typeof error === 'object' && 'response' in error) return;
+  const message = getApiErrorMessage(error);
+  if (message) toast.warning(message);
+}
+
 function handleStatusChange(row: SystemPermissionListItem, status: PermissionStatus) {
   const action = status === 1 ? '启用' : '停用';
   const description = status === 0
@@ -344,16 +350,17 @@ function handleStatusChange(row: SystemPermissionListItem, status: PermissionSta
 }
 
 function handleDelete(row: SystemPermissionListItem) {
-  if (row.roleCount > 0) {
-    toast.warning(`该权限码已被 ${row.roleCount} 个角色引用，请先解除绑定`);
-    return;
-  }
-  showConfirm('删除权限码', `确认删除「${row.permissionName}」吗？删除后无法恢复。`, '删除', 'destructive', async () => {
+  const description = row.roleCount > 0
+    ? `该权限码当前显示已被 ${row.roleCount} 个角色引用，最终以后端校验为准。确认提交删除请求吗？`
+    : `确认删除「${row.permissionName}」吗？删除后无法恢复。`;
+  showConfirm('删除权限码', description, '删除', 'destructive', async () => {
     try {
       await deleteSystemPermission(row.permissionId);
       toast.success('权限码已删除');
       fetchPermissions();
-    } catch {}
+    } catch (error) {
+      showBackendActionError(error);
+    }
   });
 }
 
@@ -382,16 +389,17 @@ function buildPermissionDisableWarning(hasRoleBindings: boolean) {
 function handleBatchDelete() {
   if (actionSubmitting.value || selectedIds.value.size === 0) return;
   const bound = selectedRows.value.filter(item => item.roleCount > 0);
-  if (bound.length > 0) {
-    toast.warning(`已选数据中有 ${bound.length} 个权限码被角色引用，无法删除`);
-    return;
-  }
-  showConfirm('批量删除', `确认删除已选的 ${selectedIds.value.size} 个权限码吗？`, '删除', 'destructive', async () => {
+  const description = bound.length > 0
+    ? `已选数据中有 ${bound.length} 个权限码当前显示被角色引用，最终以后端校验为准。确认提交批量删除请求吗？`
+    : `确认删除已选的 ${selectedIds.value.size} 个权限码吗？`;
+  showConfirm('批量删除', description, '删除', 'destructive', async () => {
     try {
       await batchDeleteSystemPermissions({ permissionIds: [...selectedIds.value] });
       toast.success('权限码已批量删除');
       fetchPermissions();
-    } catch {}
+    } catch (error) {
+      showBackendActionError(error);
+    }
   });
 }
 </script>
@@ -452,7 +460,7 @@ function handleBatchDelete() {
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" :disabled="formSubmitting || actionSubmitting" @click="openCreateDialog">新增权限码</Button></span></TooltipTrigger><TooltipContent>创建新的系统权限标识</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchStatus(1)">批量启用</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '启用已选权限码' : '请先选择权限码' }}</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchStatus(0)">批量停用</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '停用已选权限码' : '请先选择权限码' }}</TooltipContent></Tooltip>
-          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="destructive" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchDelete">删除</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '删除未被角色引用的权限码' : '请先选择权限码' }}</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="destructive" :disabled="!selectedIds.size || actionSubmitting" @click="handleBatchDelete">删除</Button></span></TooltipTrigger><TooltipContent>{{ selectedIds.size ? '提交删除请求，由后端校验引用关系' : '请先选择权限码' }}</TooltipContent></Tooltip>
           <Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger><TooltipContent>重新加载权限码列表</TooltipContent></Tooltip>
         </div>
       </div>

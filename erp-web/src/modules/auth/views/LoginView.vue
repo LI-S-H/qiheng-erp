@@ -48,80 +48,81 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <main class="min-h-screen grid grid-cols-1 lg:grid-cols-[1fr_500px]">
-    <!-- Left visual panel -->
-    <section class="relative flex items-center p-12 lg:p-16 overflow-hidden bg-gradient-to-br from-white via-blue-50 to-slate-100">
-      <div class="relative z-10 w-full max-w-[760px]">
-        <div class="flex items-center gap-3 mb-8">
-          <img class="w-14 h-14 rounded-xl" :src="logoUrl" alt="启衡 ERP" />
-          <span class="text-2xl font-extrabold text-slate-900">启衡 ERP</span>
+  <main class="min-h-screen bg-slate-50 px-5 py-8 lg:px-10">
+    <div class="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-[1180px] grid-cols-1 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200 lg:grid-cols-[minmax(0,680px)_420px]">
+      <!-- Left visual panel -->
+      <section class="relative flex items-center justify-center overflow-hidden bg-gradient-to-br from-white via-blue-50 to-slate-100 p-8 sm:p-10 lg:p-12">
+        <div class="relative z-10 w-full max-w-[640px]">
+          <div class="mb-8 flex items-center gap-3">
+            <img class="h-14 w-14 rounded-xl" :src="logoUrl" alt="启衡 ERP" />
+            <span class="text-2xl font-extrabold text-slate-900">启衡 ERP</span>
+          </div>
+          <h1 class="text-4xl font-bold leading-tight text-slate-900 lg:text-[44px]">
+            清晰可靠的进销存智能管理台
+          </h1>
+          <p class="mt-5 max-w-[600px] text-lg leading-relaxed text-slate-600">
+            围绕产品 采购 销售 仓储构建稳定业务闭环 让数据查询和智能分析遵循统一权限与业务规则
+          </p>
+          <img
+            class="mt-6 block w-full max-w-[600px] rounded-lg shadow-xl"
+            :src="visualUrl"
+            alt="业务数据看板"
+          />
         </div>
-        <h1 class="text-4xl lg:text-[44px] font-bold leading-tight text-slate-900">
-          清晰可靠的进销存智能管理台
-        </h1>
-        <p class="mt-5 text-lg text-slate-600 leading-relaxed max-w-[640px]">
-          围绕产品 采购 销售 仓储构建稳定业务闭环 让数据查询和智能分析遵循统一权限与业务规则
-        </p>
-        <img
-          class="block w-full max-w-[680px] mt-6 rounded-2xl shadow-xl"
-          :src="visualUrl"
-          alt="业务数据看板"
-        />
-      </div>
-      <div class="absolute right-12 bottom-12 w-60 h-60 bg-white/40 border border-blue-200/30 rounded-full" />
-    </section>
+      </section>
 
-    <!-- Right login form -->
-    <section class="flex items-center justify-center p-12 bg-white">
-      <Card class="w-full max-w-[380px] border-0 shadow-none">
-        <CardHeader class="space-y-1 pb-6">
-          <CardTitle class="text-3xl">登录启衡 ERP</CardTitle>
-          <CardDescription>使用管理员账号进入开发环境</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form class="space-y-4" @submit.prevent="handleSubmit" @keydown.enter="handleSubmit">
-            <div class="space-y-2">
-              <Label for="username">登录账号</Label>
-              <div class="relative">
-                <User class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="username"
-                  v-model="form.username"
-                  placeholder="登录账号"
-                  autocomplete="username"
-                  class="pl-10 h-12 text-base"
-                />
+      <!-- Right login form -->
+      <section class="flex items-center justify-center bg-white p-8 sm:p-10 lg:p-12">
+        <Card class="w-full max-w-[380px] border-0 shadow-none">
+          <CardHeader class="space-y-1 pb-6">
+            <CardTitle class="text-3xl">登录启衡 ERP</CardTitle>
+            <CardDescription>使用管理员账号进入开发环境</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form class="space-y-4" @submit.prevent="handleSubmit" @keydown.enter="handleSubmit">
+              <div class="space-y-2">
+                <Label for="username">登录账号</Label>
+                <div class="relative">
+                  <User class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="username"
+                    v-model="form.username"
+                    placeholder="登录账号"
+                    autocomplete="username"
+                    class="h-12 pl-10 text-base"
+                  />
+                </div>
+                <p v-if="errors.username" class="text-sm text-destructive">{{ errors.username }}</p>
               </div>
-              <p v-if="errors.username" class="text-sm text-destructive">{{ errors.username }}</p>
-            </div>
 
-            <div class="space-y-2">
-              <Label for="password">登录密码</Label>
-              <div class="relative">
-                <Lock class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  v-model="form.password"
-                  type="password"
-                  placeholder="登录密码"
-                  autocomplete="current-password"
-                  class="pl-10 h-12 text-base"
-                />
+              <div class="space-y-2">
+                <Label for="password">登录密码</Label>
+                <div class="relative">
+                  <Lock class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    v-model="form.password"
+                    type="password"
+                    placeholder="登录密码"
+                    autocomplete="current-password"
+                    class="h-12 pl-10 text-base"
+                  />
+                </div>
+                <p v-if="errors.password" class="text-sm text-destructive">{{ errors.password }}</p>
               </div>
-              <p v-if="errors.password" class="text-sm text-destructive">{{ errors.password }}</p>
-            </div>
 
-            <Button
-              type="submit"
-              class="w-full h-12 text-base font-bold mt-2"
-              :disabled="submitting"
-            >
-              <Loader2 v-if="submitting" class="mr-2 h-4 w-4 animate-spin" />
-              登录
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </section>
+              <Button
+                type="submit"
+                class="mt-2 h-12 w-full text-base font-bold"
+                :disabled="submitting"
+              >
+                <Loader2 v-if="submitting" class="mr-2 h-4 w-4 animate-spin" />
+                登录
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </section>
+    </div>
   </main>
 </template>

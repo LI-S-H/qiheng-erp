@@ -53,6 +53,8 @@ const exclusiveDropdownSource = readProjectFile('erp-web', 'src', 'shared', 'com
 const categoryApiSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'categories', 'api.ts');
 const apiNormalizerSource = readProjectFile('erp-web', 'src', 'shared', 'utils', 'api-normalizers.ts');
 const userApiSource = readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'api.ts');
+const roleApiSource = readProjectFile('erp-web', 'src', 'modules', 'system', 'roles', 'api.ts');
+const deptApiSource = readProjectFile('erp-web', 'src', 'modules', 'system', 'depts', 'api.ts');
 const sqlDirectory = path.join(projectRoot, 'docs', 'database', 'sql');
 const allSql = fs.readdirSync(sqlDirectory)
   .filter(fileName => fileName.endsWith('.sql'))
@@ -143,7 +145,7 @@ for (const fragment of ['normalizeBinaryStatus', 'normalizeFiniteNumber', 'norma
 if (!categoryApiSource.includes('normalizeCategory') || !categoryApiSource.includes('getMockProductCategoryScope')) {
   throw new Error('产品分类 API 缺少下拉响应转换或父子分类范围计算');
 }
-if (!userApiSource.includes('normalizeRoleOption') || !userApiSource.includes('normalizeDeptOption')) {
+if (!roleApiSource.includes('normalizeRoleOption') || !deptApiSource.includes('normalizeDeptOption')) {
   throw new Error('用户筛选下拉的角色和部门选项缺少响应类型转换');
 }
 for (const fragment of [

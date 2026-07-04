@@ -83,7 +83,14 @@ runSmoke({
     await page.keyboard.press('Escape');
 
     await tableRow(page, 'system:user:query').getByRole('button', { name: '删除' }).click();
-    await page.getByText(/已被 2 个角色引用/).waitFor();
+    const deletePermissionDialog = page.getByRole('alertdialog', { name: '删除权限码' });
+    await deletePermissionDialog.waitFor();
+    const deletePermissionText = await deletePermissionDialog.innerText();
+    if (!deletePermissionText.includes('已被 2 个角色引用') || !deletePermissionText.includes('以后端校验为准')) {
+      throw new Error(`权限码删除确认未提示后端校验：${deletePermissionText}`);
+    }
+    await deletePermissionDialog.getByRole('button', { name: '删除', exact: true }).click();
+    await page.getByText('权限码已被角色引用，无法删除').waitFor();
 
     await tableRow(page, 'system:user:query').getByRole('button', { name: '编辑' }).click();
     const editDialog = page.getByRole('dialog', { name: '编辑权限码' });

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { toast } from 'vue-sonner';
-import { ChevronDown, ChevronRight } from 'lucide-vue-next';
+import { ChevronRight } from 'lucide-vue-next';
+import { getApiErrorMessage } from '@/api/http';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,11 +33,13 @@ import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import TreeTableBody from '@/components/common/TreeTableBody.vue';
 import type { DeptStatus, SystemDeptFormPayload, SystemDeptListItem, SystemDeptQuery } from '../types';
 import { listSystemDepts, createSystemDept, updateSystemDept, deleteSystemDept, batchUpdateSystemDeptStatus, batchDeleteSystemDepts } from '../api';
 
 const ROOT_PARENT_ID = '0';
 const ROOT_PARENT_LABEL = '无上级部门';
+const TREE_COLLAPSE_DURATION = 260;
 const statusFilterOptions = [
   { value: 'all', label: '全部状态' },
   { value: 1, label: '启用' },
@@ -53,6 +56,7 @@ interface DeptParentOption {
 
 interface VisibleDeptRow extends SystemDeptListItem {
   level: number;
+  isCollapsing?: boolean;
 }
 
 const deptListResponse = ref<SystemDeptListItem[]>([]);
@@ -62,6 +66,7 @@ const formSubmitting = ref(false);
 const actionSubmitting = ref(false);
 const selectedIds = ref<Set<string>>(new Set());
 const expandedDeptIds = ref<Set<string>>(new Set());
+const collapsingDeptIds = ref<Set<string>>(new Set());
 const deptDialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit' | 'child'>('create');
 const editingDeptId = ref('');
@@ -71,6 +76,7 @@ const appliedQuery = reactive<SystemDeptQuery>({ deptName: '', status: 'all' });
 const deptForm = reactive<SystemDeptFormPayload>({ parentId: '0', deptName: '', status: 1 });
 const formErrors = reactive<Record<string, string>>({});
 let fetchSequence = 0;
+const collapseTimers = new Map<string, number>();
 
 const confirmState = reactive({
   open: false, title: '', description: '', confirmText: '',
@@ -116,6 +122,7 @@ async function fetchDepts(params: SystemDeptQuery = appliedQuery) {
     const result = await listSystemDepts(toDeptQueryParams(params));
     if (sequence !== fetchSequence) return;
     const tree = buildDeptTree(result);
+    clearDeptCollapseState();
     deptListResponse.value = result;
     expandedDeptIds.value = new Set(collectExpandableDeptIds(tree));
   } catch {
@@ -125,6 +132,7 @@ async function fetchDepts(params: SystemDeptQuery = appliedQuery) {
 }
 
 onMounted(() => { fetchDepts(); });
+onBeforeUnmount(() => { clearDeptCollapseState(); });
 
 function buildDeptTree(items: SystemDeptListItem[]): SystemDeptListItem[] {
   const itemMap = new Map<string, SystemDeptListItem>();
@@ -157,12 +165,21 @@ function flattenDeptTree(tree: SystemDeptListItem[]): SystemDeptListItem[] {
 function flattenVisibleDeptTree(tree: SystemDeptListItem[], level = 0): VisibleDeptRow[] {
   const result: VisibleDeptRow[] = [];
   tree.forEach(item => {
-    result.push({ ...item, children: undefined, level });
-    if (item.children?.length && expandedDeptIds.value.has(item.deptId)) {
+    result.push({
+      ...item,
+      children: undefined,
+      level,
+      isCollapsing: collapsingDeptIds.value.has(item.deptId),
+    });
+    if (item.children?.length && (expandedDeptIds.value.has(item.deptId) || hasCollapsingDeptDescendant(item))) {
       result.push(...flattenVisibleDeptTree(item.children, level + 1));
     }
   });
   return result;
+}
+
+function hasCollapsingDeptDescendant(row: SystemDeptListItem): boolean {
+  return Boolean(row.children?.some(child => collapsingDeptIds.value.has(child.deptId) || hasCollapsingDeptDescendant(child)));
 }
 
 function collectExpandableDeptIds(tree: SystemDeptListItem[]): string[] {
@@ -222,10 +239,52 @@ function isDeptExpanded(row: SystemDeptListItem) {
   return expandedDeptIds.value.has(row.deptId);
 }
 
+function clearDeptCollapseState() {
+  collapseTimers.forEach(timer => window.clearTimeout(timer));
+  collapseTimers.clear();
+  collapsingDeptIds.value = new Set();
+}
+
+function cancelCollapsingDeptIds(ids: string[]) {
+  if (ids.length === 0) return;
+  const nextCollapsing = new Set(collapsingDeptIds.value);
+  ids.forEach((id) => {
+    const timer = collapseTimers.get(id);
+    if (timer) window.clearTimeout(timer);
+    collapseTimers.delete(id);
+    nextCollapsing.delete(id);
+  });
+  collapsingDeptIds.value = nextCollapsing;
+}
+
+function scheduleDeptCollapseRemoval(ids: string[]) {
+  ids.forEach((id) => {
+    const oldTimer = collapseTimers.get(id);
+    if (oldTimer) window.clearTimeout(oldTimer);
+    const timer = window.setTimeout(() => {
+      const nextCollapsing = new Set(collapsingDeptIds.value);
+      nextCollapsing.delete(id);
+      collapsingDeptIds.value = nextCollapsing;
+      collapseTimers.delete(id);
+    }, TREE_COLLAPSE_DURATION);
+    collapseTimers.set(id, timer);
+  });
+}
+
 function toggleDept(row: SystemDeptListItem) {
   if (!hasChildren(row)) return;
+  const descendantIds = getDeptDescendants(row.deptId).map(item => item.deptId);
   const nextExpandedIds = new Set(expandedDeptIds.value);
-  if (nextExpandedIds.has(row.deptId)) nextExpandedIds.delete(row.deptId); else nextExpandedIds.add(row.deptId);
+  if (nextExpandedIds.has(row.deptId)) {
+    nextExpandedIds.delete(row.deptId);
+    const nextCollapsing = new Set(collapsingDeptIds.value);
+    descendantIds.forEach(id => nextCollapsing.add(id));
+    collapsingDeptIds.value = nextCollapsing;
+    scheduleDeptCollapseRemoval(descendantIds);
+  } else {
+    cancelCollapsingDeptIds(descendantIds);
+    nextExpandedIds.add(row.deptId);
+  }
   expandedDeptIds.value = nextExpandedIds;
 }
 
@@ -386,6 +445,7 @@ function toggleSelectRow(deptId: string) {
     const descendants = getDeptDescendants(deptId);
     descendants.forEach(d => next.add(d.deptId));
     if (hasChildren(row)) {
+      cancelCollapsingDeptIds(descendants.map(item => item.deptId));
       const nextExpandedIds = new Set(expandedDeptIds.value);
       [row, ...descendants].filter(item => hasChildren(item)).forEach(item => nextExpandedIds.add(item.deptId));
       expandedDeptIds.value = nextExpandedIds;
@@ -461,18 +521,31 @@ function getDeptDescendants(deptId: string, tree = depts.value): SystemDeptListI
   return flattenDeptTree(target.children);
 }
 
+function showBackendActionError(error: unknown) {
+  if (error && typeof error === 'object' && 'response' in error) return;
+  const message = getApiErrorMessage(error);
+  if (message) toast.warning(message);
+}
+
 function confirmDelete(row: SystemDeptListItem) {
-  if (hasChildren(row)) { toast.warning('该部门存在下级部门，请先调整层级'); return; }
-  if (row.userCount > 0) { toast.warning('该部门已有员工归属，请先调整员工所属部门'); return; }
+  const risks = [
+    hasChildren(row) ? '存在下级部门' : '',
+    row.userCount > 0 ? `已有 ${row.userCount} 名员工归属` : '',
+  ].filter(Boolean);
+  const description = risks.length > 0
+    ? `该部门当前显示${risks.join('、')}，最终以后端校验为准。确认提交删除请求吗？`
+    : `确认删除部门「${row.deptName}」吗？`;
   showConfirm(
-    '删除部门', `确认删除部门「${row.deptName}」吗？`, '删除', 'destructive',
+    '删除部门', description, '删除', 'destructive',
     async () => {
       try {
         await deleteSystemDept(row.deptId);
         selectedIds.value = new Set();
         toast.success('部门已删除');
         fetchDepts();
-      } catch {}
+      } catch (error) {
+        showBackendActionError(error);
+      }
     },
   );
 }
@@ -480,17 +553,21 @@ function confirmDelete(row: SystemDeptListItem) {
 function confirmBatchDelete() {
   if (selectedIds.value.size === 0) { toast.warning('请先选择部门'); return; }
   const rows = selectedRows.value;
-  const blocked = rows.find(row => hasChildren(row) || row.userCount > 0);
-  if (blocked) { toast.warning('已选部门中存在下级部门或员工归属，暂不能删除'); return; }
+  const blockedCount = rows.filter(row => hasChildren(row) || row.userCount > 0).length;
+  const description = blockedCount > 0
+    ? `已选部门中有 ${blockedCount} 个当前显示存在下级部门或员工归属，最终以后端校验为准。确认提交批量删除请求吗？`
+    : `确认删除已选的 ${rows.length} 个部门吗？`;
   showConfirm(
-    '批量删除', `确认删除已选的 ${rows.length} 个部门吗？`, '删除', 'destructive',
+    '批量删除', description, '删除', 'destructive',
     async () => {
       try {
         await batchDeleteSystemDepts({ deptIds: rows.map(r => r.deptId) });
         selectedIds.value = new Set();
         toast.success('已批量删除');
         fetchDepts();
-      } catch {}
+      } catch (error) {
+        showBackendActionError(error);
+      }
     },
   );
 }
@@ -602,23 +679,32 @@ function confirmBatchDelete() {
               <TableHead class="text-center w-[220px]">操作</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            <TableRow v-if="loading">
+          <TableBody v-if="loading">
+            <TableRow>
               <TableCell colspan="7" class="text-center text-muted-foreground py-8">加载中...</TableCell>
             </TableRow>
-            <TableRow v-else-if="visibleDepts.length === 0">
+          </TableBody>
+          <TableBody v-else-if="visibleDepts.length === 0">
+            <TableRow>
               <TableCell colspan="7" class="text-center text-muted-foreground py-8">暂无数据</TableCell>
             </TableRow>
+          </TableBody>
+          <TreeTableBody v-else>
             <TableRow
               v-for="row in visibleDepts"
               :key="row.deptId"
+              :data-tree-row-key="row.deptId"
+              :data-tree-row-collapsing="row.isCollapsing ? 'true' : undefined"
               :class="{ 'bg-muted/50': selectedIds.has(row.deptId) }"
             >
               <TableCell>
-                <Checkbox :model-value="selectedIds.has(row.deptId)" @update:model-value="toggleSelectRow(row.deptId)" />
+                <div class="tree-table-cell-reveal">
+                  <Checkbox :model-value="selectedIds.has(row.deptId)" @update:model-value="toggleSelectRow(row.deptId)" />
+                </div>
               </TableCell>
               <TableCell>
-                <div class="flex items-center gap-1" :style="{ paddingLeft: `${row.level * 22}px` }">
+                <div class="tree-table-cell-reveal">
+                  <div class="flex items-center gap-1" :style="{ paddingLeft: `${row.level * 22}px` }">
                   <button
                     v-if="hasChildren(row)"
                     type="button"
@@ -626,40 +712,53 @@ function confirmBatchDelete() {
                     :aria-label="isDeptExpanded(row) ? '收起当前部门' : '展开当前部门'"
                     @click.stop="toggleDept(row)"
                   >
-                    <ChevronDown v-if="isDeptExpanded(row)" class="h-3.5 w-3.5" />
-                    <ChevronRight v-else class="h-3.5 w-3.5" />
+                    <ChevronRight
+                      class="h-3.5 w-3.5 transition-transform duration-200 ease-out"
+                      :class="{ 'rotate-90': isDeptExpanded(row) }"
+                    />
                   </button>
                   <span v-else class="w-5 h-6 flex-shrink-0" />
-                  <strong class="text-sm">{{ row.deptName }}</strong>
+                    <strong class="text-sm">{{ row.deptName }}</strong>
+                  </div>
                 </div>
               </TableCell>
-              <TableCell class="text-center text-xs text-muted-foreground">{{ getParentName(row.parentId) }}</TableCell>
+              <TableCell class="text-center text-xs text-muted-foreground">
+                <div class="tree-table-cell-reveal">{{ getParentName(row.parentId) }}</div>
+              </TableCell>
               <TableCell>
-                <span class="text-xs text-muted-foreground truncate">{{ getDeptPath(row) }}</span>
+                <div class="tree-table-cell-reveal">
+                  <span class="text-xs text-muted-foreground truncate">{{ getDeptPath(row) }}</span>
+                </div>
               </TableCell>
               <TableCell class="text-center">
-                <Badge
-                  variant="outline"
-                  class="min-w-[38px] justify-center font-semibold"
-                  :class="row.userCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'"
-                >
-                  {{ row.userCount }}
-                </Badge>
+                <div class="tree-table-cell-reveal">
+                  <Badge
+                    variant="outline"
+                    class="min-w-[38px] justify-center font-semibold"
+                    :class="row.userCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'"
+                  >
+                    {{ row.userCount }}
+                  </Badge>
+                </div>
               </TableCell>
               <TableCell class="text-center">
-                <Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">
+                <div class="tree-table-cell-reveal">
+                  <Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">
                   {{ row.status === 1 ? '启用' : '停用' }}
-                </Badge>
+                  </Badge>
+                </div>
               </TableCell>
               <TableCell class="text-center">
-                <div class="flex items-center justify-center gap-1">
+                <div class="tree-table-cell-reveal">
+                  <div class="flex items-center justify-center gap-1">
                   <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
                   <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openChildDialog(row)">新增下级</Button>
                   <Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="confirmDelete(row)">删除</Button>
+                  </div>
                 </div>
               </TableCell>
             </TableRow>
-          </TableBody>
+          </TreeTableBody>
         </Table>
       </ScrollArea>
 

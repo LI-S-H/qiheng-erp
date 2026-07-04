@@ -19,6 +19,7 @@ import com.qiheng.erp.system.mapper.SysRoleMapper;
 import com.qiheng.erp.system.mapper.SysUserRoleMapper;
 import com.qiheng.erp.system.service.ISysRoleService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +35,7 @@ import java.util.List;
  * @author Li
  * @since 2026-06-17
  */
+@Slf4j
 @Service
 public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> implements ISysRoleService {
 
@@ -259,6 +261,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     public List<RoleOptionVo> getPermissionCodeOptions() {
         List<RoleOptionVo> cached = redisUtil.getList(CACHE_KEY, RoleOptionVo.class);
         if (cached != null) {
+            log.info("从缓存中获取角色权限码选项分组列表，数量：{}", cached.size());
             return cached;
         }
         LambdaQueryWrapper<SysRole> wrapper = new LambdaQueryWrapper<SysRole>()

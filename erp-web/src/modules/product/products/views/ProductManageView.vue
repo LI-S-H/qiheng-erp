@@ -40,6 +40,14 @@ const statusFilterOptions = [
 const unitOptions = ['件', '箱', '盒', '包', '瓶', '卷', '本', '卡', '个', 'kg'];
 const unitSelectOptions = unitOptions.map(unit => ({ value: unit, label: unit }));
 const uncategorizedValue = '__uncategorized__';
+const categoryBadgePalette = [
+  'border-sky-200 bg-sky-50 text-sky-700',
+  'border-emerald-200 bg-emerald-50 text-emerald-700',
+  'border-violet-200 bg-violet-50 text-violet-700',
+  'border-amber-200 bg-amber-50 text-amber-700',
+  'border-rose-200 bg-rose-50 text-rose-700',
+  'border-cyan-200 bg-cyan-50 text-cyan-700',
+];
 
 const products = ref<ProductListItem[]>([]);
 const categories = ref<ProductCategoryListItem[]>([]);
@@ -120,6 +128,16 @@ function buildCategoryPath(categoryId: string) {
     current = current.parentId === '0' ? undefined : categories.value.find(item => item.categoryId === current?.parentId);
   }
   return path.join(' / ');
+}
+
+function getCategoryBadgeClass(row: ProductListItem) {
+  if (!row.categoryId) return 'border-slate-200 bg-slate-100 text-slate-500';
+  const source = row.categoryId || row.categoryName || row.productId;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 31 + source.charCodeAt(index)) % categoryBadgePalette.length;
+  }
+  return categoryBadgePalette[hash];
 }
 
 async function fetchProducts() {
@@ -439,7 +457,7 @@ function formatQty(value: number) {
               <TableCell><Checkbox :model-value="selectedIds.has(row.productId)" @update:model-value="toggleSelect(row.productId, $event)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium">{{ row.productCode }}</code></TableCell>
               <TableCell><div class="flex flex-col"><span class="font-medium">{{ row.productName }}</span><span class="truncate text-xs text-muted-foreground">{{ row.barcode || '暂无条码' }}</span></div></TableCell>
-              <TableCell><Badge variant="outline">{{ row.categoryName || '未分类' }}</Badge></TableCell>
+              <TableCell><Badge variant="outline" :class="getCategoryBadgeClass(row)">{{ row.categoryName || '未分类' }}</Badge></TableCell>
               <TableCell><div class="flex flex-col"><span>{{ row.brandName || '无品牌' }}</span><span class="truncate text-xs text-muted-foreground">{{ row.specification || '无规格' }}</span></div></TableCell>
               <TableCell>{{ row.unitName }}</TableCell>
               <TableCell><div class="flex flex-col text-xs"><span>采 {{ formatMoney(row.referencePurchasePrice) }}</span><span class="text-muted-foreground">销 {{ formatMoney(row.referenceSalePrice) }}</span></div></TableCell>

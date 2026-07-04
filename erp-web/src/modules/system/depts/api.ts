@@ -2,11 +2,13 @@ import { getResult, postResult, http } from '@/api/http';
 import type {
   DeptBatchIdsPayload,
   DeptBatchStatusPayload,
+  DeptOption,
   DeptStatus,
   SystemDeptFormPayload,
   SystemDeptListItem,
   SystemDeptQuery,
 } from './types';
+import { normalizeBinaryStatus, normalizeStringId } from '@/shared/utils/api-normalizers';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
 
@@ -58,7 +60,28 @@ function ensureValidParent(deptId: string, parentId: string) {
   }
 }
 
+function normalizeDeptOption(item: DeptOption): DeptOption {
+  return {
+    ...item,
+    deptId: normalizeStringId(item.deptId, 'deptId'),
+    parentId: normalizeStringId(item.parentId, 'parentId'),
+    status: normalizeBinaryStatus(item.status),
+  };
+}
+
 // ── API functions ──
+
+export function listDeptOptions() {
+  if (useMockApi) {
+    return Promise.resolve(mockFlatDepts.map(item => normalizeDeptOption({
+      deptId: item.deptId,
+      deptName: item.deptName,
+      parentId: item.parentId,
+      status: item.status,
+    })));
+  }
+  return getResult<DeptOption[]>('/system/depts/options').then(items => items.map(normalizeDeptOption));
+}
 
 export function listSystemDepts(params: SystemDeptQuery = {}) {
   if (useMockApi) {

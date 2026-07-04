@@ -2,6 +2,7 @@ import { getResult, postResult, http } from '@/api/http';
 import type {
   RoleBatchIdsPayload,
   RoleBatchStatusPayload,
+  RoleOption,
   RolePermissionPayload,
   RoleStatus,
   SystemRoleFormPayload,
@@ -9,6 +10,7 @@ import type {
   SystemRoleQuery,
 } from './types';
 import type { PageResult } from '@/shared/types/api';
+import { normalizeBinaryStatus, normalizeStringId } from '@/shared/utils/api-normalizers';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
 
@@ -63,7 +65,29 @@ function mockFilterRoles(params: SystemRoleQuery): PageResult<SystemRoleListItem
   return { records, total, pageNum: params.pageNum, pageSize: params.pageSize };
 }
 
+function normalizeRoleOption(item: RoleOption): RoleOption {
+  return {
+    ...item,
+    roleId: normalizeStringId(item.roleId, 'roleId'),
+    status: normalizeBinaryStatus(item.status),
+  };
+}
+
 // ── API functions ──
+
+export function listRoleOptions() {
+  if (useMockApi) {
+    return Promise.resolve(mockRoles
+      .filter(role => role.status === 1)
+      .map(role => normalizeRoleOption({
+        roleId: role.roleId,
+        roleCode: role.roleCode,
+        roleName: role.roleName,
+        status: role.status,
+      })));
+  }
+  return getResult<RoleOption[]>('/system/roles/options').then(items => items.map(normalizeRoleOption));
+}
 
 export function listSystemRoles(params: SystemRoleQuery) {
   if (useMockApi) return Promise.resolve(mockFilterRoles(params));

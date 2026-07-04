@@ -288,6 +288,7 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
     public List<DeptOptionVo> getDeptOptions() {
         List<DeptOptionVo> cached = redisUtil.getList(CACHE_KEY, DeptOptionVo.class);
         if (cached != null) {
+            log.info("从缓存中获取部门下拉选项列表，数量：{}", cached.size());
             return cached;
         }
         LambdaQueryWrapper<SysDept> query = new LambdaQueryWrapper<SysDept>()

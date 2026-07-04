@@ -28,6 +28,13 @@ export interface SystemRoleFormPayload {
   remark: string;
 }
 
+export interface RoleOption {
+  roleId: string;
+  roleCode: string;
+  roleName: string;
+  status: RoleStatus;
+}
+
 export interface RoleBatchIdsPayload {
   roleIds: string[];
 }

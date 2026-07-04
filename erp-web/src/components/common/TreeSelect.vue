@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -16,13 +16,15 @@ interface TreeNode {
 }
 
 interface Props {
-  modelValue: string;
+  modelValue: string | null;
   options: TreeNode[];
   placeholder?: string;
+  invalid?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   placeholder: '请选择',
+  invalid: false,
 });
 
 const emit = defineEmits<{
@@ -31,7 +33,7 @@ const emit = defineEmits<{
 
 const isOpen = ref(false);
 const { setOpen } = useExclusiveDropdown(isOpen);
-const expandedIds = ref<Set<string>>(new Set(collectAllIds(props.options)));
+const expandedIds = ref<Set<string>>(new Set());
 
 function collectAllIds(nodes: TreeNode[]): string[] {
   const ids: string[] = [];
@@ -46,6 +48,14 @@ function collectAllIds(nodes: TreeNode[]): string[] {
   walk(nodes);
   return ids;
 }
+
+watch(
+  () => props.options,
+  options => {
+    expandedIds.value = new Set(collectAllIds(options));
+  },
+  { immediate: true },
+);
 
 const selectedLabel = computed(() => {
   function find(nodes: TreeNode[]): string | null {
@@ -85,6 +95,7 @@ function selectNode(id: string) {
         role="combobox"
         :aria-expanded="isOpen"
         class="w-full justify-between font-normal"
+        :class="{ 'border-destructive ring-destructive/20': props.invalid }"
       >
         <span :class="{ 'text-muted-foreground': selectedLabel === props.placeholder }">
           {{ selectedLabel }}

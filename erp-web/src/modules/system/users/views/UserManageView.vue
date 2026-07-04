@@ -13,13 +13,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Table,
   TableBody,
   TableCell,
@@ -40,19 +33,22 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import PromptDialog from '@/components/common/PromptDialog.vue';
 import MultiSelect from '@/components/common/MultiSelect.vue';
+import TreeSelect from '@/components/common/TreeSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type {
-  DeptOption,
-  RoleOption,
   SystemUserFormPayload,
   SystemUserFormModel,
   SystemUserListItem,
   SystemUserQuery,
   UserStatus,
 } from '../types';
+import type { RoleOption } from '../../roles/types';
+import { listRoleOptions } from '../../roles/api';
+import type { DeptOption } from '../../depts/types';
+import { listDeptOptions } from '../../depts/api';
 import {
   listSystemUsers,
   createSystemUser,
@@ -63,10 +59,12 @@ import {
   batchUpdateSystemUserStatus,
   batchResetSystemUserPassword,
   batchDeleteSystemUsers,
-  listRoleOptions,
-  listDeptOptions,
   bindSystemUserRoles,
 } from '../api';
+
+interface DeptTreeOption extends DeptOption {
+  children?: DeptTreeOption[];
+}
 
 const loading = ref(false);
 const queryPending = ref(false);
@@ -78,6 +76,7 @@ const total = ref(0);
 const roleOptions = ref<RoleOption[]>([]);
 const deptOptions = ref<DeptOption[]>([]);
 const roleMultiOptions = computed(() => roleOptions.value.map(r => ({ value: r.roleId, label: r.roleName })));
+const deptTreeOptions = computed(() => buildDeptTreeOptions(deptOptions.value));
 const deptFilterOptions = computed(() => [
   { value: 'all', label: '全部部门' },
   ...deptOptions.value.map(dept => ({ value: dept.deptId, label: dept.deptName })),
@@ -143,6 +142,21 @@ const roleBoundCount = computed(() => users.value.filter(u => u.roleIds.length >
 const allSelected = computed(() => users.value.length > 0 && users.value.every(u => selectedIds.value.has(u.userId)));
 const selectedRows = computed(() => users.value.filter(u => selectedIds.value.has(u.userId)));
 const queryBusy = computed(() => queryPending.value || loading.value);
+
+function buildDeptTreeOptions(items: DeptOption[]): DeptTreeOption[] {
+  const itemMap = new Map<string, DeptTreeOption>();
+  const roots: DeptTreeOption[] = [];
+  items.forEach(item => itemMap.set(item.deptId, { ...item, children: undefined }));
+  itemMap.forEach(item => {
+    const parent = item.parentId === '0' ? null : itemMap.get(item.parentId);
+    if (!parent) {
+      roots.push(item);
+      return;
+    }
+    parent.children = [...(parent.children || []), item];
+  });
+  return roots;
+}
 
 async function fetchUsers() {
   const sequence = ++fetchSequence;
@@ -621,7 +635,7 @@ function handleDelete(row: SystemUserListItem) {
               <TableHead class="w-[44px]">
                 <Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" />
               </TableHead>
-              <TableHead>账号</TableHead>
+              <TableHead class="text-center">账号</TableHead>
               <TableHead class="text-center">部门</TableHead>
               <TableHead class="text-center">角色</TableHead>
               <TableHead class="text-center w-[108px]">管理员</TableHead>
@@ -641,12 +655,12 @@ function handleDelete(row: SystemUserListItem) {
               <TableCell>
                 <Checkbox :model-value="selectedIds.has(row.userId)" @update:model-value="toggleSelectRow(row.userId)" />
               </TableCell>
-              <TableCell>
-                <div class="flex items-center gap-2">
+              <TableCell class="text-center">
+                <div class="mx-auto flex w-[150px] min-w-0 items-center justify-start gap-2 text-left">
                   <Avatar class="h-8 w-8 bg-primary">
                     <AvatarFallback class="text-primary-foreground text-xs bg-primary"><User class="h-4 w-4" /></AvatarFallback>
                   </Avatar>
-                  <div>
+                  <div class="min-w-0">
                     <div class="text-sm font-medium">{{ row.username }}</div>
                     <div class="text-xs text-muted-foreground">{{ row.realName }}</div>
                   </div>
@@ -719,12 +733,7 @@ function handleDelete(row: SystemUserListItem) {
           </div>
           <div class="space-y-1">
             <Label>所属部门 <span class="text-destructive">*</span></Label>
-            <Select v-model="userForm.deptId">
-              <SelectTrigger><SelectValue placeholder="请选择部门" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="d in deptOptions" :key="d.deptId" :value="d.deptId">{{ d.deptName }}</SelectItem>
-              </SelectContent>
-            </Select>
+            <TreeSelect v-model="userForm.deptId" :options="deptTreeOptions" placeholder="请选择部门" :invalid="Boolean(formErrors.deptId)" />
             <p v-if="formErrors.deptId" class="text-xs text-destructive">{{ formErrors.deptId }}</p>
           </div>
           <div class="space-y-1">

@@ -23,6 +23,13 @@ export interface SystemDeptFormPayload {
   status: DeptStatus;
 }
 
+export interface DeptOption {
+  deptId: string;
+  deptName: string;
+  parentId: string;
+  status: DeptStatus;
+}
+
 export interface DeptBatchIdsPayload {
   deptIds: string[];
 }

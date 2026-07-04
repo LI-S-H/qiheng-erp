@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import CollapseReveal from '@/components/common/CollapseReveal.vue';
 
 interface MenuItem {
   index: string;
@@ -241,32 +242,29 @@ onBeforeUnmount(() => {
           </button>
 
           <!-- Children -->
-          <div
+          <CollapseReveal
             v-if="item.children?.length"
-            class="submenu-collapse"
-            :class="{ 'is-open': isMenuOpen(item.index) }"
+            :open="isMenuOpen(item.index)"
           >
-            <div class="submenu-collapse__inner">
-              <div class="py-1">
-                <button
-                  v-for="child in item.children"
-                  :key="child.index"
-                  class="relative flex h-10 w-full items-center rounded-md pl-10 pr-3 text-[15px] font-medium text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer"
-                  :class="{
-                    'bg-sidebar-accent text-sidebar-foreground font-semibold': activeMenu === child.index,
-                  }"
-                  type="button"
-                  @click="navigateTo(child.index)"
-                >
-                  <span
-                    v-if="activeMenu === child.index"
-                    class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sidebar-primary"
-                  />
-                  {{ child.title }}
-                </button>
-              </div>
+            <div class="py-1">
+              <button
+                v-for="child in item.children"
+                :key="child.index"
+                class="relative flex h-10 w-full items-center rounded-md pl-10 pr-3 text-[15px] font-medium text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer"
+                :class="{
+                  'bg-sidebar-accent text-sidebar-foreground font-semibold': activeMenu === child.index,
+                }"
+                type="button"
+                @click="navigateTo(child.index)"
+              >
+                <span
+                  v-if="activeMenu === child.index"
+                  class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sidebar-primary"
+                />
+                {{ child.title }}
+              </button>
             </div>
-          </div>
+          </CollapseReveal>
         </div>
       </nav>
     </aside>

@@ -86,10 +86,24 @@ runSmoke({
     }
 
     await tableRow(page, '采购部').getByRole('button', { name: '删除' }).click();
-    await page.getByText('该部门存在下级部门，请先调整层级').waitFor();
+    const deleteDeptWithChildrenDialog = page.getByRole('alertdialog', { name: '删除部门' });
+    await deleteDeptWithChildrenDialog.waitFor();
+    const deleteDeptWithChildrenText = await deleteDeptWithChildrenDialog.innerText();
+    if (!deleteDeptWithChildrenText.includes('存在下级部门') || !deleteDeptWithChildrenText.includes('以后端校验为准')) {
+      throw new Error(`部门删除确认未提示后端校验：${deleteDeptWithChildrenText}`);
+    }
+    await deleteDeptWithChildrenDialog.getByRole('button', { name: '删除', exact: true }).click();
+    await page.getByText('该部门存在下级部门').waitFor();
 
     await tableRow(page, '华东销售组').getByRole('button', { name: '删除' }).click();
-    await page.getByText('该部门已有员工归属，请先调整员工所属部门').waitFor();
+    const deleteDeptWithUsersDialog = page.getByRole('alertdialog', { name: '删除部门' });
+    await deleteDeptWithUsersDialog.waitFor();
+    const deleteDeptWithUsersText = await deleteDeptWithUsersDialog.innerText();
+    if (!deleteDeptWithUsersText.includes('员工归属') || !deleteDeptWithUsersText.includes('以后端校验为准')) {
+      throw new Error(`部门删除确认未提示员工归属与后端校验：${deleteDeptWithUsersText}`);
+    }
+    await deleteDeptWithUsersDialog.getByRole('button', { name: '删除', exact: true }).click();
+    await page.getByText('该部门已有员工归属').waitFor();
 
     await tableRow(page, '仓储部').getByRole('button', { name: '编辑' }).click();
     const warehouseDialog = page.getByRole('dialog', { name: '编辑部门' });

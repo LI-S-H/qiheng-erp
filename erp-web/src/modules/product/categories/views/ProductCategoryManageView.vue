@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { toast } from 'vue-sonner';
-import { ChevronDown, ChevronRight } from 'lucide-vue-next';
+import { ChevronRight } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,7 @@ import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import TreeTableBody from '@/components/common/TreeTableBody.vue';
 import type {
   ProductCategoryFormPayload,
   ProductCategoryListItem,
@@ -50,6 +51,7 @@ import {
 
 const ROOT_PARENT_ID = '0';
 const ROOT_PARENT_LABEL = '无上级分类';
+const TREE_COLLAPSE_DURATION = 260;
 const statusFilterOptions = [
   { value: 'all', label: '全部状态' },
   { value: 1, label: '启用' },
@@ -58,6 +60,7 @@ const statusFilterOptions = [
 
 interface VisibleCategoryRow extends ProductCategoryListItem {
   level: number;
+  isCollapsing?: boolean;
 }
 
 interface CategoryParentOption {
@@ -75,6 +78,7 @@ const formSubmitting = ref(false);
 const actionSubmitting = ref(false);
 const selectedIds = ref<Set<string>>(new Set());
 const expandedCategoryIds = ref<Set<string>>(new Set());
+const collapsingCategoryIds = ref<Set<string>>(new Set());
 const dialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit' | 'child'>('create');
 const editingCategoryId = ref('');
@@ -83,6 +87,7 @@ const appliedQuery = reactive<ProductCategoryQuery>({ categoryName: '', status: 
 const form = reactive<ProductCategoryFormPayload>({ parentId: ROOT_PARENT_ID, categoryName: '', status: 1 });
 const formErrors = reactive<Record<string, string>>({});
 let fetchSequence = 0;
+const collapseTimers = new Map<string, number>();
 
 const confirmState = reactive({
   open: false,
@@ -136,6 +141,7 @@ async function fetchCategories(queryParams: ProductCategoryQuery = appliedQuery)
     const params = toCategoryQueryParams(queryParams);
     const result = await listProductCategories(params);
     if (sequence !== fetchSequence) return;
+    clearCategoryCollapseState();
     filteredListResponse.value = result;
     expandedCategoryIds.value = new Set(collectExpandableCategoryIds(buildCategoryTree(result)));
     selectedIds.value = new Set();
@@ -146,6 +152,7 @@ async function fetchCategories(queryParams: ProductCategoryQuery = appliedQuery)
 }
 
 onMounted(() => { void fetchCategories(); });
+onBeforeUnmount(() => { clearCategoryCollapseState(); });
 
 function buildCategoryTree(items: ProductCategoryListItem[]) {
   const itemMap = new Map<string, ProductCategoryListItem>();
@@ -177,12 +184,21 @@ function flattenCategoryTree(tree: ProductCategoryListItem[]) {
 function flattenVisibleCategoryTree(tree: ProductCategoryListItem[], level = 0): VisibleCategoryRow[] {
   const result: VisibleCategoryRow[] = [];
   tree.forEach(item => {
-    result.push({ ...item, children: undefined, level });
-    if (item.children?.length && expandedCategoryIds.value.has(item.categoryId)) {
+    result.push({
+      ...item,
+      children: undefined,
+      level,
+      isCollapsing: collapsingCategoryIds.value.has(item.categoryId),
+    });
+    if (item.children?.length && (expandedCategoryIds.value.has(item.categoryId) || hasCollapsingCategoryDescendant(item))) {
       result.push(...flattenVisibleCategoryTree(item.children, level + 1));
     }
   });
   return result;
+}
+
+function hasCollapsingCategoryDescendant(row: ProductCategoryListItem): boolean {
+  return Boolean(row.children?.some(child => collapsingCategoryIds.value.has(child.categoryId) || hasCollapsingCategoryDescendant(child)));
 }
 
 function collectExpandableCategoryIds(tree: ProductCategoryListItem[]): string[] {
@@ -267,10 +283,52 @@ function isCategoryExpanded(row: ProductCategoryListItem) {
   return expandedCategoryIds.value.has(row.categoryId);
 }
 
+function clearCategoryCollapseState() {
+  collapseTimers.forEach(timer => window.clearTimeout(timer));
+  collapseTimers.clear();
+  collapsingCategoryIds.value = new Set();
+}
+
+function cancelCollapsingCategoryIds(ids: string[]) {
+  if (ids.length === 0) return;
+  const nextCollapsing = new Set(collapsingCategoryIds.value);
+  ids.forEach((id) => {
+    const timer = collapseTimers.get(id);
+    if (timer) window.clearTimeout(timer);
+    collapseTimers.delete(id);
+    nextCollapsing.delete(id);
+  });
+  collapsingCategoryIds.value = nextCollapsing;
+}
+
+function scheduleCategoryCollapseRemoval(ids: string[]) {
+  ids.forEach((id) => {
+    const oldTimer = collapseTimers.get(id);
+    if (oldTimer) window.clearTimeout(oldTimer);
+    const timer = window.setTimeout(() => {
+      const nextCollapsing = new Set(collapsingCategoryIds.value);
+      nextCollapsing.delete(id);
+      collapsingCategoryIds.value = nextCollapsing;
+      collapseTimers.delete(id);
+    }, TREE_COLLAPSE_DURATION);
+    collapseTimers.set(id, timer);
+  });
+}
+
 function toggleCategory(row: ProductCategoryListItem) {
   if (!hasChildren(row)) return;
+  const descendantIds = getCategoryDescendants(row.categoryId).map(item => item.categoryId);
   const next = new Set(expandedCategoryIds.value);
-  next.has(row.categoryId) ? next.delete(row.categoryId) : next.add(row.categoryId);
+  if (next.has(row.categoryId)) {
+    next.delete(row.categoryId);
+    const nextCollapsing = new Set(collapsingCategoryIds.value);
+    descendantIds.forEach(id => nextCollapsing.add(id));
+    collapsingCategoryIds.value = nextCollapsing;
+    scheduleCategoryCollapseRemoval(descendantIds);
+  } else {
+    cancelCollapsingCategoryIds(descendantIds);
+    next.add(row.categoryId);
+  }
   expandedCategoryIds.value = next;
 }
 
@@ -405,6 +463,7 @@ function toggleSelectRow(categoryId: string) {
     const descendants = getCategoryDescendants(categoryId);
     descendants.forEach(item => next.add(item.categoryId));
     if (descendants.length) {
+      cancelCollapsingCategoryIds(descendants.map(item => item.categoryId));
       const expanded = new Set(expandedCategoryIds.value);
       [findCategory(categoryId), ...descendants].filter(Boolean).forEach(item => {
         if (item && hasChildren(item)) expanded.add(item.categoryId);
@@ -482,21 +541,27 @@ function confirmBatchStatus(status: ProductCategoryStatus) {
   );
 }
 
+function showBackendActionError(error: unknown) {
+  if (error && typeof error === 'object' && 'response' in error) return;
+  const message = getApiErrorMessage(error);
+  if (message) toast.warning(message);
+}
+
 function confirmDelete(row: ProductCategoryListItem) {
-  if (hasChildren(row)) {
-    toast.warning('该分类存在下级分类，请先调整层级');
-    return;
-  }
-  if (row.productCount > 0) {
-    toast.warning('该分类已关联产品，请先调整产品分类');
-    return;
-  }
-  showConfirm('删除分类', `确认删除分类「${row.categoryName}」吗？`, '删除', 'destructive', async () => {
+  const risks = [
+    hasChildren(row) ? '存在下级分类' : '',
+    row.productCount > 0 ? `已关联 ${row.productCount} 个产品` : '',
+  ].filter(Boolean);
+  const description = risks.length > 0
+    ? `该分类当前显示${risks.join('、')}，最终以后端校验为准。确认提交删除请求吗？`
+    : `确认删除分类「${row.categoryName}」吗？`;
+  showConfirm('删除分类', description, '删除', 'destructive', async () => {
     try {
       await deleteProductCategory(row.categoryId);
       toast.success('分类已删除');
       void fetchCategories();
-    } catch {
+    } catch (error) {
+      showBackendActionError(error);
     }
   });
 }
@@ -507,16 +572,17 @@ function confirmBatchDelete() {
     return;
   }
   const rows = selectedRows.value;
-  if (rows.some(item => hasChildren(item) || item.productCount > 0)) {
-    toast.warning('已选分类中存在下级分类或关联产品，暂不能删除');
-    return;
-  }
-  showConfirm('批量删除', `确认删除已选的 ${rows.length} 个分类吗？`, '删除', 'destructive', async () => {
+  const blockedCount = rows.filter(item => hasChildren(item) || item.productCount > 0).length;
+  const description = blockedCount > 0
+    ? `已选分类中有 ${blockedCount} 个当前显示存在下级分类或关联产品，最终以后端校验为准。确认提交批量删除请求吗？`
+    : `确认删除已选的 ${rows.length} 个分类吗？`;
+  showConfirm('批量删除', description, '删除', 'destructive', async () => {
     try {
       await batchDeleteProductCategories({ categoryIds: rows.map(item => item.categoryId) });
       toast.success('已批量删除');
       void fetchCategories();
-    } catch {
+    } catch (error) {
+      showBackendActionError(error);
     }
   });
 }
@@ -620,17 +686,32 @@ function confirmBatchDelete() {
               <TableHead class="text-center">操作</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            <TableRow v-if="loading">
+          <TableBody v-if="loading">
+            <TableRow>
               <TableCell colspan="7" class="text-center text-muted-foreground py-8">加载中...</TableCell>
             </TableRow>
-            <TableRow v-else-if="visibleCategories.length === 0">
+          </TableBody>
+          <TableBody v-else-if="visibleCategories.length === 0">
+            <TableRow>
               <TableCell colspan="7" class="text-center text-muted-foreground py-8">暂无数据</TableCell>
             </TableRow>
-            <TableRow v-for="row in visibleCategories" :key="row.categoryId" :class="{ 'bg-muted/50': selectedIds.has(row.categoryId) }">
-              <TableCell><Checkbox :model-value="selectedIds.has(row.categoryId)" @update:model-value="toggleSelectRow(row.categoryId)" /></TableCell>
+          </TableBody>
+          <TreeTableBody v-else>
+            <TableRow
+              v-for="row in visibleCategories"
+              :key="row.categoryId"
+              :data-tree-row-key="row.categoryId"
+              :data-tree-row-collapsing="row.isCollapsing ? 'true' : undefined"
+              :class="{ 'bg-muted/50': selectedIds.has(row.categoryId) }"
+            >
               <TableCell>
-                <div class="flex items-center gap-1" :style="{ paddingLeft: `${row.level * 22}px` }">
+                <div class="tree-table-cell-reveal">
+                  <Checkbox :model-value="selectedIds.has(row.categoryId)" @update:model-value="toggleSelectRow(row.categoryId)" />
+                </div>
+              </TableCell>
+              <TableCell>
+                <div class="tree-table-cell-reveal">
+                  <div class="flex items-center gap-1" :style="{ paddingLeft: `${row.level * 22}px` }">
                   <button
                     v-if="hasChildren(row)"
                     type="button"
@@ -638,30 +719,45 @@ function confirmBatchDelete() {
                     :aria-label="isCategoryExpanded(row) ? '收起当前分类' : '展开当前分类'"
                     @click.stop="toggleCategory(row)"
                   >
-                    <ChevronDown v-if="isCategoryExpanded(row)" class="h-3.5 w-3.5" />
-                    <ChevronRight v-else class="h-3.5 w-3.5" />
+                    <ChevronRight
+                      class="h-3.5 w-3.5 transition-transform duration-200 ease-out"
+                      :class="{ 'rotate-90': isCategoryExpanded(row) }"
+                    />
                   </button>
                   <span v-else class="w-5 h-6 shrink-0" />
-                  <strong class="text-sm">{{ row.categoryName }}</strong>
+                    <strong class="text-sm">{{ row.categoryName }}</strong>
+                  </div>
                 </div>
               </TableCell>
-              <TableCell class="text-center text-xs text-muted-foreground">{{ getParentName(row.parentId) }}</TableCell>
-              <TableCell><span class="text-xs text-muted-foreground truncate">{{ getCategoryPath(row) }}</span></TableCell>
-              <TableCell class="text-center">
-                <Badge variant="outline" class="min-w-[38px] justify-center font-semibold" :class="row.productCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'">{{ row.productCount }}</Badge>
+              <TableCell class="text-center text-xs text-muted-foreground">
+                <div class="tree-table-cell-reveal">{{ getParentName(row.parentId) }}</div>
+              </TableCell>
+              <TableCell>
+                <div class="tree-table-cell-reveal">
+                  <span class="text-xs text-muted-foreground truncate">{{ getCategoryPath(row) }}</span>
+                </div>
               </TableCell>
               <TableCell class="text-center">
-                <Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge>
+                <div class="tree-table-cell-reveal">
+                  <Badge variant="outline" class="min-w-[38px] justify-center font-semibold" :class="row.productCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'">{{ row.productCount }}</Badge>
+                </div>
               </TableCell>
               <TableCell class="text-center">
-                <div class="flex items-center justify-center gap-1">
-                  <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
-                  <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openChildDialog(row)">新增下级</Button>
-                  <Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="confirmDelete(row)">删除</Button>
+                <div class="tree-table-cell-reveal">
+                  <Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge>
+                </div>
+              </TableCell>
+              <TableCell class="text-center">
+                <div class="tree-table-cell-reveal">
+                  <div class="flex items-center justify-center gap-1">
+                    <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
+                    <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openChildDialog(row)">新增下级</Button>
+                    <Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="confirmDelete(row)">删除</Button>
+                  </div>
                 </div>
               </TableCell>
             </TableRow>
-          </TableBody>
+          </TreeTableBody>
         </Table>
       </ScrollArea>
 

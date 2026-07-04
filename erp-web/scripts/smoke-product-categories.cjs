@@ -101,9 +101,23 @@ runSmoke({
     }
 
     await tableRow(page, '食品饮料').getByRole('button', { name: '删除' }).click();
-    await page.getByText('该分类存在下级分类，请先调整层级').waitFor();
+    const deleteCategoryWithChildrenDialog = page.getByRole('alertdialog', { name: '删除分类' });
+    await deleteCategoryWithChildrenDialog.waitFor();
+    const deleteCategoryWithChildrenText = await deleteCategoryWithChildrenDialog.innerText();
+    if (!deleteCategoryWithChildrenText.includes('存在下级分类') || !deleteCategoryWithChildrenText.includes('以后端校验为准')) {
+      throw new Error(`分类删除确认未提示后端校验：${deleteCategoryWithChildrenText}`);
+    }
+    await deleteCategoryWithChildrenDialog.getByRole('button', { name: '删除', exact: true }).click();
+    await page.getByText('该分类存在下级分类').waitFor();
     await tableRow(page, '书写文具').getByRole('button', { name: '删除' }).click();
-    await page.getByText('该分类已关联产品，请先调整产品分类').waitFor();
+    const deleteCategoryWithProductsDialog = page.getByRole('alertdialog', { name: '删除分类' });
+    await deleteCategoryWithProductsDialog.waitFor();
+    const deleteCategoryWithProductsText = await deleteCategoryWithProductsDialog.innerText();
+    if (!deleteCategoryWithProductsText.includes('已关联') || !deleteCategoryWithProductsText.includes('以后端校验为准')) {
+      throw new Error(`分类删除确认未提示关联产品与后端校验：${deleteCategoryWithProductsText}`);
+    }
+    await deleteCategoryWithProductsDialog.getByRole('button', { name: '删除', exact: true }).click();
+    await page.getByText('该分类已关联产品').waitFor();
 
     await tableRow(page, '食品饮料').getByRole('checkbox').click();
     await page.getByRole('button', { name: '批量启用' }).click();

@@ -3,7 +3,7 @@ import { onBeforeUpdate, onUpdated, ref } from 'vue';
 
 const bodyRef = ref<HTMLTableSectionElement | null>(null);
 const previousKeys = new Set<string>();
-const ANIMATION_DURATION = 240;
+const ANIMATION_DURATION = 260;
 const ANIMATION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 interface CellMetrics {
@@ -92,19 +92,19 @@ function setExpandedStart(metrics: CellMetrics[]) {
   });
 }
 
-function clearInlineStyles(metrics: CellMetrics[]) {
-  metrics.forEach(({ cell, reveal }) => {
-    cell.style.height = '';
-    cell.style.paddingTop = '';
-    cell.style.paddingBottom = '';
-    cell.style.borderColor = '';
-    cell.style.overflow = '';
+function lockExpandedStyles(metrics: CellMetrics[]) {
+  metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, revealHeight }) => {
+    cell.style.height = `${height}px`;
+    cell.style.paddingTop = paddingTop;
+    cell.style.paddingBottom = paddingBottom;
+    cell.style.borderColor = borderColor;
+    cell.style.overflow = 'hidden';
     cell.style.willChange = '';
 
-    reveal.style.height = '';
-    reveal.style.opacity = '';
-    reveal.style.overflow = '';
-    reveal.style.transform = '';
+    reveal.style.height = `${revealHeight}px`;
+    reveal.style.opacity = '1';
+    reveal.style.overflow = 'hidden';
+    reveal.style.transform = 'translateY(0)';
     reveal.style.willChange = '';
   });
 }
@@ -119,7 +119,10 @@ function animateRowEnter(metrics: CellMetrics[]) {
     const handleFinish = () => {
       finishedAnimations += 1;
       if (finishedAnimations >= expectedAnimations) {
-        requestAnimationFrame(() => clearInlineStyles(metrics));
+        requestAnimationFrame(() => {
+          lockExpandedStyles(metrics);
+          stopAnimations(metrics);
+        });
       }
     };
 
@@ -150,7 +153,9 @@ function animateRowCollapse(row: Element, metrics: CellMetrics[]) {
   row.setAttribute('data-tree-row-collapse-animated', 'true');
 
   if (row instanceof HTMLElement) {
+    row.style.transition = 'none';
     row.style.borderColor = 'transparent';
+    row.style.borderBottomColor = 'transparent';
   }
 
   stopAnimations(metrics);
@@ -197,7 +202,13 @@ onUpdated(() => {
     const isEntering = hadRowsBeforeUpdate && !previousKeys.has(getRowKey(row, index)) && !isCollapsing;
 
     if (isEntering) enteringMetrics.push(metrics);
-    if (isCollapsing) collapsingRows.push({ row, metrics });
+    if (isCollapsing) {
+      collapsingRows.push({ row, metrics });
+    } else if (row instanceof HTMLElement) {
+      row.style.transition = '';
+      row.style.borderColor = '';
+      row.style.borderBottomColor = '';
+    }
   });
 
   enteringMetrics.forEach(metrics => animateRowEnter(metrics));
@@ -216,3 +227,11 @@ onUpdated(() => {
     <slot />
   </tbody>
 </template>
+
+<style>
+tr[data-tree-row-collapsing="true"] {
+  border-color: transparent !important;
+  border-bottom-color: transparent !important;
+  transition-property: none !important;
+}
+</style>

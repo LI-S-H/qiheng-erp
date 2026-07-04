@@ -118,7 +118,9 @@ function animateRowEnter(metrics: CellMetrics[]) {
     const expectedAnimations = metrics.length;
     const handleFinish = () => {
       finishedAnimations += 1;
-      if (finishedAnimations >= expectedAnimations) clearInlineStyles(metrics);
+      if (finishedAnimations >= expectedAnimations) {
+        requestAnimationFrame(() => clearInlineStyles(metrics));
+      }
     };
 
     metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, revealHeight }) => {
@@ -127,7 +129,7 @@ function animateRowEnter(metrics: CellMetrics[]) {
           { height: '0px', paddingTop: '0px', paddingBottom: '0px', borderColor: 'transparent' },
           { height: `${height}px`, paddingTop, paddingBottom, borderColor },
         ],
-        { duration: ANIMATION_DURATION, easing: ANIMATION_EASING },
+        { duration: ANIMATION_DURATION, easing: ANIMATION_EASING, fill: 'forwards' },
       );
 
       reveal.animate(
@@ -135,7 +137,7 @@ function animateRowEnter(metrics: CellMetrics[]) {
           { height: '0px', opacity: 0, transform: 'translateY(-4px)' },
           { height: `${revealHeight}px`, opacity: 1, transform: 'translateY(0)' },
         ],
-        { duration: ANIMATION_DURATION, easing: ANIMATION_EASING },
+        { duration: ANIMATION_DURATION, easing: ANIMATION_EASING, fill: 'forwards' },
       );
 
       cellAnimation.onfinish = handleFinish;

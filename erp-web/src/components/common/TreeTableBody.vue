@@ -147,6 +147,10 @@ function animateRowCollapse(row: Element, metrics: CellMetrics[]) {
   if (row.getAttribute('data-tree-row-collapse-animated') === 'true') return;
   row.setAttribute('data-tree-row-collapse-animated', 'true');
 
+  if (row instanceof HTMLElement) {
+    row.style.borderColor = 'transparent';
+  }
+
   stopAnimations(metrics);
   setExpandedStart(metrics);
 

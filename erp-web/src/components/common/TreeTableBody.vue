@@ -3,7 +3,7 @@ import { onBeforeUpdate, onUpdated, ref } from 'vue';
 
 const bodyRef = ref<HTMLTableSectionElement | null>(null);
 const previousKeys = new Set<string>();
-const ANIMATION_DURATION = 260;
+const ANIMATION_DURATION = 240;
 const ANIMATION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 interface CellMetrics {
@@ -13,6 +13,7 @@ interface CellMetrics {
   paddingTop: string;
   paddingBottom: string;
   borderColor: string;
+  lineHeight: string;
   revealHeight: number;
 }
 
@@ -53,6 +54,7 @@ function measureRow(row: Element): CellMetrics[] {
       paddingTop: style.paddingTop,
       paddingBottom: style.paddingBottom,
       borderColor: style.borderColor,
+      lineHeight: style.lineHeight,
       revealHeight: reveal.scrollHeight || reveal.getBoundingClientRect().height,
     };
   });
@@ -64,8 +66,9 @@ function setCollapsed(metrics: CellMetrics[]) {
     cell.style.paddingTop = '0px';
     cell.style.paddingBottom = '0px';
     cell.style.borderColor = 'transparent';
+    cell.style.lineHeight = '0px';
     cell.style.overflow = 'hidden';
-    cell.style.willChange = 'height, padding, border-color';
+    cell.style.willChange = 'height, padding, border-color, line-height';
 
     reveal.style.height = '0px';
     reveal.style.opacity = '0';
@@ -76,13 +79,14 @@ function setCollapsed(metrics: CellMetrics[]) {
 }
 
 function setExpandedStart(metrics: CellMetrics[]) {
-  metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, revealHeight }) => {
+  metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, lineHeight, revealHeight }) => {
     cell.style.height = `${height}px`;
     cell.style.paddingTop = paddingTop;
     cell.style.paddingBottom = paddingBottom;
     cell.style.borderColor = borderColor;
+    cell.style.lineHeight = lineHeight;
     cell.style.overflow = 'hidden';
-    cell.style.willChange = 'height, padding, border-color';
+    cell.style.willChange = 'height, padding, border-color, line-height';
 
     reveal.style.height = `${revealHeight}px`;
     reveal.style.opacity = '1';
@@ -93,11 +97,12 @@ function setExpandedStart(metrics: CellMetrics[]) {
 }
 
 function lockExpandedStyles(metrics: CellMetrics[]) {
-  metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, revealHeight }) => {
+  metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, lineHeight, revealHeight }) => {
     cell.style.height = `${height}px`;
     cell.style.paddingTop = paddingTop;
     cell.style.paddingBottom = paddingBottom;
     cell.style.borderColor = borderColor;
+    cell.style.lineHeight = lineHeight;
     cell.style.overflow = 'hidden';
     cell.style.willChange = '';
 
@@ -126,11 +131,11 @@ function animateRowEnter(metrics: CellMetrics[]) {
       }
     };
 
-    metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, revealHeight }) => {
+    metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, lineHeight, revealHeight }) => {
       const cellAnimation = cell.animate(
         [
-          { height: '0px', paddingTop: '0px', paddingBottom: '0px', borderColor: 'transparent' },
-          { height: `${height}px`, paddingTop, paddingBottom, borderColor },
+          { height: '0px', paddingTop: '0px', paddingBottom: '0px', borderColor: 'transparent', lineHeight: '0px' },
+          { height: `${height}px`, paddingTop, paddingBottom, borderColor, lineHeight },
         ],
         { duration: ANIMATION_DURATION, easing: ANIMATION_EASING, fill: 'forwards' },
       );
@@ -155,21 +160,37 @@ function animateRowCollapse(row: Element, metrics: CellMetrics[]) {
   if (row instanceof HTMLElement) {
     row.style.transition = 'none';
     row.style.borderColor = 'transparent';
+    row.style.borderWidth = '0px';
     row.style.borderBottomColor = 'transparent';
+    row.style.borderBottomWidth = '0px';
+    row.style.visibility = '';
   }
 
   stopAnimations(metrics);
   setExpandedStart(metrics);
 
   requestAnimationFrame(() => {
-    metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, revealHeight }) => {
-      cell.animate(
+    let finishedAnimations = 0;
+    const expectedAnimations = metrics.length;
+    const handleFinish = () => {
+      finishedAnimations += 1;
+      if (finishedAnimations >= expectedAnimations && row instanceof HTMLElement) {
+        requestAnimationFrame(() => {
+          row.style.visibility = 'collapse';
+        });
+      }
+    };
+
+    metrics.forEach(({ cell, reveal, height, paddingTop, paddingBottom, borderColor, lineHeight, revealHeight }) => {
+      const cellAnimation = cell.animate(
         [
-          { height: `${height}px`, paddingTop, paddingBottom, borderColor },
-          { height: '0px', paddingTop: '0px', paddingBottom: '0px', borderColor: 'transparent' },
+          { height: `${height}px`, paddingTop, paddingBottom, borderColor, lineHeight },
+          { height: '0px', paddingTop: '0px', paddingBottom: '0px', borderColor: 'transparent', lineHeight: '0px' },
         ],
         { duration: ANIMATION_DURATION, easing: ANIMATION_EASING, fill: 'forwards' },
       );
+
+      cellAnimation.onfinish = handleFinish;
 
       reveal.animate(
         [
@@ -207,7 +228,10 @@ onUpdated(() => {
     } else if (row instanceof HTMLElement) {
       row.style.transition = '';
       row.style.borderColor = '';
+      row.style.borderWidth = '';
       row.style.borderBottomColor = '';
+      row.style.borderBottomWidth = '';
+      row.style.visibility = '';
     }
   });
 
@@ -231,7 +255,9 @@ onUpdated(() => {
 <style>
 tr[data-tree-row-collapsing="true"] {
   border-color: transparent !important;
+  border-width: 0 !important;
   border-bottom-color: transparent !important;
+  border-bottom-width: 0 !important;
   transition-property: none !important;
 }
 </style>

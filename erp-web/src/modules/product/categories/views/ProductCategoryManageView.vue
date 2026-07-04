@@ -51,7 +51,8 @@ import {
 
 const ROOT_PARENT_ID = '0';
 const ROOT_PARENT_LABEL = '无上级分类';
-const TREE_COLLAPSE_DURATION = 260;
+// DOM 移除要晚于行高动画结束，避免最后一帧和删除折叠行抢同一帧造成轻微回跳。
+const TREE_COLLAPSE_DURATION = 340;
 const statusFilterOptions = [
   { value: 'all', label: '全部状态' },
   { value: 1, label: '启用' },

@@ -167,6 +167,9 @@ export interface PurchaseOrderListItem {
   updateTime: string;
   version: number;
   remark: string;
+}
+
+export interface PurchaseOrderDetail extends PurchaseOrderListItem {
   items: PurchaseOrderItem[];
 }
 
@@ -177,9 +180,7 @@ export interface PurchaseOrderSummary {
   inboundPendingCount: number;
 }
 
-export interface PurchaseOrderPage extends PageResult<PurchaseOrderListItem> {
-  summary: PurchaseOrderSummary;
-}
+export type PurchaseOrderPage = PageResult<PurchaseOrderListItem>;
 
 export interface PurchaseOrderQuery {
   purchaseNo?: string;

@@ -7,12 +7,12 @@ import type { ProductListItem } from '@/modules/product/products/types';
 import type { WarehouseListItem } from '@/modules/warehouse/warehouses/types';
 import type {
   PurchaseOrderFormPayload,
+  PurchaseOrderDetail,
   PurchaseOrderItem,
   PurchaseOrderListItem,
   PurchaseOrderPage,
   PurchaseOrderQuery,
   PurchaseOrderStatus,
-  PurchaseOrderSummary,
   SupplierBatchIdsPayload,
   SupplierBatchStatusPayload,
   SupplierFormPayload,
@@ -103,7 +103,7 @@ let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean 
   };
 });
 
-let mockOrders: PurchaseOrderListItem[] = [
+let mockOrders: PurchaseOrderDetail[] = [
   buildOrderSeed('PO202606001', 'S001', 'WH001', 'APPROVED', '2026-06-24', [['HD-SD330', 24, 35.2]], '采购主管', true),
   buildOrderSeed('PO202606002', 'S005', 'WH008', 'PARTIAL_INBOUND', '2026-06-22', [['SZ-A4-70G', 18, 89.4]], '采购主管', true),
   buildOrderSeed('PO202606003', 'S004', 'WH005', 'DRAFT', '2026-06-28', [['WY-PEN12', 30, 13.8]], '系统管理员', false),
@@ -147,7 +147,7 @@ function buildOrderSeed(
   lines: Array<[string, number, number]>,
   createdByName: string,
   submitted: boolean,
-): PurchaseOrderListItem {
+): PurchaseOrderDetail {
   const supplier = mockSuppliers.find(item => item.supplierCode === supplierCode)!;
   const warehouses: Record<string, { warehouseId: string; warehouseName: string }> = {
     WH001: { warehouseId: '1930000000000000001', warehouseName: '华东中心仓' },
@@ -276,8 +276,11 @@ function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
     approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
     version: normalizeFiniteNumber(item.version, 'version'),
-    items: item.items.map(normalizeOrderItem),
   };
+}
+
+function normalizeOrderDetail(item: PurchaseOrderDetail): PurchaseOrderDetail {
+  return { ...normalizeOrder(item), items: item.items.map(normalizeOrderItem) };
 }
 
 function normalizePage<T>(page: PageResult<T>, mapper: (item: T) => T): PageResult<T> {
@@ -331,15 +334,6 @@ function resolveOrderSupplierProduct(supplierId: string, line: PurchaseOrderForm
   return exact || mockSupplierProducts.find(item => item.supplierId === supplierId && item.productId === line.productId && item.status === 1);
 }
 
-function buildOrderSummary(records: PurchaseOrderListItem[]): PurchaseOrderSummary {
-  return {
-    draftCount: records.filter(item => item.status === 'DRAFT').length,
-    submittedCount: records.filter(item => item.status === 'SUBMITTED').length,
-    approvedCount: records.filter(item => item.status === 'APPROVED').length,
-    inboundPendingCount: records.filter(item => item.status === 'APPROVED' || item.status === 'PARTIAL_INBOUND').length,
-  };
-}
-
 function filterOrders(params: PurchaseOrderQuery): PurchaseOrderPage {
   let filtered = [...mockOrders];
   const purchaseNo = params.purchaseNo?.trim().toLocaleLowerCase();
@@ -348,8 +342,8 @@ function filterOrders(params: PurchaseOrderQuery): PurchaseOrderPage {
   if (params.warehouseId && params.warehouseId !== 'all') filtered = filtered.filter(item => item.warehouseId === params.warehouseId);
   if (params.status && params.status !== 'all') filtered = filtered.filter(item => item.status === params.status);
   filtered.sort((a, b) => b.createTime.localeCompare(a.createTime));
-  const records = pageSlice(filtered, params.pageNum, params.pageSize);
-  return { records, total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize, summary: buildOrderSummary(records) };
+  const records = pageSlice(filtered, params.pageNum, params.pageSize).map(({ items: _, ...item }) => item);
+  return { records, total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize };
 }
 
 export function listSuppliers(params: SupplierQuery) {
@@ -362,18 +356,6 @@ export function listSuppliers(params: SupplierQuery) {
     ...(contactName?.trim() ? { contactName: contactName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
   }).then(page => normalizePage(page, normalizeSupplier));
-}
-
-export function listSupplierOptions(): Promise<SupplierOption[]> {
-  if (useMockApi) {
-    return Promise.resolve(mockSuppliers.map(item => ({
-      supplierId: item.supplierId,
-      supplierCode: item.supplierCode,
-      supplierName: item.supplierName,
-      status: item.status,
-    })));
-  }
-  return getResult<SupplierOption[]>('/purchase/suppliers/options');
 }
 
 export async function searchSupplierOptions(keyword = '', pageSize = 10): Promise<SupplierOption[]> {
@@ -584,8 +566,7 @@ export function batchDeleteSupplierProducts(payload: SupplierProductBatchIdsPayl
 export function listPurchaseOrders(params: PurchaseOrderQuery) {
   if (useMockApi) {
     const page = filterOrders(params);
-    const normalized = normalizePage(page, normalizeOrder);
-    return Promise.resolve({ ...normalized, summary: buildOrderSummary(normalized.records) });
+    return Promise.resolve(normalizePage(page, normalizeOrder));
   }
   const { purchaseNo, supplierId, warehouseId, status, ...rest } = params;
   return getResult<PurchaseOrderPage>('/purchase/orders', {
@@ -594,10 +575,15 @@ export function listPurchaseOrders(params: PurchaseOrderQuery) {
     ...(supplierId && supplierId !== 'all' ? { supplierId } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(status && status !== 'all' ? { status } : {}),
-  }).then(page => {
-    const normalized = normalizePage(page, normalizeOrder);
-    return { ...normalized, summary: buildOrderSummary(normalized.records) };
-  });
+  }).then(page => normalizePage(page, normalizeOrder));
+}
+
+export function getPurchaseOrderDetail(purchaseOrderId: string) {
+  if (useMockApi) {
+    const order = mockOrders.find(item => item.purchaseOrderId === purchaseOrderId);
+    return order ? Promise.resolve(normalizeOrderDetail(order)) : Promise.reject(new Error('采购订单不存在'));
+  }
+  return getResult<PurchaseOrderDetail>(`/purchase/orders/${purchaseOrderId}`).then(normalizeOrderDetail);
 }
 
 export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
@@ -629,7 +615,7 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
         remark: line.remark.trim(),
       });
     });
-    const created: PurchaseOrderListItem = normalizeOrder({
+    const created: PurchaseOrderDetail = normalizeOrderDetail({
       purchaseOrderId,
       purchaseNo,
       supplierId: supplier.supplierId,
@@ -655,7 +641,7 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
     mockOrders = [created, ...mockOrders];
     return Promise.resolve(created);
   }
-  return postResult<PurchaseOrderListItem, PurchaseOrderFormPayload>('/purchase/orders', payload).then(normalizeOrder);
+  return postResult<PurchaseOrderDetail, PurchaseOrderFormPayload>('/purchase/orders', payload).then(normalizeOrderDetail);
 }
 
 export async function updatePurchaseOrder(purchaseOrderId: string, payload: PurchaseOrderFormPayload) {
@@ -689,7 +675,7 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
         remark: line.remark.trim(),
       });
     });
-    const updated = normalizeOrder({
+    const updated = normalizeOrderDetail({
       ...existing,
       supplierId: supplier.supplierId,
       supplierCode: supplier.supplierCode,
@@ -707,7 +693,7 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
     return Promise.resolve(updated);
   }
   const response = await http.put(`/purchase/orders/${purchaseOrderId}`, payload);
-  return normalizeOrder(response.data.data as PurchaseOrderListItem);
+  return normalizeOrderDetail(response.data.data as PurchaseOrderDetail);
 }
 
 export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'submit' | 'approve' | 'cancel', version: number) {

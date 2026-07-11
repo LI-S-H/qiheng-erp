@@ -41,6 +41,12 @@ function billDirection(billType: StockBillType): StockBillDirection {
   return inboundTypes.has(billType) ? 'INBOUND' : 'OUTBOUND';
 }
 
+function workBillCollectionEndpoint(billType: StockBillType) {
+  return billDirection(billType) === 'INBOUND'
+    ? '/warehouse/inbound-bills'
+    : '/warehouse/outbound-bills';
+}
+
 function nullableNumber(value: unknown, fieldName: string): number | null {
   return value === null || value === undefined ? null : normalizeFiniteNumber(value, fieldName);
 }
@@ -441,7 +447,8 @@ export async function createStockBill(payload: StockBillCreatePayload) {
     mockBills = [created, ...mockBills];
     return normalizeStockBillDetail(created);
   }
-  return postResult<StockBillDetail, StockBillCreatePayload>('/warehouse/stock-bills', payload).then(normalizeStockBillDetail);
+  return postResult<StockBillDetail, StockBillCreatePayload>(workBillCollectionEndpoint(payload.billType), payload)
+    .then(normalizeStockBillDetail);
 }
 
 export async function updateStockBill(stockBillId: string, payload: StockBillUpdatePayload) {
@@ -518,7 +525,7 @@ export async function updateStockBill(stockBillId: string, payload: StockBillUpd
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? updated : item);
     return normalizeStockBillDetail(updated);
   }
-  const response = await http.put(`/warehouse/stock-bills/${stockBillId}`, payload);
+  const response = await http.put(`/warehouse/work-bills/${stockBillId}`, payload);
   return normalizeStockBillDetail(response.data.data as StockBillDetail);
 }
 
@@ -586,7 +593,7 @@ export async function confirmStockBill(stockBillId: string, version: number) {
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? confirmed : item);
     return normalizeStockBillDetail(confirmed);
   }
-  return postResult<StockBillDetail, { version: number }>(`/warehouse/stock-bills/${stockBillId}/confirm`, { version }).then(normalizeStockBillDetail);
+  return postResult<StockBillDetail, { version: number }>(`/warehouse/work-bills/${stockBillId}/confirm`, { version }).then(normalizeStockBillDetail);
 }
 
 export async function submitStockBill(stockBillId: string, version: number) {
@@ -602,7 +609,7 @@ export async function submitStockBill(stockBillId: string, version: number) {
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? submitted : item);
     return normalizeStockBillDetail(submitted);
   }
-  return postResult<StockBillDetail, { version: number }>(`/warehouse/stock-bills/${stockBillId}/submit`, { version }).then(normalizeStockBillDetail);
+  return postResult<StockBillDetail, { version: number }>(`/warehouse/work-bills/${stockBillId}/submit`, { version }).then(normalizeStockBillDetail);
 }
 
 export async function cancelStockBill(stockBillId: string, version: number) {
@@ -618,7 +625,7 @@ export async function cancelStockBill(stockBillId: string, version: number) {
     mockBills = mockBills.map(item => item.stockBillId === stockBillId ? cancelled : item);
     return normalizeStockBillDetail(cancelled);
   }
-  return postResult<StockBillDetail, { version: number }>(`/warehouse/stock-bills/${stockBillId}/cancel`, { version }).then(normalizeStockBillDetail);
+  return postResult<StockBillDetail, { version: number }>(`/warehouse/work-bills/${stockBillId}/cancel`, { version }).then(normalizeStockBillDetail);
 }
 
 export function listStockBills(params: StockBillQuery) {
@@ -645,5 +652,5 @@ export function getStockBillDetail(stockBillId: string) {
     const detail = mockBills.find(item => item.stockBillId === stockBillId);
     return detail ? Promise.resolve(normalizeStockBillDetail(detail)) : Promise.reject(new Error('入库单或出库单不存在'));
   }
-  return getResult<StockBillDetail>(`/warehouse/stock-bills/${stockBillId}`).then(normalizeStockBillDetail);
+  return getResult<StockBillDetail>(`/warehouse/work-bills/${stockBillId}`).then(normalizeStockBillDetail);
 }

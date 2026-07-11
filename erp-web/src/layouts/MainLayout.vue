@@ -10,8 +10,11 @@ import {
   CalendarClock,
   Bell,
   LogOut,
+  AlertCircle,
+  Loader2,
+  ChevronRight,
 } from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import logoUrl from '@/assets/brand/qiheng-logo.svg';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
@@ -26,6 +29,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import CollapseReveal from '@/components/common/CollapseReveal.vue';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { getDashboardNotifications } from '@/modules/dashboard/api';
+import type { DashboardNotificationPopover, DashboardTodoItem } from '@/modules/dashboard/types';
 
 interface MenuItem {
   index: string;
@@ -43,6 +49,12 @@ const activeMenu = computed(() => route.path);
 const openedMenus = reactive(new Set<string>());
 const logoutConfirmOpen = ref(false);
 const pageLoading = ref(false);
+const notificationOpen = ref(false);
+const userMenuOpen = ref(false);
+const notificationLoading = ref(false);
+const notificationError = ref('');
+const notificationData = ref<DashboardNotificationPopover | null>(null);
+let notificationLoadedAt = 0;
 let pageLoadingTimer: number | undefined;
 let pageLoadingFrame: number | undefined;
 
@@ -160,6 +172,44 @@ function navigateTo(path: string) {
   }
 }
 
+async function loadNotifications(force = false) {
+  if (notificationLoading.value) return;
+  if (!force && notificationData.value && Date.now() - notificationLoadedAt < 60_000) return;
+  notificationLoading.value = true;
+  notificationError.value = '';
+  try {
+    notificationData.value = await getDashboardNotifications();
+    notificationLoadedAt = Date.now();
+  } catch (error) {
+    notificationError.value = error instanceof Error ? error.message : '通知加载失败，请稍后重试';
+  } finally {
+    notificationLoading.value = false;
+  }
+}
+
+function handleNotificationOpen(open: boolean) {
+  notificationOpen.value = open;
+  if (open) {
+    userMenuOpen.value = false;
+    void loadNotifications();
+  }
+}
+
+function handleUserMenuOpen(open: boolean) {
+  userMenuOpen.value = open;
+  if (open) notificationOpen.value = false;
+}
+
+function handleNotificationItem(item: DashboardTodoItem) {
+  notificationOpen.value = false;
+  void router.push(item.completionMode === 'TRACKED' ? '/dashboard' : item.route || '/dashboard');
+}
+
+function openWorkbench() {
+  notificationOpen.value = false;
+  void router.push('/dashboard');
+}
+
 function openCurrentParent(path: string) {
   const parent = visibleMenus.value.find(item => item.children?.some(child => child.index === path));
   if (parent) openedMenus.add(parent.index);
@@ -197,6 +247,10 @@ watch(
   },
   { immediate: true },
 );
+
+onMounted(() => {
+  void loadNotifications();
+});
 
 onBeforeUnmount(() => {
   window.clearTimeout(pageLoadingTimer);
@@ -279,13 +333,56 @@ onBeforeUnmount(() => {
         </div>
         <div class="flex items-center gap-3">
           <!-- Notification bell -->
-          <button class="relative flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer" type="button" aria-label="通知">
-            <Bell class="h-4 w-4" />
-            <span class="absolute right-[9px] top-[8px] h-1.5 w-1.5 rounded-full bg-sidebar-primary ring-2 ring-sidebar" />
-          </button>
+          <Popover :open="notificationOpen" @update:open="handleNotificationOpen">
+            <PopoverTrigger as-child>
+              <button class="relative flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer" type="button" aria-label="待处理通知" data-notification-trigger>
+                <Bell class="h-4 w-4" />
+                <span v-if="notificationData?.pendingCount" class="absolute -right-1 -top-1 min-w-4 rounded-full bg-destructive px-1 text-center text-[10px] font-bold leading-4 text-destructive-foreground ring-2 ring-sidebar">
+                  {{ notificationData.pendingCount > 99 ? '99+' : notificationData.pendingCount }}
+                </span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" :side-offset="10" class="w-[380px] overflow-hidden p-0" data-notification-popover>
+              <div class="flex items-start justify-between border-b px-4 py-3">
+                <div>
+                  <h2 class="text-sm font-semibold">待处理事项</h2>
+                  <p class="mt-0.5 text-xs text-muted-foreground">业务状态汇总，不代表未读消息</p>
+                </div>
+                <span v-if="notificationData" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ notificationData.pendingCount }} 项</span>
+              </div>
+              <div v-if="notificationLoading && !notificationData" class="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 class="h-4 w-4 animate-spin" /> 正在加载
+              </div>
+              <div v-else-if="notificationError && !notificationData" class="flex h-40 flex-col items-center justify-center gap-3 px-6 text-center">
+                <AlertCircle class="h-5 w-5 text-destructive" />
+                <p class="text-sm text-muted-foreground">{{ notificationError }}</p>
+                <button class="text-sm font-medium text-primary hover:underline" type="button" @click="loadNotifications(true)">重新加载</button>
+              </div>
+              <div v-else-if="!notificationData?.items.length" class="flex h-40 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Bell class="h-5 w-5" /> 暂无待处理事项
+              </div>
+              <div v-else class="max-h-[420px] overflow-y-auto py-1">
+                <button v-for="item in notificationData.items" :key="item.todoId" class="flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/60" type="button" @click="handleNotificationItem(item)">
+                  <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="item.priority === 'HIGH' ? 'bg-destructive' : item.priority === 'MEDIUM' ? 'bg-amber-500' : 'bg-muted-foreground'" />
+                  <span class="min-w-0 flex-1">
+                    <span class="flex items-center justify-between gap-2">
+                      <span class="truncate text-sm font-medium">{{ item.title }}</span>
+                      <span class="shrink-0 text-xs font-semibold text-muted-foreground">{{ item.count }} 项</span>
+                    </span>
+                    <span class="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{{ item.description }}</span>
+                  </span>
+                  <ChevronRight class="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              </div>
+              <div class="flex items-center justify-between border-t bg-muted/30 px-4 py-2.5">
+                <span class="text-xs text-muted-foreground">{{ notificationData?.hasMore ? '工作台还有更多事项' : '在工作台查看完整依据' }}</span>
+                <button class="text-sm font-medium text-primary hover:underline" type="button" @click="openWorkbench">前往工作台</button>
+              </div>
+            </PopoverContent>
+          </Popover>
 
           <!-- User dropdown -->
-          <DropdownMenu>
+          <DropdownMenu :open="userMenuOpen" @update:open="handleUserMenuOpen">
             <DropdownMenuTrigger as-child>
               <button class="flex h-10 items-center gap-2 rounded-md px-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent cursor-pointer" type="button" :title="userLabel">
                 <Avatar class="h-7 w-7 bg-sidebar-primary">

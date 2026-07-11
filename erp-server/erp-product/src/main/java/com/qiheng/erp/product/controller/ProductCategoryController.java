@@ -121,7 +121,7 @@ public class ProductCategoryController {
     @PostMapping("/batch/delete")
     public Result<Void> deleteBatch(@RequestBody Map<String, List<Long>> categoryIds) {
         StpUtil.checkPermission("product:manage");
-        List<Long> ids = categoryIds.get("ids");
+        List<Long> ids = categoryIds.get("categoryIds");
         log.info("批量删除产品分类，categoryIds: {}", ids);
         productCategoryService.removeBatch(ids);
         return Result.ok();

@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import {
   createSalesOrder,
+  getSalesOrderDetail,
   listEnabledSalesProductOptions,
   listEnabledSalesWarehouseOptions,
   listSalesOrders,
@@ -28,6 +29,7 @@ import {
 } from '../../api';
 import type {
   SalesOrderDraftItemPayload,
+  SalesOrderDetail,
   SalesOrderFormPayload,
   SalesOrderListItem,
   SalesOrderQuery,
@@ -75,11 +77,12 @@ const loading = ref(false);
 const queryPending = ref(false);
 const formSubmitting = ref(false);
 const actionSubmitting = ref(false);
+const detailLoading = ref(false);
 const createDialogOpen = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
-const editingOrder = ref<SalesOrderListItem | null>(null);
+const editingOrder = ref<SalesOrderDetail | null>(null);
 const detailDialogOpen = ref(false);
-const detailRow = ref<SalesOrderListItem | null>(null);
+const detailRow = ref<SalesOrderDetail | null>(null);
 const detailActionMode = ref<'view' | 'submit' | 'approve'>('view');
 const customerOptions = ref<Option[]>([{ value: 'all', label: '全部客户' }]);
 const warehouseOptions = ref<Option[]>([{ value: 'all', label: '全部仓库' }]);
@@ -181,7 +184,7 @@ async function fetchProductSearchOptions(keyword: string) {
   return options;
 }
 
-function cacheOrderOptions(row: SalesOrderListItem) {
+function cacheOrderOptions(row: SalesOrderDetail) {
   mergeCustomerOptions([{ value: row.customerId, label: `${row.customerCode} ${row.customerName}` }]);
   mergeWarehouseOptions([{ value: row.warehouseId, label: row.warehouseName }]);
   mergeProductOptions(row.items.map(item => ({
@@ -222,7 +225,12 @@ async function fetchOrders() {
     if (sequence !== requestSequence) return;
     orders.value = page.records;
     total.value = page.total;
-    Object.assign(summary, page.summary);
+    Object.assign(summary, {
+      draftCount: page.records.filter(item => item.status === 'DRAFT').length,
+      submittedCount: page.records.filter(item => item.status === 'SUBMITTED').length,
+      approvedCount: page.records.filter(item => item.status === 'APPROVED').length,
+      outboundPendingCount: page.records.filter(item => item.status === 'APPROVED' || item.status === 'PARTIAL_OUTBOUND').length,
+    });
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '销售订单加载失败');
   } finally {
@@ -294,24 +302,35 @@ function openCreateDialog() {
   createDialogOpen.value = true;
 }
 
-function openEditDialog(row: SalesOrderListItem) {
+async function openEditDialog(row: SalesOrderListItem) {
   if (row.status !== 'DRAFT' && row.status !== 'SUBMITTED') {
     toast.warning('仅草稿或已提交销售单可以编辑，审核后不能直接修改');
     return;
   }
+  if (detailLoading.value) return;
+  detailLoading.value = true;
+  let detail: SalesOrderDetail;
+  try {
+    detail = await getSalesOrderDetail(row.salesOrderId);
+  } catch (error) {
+    toast.warning(getApiErrorMessage(error) || '销售订单详情加载失败');
+    return;
+  } finally {
+    detailLoading.value = false;
+  }
   dialogMode.value = 'edit';
   resetForm();
-  editingOrder.value = row;
-  cacheOrderOptions(row);
+  editingOrder.value = detail;
+  cacheOrderOptions(detail);
   Object.assign(form, {
-    customerId: row.customerId,
-    warehouseId: row.warehouseId,
-    expectedDeliveryDate: row.expectedDeliveryDate || '',
-    remark: row.remark,
+    customerId: detail.customerId,
+    warehouseId: detail.warehouseId,
+    expectedDeliveryDate: detail.expectedDeliveryDate || '',
+    remark: detail.remark,
     items: [],
   });
-  draftItems.value = row.items.length > 0
-    ? row.items.map(item => ({
+  draftItems.value = detail.items.length > 0
+    ? detail.items.map(item => ({
       rowId: `line-${lineSequence++}`,
       salesOrderItemId: item.salesOrderItemId,
       productId: item.productId,
@@ -409,10 +428,18 @@ async function submitForm() {
   }
 }
 
-function openDetail(row: SalesOrderListItem, actionMode: 'view' | 'submit' | 'approve' = 'view') {
-  detailRow.value = row;
-  detailActionMode.value = actionMode;
-  detailDialogOpen.value = true;
+async function openDetail(row: SalesOrderListItem, actionMode: 'view' | 'submit' | 'approve' = 'view') {
+  if (detailLoading.value) return;
+  detailLoading.value = true;
+  try {
+    detailRow.value = await getSalesOrderDetail(row.salesOrderId);
+    detailActionMode.value = actionMode;
+    detailDialogOpen.value = true;
+  } catch (error) {
+    toast.warning(getApiErrorMessage(error) || '销售订单详情加载失败');
+  } finally {
+    detailLoading.value = false;
+  }
 }
 
 function showConfirm(title: string, description: string, confirmText: string, variant: 'default' | 'destructive' | 'warning', onConfirm: () => void | Promise<void>) {
@@ -482,7 +509,12 @@ function formatQty(value: number) {
   return Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 3 });
 }
 
-function lockedInventoryText(row: SalesOrderListItem) {
+function lockedInventoryText(row: SalesOrderListItem | SalesOrderDetail) {
+  if (!('items' in row)) {
+    if (row.status === 'CANCELLED') return '已释放';
+    if (row.status === 'OUTBOUND_DONE') return '已出库';
+    return row.lockedAt ? '已锁定' : '未锁定';
+  }
   const lockedItems = row.items.filter(item => Number(item.lockedQty || 0) > 0);
   const lockedQty = lockedItems.reduce((sum, item) => sum + Number(item.lockedQty || 0), 0);
   if (lockedQty > 0) {
@@ -557,10 +589,10 @@ onMounted(() => {
               <TableCell class="text-xs text-muted-foreground">{{ lockedInventoryText(row) }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
               <TableCell class="text-right">
-                <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" @click="openDetail(row)">详情</Button>
-                <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" @click="openEditDialog(row)">编辑</Button>
-                <Button v-if="row.status === 'DRAFT'" variant="ghost" size="sm" class="text-primary hover:text-primary" @click="openOrderActionDetail(row, 'submit')">提交</Button>
-                <Button v-if="row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-emerald-700 hover:text-emerald-800" @click="openOrderActionDetail(row, 'approve')">审核</Button>
+                <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" :disabled="detailLoading" @click="openDetail(row)">{{ detailLoading ? '加载中' : '详情' }}</Button>
+                <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" :disabled="detailLoading" @click="openEditDialog(row)">编辑</Button>
+                <Button v-if="row.status === 'DRAFT'" variant="ghost" size="sm" class="text-primary hover:text-primary" :disabled="detailLoading" @click="openOrderActionDetail(row, 'submit')">提交</Button>
+                <Button v-if="row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-emerald-700 hover:text-emerald-800" :disabled="detailLoading" @click="openOrderActionDetail(row, 'approve')">审核</Button>
                 <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="confirmOrderAction(row, 'cancel')">取消</Button>
               </TableCell>
             </TableRow>

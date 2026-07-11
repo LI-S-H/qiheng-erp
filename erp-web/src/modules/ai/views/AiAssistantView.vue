@@ -20,7 +20,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
-  Save,
   Send,
   ShoppingCart,
   Sparkles,
@@ -95,7 +94,7 @@ interface AssistantWorkbench {
   title: string;
   description: string;
   workbenchType: 'PURCHASE_DRAFT' | 'TRANSFER_DRAFT' | 'LOCK_RELEASE' | 'STOCK_FILTER';
-  status: '待确认' | '已修改' | '草稿已创建';
+  status: '待确认' | '已修改' | '草稿已创建' | '预览已更新（未保存）';
   route: string | null;
   generatedNos: string[];
   lines: WorkbenchLine[];
@@ -1052,12 +1051,6 @@ function transferDraftGroups(lines: WorkbenchLine[]) {
   return { outbound: Array.from(outbound.entries()), inbound: Array.from(inbound.entries()) };
 }
 
-function saveWorkbench() {
-  if (!activeWorkbench.value) return;
-  activeWorkbench.value.status = '已修改';
-  toast.success('工作框内容已暂存，正式业务数据尚未写入');
-}
-
 async function createWorkbenchDraft() {
   const workbench = activeWorkbench.value;
   if (!workbench || workbenchSubmitting.value) return;
@@ -1088,8 +1081,8 @@ async function createWorkbenchDraft() {
     return;
   }
   if (workbench.workbenchType !== 'PURCHASE_DRAFT') {
-    workbench.status = '草稿已创建';
-    toast.success('已生成可复核的草稿预览，正式业务写入需要后端提供对应单据接口');
+    workbench.status = '预览已更新（未保存）';
+    toast.info('当前仅更新本次预览；未调用业务写入接口，也不会保存为草稿。');
     return;
   }
   const invalidLine = workbench.lines.find(line => !line.productId || !line.supplierId || !line.warehouseId || !Number.isFinite(Number(line.suggestedQty)) || Number(line.suggestedQty) <= 0);
@@ -1657,10 +1650,6 @@ onMounted(loadOverview);
           </div>
 
           <div class="ai-workbench-actions">
-            <Button size="sm" variant="outline" @click="saveWorkbench">
-              <Save class="mr-1 h-3.5 w-3.5" />
-              暂存修改
-            </Button>
             <Button v-if="activeWorkbench.workbenchType !== 'STOCK_FILTER'" size="sm" :disabled="workbenchSubmitting" @click="createWorkbenchDraft">
               {{ workbenchSubmitting ? '生成中...' : activeWorkbench.workbenchType === 'PURCHASE_DRAFT' ? '生成采购草稿' : activeWorkbench.workbenchType === 'TRANSFER_DRAFT' ? '生成调拨草稿' : '生成释放预览' }}
             </Button>

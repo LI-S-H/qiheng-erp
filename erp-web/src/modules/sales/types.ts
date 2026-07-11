@@ -92,6 +92,9 @@ export interface SalesOrderListItem {
   updateTime: string;
   version: number;
   remark: string;
+}
+
+export interface SalesOrderDetail extends SalesOrderListItem {
   items: SalesOrderItem[];
 }
 
@@ -102,9 +105,7 @@ export interface SalesOrderSummary {
   outboundPendingCount: number;
 }
 
-export interface SalesOrderPage extends PageResult<SalesOrderListItem> {
-  summary: SalesOrderSummary;
-}
+export type SalesOrderPage = PageResult<SalesOrderListItem>;
 
 export interface SalesOrderQuery {
   salesNo?: string;

@@ -91,10 +91,10 @@ const requiredPaths = [
   '/warehouse/inbound-bills:',
   '/warehouse/outbound-bills:',
   '/warehouse/stock-bills:',
-  '/warehouse/stock-bills/{stockBillId}:',
-  '/warehouse/stock-bills/{stockBillId}/submit:',
-  '/warehouse/stock-bills/{stockBillId}/confirm:',
-  '/warehouse/stock-bills/{stockBillId}/cancel:',
+  '/warehouse/work-bills/{workBillId}:',
+  '/warehouse/work-bills/{workBillId}/submit:',
+  '/warehouse/work-bills/{workBillId}/confirm:',
+  '/warehouse/work-bills/{workBillId}/cancel:',
 ];
 
 for (const requiredPath of requiredPaths) {

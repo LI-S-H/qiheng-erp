@@ -29,6 +29,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { listProducts } from '@/modules/product/products/api';
 import { listWarehouses } from '@/modules/warehouse/warehouses/api';
+import { listRoleOptions } from '@/modules/system/roles/api';
 import AiChartCard from '../components/AiChartCard.vue';
 import AiFadeSwitch from '../components/AiFadeSwitch.vue';
 import {
@@ -78,7 +79,9 @@ const chartFrame = {
   tickX: 638,
 } as const;
 
-const recipientOptions = ['经营负责人', '采购主管', '仓库主管', '销售主管', '系统管理员'].map(item => ({ value: item, label: item }));
+const recipientOptions = ref<Array<{ value: string; label: string }>>([]);
+const productLabels = ref<Record<string, string>>({ ALL: '全部商品' });
+const warehouseLabels = ref<Record<string, string>>({ ALL: '全部仓库' });
 
 const categoryOptions: Array<{ value: AiScheduledTaskCategory; label: string }> = [
   { value: 'REPORT', label: '经营报告' },
@@ -95,7 +98,6 @@ const frequencyOptions: Array<{ value: AiScheduledTaskFrequency; label: string }
 const outputFormatOptions: Array<{ value: AiScheduledTaskOutputFormat; label: string }> = [
   { value: 'REPORT', label: '页面报告' },
   { value: 'CHAT_CARD', label: '对话卡片' },
-  { value: 'NOTIFICATION', label: '通知摘要' },
 ];
 
 const editForm = reactive<AiScheduledTaskUpdateRequest>({
@@ -103,9 +105,9 @@ const editForm = reactive<AiScheduledTaskUpdateRequest>({
   category: 'REPORT',
   frequency: 'DAILY',
   cronExpression: '',
-  productScope: [],
-  warehouseScope: [],
-  recipients: [],
+  productIds: [],
+  warehouseIds: [],
+  recipientRoleIds: [],
   analysisGoal: '',
   outputFormat: 'REPORT',
 });
@@ -320,7 +322,7 @@ async function fetchProductOptions(keyword: string): Promise<RemoteSearchOption[
     ...productKeywordQuery(keyword),
   });
   return page.records.map(item => ({
-    value: `${item.productCode} ${item.productName}`,
+    value: item.productId,
     label: `${item.productCode} ${item.productName}（${item.unitName}）`,
   }));
 }
@@ -333,7 +335,7 @@ async function fetchWarehouseOptions(keyword: string): Promise<RemoteSearchOptio
     ...warehouseKeywordQuery(keyword),
   });
   return page.records.map(item => ({
-    value: `${item.warehouseCode} ${item.warehouseName}`,
+    value: item.warehouseId,
     label: `${item.warehouseCode} ${item.warehouseName}`,
   }));
 }
@@ -341,39 +343,42 @@ async function fetchWarehouseOptions(keyword: string): Promise<RemoteSearchOptio
 function addUniqueValue(list: string[], value: string) {
   const normalized = value.trim();
   if (!normalized || list.includes(normalized)) return list;
-  if (normalized !== '全部商品' && list.includes('全部商品')) return [normalized];
-  if (normalized !== '全部仓库' && list.includes('全部仓库')) return [normalized];
+  if (normalized !== 'ALL' && list.includes('ALL')) return [normalized];
   return [...list, normalized];
 }
 
 function addProduct(option: RemoteSearchOption) {
-  editForm.productScope = addUniqueValue(editForm.productScope, option.label);
+  const productId = String(option.value);
+  productLabels.value[productId] = option.label;
+  editForm.productIds = addUniqueValue(editForm.productIds, productId);
   productPickerValue.value = '';
   productPickerKey.value += 1;
 }
 
 function addWarehouse(option: RemoteSearchOption) {
-  editForm.warehouseScope = addUniqueValue(editForm.warehouseScope, option.label);
+  const warehouseId = String(option.value);
+  warehouseLabels.value[warehouseId] = option.label;
+  editForm.warehouseIds = addUniqueValue(editForm.warehouseIds, warehouseId);
   warehousePickerValue.value = '';
   warehousePickerKey.value += 1;
 }
 
 function addAllProducts() {
-  editForm.productScope = ['全部商品'];
+  editForm.productIds = ['ALL'];
   productPickerKey.value += 1;
 }
 
 function addAllWarehouses() {
-  editForm.warehouseScope = ['全部仓库'];
+  editForm.warehouseIds = ['ALL'];
   warehousePickerKey.value += 1;
 }
 
 function removeProduct(product: string) {
-  editForm.productScope = editForm.productScope.filter(item => item !== product);
+  editForm.productIds = editForm.productIds.filter(item => item !== product);
 }
 
 function removeWarehouse(warehouse: string) {
-  editForm.warehouseScope = editForm.warehouseScope.filter(item => item !== warehouse);
+  editForm.warehouseIds = editForm.warehouseIds.filter(item => item !== warehouse);
 }
 
 function resetForm() {
@@ -381,9 +386,9 @@ function resetForm() {
   editForm.category = 'REPORT';
   editForm.frequency = 'DAILY';
   editForm.cronExpression = '0 0 9 * * ?';
-  editForm.productScope = ['全部商品'];
-  editForm.warehouseScope = ['全部仓库'];
-  editForm.recipients = ['经营负责人'];
+  editForm.productIds = ['ALL'];
+  editForm.warehouseIds = ['ALL'];
+  editForm.recipientRoleIds = recipientOptions.value.slice(0, 1).map(item => item.value);
   editForm.analysisGoal = '';
   editForm.outputFormat = 'REPORT';
 }
@@ -393,9 +398,9 @@ function fillFromTemplate(template: AiScheduledTaskTemplate) {
   editForm.category = template.category;
   editForm.frequency = template.frequency;
   editForm.cronExpression = template.defaultCronExpression;
-  editForm.productScope = [...template.defaultProductScope];
-  editForm.warehouseScope = [...template.defaultWarehouseScope];
-  editForm.recipients = ['经营负责人'];
+  editForm.productIds = ['ALL'];
+  editForm.warehouseIds = ['ALL'];
+  editForm.recipientRoleIds = recipientOptions.value.slice(0, 1).map(item => item.value);
   editForm.analysisGoal = template.defaultAnalysisGoal;
   editForm.outputFormat = template.outputFormat;
 }
@@ -415,9 +420,15 @@ function openEdit(task: AiScheduledTask) {
   editForm.category = task.category;
   editForm.frequency = task.frequency;
   editForm.cronExpression = task.cronExpression;
-  editForm.productScope = [...task.productScope];
-  editForm.warehouseScope = [...task.warehouseScope];
-  editForm.recipients = [...task.recipients];
+  editForm.productIds = [...task.productIds];
+  editForm.warehouseIds = [...task.warehouseIds];
+  editForm.recipientRoleIds = [...task.recipientRoleIds];
+  task.productIds.forEach((id, index) => {
+    productLabels.value[id] = task.productScope[index] || productLabels.value[id] || id;
+  });
+  task.warehouseIds.forEach((id, index) => {
+    warehouseLabels.value[id] = task.warehouseScope[index] || warehouseLabels.value[id] || id;
+  });
   editForm.analysisGoal = task.analysisGoal;
   editForm.outputFormat = task.outputFormat;
   formVisible.value = true;
@@ -431,9 +442,9 @@ function closeForm() {
 function validateForm() {
   if (!editForm.taskName.trim()) return '请填写任务名称';
   if (!editForm.cronExpression.trim()) return '请填写 Cron 表达式';
-  if (editForm.productScope.length === 0) return '请选择关注商品';
-  if (editForm.warehouseScope.length === 0) return '请选择关注仓库';
-  if (editForm.recipients.length === 0) return '请选择接收人';
+  if (editForm.productIds.length === 0) return '请选择关注商品';
+  if (editForm.warehouseIds.length === 0) return '请选择关注仓库';
+  if (editForm.recipientRoleIds.length === 0) return '请选择接收角色';
   if (!editForm.analysisGoal.trim()) return '请填写分析目标';
   return '';
 }
@@ -496,10 +507,7 @@ async function toggleTask(task: AiScheduledTask, checked: boolean) {
 async function runTask(task: AiScheduledTask) {
   actionTaskId.value = task.taskId;
   try {
-    const updated = await runAiScheduledTask(task.taskId);
-    if (taskPage.value) {
-      taskPage.value.tasks = taskPage.value.tasks.map(item => item.taskId === updated.taskId ? updated : item);
-    }
+    await runAiScheduledTask(task.taskId);
     await loadTaskPage();
     toast.success(`${task.taskName}已执行`);
   } catch (error) {
@@ -529,7 +537,14 @@ function navigate(route: string | null) {
   if (route) router.push(route);
 }
 
-onMounted(loadTaskPage);
+onMounted(async () => {
+  try {
+    recipientOptions.value = (await listRoleOptions()).map(role => ({ value: role.roleId, label: role.roleName }));
+  } catch (error) {
+    toast.warning(getApiErrorMessage(error) || '接收角色加载失败');
+  }
+  await loadTaskPage();
+});
 </script>
 
 <template>
@@ -902,11 +917,11 @@ onMounted(loadTaskPage);
               <Label>关注商品 <span class="text-destructive">*</span></Label>
               <div class="ai-search-picker">
                 <div class="ai-selected-tags">
-                  <Badge v-for="product in editForm.productScope" :key="product" variant="outline">
-                    {{ product }}
+                  <Badge v-for="product in editForm.productIds" :key="product" variant="outline">
+                    {{ productLabels[product] || product }}
                     <button type="button" aria-label="移除商品" @click="removeProduct(product)">×</button>
                   </Badge>
-                  <span v-if="editForm.productScope.length === 0">请搜索并添加商品</span>
+                  <span v-if="editForm.productIds.length === 0">请搜索并添加商品</span>
                 </div>
                 <div class="ai-search-picker__row">
                   <RemoteSearchSelect
@@ -926,11 +941,11 @@ onMounted(loadTaskPage);
               <Label>关注仓库 <span class="text-destructive">*</span></Label>
               <div class="ai-search-picker">
                 <div class="ai-selected-tags">
-                  <Badge v-for="warehouse in editForm.warehouseScope" :key="warehouse" variant="outline">
-                    {{ warehouse }}
+                  <Badge v-for="warehouse in editForm.warehouseIds" :key="warehouse" variant="outline">
+                    {{ warehouseLabels[warehouse] || warehouse }}
                     <button type="button" aria-label="移除仓库" @click="removeWarehouse(warehouse)">×</button>
                   </Badge>
-                  <span v-if="editForm.warehouseScope.length === 0">请搜索并添加仓库</span>
+                  <span v-if="editForm.warehouseIds.length === 0">请搜索并添加仓库</span>
                 </div>
                 <div class="ai-search-picker__row">
                   <RemoteSearchSelect
@@ -955,8 +970,8 @@ onMounted(loadTaskPage);
               <Input id="cronExpression" v-model="editForm.cronExpression" />
             </div>
             <div class="ai-field">
-              <Label>接收人 <span class="text-destructive">*</span></Label>
-              <MultiSelect v-model="editForm.recipients" :options="recipientOptions" placeholder="选择接收人" />
+              <Label>接收角色 <span class="text-destructive">*</span></Label>
+              <MultiSelect v-model="editForm.recipientRoleIds" :options="recipientOptions" placeholder="选择接收角色" />
             </div>
             <div class="ai-field">
               <Label>输出形式</Label>

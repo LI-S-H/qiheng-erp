@@ -18,6 +18,15 @@
 - 不同产品单位不得在列表或摘要中直接汇总数量；只有同单位明细才允许展示合计数量。
 - 数量字段统一遵守 `database-design-conventions.md`：数据库按 100 倍整数存储，接口和前端使用真实业务值。
 
+## 接口资源边界
+
+- `/warehouse/inbound-bills` 与 `/warehouse/outbound-bills` 表示仓库待处理的入库工作单和出库工作单。列表、新建均按方向访问对应集合资源；前端不得再通过 `POST /warehouse/stock-bills` 兼容入口创建工作单。
+- `/warehouse/work-bills/{workBillId}` 表示单张可写工作单的详情、编辑、提交、确认和取消动作；该路径统一承载入库单与出库单的共同流程，不与库存流水资源混用。
+- `/warehouse/stock-bills` 表示工作单确认后生成的库存流水凭证，仅用于查询已经发生的库存变化事实，不承担草稿新建、编辑、提交或取消职责。
+- 入库类型 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN` 新建时提交到 `/warehouse/inbound-bills`；出库类型 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT` 新建时提交到 `/warehouse/outbound-bills`。
+- 入库单、出库单响应应使用工作单字段（计划数量、已处理数量、待处理数量和流程状态）；库存流水响应应使用事实字段（变动前数量、变动数量、变动后数量和确认信息），不得用同一个 DTO 混合两类语义。
+- 确认工作单时由后端在同一事务内生成只读库存流水并更新库存余额。前端只提交工作单确认动作，不单独创建或修改库存流水。
+
 ## 表：warehouse（仓库表）
 
 | 字段 | 类型 | 说明 |

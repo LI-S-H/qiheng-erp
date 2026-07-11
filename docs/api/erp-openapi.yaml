@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: 启衡 ERP 接口文档
-  version: 0.5.0
+  version: 0.6.0
   description: |
     本文档用于启衡 ERP 前后端接口约定，可直接导入 Apifox 使用。
     当前版本包含登录模块、工作台、系统权限模块、产品模块、仓库库存模块、采购模块和销售模块。
@@ -11,7 +11,7 @@ servers:
     description: 本地开发环境
 tags:
   - name: Dashboard
-    description: 工作台 - 经营概览、待办、库存风险和关键排行
+    description: 工作台与顶栏通知 - 经营概览、待办摘要、库存风险和关键排行
   - name: AIAssistant
     description: 智能助手 - 智能经营助手、经营任务中心和受控 AI Workflow 入口
   - name: Auth
@@ -45,6 +45,60 @@ tags:
   - name: SalesOrder
     description: 销售管理 - 销售订单管理
 paths:
+  /dashboard/notifications:
+    get:
+      tags: [Dashboard]
+      summary: 获取顶栏通知铃铛摘要
+      description: |
+        返回当前登录用户在顶栏通知铃铛中可见的待处理摘要。该接口只承载待办数量和前 8 条待办，不返回经营趋势、订单流转、商品排行、供应商履约或完整库存预警，避免全局主布局频繁请求较重的 `/dashboard/overview`。
+        后端必须按当前用户的模块权限、处理权限、指派用户、指派角色和指派部门裁剪数据；无权模块的数量、标题、描述和证据均不得返回。普通业务事项按采购、销售、仓储等业务状态聚合，系统异常只返回给具备异常处理权限或被指派的用户范围。
+        本接口只返回 `status=PENDING` 的事项，并复用 `DashboardTodoItem`。`completionMode=AUTO` 的事项由对应业务状态变化自动完成；`TRACKED` 的系统异常只允许跳转查看详情。
+        `pendingCount` 表示权限裁剪和业务去重后的待处理业务事项总量，不是未读数；前端打开弹层不得清零。聚合待办按其 `count` 计入总量，后端必须避免同一业务事实被不同聚合项重复计数。`highPriorityCount` 使用相同口径统计 `priority=HIGH` 的事项总量。
+        `items` 最多返回排序后的前 8 条；排序先按 `sortWeight` 升序，再按 `priority`、处理模式和发生时间倒序兜底。完整待办仍通过 `/dashboard/overview` 在工作台查看。
+        当前阶段不设计已读、未读、归档、搜索、批量处理或站外推送，因此本接口不返回 read 状态，也没有写操作接口。
+      operationId: dashboardNotifications
+      security:
+        - SaTokenAuth: []
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/DashboardNotificationPopover' }
+              example:
+                code: 0
+                message: success
+                data:
+                  refreshedAt: "2026-07-10 10:30:00"
+                  pendingCount: 15
+                  highPriorityCount: 12
+                  hasMore: true
+                  items:
+                    - todoId: todo-sales-approve
+                      businessType: SALES
+                      businessLabel: 销售
+                      title: 销售单待审核
+                      description: 还有 12 张销售单需要审核，处理后会自动完成待办。
+                      count: 12
+                      priority: HIGH
+                      sortWeight: 21
+                      sourceMode: AGGREGATED
+                      completionMode: AUTO
+                      status: PENDING
+                      errorCode: null
+                      errorMessage: null
+                      sourceNo: null
+                      occurredAt: null
+                      resolveHint: 前往销售订单完成审核，审核通过后进入库存锁定和发货准备。
+                      evidence: []
+                      route: /sales/orders
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
   /dashboard/overview:
     get:
       tags: [Dashboard]
@@ -56,7 +110,7 @@ paths:
         本接口为工作台汇总接口，不接收含义不明的 `keyword`，不要求前端自行并发调用多个业务列表接口后拼装经营指标。
         `todos`、`topProducts`、`supplierPerformance`、`stockAlerts` 返回完整工作台明细数组；前端主页面只截取摘要展示，点击对应“详情”按钮时在同页弹窗展示同一数组的完整内容，不额外请求详情接口。经营趋势和订单流转只在主卡展示，不提供详情弹窗。
         当前前端展示规则：经营趋势接口返回近 30 天数据，前端提供 7 天、15 天、30 天切换并在同一卡片内展示，切换只改变前端截取范围和图表过渡效果，不新增请求；业务待办主卡展示前 8 条，订单流转展示全部阶段，销售商品排行主卡展示前 5 名，供应商履约主卡展示前 5 名；详情弹窗展示接口返回的完整明细记录，其中库存预警详情使用窄幅列表卡片承载完整字段，避免横向滚动。
-        `todos` 是可扩展事件流，不限于采购、销售、仓储和系统四类。普通业务待办使用 `completionMode=AUTO`，可通过 `evidence[]` 展开少量代表性单据摘要并跳转对应业务页面；系统异常使用 `completionMode=TRACKED`，只展示数据库异常记录详情，不展示“完成处理”按钮。历史 `completionMode=MANUAL` 仅为兼容旧待办完成接口，不建议用于新的系统异常。
+        `todos` 是可扩展事件流，不限于采购、销售、仓储和系统四类。普通业务待办使用 `completionMode=AUTO`，可通过 `evidence[]` 展开少量代表性单据摘要并跳转对应业务页面；系统异常使用 `completionMode=TRACKED`，只展示数据库异常记录详情，不展示“完成处理”按钮。
         待办排序由后端完成并返回 `sortWeight`，前端只做兜底排序。推荐顺序：先按 `sortWeight` 升序，再按 `priority`（HIGH > MEDIUM > LOW），同优先级下人工异常任务优先于普通业务聚合，最后按发生时间倒序。异常/人工修复类待办不能广播给普通员工，只返回给具备处理权限、被指派用户、被指派角色或被指派部门范围内的人员；普通业务聚合待办按模块权限返回。
         工作台只展示复核证据，不在本接口提供产品、仓库、客户、供应商选择器。若待办详情或跳转页面需要选择产品、仓库、客户、供应商，应复用各模块已有分页查询和共享选择组件，例如 `/products`、`/warehouses`、`/sales/customers`、`/purchase/suppliers`，禁止在工作台接口固定返回大量下拉选项。
         后端建议至少返回：业务待办 20 条以内、销售商品排行 10 条以内、供应商履约 10 条以内、库存预警 20 条以内，避免工作台接口过重；超出范围时应按业务优先级、异常严重程度、影响金额或发生时间排序后截断。若异常待办未来明显超过工作台承载范围，应新增独立异常/任务中心分页接口，工作台只展示高优先级摘要。
@@ -237,88 +291,6 @@ paths:
                       qualityScore: 96.1
                       onTimeRate: 96.5
         "401": { $ref: '#/components/responses/Unauthorized' }
-
-  /dashboard/system-exceptions/{exceptionId}/status:
-    patch:
-      tags: [Dashboard]
-      summary: 更新系统异常记录状态
-      description: |
-        用于异常中心、后台补偿任务或具备系统异常处理权限的页面更新异常记录状态。工作台只展示 `SYSTEM_EXCEPTION` 聚合待办和异常详情，不直接提供“完成处理”入口。
-        异常记录建议来自独立的 `system_exception` 表，覆盖 AI/MCP 工具调用失败、消息队列死信、第三方回调失败、定时任务失败和数据补偿失败等系统级问题。
-      operationId: dashboardSystemExceptionStatus
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: exceptionId
-          in: path
-          required: true
-          description: 系统异常记录 ID 或稳定异常编号
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DashboardSystemExceptionStatusRequest'
-            example:
-              status: RESOLVED
-              remark: 已由死信队列补偿任务重新消费成功。
-      responses:
-        "200":
-          description: 更新成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Result'
-              example:
-                code: 0
-                message: success
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
-  /dashboard/todos/{todoId}/complete:
-    post:
-      deprecated: true
-      tags: [Dashboard]
-      summary: 手动完成工作台待办
-      description: |
-        历史兼容接口，仅用于旧版 `completionMode=MANUAL` 待办任务，不用于新的系统异常。系统异常统一使用 `SYSTEM_EXCEPTION` + `TRACKED` 展示，并由 `/dashboard/system-exceptions/{exceptionId}/status` 或后台补偿任务更新异常记录状态。
-        采购单待审核、销售单待审核、待确认入库、待确认出库、库存低于安全线等 `completionMode=AUTO` 的状态类待办不应调用本接口；它们由对应业务状态变更后在 `/dashboard/overview` 中自动消失或数量变化。
-        后端建议通过独立待办任务表实现手动完成：保存 `todo_id`、来源业务、来源单号、错误码、错误信息、处理建议、状态、处理人、处理时间和处理备注，避免每次只查询当前库存状态导致异常事件丢失。
-      operationId: dashboardTodoComplete
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: todoId
-          in: path
-          required: true
-          description: 待办项稳定标识；必须是持久化待办任务 ID 或后端可定位的任务编码
-          schema: { type: string }
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DashboardTodoCompleteRequest'
-            example:
-              remark: 已核对库存流水并完成补偿处理。
-      responses:
-        "200":
-          description: 完成成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Result'
-              example:
-                code: 0
-                message: success
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
 
   /ai/assistant/overview:
     get:
@@ -551,9 +523,9 @@ paths:
               taskName: 采购补货建议
               frequency: DAILY
               cronExpression: "0 0 10 * * ?"
-              productScope: [A4复印纸, USB-C扩展坞, 热敏标签纸]
-              warehouseScope: [华东中心仓, 华南中心仓]
-              recipients: [采购主管]
+              productIds: ["1920000000000000007", "1920000000000000013", "1920000000000000008"]
+              warehouseIds: ["1930000000000000001", "1930000000000000002"]
+              recipientRoleIds: ["1880000000000000002"]
               analysisGoal: 根据指定商品的销量预测、当前库存、安全库存、在途采购和供应商评分给出补货建议。
       responses:
         "200":
@@ -575,7 +547,7 @@ paths:
     post:
       tags: [AIAssistant]
       summary: 立即执行经营任务
-      description: 手动触发一次定时经营任务。后端应创建执行记录并调度多智能体协同分析；执行结果写入最近执行记录并返回任务最新状态，不直接生成正式业务单据。
+      description: 手动触发一次定时经营任务。后端创建执行记录并异步调度多智能体协同分析，接口只返回已受理的执行标识；执行结果写入最近执行记录，不直接生成正式业务单据。
       operationId: aiScheduledTaskRun
       security:
         - SaTokenAuth: []
@@ -587,7 +559,7 @@ paths:
           description: AI 定时任务 ID，BIGINT 或稳定任务编码按字符串传输
       responses:
         "200":
-          description: 执行成功
+          description: 已受理执行
           content:
             application/json:
               schema:
@@ -595,7 +567,7 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/AiScheduledTask' }
+                      data: { $ref: '#/components/schemas/AiScheduledTaskRunAccepted' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -2030,30 +2002,6 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /purchase/suppliers/options:
-    get:
-      tags: [PurchaseSupplier]
-      summary: 获取启用供应商选项
-      description: 只返回未删除且启用的供应商，用于兼容小规模 options 场景。本接口需要 `supplier:query` 权限。供货产品、采购订单等业务表单和筛选不得依赖本接口全量加载；应使用 `GET /purchase/suppliers` 按供应商编码或名称普通分页搜索，默认 `pageSize=10`。
-      operationId: purchaseSupplierOptions
-      security:
-        - SaTokenAuth: []
-      responses:
-        "200":
-          description: 获取成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items: { $ref: '#/components/schemas/PurchaseSupplierOption' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-
   /purchase/suppliers/batch/status:
     patch:
       tags: [PurchaseSupplier]
@@ -2103,34 +2051,6 @@ paths:
         "409": { $ref: '#/components/responses/Conflict' }
 
   /purchase/suppliers/{supplierId}:
-    get:
-      tags: [PurchaseSupplier]
-      summary: 获取供应商详情
-      description: 本接口需要 `supplier:query` 权限。
-      operationId: purchaseSupplierDetail
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - $ref: '#/components/parameters/SupplierId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
-      responses:
-        "200":
-          description: 获取成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/PurchaseSupplier' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
     put:
       tags: [PurchaseSupplier]
       summary: 编辑供应商
@@ -2340,34 +2260,6 @@ paths:
         "409": { $ref: '#/components/responses/Conflict' }
 
   /purchase/supplier-products/{supplierProductId}:
-    get:
-      tags: [PurchaseSupplierProduct]
-      summary: 获取供货产品详情
-      description: 本接口需要 `supplier:query` 权限。
-      operationId: purchaseSupplierProductDetail
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - $ref: '#/components/parameters/SupplierProductId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
-      responses:
-        "200":
-          description: 获取成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/PurchaseSupplierProduct' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
     put:
       tags: [PurchaseSupplierProduct]
       summary: 编辑供货产品
@@ -2428,7 +2320,7 @@ paths:
       tags: [PurchaseOrder]
       summary: 分页查询采购订单
       description: |
-        查询未删除的 `purchase_order` 数据，并返回按 `purchase_order_item.purchase_order_id` 查询的明细数组。采购单号使用包含匹配，供应商、仓库和状态使用精确匹配，多个有效条件按 AND 组合。
+        查询未删除的 `purchase_order` 单头数据，列表不返回明细数组；查看、编辑、提交或审核前通过详情接口按订单 ID 获取 `items`。采购单号使用包含匹配，供应商、仓库和状态使用精确匹配，多个有效条件按 AND 组合。
         不接收含义不明确的 `keyword` 参数。列表摘要只展示当前页 `records` 派生的状态、入库等业务指标，不展示当前页行数；不得要求后端为了摘要额外全量聚合。
         本接口需要 `purchase:query` 权限。
       operationId: purchaseOrderPage
@@ -2500,7 +2392,7 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/PurchaseOrder' }
+                      data: { $ref: '#/components/schemas/PurchaseOrderDetail' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -2559,7 +2451,7 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/PurchaseOrder' }
+                      data: { $ref: '#/components/schemas/PurchaseOrderDetail' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -2727,30 +2619,6 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /sales/customers/options:
-    get:
-      tags: [SalesCustomer]
-      summary: 获取启用客户选项
-      description: 只返回未删除且启用的客户，用于兼容小规模 options 场景。本接口需要 `sales:query` 权限。销售订单表单和筛选不得依赖本接口全量加载；应使用 `GET /sales/customers` 按客户编码或名称普通分页搜索，默认 `pageSize=10`。
-      operationId: salesCustomerOptions
-      security:
-        - SaTokenAuth: []
-      responses:
-        "200":
-          description: 获取成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items: { $ref: '#/components/schemas/SalesCustomerOption' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-
   /sales/customers/batch/status:
     patch:
       tags: [SalesCustomer]
@@ -2800,34 +2668,6 @@ paths:
         "409": { $ref: '#/components/responses/Conflict' }
 
   /sales/customers/{customerId}:
-    get:
-      tags: [SalesCustomer]
-      summary: 获取客户详情
-      description: 本接口需要 `sales:query` 权限。
-      operationId: salesCustomerDetail
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - $ref: '#/components/parameters/CustomerId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
-      responses:
-        "200":
-          description: 获取成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/SalesCustomer' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
     put:
       tags: [SalesCustomer]
       summary: 编辑客户
@@ -2915,7 +2755,7 @@ paths:
       tags: [SalesOrder]
       summary: 分页查询销售订单
       description: |
-        查询未删除的 `sales_order` 数据，并返回按 `sales_order_item.sales_order_id` 查询的明细数组。销售单号使用包含匹配，客户、仓库和状态使用精确匹配，多个有效条件按 AND 组合。
+        查询未删除的 `sales_order` 单头数据，列表不返回明细数组；查看、编辑、提交或审核前通过详情接口按订单 ID 获取 `items`。销售单号使用包含匹配，客户、仓库和状态使用精确匹配，多个有效条件按 AND 组合。
         不接收含义不明确的 `keyword` 参数。列表摘要只展示当前页 `records` 派生的状态、出库等业务指标，不展示当前页行数；不得要求后端为了摘要额外全量聚合。
         本接口需要 `sales:query` 权限。
       operationId: salesOrderPage
@@ -2987,7 +2827,7 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/SalesOrder' }
+                      data: { $ref: '#/components/schemas/SalesOrderDetail' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -3046,7 +2886,7 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/SalesOrder' }
+                      data: { $ref: '#/components/schemas/SalesOrderDetail' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -3396,9 +3236,8 @@ paths:
       summary: 分页查询库存流水记录
       description: |
         查询 `stock_bill` 已确认库存流水主表，并按 `stock_bill_item.bill_id` 聚合返回 `itemCount`；列表不跨不同产品单位汇总数量。
-        入库单和出库单的业务操作请优先使用 `/warehouse/inbound-bills`、`/warehouse/outbound-bills`。本路径仅用于已确认库存事实追溯或旧前端兼容。
-        流水号和来源单号分别使用包含匹配，仓库、出入库类型、录入方式和状态使用精确匹配，多个有效条件按 AND 组合。
-        列表摘要只统计当前页 `records` 的待确认数、已确认数、已取消数和来源生成数，不展示当前页单据数，不要求后端为了摘要额外全量聚合。
+        入库单和出库单的创建、编辑、提交与确认使用 `/warehouse/inbound-bills`、`/warehouse/outbound-bills` 及工作单操作接口；本路径只读返回已经确认并实际改变库存的流水事实。
+        流水号和来源单号分别使用包含匹配，仓库、出入库类型和录入方式使用精确匹配，多个有效条件按 AND 组合。
         入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`；出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`。
         本接口只用于追溯库存凭证，需要 `warehouse:query` 权限。
       operationId: stockBillPage
@@ -3429,12 +3268,6 @@ paths:
             type: string
             enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]
           description: 录入方式，对应 `stock_bill.entry_mode`，使用精确匹配；分别表示系统自动录入、人工补录和人工调整
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]
-          description: 状态，兼容入库单/出库单查询时可为 `PENDING_CONFIRM`
         - name: pageNum
           in: query
           required: true
@@ -3453,52 +3286,20 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/StockBillPage' }
+                      data: { $ref: '#/components/schemas/StockLedgerPage' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
-    post:
-      tags: [WarehouseStockBill]
-      summary: 新增手工入库单/出库单草稿（兼容路径）
-      description: |
-        兼容旧前端的统一创建路径。新接口应按方向使用 `/warehouse/inbound-bills` 或 `/warehouse/outbound-bills`。
-        允许创建 `ADJUST_IN`、`ADJUST_OUT` 库存调整，或在原采购、销售、退货业务遗漏登记时补录对应入库单/出库单。
-        非调整类型必须提交原业务单号和补录原因，后端设置 `entryMode=MANUAL_SUPPLEMENT`、按 `billType` 推导 `sourceType`，且 `sourceId` 为空；调整类型由后端生成调整单号并设置 `entryMode=MANUAL_ADJUSTMENT`。
-        `billNo`、负责人、创建人、创建时间和产品快照由后端生成或按当前登录上下文填充；负责人字段不接受前端提交。
-        保存后状态为 `DRAFT`，不立即改变库存；确认入库/出库后才生成库存流水。需要 `warehouse:manage` 权限。
-      operationId: stockBillCreate
-      security:
-        - SaTokenAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/StockBillCreateRequest' }
-      responses:
-        "200":
-          description: 创建成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/StockBillDetail' }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "409": { $ref: '#/components/responses/Conflict' }
 
-  /warehouse/stock-bills/{stockBillId}:
+  /warehouse/work-bills/{workBillId}:
     get:
       tags: [WarehouseStockBill]
-      summary: 获取入库单、出库单或库存流水详情
-      description: 返回入库单、出库单或库存流水主表信息及全部明细，用于追溯来源单据、供应商或客户、确认信息、产品数量和库存变动。本接口需要 `warehouse:query` 权限。
-      operationId: stockBillDetail
+      summary: 获取入库单或出库单工作单详情
+      description: 返回可写工作单主表信息及全部明细，用于追溯来源单据、供应商或客户、确认信息和本次数量。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口。本接口需要 `warehouse:query` 权限。
+      operationId: warehouseWorkBillDetail
       security:
         - SaTokenAuth: []
       parameters:
-        - $ref: '#/components/parameters/StockBillId'
+        - $ref: '#/components/parameters/WorkBillId'
       responses:
         "200":
           description: 获取成功
@@ -3515,17 +3316,17 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
     put:
       tags: [WarehouseStockBill]
-      summary: 编辑入库单/出库单草稿或待确认单
+      summary: 编辑入库单/出库单工作单草稿或待确认单
       description: |
         `DRAFT` 和 `PENDING_CONFIRM` 状态允许编辑数量、质量数量和备注；提交后或来源生成单据需要具备仓库确认/审核权限。
         `DRAFT` 状态允许修改仓库；进入 `PENDING_CONFIRM` 后仓库、来源信息、产品结构均锁定，只允许调整本次数量、合格数量、不合格数量和备注。
         来源业务单据生成的单据不能在本接口增删或更换产品，也不能修改来源和出入库类型；手工补录或库存调整草稿允许维护产品明细。
         流水号、来源信息、审计字段、变动前后库存均由后端维护，前端不得提交；需要 `warehouse:manage` 权限。
-      operationId: stockBillUpdate
+      operationId: warehouseWorkBillUpdate
       security:
         - SaTokenAuth: []
       parameters:
-        - $ref: '#/components/parameters/StockBillId'
+        - $ref: '#/components/parameters/WorkBillId'
       requestBody:
         required: true
         content:
@@ -3548,7 +3349,7 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /warehouse/stock-bills/{stockBillId}/submit:
+  /warehouse/work-bills/{workBillId}/submit:
     post:
       tags: [WarehouseStockBill]
       summary: 提交入库单/出库单草稿为待确认
@@ -3557,11 +3358,11 @@ paths:
         前端必须先展示入库单/出库单详情及全部产品明细，再在详情页提供提交确认按钮并进行二次确认。
         提交前后端必须重新校验仓库、产品明细、本次数量、质检数量、手工补录原业务单号和补录/调整原因；来源生成单据还必须保留来源计划数量、生成本单前累计已处理数量和确认后剩余未处理数量。
         待确认状态仍允许具备仓库管理权限的人员调整本次数量、质检数量和备注；确认后才禁止修改。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
-      operationId: stockBillSubmit
+      operationId: warehouseWorkBillSubmit
       security:
         - SaTokenAuth: []
       parameters:
-        - $ref: '#/components/parameters/StockBillId'
+        - $ref: '#/components/parameters/WorkBillId'
       requestBody:
         required: true
         content:
@@ -3584,7 +3385,7 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /warehouse/stock-bills/{stockBillId}/confirm:
+  /warehouse/work-bills/{workBillId}/confirm:
     post:
       tags: [WarehouseStockBill]
       summary: 确认入库/出库
@@ -3593,11 +3394,11 @@ paths:
         后端必须锁定入库单/出库单和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，生成 `stock_bill` / `stock_bill_item`，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已入库/已出库数量。
         来源生成的待确认单确认时，后端必须校验本次入库/出库数量大于 0 且不超过来源明细剩余数量，并重新计算确认后的剩余未入库/未出库数量；`pendingQty` 是只读结果，前端不得作为提交字段传入。
         已确认单据不得直接改回草稿或取消；错误凭证通过反向库存调整纠正。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
-      operationId: stockBillConfirm
+      operationId: warehouseWorkBillConfirm
       security:
         - SaTokenAuth: []
       parameters:
-        - $ref: '#/components/parameters/StockBillId'
+        - $ref: '#/components/parameters/WorkBillId'
       requestBody:
         required: true
         content:
@@ -3620,16 +3421,16 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /warehouse/stock-bills/{stockBillId}/cancel:
+  /warehouse/work-bills/{workBillId}/cancel:
     post:
       tags: [WarehouseStockBill]
       summary: 取消入库单/出库单草稿或待确认单
       description: 仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`，取消不改变库存，取消后的单据保留追溯且不能再次编辑或确认。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
-      operationId: stockBillCancel
+      operationId: warehouseWorkBillCancel
       security:
         - SaTokenAuth: []
       parameters:
-        - $ref: '#/components/parameters/StockBillId'
+        - $ref: '#/components/parameters/WorkBillId'
       requestBody:
         required: true
         content:
@@ -3789,11 +3590,6 @@ paths:
         - SaTokenAuth: []
       parameters:
         - $ref: '#/components/parameters/WarehouseId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
         "200":
           description: 获取成功
@@ -4416,6 +4212,13 @@ components:
       schema:
         type: string
       description: 入库单、出库单或库存流水 ID，BIGINT 按字符串传输
+    WorkBillId:
+      name: workBillId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 入库单或出库单工作单 ID，BIGINT 按字符串传输
     SupplierId:
       name: supplierId
       in: path
@@ -4774,20 +4577,34 @@ components:
 
     AiScheduledTask:
       type: object
-      required: [taskId, taskName, category, frequency, cronExpression, productScope, warehouseScope, analysisGoal, nextRunAt, lastRunAt, lastResultSummary, recipients, status, agentCodes, painPoint, outputFormat, editable]
+      required: [taskId, taskName, category, frequency, cronExpression, productIds, warehouseIds, recipientRoleIds, productScope, warehouseScope, analysisGoal, nextRunAt, lastRunAt, lastResultSummary, recipients, status, agentCodes, painPoint, outputFormat, editable]
       properties:
         taskId: { type: string, description: AI 任务 ID，BIGINT 或稳定编码按字符串传输 }
         taskName: { type: string, description: 任务名称 }
         category: { $ref: '#/components/schemas/AiScheduledTaskCategory' }
         frequency: { $ref: '#/components/schemas/AiScheduledTaskFrequency' }
         cronExpression: { type: string, description: cron 表达式，由后端调度器解析 }
+        productIds:
+          type: array
+          description: 任务关注产品的稳定 ID；空数组表示不限制产品
+          items: { type: string }
+        warehouseIds:
+          type: array
+          description: 任务关注仓库的稳定 ID；空数组表示不限制仓库
+          items: { type: string }
+        recipientRoleIds:
+          type: array
+          description: 接收任务结果的角色稳定 ID
+          items: { type: string }
         productScope:
           type: array
-          description: 任务关注商品范围；采购、库存、销量类任务建议明确商品，`全部商品` 表示不限制
+          readOnly: true
+          description: 由 `productIds` 解析得到的产品展示名称
           items: { type: string }
         warehouseScope:
           type: array
-          description: 任务关注仓库范围；`全部仓库` 表示不限制
+          readOnly: true
+          description: 由 `warehouseIds` 解析得到的仓库展示名称
           items: { type: string }
         analysisGoal: { type: string, description: 分析目标，由用户配置；后端用于构造多智能体任务上下文 }
         nextRunAt: { type: string, description: 下次执行时间 }
@@ -4798,7 +4615,8 @@ components:
         lastResultSummary: { type: string, description: 最近执行结果摘要，不保存大量明细 }
         recipients:
           type: array
-          description: 接收人、角色或岗位名称；正式实现可由后端保存角色/用户 ID，前端展示名称
+          readOnly: true
+          description: 由 `recipientRoleIds` 解析得到的角色展示名称
           items: { type: string }
         status: { type: string, enum: [ENABLED, DISABLED, RUNNING, FAILED], description: 任务状态 }
         agentCodes:
@@ -4811,7 +4629,7 @@ components:
 
     AiTaskExecution:
       type: object
-      required: [executionId, taskId, taskName, startedAt, finishedAt, status, resultSummary, agents, findings, suggestions, metrics, sections, charts, nextActions]
+      required: [executionId, taskId, taskName, startedAt, finishedAt, status, resultSummary, agents, findings, suggestions, metrics, charts, nextActions]
       properties:
         executionId: { type: string, description: 执行记录 ID }
         taskId: { type: string, description: 任务 ID }
@@ -4839,10 +4657,6 @@ components:
           type: array
           description: 执行报告顶部指标
           items: { $ref: '#/components/schemas/AiTaskExecutionMetric' }
-        sections:
-          type: array
-          description: 兼容字段；新页面优先展示 resultSummary/findings/suggestions 拼接后的智能体汇报文本，复杂结构后续可逐步下线
-          items: { $ref: '#/components/schemas/AiTaskExecutionSection' }
         charts:
           type: array
           description: 任务结果附带图表规格；没有图表时返回空数组
@@ -4860,17 +4674,6 @@ components:
         value: { type: string, description: 指标展示值 }
         tone: { type: string, enum: [neutral, good, watch, risk], description: 指标视觉语义 }
 
-    AiTaskExecutionSection:
-      type: object
-      required: [sectionId, title, items]
-      properties:
-        sectionId: { type: string, description: 分段 ID }
-        title: { type: string, description: 分段标题 }
-        items:
-          type: array
-          description: 分段条目，允许较长文本
-          items: { type: string }
-
     AiTaskExecutionAction:
       type: object
       required: [actionId, title, description, route]
@@ -4885,23 +4688,23 @@ components:
 
     AiScheduledTaskUpdateRequest:
       type: object
-      required: [taskName, category, frequency, cronExpression, productScope, warehouseScope, recipients, analysisGoal, outputFormat]
+      required: [taskName, category, frequency, cronExpression, productIds, warehouseIds, recipientRoleIds, analysisGoal, outputFormat]
       properties:
         taskName: { type: string, minLength: 1, maxLength: 100, description: 任务名称 }
         category: { $ref: '#/components/schemas/AiScheduledTaskCategory' }
         frequency: { $ref: '#/components/schemas/AiScheduledTaskFrequency' }
         cronExpression: { type: string, minLength: 1, maxLength: 100, description: cron 表达式 }
-        productScope:
+        productIds:
           type: array
-          description: 关注商品名称或编码列表，前端由用户输入拆分；后端可进一步校验并解析为产品 ID
+          description: 关注产品稳定 ID；复用产品分页查询结果，不提交名称
           items: { type: string }
-        warehouseScope:
+        warehouseIds:
           type: array
-          description: 关注仓库名称或编码列表，前端由用户输入拆分；后端可进一步校验并解析为仓库 ID
+          description: 关注仓库稳定 ID；复用仓库分页查询结果，不提交名称
           items: { type: string }
-        recipients:
+        recipientRoleIds:
           type: array
-          description: 接收人、角色或岗位名称
+          description: 接收角色稳定 ID；复用系统角色 options 接口，不提交角色名称
           items: { type: string }
         analysisGoal: { type: string, minLength: 1, maxLength: 1000, description: 分析目标 }
         outputFormat: { $ref: '#/components/schemas/AiScheduledTaskOutputFormat' }
@@ -4915,6 +4718,15 @@ components:
           enum: [ENABLED, DISABLED]
           description: 目标任务状态；前端启停开关只提交这两个状态，`RUNNING` 和 `FAILED` 由后端执行状态产生
 
+    AiScheduledTaskRunAccepted:
+      type: object
+      required: [executionId, taskId, status, acceptedAt]
+      properties:
+        executionId: { type: string, description: 本次异步执行记录稳定 ID }
+        taskId: { type: string, description: 被执行任务稳定 ID }
+        status: { type: string, enum: [RUNNING] }
+        acceptedAt: { type: string, description: 后端受理时间 }
+
     AiScheduledTaskCategory:
       type: string
       enum: [REPORT, INVENTORY, PURCHASE, SALES, SUPPLIER]
@@ -4927,8 +4739,32 @@ components:
 
     AiScheduledTaskOutputFormat:
       type: string
-      enum: [CHAT_CARD, REPORT, NOTIFICATION]
-      description: 任务输出形态；页面报告用于任务中心完整阅读，对话卡片用于助手会话摘要，通知摘要用于后续消息推送
+      enum: [CHAT_CARD, REPORT]
+      description: 任务输出形态；页面报告用于任务中心完整阅读，对话卡片用于助手会话摘要
+
+    DashboardNotificationPopover:
+      type: object
+      required: [refreshedAt, pendingCount, highPriorityCount, hasMore, items]
+      properties:
+        refreshedAt:
+          type: string
+          description: 通知摘要生成时间，后端生成
+        pendingCount:
+          type: integer
+          minimum: 0
+          description: 当前用户权限范围内、业务去重后的待处理业务事项总量；聚合待办按 `count` 计入，不是未读数，也不等于 `items.length`
+        highPriorityCount:
+          type: integer
+          minimum: 0
+          description: 与 `pendingCount` 相同口径下 `priority=HIGH` 的待处理事项总量
+        hasMore:
+          type: boolean
+          description: 权限范围内排序后的待办是否超过弹层返回的前 8 条；为 `true` 时前端引导进入工作台查看全部
+        items:
+          type: array
+          maxItems: 8
+          description: 当前用户可见且状态为 `PENDING` 的前 8 条待办，已按后端权重排序
+          items: { $ref: '#/components/schemas/DashboardTodoItem' }
 
     DashboardOverview:
       type: object
@@ -5001,7 +4837,7 @@ components:
         priority: { type: string, enum: [HIGH, MEDIUM, LOW], description: 优先级 }
         sortWeight: { type: integer, minimum: 0, description: 排序权重，数值越小越靠前；由后端综合优先级、异常严重程度、影响范围、是否人工处理和发生时间计算，前端只做兜底排序 }
         sourceMode: { type: string, enum: [AGGREGATED, PERSISTED], description: 待办来源方式；`AGGREGATED` 表示由业务状态、价格偏离、信用风险或库存风险实时聚合，`PERSISTED` 表示待办或系统异常已持久化到业务任务表或 `system_exception` 表 }
-        completionMode: { type: string, enum: [AUTO, MANUAL, TRACKED], description: 完成方式；`AUTO` 由前端展示“前往完成”，处理对应业务后自动消失；`MANUAL` 是历史人工完成模式；`TRACKED` 表示来自系统异常记录表，工作台只展示详情，不提供完成按钮，状态由异常中心、后台重试或补偿任务更新 }
+        completionMode: { type: string, enum: [AUTO, TRACKED], description: 完成方式；`AUTO` 由前端展示“前往完成”，处理对应业务后自动消失；`TRACKED` 表示来自系统异常记录表，工作台只展示详情，不提供完成按钮，状态由后台重试、补偿任务或后续异常中心更新 }
         status: { type: string, enum: [PENDING, DONE, IGNORED], description: 待办状态；工作台通常只返回 `PENDING`，详情弹窗按该字段展示处理状态 }
         errorCode: { type: string, nullable: true, description: 异常类待办错误码；非异常待办返回 `null` }
         errorMessage: { type: string, nullable: true, description: 异常类待办错误信息；用于详情弹窗展示，不再要求前端跳转后台页面才能看到原因 }
@@ -5033,27 +4869,6 @@ components:
         label: { type: string, description: 指标名称，例如 `金额`、`品项`、`等待`、`参考采购价`、`最近采购价`、`授信额度`、`已占用` }
         value: { type: string, description: 已格式化展示值；金额、百分比和天数由后端按工作台口径返回 }
         tone: { type: string, enum: [neutral, watch, risk], description: 指标风险色语义 }
-
-    DashboardTodoCompleteRequest:
-      type: object
-      properties:
-        remark:
-          type: string
-          maxLength: 500
-          description: 人工完成备注，记录处理结论、补偿动作或确认依据；为空时后端可按默认文案记录
-
-    DashboardSystemExceptionStatusRequest:
-      type: object
-      required: [status]
-      properties:
-        status:
-          type: string
-          enum: [PROCESSING, RESOLVED, IGNORED]
-          description: 系统异常记录处理状态；工作台聚合待办通常只展示未解决记录，状态变更后由 `/dashboard/overview` 自动刷新数量
-        remark:
-          type: string
-          maxLength: 500
-          description: 处理备注，记录重试、补偿、忽略或人工确认依据
 
     DashboardStockAlert:
       type: object
@@ -6041,15 +5856,6 @@ components:
           additionalProperties: { type: integer, minimum: 0 }
           description: Map of supplierId to current `supplier.version` for optimistic locking.
 
-    PurchaseSupplierOption:
-      type: object
-      required: [supplierId, supplierCode, supplierName, status]
-      properties:
-        supplierId: { type: string, description: 对应 `supplier.id`，BIGINT 按字符串传输 }
-        supplierCode: { type: string, maxLength: 64 }
-        supplierName: { type: string, maxLength: 200 }
-        status: { type: integer, enum: [0, 1] }
-
     PurchaseSupplierProductPage:
       type: object
       required: [records, total, pageNum, pageSize]
@@ -6137,7 +5943,7 @@ components:
 
     PurchaseOrderPage:
       type: object
-      required: [records, total, pageNum, pageSize, summary]
+      required: [records, total, pageNum, pageSize]
       properties:
         records:
           type: array
@@ -6145,20 +5951,9 @@ components:
         total: { type: integer, minimum: 0 }
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1 }
-        summary: { $ref: '#/components/schemas/PurchaseOrderSummary' }
-
-    PurchaseOrderSummary:
-      type: object
-      required: [draftCount, submittedCount, approvedCount, inboundPendingCount]
-      properties:
-        draftCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 DRAFT 的订单数 }
-        submittedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 SUBMITTED 的订单数 }
-        approvedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 APPROVED 的订单数 }
-        inboundPendingCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 APPROVED 或 PARTIAL_INBOUND 的待入库订单数 }
-
     PurchaseOrder:
       type: object
-      required: [purchaseOrderId, purchaseNo, supplierId, supplierCode, supplierName, warehouseId, warehouseName, status, totalAmount, expectedArrivalDate, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, version, remark, items]
+      required: [purchaseOrderId, purchaseNo, supplierId, supplierCode, supplierName, warehouseId, warehouseName, status, totalAmount, expectedArrivalDate, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, version, remark]
       properties:
         purchaseOrderId: { type: string, description: 对应 `purchase_order.id`，BIGINT 按字符串传输 }
         purchaseNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `purchase_order.purchase_no`，由后端生成、全局唯一 }
@@ -6180,13 +5975,15 @@ components:
         updateTime: { type: string, description: 对应 `purchase_order.update_time` }
         version: { type: integer, minimum: 0, description: Current `purchase_order.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `purchase_order.remark` }
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/PurchaseOrderItem' }
-
     PurchaseOrderDetail:
       allOf:
         - $ref: '#/components/schemas/PurchaseOrder'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/PurchaseOrderItem' }
 
     PurchaseOrderItem:
       type: object
@@ -6323,18 +6120,9 @@ components:
           additionalProperties: { type: integer, minimum: 0 }
           description: Map of customerId to current `customer.version` for optimistic locking.
 
-    SalesCustomerOption:
-      type: object
-      required: [customerId, customerCode, customerName, status]
-      properties:
-        customerId: { type: string, description: 对应 `customer.id`，BIGINT 按字符串传输 }
-        customerCode: { type: string, maxLength: 64 }
-        customerName: { type: string, maxLength: 200 }
-        status: { type: integer, enum: [0, 1] }
-
     SalesOrderPage:
       type: object
-      required: [records, total, pageNum, pageSize, summary]
+      required: [records, total, pageNum, pageSize]
       properties:
         records:
           type: array
@@ -6342,20 +6130,9 @@ components:
         total: { type: integer, minimum: 0 }
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1 }
-        summary: { $ref: '#/components/schemas/SalesOrderSummary' }
-
-    SalesOrderSummary:
-      type: object
-      required: [draftCount, submittedCount, approvedCount, outboundPendingCount]
-      properties:
-        draftCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 DRAFT 的订单数 }
-        submittedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 SUBMITTED 的订单数 }
-        approvedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 APPROVED 的订单数 }
-        outboundPendingCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 APPROVED 或 PARTIAL_OUTBOUND 的待出库订单数 }
-
     SalesOrder:
       type: object
-      required: [salesOrderId, salesNo, customerId, customerCode, customerName, warehouseId, warehouseName, status, totalAmount, expectedDeliveryDate, lockedAt, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, version, remark, items]
+      required: [salesOrderId, salesNo, customerId, customerCode, customerName, warehouseId, warehouseName, status, totalAmount, expectedDeliveryDate, lockedAt, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, version, remark]
       properties:
         salesOrderId: { type: string, description: 对应 `sales_order.id`，BIGINT 按字符串传输 }
         salesNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `sales_order.sales_no`，由后端生成、全局唯一 }
@@ -6378,13 +6155,15 @@ components:
         updateTime: { type: string, description: 对应 `sales_order.update_time` }
         version: { type: integer, minimum: 0, description: Current `sales_order.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `sales_order.remark` }
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/SalesOrderItem' }
-
     SalesOrderDetail:
       allOf:
         - $ref: '#/components/schemas/SalesOrder'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/SalesOrderItem' }
 
     SalesOrderItem:
       type: object
@@ -6456,6 +6235,7 @@ components:
 
     StockBillDraftItemRequest:
       type: object
+      description: 工作单明细写入 DTO；保留历史 schema 名称仅为前端类型兼容，不表示直接写入 `stock_bill_item`。
       required: [productId, quantity, qualifiedQty, defectiveQty, remark]
       properties:
         stockBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
@@ -6467,6 +6247,7 @@ components:
 
     StockBillCreateRequest:
       type: object
+      description: 入库/出库工作单创建 DTO；实际落库到 `inbound_bill` 或 `outbound_bill` 及其明细表。
       required: [billType, sourceNo, warehouseId, manualReason, items, remark]
       properties:
         billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 手工补录或库存调整类型 }
@@ -6481,9 +6262,10 @@ components:
 
     StockBillUpdateRequest:
       type: object
+      description: 入库/出库工作单更新 DTO；不直接更新确认后的库存流水。
       required: [version, warehouseId, sourceNo, manualReason, items, remark]
       properties:
-        version: { type: integer, minimum: 0, description: Current `stock_bill.version` for optimistic locking. }
+        version: { type: integer, minimum: 0, description: 当前入库单或出库单工作单版本，用于乐观锁。 }
         warehouseId: { type: string, description: 仓库 ID；仅 `DRAFT` 状态允许修改，`PENDING_CONFIRM` 必须保持原值 }
         sourceNo: { type: string, maxLength: 64, description: 手工补录草稿可维护原业务单号；其他录入方式保持原值 }
         manualReason: { type: string, maxLength: 500, description: 手工补录或调整草稿必填；来源生成草稿保持原值 }
@@ -6495,6 +6277,7 @@ components:
 
     StockBillPage:
       type: object
+      description: 入库/出库工作单分页；已确认库存流水使用 `StockLedgerPage`。
       required: [records, total, pageNum, pageSize, summary]
       properties:
         records:
@@ -6518,11 +6301,12 @@ components:
 
     StockBill:
       type: object
+      description: 入库或出库工作单响应。保留历史 schema 名称仅为前端类型兼容；确认后生成的库存事实不通过本 schema 查询。
       required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, sourcePartyName, entryMode, warehouseId, warehouseName, status, itemCount, quantitySummary, totalCurrentQty, quantityUnitName, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, version, createTime, updateTime]
       properties:
-        stockBillId: { type: string, description: 入库单、出库单或库存流水 ID，BIGINT 按字符串传输 }
-        billNo: { type: string, maxLength: 64, description: 入库单号、出库单号或库存流水号 }
-        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 入库、出库或库存流水类型 }
+        stockBillId: { type: string, description: 工作单稳定 ID，对应入库单或出库单主表主键，BIGINT 按字符串传输 }
+        billNo: { type: string, maxLength: 64, description: 入库单号或出库单号 }
+        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 入库或出库工作单类型 }
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 原业务来源类型 }
         sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输 }
         sourceNo: { type: string, maxLength: 64, description: 原业务来源单号 }
@@ -6530,21 +6314,21 @@ components:
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 区分来源生成、手工补录和手工调整 }
         warehouseId: { type: string, description: 仓库 ID，BIGINT 按字符串传输 }
         warehouseName: { type: string, maxLength: 100, description: 仓库名称快照 }
-        status: { type: string, enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED], description: 入库单/出库单状态；库存流水只返回 CONFIRMED }
+        status: { type: string, enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED], description: 入库单或出库单工作单状态 }
         itemCount: { type: integer, minimum: 0, description: 明细条数 }
         quantitySummary: { type: string, description: 列表入库量/出库量摘要，例如“本次 20 箱”；不同单位时返回简短明细摘要，前端列表按页面方向展示为入库量或出库量，展开明细必须使用 `items.quantity`、`items.qualifiedQty`、`items.defectiveQty`、`items.pendingQty` 独立列展示，不使用拼接质检字段 }
         totalCurrentQty: { type: number, format: double, nullable: true, description: 同单位时的入库量/出库量合计，不同单位返回 null }
         quantityUnitName: { type: string, description: 数量摘要单位；不同单位时返回空字符串 }
-        confirmedById: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_by_id`，BIGINT 按字符串传输 }
-        confirmedByName: { type: string, maxLength: 100, description: 对应 `stock_bill.confirmed_by_name` }
-        confirmedAt: { type: string, nullable: true, description: 对应 `stock_bill.confirmed_at` }
-        createdById: { type: string, nullable: true, description: 对应 `stock_bill.created_by_id`，BIGINT 按字符串传输 }
-        createdByName: { type: string, maxLength: 100, description: 对应 `stock_bill.created_by_name` }
-        responsibleById: { type: string, description: 对应 `stock_bill.responsible_by_id`；手工单据由后端取当前登录用户 }
-        responsibleByName: { type: string, maxLength: 100, description: 对应 `stock_bill.responsible_by_name` }
-        version: { type: integer, minimum: 0, description: Current `stock_bill.version` for optimistic locking. }
-        createTime: { type: string, description: 对应 `stock_bill.create_time` }
-        updateTime: { type: string, description: 对应 `stock_bill.update_time` }
+        confirmedById: { type: string, nullable: true, description: 工作单确认人 ID，BIGINT 按字符串传输 }
+        confirmedByName: { type: string, maxLength: 100, description: 工作单确认人名称快照 }
+        confirmedAt: { type: string, nullable: true, description: 工作单确认时间 }
+        createdById: { type: string, nullable: true, description: 工作单创建人 ID，BIGINT 按字符串传输 }
+        createdByName: { type: string, maxLength: 100, description: 工作单创建人名称快照 }
+        responsibleById: { type: string, description: 工作单负责人 ID；手工单据由后端取当前登录用户 }
+        responsibleByName: { type: string, maxLength: 100, description: 工作单负责人名称快照 }
+        version: { type: integer, minimum: 0, description: 当前工作单版本，用于乐观锁。 }
+        createTime: { type: string, description: 工作单创建时间 }
+        updateTime: { type: string, description: 工作单更新时间 }
 
     StockBillDetail:
       allOf:
@@ -6552,20 +6336,21 @@ components:
         - type: object
           required: [manualReason, remark, items]
           properties:
-            manualReason: { type: string, maxLength: 500, description: 对应 `stock_bill.manual_reason`；来源生成凭证为空字符串 }
-            remark: { type: string, maxLength: 500, description: 对应 `stock_bill.remark` }
+            manualReason: { type: string, maxLength: 500, description: 对应入库单或出库单的补录/调整原因；来源生成工作单为空字符串 }
+            remark: { type: string, maxLength: 500, description: 对应工作单备注 }
             items:
               type: array
               items: { $ref: '#/components/schemas/StockBillItem' }
 
     StockBillItem:
       type: object
+      description: 工作单明细响应；`beforeQty`、`changeQty`、`afterQty` 仅在确认后作为关联库存流水快照返回，不能提交修改。
       required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, planQty, processedQty, pendingQty, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createTime, updateTime, remark]
       properties:
-        stockBillItemId: { type: string, description: 对应 `stock_bill_item.id`，BIGINT 按字符串传输 }
-        stockBillId: { type: string, description: 对应 `stock_bill_item.bill_id`，BIGINT 按字符串传输 }
-        billNo: { type: string, maxLength: 64, description: 对应 `stock_bill_item.bill_no` }
-        sourceItemId: { type: string, nullable: true, description: 对应 `stock_bill_item.source_item_id`，BIGINT 按字符串传输 }
+        stockBillItemId: { type: string, description: 工作单明细稳定 ID，对应 `inbound_bill_item` 或 `outbound_bill_item` 主键，BIGINT 按字符串传输 }
+        stockBillId: { type: string, description: 所属工作单稳定 ID，BIGINT 按字符串传输 }
+        billNo: { type: string, maxLength: 64, description: 所属入库单号或出库单号 }
+        sourceItemId: { type: string, nullable: true, description: 原业务来源明细 ID，BIGINT 按字符串传输 }
         productId: { type: string, description: 对应 `stock_bill_item.product_id`，BIGINT 按字符串传输 }
         productCode: { type: string, maxLength: 64, description: 对应 `stock_bill_item.product_code` }
         productName: { type: string, maxLength: 200, description: 对应 `stock_bill_item.product_name` }
@@ -6583,6 +6368,57 @@ components:
         createTime: { type: string, description: 对应 `stock_bill_item.create_time` }
         updateTime: { type: string, description: 对应 `stock_bill_item.update_time` }
         remark: { type: string, maxLength: 500, description: 对应 `stock_bill_item.remark` }
+
+    StockLedgerPage:
+      type: object
+      description: 已确认库存流水分页；与仍可编辑、提交或确认的入库/出库工作单分页相互独立。
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/StockLedger' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    StockLedger:
+      type: object
+      description: 已经确认并产生库存变动的只读库存流水，不承载草稿、提交或取消状态。
+      required: [stockLedgerId, billNo, billType, sourceType, sourceId, sourceNo, warehouseId, warehouseName, itemCount, confirmedById, confirmedByName, confirmedAt, createTime]
+      properties:
+        stockLedgerId: { type: string, description: 对应 `stock_bill.id`，BIGINT 按字符串传输 }
+        billNo: { type: string, maxLength: 64, description: 对应 `stock_bill.bill_no` }
+        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT] }
+        sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST] }
+        sourceId: { type: string, nullable: true, description: 原业务单据 ID }
+        sourceNo: { type: string, maxLength: 64, description: 原业务单号或调整单号 }
+        warehouseId: { type: string }
+        warehouseName: { type: string, maxLength: 100 }
+        itemCount: { type: integer, minimum: 0 }
+        confirmedById: { type: string, nullable: true }
+        confirmedByName: { type: string, maxLength: 100 }
+        confirmedAt: { type: string }
+        createTime: { type: string }
+        items:
+          type: array
+          readOnly: true
+          items: { $ref: '#/components/schemas/StockLedgerItem' }
+
+    StockLedgerItem:
+      type: object
+      description: 库存流水明细，只记录本次变动及变动前后库存，不包含工作单的计划、累计处理和待处理字段。
+      required: [stockLedgerItemId, stockLedgerId, productId, productCode, productName, unitName, beforeQty, changeQty, afterQty]
+      properties:
+        stockLedgerItemId: { type: string, description: 对应 `stock_bill_item.id` }
+        stockLedgerId: { type: string, description: 对应 `stock_bill_item.bill_id` }
+        productId: { type: string }
+        productCode: { type: string, maxLength: 64 }
+        productName: { type: string, maxLength: 200 }
+        unitName: { type: string, maxLength: 32 }
+        beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01 }
+        changeQty: { type: number, format: double, multipleOf: 0.01, description: 入库为正，出库为负 }
+        afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01 }
+        remark: { type: string, maxLength: 500 }
 
     WarehouseStock:
       type: object

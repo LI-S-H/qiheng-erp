@@ -106,3 +106,9 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 - AI 查询库存时必须写入 `TOOL_CALL` 审计日志。
 - 权限校验失败时也必须写入审计日志，且 `permission_passed = 0`。
 - Tool 调用失败时记录 `success = 0` 和错误信息。
+
+## 定时任务数据契约补充
+
+MVP 暂不因此新增角色、商品或仓库快照表。任务配置持久化时应保存稳定 ID 数组：`product_ids`、`warehouse_ids`、`recipient_role_ids`；展示名称在读取时通过对应业务模块查询。`ALL` 表示执行时按当前用户权限展开全部可见资源。
+
+定时任务输出格式只允许 `REPORT`、`CHAT_CARD`。手动执行先创建执行记录并返回异步受理结果（`execution_id`、`task_id`、`RUNNING`、`accepted_at`），最终状态和结果通过执行记录查询。执行结果不再存储兼容字段 `sections`；对话模块的 SSE 流式事件保持不变。

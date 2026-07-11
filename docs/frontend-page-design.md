@@ -105,7 +105,39 @@ sys_user_role
 
 后台主布局采用固定左侧菜单。MVP 阶段不设计 `sys_menu` 和动态路由表，权限由后端接口和页面进入后的权限码校验控制。后续如果拆出菜单权限表，可以把当前静态菜单迁移为后端菜单数据。
 
-### 5.1 工作台 `/dashboard`
+### 5.1 顶栏通知铃铛弹层
+
+通知铃铛位于所有登录后页面的顶栏右侧、用户菜单左侧，用于快速回答“当前有什么需要我处理或关注”。当前阶段只建设轻量弹层，不新增独立消息中心页面，也不维护已读/未读历史。
+
+弹层结构与交互：
+
+- 铃铛徽标展示当前用户待处理业务事项数量，`0` 时隐藏，`1-99` 显示实际数量，超过 `99` 显示 `99+`。该数量不是未读数，打开弹层不会清零。
+- 点击铃铛打开右对齐弹层，头部展示“待办与预警”、待处理数量和刷新状态；中部最多展示后端已排序的前 8 条待办；底部提供“进入工作台查看全部”。
+- 每条待办展示业务标签、优先级、标题、聚合数量和最多两行影响说明，不在小弹层堆叠完整单据证据、错误堆栈或复杂指标。
+- `completionMode=AUTO` 展示“去处理”并跳转 `route` 指定的采购、销售、仓储或库存页面；`completionMode=TRACKED` 展示“查看详情”并进入工作台异常详情；历史 `MANUAL` 只允许查看详情。铃铛内不直接审核、确认出入库或完成异常。
+- 通知弹层与用户菜单互斥；点击外部、按 `Esc`、完成路由跳转或再次点击铃铛时关闭。弹层需要正确管理焦点和 `aria-label`。
+- 首次进入主布局请求一次通知摘要。打开弹层或页面恢复前台时，若缓存超过 60 秒再刷新；缓存未过期时立即展示，不持续轮询。后台刷新保留旧数据，避免内容闪空。
+- 空数据展示“当前没有待处理事项”；无缓存且请求失败时展示错误说明和“重新加载”；有缓存时继续展示旧数据并提示刷新失败。
+
+数据与权限边界：
+
+- 铃铛使用轻量 `GET /dashboard/notifications`，不得在全局主布局频繁请求包含趋势、排行和履约数据的 `/dashboard/overview`。
+- 返回结构复用 `DashboardTodoItem`，后端负责权限裁剪、业务聚合、去重、总数和排序；前端不得自行并发查询各模块列表后拼装通知。
+- 普通业务待办按采购、销售、仓储等模块权限返回；系统异常只返回给具备异常处理权限或被指派的用户、角色、部门，不能向普通员工广播。
+- 弹层只展示 `PENDING` 事项。业务完成后由后端最新聚合结果自动减少数量或移除，不因为用户查看过就消失。
+- 当前阶段不新增消息表、用户消息关系表或数据库字段；独立消息中心、已读状态、归档、搜索、批量操作、站外推送和实时连接均不在范围内。
+
+字段契约：
+
+| UI 标签 | API/schema 字段 | 类型 | 来源 | 可编辑 | 空值展示 | 备注 |
+|---|---|---|---|---|---|---|
+| 刷新时间 | `refreshedAt` | string | 后端生成 | 否 | `-` | 通知摘要生成时间 |
+| 待处理数量 | `pendingCount` | integer | 后端按权限聚合 | 否 | `0` | 徽标最大显示 `99+`，不是未读数 |
+| 高优先级数量 | `highPriorityCount` | integer | 后端按权限聚合 | 否 | `0` | 仅用于头部风险提示 |
+| 是否还有更多 | `hasMore` | boolean | 后端计算 | 否 | `false` | 为真时引导进入工作台 |
+| 待办列表 | `items[]` | object[] | 业务状态、风险和异常聚合 | 否 | 空列表 | 最多 8 条，复用 `DashboardTodoItem` |
+
+### 5.2 工作台 `/dashboard`
 
 工作台面向业务负责人、采购、销售和仓储人员，首屏用于快速判断“收入是否正常、订单是否阻塞、库存是否影响交付、哪些事项需要优先处理”。页面不做营销式大屏，也不要求前端并发拉取各业务列表再拼指标；统一使用 `/dashboard/overview` 获取后端已按当前用户权限裁剪的经营概览。
 
@@ -760,11 +792,11 @@ GET /warehouse/inbound-bills
 POST /warehouse/inbound-bills
 GET /warehouse/outbound-bills
 POST /warehouse/outbound-bills
-GET /warehouse/stock-bills/{stockBillId}
-PUT /warehouse/stock-bills/{stockBillId}
-POST /warehouse/stock-bills/{stockBillId}/submit
-POST /warehouse/stock-bills/{stockBillId}/confirm
-POST /warehouse/stock-bills/{stockBillId}/cancel
+GET /warehouse/work-bills/{workBillId}
+PUT /warehouse/work-bills/{workBillId}
+POST /warehouse/work-bills/{workBillId}/submit
+POST /warehouse/work-bills/{workBillId}/confirm
+POST /warehouse/work-bills/{workBillId}/cancel
 ```
 
 ## 17. 仓库库存模块：库存调整（合并至入库单/出库单）
@@ -794,12 +826,11 @@ POST /warehouse/stock-bills/{stockBillId}/cancel
 ```text
 GET /warehouse/inbound-bills?entryMode=MANUAL_ADJUSTMENT
 GET /warehouse/outbound-bills?entryMode=MANUAL_ADJUSTMENT
-POST /warehouse/stock-bills
-GET /warehouse/stock-bills/{stockBillId}
-PUT /warehouse/stock-bills/{stockBillId}
-POST /warehouse/stock-bills/{stockBillId}/submit
-POST /warehouse/stock-bills/{stockBillId}/confirm
-POST /warehouse/stock-bills/{stockBillId}/cancel
+GET /warehouse/work-bills/{workBillId}
+PUT /warehouse/work-bills/{workBillId}
+POST /warehouse/work-bills/{workBillId}/submit
+POST /warehouse/work-bills/{workBillId}/confirm
+POST /warehouse/work-bills/{workBillId}/cancel
 ```
 
 ## 18. 采购业务模块：供应商、供货产品与采购订单

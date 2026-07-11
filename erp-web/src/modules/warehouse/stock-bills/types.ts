@@ -116,3 +116,45 @@ export interface StockBillUpdatePayload {
   items: StockBillDraftItemPayload[];
   remark: string;
 }
+
+/**
+ * 入库/出库页面的工作单模型。现有 StockBill* 名称保留为页面兼容名称，
+ * 接口契约中应将它与确认后只读的库存流水模型分开。
+ */
+export type WarehouseWorkBillListItem = StockBillListItem;
+export type WarehouseWorkBillItem = Omit<StockBillItem, 'beforeQty' | 'changeQty' | 'afterQty'>;
+export type WarehouseWorkBillDetail = Omit<StockBillDetail, 'items'> & { items: WarehouseWorkBillItem[] };
+
+/** 确认工作单后生成的只读库存流水，不用于新建或编辑工作单。 */
+export interface StockLedgerItem {
+  stockBillItemId: string;
+  stockBillId: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  unitName: string;
+  quantityPrecision: number;
+  beforeQty: number;
+  changeQty: number;
+  afterQty: number;
+  createTime: string;
+  remark: string;
+}
+
+export interface StockLedger {
+  stockBillId: string;
+  billNo: string;
+  direction: StockBillDirection;
+  sourceBillType: 'INBOUND_BILL' | 'OUTBOUND_BILL';
+  sourceBillId: string;
+  sourceBillNo: string;
+  warehouseId: string;
+  warehouseName: string;
+  confirmedById: string;
+  confirmedByName: string;
+  confirmedAt: string;
+  createTime: string;
+  items: StockLedgerItem[];
+}
+
+export type StockLedgerPage = PageResult<StockLedger>;

@@ -20,12 +20,12 @@ import type {
   AiScheduledTaskStatus,
   AiScheduledTaskSummary,
   AiScheduledTaskTemplate,
+  AiScheduledTaskRunAccepted,
   AiScheduledTaskUpdateRequest,
   AiTaskCard,
   AiTaskExecution,
   AiTaskExecutionAction,
   AiTaskExecutionMetric,
-  AiTaskExecutionSection,
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
@@ -250,6 +250,9 @@ const mockOverview: AiAssistantOverview = {
 let mockTasks: AiScheduledTask[] = [
   {
     taskId: 'task-daily-report',
+    productIds: ['ALL'],
+    warehouseIds: ['ALL'],
+    recipientRoleIds: ['1900000000000001003'],
     taskName: '每日经营晨报',
     category: 'REPORT',
     frequency: 'DAILY',
@@ -269,6 +272,9 @@ let mockTasks: AiScheduledTask[] = [
   },
   {
     taskId: 'task-inventory-health',
+    productIds: ['product-dock', 'product-label', 'product-mouse'],
+    warehouseIds: ['warehouse-east', 'warehouse-south', 'warehouse-nanjing'],
+    recipientRoleIds: ['1900000000000001004', '1900000000000001003'],
     taskName: '库存健康巡检',
     category: 'INVENTORY',
     frequency: 'DAILY',
@@ -288,6 +294,9 @@ let mockTasks: AiScheduledTask[] = [
   },
   {
     taskId: 'task-purchase-advice',
+    productIds: ['product-paper', 'product-dock', 'product-label'],
+    warehouseIds: ['warehouse-east', 'warehouse-south'],
+    recipientRoleIds: ['1900000000000001003'],
     taskName: '采购补货建议',
     category: 'PURCHASE',
     frequency: 'DAILY',
@@ -307,6 +316,9 @@ let mockTasks: AiScheduledTask[] = [
   },
   {
     taskId: 'task-weekly-sales',
+    productIds: ['ALL'],
+    warehouseIds: ['ALL'],
+    recipientRoleIds: ['1900000000000001003'],
     taskName: '每周销量报告',
     category: 'SALES',
     frequency: 'WEEKLY',
@@ -368,7 +380,8 @@ const mockTemplates: AiScheduledTaskTemplate[] = [
   },
 ];
 
-let mockExecutions: AiTaskExecution[] = [
+// 旧 Mock 夹具保留 sections 仅用于兼容历史样例；对外归一化结果不再暴露该字段。
+let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
   {
     executionId: 'exec-20260701-1000',
     taskId: 'task-purchase-advice',
@@ -686,7 +699,7 @@ function normalizeTaskStatus(value: unknown): AiScheduledTaskStatus {
 }
 
 function normalizeOutputFormat(value: unknown): AiScheduledTaskOutputFormat {
-  return value === 'CHAT_CARD' || value === 'NOTIFICATION' ? value : 'REPORT';
+  return value === 'CHAT_CARD' ? value : 'REPORT';
 }
 
 function normalizeTask(task: AiScheduledTask): AiScheduledTask {
@@ -697,6 +710,9 @@ function normalizeTask(task: AiScheduledTask): AiScheduledTask {
     category: task.category,
     frequency: task.frequency,
     cronExpression: String(task.cronExpression || ''),
+    productIds: normalizeStringArray(task.productIds),
+    warehouseIds: normalizeStringArray(task.warehouseIds),
+    recipientRoleIds: normalizeStringArray(task.recipientRoleIds),
     productScope: normalizeStringArray(task.productScope),
     warehouseScope: normalizeStringArray(task.warehouseScope),
     analysisGoal: String(task.analysisGoal || ''),
@@ -717,14 +733,6 @@ function normalizeMetric(metric: AiTaskExecutionMetric): AiTaskExecutionMetric {
     label: String(metric.label || ''),
     value: String(metric.value || ''),
     tone: metric.tone === 'good' || metric.tone === 'watch' || metric.tone === 'risk' ? metric.tone : 'neutral',
-  };
-}
-
-function normalizeSection(section: AiTaskExecutionSection): AiTaskExecutionSection {
-  return {
-    sectionId: normalizeStringId(section.sectionId, 'sectionId'),
-    title: String(section.title || ''),
-    items: normalizeStringArray(section.items),
   };
 }
 
@@ -750,7 +758,6 @@ function normalizeExecution(execution: AiTaskExecution): AiTaskExecution {
     findings: normalizeStringArray(execution.findings),
     suggestions: normalizeStringArray(execution.suggestions),
     metrics: Array.isArray(execution.metrics) ? execution.metrics.map(normalizeMetric) : [],
-    sections: Array.isArray(execution.sections) ? execution.sections.map(normalizeSection) : [],
     charts: Array.isArray(execution.charts) ? execution.charts.map(normalizeChart) : [],
     nextActions: Array.isArray(execution.nextActions) ? execution.nextActions.map(normalizeExecutionAction) : [],
   };
@@ -809,13 +816,16 @@ function buildTaskFromPayload(payload: AiScheduledTaskUpdateRequest): AiSchedule
     category: payload.category,
     frequency: payload.frequency,
     cronExpression: payload.cronExpression,
-    productScope: payload.productScope,
-    warehouseScope: payload.warehouseScope,
+    productIds: payload.productIds,
+    warehouseIds: payload.warehouseIds,
+    recipientRoleIds: payload.recipientRoleIds,
+    productScope: payload.productIds.map(id => id === 'ALL' ? '全部商品' : id),
+    warehouseScope: payload.warehouseIds.map(id => id === 'ALL' ? '全部仓库' : id),
     analysisGoal: payload.analysisGoal,
     nextRunAt: '2026-07-02 09:00:00',
     lastRunAt: null,
     lastResultSummary: '尚未执行',
-    recipients: payload.recipients,
+    recipients: payload.recipientRoleIds,
     status: 'ENABLED',
     agentCodes,
     painPoint: '自定义经营任务，减少重复查询和人工整理。',
@@ -894,7 +904,7 @@ export async function runAiScheduledTask(taskId: string) {
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     task.lastRunAt = now;
     task.lastResultSummary = `已手动执行 ${task.taskName}，生成最新多智能体分析报告。`;
-    const execution: AiTaskExecution = {
+    const execution: AiTaskExecution & { sections?: unknown[] } = {
       executionId: `exec-${Date.now()}`,
       taskId: task.taskId,
       taskName: task.taskName,
@@ -923,9 +933,14 @@ export async function runAiScheduledTask(taskId: string) {
       ],
     };
     mockExecutions = [execution, ...mockExecutions].slice(0, 8);
-    return normalizeTask(task);
+    return {
+      executionId: execution.executionId,
+      taskId: task.taskId,
+      status: 'RUNNING',
+      acceptedAt: now,
+    } satisfies AiScheduledTaskRunAccepted;
   }
-  return http.post<Result<AiScheduledTask>>(`/ai/scheduled-tasks/${taskId}/run`).then(response => normalizeTask(response.data.data));
+  return http.post<Result<AiScheduledTaskRunAccepted>>(`/ai/scheduled-tasks/${taskId}/run`).then(response => response.data.data);
 }
 
 export async function updateAiScheduledTaskStatus(taskId: string, status: AiScheduledTaskStatus) {

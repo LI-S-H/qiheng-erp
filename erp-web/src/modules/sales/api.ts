@@ -13,12 +13,12 @@ import type {
   CustomerOption,
   CustomerQuery,
   SalesOrderFormPayload,
+  SalesOrderDetail,
   SalesOrderItem,
   SalesOrderListItem,
   SalesOrderPage,
   SalesOrderQuery,
   SalesOrderStatus,
-  SalesOrderSummary,
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
@@ -47,7 +47,7 @@ let mockCustomers: Array<CustomerListItem & { referenced: boolean }> = customerS
   referenced: item[7],
 }));
 
-let mockOrders: SalesOrderListItem[] = [
+let mockOrders: SalesOrderDetail[] = [
   buildOrderSeed('SO202606001', 'C001', 'WH001', 'APPROVED', '2026-06-27', [['P000001', 12, 49.9], ['P000003', 8, 99]], '销售主管', true),
   buildOrderSeed('SO202606002', 'C003', 'WH002', 'PARTIAL_OUTBOUND', '2026-06-24', [['P000005', 20, 19.9]], '销售主管', true),
   buildOrderSeed('SO202606003', 'C004', 'WH008', 'DRAFT', '2026-06-30', [['P000007', 6, 119]], '系统管理员', false),
@@ -109,7 +109,7 @@ function buildOrderSeed(
   lines: Array<[string, number, number]>,
   createdByName: string,
   submitted: boolean,
-): SalesOrderListItem {
+): SalesOrderDetail {
   const customer = mockCustomers.find(item => item.customerCode === customerCode)!;
   const warehouses: Record<string, { warehouseId: string; warehouseName: string }> = {
     WH001: { warehouseId: '1930000000000000001', warehouseName: '华东中心仓' },
@@ -205,8 +205,11 @@ function normalizeOrder(item: SalesOrderListItem): SalesOrderListItem {
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
     approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
     version: normalizeFiniteNumber(item.version, 'version'),
-    items: item.items.map(normalizeOrderItem),
   };
+}
+
+function normalizeOrderDetail(item: SalesOrderDetail): SalesOrderDetail {
+  return { ...normalizeOrder(item), items: item.items.map(normalizeOrderItem) };
 }
 
 function normalizePage<T>(page: PageResult<T>, mapper: (item: T) => T): PageResult<T> {
@@ -241,15 +244,6 @@ function filterCustomers(params: CustomerQuery): PageResult<CustomerListItem> {
   return { records: pageSlice(filtered, params.pageNum, params.pageSize).map(({ referenced: _, ...item }) => item), total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize };
 }
 
-function buildOrderSummary(records: SalesOrderListItem[]): SalesOrderSummary {
-  return {
-    draftCount: records.filter(item => item.status === 'DRAFT').length,
-    submittedCount: records.filter(item => item.status === 'SUBMITTED').length,
-    approvedCount: records.filter(item => item.status === 'APPROVED').length,
-    outboundPendingCount: records.filter(item => item.status === 'APPROVED' || item.status === 'PARTIAL_OUTBOUND').length,
-  };
-}
-
 function filterOrders(params: SalesOrderQuery): SalesOrderPage {
   let filtered = [...mockOrders];
   const salesNo = params.salesNo?.trim().toLocaleLowerCase();
@@ -258,8 +252,8 @@ function filterOrders(params: SalesOrderQuery): SalesOrderPage {
   if (params.warehouseId && params.warehouseId !== 'all') filtered = filtered.filter(item => item.warehouseId === params.warehouseId);
   if (params.status && params.status !== 'all') filtered = filtered.filter(item => item.status === params.status);
   filtered.sort((a, b) => b.createTime.localeCompare(a.createTime));
-  const records = pageSlice(filtered, params.pageNum, params.pageSize);
-  return { records, total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize, summary: buildOrderSummary(records) };
+  const records = pageSlice(filtered, params.pageNum, params.pageSize).map(({ items: _, ...item }) => item);
+  return { records, total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize };
 }
 
 export function listCustomers(params: CustomerQuery) {
@@ -272,18 +266,6 @@ export function listCustomers(params: CustomerQuery) {
     ...(contactName?.trim() ? { contactName: contactName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
   }).then(page => normalizePage(page, normalizeCustomer));
-}
-
-export function listCustomerOptions(): Promise<CustomerOption[]> {
-  if (useMockApi) {
-    return Promise.resolve(mockCustomers.map(item => ({
-      customerId: item.customerId,
-      customerCode: item.customerCode,
-      customerName: item.customerName,
-      status: item.status,
-    })));
-  }
-  return getResult<CustomerOption[]>('/sales/customers/options');
 }
 
 export async function searchCustomerOptions(keyword = '', pageSize = 10): Promise<CustomerOption[]> {
@@ -387,8 +369,7 @@ export function batchDeleteCustomers(payload: CustomerBatchIdsPayload) {
 export function listSalesOrders(params: SalesOrderQuery) {
   if (useMockApi) {
     const page = filterOrders(params);
-    const normalized = normalizePage(page, normalizeOrder);
-    return Promise.resolve({ ...normalized, summary: buildOrderSummary(normalized.records) });
+    return Promise.resolve(normalizePage(page, normalizeOrder));
   }
   const { salesNo, customerId, warehouseId, status, ...rest } = params;
   return getResult<SalesOrderPage>('/sales/orders', {
@@ -397,10 +378,15 @@ export function listSalesOrders(params: SalesOrderQuery) {
     ...(customerId && customerId !== 'all' ? { customerId } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(status && status !== 'all' ? { status } : {}),
-  }).then(page => {
-    const normalized = normalizePage(page, normalizeOrder);
-    return { ...normalized, summary: buildOrderSummary(normalized.records) };
-  });
+  }).then(page => normalizePage(page, normalizeOrder));
+}
+
+export function getSalesOrderDetail(salesOrderId: string) {
+  if (useMockApi) {
+    const order = mockOrders.find(item => item.salesOrderId === salesOrderId);
+    return order ? Promise.resolve(normalizeOrderDetail(order)) : Promise.reject(new Error('销售订单不存在'));
+  }
+  return getResult<SalesOrderDetail>(`/sales/orders/${salesOrderId}`).then(normalizeOrderDetail);
 }
 
 function buildOrderItems(orderId: string, salesNo: string, payload: SalesOrderFormPayload, existingItems: SalesOrderItem[] = []) {
@@ -433,7 +419,7 @@ export function createSalesOrder(payload: SalesOrderFormPayload) {
     const salesNo = `SO202606${String(nextSalesOrderSequence++).padStart(3, '0')}`;
     const timestamp = nowText();
     const items = buildOrderItems(salesOrderId, salesNo, payload);
-    const created = normalizeOrder({
+    const created = normalizeOrderDetail({
       salesOrderId,
       salesNo,
       customerId: customer.customerId,
@@ -460,7 +446,7 @@ export function createSalesOrder(payload: SalesOrderFormPayload) {
     mockOrders = [created, ...mockOrders];
     return Promise.resolve(created);
   }
-  return postResult<SalesOrderListItem, SalesOrderFormPayload>('/sales/orders', payload).then(normalizeOrder);
+  return postResult<SalesOrderDetail, SalesOrderFormPayload>('/sales/orders', payload).then(normalizeOrderDetail);
 }
 
 export async function updateSalesOrder(salesOrderId: string, payload: SalesOrderFormPayload) {
@@ -473,7 +459,7 @@ export async function updateSalesOrder(salesOrderId: string, payload: SalesOrder
     if (!customer || customer.status === 0) return Promise.reject(new Error('请选择启用状态的客户'));
     const warehouse = mockWarehouseSnapshot(payload.warehouseId);
     const items = buildOrderItems(salesOrderId, existing.salesNo, payload, existing.items);
-    const updated = normalizeOrder({
+    const updated = normalizeOrderDetail({
       ...existing,
       customerId: customer.customerId,
       customerCode: customer.customerCode,
@@ -491,7 +477,7 @@ export async function updateSalesOrder(salesOrderId: string, payload: SalesOrder
     return Promise.resolve(updated);
   }
   const response = await http.put(`/sales/orders/${salesOrderId}`, payload);
-  return normalizeOrder(response.data.data as SalesOrderListItem);
+  return normalizeOrderDetail(response.data.data as SalesOrderDetail);
 }
 
 export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 'approve' | 'cancel', version: number) {

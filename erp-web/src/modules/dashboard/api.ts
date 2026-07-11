@@ -2,6 +2,7 @@ import { getResult } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
 import type {
   DashboardMetric,
+  DashboardNotificationPopover,
   DashboardOrderStage,
   DashboardOverview,
   DashboardStockAlert,
@@ -156,10 +157,10 @@ function normalizeTrendPoint(item: DashboardTrendPoint): DashboardTrendPoint {
 function normalizeTodo(item: DashboardTodoItem): DashboardTodoItem {
   const businessType = String(item.businessType || 'SYSTEM');
   const sourceMode = item.sourceMode === 'PERSISTED' ? 'PERSISTED' : 'AGGREGATED';
-  const completionMode = item.completionMode === 'MANUAL' || item.completionMode === 'TRACKED' ? item.completionMode : 'AUTO';
+  const completionMode = item.completionMode === 'TRACKED' ? 'TRACKED' : 'AUTO';
   const status = item.status === 'DONE' || item.status === 'IGNORED' ? item.status : 'PENDING';
   const priorityFallback = item.priority === 'HIGH' ? 100 : item.priority === 'MEDIUM' ? 200 : 300;
-  const sourceFallback = completionMode === 'MANUAL' ? 0 : 20;
+  const sourceFallback = completionMode === 'TRACKED' ? 0 : 20;
   return {
     ...item,
     todoId: normalizeStringId(item.todoId, 'todoId'),
@@ -256,4 +257,34 @@ export async function getDashboardOverview() {
   }
 
   return getResult<DashboardOverview>('/dashboard/overview').then(normalizeOverview);
+}
+
+function normalizeNotificationPopover(data: DashboardNotificationPopover): DashboardNotificationPopover {
+  return {
+    refreshedAt: String(data.refreshedAt || ''),
+    pendingCount: normalizeFiniteNumber(data.pendingCount, 'pendingCount'),
+    highPriorityCount: normalizeFiniteNumber(data.highPriorityCount, 'highPriorityCount'),
+    hasMore: Boolean(data.hasMore),
+    items: Array.isArray(data.items) ? data.items.slice(0, 8).map(normalizeTodo) : [],
+  };
+}
+
+export async function getDashboardNotifications() {
+  if (useMockApi) {
+    await new Promise(resolve => window.setTimeout(resolve, 180));
+    const pendingItems = mockOverview.todos
+      .filter(item => item.status === 'PENDING')
+      .sort((left, right) => left.sortWeight - right.sortWeight);
+    return normalizeNotificationPopover({
+      refreshedAt: mockOverview.refreshedAt,
+      pendingCount: pendingItems.reduce((total, item) => total + item.count, 0),
+      highPriorityCount: pendingItems
+        .filter(item => item.priority === 'HIGH')
+        .reduce((total, item) => total + item.count, 0),
+      hasMore: pendingItems.length > 8,
+      items: pendingItems.slice(0, 8),
+    });
+  }
+
+  return getResult<DashboardNotificationPopover>('/dashboard/notifications').then(normalizeNotificationPopover);
 }

@@ -24,16 +24,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { getDashboardOverview } from '../api';
@@ -47,7 +37,6 @@ const overview = ref<DashboardOverview | null>(null);
 const activeDetail = ref<DetailType | null>(null);
 const expandedTodoId = ref<string | null>(null);
 const selectedTodoDetailId = ref<string | null>(null);
-const pendingCompleteTodo = ref<DashboardTodoItem | null>(null);
 const trendDayOptions = [7, 15, 30] as const;
 const selectedTrendDays = ref<(typeof trendDayOptions)[number]>(7);
 const trendTransitioning = ref(false);
@@ -119,7 +108,7 @@ const sortedTodos = computed(() => {
     const priorityDiff = priorityRank[left.priority] - priorityRank[right.priority];
     if (priorityDiff !== 0) return priorityDiff;
 
-    if (left.completionMode !== right.completionMode) return left.completionMode === 'MANUAL' ? -1 : 1;
+    if (left.completionMode !== right.completionMode) return left.completionMode === 'TRACKED' ? -1 : 1;
     return left.title.localeCompare(right.title, 'zh-CN');
   });
 });
@@ -269,10 +258,6 @@ function statusText(status: DashboardTodoItem['status']) {
   return '待处理';
 }
 
-function isManualTodo(todo: DashboardTodoItem) {
-  return todo.completionMode === 'MANUAL';
-}
-
 function isTrackedTodo(todo: DashboardTodoItem) {
   return todo.completionMode === 'TRACKED' || todo.businessType === 'SYSTEM_EXCEPTION';
 }
@@ -310,22 +295,6 @@ function setDetailDialogOpen(open: boolean) {
 
 function toggleTodoEvidence(todo: DashboardTodoItem) {
   expandedTodoId.value = expandedTodoId.value === todo.todoId ? null : todo.todoId;
-}
-
-function requestCompleteTodo(todo: DashboardTodoItem) {
-  pendingCompleteTodo.value = todo;
-}
-
-function setCompleteConfirmOpen(open: boolean) {
-  if (!open) pendingCompleteTodo.value = null;
-}
-
-function confirmCompleteTodo() {
-  const todo = pendingCompleteTodo.value;
-  if (!todo) return;
-
-  toast.success(`已确认完成「${todo.title}」处理，后续接入 POST /dashboard/todos/${todo.todoId}/complete。`);
-  pendingCompleteTodo.value = null;
 }
 
 function goToTodoRoute(todo: DashboardTodoItem) {
@@ -665,15 +634,12 @@ onBeforeUnmount(() => {
                     <strong>{{ todo.title }}</strong>
                     <Badge variant="outline" :class="priorityClass(todo.priority)">{{ priorityText(todo.priority) }}</Badge>
                     <Badge variant="outline" class="border-slate-200 bg-slate-50 text-slate-600">{{ businessLabel(todo) }}</Badge>
-                    <Badge v-if="isManualTodo(todo)" variant="outline" class="border-blue-200 bg-blue-50 text-blue-700">
-                      需人工处理
-                    </Badge>
-                    <Badge v-else-if="isTrackedTodo(todo)" variant="outline" class="border-slate-200 bg-slate-50 text-slate-700">
+                    <Badge v-if="isTrackedTodo(todo)" variant="outline" class="border-slate-200 bg-slate-50 text-slate-700">
                       数据库记录
                     </Badge>
                   </div>
                   <p>{{ todo.description }}</p>
-                  <div v-if="isManualTodo(todo) || isTrackedTodo(todo)" class="dashboard-detail-todo__meta">
+                  <div v-if="isTrackedTodo(todo)" class="dashboard-detail-todo__meta">
                     <span><small>状态</small><strong>{{ statusText(todo.status) }}</strong></span>
                     <span><small>{{ todoSourceLabel(todo) }}</small><strong>{{ todoSourceText(todo) }}</strong></span>
                     <span><small>{{ todoOccurredAtLabel(todo) }}</small><strong>{{ todo.occurredAt || '-' }}</strong></span>
@@ -719,10 +685,10 @@ onBeforeUnmount(() => {
                   <Button
                     v-if="!isTrackedTodo(todo)"
                     size="sm"
-                    :variant="isManualTodo(todo) ? 'default' : 'outline'"
-                    @click="isManualTodo(todo) ? requestCompleteTodo(todo) : goToTodoRoute(todo)"
+                    variant="outline"
+                    @click="goToTodoRoute(todo)"
                   >
-                    {{ isManualTodo(todo) ? '完成处理' : '前往完成' }}
+                    前往完成
                   </Button>
                 </div>
               </div>
@@ -788,26 +754,6 @@ onBeforeUnmount(() => {
           </DialogContent>
         </Dialog>
 
-        <AlertDialog :open="!!pendingCompleteTodo" @update:open="setCompleteConfirmOpen">
-          <AlertDialogContent size="sm">
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认完成异常处理</AlertDialogTitle>
-              <AlertDialogDescription>
-                请确认已完成补偿、重试或人工修复后再完成处理。完成后该异常待办会在下一次工作台刷新时从待处理列表移除。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div v-if="pendingCompleteTodo" class="dashboard-confirm-card">
-              <strong>{{ pendingCompleteTodo.title }}</strong>
-              <span>{{ pendingCompleteTodo.sourceNo || pendingCompleteTodo.todoId }}</span>
-              <small v-if="pendingCompleteTodo.errorCode">{{ pendingCompleteTodo.errorCode }}</small>
-              <p v-if="pendingCompleteTodo.errorMessage">{{ pendingCompleteTodo.errorMessage }}</p>
-            </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction @click="confirmCompleteTodo">确认完成</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
     </div>
   </section>

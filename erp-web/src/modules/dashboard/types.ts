@@ -24,7 +24,7 @@ export interface DashboardTodoItem {
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
   sortWeight: number;
   sourceMode: 'AGGREGATED' | 'PERSISTED';
-  completionMode: 'AUTO' | 'MANUAL' | 'TRACKED';
+  completionMode: 'AUTO' | 'TRACKED';
   status: 'PENDING' | 'DONE' | 'IGNORED';
   errorCode: string | null;
   errorMessage: string | null;
@@ -96,4 +96,12 @@ export interface DashboardOverview {
   orderStages: DashboardOrderStage[];
   topProducts: DashboardTopProduct[];
   supplierPerformance: DashboardSupplierPerformance[];
+}
+
+export interface DashboardNotificationPopover {
+  refreshedAt: string;
+  pendingCount: number;
+  highPriorityCount: number;
+  hasMore: boolean;
+  items: DashboardTodoItem[];
 }

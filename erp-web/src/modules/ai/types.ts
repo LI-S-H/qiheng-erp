@@ -116,7 +116,7 @@ export interface AiConversationUpdateRequest {
 export type AiScheduledTaskStatus = 'ENABLED' | 'DISABLED' | 'RUNNING' | 'FAILED';
 export type AiScheduledTaskFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 export type AiScheduledTaskCategory = 'REPORT' | 'INVENTORY' | 'PURCHASE' | 'SALES' | 'SUPPLIER';
-export type AiScheduledTaskOutputFormat = 'CHAT_CARD' | 'REPORT' | 'NOTIFICATION';
+export type AiScheduledTaskOutputFormat = 'CHAT_CARD' | 'REPORT';
 
 export interface AiScheduledTaskSummary {
   totalCount: number;
@@ -131,6 +131,9 @@ export interface AiScheduledTask {
   category: AiScheduledTaskCategory;
   frequency: AiScheduledTaskFrequency;
   cronExpression: string;
+  productIds: string[];
+  warehouseIds: string[];
+  recipientRoleIds: string[];
   productScope: string[];
   warehouseScope: string[];
   analysisGoal: string;
@@ -165,12 +168,6 @@ export interface AiTaskExecutionMetric {
   tone: AiTone;
 }
 
-export interface AiTaskExecutionSection {
-  sectionId: string;
-  title: string;
-  items: string[];
-}
-
 export interface AiTaskExecutionAction {
   actionId: string;
   title: string;
@@ -190,7 +187,6 @@ export interface AiTaskExecution {
   findings: string[];
   suggestions: string[];
   metrics: AiTaskExecutionMetric[];
-  sections: AiTaskExecutionSection[];
   charts: AiChartSpec[];
   nextActions: AiTaskExecutionAction[];
 }
@@ -208,9 +204,16 @@ export interface AiScheduledTaskUpdateRequest {
   category: AiScheduledTaskCategory;
   frequency: AiScheduledTaskFrequency;
   cronExpression: string;
-  productScope: string[];
-  warehouseScope: string[];
-  recipients: string[];
+  productIds: string[];
+  warehouseIds: string[];
+  recipientRoleIds: string[];
   analysisGoal: string;
   outputFormat: AiScheduledTaskOutputFormat;
+}
+
+export interface AiScheduledTaskRunAccepted {
+  executionId: string;
+  taskId: string;
+  status: 'RUNNING';
+  acceptedAt: string;
 }

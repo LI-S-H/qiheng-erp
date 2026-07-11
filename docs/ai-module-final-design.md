@@ -666,3 +666,12 @@ erp-ai
 可以这样概括：
 
 > 这个项目里的 AI 不是一个自由发挥的大 Agent，而是三层结构。第一层是基础查询 Tool，所有自然语言查询都必须经过 Tool、权限校验和 ERP Service；第二层是标准业务 Workflow，像销量预测、采购建议、仓储建议都通过按钮或明确 API 触发，保证稳定可复现；第三层是 Planner + Agent 个性化编排，LLM 只负责生成结构化计划，系统用 PlanValidator 校验节点白名单、权限、顺序和风险，再由 PlanExecutor 执行能力节点。这样既不会被有限模板限制，也不会让 Agent 自由乱跑。
+
+## 15. 定时任务接口约束
+
+- 定时任务配置只提交稳定标识：`productIds`、`warehouseIds`、`recipientRoleIds`。名称仅用于页面展示，不得作为关联条件保存或提交。
+- “全部商品”和“全部仓库”使用稳定哨兵值 `ALL`；后端在执行时按当前权限范围展开，不固化名称快照。
+- 接收对象复用系统角色选项接口，AI 模块不重复建设角色或收件人接口。
+- 输出形式仅保留 `REPORT` 与 `CHAT_CARD`。铃铛通知由工作台待办/异常聚合负责，定时任务不再提供 `NOTIFICATION` 输出。
+- 手动运行采用异步受理，返回 `executionId`、`taskId`、`status=RUNNING`、`acceptedAt`；前端随后刷新任务与执行记录。
+- 执行详情不再暴露兼容性的 `sections` 字段；对话流式输出继续使用 SSE。

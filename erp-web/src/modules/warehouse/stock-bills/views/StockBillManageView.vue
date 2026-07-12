@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { useDebounceFn } from '@vueuse/core';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
@@ -18,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useListRefresh } from '@/shared/composables/use-list-refresh';
+import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
@@ -431,50 +430,29 @@ async function fetchRecords() {
   }
 }
 
-const debouncedSearch = useDebounceFn(() => {
-  query.pageNum = 1;
-  fetchRecords();
-}, 250);
-const debouncedPageChange = useDebounceFn((pageNum: number, pageSize: number) => {
-  query.pageNum = pageNum;
-  query.pageSize = pageSize;
-  fetchRecords();
-}, 180);
-const refreshList = useListRefresh(queryBusy, queryPending, fetchRecords);
-
-function handleSearch() {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedSearch();
-}
-
-function handleReset() {
-  if (queryBusy.value) return;
-  Object.assign(query, {
-    direction: pageDirection.value,
-    billNo: '',
-    sourceNo: '',
-    warehouseId: 'all',
-    billType: 'all',
-    entryMode: 'all',
-    status: 'all',
-    pageNum: 1,
-  });
-  queryPending.value = true;
-  debouncedSearch();
-}
-
-function handlePageChange(pageNum: number) {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedPageChange(pageNum, query.pageSize);
-}
-
-function handlePageSizeChange(pageSize: number) {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedPageChange(1, pageSize);
-}
+const {
+  handleSearch,
+  handleReset,
+  handlePageChange,
+  handlePageSizeChange,
+  refreshList,
+} = usePagedQuery({
+  query,
+  busy: queryBusy,
+  pending: queryPending,
+  load: fetchRecords,
+  resetFilters: () => {
+    Object.assign(query, {
+      direction: pageDirection.value,
+      billNo: '',
+      sourceNo: '',
+      warehouseId: 'all',
+      billType: 'all',
+      entryMode: 'all',
+      status: 'all',
+    });
+  },
+});
 
 async function openDetail(row: StockBillListItem, actionMode: 'view' | 'submit' | 'confirm' = 'view') {
   detailActionMode.value = actionMode;

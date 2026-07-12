@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { useDebounceFn } from '@vueuse/core';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
-import { useListRefresh } from '@/shared/composables/use-list-refresh';
+import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -112,43 +111,21 @@ async function fetchWarehouses() {
 
 onMounted(fetchWarehouses);
 
-const debouncedSearch = useDebounceFn(() => {
-  query.pageNum = 1;
-  fetchWarehouses();
-}, 250);
-const debouncedPageChange = useDebounceFn((pageNum: number, pageSize: number) => {
-  query.pageNum = pageNum;
-  query.pageSize = pageSize;
-  fetchWarehouses();
-}, 180);
-const refreshList = useListRefresh(queryBusy, queryPending, fetchWarehouses);
-
-function handleSearch() {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedSearch();
-}
-
-function handleReset() {
-  if (queryBusy.value) return;
-  Object.assign(query, {
-    warehouseCode: '', warehouseName: '', contactName: '', contactPhone: '', status: 'all', pageNum: 1,
-  });
-  queryPending.value = true;
-  debouncedSearch();
-}
-
-function handlePageChange(pageNum: number) {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedPageChange(pageNum, query.pageSize);
-}
-
-function handlePageSizeChange(pageSize: number) {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedPageChange(1, pageSize);
-}
+const {
+  handleSearch,
+  handleReset,
+  handlePageChange,
+  handlePageSizeChange,
+  refreshList,
+} = usePagedQuery({
+  query,
+  busy: queryBusy,
+  pending: queryPending,
+  load: fetchWarehouses,
+  resetFilters: () => {
+    Object.assign(query, { warehouseCode: '', warehouseName: '', contactName: '', contactPhone: '', status: 'all' });
+  },
+});
 
 function toggleSelectAll(value: boolean | 'indeterminate') {
   selectedIds.value = value === true ? new Set(warehouses.value.map(item => item.warehouseId)) : new Set();

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { useDebounceFn } from '@vueuse/core';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
@@ -17,7 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useListRefresh } from '@/shared/composables/use-list-refresh';
+import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import {
   batchDeleteSuppliers,
   batchUpdateSupplierStatus,
@@ -117,41 +116,21 @@ async function fetchSuppliers() {
   }
 }
 
-const debouncedSearch = useDebounceFn(() => {
-  query.pageNum = 1;
-  fetchSuppliers();
-}, 250);
-const debouncedPageChange = useDebounceFn((pageNum: number, pageSize: number) => {
-  query.pageNum = pageNum;
-  query.pageSize = pageSize;
-  fetchSuppliers();
-}, 180);
-const refreshList = useListRefresh(queryBusy, queryPending, fetchSuppliers);
-
-function handleSearch() {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedSearch();
-}
-
-function handleReset() {
-  if (queryBusy.value) return;
-  Object.assign(query, { supplierCode: '', supplierName: '', contactName: '', status: 'all', pageNum: 1 });
-  queryPending.value = true;
-  debouncedSearch();
-}
-
-function handlePageChange(pageNum: number) {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedPageChange(pageNum, query.pageSize);
-}
-
-function handlePageSizeChange(pageSize: number) {
-  if (queryBusy.value) return;
-  queryPending.value = true;
-  debouncedPageChange(1, pageSize);
-}
+const {
+  handleSearch,
+  handleReset,
+  handlePageChange,
+  handlePageSizeChange,
+  refreshList,
+} = usePagedQuery({
+  query,
+  busy: queryBusy,
+  pending: queryPending,
+  load: fetchSuppliers,
+  resetFilters: () => {
+    Object.assign(query, { supplierCode: '', supplierName: '', contactName: '', status: 'all' });
+  },
+});
 
 function toggleSelectAll(value: boolean | 'indeterminate') {
   selectedIds.value = value === true ? new Set(suppliers.value.map(item => item.supplierId)) : new Set();

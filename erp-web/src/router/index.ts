@@ -2,24 +2,25 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import LoginView from '@/modules/auth/views/LoginView.vue';
 import MainLayout from '@/layouts/MainLayout.vue';
-import DashboardView from '@/modules/dashboard/views/DashboardView.vue';
 import NotFoundView from '@/modules/system/views/NotFoundView.vue';
-import UserManageView from '@/modules/system/users/views/UserManageView.vue';
-import RoleManageView from '@/modules/system/roles/views/RoleManageView.vue';
-import DeptManageView from '@/modules/system/depts/views/DeptManageView.vue';
-import PermissionManageView from '@/modules/system/permissions/views/PermissionManageView.vue';
-import ProductCategoryManageView from '@/modules/product/categories/views/ProductCategoryManageView.vue';
-import ProductManageView from '@/modules/product/products/views/ProductManageView.vue';
-import WarehouseManageView from '@/modules/warehouse/warehouses/views/WarehouseManageView.vue';
-import WarehouseStockManageView from '@/modules/warehouse/stocks/views/WarehouseStockManageView.vue';
-import StockBillManageView from '@/modules/warehouse/stock-bills/views/StockBillManageView.vue';
-import SupplierManageView from '@/modules/purchase/suppliers/views/SupplierManageView.vue';
-import SupplierProductManageView from '@/modules/purchase/supplier-products/views/SupplierProductManageView.vue';
-import PurchaseOrderManageView from '@/modules/purchase/orders/views/PurchaseOrderManageView.vue';
-import CustomerManageView from '@/modules/sales/customers/views/CustomerManageView.vue';
-import SalesOrderManageView from '@/modules/sales/orders/views/SalesOrderManageView.vue';
-import AiAssistantView from '@/modules/ai/views/AiAssistantView.vue';
-import AiScheduledTasksView from '@/modules/ai/views/AiScheduledTasksView.vue';
+
+const DashboardView = () => import('@/modules/dashboard/views/DashboardView.vue');
+const UserManageView = () => import('@/modules/system/users/views/UserManageView.vue');
+const RoleManageView = () => import('@/modules/system/roles/views/RoleManageView.vue');
+const DeptManageView = () => import('@/modules/system/depts/views/DeptManageView.vue');
+const PermissionManageView = () => import('@/modules/system/permissions/views/PermissionManageView.vue');
+const ProductCategoryManageView = () => import('@/modules/product/categories/views/ProductCategoryManageView.vue');
+const ProductManageView = () => import('@/modules/product/products/views/ProductManageView.vue');
+const WarehouseManageView = () => import('@/modules/warehouse/warehouses/views/WarehouseManageView.vue');
+const WarehouseStockManageView = () => import('@/modules/warehouse/stocks/views/WarehouseStockManageView.vue');
+const StockBillManageView = () => import('@/modules/warehouse/stock-bills/views/StockBillManageView.vue');
+const SupplierManageView = () => import('@/modules/purchase/suppliers/views/SupplierManageView.vue');
+const SupplierProductManageView = () => import('@/modules/purchase/supplier-products/views/SupplierProductManageView.vue');
+const PurchaseOrderManageView = () => import('@/modules/purchase/orders/views/PurchaseOrderManageView.vue');
+const CustomerManageView = () => import('@/modules/sales/customers/views/CustomerManageView.vue');
+const SalesOrderManageView = () => import('@/modules/sales/orders/views/SalesOrderManageView.vue');
+const AiAssistantView = () => import('@/modules/ai/views/AiAssistantView.vue');
+const AiScheduledTasksView = () => import('@/modules/ai/views/AiScheduledTasksView.vue');
 
 const routes: RouteRecordRaw[] = [
   {

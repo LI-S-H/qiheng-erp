@@ -36,6 +36,7 @@ const stockBillViewSource = readProjectFile('erp-web', 'src', 'modules', 'wareho
 
 const routerSource = readProjectFile('erp-web', 'src', 'router', 'index.ts');
 const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
+const pagedQuerySource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-paged-query.ts');
 const listViewSources = [
   readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'views', 'UserManageView.vue'),
   readProjectFile('erp-web', 'src', 'modules', 'system', 'roles', 'views', 'RoleManageView.vue'),
@@ -46,6 +47,11 @@ const listViewSources = [
   warehouseViewSource,
   warehouseStockViewSource,
   stockBillViewSource,
+  readProjectFile('erp-web', 'src', 'modules', 'purchase', 'suppliers', 'views', 'SupplierManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'purchase', 'supplier-products', 'views', 'SupplierProductManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'purchase', 'orders', 'views', 'PurchaseOrderManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'sales', 'customers', 'views', 'CustomerManageView.vue'),
+  readProjectFile('erp-web', 'src', 'modules', 'sales', 'orders', 'views', 'SalesOrderManageView.vue'),
 ];
 const anchoredSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'AnchoredSelect.vue');
 const treeSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'TreeSelect.vue');
@@ -403,11 +409,19 @@ if (!stockBillViewSource.includes('entryModeOptions')
   || !warehouseSchema.includes('库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`')) {
   throw new Error('库存调整功能合并到入库单/出库单页面的契约或设计文档不完整');
 }
+const pagedQueryCallPattern = /usePagedQuery\(\{\s*query,\s*busy:\s*queryBusy,\s*pending:\s*queryPending,\s*load:\s*[A-Za-z_$][\w$]*,\s*resetFilters:\s*\(\)\s*=>\s*\{[\s\S]*?\},\s*\}\)/;
+const hasSharedListQuery = viewSource => viewSource.includes('useListRefresh(queryBusy, queryPending')
+  || pagedQueryCallPattern.test(viewSource);
+const hasResetLoading = viewSource => /function handleReset\(\) \{[\s\S]*?queryPending\.value = true;[\s\S]*?debouncedSearch\(\);[\s\S]*?\n\}/.test(viewSource)
+  || pagedQueryCallPattern.test(viewSource);
+
 if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
-  || listViewSources.some(viewSource => !viewSource.includes('useListRefresh(queryBusy, queryPending'))) {
+  || !pagedQuerySource.includes('useDebounceFn') || !pagedQuerySource.includes('pending.value = true')
+  || !pagedQuerySource.includes('resetFilters()') || !pagedQuerySource.includes('useListRefresh(busy, pending, load, pageDelay)')
+  || listViewSources.some(viewSource => !hasSharedListQuery(viewSource))) {
   throw new Error('已完成列表页未统一接入刷新防抖和即时加载状态');
 }
-if (listViewSources.some(viewSource => !/function handleReset\(\) \{[\s\S]*?queryPending\.value = true;[\s\S]*?debouncedSearch\(\);[\s\S]*?\n\}/.test(viewSource))) {
+if (listViewSources.some(viewSource => !hasResetLoading(viewSource))) {
   throw new Error('已完成列表页未统一接入重置防抖和即时加载状态');
 }
 for (const fragment of [

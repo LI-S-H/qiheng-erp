@@ -56,6 +56,24 @@ const trendSeries = [
 
 const displayedTrend = computed(() => overview.value?.trend.slice(-selectedTrendDays.value) || []);
 
+const trendSummary = computed(() => {
+  const totals = displayedTrend.value.reduce((result, item) => ({
+    salesAmount: result.salesAmount + item.salesAmount,
+    purchaseAmount: result.purchaseAmount + item.purchaseAmount,
+    grossMarginAmount: result.grossMarginAmount + item.grossMarginAmount,
+  }), { salesAmount: 0, purchaseAmount: 0, grossMarginAmount: 0 });
+  const grossMarginRate = totals.salesAmount > 0
+    ? (totals.grossMarginAmount / totals.salesAmount) * 100
+    : 0;
+
+  return [
+    { key: 'sales', label: `${selectedTrendDays.value}日销售合计`, value: formatCurrency(totals.salesAmount) },
+    { key: 'purchase', label: '采购合计', value: formatCurrency(totals.purchaseAmount) },
+    { key: 'margin', label: '毛利合计', value: formatCurrency(totals.grossMarginAmount) },
+    { key: 'rate', label: '区间毛利率', value: `${grossMarginRate.toFixed(1)}%` },
+  ];
+});
+
 const trendMax = computed(() => {
   const values = displayedTrend.value.flatMap(item => [item.salesAmount, item.purchaseAmount, item.grossMarginAmount]);
   return Math.max(...values, 1);
@@ -316,10 +334,15 @@ onBeforeUnmount(() => {
         <h1 class="page-title">工作台</h1>
         <p class="page-description">聚合销售、采购、库存和履约风险，优先处理会影响收入和交付的事项</p>
       </div>
-      <Button size="sm" variant="outline" :disabled="loading" @click="loadOverview">
-        <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': loading }" />
-        刷新
-      </Button>
+      <div class="dashboard-heading-actions">
+        <span data-dashboard-refresh-status aria-live="polite">
+          {{ loading ? '正在同步经营数据...' : (overview ? `更新于 ${overview.refreshedAt}` : '等待加载经营数据') }}
+        </span>
+        <Button size="sm" variant="outline" :disabled="loading" @click="loadOverview">
+          <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': loading }" aria-hidden="true" />
+          {{ loading ? '刷新中' : '刷新' }}
+        </Button>
+      </div>
     </div>
 
     <div class="relative">
@@ -357,6 +380,7 @@ onBeforeUnmount(() => {
                   :key="option"
                   size="sm"
                   :variant="selectedTrendDays === option ? 'default' : 'outline'"
+                  :aria-pressed="selectedTrendDays === option"
                   @click="selectTrendDays(option)"
                 >
                   {{ option }}天
@@ -364,6 +388,17 @@ onBeforeUnmount(() => {
               </div>
             </CardHeader>
             <CardContent>
+              <div
+                data-dashboard-trend-summary
+                class="dashboard-trend-summary"
+                :class="{ 'is-transitioning': trendTransitioning }"
+                aria-live="polite"
+              >
+                <div v-for="item in trendSummary" :key="item.key">
+                  <small>{{ item.label }}</small>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
               <svg
                 class="dashboard-trend-chart"
                 :class="{ 'is-transitioning': trendTransitioning }"
@@ -437,6 +472,7 @@ onBeforeUnmount(() => {
                 :key="todo.todoId"
                 type="button"
                 class="dashboard-todo"
+                :aria-label="`${todo.title}，${todo.count}项，${priorityText(todo.priority)}，查看详情`"
                 @click="openDetail('todos', todo.todoId)"
               >
                 <span class="dashboard-todo__icon">
@@ -449,7 +485,10 @@ onBeforeUnmount(() => {
                   </span>
                   <small>{{ todo.description }}</small>
                 </span>
-                <span class="dashboard-todo__count">{{ todo.count }}</span>
+                <span class="dashboard-todo__end" aria-hidden="true">
+                  <span class="dashboard-todo__count">{{ todo.count }}</span>
+                  <ChevronRight class="size-4 text-muted-foreground" />
+                </span>
               </button>
             </CardContent>
           </Card>
@@ -768,6 +807,18 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
+.dashboard-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-heading-actions > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.75fr) minmax(320px, 0.65fr);
@@ -844,6 +895,46 @@ onBeforeUnmount(() => {
   padding-inline: 10px;
 }
 
+.dashboard-trend-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+}
+
+.dashboard-trend-summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-right: 1px solid var(--border);
+}
+
+.dashboard-trend-summary > div:last-child {
+  border-right: 0;
+}
+
+.dashboard-trend-summary small {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-trend-summary strong {
+  color: #172033;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-trend-summary.is-transitioning {
+  animation: dashboard-trend-soft-enter var(--motion-duration-slow) var(--motion-ease-standard);
+}
+
 .dashboard-trend-chart {
   width: 100%;
   height: 300px;
@@ -855,7 +946,7 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-trend-chart.is-transitioning .dashboard-trend-layer {
-  animation: dashboard-trend-soft-enter 240ms ease-out;
+  animation: dashboard-trend-soft-enter var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .dashboard-grid-lines line {
@@ -1076,6 +1167,13 @@ circle.dashboard-trend--margin {
   font-weight: 700;
   line-height: 1;
   text-align: right;
+}
+
+.dashboard-todo__end {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
 }
 
 .dashboard-stage__bars {
@@ -1715,6 +1813,24 @@ circle.dashboard-trend--margin {
 }
 
 @media (max-width: 760px) {
+  .dashboard-heading-actions {
+    width: 100%;
+    align-items: flex-end;
+    flex-direction: column-reverse;
+  }
+
+  .dashboard-trend-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-trend-summary > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .dashboard-trend-summary > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+
   .dashboard-panel__header {
     flex-direction: column;
   }

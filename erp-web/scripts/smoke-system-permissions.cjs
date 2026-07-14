@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertSharedListChrome, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/permissions',
@@ -7,8 +7,14 @@ runSmoke({
   viewport: { width: 1115, height: 838 },
   async test(page) {
     await page.getByRole('heading', { name: '权限码配置' }).waitFor();
+    await assertSharedListChrome(page, { summaryLabel: '权限码数据汇总', filterLabel: '权限码筛选' });
     await page.getByText('system:user:query', { exact: true }).waitFor();
     await assertFixedTableLayout(page, 10);
+    const permissionDescription = tableRow(page, 'system:user:query').locator('[data-overflow-tooltip]');
+    if (await permissionDescription.count() !== 1 || !(await permissionDescription.innerText()).includes('查看用户')) {
+      throw new Error('权限说明未接入统一省略文本组件');
+    }
+    await page.screenshot({ path: 'smoke-system-permissions-chrome.png', fullPage: true });
     await clickRefreshAndAssertLoading(page, 'smoke-system-permissions-refresh-loading.png');
 
     const filterComboboxes = page.locator('.filter-panel').getByRole('combobox');

@@ -1,24 +1,44 @@
+const fs = require('fs');
+const path = require('path');
 const {
   runSmoke,
   tableRow,
   assertFixedTableLayout,
   assertRequiredLabels,
+  assertSharedListChrome,
   clickQueryAndAssertLoading,
   clickRefreshAndAssertLoading,
   clickResetAndAssertLoading,
 } = require('./smoke-helpers.cjs');
 
+const screenshotDirectory = path.resolve(
+  process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/2026-07-14-141759-sales-order-compact-table',
+);
+const screenshotPath = filename => path.join(screenshotDirectory, filename);
+
+fs.mkdirSync(screenshotDirectory, { recursive: true });
+
+async function selectRowAction(page, row, salesNo, actionLabel) {
+  const trigger = row.getByRole('button', { name: `更多 ${salesNo} 操作` });
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  const item = page.getByRole('menuitem', { name: actionLabel, exact: true });
+  await item.waitFor();
+  await item.click();
+}
+
 runSmoke({
   route: '/sales/customers',
-  screenshot: 'smoke-sales.png',
+  screenshot: screenshotPath('sales-orders-normal.png'),
   async test(page) {
     await page.getByRole('heading', { name: '客户管理' }).waitFor();
+    await assertSharedListChrome(page, { summaryLabel: '客户数据汇总', filterLabel: '客户筛选' });
     await tableRow(page, 'C001').waitFor();
     await assertFixedTableLayout(page, 8);
-    await clickRefreshAndAssertLoading(page, 'smoke-sales-customers-refresh.png');
+    await clickRefreshAndAssertLoading(page, screenshotPath('sales-customers-refresh.png'));
 
     await page.getByPlaceholder('请输入名称').fill('上海');
-    await clickQueryAndAssertLoading(page, 'smoke-sales-customers-query.png');
+    await clickQueryAndAssertLoading(page, screenshotPath('sales-customers-query.png'));
     await tableRow(page, '上海林间便利连锁').waitFor();
     await clickResetAndAssertLoading(page);
 
@@ -32,16 +52,52 @@ runSmoke({
     await page.getByRole('dialog', { name: '客户详情' }).getByText('客户编码').waitFor();
     await page.getByRole('dialog', { name: '客户详情' }).getByRole('button', { name: '关闭' }).click();
 
-    await page.getByRole('button', { name: '销售订单', exact: true }).click();
+    await page.locator('[data-menu-path="/sales/orders"]').click();
     await page.getByRole('heading', { name: '销售订单' }).waitFor();
+    await assertSharedListChrome(page, { summaryLabel: '销售订单数据汇总', filterLabel: '销售订单筛选' });
     await tableRow(page, 'SO202606001').waitFor();
     await assertFixedTableLayout(page, 9);
+    const desktopTableState = await page.locator('[data-slot="table-container"]').first().evaluate((element) => {
+      const row = element.querySelector('tbody [data-slot="table-row"]');
+      const actionCell = row?.lastElementChild;
+      const actionGroup = actionCell?.firstElementChild;
+      return {
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        stickyCount: element.querySelectorAll('[data-table-sticky-edge], .sticky').length,
+        actionPosition: actionCell ? getComputedStyle(actionCell).position : '',
+        actionOverflow: actionCell ? actionCell.scrollWidth - actionCell.clientWidth : 0,
+        actionWhiteSpace: actionGroup ? getComputedStyle(actionGroup).whiteSpace : '',
+      };
+    });
+    if (desktopTableState.scrollWidth > desktopTableState.clientWidth + 1 || desktopTableState.stickyCount !== 0
+      || desktopTableState.actionPosition !== 'static' || desktopTableState.actionOverflow > 1
+      || desktopTableState.actionWhiteSpace !== 'nowrap') {
+      throw new Error(`1440px 销售订单未实现无固定列紧凑布局：${JSON.stringify(desktopTableState)}`);
+    }
+    if (!await tableRow(page, 'SO202606001').locator('[data-slot="table-cell"]').nth(1).locator('[title]').count()) {
+      throw new Error('销售订单客户名称省略后缺少完整信息提示');
+    }
+    await page.locator('[data-page-loading]').waitFor({ state: 'hidden' });
+    await page.screenshot({ path: screenshotPath('sales-orders-compact-1440.png'), fullPage: true });
     await page.getByPlaceholder('如 SO202606001').fill('SO202606001');
-    await clickQueryAndAssertLoading(page, 'smoke-sales-orders-query.png');
+    await clickQueryAndAssertLoading(page, screenshotPath('sales-orders-query.png'));
     await tableRow(page, 'SO202606001').waitFor();
     await clickResetAndAssertLoading(page);
 
-    await tableRow(page, 'SO202606003').getByRole('button', { name: '编辑' }).click();
+    const draftOrderRow = tableRow(page, 'SO202606003');
+    if (!(await draftOrderRow.innerText()).includes('待提交') || !(await draftOrderRow.innerText()).includes('未锁定')) {
+      throw new Error('销售草稿缺少待提交或未锁定提示');
+    }
+    await draftOrderRow.getByRole('button', { name: '更多 SO202606003 操作' }).focus();
+    await page.keyboard.press('Enter');
+    const draftMenu = page.getByRole('menu');
+    for (const expected of ['编辑销售单', '提交销售单', '取消销售单']) {
+      await draftMenu.getByRole('menuitem', { name: expected, exact: true }).waitFor();
+    }
+    await page.waitForTimeout(180);
+    await page.screenshot({ path: screenshotPath('sales-orders-row-actions.png'), fullPage: true });
+    await draftMenu.getByRole('menuitem', { name: '编辑销售单', exact: true }).click();
     const editOrderDialog = page.getByRole('dialog', { name: '编辑销售单' });
     await editOrderDialog.getByText('SO202606003').waitFor();
     await editOrderDialog.getByText('预计发货').waitFor();
@@ -49,7 +105,7 @@ runSmoke({
     await editOrderDialog.getByRole('button', { name: '保存修改' }).click();
     await editOrderDialog.waitFor({ state: 'hidden' });
 
-    await tableRow(page, 'SO202606003').getByRole('button', { name: '提交' }).click();
+    await selectRowAction(page, tableRow(page, 'SO202606003'), 'SO202606003', '提交销售单');
     const submitPreviewDialog = page.getByRole('dialog', { name: '销售单详情' });
     await submitPreviewDialog.getByText('请先核对销售单头和全部销售明细，再提交进入待审核并锁定库存。').waitFor();
     if (await submitPreviewDialog.getByRole('button', { name: '提交销售单' }).isDisabled()) {
@@ -61,10 +117,43 @@ runSmoke({
     await submitDialog.getByRole('button', { name: '取消' }).click();
     await submitPreviewDialog.getByRole('button', { name: '关闭' }).click();
 
+    const submittedOrderRow = tableRow(page, 'SO202606004');
+    if (!(await submittedOrderRow.innerText()).includes('待审核') || !(await submittedOrderRow.innerText()).includes('已锁定')) {
+      throw new Error('已提交销售单缺少待审核或库存锁定提示');
+    }
+    await submittedOrderRow.getByRole('button', { name: '更多 SO202606004 操作' }).click();
+    const submittedMenu = page.getByRole('menu');
+    for (const expected of ['编辑销售单', '审核销售单', '取消销售单']) {
+      await submittedMenu.getByRole('menuitem', { name: expected, exact: true }).waitFor();
+    }
+    await submittedMenu.getByRole('menuitem', { name: '审核销售单', exact: true }).click();
+    const approvePreviewDialog = page.getByRole('dialog', { name: '销售单详情' });
+    await approvePreviewDialog.getByText('审核通过后将生成待确认销售出库单').waitFor();
+    await approvePreviewDialog.getByRole('button', { name: '关闭' }).click();
+
     await tableRow(page, 'SO202606001').getByRole('button', { name: '详情' }).click();
     const detailDialog = page.getByRole('dialog', { name: '销售单详情' });
     await detailDialog.getByText('销售单号').waitFor();
+    if (await detailDialog.locator('[data-overflow-tooltip]').count() === 0) {
+      throw new Error('销售明细备注未接入统一的溢出内容提示');
+    }
     await detailDialog.getByRole('button', { name: '关闭' }).click();
+    const readonlyStatusExpectations = {
+      SO202606001: ['待出库', '已锁定'],
+      SO202606002: ['出库中', '已锁定'],
+      SO202606006: ['已完成', '已出库'],
+      SO202606007: ['已终止', '已释放'],
+    };
+    for (const [readonlyOrder, expectedTexts] of Object.entries(readonlyStatusExpectations)) {
+      const readonlyRow = tableRow(page, readonlyOrder);
+      const readonlyText = await readonlyRow.innerText();
+      for (const expected of expectedTexts) {
+        if (!readonlyText.includes(expected)) throw new Error(`销售单 ${readonlyOrder} 缺少状态或库存提示：${expected}`);
+      }
+      if (await readonlyRow.getByRole('button', { name: `更多 ${readonlyOrder} 操作` }).count()) {
+        throw new Error(`不可编辑销售单 ${readonlyOrder} 不应显示编辑、流转或取消菜单`);
+      }
+    }
 
     await page.getByRole('button', { name: '新增销售单' }).click();
     const orderDialog = page.getByRole('dialog', { name: '新增销售单草稿' });
@@ -81,6 +170,79 @@ runSmoke({
     await orderDialog.getByRole('button', { name: '取消', exact: true }).click();
     await orderDialog.waitFor({ state: 'hidden' });
 
-    console.log('SMOKE_OK: 销售模块客户和销售订单页面通过');
+    await page.setViewportSize({ width: 1115, height: 838 });
+    const tableViewport = page.locator('[data-slot="table-container"]').first();
+    await tableViewport.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+      element.dispatchEvent(new Event('scroll'));
+    });
+    await page.waitForTimeout(100);
+    const narrowLayout = await tableViewport.evaluate((element) => {
+      const container = element.getBoundingClientRect();
+      const salesHeader = element.querySelector('thead [data-sales-no-column]')?.getBoundingClientRect();
+      const actionsHeader = element.querySelector('thead [data-sales-actions-column]')?.getBoundingClientRect();
+      return {
+        overflow: element.scrollWidth - element.clientWidth,
+        scrollLeft: element.scrollLeft,
+        stickyCount: element.querySelectorAll('[data-table-sticky-edge], .sticky').length,
+        salesHeaderLeft: salesHeader ? salesHeader.left - container.left : null,
+        actionsHeaderRight: actionsHeader ? container.right - actionsHeader.right : null,
+      };
+    });
+    if (narrowLayout.overflow <= 2 || narrowLayout.scrollLeft <= 2 || narrowLayout.stickyCount !== 0
+      || narrowLayout.salesHeaderLeft === null || narrowLayout.salesHeaderLeft >= 0
+      || narrowLayout.actionsHeaderRight === null || Math.abs(narrowLayout.actionsHeaderRight) > 2) {
+      throw new Error(`较窄视口下销售订单未自然滚动或仍存在固定列：${JSON.stringify(narrowLayout)}`);
+    }
+    await page.screenshot({ path: screenshotPath('sales-orders-1115.png'), fullPage: true });
+
   },
+}).then(() => runSmoke({
+  route: '/sales/orders',
+  reducedMotion: 'reduce',
+  viewport: { width: 1280, height: 720 },
+  screenshot: screenshotPath('sales-orders-reduced-motion.png'),
+  async test(page) {
+    await page.getByRole('heading', { name: '销售订单' }).waitFor();
+    const row = tableRow(page, 'SO202606003');
+    const compactCellState = await row.evaluate((element) => {
+      const updateCell = element.children[7];
+      const actionCell = element.children[8];
+      const actionGroup = actionCell.firstElementChild;
+      return {
+        updateOverflow: getComputedStyle(updateCell).overflow,
+        actionPosition: getComputedStyle(actionCell).position,
+        actionOverflow: actionCell.scrollWidth - actionCell.clientWidth,
+        actionWhiteSpace: actionGroup ? getComputedStyle(actionGroup).whiteSpace : '',
+      };
+    });
+    if (compactCellState.updateOverflow !== 'hidden' || compactCellState.actionPosition !== 'static'
+      || compactCellState.actionOverflow > 1 || compactCellState.actionWhiteSpace !== 'nowrap') {
+      throw new Error(`销售更新时间或操作列紧凑布局异常：${JSON.stringify(compactCellState)}`);
+    }
+    const trigger = row.getByRole('button', { name: '更多 SO202606003 操作' });
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    const menuItem = page.getByRole('menuitem', { name: '提交销售单', exact: true });
+    await menuItem.waitFor();
+    const menuMotion = await page.getByRole('menu').evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { duration: style.animationDuration, transition: style.transitionDuration };
+    });
+    const durationValues = [menuMotion.duration, menuMotion.transition].flatMap(value => value.split(',')).map(value => {
+      const text = value.trim();
+      return text.endsWith('ms') ? Number.parseFloat(text) : Number.parseFloat(text) * 1000;
+    });
+    if (durationValues.some(value => value > 1)) throw new Error(`减少动态效果模式下销售行菜单仍有长动画：${JSON.stringify(menuMotion)}`);
+    await page.keyboard.press('Escape');
+    await menuItem.waitFor({ state: 'hidden' });
+    if (!await trigger.evaluate(element => document.activeElement === element)) throw new Error('销售行菜单关闭后焦点未返回触发器');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    if (overflow > 1) throw new Error(`1280px 销售订单页面发生横向溢出：${overflow}`);
+  },
+})).then(() => {
+  console.log('SMOKE_OK: 销售订单关键列、状态与库存反馈、行操作、业务保护及减弱动效通过');
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
 });

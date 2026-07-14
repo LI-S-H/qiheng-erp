@@ -30,6 +30,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
@@ -90,6 +92,12 @@ const flatDepts = computed(() => flattenDeptTree(depts.value));
 const enabledCount = computed(() => flatDepts.value.filter(d => d.status === 1).length);
 const childDeptCount = computed(() => flatDepts.value.filter(d => d.parentId !== ROOT_PARENT_ID).length);
 const employeeTotal = computed(() => flatDepts.value.reduce((t, d) => t + d.userCount, 0));
+const summaryItems = computed(() => [
+  { key: 'total', label: '部门总数', value: flatDepts.value.length },
+  { key: 'enabled', label: '启用部门', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'children', label: '下级部门', value: childDeptCount.value },
+  { key: 'employees', label: '员工数量', value: employeeTotal.value },
+]);
 const visibleDepts = computed(() => flattenVisibleDeptTree(depts.value));
 const parentOptions = computed(() => [
   {
@@ -583,29 +591,9 @@ function confirmBatchDelete() {
       </div>
     </div>
 
-    <!-- Metrics -->
-    <div class="summary-strip">
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">部门总数</span>
-        <strong class="text-2xl mt-1">{{ flatDepts.length }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">启用部门</span>
-        <strong class="text-2xl mt-1">{{ enabledCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">下级部门</span>
-        <strong class="text-2xl mt-1">{{ childDeptCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">员工数量</span>
-        <strong class="text-2xl mt-1">{{ employeeTotal }}</strong>
-      </div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="部门数据汇总" />
 
-    <!-- Filter -->
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--depts">
+    <ListFilterPanel grid-class="filter-grid--depts" aria-label="部门筛选">
         <div class="space-y-1">
           <Label class="text-xs">部门名称</Label>
           <Input v-model="query.deptName" placeholder="如 采购部" @keyup.enter="handleSearch" />
@@ -614,12 +602,11 @@ function confirmBatchDelete() {
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        </template>
+    </ListFilterPanel>
 
     <!-- Table -->
     <div class="data-panel relative">

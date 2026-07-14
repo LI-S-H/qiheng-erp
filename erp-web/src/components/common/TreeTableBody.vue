@@ -5,6 +5,7 @@ const bodyRef = ref<HTMLTableSectionElement | null>(null);
 const previousKeys = new Set<string>();
 const ANIMATION_DURATION = 240;
 const ANIMATION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
 interface CellMetrics {
   cell: HTMLElement;
@@ -41,6 +42,10 @@ function stopAnimations(metrics: CellMetrics[]) {
     cell.getAnimations().forEach(animation => animation.cancel());
     reveal.getAnimations().forEach(animation => animation.cancel());
   });
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
 }
 
 function measureRow(row: Element): CellMetrics[] {
@@ -114,8 +119,38 @@ function lockExpandedStyles(metrics: CellMetrics[]) {
   });
 }
 
+function lockCollapsedStyles(metrics: CellMetrics[]) {
+  setCollapsed(metrics);
+  metrics.forEach(({ cell, reveal }) => {
+    cell.style.willChange = '';
+    reveal.style.willChange = '';
+  });
+}
+
+function resetAnimatedStyles(metrics: CellMetrics[]) {
+  metrics.forEach(({ cell, reveal }) => {
+    cell.style.height = '';
+    cell.style.paddingTop = '';
+    cell.style.paddingBottom = '';
+    cell.style.borderColor = '';
+    cell.style.lineHeight = '';
+    cell.style.overflow = '';
+    cell.style.willChange = '';
+
+    reveal.style.height = '';
+    reveal.style.opacity = '';
+    reveal.style.overflow = '';
+    reveal.style.transform = '';
+    reveal.style.willChange = '';
+  });
+}
+
 function animateRowEnter(metrics: CellMetrics[]) {
   stopAnimations(metrics);
+  if (prefersReducedMotion()) {
+    lockExpandedStyles(metrics);
+    return;
+  }
   setCollapsed(metrics);
 
   requestAnimationFrame(() => {
@@ -163,20 +198,28 @@ function animateRowCollapse(row: Element, metrics: CellMetrics[]) {
     row.style.borderWidth = '0px';
     row.style.borderBottomColor = 'transparent';
     row.style.borderBottomWidth = '0px';
-    row.style.visibility = '';
   }
 
   stopAnimations(metrics);
   setExpandedStart(metrics);
+
+  if (prefersReducedMotion()) {
+    lockCollapsedStyles(metrics);
+    return;
+  }
 
   requestAnimationFrame(() => {
     let finishedAnimations = 0;
     const expectedAnimations = metrics.length;
     const handleFinish = () => {
       finishedAnimations += 1;
-      if (finishedAnimations >= expectedAnimations && row instanceof HTMLElement) {
+      if (finishedAnimations >= expectedAnimations) {
         requestAnimationFrame(() => {
-          row.style.visibility = 'collapse';
+          if (row.getAttribute('data-tree-row-collapsing') !== 'true') return;
+          // 保持单元格为零高直到 Vue 移除节点，避免 visibility: collapse
+          // 触发表格轨道的二次重算，造成收起末帧横向变宽或平移。
+          lockCollapsedStyles(metrics);
+          stopAnimations(metrics);
         });
       }
     };
@@ -226,12 +269,18 @@ onUpdated(() => {
     if (isCollapsing) {
       collapsingRows.push({ row, metrics });
     } else if (row instanceof HTMLElement) {
+      if (row.getAttribute('data-tree-row-collapse-animated') === 'true') {
+        // 用户在收起过程中重新展开时，必须先取消旧动画并清除零高样式，
+        // 避免旧 onfinish 在新状态后再次把行锁为不可见。
+        stopAnimations(metrics);
+        resetAnimatedStyles(metrics);
+        row.removeAttribute('data-tree-row-collapse-animated');
+      }
       row.style.transition = '';
       row.style.borderColor = '';
       row.style.borderWidth = '';
       row.style.borderBottomColor = '';
       row.style.borderBottomWidth = '';
-      row.style.visibility = '';
     }
   });
 

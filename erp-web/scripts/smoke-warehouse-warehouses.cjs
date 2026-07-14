@@ -4,6 +4,7 @@ const {
   assertFixedTableLayout,
   assertRequiredLabels,
   assertDialogScrollGutter,
+  assertSharedListChrome,
   clickQueryAndAssertLoading,
   clickPaginationAndAssertLoading,
   clickRefreshAndAssertLoading,
@@ -15,7 +16,18 @@ runSmoke({
   screenshot: 'smoke-warehouse-warehouses.png',
   async test(page) {
     await page.getByRole('heading', { name: '仓库管理' }).waitFor();
+    await assertSharedListChrome(page, { summaryLabel: '仓库数据汇总', filterLabel: '仓库筛选' });
     await tableRow(page, 'WH001').waitFor();
+    const warehouseRemark = tableRow(page, 'WH001').locator('[data-overflow-tooltip]');
+    if (await warehouseRemark.count() !== 1) throw new Error('仓库名称下方备注未接入统一溢出提示');
+    if (await warehouseRemark.getAttribute('data-overflowing') !== 'true') throw new Error('仓库备注被省略后未标记为可查看完整内容');
+    await warehouseRemark.hover();
+    const warehouseRemarkTooltip = page.locator('[data-slot="tooltip-content"]');
+    await warehouseRemarkTooltip.getByText('区域主仓，承担日常收发与调拨', { exact: true }).waitFor();
+    const describedBy = await warehouseRemark.getAttribute('aria-describedby');
+    if (!describedBy || await page.locator(`#${describedBy}`).count() !== 1) throw new Error('仓库备注完整提示缺少无障碍描述关联');
+    await page.screenshot({ path: 'smoke-warehouse-remark-tooltip.png', fullPage: true });
+    await page.mouse.move(0, 0);
     await assertFixedTableLayout(page, 9);
     const summaryText = await page.locator('.summary-strip').innerText();
     for (const expected of ['本页启用\n8', '本页停用\n2', '联系方式完整\n10', '联系方式待补\n0']) {

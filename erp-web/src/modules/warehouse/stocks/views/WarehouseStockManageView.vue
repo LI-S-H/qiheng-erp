@@ -4,7 +4,9 @@ import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -51,6 +53,12 @@ const query = reactive<WarehouseStockQuery>({
 const queryBusy = computed(() => loading.value || queryPending.value);
 const hasNextPage = computed(() => stocks.value.length >= query.pageSize);
 const selectedWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
+const summaryItems = computed(() => [
+  { key: 'warehouse', label: '本页仓库', value: summary.warehouseCount },
+  { key: 'product', label: '本页产品', value: summary.productCount },
+  { key: 'low-stock', label: '本页低库存', value: summary.lowStockCount, tone: 'warning' as const },
+  { key: 'locked', label: '本页已锁定', value: summary.lockedCount },
+]);
 const inventoryHealthOptions: Array<{ value: InventoryHealth | 'all'; label: string }> = [
   { value: 'all', label: '全部健康状态' },
   { value: 'NORMAL', label: '正常库存' },
@@ -151,10 +159,15 @@ function reservationState(row: WarehouseStockListItem) {
   return { label: '部分锁定', className: 'border-blue-200 bg-blue-50 text-blue-700' };
 }
 
+function stockRiskLevel(row: WarehouseStockListItem) {
+  if (row.stockQty === 0 || row.availableQty === 0) return 'critical';
+  if (row.availableQty <= row.safetyStockQty) return 'warning';
+  return undefined;
+}
+
 function stockRowClass(row: WarehouseStockListItem) {
-  if (row.stockQty === 0) return 'bg-rose-50/60';
-  if (row.availableQty <= row.safetyStockQty) return 'bg-amber-50/35';
-  return '';
+  const riskLevel = stockRiskLevel(row);
+  return riskLevel ? ['inventory-risk-row', `inventory-risk-row--${riskLevel}`] : undefined;
 }
 
 onMounted(() => {
@@ -172,26 +185,19 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页仓库</span><strong class="mt-1 text-2xl">{{ summary.warehouseCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页产品</span><strong class="mt-1 text-2xl">{{ summary.productCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页低库存</span><strong class="mt-1 text-2xl text-amber-700">{{ summary.lowStockCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页已锁定</span><strong class="mt-1 text-2xl text-blue-700">{{ summary.lockedCount }}</strong></div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="库存数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--stocks">
+    <ListFilterPanel grid-class="filter-grid--stocks" aria-label="库存筛选">
         <div class="space-y-1"><Label class="text-xs">仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
         <div class="space-y-1"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P000001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">库存健康</Label><AnchoredSelect v-model="query.inventoryHealth" :options="inventoryHealthOptions" placeholder="全部健康状态" /></div>
         <div class="space-y-1"><Label class="text-xs">占用情况</Label><AnchoredSelect v-model="query.reservationState" :options="reservationStateOptions" placeholder="全部占用情况" /></div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
@@ -209,7 +215,7 @@ onMounted(() => {
           <TableBody>
             <TableRow v-if="loading && stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
             <TableRow v-else-if="stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无符合条件的库存记录</TableCell></TableRow>
-            <TableRow v-for="row in stocks" v-else :key="row.stockId" :data-stock-id="row.stockId" :class="stockRowClass(row)">
+            <TableRow v-for="row in stocks" v-else :key="row.stockId" :data-stock-id="row.stockId" :data-stock-risk="stockRiskLevel(row)" :class="stockRowClass(row)">
               <TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.warehouseCode }}</code><span class="max-w-full truncate font-medium" :title="row.warehouseName">{{ row.warehouseName }}</span></div></TableCell>
               <TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.productCode }}</code><span class="max-w-full truncate font-medium" :title="row.productName">{{ row.productName }}</span></div></TableCell>
               <TableCell class="text-center">{{ row.unitName }}</TableCell>
@@ -233,6 +239,34 @@ onMounted(() => {
 <style scoped>
 .filter-grid--stocks {
   grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+}
+
+.inventory-risk-row :deep([data-slot='table-cell']) {
+  transition: background-color var(--motion-duration-fast) ease;
+}
+
+.inventory-risk-row--warning :deep([data-slot='table-cell']) {
+  background-color: color-mix(in srgb, #f59e0b 13%, var(--card));
+}
+
+.inventory-risk-row--warning:hover :deep([data-slot='table-cell']) {
+  background-color: color-mix(in srgb, #f59e0b 18%, var(--card));
+}
+
+.inventory-risk-row--critical :deep([data-slot='table-cell']) {
+  background-color: color-mix(in srgb, #f43f5e 13%, var(--card));
+}
+
+.inventory-risk-row--critical:hover :deep([data-slot='table-cell']) {
+  background-color: color-mix(in srgb, #f43f5e 18%, var(--card));
+}
+
+.inventory-risk-row--warning :deep([data-slot='table-cell']:first-child) {
+  box-shadow: inset 3px 0 #d97706;
+}
+
+.inventory-risk-row--critical :deep([data-slot='table-cell']:first-child) {
+  box-shadow: inset 3px 0 #e11d48;
 }
 
 @media (max-width: 1279px) {

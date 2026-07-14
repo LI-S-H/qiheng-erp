@@ -5,8 +5,13 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
+import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -74,6 +79,12 @@ const statusOptions: Array<{ value: PurchaseOrderStatus | 'all'; label: string }
 const orders = ref<PurchaseOrderListItem[]>([]);
 const total = ref(0);
 const summary = reactive(emptySummary());
+const summaryItems = computed(() => [
+  { key: 'draft', label: '本页草稿', value: summary.draftCount },
+  { key: 'submitted', label: '本页已提交', value: summary.submittedCount },
+  { key: 'approved', label: '本页已审核', value: summary.approvedCount, tone: 'positive' as const },
+  { key: 'inbound-pending', label: '本页待入库', value: summary.inboundPendingCount, tone: 'warning' as const },
+]);
 const loading = ref(false);
 const queryPending = ref(false);
 const formSubmitting = ref(false);
@@ -565,6 +576,26 @@ function openOrderActionDetail(row: PurchaseOrderListItem, action: 'submit' | 'a
   openDetail(row, action);
 }
 
+function getRowActions(row: PurchaseOrderListItem): RowActionOption[] {
+  if (row.status !== 'DRAFT' && row.status !== 'SUBMITTED') return [];
+
+  return [
+    { key: 'edit', label: '编辑采购单' },
+    row.status === 'DRAFT'
+      ? { key: 'submit', label: '提交采购单' }
+      : { key: 'approve', label: '审核采购单' },
+    { key: 'cancel', label: '取消采购单', variant: 'destructive', separated: true },
+  ];
+}
+
+function handleRowAction(row: PurchaseOrderListItem, actionKey: string) {
+  if (detailLoading.value || actionSubmitting.value) return;
+  if (actionKey === 'edit') openEditDialog(row);
+  if (actionKey === 'submit' && row.status === 'DRAFT') openOrderActionDetail(row, 'submit');
+  if (actionKey === 'approve' && row.status === 'SUBMITTED') openOrderActionDetail(row, 'approve');
+  if (actionKey === 'cancel' && (row.status === 'DRAFT' || row.status === 'SUBMITTED')) confirmOrderAction(row, 'cancel');
+}
+
 function detailActionHint(row: PurchaseOrderListItem) {
   if (detailActionMode.value === 'view') return '';
   if (!row.expectedArrivalDate) return '预计到货日期为空，提交或审核前请先编辑维护。';
@@ -594,6 +625,18 @@ function statusMeta(status: PurchaseOrderStatus) {
   return map[status];
 }
 
+function statusHint(status: PurchaseOrderStatus) {
+  const map: Record<PurchaseOrderStatus, string> = {
+    DRAFT: '待提交',
+    SUBMITTED: '待审核',
+    APPROVED: '待入库',
+    PARTIAL_INBOUND: '入库中',
+    INBOUND_DONE: '已完成',
+    CANCELLED: '已终止',
+  };
+  return map[status];
+}
+
 function formatMoney(value: number) {
   return `￥${value.toFixed(2)}`;
 }
@@ -613,25 +656,18 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页草稿</span><strong class="mt-1 text-2xl">{{ summary.draftCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页已提交</span><strong class="mt-1 text-2xl text-blue-700">{{ summary.submittedCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页已审核</span><strong class="mt-1 text-2xl text-emerald-700">{{ summary.approvedCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页待入库</span><strong class="mt-1 text-2xl text-amber-700">{{ summary.inboundPendingCount }}</strong></div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="采购订单数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--purchase">
+    <ListFilterPanel grid-class="filter-grid--purchase" aria-label="采购订单筛选">
         <div class="space-y-1"><Label class="text-xs">采购单号</Label><Input v-model="query.purchaseNo" placeholder="如 PO202606001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">供应商</Label><RemoteSearchSelect v-model="query.supplierId" :selected-label="querySupplierLabel" :fetch-options="fetchSupplierSearchOptions" placeholder="全部供应商" search-placeholder="输入供应商编码或名称" clearable clear-value="all" clear-label="全部供应商" /></div>
         <div class="space-y-1"><Label class="text-xs">入库仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="queryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
         <div class="space-y-1"><Label class="text-xs">订单状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
@@ -640,33 +676,30 @@ onMounted(() => {
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增采购单</Button></div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="business-data-table min-w-[1155px] table-fixed">
-          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[90px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[210px]" /></colgroup>
-          <TableHeader><TableRow><TableHead>采购单号</TableHead><TableHead>供应商</TableHead><TableHead>入库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计到货</TableHead><TableHead>创建人</TableHead><TableHead>更新时间</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
+      <Table class="business-data-table min-w-[1107px] table-fixed" scroll-label="采购订单列表">
+          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[132px]" /></colgroup>
+          <TableHeader><TableRow><TableHead data-purchase-no-column>采购单号</TableHead><TableHead>供应商</TableHead><TableHead>入库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计到货</TableHead><TableHead>创建人</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-purchase-actions-column>操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
             <TableRow v-else-if="orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无采购订单</TableCell></TableRow>
-            <TableRow v-for="row in orders" v-else :key="row.purchaseOrderId">
-              <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.purchaseNo }}</code></TableCell>
+            <TableRow v-for="row in orders" v-else :key="row.purchaseOrderId" class="group">
+              <TableCell data-purchase-no-column><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.purchaseNo }}</code></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.supplierCode }}</code><div class="mt-1 truncate font-medium">{{ row.supplierName }}</div></TableCell>
               <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
-              <TableCell class="text-center"><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge></TableCell>
+              <TableCell class="text-center"><div class="flex flex-col items-center gap-1"><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge><span class="text-[11px] text-muted-foreground">{{ statusHint(row.status) }}</span></div></TableCell>
               <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.totalAmount) }}</TableCell>
               <TableCell class="text-center text-sm">{{ row.expectedArrivalDate || '未设置' }}</TableCell>
               <TableCell class="whitespace-nowrap" :title="row.createdByName || '系统'">{{ row.createdByName || '系统' }}</TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-right">
+              <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
+              <TableCell class="text-center" data-purchase-actions-column>
+                <div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
                 <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" :disabled="detailLoading" @click="openDetail(row)">{{ detailLoading ? '加载中' : '详情' }}</Button>
-                <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" :disabled="detailLoading" @click="openEditDialog(row)">编辑</Button>
-                <Button v-if="row.status === 'DRAFT'" variant="ghost" size="sm" class="text-primary hover:text-primary" :disabled="detailLoading" @click="openOrderActionDetail(row, 'submit')">提交</Button>
-                <Button v-if="row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-emerald-700 hover:text-emerald-800" :disabled="detailLoading" @click="openOrderActionDetail(row, 'approve')">审核</Button>
-                <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="confirmOrderAction(row, 'cancel')">取消</Button>
+                <RowActionsMenu :actions="getRowActions(row)" :disabled="detailLoading || actionSubmitting" :label="`更多 ${row.purchaseNo} 操作`" @select="handleRowAction(row, $event)" />
+                </div>
               </TableCell>
             </TableRow>
           </TableBody>
-        </Table>
-      </ScrollArea>
+      </Table>
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
 
@@ -743,7 +776,7 @@ onMounted(() => {
                   <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell>
                   <TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell>
                   <TableCell class="text-center">{{ item.selectedSupplierScore.toFixed(1) }}</TableCell>
-                  <TableCell class="truncate" :title="item.remark">{{ item.remark || '未维护' }}</TableCell>
+                  <TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell>
                 </TableRow>
               </TableBody>
             </Table>

@@ -13,6 +13,7 @@ withDefaults(defineProps<{
     class="submenu-collapse"
     :class="{ 'is-open': open }"
     :aria-hidden="!open"
+    :inert="!open"
   >
     <div class="submenu-collapse__inner">
       <slot />

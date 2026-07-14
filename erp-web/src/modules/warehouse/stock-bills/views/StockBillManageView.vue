@@ -1,17 +1,32 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import { Columns3, RotateCcw } from 'lucide-vue-next';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
+import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -23,6 +38,7 @@ import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
 import { listWarehouses } from '../../warehouses/api';
 import type { WarehouseListItem } from '../../warehouses/types';
+import { stockBillListColumns, stockBillOptionalColumns, useStockBillTableColumns } from '../composables/use-stock-bill-table-columns';
 import {
   cancelStockBill,
   confirmStockBill,
@@ -69,6 +85,14 @@ const adjustmentTypes = new Set<StockBillType>(['ADJUST_IN', 'ADJUST_OUT']);
 
 const pageDirection = computed<StockBillDirection>(() => String(route.meta.stockDirection) === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND');
 const isInboundPage = computed(() => pageDirection.value === 'INBOUND');
+const {
+  isVisible: isListColumnVisible,
+  reset: resetListColumns,
+  setVisible: setListColumnVisible,
+  tableMinWidth,
+  visibleColumnCount,
+  visibleOptionalCount,
+} = useStockBillTableColumns(pageDirection);
 const defaultBillType = computed<ManualStockBillType>(() => isInboundPage.value ? 'ADJUST_IN' : 'ADJUST_OUT');
 const pageText = computed(() => ({
   title: isInboundPage.value ? '入库单' : '出库单',
@@ -158,10 +182,10 @@ const sourceNoEditable = computed(() => (dialogMode.value === 'create' || editin
 const manualReasonEditable = computed(() => (dialogMode.value === 'create' || editingIsDraft.value) && isManualForm.value);
 const structureEditable = computed(() => dialogMode.value === 'create' || (editingIsDraft.value && editingDetail.value?.entryMode !== 'SOURCE_GENERATED'));
 const summaryCards = computed(() => [
-  { label: pageText.value.pendingLabel, value: summary.pendingCount },
-  { label: pageText.value.confirmedLabel, value: summary.confirmedCount },
-  { label: pageText.value.cancelledLabel, value: summary.cancelledCount },
-  { label: pageText.value.sourceGeneratedLabel, value: summary.sourceGeneratedCount },
+  { key: 'pending', label: pageText.value.pendingLabel, value: summary.pendingCount, tone: 'warning' as const },
+  { key: 'confirmed', label: pageText.value.confirmedLabel, value: summary.confirmedCount, tone: 'positive' as const },
+  { key: 'cancelled', label: pageText.value.cancelledLabel, value: summary.cancelledCount },
+  { key: 'source-generated', label: pageText.value.sourceGeneratedLabel, value: summary.sourceGeneratedCount },
 ]);
 const selectedQueryWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
 const selectedFormWarehouseLabel = computed(() => formWarehouseOptions.value.find(item => item.value === form.warehouseId)?.label || (editingDetail.value?.warehouseId === form.warehouseId ? editingDetail.value.warehouseName : ''));
@@ -280,12 +304,6 @@ function isQualityBillType(billType: StockBillType) {
 function qualityQtyText(item: StockBillItem, billType: StockBillType, field: 'qualifiedQty' | 'defectiveQty') {
   if (!isQualityBillType(billType)) return '-';
   return formatQty(item[field]);
-}
-
-function shortText(value: string, maxLength = 16) {
-  const text = value.trim();
-  if (!text) return '-';
-  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
 function expandedItems(row: StockBillListItem) {
@@ -804,6 +822,26 @@ function handleCancel(row: StockBillListItem) {
   });
 }
 
+function getRowActions(row: StockBillListItem): RowActionOption[] {
+  if (row.status !== 'DRAFT' && row.status !== 'PENDING_CONFIRM') return [];
+
+  return [
+    { key: 'edit', label: `编辑${pageText.value.formTitle}` },
+    row.status === 'DRAFT'
+      ? { key: 'submit', label: '提交确认' }
+      : { key: 'confirm', label: isInboundPage.value ? '确认入库' : '确认出库' },
+    { key: 'cancel', label: `取消${pageText.value.formTitle}`, variant: 'destructive', separated: true },
+  ];
+}
+
+function handleRowAction(row: StockBillListItem, actionKey: string) {
+  if (actionSubmitting.value) return;
+  if (actionKey === 'edit') openEditDialog(row);
+  if (actionKey === 'submit') openSubmitDetail(row);
+  if (actionKey === 'confirm') openConfirmDetail(row);
+  if (actionKey === 'cancel') handleCancel(row);
+}
+
 async function runConfirmAction() {
   if (actionSubmitting.value) return;
   actionSubmitting.value = true;
@@ -837,15 +875,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div v-for="item in summaryCards" :key="item.label" class="summary-item">
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-      </div>
-    </div>
+    <ListSummaryStrip :items="summaryCards" :aria-label="`${pageText.title}数据汇总`" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--stock-bills">
+    <ListFilterPanel grid-class="filter-grid--stock-bills" :aria-label="`${pageText.title}筛选`">
         <div class="space-y-1">
           <Label>{{ pageText.billNoLabel }}</Label>
           <Input v-model="query.billNo" :placeholder="`如 ${isInboundPage ? 'IB202606140001' : 'OB202606140002'}`" @keyup.enter="handleSearch" />
@@ -870,12 +902,11 @@ onMounted(async () => {
           <Label>状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusOptions" />
         </div>
-        <div class="filter-actions">
+      <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
-        </div>
-      </div>
-    </div>
+      </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy && records.length > 0" label="正在刷新单据..." />
@@ -885,6 +916,50 @@ onMounted(async () => {
           <span class="text-xs text-muted-foreground">列表只显示本单作业数量；来源订单进度在详情和原单中查看</span>
         </div>
         <div class="table-toolbar__actions">
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button
+                size="sm"
+                variant="outline"
+                class="gap-2 border-slate-200 bg-white shadow-sm hover:border-primary/35 hover:bg-primary/[0.03]"
+                :aria-label="`选择显示字段，当前 ${visibleOptionalCount}/${stockBillOptionalColumns.length}`"
+                data-stock-bill-column-trigger
+              >
+                <Columns3 class="size-4 text-muted-foreground" />
+                显示字段
+                <span class="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">{{ visibleOptionalCount }}/{{ stockBillOptionalColumns.length }}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent class="w-64 rounded-xl border-slate-200 p-2 shadow-xl" align="end" :side-offset="6" data-stock-bill-column-menu>
+              <DropdownMenuLabel class="px-2 py-2">
+                <div class="flex items-start gap-2.5">
+                  <span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary"><Columns3 class="size-4" /></span>
+                  <span class="min-w-0">
+                    <strong class="block text-sm font-semibold text-foreground">显示字段</strong>
+                    <small class="mt-0.5 block font-normal leading-4 text-muted-foreground">按需精简列表，偏好仅保存在当前浏览器</small>
+                  </span>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel class="px-2 pb-1 pt-1.5">可选字段</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                v-for="column in stockBillOptionalColumns"
+                :key="column.key"
+                class="min-h-9 px-2 pr-9 text-[13px]"
+                :model-value="isListColumnVisible(column.key)"
+                :data-stock-bill-column-key="column.key"
+                @select.prevent
+                @update:model-value="setListColumnVisible(column.key, Boolean($event))"
+              >
+                {{ column.key === 'party' ? pageText.partyColumnLabel : column.label }}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem class="min-h-9 gap-2 px-2 text-[13px] text-muted-foreground" data-stock-bill-column-reset @select="resetListColumns">
+                <RotateCcw class="size-3.5" />
+                恢复默认字段
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Tooltip>
             <TooltipTrigger as-child>
               <span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span>
@@ -895,87 +970,73 @@ onMounted(async () => {
         </div>
       </div>
       <div class="stock-bill-table-scroll w-full">
-        <Table class="min-w-[1940px] table-fixed">
+        <Table class="stock-bill-list-table table-fixed" :style="{ '--stock-bill-table-min-width': `${tableMinWidth}px` }" :scroll-label="`${pageText.title}列表`" data-stock-bill-list-table>
           <colgroup>
-            <col class="w-[220px]" />
-            <col class="w-[140px]" />
-            <col class="w-[120px]" />
-            <col class="w-[130px]" />
-            <col class="w-[170px]" />
-            <col class="w-[170px]" />
-            <col class="w-[150px]" />
-            <col class="w-[120px]" />
-            <col class="w-[110px]" />
-            <col class="w-[130px]" />
-            <col class="w-[180px]" />
-            <col class="w-[300px]" />
+            <template v-for="column in stockBillListColumns" :key="column.key">
+              <col v-if="isListColumnVisible(column.key)" :style="{ width: `${column.width}px` }" />
+            </template>
           </colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead>{{ pageText.billNoLabel }}</TableHead>
+              <TableHead class="stock-bill-key-column sticky left-0 z-50 border-r border-border/60 bg-muted" data-table-sticky-edge="start">{{ pageText.billNoLabel }}</TableHead>
               <TableHead>类型</TableHead>
-              <TableHead>录入方式</TableHead>
-              <TableHead>来源类型</TableHead>
-              <TableHead>来源单号</TableHead>
-              <TableHead>{{ pageText.partyColumnLabel }}</TableHead>
-              <TableHead>仓库</TableHead>
+              <TableHead v-if="isListColumnVisible('entryMode')">录入方式</TableHead>
+              <TableHead v-if="isListColumnVisible('sourceType')">来源类型</TableHead>
+              <TableHead v-if="isListColumnVisible('sourceNo')">来源单号</TableHead>
+              <TableHead v-if="isListColumnVisible('party')">{{ pageText.partyColumnLabel }}</TableHead>
+              <TableHead v-if="isListColumnVisible('warehouse')">仓库</TableHead>
               <TableHead class="text-right">{{ pageText.listQtyLabel }}</TableHead>
               <TableHead class="text-center">状态</TableHead>
-              <TableHead>负责人</TableHead>
-              <TableHead>创建时间</TableHead>
-              <TableHead class="text-right">操作</TableHead>
+              <TableHead v-if="isListColumnVisible('responsible')">负责人</TableHead>
+              <TableHead v-if="isListColumnVisible('createTime')">创建时间</TableHead>
+              <TableHead class="stock-bill-actions-column sticky right-0 z-50 border-l border-border/60 bg-muted text-center" data-table-sticky-edge="end">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow v-if="loading && records.length === 0">
-              <TableCell colspan="12" class="h-28 text-center text-muted-foreground">正在加载...</TableCell>
+              <TableCell :colspan="visibleColumnCount" class="h-28 text-center text-muted-foreground">正在加载...</TableCell>
             </TableRow>
             <TableRow v-else-if="records.length === 0">
-              <TableCell colspan="12" class="h-28 text-center text-muted-foreground">{{ pageText.emptyText }}</TableCell>
+              <TableCell :colspan="visibleColumnCount" class="h-28 text-center text-muted-foreground">{{ pageText.emptyText }}</TableCell>
             </TableRow>
             <template v-else>
               <template v-for="row in records" :key="row.stockBillId">
-                <TableRow class="bg-muted/25" :data-stock-bill-id="row.stockBillId">
-                  <TableCell>
+                <TableRow class="group bg-muted/25" :data-stock-bill-id="row.stockBillId">
+                  <TableCell class="stock-bill-key-column sticky left-0 z-20 border-r border-border/60 bg-background group-hover:bg-muted/50" data-table-sticky-edge="start">
                     <div class="flex items-center gap-2">
-                      <Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button>
+                      <Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-bill-detail-${row.stockBillId}`" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button>
                       <code class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.billNo }}</code>
                     </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" :class="billTypeMap[row.billType].className">{{ billTypeMap[row.billType].label }}</Badge>
                   </TableCell>
-                  <TableCell class="text-muted-foreground">{{ entryModeMap[row.entryMode] }}</TableCell>
-                  <TableCell class="text-muted-foreground">{{ sourceTypeMap[row.sourceType] }}</TableCell>
-                  <TableCell>
+                  <TableCell v-if="isListColumnVisible('entryMode')" class="text-muted-foreground">{{ entryModeMap[row.entryMode] }}</TableCell>
+                  <TableCell v-if="isListColumnVisible('sourceType')" class="text-muted-foreground">{{ sourceTypeMap[row.sourceType] }}</TableCell>
+                  <TableCell v-if="isListColumnVisible('sourceNo')">
                     <code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.sourceNo || '-' }}</code>
                   </TableCell>
-                  <TableCell class="truncate" :title="sourcePartyDisplay(row)">
+                  <TableCell v-if="isListColumnVisible('party')" class="truncate" :title="sourcePartyDisplay(row)">
                     <span class="text-sm">{{ sourcePartyDisplay(row) }}</span>
                   </TableCell>
-                  <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
+                  <TableCell v-if="isListColumnVisible('warehouse')" class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
                   <TableCell class="text-right font-medium tabular-nums">{{ billTotalQuantityText(row) }}</TableCell>
                   <TableCell class="text-center">
                     <Badge variant="outline" :class="statusMap[row.status].className">{{ statusMap[row.status].label }}</Badge>
                   </TableCell>
-                  <TableCell class="truncate" :title="row.responsibleByName">{{ row.responsibleByName }}</TableCell>
-                  <TableCell class="whitespace-nowrap text-muted-foreground">{{ row.createTime }}</TableCell>
-                  <TableCell class="whitespace-nowrap text-right">
-                    <div class="inline-flex flex-nowrap justify-end gap-1">
+                  <TableCell v-if="isListColumnVisible('responsible')" class="truncate" :title="row.responsibleByName">{{ row.responsibleByName }}</TableCell>
+                  <TableCell v-if="isListColumnVisible('createTime')" class="whitespace-nowrap text-muted-foreground">{{ row.createTime }}</TableCell>
+                  <TableCell class="stock-bill-actions-column sticky right-0 z-20 whitespace-nowrap border-l border-border/60 bg-background text-center group-hover:bg-muted/50" data-table-sticky-edge="end">
+                    <div class="inline-flex flex-nowrap items-center justify-center gap-1">
                       <Button size="sm" variant="ghost" class="text-cyan-700 hover:text-cyan-800" :disabled="actionSubmitting" @click="openDetail(row)">详情</Button>
-                      <template v-if="row.status === 'DRAFT' || row.status === 'PENDING_CONFIRM'">
-                        <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
-                        <Button v-if="row.status === 'DRAFT'" size="sm" variant="ghost" class="text-primary hover:text-primary" :disabled="actionSubmitting" @click="openSubmitDetail(row)">提交确认</Button>
-                        <Button v-else size="sm" variant="ghost" class="text-primary hover:text-primary" :disabled="actionSubmitting" @click="openConfirmDetail(row)">{{ isInboundPage ? '确认入库' : '确认出库' }}</Button>
-                        <Button size="sm" variant="ghost" class="text-destructive hover:text-destructive" :disabled="actionSubmitting" @click="handleCancel(row)">取消</Button>
-                      </template>
+                      <RowActionsMenu :actions="getRowActions(row)" :disabled="actionSubmitting" :label="`更多 ${row.billNo} 操作`" @select="handleRowAction(row, $event)" />
                     </div>
                   </TableCell>
                 </TableRow>
                 <TableRow class="stock-bill-detail-host-row bg-background" :data-stock-bill-detail-host-id="row.stockBillId">
-                  <TableCell colspan="12" class="h-0 px-4 py-0">
+                  <TableCell :colspan="visibleColumnCount" class="h-0 px-4 py-0">
                     <CollapsibleRoot :open="!isRowDetailCollapsed(row)" :unmount-on-hide="false">
-                      <CollapsibleContent class="stock-bill-detail-drawer" :data-stock-bill-detail-id="row.stockBillId">
+                      <CollapsibleContent :id="`stock-bill-detail-${row.stockBillId}`" class="stock-bill-detail-drawer" :data-stock-bill-detail-id="row.stockBillId">
                         <div class="stock-bill-detail-drawer__inner">
                           <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.stockBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
                           <div v-else-if="detailLoadErrors[row.stockBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.stockBillId">{{ detailLoadErrors[row.stockBillId] }}</div>
@@ -1014,13 +1075,7 @@ onMounted(async () => {
                                     <TableCell class="text-right tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
                                     <TableCell class="text-right tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(row.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
                                     <TableCell class="text-right tabular-nums">{{ remainingQtyText(item) }}</TableCell>
-                                    <TableCell class="truncate text-muted-foreground">
-                                      <Tooltip v-if="item.remark">
-                                        <TooltipTrigger as-child><span class="block truncate">{{ shortText(item.remark) }}</span></TooltipTrigger>
-                                        <TooltipContent class="max-w-xs">{{ item.remark }}</TooltipContent>
-                                      </Tooltip>
-                                      <span v-else>-</span>
-                                    </TableCell>
+                                    <TableCell><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell>
                                   </TableRow>
                                 </TableBody>
                               </Table>
@@ -1198,13 +1253,7 @@ onMounted(async () => {
                         <TableCell class="text-right tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(detail.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, detail.billType, 'defectiveQty') }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.beforeQty) }}</TableCell>
                         <TableCell class="text-right font-medium tabular-nums">{{ formatQty(item.afterQty) }}</TableCell>
-                        <TableCell class="text-xs text-muted-foreground">
-                          <Tooltip v-if="item.remark">
-                            <TooltipTrigger as-child><span class="block truncate">{{ shortText(item.remark, 18) }}</span></TooltipTrigger>
-                            <TooltipContent class="max-w-xs">{{ item.remark }}</TooltipContent>
-                          </Tooltip>
-                          <span v-else>-</span>
-                        </TableCell>
+                        <TableCell><OverflowTooltip :text="item.remark" fallback="-" class="block text-xs text-muted-foreground" /></TableCell>
                       </TableRow>
                     </TableBody>
                   </Table>
@@ -1229,6 +1278,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.stock-bill-table-scroll :deep(.stock-bill-list-table) {
+  min-width: var(--stock-bill-table-min-width);
+}
+
 .filter-grid--stock-bills {
   grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
 }
@@ -1242,6 +1295,18 @@ onMounted(async () => {
   max-height: min(74vh, 760px);
   overflow: auto;
   padding-bottom: 10px;
+}
+
+.stock-bill-table-scroll :deep([data-slot="table-head"].stock-bill-key-column),
+.stock-bill-table-scroll :deep([data-slot="table-head"].stock-bill-actions-column) {
+  z-index: 60;
+  background-color: var(--muted);
+}
+
+.stock-bill-table-scroll :deep([data-slot="table-cell"].stock-bill-key-column),
+.stock-bill-table-scroll :deep([data-slot="table-cell"].stock-bill-actions-column) {
+  z-index: 25;
+  background-color: var(--background);
 }
 
 .stock-bill-detail-row-scroll :deep([data-slot="table-container"]) {
@@ -1258,7 +1323,12 @@ onMounted(async () => {
 
 .stock-bill-detail-drawer {
   overflow: hidden;
-  will-change: height;
+  overflow: clip;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  contain: inline-size paint;
+  will-change: height, opacity;
 }
 
 .stock-bill-detail-host-row :deep([data-slot='table-cell']) {
@@ -1266,11 +1336,11 @@ onMounted(async () => {
 }
 
 .stock-bill-detail-drawer[data-state="open"] {
-  animation: stock-bill-collapsible-down 170ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: stock-bill-collapsible-down var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 .stock-bill-detail-drawer[data-state="closed"] {
-  animation: stock-bill-collapsible-up 145ms cubic-bezier(0.4, 0, 1, 1);
+  animation: stock-bill-collapsible-up var(--motion-duration-fast) var(--motion-ease-exit);
 }
 
 .stock-bill-detail-drawer__inner {
@@ -1288,20 +1358,24 @@ onMounted(async () => {
 @keyframes stock-bill-collapsible-down {
   from {
     height: 0;
+    opacity: 0;
   }
 
   to {
     height: var(--reka-collapsible-content-height);
+    opacity: 1;
   }
 }
 
 @keyframes stock-bill-collapsible-up {
   from {
     height: var(--reka-collapsible-content-height);
+    opacity: 1;
   }
 
   to {
     height: 0;
+    opacity: 0;
   }
 }
 

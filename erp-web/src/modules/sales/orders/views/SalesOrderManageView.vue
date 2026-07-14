@@ -5,8 +5,13 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
+import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -72,6 +77,12 @@ const statusOptions: Array<{ value: SalesOrderStatus | 'all'; label: string }> =
 const orders = ref<SalesOrderListItem[]>([]);
 const total = ref(0);
 const summary = reactive(emptySummary());
+const summaryItems = computed(() => [
+  { key: 'draft', label: '本页草稿', value: summary.draftCount },
+  { key: 'submitted', label: '本页已提交', value: summary.submittedCount },
+  { key: 'approved', label: '本页已审核', value: summary.approvedCount, tone: 'positive' as const },
+  { key: 'outbound-pending', label: '本页待出库', value: summary.outboundPendingCount, tone: 'warning' as const },
+]);
 const loading = ref(false);
 const queryPending = ref(false);
 const formSubmitting = ref(false);
@@ -455,6 +466,26 @@ function openOrderActionDetail(row: SalesOrderListItem, action: 'submit' | 'appr
   openDetail(row, action);
 }
 
+function getRowActions(row: SalesOrderListItem): RowActionOption[] {
+  if (row.status !== 'DRAFT' && row.status !== 'SUBMITTED') return [];
+
+  return [
+    { key: 'edit', label: '编辑销售单' },
+    row.status === 'DRAFT'
+      ? { key: 'submit', label: '提交销售单' }
+      : { key: 'approve', label: '审核销售单' },
+    { key: 'cancel', label: '取消销售单', variant: 'destructive', separated: true },
+  ];
+}
+
+function handleRowAction(row: SalesOrderListItem, actionKey: string) {
+  if (detailLoading.value || actionSubmitting.value) return;
+  if (actionKey === 'edit') openEditDialog(row);
+  if (actionKey === 'submit' && row.status === 'DRAFT') openOrderActionDetail(row, 'submit');
+  if (actionKey === 'approve' && row.status === 'SUBMITTED') openOrderActionDetail(row, 'approve');
+  if (actionKey === 'cancel' && (row.status === 'DRAFT' || row.status === 'SUBMITTED')) confirmOrderAction(row, 'cancel');
+}
+
 function detailActionHint(row: SalesOrderListItem) {
   if (detailActionMode.value === 'view') return '';
   if (!row.expectedDeliveryDate) return '预计发货日期为空，提交或审核前请先编辑维护。';
@@ -480,6 +511,18 @@ function statusMeta(status: SalesOrderStatus) {
     PARTIAL_OUTBOUND: { label: '部分出库', className: 'border-amber-200 bg-amber-50 text-amber-700' },
     OUTBOUND_DONE: { label: '出库完成', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
     CANCELLED: { label: '已取消', className: 'border-rose-200 bg-rose-50 text-rose-700' },
+  };
+  return map[status];
+}
+
+function statusHint(status: SalesOrderStatus) {
+  const map: Record<SalesOrderStatus, string> = {
+    DRAFT: '待提交',
+    SUBMITTED: '待审核',
+    APPROVED: '待出库',
+    PARTIAL_OUTBOUND: '出库中',
+    OUTBOUND_DONE: '已完成',
+    CANCELLED: '已终止',
   };
   return map[status];
 }
@@ -524,25 +567,18 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页草稿</span><strong class="mt-1 text-2xl">{{ summary.draftCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页已提交</span><strong class="mt-1 text-2xl text-blue-700">{{ summary.submittedCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页已审核</span><strong class="mt-1 text-2xl text-emerald-700">{{ summary.approvedCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页待出库</span><strong class="mt-1 text-2xl text-amber-700">{{ summary.outboundPendingCount }}</strong></div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="销售订单数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--sales">
+    <ListFilterPanel grid-class="filter-grid--sales" aria-label="销售订单筛选">
         <div class="space-y-1"><Label class="text-xs">销售单号</Label><Input v-model="query.salesNo" placeholder="如 SO202606001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">客户</Label><RemoteSearchSelect v-model="query.customerId" :selected-label="queryCustomerLabel" :fetch-options="fetchCustomerSearchOptions" placeholder="全部客户" search-placeholder="输入客户编码或名称" clearable clear-value="all" clear-label="全部客户" /></div>
         <div class="space-y-1"><Label class="text-xs">出库仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="queryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
         <div class="space-y-1"><Label class="text-xs">订单状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
@@ -551,33 +587,30 @@ onMounted(() => {
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增销售单</Button></div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="business-data-table min-w-[1160px] table-fixed">
-          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[105px]" /><col class="w-[85px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[135px]" /><col class="w-[240px]" /></colgroup>
-          <TableHeader><TableRow><TableHead>销售单号</TableHead><TableHead>客户</TableHead><TableHead>出库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计发货</TableHead><TableHead>锁定数量</TableHead><TableHead>更新时间</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
+      <Table class="business-data-table min-w-[1087px] table-fixed" scroll-label="销售订单列表">
+          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[135px]" /><col class="w-[132px]" /></colgroup>
+          <TableHeader><TableRow><TableHead data-sales-no-column>销售单号</TableHead><TableHead>客户</TableHead><TableHead>出库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计发货</TableHead><TableHead>锁定数量</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-sales-actions-column>操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
             <TableRow v-else-if="orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无销售订单</TableCell></TableRow>
-            <TableRow v-for="row in orders" v-else :key="row.salesOrderId">
-              <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.salesNo }}</code></TableCell>
-              <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.customerCode }}</code><div class="mt-1 truncate font-medium">{{ row.customerName }}</div></TableCell>
+            <TableRow v-for="row in orders" v-else :key="row.salesOrderId" class="group">
+              <TableCell data-sales-no-column><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.salesNo }}</code></TableCell>
+              <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.customerCode }}</code><div class="mt-1 truncate font-medium" :title="row.customerName">{{ row.customerName }}</div></TableCell>
               <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
-              <TableCell class="text-center"><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge></TableCell>
+              <TableCell class="text-center"><div class="flex flex-col items-center gap-1"><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge><span class="text-[11px] text-muted-foreground">{{ statusHint(row.status) }}</span></div></TableCell>
               <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.totalAmount) }}</TableCell>
               <TableCell class="text-center text-sm">{{ row.expectedDeliveryDate || '未设置' }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ lockedInventoryText(row) }}</TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-right">
+              <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
+              <TableCell class="text-center" data-sales-actions-column>
+                <div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
                 <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" :disabled="detailLoading" @click="openDetail(row)">{{ detailLoading ? '加载中' : '详情' }}</Button>
-                <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" :disabled="detailLoading" @click="openEditDialog(row)">编辑</Button>
-                <Button v-if="row.status === 'DRAFT'" variant="ghost" size="sm" class="text-primary hover:text-primary" :disabled="detailLoading" @click="openOrderActionDetail(row, 'submit')">提交</Button>
-                <Button v-if="row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-emerald-700 hover:text-emerald-800" :disabled="detailLoading" @click="openOrderActionDetail(row, 'approve')">审核</Button>
-                <Button v-if="row.status === 'DRAFT' || row.status === 'SUBMITTED'" variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="confirmOrderAction(row, 'cancel')">取消</Button>
+                <RowActionsMenu :actions="getRowActions(row)" :disabled="detailLoading || actionSubmitting" :label="`更多 ${row.salesNo} 操作`" @select="handleRowAction(row, $event)" />
+                </div>
               </TableCell>
             </TableRow>
           </TableBody>
-        </Table>
-      </ScrollArea>
+      </Table>
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
 
@@ -653,7 +686,7 @@ onMounted(() => {
                     <TableCell class="text-center tabular-nums">{{ item.outboundQty }} {{ item.unitName }}</TableCell>
                     <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell>
                     <TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell>
-                    <TableCell class="truncate" :title="item.remark">{{ item.remark || '未维护' }}</TableCell>
+                    <TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell>
                   </TableRow>
                 </TableBody>
               </Table>

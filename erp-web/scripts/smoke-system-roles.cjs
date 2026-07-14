@@ -1,4 +1,4 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, assertSharedListChrome, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/roles',
@@ -6,6 +6,7 @@ runSmoke({
   viewport: { width: 1115, height: 520 },
   async test(page) {
     await page.getByRole('heading', { name: '角色管理' }).waitFor();
+    await assertSharedListChrome(page, { summaryLabel: '角色数据汇总', filterLabel: '角色筛选' });
     await assertFixedTableLayout(page, 8);
     await page.getByText('SUPER_ADMIN').waitFor();
     await page.getByText('业务主管').waitFor();

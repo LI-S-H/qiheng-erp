@@ -12,12 +12,15 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
+import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import { listProductCategories } from '../../categories/api';
 import type { ProductCategoryListItem } from '../../categories/types';
@@ -31,6 +34,9 @@ import {
   updateProductStatus,
 } from '../api';
 import type { ProductFormPayload, ProductListItem, ProductQuery, ProductStatus } from '../types';
+
+const PRODUCT_TABLE_COLUMN_COUNT = 10;
+const LEGACY_PRODUCT_COLUMN_PREFERENCE_STORAGE_KEY = 'erp.product.products.table-columns.v1';
 
 const statusFilterOptions = [
   { value: 'all', label: '全部状态' },
@@ -93,6 +99,12 @@ function matchesQuantityPrecision(value: number, precision: number) {
   return Math.abs(value * 10 ** precision - Math.round(value * 10 ** precision)) < 1e-8;
 }
 const categoryCount = computed(() => new Set(products.value.map(item => item.categoryId).filter(Boolean)).size);
+const summaryItems = computed(() => [
+  { key: 'enabled', label: '本页启用', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'disabled', label: '本页停用', value: disabledCount.value },
+  { key: 'categories', label: '本页分类', value: categoryCount.value },
+  { key: 'safety-stock', label: '本页安全库存', value: lowStockConfigCount.value },
+]);
 const selectedRows = computed(() => products.value.filter(item => selectedIds.value.has(item.productId)));
 const allSelected = computed(() => products.value.length > 0 && products.value.every(item => selectedIds.value.has(item.productId)));
 const categoryOptions = computed(() => categories.value.map(item => ({
@@ -162,6 +174,11 @@ async function fetchCategories() {
 }
 
 onMounted(() => {
+  try {
+    window.localStorage.removeItem(LEGACY_PRODUCT_COLUMN_PREFERENCE_STORAGE_KEY);
+  } catch {
+    // 浏览器禁用本地存储时无需阻断产品列表，旧偏好也不会再参与渲染。
+  }
   fetchCategories();
   fetchProducts();
 });
@@ -364,6 +381,19 @@ function handleDelete(row: ProductListItem) {
   });
 }
 
+function getRowActions(row: ProductListItem): RowActionOption[] {
+  return [
+    { key: 'toggle-status', label: row.status === 1 ? '停用产品' : '启用产品' },
+    { key: 'delete', label: '删除产品', variant: 'destructive', separated: true },
+  ];
+}
+
+function handleRowAction(row: ProductListItem, actionKey: string) {
+  if (actionSubmitting.value) return;
+  if (actionKey === 'toggle-status') handleStatusChange(row, row.status === 1 ? 0 : 1);
+  if (actionKey === 'delete') handleDelete(row);
+}
+
 function handleBatchStatus(status: ProductStatus) {
   if (!selectedIds.value.size) return;
   const action = status === 1 ? '启用' : '停用';
@@ -409,27 +439,20 @@ function formatQty(value: number) {
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页分类</span><strong class="mt-1 text-2xl">{{ categoryCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页安全库存</span><strong class="mt-1 text-2xl">{{ lowStockConfigCount }}</strong></div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="产品档案数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--products">
+    <ListFilterPanel grid-class="filter-grid--products" aria-label="产品档案筛选">
         <div class="space-y-1"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P000001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">产品分类</Label><AnchoredSelect v-model="query.categoryId" :options="categoryFilterOptions" placeholder="全部分类" /></div>
         <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" /></div>
         <div class="space-y-1"><Label class="text-xs">品牌名称</Label><Input v-model="query.brandName" placeholder="请输入品牌名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">产品条码</Label><Input v-model="query.barcode" placeholder="请输入完整条码" @keyup.enter="handleSearch" /></div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
@@ -444,30 +467,28 @@ function formatQty(value: number) {
         </div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="min-w-[1384px] table-fixed">
-          <colgroup><col class="w-[44px]" /><col class="w-[130px]" /><col class="w-[220px]" /><col class="w-[170px]" /><col class="w-[150px]" /><col class="w-[90px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[100px]" /><col class="w-[190px]" /></colgroup>
+      <Table class="product-products-table table-fixed" scroll-label="产品档案列表">
+          <colgroup><col class="w-[40px]" /><col class="w-[104px]" /><col class="w-[170px]" /><col class="w-[124px]" /><col class="w-[130px]" /><col class="w-[54px]" /><col class="w-[112px]" /><col class="w-[82px]" /><col class="w-[72px]" /><col class="w-[104px]" /></colgroup>
           <TableHeader><TableRow>
-            <TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>产品编码</TableHead><TableHead>产品名称</TableHead><TableHead>分类</TableHead><TableHead>品牌 / 规格</TableHead><TableHead>单位</TableHead><TableHead>参考价格</TableHead><TableHead>安全库存</TableHead><TableHead>状态</TableHead><TableHead class="text-center">操作</TableHead>
+            <TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead data-product-code-column>产品编码</TableHead><TableHead>产品名称</TableHead><TableHead>分类</TableHead><TableHead>品牌 / 规格</TableHead><TableHead>单位</TableHead><TableHead>参考价格</TableHead><TableHead>安全库存</TableHead><TableHead>状态</TableHead><TableHead class="text-center">操作</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="products.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
-            <TableRow v-for="row in products" v-else :key="row.productId">
+            <TableRow v-if="loading"><TableCell :colspan="PRODUCT_TABLE_COLUMN_COUNT" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
+            <TableRow v-else-if="products.length === 0"><TableCell :colspan="PRODUCT_TABLE_COLUMN_COUNT" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+            <TableRow v-for="row in products" v-else :key="row.productId" class="group">
               <TableCell><Checkbox :model-value="selectedIds.has(row.productId)" @update:model-value="toggleSelect(row.productId, $event)" /></TableCell>
-              <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium">{{ row.productCode }}</code></TableCell>
-              <TableCell><div class="flex flex-col"><span class="font-medium">{{ row.productName }}</span><span class="truncate text-xs text-muted-foreground">{{ row.barcode || '暂无条码' }}</span></div></TableCell>
-              <TableCell><Badge variant="outline" :class="getCategoryBadgeClass(row)">{{ row.categoryName || '未分类' }}</Badge></TableCell>
-              <TableCell><div class="flex flex-col"><span>{{ row.brandName || '无品牌' }}</span><span class="truncate text-xs text-muted-foreground">{{ row.specification || '无规格' }}</span></div></TableCell>
+              <TableCell data-product-code-column><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium">{{ row.productCode }}</code></TableCell>
+              <TableCell><div class="flex min-w-0 flex-col"><span class="truncate font-medium" :title="row.productName">{{ row.productName }}</span><span class="truncate text-xs text-muted-foreground" :title="row.barcode || '暂无条码'">{{ row.barcode || '暂无条码' }}</span></div></TableCell>
+              <TableCell><Badge variant="outline" class="max-w-full" :class="getCategoryBadgeClass(row)"><span class="truncate" :title="row.categoryName || '未分类'">{{ row.categoryName || '未分类' }}</span></Badge></TableCell>
+              <TableCell><div class="flex min-w-0 flex-col"><span class="truncate" :title="row.brandName || '无品牌'">{{ row.brandName || '无品牌' }}</span><span class="truncate text-xs text-muted-foreground" :title="row.specification || '无规格'">{{ row.specification || '无规格' }}</span></div></TableCell>
               <TableCell>{{ row.unitName }}</TableCell>
-              <TableCell><div class="flex flex-col text-xs"><span>采 {{ formatMoney(row.referencePurchasePrice) }}</span><span class="text-muted-foreground">销 {{ formatMoney(row.referenceSalePrice) }}</span></div></TableCell>
+              <TableCell><div class="flex flex-col whitespace-nowrap text-xs"><span>采 {{ formatMoney(row.referencePurchasePrice) }}</span><span class="text-muted-foreground">销 {{ formatMoney(row.referenceSalePrice) }}</span></div></TableCell>
               <TableCell>{{ formatQty(row.safetyStockQty) }}</TableCell>
               <TableCell><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
-              <TableCell class="text-center"><div class="flex justify-center gap-1"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><Button size="sm" variant="ghost" :class="row.status === 1 ? 'text-amber-700' : 'text-primary'" :disabled="actionSubmitting" @click="handleStatusChange(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button><Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="handleDelete(row)">删除</Button></div></TableCell>
+              <TableCell class="text-center"><div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><RowActionsMenu :actions="getRowActions(row)" :disabled="actionSubmitting" :label="`更多 ${row.productCode} 操作`" @select="handleRowAction(row, $event)" /></div></TableCell>
             </TableRow>
           </TableBody>
-        </Table>
-      </ScrollArea>
+      </Table>
 
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
@@ -499,3 +520,9 @@ function formatQty(value: number) {
     <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" :variant="confirmState.variant" :loading="actionSubmitting || formSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
   </section>
 </template>
+
+<style scoped>
+.product-products-table {
+  min-width: 1024px;
+}
+</style>

@@ -1,8 +1,16 @@
+const fs = require('fs');
+const path = require('path');
 const { runSmoke } = require('./smoke-helpers.cjs');
+
+const screenshotDirectory = path.resolve(
+  process.env.QA_SCREENSHOT_DIR || 'qa-artifacts/dashboard',
+);
+
+fs.mkdirSync(screenshotDirectory, { recursive: true });
 
 runSmoke({
   route: '/dashboard',
-  screenshot: 'smoke-dashboard.png',
+  screenshot: path.join(screenshotDirectory, 'dashboard-normal.png'),
   async test(page) {
     async function getVisibleTrendLabels(expectedMin = 1) {
       await page.waitForFunction(
@@ -39,7 +47,16 @@ runSmoke({
     }
 
     await page.getByRole('heading', { name: '工作台' }).waitFor();
+    await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
     await page.getByText('今日销售额').waitFor();
+    const trendSummary = page.locator('[data-dashboard-trend-summary]');
+    if (await trendSummary.locator(':scope > div').count() !== 4) {
+      throw new Error('经营趋势应展示 4 项区间摘要');
+    }
+    await trendSummary.getByText('7日销售合计', { exact: true }).waitFor();
+    if (await page.getByRole('button', { name: '7天' }).getAttribute('aria-pressed') !== 'true') {
+      throw new Error('当前趋势周期没有通过 aria-pressed 标记');
+    }
     await page.getByRole('img', { name: '近 7 日经营趋势' }).waitFor();
     if ((await page.locator('.dashboard-grid-lines line').count()) !== 5) {
       throw new Error('经营趋势应展示 5 条横向网格线');
@@ -52,6 +69,11 @@ runSmoke({
     await page.getByRole('button', { name: '15天' }).click();
     await page.locator('.dashboard-trend-chart.is-transitioning').waitFor();
     await page.getByText('近 15 日销售、采购和毛利变化').waitFor();
+    await trendSummary.getByText('15日销售合计', { exact: true }).waitFor();
+    if (await page.getByRole('button', { name: '15天' }).getAttribute('aria-pressed') !== 'true'
+      || await page.getByRole('button', { name: '7天' }).getAttribute('aria-pressed') !== 'false') {
+      throw new Error('趋势周期切换后的 aria-pressed 状态错误');
+    }
     const trend15Labels = await getVisibleTrendLabels(8);
     assertTrendLabelsNotOverlap(trend15Labels, '15天');
     await page.getByRole('button', { name: '30天' }).click();
@@ -86,11 +108,13 @@ runSmoke({
     await page.keyboard.press('Escape');
     await stockDialog.waitFor({ state: 'hidden' });
 
-    const refreshButton = page.getByRole('button', { name: '刷新', exact: true });
+    const refreshButton = page.locator('.dashboard-heading-actions [data-slot="button"]');
     await refreshButton.click();
     await page.locator('[data-list-loading]').waitFor({ state: 'visible', timeout: 1000 });
+    await page.locator('[data-dashboard-refresh-status]').getByText('正在同步经营数据...', { exact: true }).waitFor();
     if (!(await refreshButton.isDisabled())) throw new Error('工作台刷新期间按钮未禁用');
     await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 });
+    await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
 
     await page.getByRole('button', { name: /销售单待审核/ }).click();
     const quickTodoDialog = page.getByRole('dialog', { name: '销售单待审核详情' });
@@ -188,6 +212,45 @@ runSmoke({
     await todoDialog.waitFor({ state: 'hidden' });
     await page.waitForTimeout(600);
 
-    console.log('SMOKE_OK: 工作台经营概览页面通过');
   },
+}).then(() => runSmoke({
+  route: '/dashboard',
+  reducedMotion: 'reduce',
+  viewport: { width: 1280, height: 720 },
+  screenshot: path.join(screenshotDirectory, 'dashboard-reduced-motion.png'),
+  async test(page) {
+    await page.getByRole('heading', { name: '工作台' }).waitFor();
+    await page.getByRole('button', { name: '15天' }).click();
+    await page.getByText('近 15 日销售、采购和毛利变化').waitFor();
+    const summaryMotion = await page.locator('[data-dashboard-trend-summary]').evaluate(element => ({
+      name: getComputedStyle(element).animationName,
+      duration: getComputedStyle(element).animationDuration,
+    }));
+    const duration = summaryMotion.duration.endsWith('ms')
+      ? Number.parseFloat(summaryMotion.duration)
+      : Number.parseFloat(summaryMotion.duration) * 1000;
+    if (duration > 1) throw new Error(`减少动态效果模式下趋势摘要仍有长动画：${JSON.stringify(summaryMotion)}`);
+
+    await page.locator('.dashboard-todo').first().click();
+    await page.getByRole('dialog').waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+
+    await page.getByRole('button', { name: '刷新', exact: true }).click();
+    const loadingOverlay = page.locator('[data-list-loading]');
+    await loadingOverlay.waitFor({ state: 'visible', timeout: 1000 });
+    const spinnerAnimation = await loadingOverlay.locator('.page-loading-spinner').evaluate(
+      element => getComputedStyle(element).animationName,
+    );
+    if (spinnerAnimation !== 'none') throw new Error(`减少动态效果模式下加载图标仍在旋转：${spinnerAnimation}`);
+    await loadingOverlay.waitFor({ state: 'hidden', timeout: 5000 });
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    if (overflow > 1) throw new Error(`1280px 工作台发生横向溢出：${overflow}`);
+  },
+})).then(() => {
+  console.log('SMOKE_OK: 工作台指标层级、趋势切换、待办下钻、刷新反馈与减弱动效通过');
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
 });

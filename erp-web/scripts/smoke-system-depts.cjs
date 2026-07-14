@@ -1,10 +1,12 @@
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const path = require('node:path');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertTreeCollapseStability, assertSharedListChrome, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/depts',
   screenshot: 'smoke-system-depts.png',
   async test(page) {
     await page.getByRole('heading', { name: '部门管理' }).waitFor();
+    await assertSharedListChrome(page, { summaryLabel: '部门数据汇总', filterLabel: '部门筛选' });
     await assertFixedTableLayout(page, 7);
     await page.getByText('无上级部门').first().waitFor();
     await page.getByText('采购跟单组', { exact: true }).waitFor();
@@ -19,6 +21,17 @@ runSmoke({
     if (toggleStyle.background !== 'rgba(0, 0, 0, 0)' || toggleStyle.border !== '0px') {
       throw new Error('部门树展开控件必须保持纯箭头、无底色和边框');
     }
+
+    await page.setViewportSize({ width: 1115, height: 838 });
+    await assertTreeCollapseStability(page, {
+      parentText: '采购部',
+      childText: '采购跟单组',
+      followingText: '销售部',
+      collapseButtonName: '收起当前部门',
+      expandButtonName: '展开当前部门',
+      screenshotPath: path.resolve(__dirname, '..', 'docs', 'qa-screenshots', '2026-07-14-114007-tree-collapse-stability', 'dept-collapse-120ms.png'),
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.getByPlaceholder('如 采购部').fill('采购部');
     await clickQueryAndAssertLoading(page);

@@ -71,6 +71,11 @@
     oklch(0.269 0 0);
   --radius:
     0.625rem;
+  --motion-duration-fast: 140ms;
+  --motion-duration-base: 180ms;
+  --motion-duration-slow: 240ms;
+  --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --sidebar:
     oklch(0.19 0.018 258);
   --sidebar-foreground:
@@ -318,15 +323,21 @@ a {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   transition:
-    grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 160ms ease-out;
+    grid-template-rows var(--motion-duration-slow) var(--motion-ease-standard),
+    opacity var(--motion-duration-base) ease-out,
+    visibility 0s linear var(--motion-duration-slow);
   will-change: grid-template-rows, opacity;
 }
 
 .submenu-collapse.is-open {
   grid-template-rows: 1fr;
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
 }
 
 .submenu-collapse__inner {
@@ -341,8 +352,8 @@ a {
 .page-view-enter-active,
 .page-view-leave-active {
   transition:
-    opacity 140ms ease,
-    transform 140ms ease;
+    opacity var(--motion-duration-fast) ease,
+    transform var(--motion-duration-fast) ease;
 }
 
 .page-view-enter-from {
@@ -357,7 +368,7 @@ a {
 
 .page-loading-enter-active,
 .page-loading-leave-active {
-  transition: opacity 120ms ease;
+  transition: opacity var(--motion-duration-fast) ease;
 }
 
 .page-loading-enter-from,
@@ -447,6 +458,72 @@ a {
   }
 }
 
+.table-scroll-viewport {
+  --table-scroll-shadow-color: rgb(15 23 42 / 16%);
+  --table-scroll-shadow-size: 18px;
+  --table-scroll-shadow-offset: -18px;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  transition: box-shadow var(--motion-duration-fast) ease;
+}
+
+.table-scroll-viewport[data-scroll-end="true"] {
+  box-shadow: inset var(--table-scroll-shadow-offset) 0 var(--table-scroll-shadow-size) var(--table-scroll-shadow-offset) var(--table-scroll-shadow-color);
+}
+
+.table-scroll-viewport[data-scroll-start="true"] {
+  box-shadow: inset var(--table-scroll-shadow-size) 0 var(--table-scroll-shadow-size) var(--table-scroll-shadow-offset) var(--table-scroll-shadow-color);
+}
+
+.table-scroll-viewport[data-scroll-start="true"][data-scroll-end="true"] {
+  box-shadow:
+    inset var(--table-scroll-shadow-size) 0 var(--table-scroll-shadow-size) var(--table-scroll-shadow-offset) var(--table-scroll-shadow-color),
+    inset var(--table-scroll-shadow-offset) 0 var(--table-scroll-shadow-size) var(--table-scroll-shadow-offset) var(--table-scroll-shadow-color);
+}
+
+.table-scroll-viewport [data-table-sticky-edge] {
+  --table-sticky-edge-opacity: 0.72;
+  isolation: isolate;
+}
+
+.table-scroll-viewport [data-table-sticky-edge]::after {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  content: "";
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.table-scroll-viewport [data-table-sticky-edge="start"]::after {
+  right: -18px;
+  background: linear-gradient(90deg, rgb(15 23 42 / 18%), rgb(15 23 42 / 7%) 34%, transparent 100%);
+}
+
+.table-scroll-viewport [data-table-sticky-edge="end"]::after {
+  left: -18px;
+  background: linear-gradient(270deg, rgb(15 23 42 / 18%), rgb(15 23 42 / 7%) 34%, transparent 100%);
+}
+
+.table-scroll-viewport[data-scroll-start="true"] [data-table-sticky-edge="start"]::after,
+.table-scroll-viewport[data-scroll-end="true"] [data-table-sticky-edge="end"]::after {
+  opacity: var(--table-sticky-edge-opacity);
+}
+
+.table-scroll-viewport[data-scroll-start="true"] [data-slot="table-row"]:hover > [data-table-sticky-edge="start"],
+.table-scroll-viewport[data-scroll-end="true"] [data-slot="table-row"]:hover > [data-table-sticky-edge="end"] {
+  --table-sticky-edge-opacity: 1;
+}
+
+.table-scroll-viewport[data-horizontal-overflow="true"]:focus-visible {
+  border-radius: calc(var(--radius) - 2px);
+  outline: 2px solid color-mix(in srgb, var(--ring) 36%, transparent);
+  outline-offset: -2px;
+}
+
 .purchase-detail-field {
   display: flex;
   min-height: 92px;
@@ -461,9 +538,9 @@ a {
     0 10px 24px rgb(15 23 42 / 5%);
   padding: 14px;
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    border-color var(--motion-duration-base) ease,
+    box-shadow var(--motion-duration-base) ease,
+    transform var(--motion-duration-base) ease;
 }
 
 .purchase-detail-field:hover {
@@ -480,9 +557,9 @@ a {
     0 1px 2px rgb(15 23 42 / 4%),
     0 10px 24px rgb(15 23 42 / 5%);
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    border-color var(--motion-duration-base) ease,
+    box-shadow var(--motion-duration-base) ease,
+    transform var(--motion-duration-base) ease;
 }
 
 .detail-field:hover,
@@ -504,9 +581,9 @@ a {
     0 1px 2px rgb(15 23 42 / 4%),
     0 12px 28px rgb(15 23 42 / 6%);
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    border-color var(--motion-duration-base) ease,
+    box-shadow var(--motion-duration-base) ease,
+    transform var(--motion-duration-base) ease;
 }
 
 .detail-table-floating:hover {
@@ -553,9 +630,9 @@ a {
     0 1px 2px rgb(15 23 42 / 4%),
     0 10px 24px rgb(15 23 42 / 5%);
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    border-color var(--motion-duration-base) ease,
+    box-shadow var(--motion-duration-base) ease,
+    transform var(--motion-duration-base) ease;
 }
 
 .purchase-score-grid > div {
@@ -857,5 +934,23 @@ a {
 
   .filter-actions > * {
     flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .page-loading-spinner {
+    animation: none !important;
+    border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+    border-top-color: var(--primary);
   }
 }

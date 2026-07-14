@@ -5,7 +5,10 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -88,6 +91,12 @@ const enabledCount = computed(() => warehouses.value.filter(item => item.status 
 const disabledCount = computed(() => warehouses.value.filter(item => item.status === 0).length);
 const contactReadyCount = computed(() => warehouses.value.filter(item => item.contactName && item.contactPhone).length);
 const contactMissingCount = computed(() => warehouses.value.filter(item => !item.contactName || !item.contactPhone).length);
+const summaryItems = computed(() => [
+  { key: 'enabled', label: '本页启用', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'disabled', label: '本页停用', value: disabledCount.value },
+  { key: 'contact-ready', label: '联系方式完整', value: contactReadyCount.value },
+  { key: 'contact-missing', label: '联系方式待补', value: contactMissingCount.value, tone: 'warning' as const },
+]);
 const hasNextPage = computed(() => warehouses.value.length >= query.pageSize);
 const allSelected = computed(() => warehouses.value.length > 0 && warehouses.value.every(item => selectedIds.value.has(item.warehouseId)));
 
@@ -308,26 +317,19 @@ function handleBatchDelete() {
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">联系方式完整</span><strong class="mt-1 text-2xl">{{ contactReadyCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">联系方式待补</span><strong class="mt-1 text-2xl text-amber-700">{{ contactMissingCount }}</strong></div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="仓库数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--warehouses">
+    <ListFilterPanel grid-class="filter-grid--warehouses" aria-label="仓库筛选">
         <div class="space-y-1"><Label class="text-xs">仓库编码</Label><Input v-model="query.warehouseCode" placeholder="如 WH001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">仓库名称</Label><Input v-model="query.warehouseName" placeholder="请输入仓库名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">联系人</Label><Input v-model="query.contactName" placeholder="请输入联系人" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">联系电话</Label><Input v-model="query.contactPhone" placeholder="请输入联系电话" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" /></div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
@@ -354,7 +356,7 @@ function handleBatchDelete() {
             <TableRow v-for="row in warehouses" v-else :key="row.warehouseId">
               <TableCell><Checkbox :model-value="selectedIds.has(row.warehouseId)" @update:model-value="toggleSelect(row.warehouseId, $event)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium">{{ row.warehouseCode }}</code></TableCell>
-              <TableCell><div class="flex flex-col"><span class="font-medium">{{ row.warehouseName }}</span><span class="truncate text-xs text-muted-foreground">{{ row.remark || '暂无备注' }}</span></div></TableCell>
+              <TableCell><div class="flex min-w-0 flex-col"><span class="font-medium">{{ row.warehouseName }}</span><OverflowTooltip :text="row.remark" fallback="暂无备注" class="block text-xs text-muted-foreground" /></div></TableCell>
               <TableCell>{{ row.contactName || '未维护' }}</TableCell>
               <TableCell>{{ row.contactPhone || '未维护' }}</TableCell>
               <TableCell><span class="block truncate" :title="row.address">{{ row.address || '未维护' }}</span></TableCell>

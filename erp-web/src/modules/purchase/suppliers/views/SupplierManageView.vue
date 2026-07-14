@@ -5,7 +5,9 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -95,6 +97,12 @@ const enabledCount = computed(() => suppliers.value.filter(item => item.status =
 const disabledCount = computed(() => suppliers.value.filter(item => item.status === 0).length);
 const topScoreCount = computed(() => suppliers.value.filter(item => item.overallScore >= 90).length);
 const avgScore = computed(() => suppliers.value.length ? suppliers.value.reduce((sum, item) => sum + item.overallScore, 0) / suppliers.value.length : 0);
+const summaryItems = computed(() => [
+  { key: 'enabled', label: '本页启用', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'disabled', label: '本页停用', value: disabledCount.value },
+  { key: 'top-score', label: '本页高评分', value: topScoreCount.value },
+  { key: 'average-score', label: '本页均分', value: formatScore(avgScore.value) },
+]);
 const allSelected = computed(() => suppliers.value.length > 0 && suppliers.value.every(item => selectedIds.value.has(item.supplierId)));
 
 async function fetchSuppliers() {
@@ -334,25 +342,18 @@ onMounted(fetchSuppliers);
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl text-emerald-700">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页高评分</span><strong class="mt-1 text-2xl text-blue-700">{{ topScoreCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页均分</span><strong class="mt-1 text-2xl">{{ formatScore(avgScore) }}</strong></div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="供应商数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--purchase">
+    <ListFilterPanel grid-class="filter-grid--purchase" aria-label="供应商筛选">
         <div class="space-y-1"><Label class="text-xs">供应商编码</Label><Input v-model="query.supplierCode" placeholder="如 S001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">供应商名称</Label><Input v-model="query.supplierName" placeholder="请输入名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">联系人</Label><Input v-model="query.contactName" placeholder="请输入联系人" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />

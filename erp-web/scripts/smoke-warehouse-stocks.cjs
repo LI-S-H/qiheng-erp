@@ -2,6 +2,7 @@ const {
   runSmoke,
   tableRow,
   assertFixedTableLayout,
+  assertSharedListChrome,
   clickQueryAndAssertLoading,
   clickPaginationAndAssertLoading,
   clickRefreshAndAssertLoading,
@@ -27,8 +28,26 @@ runSmoke({
   screenshot: 'smoke-warehouse-stocks.png',
   async test(page) {
     await page.getByRole('heading', { name: '库存管理' }).waitFor();
+    await assertSharedListChrome(page, { summaryLabel: '库存数据汇总', filterLabel: '库存筛选' });
     await tableRow(page, 'P000001').waitFor();
     await assertFixedTableLayout(page, 10);
+
+    const normalRow = tableRow(page, 'P000001');
+    const warningRow = tableRow(page, 'P000002');
+    const riskVisuals = await Promise.all([normalRow, warningRow].map(row => row.locator('[data-slot="table-cell"]').first().evaluate(element => ({
+      background: getComputedStyle(element).backgroundColor,
+      marker: getComputedStyle(element).boxShadow,
+    }))));
+    if (await warningRow.getAttribute('data-stock-risk') !== 'warning'
+      || riskVisuals[0].background === riskVisuals[1].background
+      || !riskVisuals[1].marker.includes('inset')) {
+      throw new Error(`低库存行缺少清晰背景与左侧风险标识：${JSON.stringify(riskVisuals)}`);
+    }
+    const warningBackground = riskVisuals[1].background;
+    await warningRow.hover();
+    const warningHoverBackground = await warningRow.locator('[data-slot="table-cell"]').first().evaluate(element => getComputedStyle(element).backgroundColor);
+    if (warningHoverBackground === warningBackground) throw new Error('低库存行悬停后缺少可辨认的背景反馈');
+    await page.screenshot({ path: 'smoke-warehouse-stocks-risk-contrast.png', fullPage: true });
 
     const summaryText = await page.locator('.summary-strip').innerText();
     for (const expected of ['本页仓库\n4', '本页产品\n9', '本页低库存\n4', '本页已锁定\n7']) {
@@ -80,9 +99,15 @@ runSmoke({
     const outOfStockRow = tableRow(page, 'P000008');
     await outOfStockRow.waitFor();
     if (await page.locator('tbody tr').count() !== 1) throw new Error('零库存筛选应只返回当前库存为 0 的记录');
-    if (!await outOfStockRow.evaluate(element => element.classList.contains('bg-rose-50/60'))) {
-      throw new Error('零库存行未使用浅红色风险背景');
+    const criticalVisual = await outOfStockRow.locator('[data-slot="table-cell"]').first().evaluate(element => ({
+      risk: element.parentElement?.getAttribute('data-stock-risk'),
+      background: getComputedStyle(element).backgroundColor,
+      marker: getComputedStyle(element).boxShadow,
+    }));
+    if (criticalVisual.risk !== 'critical' || criticalVisual.background === riskVisuals[0].background || !criticalVisual.marker.includes('inset')) {
+      throw new Error(`零库存行缺少清晰红色背景与左侧风险标识：${JSON.stringify(criticalVisual)}`);
     }
+    await page.screenshot({ path: 'smoke-warehouse-stocks-zero-contrast.png', fullPage: true });
     await clickResetAndAssertLoading(page);
 
     await clickPaginationAndAssertLoading(page, '下一页');

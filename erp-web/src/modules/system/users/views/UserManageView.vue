@@ -36,8 +36,12 @@ import MultiSelect from '@/components/common/MultiSelect.vue';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
+import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import type {
   SystemUserFormPayload,
   SystemUserFormModel,
@@ -64,6 +68,21 @@ import {
 
 interface DeptTreeOption extends DeptOption {
   children?: DeptTreeOption[];
+}
+
+type UserFilterKey = 'username' | 'realName' | 'deptId' | 'roleId' | 'status';
+
+interface AppliedUserFilter {
+  key: UserFilterKey;
+  label: string;
+}
+
+interface AppliedUserFilterState {
+  username: string;
+  realName: string;
+  deptId: string;
+  roleId: string;
+  status: UserStatus | 'all';
 }
 
 const loading = ref(false);
@@ -100,6 +119,11 @@ const roleEditingUser = ref<SystemUserListItem | null>(null);
 const query = reactive<SystemUserQuery>({
   username: '', realName: '', deptId: 'all', roleId: 'all', status: 'all', pageNum: 1, pageSize: 10,
 });
+
+const appliedFilterState = reactive<AppliedUserFilterState>({
+  username: '', realName: '', deptId: 'all', roleId: 'all', status: 'all',
+});
+let pendingFilterState: AppliedUserFilterState = { ...appliedFilterState };
 
 const userForm = reactive<SystemUserFormModel>({
   username: '', realName: '', password: '', deptId: null, isAdmin: false, status: 1, roleIds: [],
@@ -138,10 +162,33 @@ const enabledCount = computed(() => users.value.filter(u => u.status === 1).leng
 const disabledCount = computed(() => users.value.filter(u => u.status === 0).length);
 const adminCount = computed(() => users.value.filter(u => u.isAdmin).length);
 const roleBoundCount = computed(() => users.value.filter(u => u.roleIds.length > 0).length);
+const summaryItems = computed(() => [
+  { key: 'enabled', label: '本页启用', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'disabled', label: '本页停用', value: disabledCount.value },
+  { key: 'admin', label: '本页超级管理员', value: adminCount.value },
+  { key: 'role-bound', label: '本页绑定角色', value: roleBoundCount.value },
+]);
 
 const allSelected = computed(() => users.value.length > 0 && users.value.every(u => selectedIds.value.has(u.userId)));
 const selectedRows = computed(() => users.value.filter(u => selectedIds.value.has(u.userId)));
 const queryBusy = computed(() => queryPending.value || loading.value);
+const appliedFilters = computed<AppliedUserFilter[]>(() => {
+  const filters: AppliedUserFilter[] = [];
+  if (appliedFilterState.username) filters.push({ key: 'username', label: `账号：${appliedFilterState.username}` });
+  if (appliedFilterState.realName) filters.push({ key: 'realName', label: `姓名：${appliedFilterState.realName}` });
+  if (appliedFilterState.deptId !== 'all') {
+    const label = deptFilterOptions.value.find(option => option.value === appliedFilterState.deptId)?.label || appliedFilterState.deptId;
+    filters.push({ key: 'deptId', label: `部门：${label}` });
+  }
+  if (appliedFilterState.roleId !== 'all') {
+    const label = roleFilterOptions.value.find(option => option.value === appliedFilterState.roleId)?.label || appliedFilterState.roleId;
+    filters.push({ key: 'roleId', label: `角色：${label}` });
+  }
+  if (appliedFilterState.status !== 'all') {
+    filters.push({ key: 'status', label: `状态：${appliedFilterState.status === 1 ? '启用' : '停用'}` });
+  }
+  return filters;
+});
 
 function buildDeptTreeOptions(items: DeptOption[]): DeptTreeOption[] {
   const itemMap = new Map<string, DeptTreeOption>();
@@ -158,14 +205,46 @@ function buildDeptTreeOptions(items: DeptOption[]): DeptTreeOption[] {
   return roots;
 }
 
-async function fetchUsers() {
+function getDraftFilterState(): AppliedUserFilterState {
+  return {
+    username: query.username?.trim() || '',
+    realName: query.realName?.trim() || '',
+    deptId: query.deptId || 'all',
+    roleId: query.roleId || 'all',
+    status: query.status === 0 || query.status === 1 ? query.status : 'all',
+  };
+}
+
+function writeDraftFilterState(filters: AppliedUserFilterState) {
+  query.username = filters.username;
+  query.realName = filters.realName;
+  query.deptId = filters.deptId;
+  query.roleId = filters.roleId;
+  query.status = filters.status;
+}
+
+function buildUserQuery(
+  filters: AppliedUserFilterState = appliedFilterState,
+  pageNum = query.pageNum,
+  pageSize = query.pageSize,
+): SystemUserQuery {
+  return { ...filters, pageNum, pageSize };
+}
+
+async function fetchUsers(
+  requestQuery: SystemUserQuery = buildUserQuery(),
+  filtersToConfirm?: AppliedUserFilterState,
+) {
   const sequence = ++fetchSequence;
   loading.value = true;
   try {
-    const result = await listSystemUsers({ ...query });
+    const result = await listSystemUsers(requestQuery);
     if (sequence !== fetchSequence) return;
     users.value = result.records;
     total.value = result.total;
+    query.pageNum = requestQuery.pageNum;
+    query.pageSize = requestQuery.pageSize;
+    if (filtersToConfirm) Object.assign(appliedFilterState, filtersToConfirm);
   } catch {
     // http.ts 统一处理接口错误提示。
   } finally {
@@ -198,21 +277,18 @@ function formatTableTime(value: string | null) {
 
 const refreshList = useListRefresh(queryBusy, queryPending, fetchUsers);
 
-const debouncedSearch = useDebounceFn(() => {
-  query.pageNum = 1;
-  fetchUsers();
+const debouncedSearch = useDebounceFn((filters: AppliedUserFilterState = pendingFilterState) => {
+  fetchUsers(buildUserQuery(filters, 1, query.pageSize), filters);
 }, 250);
 
 const debouncedPageChange = useDebounceFn((pageNum: number, pageSize: number) => {
-  query.pageNum = pageNum;
-  query.pageSize = pageSize;
-  fetchUsers();
+  fetchUsers(buildUserQuery(appliedFilterState, pageNum, pageSize));
 }, 180);
 
 function handleSearch() {
   if (queryBusy.value) return;
   queryPending.value = true;
-  debouncedSearch();
+  debouncedSearch(getDraftFilterState());
 }
 
 function handlePageChange(pageNum: number) {
@@ -229,9 +305,24 @@ function handlePageSizeChange(pageSize: number) {
 
 function handleReset() {
   if (queryBusy.value) return;
-  query.username = ''; query.realName = ''; query.deptId = 'all'; query.roleId = 'all'; query.status = 'all'; query.pageNum = 1;
+  const filters: AppliedUserFilterState = {
+    username: '', realName: '', deptId: 'all', roleId: 'all', status: 'all',
+  };
+  writeDraftFilterState(filters);
+  pendingFilterState = filters;
   queryPending.value = true;
   debouncedSearch();
+}
+
+function removeAppliedFilter(key: UserFilterKey) {
+  if (queryBusy.value) return;
+  const filters: AppliedUserFilterState = { ...appliedFilterState };
+  if (key === 'username' || key === 'realName') filters[key] = '';
+  if (key === 'deptId' || key === 'roleId') filters[key] = 'all';
+  if (key === 'status') filters.status = 'all';
+  writeDraftFilterState(filters);
+  queryPending.value = true;
+  debouncedSearch(filters);
 }
 
 function toggleSelectAll() {
@@ -498,6 +589,23 @@ function handleDelete(row: SystemUserListItem) {
     } catch {}
   });
 }
+
+function getRowActions(row: SystemUserListItem): RowActionOption[] {
+  return [
+    { key: 'roles', label: '绑定角色' },
+    { key: 'reset-password', label: '重置密码' },
+    { key: 'toggle-status', label: row.status === 1 ? '停用账号' : '启用账号', separated: true },
+    { key: 'delete', label: '删除用户', variant: 'destructive', separated: true },
+  ];
+}
+
+function handleRowAction(row: SystemUserListItem, actionKey: string) {
+  if (actionSubmitting.value) return;
+  if (actionKey === 'roles') openRoleDialog(row);
+  if (actionKey === 'reset-password') handleResetPassword(row);
+  if (actionKey === 'toggle-status') handleStatusChange(row, row.status === 1 ? 0 : 1);
+  if (actionKey === 'delete') handleDelete(row);
+}
 </script>
 
 <template>
@@ -509,29 +617,9 @@ function handleDelete(row: SystemUserListItem) {
       </div>
     </div>
 
-    <!-- Metrics -->
-    <div class="summary-strip">
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">本页启用</span>
-        <strong class="text-2xl mt-1">{{ enabledCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">本页停用</span>
-        <strong class="text-2xl mt-1">{{ disabledCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">本页超级管理员</span>
-        <strong class="text-2xl mt-1">{{ adminCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">本页绑定角色</span>
-        <strong class="text-2xl mt-1">{{ roleBoundCount }}</strong>
-      </div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="用户数据汇总" />
 
-    <!-- Filter -->
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--users">
+    <ListFilterPanel grid-class="filter-grid--users" aria-label="用户筛选">
         <div class="space-y-1">
           <Label class="text-xs">登录账号</Label>
           <Input v-model="query.username" placeholder="请输入登录账号" @keyup.enter="handleSearch" />
@@ -552,12 +640,36 @@ function handleDelete(row: SystemUserListItem) {
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        </template>
+      <template v-if="appliedFilters.length > 0" #footer>
+      <div
+        class="flex flex-wrap items-center gap-2"
+        data-active-user-filters
+      >
+        <span class="mr-1 text-xs text-muted-foreground" aria-live="polite">
+          已生效 {{ appliedFilters.length }} 个条件
+        </span>
+        <button
+          v-for="filter in appliedFilters"
+          :key="filter.key"
+          type="button"
+          class="inline-flex h-7 items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 text-xs text-primary transition-colors hover:border-primary/35 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50"
+          :disabled="queryBusy"
+          :aria-label="`移除筛选条件：${filter.label}`"
+          @click="removeAppliedFilter(filter.key)"
+        >
+          <span>{{ filter.label }}</span>
+          <span aria-hidden="true" class="text-sm leading-none">×</span>
+        </button>
+        <Button size="sm" variant="ghost" class="h-7 px-2 text-xs" :disabled="queryBusy" @click="handleReset">
+          清空条件
+        </Button>
       </div>
-    </div>
+      </template>
+    </ListFilterPanel>
 
     <!-- Table -->
     <div class="data-panel relative">
@@ -619,7 +731,7 @@ function handleDelete(row: SystemUserListItem) {
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1050px] table-fixed">
+        <Table class="min-w-[990px] table-fixed">
           <colgroup>
             <col class="w-[44px]" />
             <col class="w-[190px]" />
@@ -628,7 +740,7 @@ function handleDelete(row: SystemUserListItem) {
             <col class="w-[90px]" />
             <col class="w-[80px]" />
             <col class="w-[150px]" />
-            <col class="w-[176px]" />
+            <col class="w-[116px]" />
           </colgroup>
           <TableHeader>
             <TableRow>
@@ -641,7 +753,7 @@ function handleDelete(row: SystemUserListItem) {
               <TableHead class="text-center w-[108px]">管理员</TableHead>
               <TableHead class="text-center w-[96px]">状态</TableHead>
               <TableHead>时间</TableHead>
-              <TableHead class="text-center w-[176px]">操作</TableHead>
+              <TableHead class="text-center w-[116px]">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -689,8 +801,12 @@ function handleDelete(row: SystemUserListItem) {
               <TableCell class="text-center">
                 <div class="flex items-center justify-center gap-1">
                   <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
-                  <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openRoleDialog(row)">角色</Button>
-                  <Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="handleDelete(row)">删除</Button>
+                  <RowActionsMenu
+                    :actions="getRowActions(row)"
+                    :disabled="actionSubmitting"
+                    :label="`更多 ${row.username} 操作`"
+                    @select="handleRowAction(row, $event)"
+                  />
                 </div>
               </TableCell>
             </TableRow>

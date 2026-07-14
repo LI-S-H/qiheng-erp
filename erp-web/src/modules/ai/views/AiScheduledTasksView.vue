@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Edit3,
   FileText,
+  LoaderCircle,
   Plus,
   Play,
   RefreshCw,
@@ -17,6 +18,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import MultiSelect from '@/components/common/MultiSelect.vue';
 import RemoteSearchSelect, { type RemoteSearchOption } from '@/components/common/RemoteSearchSelect.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -57,6 +59,7 @@ const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
 const actionTaskId = ref<string | null>(null);
+const taskAction = ref<'toggle' | 'run' | null>(null);
 const taskPage = ref<AiScheduledTaskPage | null>(null);
 const selectedExecutionId = ref<string | null>(null);
 const editingTask = ref<AiScheduledTask | null>(null);
@@ -116,6 +119,16 @@ const editForm = reactive<AiScheduledTaskUpdateRequest>({
 const selectedExecution = computed(() => {
   if (!taskPage.value) return null;
   return taskPage.value.recentExecutions.find(item => item.executionId === selectedExecutionId.value) || taskPage.value.recentExecutions[0] || null;
+});
+const summaryItems = computed(() => {
+  const summary = taskPage.value?.summary;
+  if (!summary) return [];
+  return [
+    { key: 'total', label: '任务总数', value: summary.totalCount },
+    { key: 'enabled', label: '已启用', value: summary.enabledCount, tone: 'positive' as const },
+    { key: 'next-run', label: '待执行', value: summary.nextRunCount },
+    { key: 'failed', label: '失败任务', value: summary.failedCount, tone: 'danger' as const },
+  ];
 });
 const archiveGroups = computed(() => {
   if (!taskPage.value) return [];
@@ -412,6 +425,7 @@ async function saveForm() {
 async function toggleTask(task: AiScheduledTask, checked: boolean) {
   const nextStatus: AiScheduledTaskStatus = checked ? 'ENABLED' : 'DISABLED';
   actionTaskId.value = task.taskId;
+  taskAction.value = 'toggle';
   try {
     const updated = await updateAiScheduledTaskStatus(task.taskId, nextStatus);
     if (taskPage.value) {
@@ -423,12 +437,16 @@ async function toggleTask(task: AiScheduledTask, checked: boolean) {
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '任务状态更新失败');
   } finally {
-    actionTaskId.value = null;
+    if (actionTaskId.value === task.taskId) {
+      actionTaskId.value = null;
+      taskAction.value = null;
+    }
   }
 }
 
 async function runTask(task: AiScheduledTask) {
   actionTaskId.value = task.taskId;
+  taskAction.value = 'run';
   try {
     await runAiScheduledTask(task.taskId);
     await loadTaskPage();
@@ -436,7 +454,10 @@ async function runTask(task: AiScheduledTask) {
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '任务执行失败');
   } finally {
-    actionTaskId.value = null;
+    if (actionTaskId.value === task.taskId) {
+      actionTaskId.value = null;
+      taskAction.value = null;
+    }
   }
 }
 
@@ -493,24 +514,7 @@ onMounted(async () => {
       <ListLoadingOverlay :visible="loading" />
 
       <div v-if="taskPage" class="ai-task-workspace">
-        <div class="summary-strip">
-          <div class="summary-item">
-            <span>任务总数</span>
-            <strong>{{ taskPage.summary.totalCount }}</strong>
-          </div>
-          <div class="summary-item">
-            <span>已启用</span>
-            <strong>{{ taskPage.summary.enabledCount }}</strong>
-          </div>
-          <div class="summary-item">
-            <span>待执行</span>
-            <strong>{{ taskPage.summary.nextRunCount }}</strong>
-          </div>
-          <div class="summary-item">
-            <span>失败任务</span>
-            <strong>{{ taskPage.summary.failedCount }}</strong>
-          </div>
-        </div>
+        <ListSummaryStrip :items="summaryItems" aria-label="AI 定时任务数据汇总" />
 
         <div class="ai-template-row">
           <article v-for="template in taskPage.templates" :key="template.templateId">
@@ -533,7 +537,7 @@ onMounted(async () => {
           </div>
 
           <div class="ai-task-table-wrap">
-            <Table class="business-data-table">
+            <Table class="business-data-table" scroll-label="经营任务配置" :aria-busy="loading || Boolean(actionTaskId)">
               <colgroup>
                 <col style="width: 16%" />
                 <col style="width: 8%" />
@@ -545,18 +549,18 @@ onMounted(async () => {
               </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead>任务</TableHead>
+                  <TableHead data-task-sticky="name">任务</TableHead>
                   <TableHead>类型</TableHead>
                   <TableHead>频率</TableHead>
                   <TableHead>商品范围</TableHead>
                   <TableHead>仓库范围</TableHead>
                   <TableHead>状态</TableHead>
-                  <TableHead>操作</TableHead>
+                  <TableHead data-task-sticky="actions">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow v-for="task in taskPage.tasks" :key="task.taskId">
-                  <TableCell>
+                  <TableCell data-task-sticky="name">
                     <Tooltip>
                       <TooltipTrigger as-child>
                         <button type="button" class="ai-task-title">
@@ -587,20 +591,22 @@ onMounted(async () => {
                       <Badge variant="outline" :class="statusClass(task.status)">{{ statusText(task.status) }}</Badge>
                       <Switch
                         :model-value="task.status === 'ENABLED' || task.status === 'RUNNING'"
-                        :disabled="actionTaskId === task.taskId"
+                        :aria-label="`${task.taskName}${task.status === 'ENABLED' || task.status === 'RUNNING' ? '停用' : '启用'}`"
+                        :disabled="Boolean(actionTaskId)"
                         @update:model-value="toggleTask(task, Boolean($event))"
                       />
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-task-sticky="actions">
                     <div class="ai-task-actions">
                       <Button size="sm" variant="outline" :disabled="!task.editable" @click="openEdit(task)">
                         <Edit3 class="mr-1 h-3.5 w-3.5" />
                         编辑
                       </Button>
-                      <Button size="sm" variant="outline" :disabled="actionTaskId === task.taskId || task.status === 'DISABLED'" @click="runTask(task)">
-                        <Play class="mr-1 h-3.5 w-3.5" />
-                        执行
+                      <Button size="sm" variant="outline" :disabled="Boolean(actionTaskId) || task.status === 'DISABLED'" @click="runTask(task)">
+                        <LoaderCircle v-if="actionTaskId === task.taskId && taskAction === 'run'" class="mr-1 h-3.5 w-3.5 animate-spin" />
+                        <Play v-else class="mr-1 h-3.5 w-3.5" />
+                        {{ actionTaskId === task.taskId && taskAction === 'run' ? '执行中' : '执行' }}
                       </Button>
                       <Button size="sm" variant="outline" @click="selectLatestResult(task)">
                         <FileText class="mr-1 h-3.5 w-3.5" />
@@ -967,22 +973,47 @@ onMounted(async () => {
 }
 
 .ai-task-table-wrap {
+  min-width: 0;
+}
+
+.ai-task-table-wrap > :deep([data-slot="table-container"]) {
   max-height: 330px;
   overflow: auto;
 }
 
-.ai-task-table-wrap [data-slot="table"] {
+.ai-task-table-wrap :deep([data-slot="table"]) {
   min-width: 1180px;
   table-layout: fixed;
 }
 
-.ai-task-table-wrap [data-slot="table-head"],
-.ai-task-table-wrap [data-slot="table-cell"] {
+.ai-task-table-wrap :deep([data-slot="table-head"]),
+.ai-task-table-wrap :deep([data-slot="table-cell"]) {
   height: 48px;
   padding: 8px 10px;
   font-size: 12px;
   text-align: center;
   vertical-align: middle;
+}
+
+.ai-task-table-wrap :deep([data-task-sticky="name"]) {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--background);
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.ai-task-table-wrap :deep([data-task-sticky="actions"]) {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  background: var(--background);
+  box-shadow: -1px 0 0 var(--border);
+}
+
+.ai-task-table-wrap :deep([data-slot="table-header"] [data-task-sticky]) {
+  z-index: 5;
+  background: color-mix(in srgb, var(--muted) 72%, var(--background));
 }
 
 .ai-task-title {
@@ -1134,7 +1165,11 @@ onMounted(async () => {
   color: #475467;
   text-align: center;
   cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, transform 150ms ease;
+  transition:
+    border-color var(--motion-duration-fast) ease,
+    background var(--motion-duration-fast) ease,
+    color var(--motion-duration-fast) ease,
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .ai-calendar-grid button:hover,
@@ -1625,7 +1660,9 @@ onMounted(async () => {
 
 .ai-result-switch-enter-active,
 .ai-result-switch-leave-active {
-  transition: opacity 190ms ease, transform 190ms ease;
+  transition:
+    opacity var(--motion-duration-base) ease,
+    transform var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 .ai-result-switch-enter-from,

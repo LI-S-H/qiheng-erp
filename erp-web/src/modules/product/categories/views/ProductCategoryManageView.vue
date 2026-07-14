@@ -30,6 +30,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
@@ -104,6 +106,12 @@ const flatCategories = computed(() => flattenCategoryTree(categories.value));
 const enabledCount = computed(() => flatCategories.value.filter(item => item.status === 1).length);
 const childCategoryCount = computed(() => flatCategories.value.filter(item => item.parentId !== ROOT_PARENT_ID).length);
 const productTotal = computed(() => flatCategories.value.reduce((total, item) => total + item.productCount, 0));
+const summaryItems = computed(() => [
+  { key: 'total', label: '分类总数', value: flatCategories.value.length },
+  { key: 'enabled', label: '启用分类', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'children', label: '下级分类', value: childCategoryCount.value },
+  { key: 'products', label: '关联产品', value: productTotal.value },
+]);
 const visibleCategories = computed(() => flattenVisibleCategoryTree(categories.value));
 const selectedRows = computed(() => flatCategories.value.filter(item => selectedIds.value.has(item.categoryId)));
 const queryBusy = computed(() => queryPending.value || loading.value);
@@ -598,27 +606,9 @@ function confirmBatchDelete() {
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">分类总数</span>
-        <strong class="text-2xl mt-1">{{ flatCategories.length }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">启用分类</span>
-        <strong class="text-2xl mt-1">{{ enabledCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">下级分类</span>
-        <strong class="text-2xl mt-1">{{ childCategoryCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">关联产品</span>
-        <strong class="text-2xl mt-1">{{ productTotal }}</strong>
-      </div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="产品分类数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--depts">
+    <ListFilterPanel grid-class="filter-grid--depts" aria-label="产品分类筛选">
         <div class="space-y-1">
           <Label class="text-xs">分类名称</Label>
           <Input v-model="query.categoryName" placeholder="如 食品饮料" @keyup.enter="handleSearch" />
@@ -627,12 +617,11 @@ function confirmBatchDelete() {
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />

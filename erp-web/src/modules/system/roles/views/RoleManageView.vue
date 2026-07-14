@@ -34,6 +34,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import type { RoleStatus, SystemRoleFormPayload, SystemRoleListItem, SystemRoleQuery } from '../types';
@@ -92,6 +94,12 @@ const enabledCount = computed(() => roles.value.filter(r => r.status === 1).leng
 const disabledCount = computed(() => roles.value.filter(r => r.status === 0).length);
 const permissionTotal = computed(() => new Set(roles.value.flatMap(r => r.permissionCodes)).size);
 const boundUserTotal = computed(() => roles.value.reduce((t, r) => t + r.userCount, 0));
+const summaryItems = computed(() => [
+  { key: 'enabled', label: '本页启用', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'disabled', label: '本页停用', value: disabledCount.value },
+  { key: 'permissions', label: '本页权限码覆盖', value: permissionTotal.value },
+  { key: 'users', label: '本页绑定用户', value: boundUserTotal.value },
+]);
 
 const allSelected = computed(() => roles.value.length > 0 && roles.value.every(r => selectedIds.value.has(r.roleId)));
 const selectedRows = computed(() => roles.value.filter(r => selectedIds.value.has(r.roleId)));
@@ -428,29 +436,9 @@ function togglePermForm(code: string, checked: boolean) {
       </div>
     </div>
 
-    <!-- Metrics -->
-    <div class="summary-strip">
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">本页启用</span>
-        <strong class="text-2xl mt-1">{{ enabledCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">本页停用</span>
-        <strong class="text-2xl mt-1">{{ disabledCount }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">本页权限码覆盖</span>
-        <strong class="text-2xl mt-1">{{ permissionTotal }}</strong>
-      </div>
-      <div class="summary-item">
-        <span class="text-xs text-muted-foreground">本页绑定用户</span>
-        <strong class="text-2xl mt-1">{{ boundUserTotal }}</strong>
-      </div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="角色数据汇总" />
 
-    <!-- Filter -->
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--roles">
+    <ListFilterPanel grid-class="filter-grid--roles" aria-label="角色筛选">
         <div class="space-y-1">
           <Label class="text-xs">角色编码</Label>
           <Input v-model="query.roleCode" placeholder="如 SUPER_ADMIN" @keyup.enter="handleSearch" />
@@ -463,12 +451,11 @@ function togglePermForm(code: string, checked: boolean) {
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        </template>
+    </ListFilterPanel>
 
     <!-- Table -->
     <div class="data-panel relative">

@@ -5,7 +5,9 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -87,6 +89,12 @@ const enabledCount = computed(() => customers.value.filter(item => item.status =
 const disabledCount = computed(() => customers.value.filter(item => item.status === 0).length);
 const creditTotal = computed(() => customers.value.reduce((sum, item) => sum + item.creditLimit, 0));
 const highCreditCount = computed(() => customers.value.filter(item => item.creditLimit >= 100000).length);
+const summaryItems = computed(() => [
+  { key: 'enabled', label: '本页启用', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'disabled', label: '本页停用', value: disabledCount.value },
+  { key: 'high-credit', label: '高信用客户', value: highCreditCount.value },
+  { key: 'credit-total', label: '本页信用额度', value: formatMoney(creditTotal.value) },
+]);
 const allSelected = computed(() => customers.value.length > 0 && customers.value.every(item => selectedIds.value.has(item.customerId)));
 
 async function fetchCustomers() {
@@ -297,25 +305,18 @@ onMounted(fetchCustomers);
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl text-emerald-700">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">高信用客户</span><strong class="mt-1 text-2xl text-blue-700">{{ highCreditCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页信用额度</span><strong class="mt-1 text-2xl">{{ formatMoney(creditTotal) }}</strong></div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="客户数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--sales">
+    <ListFilterPanel grid-class="filter-grid--sales" aria-label="客户筛选">
         <div class="space-y-1"><Label class="text-xs">客户编码</Label><Input v-model="query.customerCode" placeholder="如 C001" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">客户名称</Label><Input v-model="query.customerName" placeholder="请输入名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">联系人</Label><Input v-model="query.contactName" placeholder="请输入联系人" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+      </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />

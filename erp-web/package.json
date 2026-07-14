@@ -9,6 +9,10 @@
     "preflight:frontend": "node scripts/frontend-preflight.cjs",
     "check:frontend-preflight": "node scripts/check-frontend-preflight.cjs",
     "hooks:install": "node scripts/install-git-hooks.cjs",
+    "smoke:shared-ui": "node scripts/smoke-shared-ui.cjs",
+    "smoke:list-page-components": "node scripts/smoke-list-page-components.cjs",
+    "smoke:overflow-tooltip": "node scripts/smoke-overflow-tooltip.cjs",
+    "smoke:auth": "node scripts/smoke-auth.cjs",
     "smoke:system-users": "node scripts/smoke-system-users.cjs",
     "smoke:system-roles": "node scripts/smoke-system-roles.cjs",
     "smoke:system-depts": "node scripts/smoke-system-depts.cjs",
@@ -23,7 +27,7 @@
     "smoke:purchase": "node scripts/smoke-purchase.cjs",
     "smoke:sales": "node scripts/smoke-sales.cjs",
     "check:openapi": "node scripts/check-openapi.cjs",
-    "test:delivery": "node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-dashboard.cjs && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-bills.cjs && node scripts/smoke-purchase.cjs && node scripts/smoke-sales.cjs && node scripts/smoke-ai.cjs",
+    "test:delivery": "node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-list-page-components.cjs && node scripts/smoke-overflow-tooltip.cjs && node scripts/smoke-shared-ui.cjs && node scripts/smoke-auth.cjs && node scripts/smoke-dashboard.cjs && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-bills.cjs && node scripts/smoke-purchase.cjs && node scripts/smoke-sales.cjs && node scripts/smoke-ai.cjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

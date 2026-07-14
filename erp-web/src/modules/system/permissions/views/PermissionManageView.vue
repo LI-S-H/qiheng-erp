@@ -25,6 +25,9 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import { permissionActionOptions, permissionModuleOptions } from '../catalog';
 import {
@@ -103,6 +106,12 @@ const enabledCount = computed(() => permissions.value.filter(item => item.status
 const disabledCount = computed(() => permissions.value.filter(item => item.status === 0).length);
 const moduleCount = computed(() => new Set(permissions.value.map(item => item.moduleCode)).size);
 const boundRoleCount = computed(() => permissions.value.reduce((sum, item) => sum + item.roleCount, 0));
+const summaryItems = computed(() => [
+  { key: 'enabled', label: '本页启用', value: enabledCount.value, tone: 'positive' as const },
+  { key: 'disabled', label: '本页停用', value: disabledCount.value },
+  { key: 'modules', label: '本页模块', value: moduleCount.value },
+  { key: 'roles', label: '本页角色引用', value: boundRoleCount.value },
+]);
 const allSelected = computed(() => permissions.value.length > 0 && permissions.value.every(item => selectedIds.value.has(item.permissionId)));
 const selectedRows = computed(() => permissions.value.filter(item => selectedIds.value.has(item.permissionId)));
 const queryBusy = computed(() => queryPending.value || loading.value);
@@ -413,15 +422,9 @@ function handleBatchDelete() {
       </div>
     </div>
 
-    <div class="summary-strip">
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页启用</span><strong class="mt-1 text-2xl">{{ enabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页停用</span><strong class="mt-1 text-2xl">{{ disabledCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页模块</span><strong class="mt-1 text-2xl">{{ moduleCount }}</strong></div>
-      <div class="summary-item"><span class="text-xs text-muted-foreground">本页角色引用</span><strong class="mt-1 text-2xl">{{ boundRoleCount }}</strong></div>
-    </div>
+    <ListSummaryStrip :items="summaryItems" aria-label="权限码数据汇总" />
 
-    <div class="filter-panel">
-      <div class="filter-grid filter-grid--permissions">
+    <ListFilterPanel grid-class="filter-grid--permissions" aria-label="权限码筛选">
         <div class="space-y-1">
           <Label class="text-xs">权限码</Label>
           <Input v-model="query.permissionCode" placeholder="如 product:query" @keyup.enter="handleSearch" />
@@ -442,12 +445,11 @@ function handleBatchDelete() {
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
-        <div class="filter-actions">
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-        </div>
-      </div>
-    </div>
+          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        </template>
+    </ListFilterPanel>
 
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
@@ -491,7 +493,7 @@ function handleBatchDelete() {
             <TableRow v-for="row in permissions" v-else :key="row.permissionId">
               <TableCell><Checkbox :model-value="selectedIds.has(row.permissionId)" @update:model-value="toggleSelect(row.permissionId, $event)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium text-foreground">{{ row.permissionCode }}</code></TableCell>
-              <TableCell><div class="flex max-w-[220px] flex-col"><span>{{ row.permissionName }}</span><span class="truncate text-xs text-muted-foreground">{{ row.description || '暂无说明' }}</span></div></TableCell>
+              <TableCell><div class="flex max-w-[220px] flex-col"><span>{{ row.permissionName }}</span><OverflowTooltip :text="row.description" fallback="暂无说明" class="block text-xs text-muted-foreground" /></div></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="getModuleBadgeClass(row.moduleCode)">{{ getModuleName(row.moduleCode) }}</Badge></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="getActionBadgeClass(row.actionType)">{{ getActionLabel(row.actionType) }}</Badge></TableCell>
               <TableCell class="text-center"><span :class="row.roleCount ? 'font-medium text-primary' : 'text-muted-foreground'">{{ row.roleCount }}</span></TableCell>

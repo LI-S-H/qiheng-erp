@@ -1,11 +1,12 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertTreeCollapseStability, assertSharedListChrome, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/product/categories',
   screenshot: 'smoke-product-categories.png',
   async test(page) {
     await page.getByRole('heading', { name: '产品分类' }).waitFor();
+    await assertSharedListChrome(page, { summaryLabel: '产品分类数据汇总', filterLabel: '产品分类筛选' });
     await assertFixedTableLayout(page, 7);
     await page.getByText('无上级分类').first().waitFor();
     await page.getByText('饮料冲调', { exact: true }).waitFor();
@@ -20,6 +21,17 @@ runSmoke({
     if (toggleStyle.background !== 'rgba(0, 0, 0, 0)' || toggleStyle.border !== '0px') {
       throw new Error('分类树展开控件必须保持纯箭头、无底色和边框');
     }
+
+    await page.setViewportSize({ width: 1115, height: 838 });
+    await assertTreeCollapseStability(page, {
+      parentText: '食品饮料',
+      childText: '饮料冲调',
+      followingText: '办公用品',
+      collapseButtonName: '收起当前分类',
+      expandButtonName: '展开当前分类',
+      screenshotPath: path.resolve(__dirname, '..', 'docs', 'qa-screenshots', '2026-07-14-114007-tree-collapse-stability', 'category-collapse-120ms.png'),
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.getByPlaceholder('如 食品饮料').fill('办公用品');
     await clickQueryAndAssertLoading(page);

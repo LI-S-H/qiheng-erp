@@ -28,7 +28,7 @@ withDefaults(
 
 .ai-fade-switch-enter-active,
 .ai-fade-switch-leave-active {
-  transition: opacity 180ms ease;
+  transition: opacity var(--motion-duration-base) ease;
 }
 
 .ai-fade-switch-enter-from,

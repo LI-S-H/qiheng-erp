@@ -301,22 +301,23 @@ onBeforeUnmount(() => {
             :open="isMenuOpen(item.index)"
           >
             <div class="py-1">
-              <button
+              <RouterLink
                 v-for="child in item.children"
                 :key="child.index"
-                class="relative flex h-10 w-full items-center rounded-md pl-10 pr-3 text-[15px] font-medium text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer"
+                :to="child.index"
+                :aria-current="activeMenu === child.index ? 'page' : undefined"
+                :data-menu-path="child.index"
+                class="app-sidebar__submenu-link relative flex h-10 w-full items-center rounded-md pl-10 pr-3 text-[15px] font-medium transition-colors cursor-pointer"
                 :class="{
                   'bg-sidebar-accent text-sidebar-foreground font-semibold': activeMenu === child.index,
                 }"
-                type="button"
-                @click="navigateTo(child.index)"
               >
                 <span
                   v-if="activeMenu === child.index"
                   class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sidebar-primary"
                 />
                 {{ child.title }}
-              </button>
+              </RouterLink>
             </div>
           </CollapseReveal>
         </div>
@@ -436,6 +437,21 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.app-sidebar__submenu-link {
+  color: color-mix(in srgb, var(--sidebar-foreground) 78%, var(--sidebar));
+}
+
+.app-sidebar__submenu-link:hover,
+.app-sidebar__submenu-link:focus-visible,
+.app-sidebar__submenu-link[aria-current='page'] {
+  color: var(--sidebar-foreground);
+}
+
+.app-sidebar__submenu-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sidebar-ring) 88%, white);
+  outline-offset: -2px;
+}
+
 @media (max-width: 760px) {
   .app-sidebar {
     display: none;

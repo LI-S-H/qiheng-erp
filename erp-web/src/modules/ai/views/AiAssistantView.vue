@@ -14,6 +14,7 @@ import {
   FileText,
   History,
   LineChart,
+  LoaderCircle,
   PackageCheck,
   PanelLeftClose,
   PanelLeftOpen,
@@ -1135,12 +1136,14 @@ onMounted(loadOverview);
           </Button>
         </div>
 
-        <Button v-if="!sidebarCollapsed" size="sm" class="ai-new-chat" @click="createConversation">
-          <Plus class="h-4 w-4" />
-          新建会话
+        <Button v-if="!sidebarCollapsed" size="sm" class="ai-new-chat" :disabled="loading" @click="createConversation">
+          <LoaderCircle v-if="loading" class="h-4 w-4 animate-spin" />
+          <Plus v-else class="h-4 w-4" />
+          {{ loading ? '创建中' : '新建会话' }}
         </Button>
-        <Button v-else size="sm" variant="outline" class="ai-icon-button" aria-label="新建会话" @click="createConversation">
-          <Plus class="h-4 w-4" />
+        <Button v-else size="sm" variant="outline" class="ai-icon-button" :aria-label="loading ? '正在创建会话' : '新建会话'" :disabled="loading" @click="createConversation">
+          <LoaderCircle v-if="loading" class="h-4 w-4 animate-spin" />
+          <Plus v-else class="h-4 w-4" />
         </Button>
 
         <CollapsibleRoot :open="!conversationListCollapsed" :unmount-on-hide="false" class="ai-conversation-list" :class="{ 'is-conversation-collapsed': conversationListCollapsed }">
@@ -1273,10 +1276,10 @@ onMounted(loadOverview);
       </aside>
 
       <main class="ai-agent-main">
-      <section class="ai-chat-stage" :class="{ 'is-welcome-stage': isWelcomeStage, 'is-switching': transitionLoading }">
+      <section class="ai-chat-stage" :class="{ 'is-welcome-stage': isWelcomeStage, 'is-switching': transitionLoading }" :aria-busy="sending || transitionLoading">
         <div class="ai-chat-scroll">
         <Transition name="ai-conversation-panel" mode="out-in">
-        <div :key="conversationId || 'empty-conversation'" class="ai-chat-stream">
+        <div :key="conversationId || 'empty-conversation'" class="ai-chat-stream" aria-live="polite" aria-relevant="additions text">
           <article v-for="message in currentMessages" :key="message.messageId" class="ai-chat-message" :class="`is-${message.role}`">
             <div class="ai-chat-avatar">
               <UserRound v-if="message.role === 'user'" class="h-4 w-4" />
@@ -1427,7 +1430,7 @@ onMounted(loadOverview);
           <article v-if="sending" key="assistant-thinking" class="ai-chat-message is-assistant">
             <div class="ai-chat-avatar"><Bot class="h-4 w-4" /></div>
             <div class="ai-chat-bubble">
-              <div class="ai-thinking">
+              <div class="ai-thinking" role="status">
                 <span /><span /><span />
                 正在分析
               </div>
@@ -1442,11 +1445,15 @@ onMounted(loadOverview);
           v-model="inputMessage"
           class="ai-composer__input"
           placeholder="输入经营问题，例如：分析 A4复印纸未来 14 天补货建议"
+          aria-label="经营问题"
+          aria-describedby="ai-composer-hint"
           :disabled="sending"
           @keydown.enter.exact.prevent="submitMessage()"
         />
-        <Button class="ai-composer__send" type="submit" size="sm" aria-label="发送消息" :disabled="sending || !inputMessage.trim()">
-          <Send class="h-4 w-4" />
+        <span id="ai-composer-hint" class="sr-only">按 Enter 发送，按 Shift+Enter 换行</span>
+        <Button class="ai-composer__send" type="submit" size="sm" :aria-label="sending ? '正在分析' : '发送消息'" :disabled="sending || !inputMessage.trim()">
+          <LoaderCircle v-if="sending" class="h-4 w-4 animate-spin" />
+          <Send v-else class="h-4 w-4" />
         </Button>
       </form>
       </section>
@@ -1728,7 +1735,7 @@ onMounted(loadOverview);
   display: grid;
   grid-template-columns: 286px minmax(0, 1fr) var(--ai-workbench-width, 360px);
   min-height: 0;
-  transition: grid-template-columns 180ms ease;
+  transition: grid-template-columns var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 .ai-agent-shell.is-collapsed .ai-agent-body {
@@ -2093,7 +2100,7 @@ onMounted(loadOverview);
   align-content: start;
   gap: 18px;
   min-height: 100%;
-  transition: padding-top 180ms ease;
+  transition: padding-top var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 .ai-chat-stage.is-welcome-stage .ai-chat-stream {
@@ -2102,7 +2109,7 @@ onMounted(loadOverview);
 
 .ai-conversation-panel-enter-active,
 .ai-conversation-panel-leave-active {
-  transition: opacity 220ms ease;
+  transition: opacity var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .ai-conversation-panel-enter-from,
@@ -2484,7 +2491,10 @@ onMounted(loadOverview);
   background: white;
   box-shadow: 0 18px 42px rgb(15 23 42 / 14%);
   padding: 7px;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    border-color var(--motion-duration-base) ease,
+    box-shadow var(--motion-duration-base) ease,
+    transform var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 .ai-composer:focus-within {

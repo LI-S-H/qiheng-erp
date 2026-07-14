@@ -103,6 +103,7 @@ async function smokeAssistant() {
           stageBottomGap: stageRect && dockRect ? Number((stageRect.bottom - dockRect.bottom).toFixed(1)) : -1,
           rowGap: dockRect && scrollRect ? Number((dockRect.top - scrollRect.bottom).toFixed(1)) : -1,
           dockBackground: dockStyle?.backgroundColor || '',
+          dockBoxShadow: dockStyle?.boxShadow || '',
           boxShadow: style.boxShadow,
           parentClass: element.parentElement?.className || '',
           position: style.position,
@@ -116,6 +117,7 @@ async function smokeAssistant() {
         || Math.abs(composer.stageBottomGap) > 1
         || Math.abs(composer.rowGap) > 1
         || composer.dockBackground === 'rgba(0, 0, 0, 0)'
+        || composer.dockBoxShadow === 'none'
         || composer.boxShadow !== 'none'
         || composer.position !== 'static'
         || composer.transform !== 'none'

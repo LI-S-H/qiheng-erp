@@ -55,6 +55,7 @@ function submitMessage() {
   display: grid;
   border-top: 1px solid var(--border);
   background: white;
+  box-shadow: 0 -10px 28px rgb(15 23 42 / 8%);
   padding: 14px 22px 18px;
 }
 

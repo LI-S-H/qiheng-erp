@@ -319,12 +319,12 @@ function handleBatchDelete() {
 
     <ListSummaryStrip :items="summaryItems" aria-label="仓库数据汇总" />
 
-    <ListFilterPanel grid-class="filter-grid--warehouses" aria-label="仓库筛选">
-        <div class="space-y-1"><Label class="text-xs">仓库编码</Label><Input v-model="query.warehouseCode" placeholder="如 WH001" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">仓库名称</Label><Input v-model="query.warehouseName" placeholder="请输入仓库名称" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">联系人</Label><Input v-model="query.contactName" placeholder="请输入联系人" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">联系电话</Label><Input v-model="query.contactPhone" placeholder="请输入联系电话" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" /></div>
+    <ListFilterPanel layout="content" aria-label="仓库筛选">
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">仓库编码</Label><Input v-model="query.warehouseCode" placeholder="如 WH001" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">仓库名称</Label><Input v-model="query.warehouseName" placeholder="请输入仓库名称" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">联系人</Label><Input v-model="query.contactName" placeholder="请输入联系人" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">联系电话</Label><Input v-model="query.contactPhone" placeholder="请输入联系电话" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" /></div>
       <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
@@ -392,26 +392,3 @@ function handleBatchDelete() {
     <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" :variant="confirmState.variant" :loading="actionSubmitting || formSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
   </section>
 </template>
-
-<style scoped>
-.filter-grid--warehouses {
-  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
-}
-
-@media (max-width: 1279px) {
-  .filter-grid--warehouses {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filter-grid--warehouses .filter-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-end;
-  }
-}
-
-@media (max-width: 640px) {
-  .filter-grid--warehouses {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-</style>

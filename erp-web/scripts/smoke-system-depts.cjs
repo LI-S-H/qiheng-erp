@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertTreeCollapseStability, assertSharedListChrome, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertTreeCollapseStability, assertSharedListChrome, assertContentSizedFilter, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/depts',
@@ -7,6 +7,7 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '部门管理' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '部门数据汇总', filterLabel: '部门筛选' });
+    await assertContentSizedFilter(page, [220, 168]);
     await assertFixedTableLayout(page, 7);
     await page.getByText('无上级部门').first().waitFor();
     await page.getByText('采购跟单组', { exact: true }).waitFor();

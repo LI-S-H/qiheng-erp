@@ -5,9 +5,11 @@ import { Card } from '@/components/ui/card';
 withDefaults(defineProps<{
   gridClass?: HTMLAttributes['class'];
   ariaLabel?: string;
+  layout?: 'grid' | 'content';
 }>(), {
   gridClass: undefined,
   ariaLabel: '筛选条件',
+  layout: 'grid',
 });
 </script>
 
@@ -18,7 +20,11 @@ withDefaults(defineProps<{
     role="search"
     data-list-filter-panel
   >
-    <div class="filter-grid list-filter-panel__grid" :class="gridClass">
+    <div
+      class="filter-grid list-filter-panel__grid"
+      :class="[gridClass, { 'list-filter-panel__grid--content': layout === 'content' }]"
+      :data-filter-layout="layout"
+    >
       <slot />
       <div v-if="$slots.actions" class="filter-actions list-filter-panel__actions">
         <slot name="actions" />
@@ -56,6 +62,32 @@ withDefaults(defineProps<{
 
 .list-filter-panel__grid {
   gap: 14px 16px;
+}
+
+.list-filter-panel__grid--content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.list-filter-panel__grid--content :slotted(*) {
+  min-width: 0;
+  flex: 0 1 220px;
+}
+
+.list-filter-panel__grid--content :slotted([data-filter-size='compact']) {
+  flex-basis: 168px;
+  max-width: 190px;
+}
+
+.list-filter-panel__grid--content :slotted([data-filter-size='standard']) {
+  flex-basis: 220px;
+  max-width: 240px;
+}
+
+.list-filter-panel__grid--content :slotted([data-filter-size='wide']) {
+  flex-basis: 280px;
+  max-width: 320px;
 }
 
 .list-filter-panel :deep([data-slot='label']) {
@@ -96,6 +128,11 @@ withDefaults(defineProps<{
   padding: 2px;
 }
 
+.list-filter-panel__grid--content .list-filter-panel__actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .list-filter-panel__actions :deep([data-slot='button']) {
   min-width: 72px;
 }
@@ -104,5 +141,18 @@ withDefaults(defineProps<{
   margin-top: 12px;
   border-top: 1px solid color-mix(in srgb, var(--foreground) 7%, var(--border));
   padding-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .list-filter-panel__grid--content :slotted([data-filter-size]) {
+    width: 100%;
+    max-width: none;
+    flex-basis: 100%;
+  }
+
+  .list-filter-panel__grid--content .list-filter-panel__actions {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 </style>

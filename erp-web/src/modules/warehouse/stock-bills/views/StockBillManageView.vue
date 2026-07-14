@@ -877,28 +877,28 @@ onMounted(async () => {
 
     <ListSummaryStrip :items="summaryCards" :aria-label="`${pageText.title}数据汇总`" />
 
-    <ListFilterPanel grid-class="filter-grid--stock-bills" :aria-label="`${pageText.title}筛选`">
-        <div class="space-y-1">
+    <ListFilterPanel layout="content" :aria-label="`${pageText.title}筛选`">
+        <div class="space-y-1" data-filter-size="standard">
           <Label>{{ pageText.billNoLabel }}</Label>
           <Input v-model="query.billNo" :placeholder="`如 ${isInboundPage ? 'IB202606140001' : 'OB202606140002'}`" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="standard">
           <Label>来源单号</Label>
           <Input v-model="query.sourceNo" :placeholder="pageText.sourceNoPlaceholder" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="wide">
           <Label>仓库</Label>
           <RemoteSearchSelect v-model="query.warehouseId" :selected-label="selectedQueryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label>类型</Label>
           <AnchoredSelect v-model="query.billType" :options="pageBillTypeOptions" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label>录入方式</Label>
           <AnchoredSelect v-model="query.entryMode" :options="entryModeOptions" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label>状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusOptions" />
         </div>
@@ -1282,10 +1282,6 @@ onMounted(async () => {
   min-width: var(--stock-bill-table-min-width);
 }
 
-.filter-grid--stock-bills {
-  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
-}
-
 .stock-bill-table-scroll {
   border-bottom: 1px solid var(--border);
 }
@@ -1612,15 +1608,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 1279px) {
-  .filter-grid--stock-bills {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filter-grid--stock-bills .filter-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-end;
-  }
-
   .draft-item-grid,
   .draft-item-grid--quality,
   .draft-item-grid--source,
@@ -1634,7 +1621,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 640px) {
-  .filter-grid--stock-bills,
   .draft-item-grid,
   .draft-item-grid--quality,
   .draft-item-grid--source,

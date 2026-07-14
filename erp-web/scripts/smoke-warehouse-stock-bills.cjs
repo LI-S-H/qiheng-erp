@@ -125,6 +125,57 @@ async function waitListSettled(page) {
   await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
 }
 
+async function assertContentFilterLayout(page, expectedWidths) {
+  const filter = page.locator('[data-list-filter-panel]');
+  const layout = await filter.locator('[data-filter-layout]').getAttribute('data-filter-layout');
+  if (layout !== 'content') throw new Error(`出入库单筛选区未启用内容适配布局：${layout}`);
+
+  const metrics = await filter.evaluate((element) => {
+    const panel = element.getBoundingClientRect();
+    const fields = [...element.querySelectorAll('[data-filter-size]')].map((field) => {
+      const rect = field.getBoundingClientRect();
+      return { width: Math.round(rect.width), right: rect.right };
+    });
+    const actions = element.querySelector('.filter-actions')?.getBoundingClientRect();
+    return {
+      panelRight: panel.right,
+      widths: fields.map(field => field.width),
+      overflow: fields.some(field => field.right > panel.right + 1),
+      actionsRight: actions?.right ?? null,
+      panelOverflow: element.scrollWidth - element.clientWidth,
+      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+
+  if (metrics.widths.join(',') !== expectedWidths.join(',')) {
+    throw new Error(`出入库单筛选项宽度不符合内容契约：${metrics.widths.join(',')}`);
+  }
+  if (metrics.overflow || metrics.actionsRight === null || metrics.actionsRight > metrics.panelRight + 1
+    || metrics.panelOverflow > 1 || metrics.pageOverflow > 1) {
+    throw new Error(`出入库单筛选区出现横向溢出或操作区不可达：${JSON.stringify(metrics)}`);
+  }
+}
+
+async function assertMobileContentFilterLayout(page) {
+  const metrics = await page.locator('[data-list-filter-panel]').evaluate((element) => {
+    const grid = element.querySelector('[data-filter-layout]');
+    const gridWidth = grid?.getBoundingClientRect().width ?? 0;
+    const widths = [...element.querySelectorAll('[data-filter-size]')]
+      .map(field => Math.round(field.getBoundingClientRect().width));
+    const actions = element.querySelector('.filter-actions')?.getBoundingClientRect();
+    return {
+      gridWidth: Math.round(gridWidth),
+      widths,
+      actionsWidth: Math.round(actions?.width ?? 0),
+      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  if (metrics.widths.some(width => Math.abs(width - metrics.gridWidth) > 1)
+    || Math.abs(metrics.actionsWidth - metrics.gridWidth) > 1 || metrics.pageOverflow > 1) {
+    throw new Error(`出入库单移动端筛选布局异常：${JSON.stringify(metrics)}`);
+  }
+}
+
 async function selectRowAction(page, row, billNo, actionLabel) {
   const trigger = row.getByRole('button', { name: `更多 ${billNo} 操作` });
   await trigger.focus();
@@ -422,6 +473,7 @@ runSmoke({
     await assertStockBillColumnPreferences(page);
     await page.getByRole('heading', { name: '入库单' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '入库单数据汇总', filterLabel: '入库单筛选' });
+    await assertContentFilterLayout(page, [220, 220, 280, 168, 168, 168]);
     await tableRow(page, 'IB202606140001').waitFor();
     await assertFixedTableLayout(page, 12);
     await assertStockBillTableUsable(page, 'IB202606140001');
@@ -600,10 +652,7 @@ runSmoke({
     const compactOutboundRow = tableRow(page, 'OB202606140002');
     const compactOutboundItem = page.locator('[data-stock-bill-expanded-item-id]').filter({ hasText: '经典原味苏打水' });
     await assertDetailToggleMotion(page, compactOutboundRow, compactOutboundItem, path.resolve(__dirname, '..', 'docs', 'qa-screenshots', '2026-07-14-134409-stock-bill-collapse-stability', 'outbound-collapse-1115-110ms.png'));
-    const filterColumns = await page.locator('.filter-grid--stock-bills').evaluate(element =>
-      getComputedStyle(element).gridTemplateColumns.split(' ').length,
-    );
-    if (filterColumns !== 2) throw new Error(`入库/出库筛选区在中等宽度下应为两列，当前为 ${filterColumns} 列`);
+    await assertContentFilterLayout(page, [220, 220, 280, 168, 168, 168]);
     const tableViewport = page.locator('.stock-bill-table-scroll [data-slot="table-container"]').first();
     await tableViewport.evaluate((element) => {
       element.scrollLeft = element.scrollWidth;
@@ -654,6 +703,13 @@ runSmoke({
       throw new Error('Escape 关闭行操作菜单后焦点未返回原触发器');
     }
     await page.screenshot({ path: screenshotPath('warehouse-outbound-1115.png'), fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: '出库单' }).waitFor();
+    await tableRow(page, 'OB202606140002').waitFor();
+    await assertMobileContentFilterLayout(page);
+    await page.screenshot({ path: screenshotPath('warehouse-outbound-390.png'), fullPage: true });
   },
 }).then(() => runSmoke({
   route: '/warehouse/inbound-bills',

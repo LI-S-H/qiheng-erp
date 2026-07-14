@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, assertSharedListChrome, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, assertSharedListChrome, assertContentSizedFilter, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 const screenshotDirectory = path.resolve(
   process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/2026-07-14-140728-product-compact-table',
@@ -16,6 +16,7 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '产品档案' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '产品档案数据汇总', filterLabel: '产品档案筛选' });
+    await assertContentSizedFilter(page, [220, 220, 220, 168, 220, 220]);
     await tableRow(page, 'P000001').waitFor();
     await assertFixedTableLayout(page, 10);
     await page.getByText('经典原味苏打水', { exact: true }).waitFor();
@@ -61,7 +62,7 @@ runSmoke({
     await clickResetAndAssertLoading(page, screenshotPath('product-products-reset-loading.png'));
     await tableRow(page, 'P000001').waitFor();
 
-    const filterPanel = page.locator('.filter-grid--products');
+    const filterPanel = page.locator('[data-filter-layout="content"]');
     const categoryTrigger = filterPanel.getByRole('combobox').first();
     const selectCategory = async (label) => {
       await categoryTrigger.click();
@@ -220,10 +221,7 @@ runSmoke({
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '产品档案' }).waitFor();
     await tableRow(page, 'P000001').waitFor();
-    const filterColumns = await page.locator('.filter-grid--products').evaluate(element =>
-      getComputedStyle(element).gridTemplateColumns.split(' ').length,
-    );
-    if (filterColumns !== 2) throw new Error(`产品档案筛选区在中等宽度下应为两列，当前为 ${filterColumns} 列`);
+    await assertContentSizedFilter(page, [220, 220, 220, 168, 220, 220]);
     const tableContainer = page.locator('[data-slot="table-container"]').first();
     const narrowBefore = await tableContainer.evaluate(element => ({
       clientWidth: element.clientWidth,

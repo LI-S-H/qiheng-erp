@@ -424,24 +424,24 @@ function handleBatchDelete() {
 
     <ListSummaryStrip :items="summaryItems" aria-label="权限码数据汇总" />
 
-    <ListFilterPanel grid-class="filter-grid--permissions" aria-label="权限码筛选">
-        <div class="space-y-1">
+    <ListFilterPanel layout="content" aria-label="权限码筛选">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">权限码</Label>
           <Input v-model="query.permissionCode" placeholder="如 product:query" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">权限名称</Label>
           <Input v-model="query.permissionName" placeholder="请输入权限名称" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label class="text-xs">所属模块</Label>
           <AnchoredSelect v-model="query.moduleCode" :options="moduleFilterOptions" placeholder="全部模块" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label class="text-xs">操作类型</Label>
           <AnchoredSelect v-model="query.actionType" :options="actionFilterOptions" placeholder="全部类型" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>

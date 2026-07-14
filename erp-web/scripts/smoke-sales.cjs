@@ -6,6 +6,7 @@ const {
   assertFixedTableLayout,
   assertRequiredLabels,
   assertSharedListChrome,
+  assertContentSizedFilter,
   clickQueryAndAssertLoading,
   clickRefreshAndAssertLoading,
   clickResetAndAssertLoading,
@@ -33,6 +34,7 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '客户管理' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '客户数据汇总', filterLabel: '客户筛选' });
+    await assertContentSizedFilter(page, [220, 220, 220, 168]);
     await tableRow(page, 'C001').waitFor();
     await assertFixedTableLayout(page, 8);
     await clickRefreshAndAssertLoading(page, screenshotPath('sales-customers-refresh.png'));
@@ -55,6 +57,7 @@ runSmoke({
     await page.locator('[data-menu-path="/sales/orders"]').click();
     await page.getByRole('heading', { name: '销售订单' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '销售订单数据汇总', filterLabel: '销售订单筛选' });
+    await assertContentSizedFilter(page, [220, 280, 280, 168]);
     await tableRow(page, 'SO202606001').waitFor();
     await assertFixedTableLayout(page, 9);
     const desktopTableState = await page.locator('[data-slot="table-container"]').first().evaluate((element) => {
@@ -171,6 +174,7 @@ runSmoke({
     await orderDialog.waitFor({ state: 'hidden' });
 
     await page.setViewportSize({ width: 1115, height: 838 });
+    await assertContentSizedFilter(page, [220, 280, 280, 168]);
     const tableViewport = page.locator('[data-slot="table-container"]').first();
     await tableViewport.evaluate((element) => {
       element.scrollLeft = element.scrollWidth;

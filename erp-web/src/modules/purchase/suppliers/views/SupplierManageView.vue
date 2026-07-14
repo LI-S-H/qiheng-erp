@@ -344,11 +344,11 @@ onMounted(fetchSuppliers);
 
     <ListSummaryStrip :items="summaryItems" aria-label="供应商数据汇总" />
 
-    <ListFilterPanel grid-class="filter-grid--purchase" aria-label="供应商筛选">
-        <div class="space-y-1"><Label class="text-xs">供应商编码</Label><Input v-model="query.supplierCode" placeholder="如 S001" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">供应商名称</Label><Input v-model="query.supplierName" placeholder="请输入名称" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">联系人</Label><Input v-model="query.contactName" placeholder="请输入联系人" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
+    <ListFilterPanel layout="content" aria-label="供应商筛选">
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">供应商编码</Label><Input v-model="query.supplierCode" placeholder="如 S001" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">供应商名称</Label><Input v-model="query.supplierName" placeholder="请输入名称" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">联系人</Label><Input v-model="query.contactName" placeholder="请输入联系人" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
       <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>

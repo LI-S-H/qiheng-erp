@@ -539,28 +539,28 @@ onMounted(async () => {
           <div class="ai-task-table-wrap">
             <Table class="business-data-table" scroll-label="经营任务配置" :aria-busy="loading || Boolean(actionTaskId)">
               <colgroup>
+                <col style="width: 15%" />
+                <col style="width: 9%" />
+                <col style="width: 8%" />
+                <col style="width: 18%" />
                 <col style="width: 16%" />
-                <col style="width: 8%" />
-                <col style="width: 8%" />
-                <col style="width: 19%" />
-                <col style="width: 17%" />
                 <col style="width: 13%" />
-                <col style="width: 19%" />
+                <col style="width: 21%" />
               </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead data-task-sticky="name">任务</TableHead>
+                  <TableHead>任务</TableHead>
                   <TableHead>类型</TableHead>
                   <TableHead>频率</TableHead>
                   <TableHead>商品范围</TableHead>
                   <TableHead>仓库范围</TableHead>
                   <TableHead>状态</TableHead>
-                  <TableHead data-task-sticky="actions">操作</TableHead>
+                  <TableHead>操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow v-for="task in taskPage.tasks" :key="task.taskId">
-                  <TableCell data-task-sticky="name">
+                  <TableCell>
                     <Tooltip>
                       <TooltipTrigger as-child>
                         <button type="button" class="ai-task-title">
@@ -572,8 +572,18 @@ onMounted(async () => {
                       </TooltipContent>
                     </Tooltip>
                   </TableCell>
-                  <TableCell>{{ categoryText(task.category) }}</TableCell>
-                  <TableCell>{{ frequencyText(task.frequency) }}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" class="ai-task-dimension ai-task-dimension--type">
+                      <BarChart3 class="h-3.5 w-3.5" aria-hidden="true" />
+                      {{ categoryText(task.category) }}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" class="ai-task-dimension ai-task-dimension--frequency">
+                      <CalendarDays class="h-3.5 w-3.5" aria-hidden="true" />
+                      {{ frequencyText(task.frequency) }}
+                    </Badge>
+                  </TableCell>
                   <TableCell>
                     <div class="ai-tag-list">
                       <Badge v-for="product in task.productScope.slice(0, 3)" :key="product" variant="outline">{{ product }}</Badge>
@@ -597,7 +607,7 @@ onMounted(async () => {
                       />
                     </div>
                   </TableCell>
-                  <TableCell data-task-sticky="actions">
+                  <TableCell>
                     <div class="ai-task-actions">
                       <Button size="sm" variant="outline" :disabled="!task.editable" @click="openEdit(task)">
                         <Edit3 class="mr-1 h-3.5 w-3.5" />
@@ -982,38 +992,26 @@ onMounted(async () => {
 }
 
 .ai-task-table-wrap :deep([data-slot="table"]) {
-  min-width: 1180px;
+  min-width: 1100px;
   table-layout: fixed;
+  border-spacing: 0;
 }
 
-.ai-task-table-wrap :deep([data-slot="table-head"]),
 .ai-task-table-wrap :deep([data-slot="table-cell"]) {
-  height: 48px;
-  padding: 8px 10px;
-  font-size: 12px;
+  height: 52px;
+  padding: 9px 10px;
+  font-size: 14px;
   text-align: center;
   vertical-align: middle;
 }
 
-.ai-task-table-wrap :deep([data-task-sticky="name"]) {
-  position: sticky;
-  left: 0;
-  z-index: 3;
-  background: var(--background);
-  box-shadow: 1px 0 0 var(--border);
-}
-
-.ai-task-table-wrap :deep([data-task-sticky="actions"]) {
-  position: sticky;
-  right: 0;
-  z-index: 3;
-  background: var(--background);
-  box-shadow: -1px 0 0 var(--border);
-}
-
-.ai-task-table-wrap :deep([data-slot="table-header"] [data-task-sticky]) {
-  z-index: 5;
-  background: color-mix(in srgb, var(--muted) 72%, var(--background));
+.ai-task-table-wrap :deep([data-slot="table-head"]) {
+  height: 48px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .ai-task-title {
@@ -1022,13 +1020,37 @@ onMounted(async () => {
   border: 0;
   background: transparent;
   color: #172033;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   text-align: center;
   cursor: help;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ai-task-dimension {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ai-task-dimension--type {
+  background: color-mix(in srgb, var(--primary) 8%, var(--muted));
+  color: color-mix(in srgb, var(--primary) 82%, var(--foreground));
+}
+
+.ai-task-dimension--frequency {
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--border));
+  background: var(--background);
+  color: color-mix(in srgb, var(--foreground) 86%, var(--muted-foreground));
 }
 
 .ai-task-title:hover {

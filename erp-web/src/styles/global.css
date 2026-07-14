@@ -415,49 +415,6 @@ a {
   }
 }
 
-@media (min-width: 1280px) {
-  .filter-grid--users {
-    grid-template-columns: repeat(4, minmax(160px, 1fr));
-  }
-
-  .filter-grid--roles {
-    grid-template-columns: repeat(2, minmax(220px, 1fr)) minmax(170px, 0.75fr) auto;
-  }
-
-  .filter-grid--depts {
-    grid-template-columns: minmax(260px, 1fr) minmax(180px, 0.65fr) auto;
-  }
-
-  .filter-grid--permissions {
-    grid-template-columns: repeat(4, minmax(160px, 1fr));
-  }
-
-  .filter-grid--products {
-    grid-template-columns: repeat(4, minmax(160px, 1fr));
-  }
-
-  .filter-grid--purchase {
-    grid-template-columns: repeat(4, minmax(160px, 1fr));
-  }
-
-  .filter-grid--sales {
-    grid-template-columns: repeat(4, minmax(160px, 1fr));
-  }
-
-  .filter-grid--roles .filter-actions,
-  .filter-grid--depts .filter-actions {
-    grid-column: auto;
-  }
-
-  .filter-grid--users .filter-actions,
-  .filter-grid--permissions .filter-actions,
-  .filter-grid--products .filter-actions,
-  .filter-grid--purchase .filter-actions,
-  .filter-grid--sales .filter-actions {
-    grid-column: 4;
-  }
-}
-
 .table-scroll-viewport {
   --table-scroll-shadow-color: rgb(15 23 42 / 16%);
   --table-scroll-shadow-size: 18px;

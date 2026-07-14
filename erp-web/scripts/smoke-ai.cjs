@@ -200,6 +200,45 @@ async function smokeAssistant() {
   });
 }
 
+async function smokeTasksDesktopLayout() {
+  await runSmoke({
+    route: '/ai/tasks',
+    viewport: { width: 1440, height: 900 },
+    screenshot: screenshotPath('ai-tasks-layout-1440.png'),
+    async test(page) {
+      const state = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
+        const container = wrapper.querySelector('[data-slot="table-container"]');
+        const bodyCell = wrapper.querySelector('tbody [data-slot="table-cell"]');
+        const typeBadge = wrapper.querySelector('.ai-task-dimension--type');
+        const frequencyBadge = wrapper.querySelector('.ai-task-dimension--frequency');
+        const actions = wrapper.querySelector('.ai-task-actions');
+        const actionCell = actions?.closest('[data-slot="table-cell"]');
+        const actionCellStyle = actionCell ? getComputedStyle(actionCell) : null;
+        const actionContentWidth = actionCell && actionCellStyle
+          ? actionCell.clientWidth
+            - Number.parseFloat(actionCellStyle.paddingLeft)
+            - Number.parseFloat(actionCellStyle.paddingRight)
+          : 0;
+        return {
+          clientWidth: container?.clientWidth ?? 0,
+          scrollWidth: container?.scrollWidth ?? 0,
+          stickyCount: wrapper.querySelectorAll('[data-task-sticky]').length,
+          bodyFontSize: bodyCell ? Number.parseFloat(getComputedStyle(bodyCell).fontSize) : 0,
+          typeFontSize: typeBadge ? Number.parseFloat(getComputedStyle(typeBadge).fontSize) : 0,
+          frequencyFontSize: frequencyBadge ? Number.parseFloat(getComputedStyle(frequencyBadge).fontSize) : 0,
+          actionsFit: Boolean(actions && actions.scrollWidth <= actionContentWidth + 1),
+        };
+      });
+      if (state.scrollWidth > state.clientWidth + 1 || state.stickyCount !== 0 || !state.actionsFit) {
+        throw new Error(`任务配置桌面布局仍存在横向滚动、固定列或操作拥挤：${JSON.stringify(state)}`);
+      }
+      if (state.bodyFontSize < 14 || state.typeFontSize < 13 || state.frequencyFontSize < 13) {
+        throw new Error(`任务类型、频率或表格正文字号层级不足：${JSON.stringify(state)}`);
+      }
+    },
+  });
+}
+
 async function smokeTasks() {
   await runSmoke({
     route: '/ai/tasks',
@@ -226,25 +265,33 @@ async function smokeTasks() {
         throw new Error(`任务表格滚动层级异常：${JSON.stringify(scrollStructure)}`);
       }
 
-      await taskTable.evaluate(element => { element.scrollLeft = element.scrollWidth; });
-      await page.waitForTimeout(80);
-      const stickyState = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
-        const container = wrapper.querySelector('[data-slot="table-container"]');
-        const name = wrapper.querySelector('[data-slot="table-head"][data-task-sticky="name"]');
-        const actions = wrapper.querySelector('[data-slot="table-head"][data-task-sticky="actions"]');
-        if (!container || !name || !actions) return null;
-        const containerRect = container.getBoundingClientRect();
-        const nameRect = name.getBoundingClientRect();
-        const actionsRect = actions.getBoundingClientRect();
-        const hit = document.elementFromPoint(actionsRect.left + actionsRect.width / 2, actionsRect.top + actionsRect.height / 2);
+      const scrollBaseline = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
+        const name = wrapper.querySelector('[data-slot="table-head"]:first-child');
+        const actions = wrapper.querySelector('[data-slot="table-head"]:last-child');
         return {
-          nameLeftGap: Number((nameRect.left - containerRect.left).toFixed(1)),
-          actionsRightGap: Number((containerRect.right - actionsRect.right).toFixed(1)),
-          hitText: hit?.textContent?.trim() || '',
+          nameLeft: name?.getBoundingClientRect().left ?? 0,
+          actionsLeft: actions?.getBoundingClientRect().left ?? 0,
         };
       });
-      if (!stickyState || Math.abs(stickyState.nameLeftGap) > 2 || Math.abs(stickyState.actionsRightGap) > 2 || !stickyState.hitText.includes('操作')) {
-        throw new Error(`任务表格固定列异常：${JSON.stringify(stickyState)}`);
+      await taskTable.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+      await page.waitForTimeout(80);
+      const naturalScrollState = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
+        const name = wrapper.querySelector('[data-slot="table-head"]:first-child');
+        const actions = wrapper.querySelector('[data-slot="table-head"]:last-child');
+        return {
+          stickyCount: wrapper.querySelectorAll('[data-task-sticky]').length,
+          namePosition: name ? getComputedStyle(name).position : '',
+          actionsPosition: actions ? getComputedStyle(actions).position : '',
+          nameLeft: name?.getBoundingClientRect().left ?? 0,
+          actionsLeft: actions?.getBoundingClientRect().left ?? 0,
+        };
+      });
+      if (naturalScrollState.stickyCount !== 0
+        || naturalScrollState.namePosition === 'sticky'
+        || naturalScrollState.actionsPosition === 'sticky'
+        || naturalScrollState.nameLeft >= scrollBaseline.nameLeft - 40
+        || naturalScrollState.actionsLeft >= scrollBaseline.actionsLeft - 40) {
+        throw new Error(`任务表格首尾列未随内容自然滚动：${JSON.stringify({ scrollBaseline, naturalScrollState })}`);
       }
 
       await observeNextTransition(page, '.ai-fade-switch-leave-active, .ai-fade-switch-enter-active');
@@ -414,6 +461,7 @@ async function smokeTasksReducedMotion() {
 }
 
 smokeAssistant()
+  .then(smokeTasksDesktopLayout)
   .then(smokeTasks)
   .then(smokeReducedMotion)
   .then(smokeTasksReducedMotion)

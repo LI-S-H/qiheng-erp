@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertSharedListChrome, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertSharedListChrome, assertContentSizedFilter, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/system/permissions',
@@ -8,6 +8,7 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '权限码配置' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '权限码数据汇总', filterLabel: '权限码筛选' });
+    await assertContentSizedFilter(page, [220, 220, 168, 168, 168]);
     await page.getByText('system:user:query', { exact: true }).waitFor();
     await assertFixedTableLayout(page, 10);
     const permissionDescription = tableRow(page, 'system:user:query').locator('[data-overflow-tooltip]');

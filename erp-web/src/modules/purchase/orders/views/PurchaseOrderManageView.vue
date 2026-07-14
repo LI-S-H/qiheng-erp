@@ -658,11 +658,11 @@ onMounted(() => {
 
     <ListSummaryStrip :items="summaryItems" aria-label="采购订单数据汇总" />
 
-    <ListFilterPanel grid-class="filter-grid--purchase" aria-label="采购订单筛选">
-        <div class="space-y-1"><Label class="text-xs">采购单号</Label><Input v-model="query.purchaseNo" placeholder="如 PO202606001" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">供应商</Label><RemoteSearchSelect v-model="query.supplierId" :selected-label="querySupplierLabel" :fetch-options="fetchSupplierSearchOptions" placeholder="全部供应商" search-placeholder="输入供应商编码或名称" clearable clear-value="all" clear-label="全部供应商" /></div>
-        <div class="space-y-1"><Label class="text-xs">入库仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="queryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
-        <div class="space-y-1"><Label class="text-xs">订单状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
+    <ListFilterPanel layout="content" aria-label="采购订单筛选">
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">采购单号</Label><Input v-model="query.purchaseNo" placeholder="如 PO202606001" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="wide"><Label class="text-xs">供应商</Label><RemoteSearchSelect v-model="query.supplierId" :selected-label="querySupplierLabel" :fetch-options="fetchSupplierSearchOptions" placeholder="全部供应商" search-placeholder="输入供应商编码或名称" clearable clear-value="all" clear-label="全部供应商" /></div>
+        <div class="space-y-1" data-filter-size="wide"><Label class="text-xs">入库仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="queryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">订单状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
       <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>

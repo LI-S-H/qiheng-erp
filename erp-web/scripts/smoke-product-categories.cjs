@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertTreeCollapseStability, assertSharedListChrome, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertTreeCollapseStability, assertSharedListChrome, assertContentSizedFilter, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 runSmoke({
   route: '/product/categories',
@@ -7,6 +7,7 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '产品分类' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '产品分类数据汇总', filterLabel: '产品分类筛选' });
+    await assertContentSizedFilter(page, [220, 168]);
     await assertFixedTableLayout(page, 7);
     await page.getByText('无上级分类').first().waitFor();
     await page.getByText('饮料冲调', { exact: true }).waitFor();
@@ -159,10 +160,7 @@ runSmoke({
     await page.setViewportSize({ width: 1115, height: 838 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '产品分类' }).waitFor();
-    const filterColumns = await page.locator('.filter-grid--depts').evaluate(element =>
-      getComputedStyle(element).gridTemplateColumns.split(' ').length,
-    );
-    if (filterColumns !== 2) throw new Error(`产品分类筛选区在中等宽度下应为两列，当前为 ${filterColumns} 列`);
+    await assertContentSizedFilter(page, [220, 168]);
     await page.screenshot({ path: 'smoke-product-categories-1115.png', fullPage: true });
 
     await page.setViewportSize({ width: 900, height: 420 });

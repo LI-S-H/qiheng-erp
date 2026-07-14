@@ -27,7 +27,10 @@ async function mountComponentHarness(page) {
     ].join(';');
     document.body.append(host);
 
-    const field = (label, placeholder) => h('div', { class: 'space-y-1' }, [
+    const field = (label, placeholder, size) => h('div', {
+      class: 'space-y-1',
+      'data-filter-size': size,
+    }, [
       h('label', { 'data-slot': 'label' }, label),
       h('input', {
         'data-slot': 'input',
@@ -51,10 +54,11 @@ async function mountComponentHarness(page) {
             { label: '异常', value: 8, tone: 'danger' },
           ],
         }),
-        h(ListFilterPanel, { ariaLabel: '测试筛选' }, {
+        h(ListFilterPanel, { ariaLabel: '测试筛选', layout: 'content' }, {
           default: () => [
-            field('业务单号', '请输入业务单号'),
-            field('往来单位', '请输入名称或编码'),
+            field('状态', '全部状态', 'compact'),
+            field('业务单号', '请输入业务单号', 'standard'),
+            field('往来单位', '请输入名称或编码', 'wide'),
           ],
           actions: () => [
             h('button', { 'data-slot': 'button', class: 'h-9 rounded-md border px-4 text-sm' }, '重置'),
@@ -74,6 +78,12 @@ async function mountComponentHarness(page) {
               value: index + 1,
             })),
           })),
+          h(ListFilterPanel, { ariaLabel: '空筛选', layout: 'content' }, {
+            actions: () => h('button', { 'data-slot': 'button' }, '查询'),
+          }),
+          h(ListFilterPanel, { ariaLabel: '旧网格筛选' }, {
+            default: () => field('旧字段', '保持网格布局'),
+          }),
         ]),
       ]),
     }).mount(host);
@@ -89,7 +99,7 @@ runSmoke({
     await mountComponentHarness(page);
 
     const summary = page.locator('#list-page-component-harness main > [data-list-summary]');
-    const filter = page.locator('#list-page-component-harness [data-list-filter-panel]');
+    const filter = page.getByRole('search', { name: '测试筛选' });
     await page.getByRole('region', { name: '测试汇总' }).waitFor();
     await page.getByRole('search', { name: '测试筛选' }).waitFor();
     const desktopState = await page.evaluate(() => {
@@ -98,6 +108,13 @@ runSmoke({
       const summaryStyle = getComputedStyle(summaryElement);
       const filterStyle = getComputedStyle(filterElement);
       const input = filterElement.querySelector('[data-slot="input"]');
+      const grid = filterElement.querySelector('.list-filter-panel__grid');
+      const sizedFields = [...grid.children]
+        .filter(element => element.hasAttribute('data-filter-size'))
+        .map(element => ({
+          size: element.getAttribute('data-filter-size'),
+          width: Number(element.getBoundingClientRect().width.toFixed(1)),
+        }));
       return {
         summaryColumns: summaryStyle.gridTemplateColumns.split(' ').length,
         summaryShadow: summaryStyle.boxShadow,
@@ -108,6 +125,9 @@ runSmoke({
         filterShadow: filterStyle.boxShadow,
         filterBorder: filterStyle.borderTopWidth,
         inputHeight: input.getBoundingClientRect().height,
+        filterDisplay: getComputedStyle(grid).display,
+        filterWrap: getComputedStyle(grid).flexWrap,
+        sizedFields,
         actionOrder: [...filterElement.querySelectorAll('.filter-actions > *')].map(item => item.textContent.trim()),
         hasFooter: Boolean(filterElement.querySelector('.list-filter-panel__footer')),
       };
@@ -116,7 +136,12 @@ runSmoke({
       || desktopState.definitionCount !== 4 || desktopState.valueCount !== 4
       || desktopState.summaryShadow === 'none' || desktopState.filterShadow === 'none'
       || desktopState.summaryBorder === '0px' || desktopState.filterBorder === '0px'
-      || desktopState.inputHeight < 36 || desktopState.actionOrder.join(',') !== '重置,查询'
+      || desktopState.inputHeight < 36 || desktopState.filterDisplay !== 'flex' || desktopState.filterWrap !== 'wrap'
+      || JSON.stringify(desktopState.sizedFields) !== JSON.stringify([
+        { size: 'compact', width: 168 },
+        { size: 'standard', width: 220 },
+        { size: 'wide', width: 280 },
+      ]) || desktopState.actionOrder.join(',') !== '重置,查询'
       || !desktopState.hasFooter) {
       throw new Error(`列表页共享组件桌面布局异常：${JSON.stringify(desktopState)}`);
     }
@@ -158,6 +183,32 @@ runSmoke({
     }
     await page.screenshot({ path: path.join(screenshotDirectory, 'list-page-components-desktop.png'), fullPage: true });
 
+    const compatibilityState = await page.evaluate(() => ({
+      emptyFieldCount: document.querySelector('[aria-label="空筛选"]')
+        ?.querySelectorAll('[data-filter-size]').length ?? -1,
+      emptyActions: document.querySelector('[aria-label="空筛选"]')
+        ?.querySelectorAll('.list-filter-panel__actions button').length ?? -1,
+      legacyDisplay: getComputedStyle(document.querySelector('[aria-label="旧网格筛选"] .list-filter-panel__grid')).display,
+    }));
+    if (compatibilityState.emptyFieldCount !== 0 || compatibilityState.emptyActions !== 1
+      || compatibilityState.legacyDisplay !== 'grid') {
+      throw new Error(`筛选组件空字段或旧网格兼容性异常：${JSON.stringify(compatibilityState)}`);
+    }
+
+    await page.setViewportSize({ width: 1115, height: 900 });
+    await page.waitForTimeout(100);
+    const mediumState = await filter.evaluate(element => ({
+      overflow: element.scrollWidth - element.clientWidth,
+      actionReachable: element.querySelector('.list-filter-panel__actions')?.getBoundingClientRect().right
+        <= element.getBoundingClientRect().right + 1,
+      fieldWidths: [...element.querySelectorAll('[data-filter-size]')]
+        .map(fieldElement => Number(fieldElement.getBoundingClientRect().width.toFixed(1))),
+    }));
+    if (mediumState.overflow > 1 || !mediumState.actionReachable
+      || mediumState.fieldWidths.join(',') !== '168,220,280') {
+      throw new Error(`筛选组件中等视口内容适配异常：${JSON.stringify(mediumState)}`);
+    }
+
     await page.setViewportSize({ width: 900, height: 900 });
     await page.waitForTimeout(100);
     const tabletColumns = await page.locator('#list-summary-edge-cases [data-list-summary]').evaluateAll(elements => (
@@ -167,18 +218,23 @@ runSmoke({
       throw new Error(`汇总组件平板边界项布局异常：${JSON.stringify(tabletColumns)}`);
     }
 
-    await page.setViewportSize({ width: 520, height: 900 });
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(100);
     const mobileState = await page.evaluate(() => {
       const summaryElement = document.querySelector('#list-page-component-harness [data-list-summary]');
       const filterElement = document.querySelector('#list-page-component-harness [data-list-filter-panel]');
       return {
         summaryColumns: getComputedStyle(summaryElement).gridTemplateColumns.split(' ').length,
-        filterColumns: getComputedStyle(filterElement.querySelector('.filter-grid')).gridTemplateColumns.split(' ').length,
+        filterDisplay: getComputedStyle(filterElement.querySelector('.filter-grid')).display,
+        fieldWidths: [...filterElement.querySelectorAll('[data-filter-size]')]
+          .map(element => Number(element.getBoundingClientRect().width.toFixed(1))),
+        filterWidth: Number(filterElement.querySelector('.filter-grid').getBoundingClientRect().width.toFixed(1)),
         pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       };
     });
-    if (mobileState.summaryColumns !== 1 || mobileState.filterColumns !== 1 || mobileState.pageOverflow > 1) {
+    if (mobileState.summaryColumns !== 1 || mobileState.filterDisplay !== 'flex'
+      || mobileState.fieldWidths.some(width => Math.abs(width - mobileState.filterWidth) > 1)
+      || mobileState.pageOverflow > 1) {
       throw new Error(`列表页共享组件移动端布局异常：${JSON.stringify(mobileState)}`);
     }
     await page.screenshot({ path: path.join(screenshotDirectory, 'list-page-components-mobile.png'), fullPage: true });

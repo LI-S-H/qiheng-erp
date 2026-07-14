@@ -29,6 +29,16 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '库存管理' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '库存数据汇总', filterLabel: '库存筛选' });
+    const desktopFilterState = await page.getByRole('search', { name: '库存筛选' }).evaluate(element => ({
+      layout: element.querySelector('[data-filter-layout]')?.getAttribute('data-filter-layout'),
+      widths: [...element.querySelectorAll('[data-filter-size]')]
+        .map(field => Number(field.getBoundingClientRect().width.toFixed(1))),
+      overflow: element.scrollWidth - element.clientWidth,
+    }));
+    if (desktopFilterState.layout !== 'content' || desktopFilterState.widths.join(',') !== '280,220,220,168,168'
+      || desktopFilterState.overflow > 1) {
+      throw new Error(`库存筛选桌面内容宽度异常：${JSON.stringify(desktopFilterState)}`);
+    }
     await tableRow(page, 'P000001').waitFor();
     await assertFixedTableLayout(page, 10);
 
@@ -120,11 +130,37 @@ runSmoke({
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '库存管理' }).waitFor();
     await tableRow(page, 'P000001').waitFor();
-    const filterColumns = await page.locator('.filter-grid--stocks').evaluate(element =>
-      getComputedStyle(element).gridTemplateColumns.split(' ').length,
-    );
-    if (filterColumns !== 2) throw new Error(`库存筛选区在中等宽度下应为两列，当前为 ${filterColumns} 列`);
+    const mediumFilterState = await page.getByRole('search', { name: '库存筛选' }).evaluate(element => {
+      const actions = element.querySelector('.list-filter-panel__actions');
+      return {
+        widths: [...element.querySelectorAll('[data-filter-size]')]
+          .map(field => Number(field.getBoundingClientRect().width.toFixed(1))),
+        overflow: element.scrollWidth - element.clientWidth,
+        actionsReachable: Boolean(actions && actions.getBoundingClientRect().right <= element.getBoundingClientRect().right + 1),
+      };
+    });
+    if (mediumFilterState.widths.join(',') !== '280,220,220,168,168'
+      || mediumFilterState.overflow > 1 || !mediumFilterState.actionsReachable) {
+      throw new Error(`库存筛选中等视口布局异常：${JSON.stringify(mediumFilterState)}`);
+    }
     await page.screenshot({ path: 'smoke-warehouse-stocks-1115.png', fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileFilterState = await page.getByRole('search', { name: '库存筛选' }).evaluate(element => {
+      const grid = element.querySelector('[data-filter-layout]');
+      const gridWidth = grid.getBoundingClientRect().width;
+      return {
+        widths: [...element.querySelectorAll('[data-filter-size]')]
+          .map(field => Number(field.getBoundingClientRect().width.toFixed(1))),
+        gridWidth: Number(gridWidth.toFixed(1)),
+        pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+    if (mobileFilterState.widths.some(width => Math.abs(width - mobileFilterState.gridWidth) > 1)
+      || mobileFilterState.pageOverflow > 1) {
+      throw new Error(`库存筛选移动端布局异常：${JSON.stringify(mobileFilterState)}`);
+    }
+    await page.screenshot({ path: 'smoke-warehouse-stocks-390.png', fullPage: true });
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload({ waitUntil: 'domcontentloaded' });

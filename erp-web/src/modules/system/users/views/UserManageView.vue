@@ -619,24 +619,24 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
 
     <ListSummaryStrip :items="summaryItems" aria-label="用户数据汇总" />
 
-    <ListFilterPanel grid-class="filter-grid--users" aria-label="用户筛选">
-        <div class="space-y-1">
+    <ListFilterPanel layout="content" aria-label="用户筛选">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">登录账号</Label>
           <Input v-model="query.username" placeholder="请输入登录账号" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">用户姓名</Label>
           <Input v-model="query.realName" placeholder="请输入用户姓名" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">部门</Label>
           <AnchoredSelect v-model="query.deptId" :options="deptFilterOptions" placeholder="全部部门" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">角色</Label>
           <AnchoredSelect v-model="query.roleId" :options="roleFilterOptions" placeholder="全部角色" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>

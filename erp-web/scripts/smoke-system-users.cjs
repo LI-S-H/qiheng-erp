@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertSharedListChrome, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
+const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertSharedListChrome, assertContentSizedFilter, clickQueryAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 const screenshotDirectory = path.resolve(
   process.env.QA_SCREENSHOT_DIR || 'qa-artifacts/system-users',
@@ -15,6 +15,7 @@ runSmoke({
   async test(page) {
     await page.getByRole('heading', { name: '用户管理' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '用户数据汇总', filterLabel: '用户筛选' });
+    await assertContentSizedFilter(page, [220, 220, 220, 220, 168]);
     const inactiveSubmenu = page.locator('[data-menu-path="/system/roles"]');
     const activeSubmenu = page.locator('[data-menu-path="/system/users"]');
     const readSubmenuContrast = submenu => submenu.evaluate((element) => {
@@ -77,9 +78,8 @@ runSmoke({
     if (bodyFontSize !== 14) throw new Error(`页面正文基准字号应为 14px，当前为 ${bodyFontSize}px`);
 
     await page.setViewportSize({ width: 933, height: 838 });
-    const filterGrid = page.locator('.filter-grid--users');
-    const filterColumns = await filterGrid.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
-    if (filterColumns !== 2) throw new Error('用户筛选区在中等宽度下未保持规整两列布局');
+    await assertContentSizedFilter(page, [220, 220, 220, 220, 168]);
+    const filterGrid = page.locator('[data-filter-layout="content"]');
 
     const selectTriggers = filterGrid.getByRole('combobox');
     if (await selectTriggers.count() !== 3) throw new Error('用户筛选项必须使用统一下拉框组件');
@@ -87,9 +87,9 @@ runSmoke({
     const typography = await page.evaluate(() => {
       const fontSize = (selector) => getComputedStyle(document.querySelector(selector)).fontSize;
       return {
-        label: fontSize('.filter-grid--users [data-slot="label"]'),
-        input: fontSize('.filter-grid--users [data-slot="input"]'),
-        select: fontSize('.filter-grid--users [data-anchored-select-trigger]'),
+        label: fontSize('[data-filter-layout="content"] [data-slot="label"]'),
+        input: fontSize('[data-filter-layout="content"] [data-slot="input"]'),
+        select: fontSize('[data-filter-layout="content"] [data-anchored-select-trigger]'),
         queryButton: fontSize('.filter-actions [data-slot="button"]'),
       };
     });
@@ -125,7 +125,7 @@ runSmoke({
     await anchoredContent.waitFor();
     await page.waitForTimeout(180);
     const anchoredPosition = await page.evaluate(() => {
-      const trigger = document.querySelector('.filter-grid--users [data-anchored-select-trigger]')?.getBoundingClientRect();
+      const trigger = document.querySelector('[data-filter-layout="content"] [data-anchored-select-trigger]')?.getBoundingClientRect();
       const content = document.querySelector('[data-anchored-select-content]')?.getBoundingClientRect();
       return trigger && content ? {
         triggerBottom: trigger.bottom,
@@ -418,7 +418,7 @@ runSmoke({
       await page.getByRole('heading', { name: '用户管理' }).waitFor();
       await tableRow(page, 'admin').waitFor();
 
-      const statusTrigger = page.locator('.filter-grid--users').getByRole('combobox').nth(2);
+      const statusTrigger = page.locator('[data-filter-layout="content"]').getByRole('combobox').nth(2);
       const selectStatus = async (label) => {
         await statusTrigger.click();
         const content = page.locator('[data-anchored-select-content][data-state="open"]');

@@ -309,7 +309,8 @@ for (const fragment of [
   if (!source.includes(fragment)) throw new Error(`库存管理 OpenAPI 缺少：${fragment}`);
 }
 if (!warehouseStockViewSource.includes('库存变更请通过出入库或库存调整业务完成')
-  || !warehouseStockViewSource.includes('filter-grid--stocks')
+  || !warehouseStockViewSource.includes('<ListFilterPanel layout="content"')
+  || !warehouseStockViewSource.includes('data-filter-size="wide"')
   || !warehouseStockViewSource.includes('库存健康')
   || !warehouseStockViewSource.includes('占用情况')
   || !pageDesign.includes('## 15. 仓库库存模块：库存管理')) {
@@ -382,7 +383,8 @@ if (!stockBillViewSource.includes('新增入库单')
   || !stockBillViewSource.includes('handleConfirm(detail)')
   || !stockBillViewSource.includes('handleSubmit(detail)')
   || !stockBillViewSource.includes('handleCancel(row)')
-  || !stockBillViewSource.includes('filter-grid--stock-bills')
+  || !stockBillViewSource.includes('<ListFilterPanel layout="content"')
+  || !stockBillViewSource.includes('data-filter-size="compact"')
   || !stockBillViewSource.includes('entryModeOptions')
   || !stockBillViewSource.includes('listQtyLabel')
   || !stockBillViewSource.includes('billTotalQuantityText')

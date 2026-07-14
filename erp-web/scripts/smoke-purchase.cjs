@@ -6,6 +6,7 @@ const {
   assertFixedTableLayout,
   assertRequiredLabels,
   assertSharedListChrome,
+  assertContentSizedFilter,
   clickQueryAndAssertLoading,
   clickRefreshAndAssertLoading,
   clickResetAndAssertLoading,
@@ -67,6 +68,7 @@ async function assertSupplierProductsNavigation(page) {
   await page.waitForURL(url => url.pathname === '/purchase/supplier-products');
   await page.getByRole('heading', { name: '供货产品' }).waitFor();
   await assertSharedListChrome(page, { summaryLabel: '供货产品数据汇总', filterLabel: '供货产品筛选' });
+  await assertContentSizedFilter(page, [280, 220, 220, 168]);
   if (await supplierProductsLink.getAttribute('aria-current') !== 'page') {
     throw new Error('供货产品跳转后未标记当前页面');
   }
@@ -95,6 +97,7 @@ runSmoke({
     await assertSupplierProductsNavigation(page);
     await page.getByRole('heading', { name: '供应商管理' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '供应商数据汇总', filterLabel: '供应商筛选' });
+    await assertContentSizedFilter(page, [220, 220, 220, 168]);
     await tableRow(page, 'S001').waitFor();
     await assertFixedTableLayout(page, 10);
     await clickRefreshAndAssertLoading(page, screenshotPath('purchase-supplier-refresh.png'));
@@ -117,6 +120,7 @@ runSmoke({
     await page.locator('[data-menu-path="/purchase/supplier-products"]').click();
     await page.getByRole('heading', { name: '供货产品' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '供货产品数据汇总', filterLabel: '供货产品筛选' });
+    await assertContentSizedFilter(page, [280, 220, 220, 168]);
     await tableRow(page, 'HD-SD330').waitFor();
     await assertFixedTableLayout(page, 10);
     await page.getByPlaceholder('请输入产品名称').fill('苏打水');
@@ -135,6 +139,7 @@ runSmoke({
     await page.locator('[data-menu-path="/purchase/orders"]').click();
     await page.getByRole('heading', { name: '采购订单' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '采购订单数据汇总', filterLabel: '采购订单筛选' });
+    await assertContentSizedFilter(page, [220, 280, 280, 168]);
     await tableRow(page, 'PO202606001').waitFor();
     await assertFixedTableLayout(page, 9);
     const desktopTableState = await page.locator('[data-slot="table-container"]').first().evaluate((element) => {
@@ -261,6 +266,7 @@ runSmoke({
     await requiredOrderDialog.getByRole('button', { name: '取消', exact: true }).click();
 
     await page.setViewportSize({ width: 1115, height: 838 });
+    await assertContentSizedFilter(page, [220, 280, 280, 168]);
     const tableViewport = page.locator('[data-slot="table-container"]').first();
     await tableViewport.evaluate((element) => {
       element.scrollLeft = element.scrollWidth;

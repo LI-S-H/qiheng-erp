@@ -441,13 +441,13 @@ function formatQty(value: number) {
 
     <ListSummaryStrip :items="summaryItems" aria-label="产品档案数据汇总" />
 
-    <ListFilterPanel grid-class="filter-grid--products" aria-label="产品档案筛选">
-        <div class="space-y-1"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P000001" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">产品分类</Label><AnchoredSelect v-model="query.categoryId" :options="categoryFilterOptions" placeholder="全部分类" /></div>
-        <div class="space-y-1"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" /></div>
-        <div class="space-y-1"><Label class="text-xs">品牌名称</Label><Input v-model="query.brandName" placeholder="请输入品牌名称" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1"><Label class="text-xs">产品条码</Label><Input v-model="query.barcode" placeholder="请输入完整条码" @keyup.enter="handleSearch" /></div>
+    <ListFilterPanel layout="content" aria-label="产品档案筛选">
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P000001" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品分类</Label><AnchoredSelect v-model="query.categoryId" :options="categoryFilterOptions" placeholder="全部分类" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">品牌名称</Label><Input v-model="query.brandName" placeholder="请输入品牌名称" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品条码</Label><Input v-model="query.barcode" placeholder="请输入完整条码" @keyup.enter="handleSearch" /></div>
         <template #actions>
           <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
           <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>

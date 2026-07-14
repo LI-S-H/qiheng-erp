@@ -438,16 +438,16 @@ function togglePermForm(code: string, checked: boolean) {
 
     <ListSummaryStrip :items="summaryItems" aria-label="角色数据汇总" />
 
-    <ListFilterPanel grid-class="filter-grid--roles" aria-label="角色筛选">
-        <div class="space-y-1">
+    <ListFilterPanel layout="content" aria-label="角色筛选">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">角色编码</Label>
           <Input v-model="query.roleCode" placeholder="如 SUPER_ADMIN" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">角色名称</Label>
           <Input v-model="query.roleName" placeholder="如 超级管理员" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>

@@ -448,6 +448,28 @@ async function assertPolishedFilterPanel(page) {
   if (!focusShadow || focusShadow === 'none') throw new Error('筛选控件缺少清晰焦点反馈');
 }
 
+async function assertContentSizedFilter(page, expectedWidths) {
+  const filter = page.locator('[data-list-filter-panel]');
+  const metrics = await filter.evaluate((element) => {
+    const fields = [...element.querySelectorAll('[data-filter-size]')];
+    const actions = element.querySelector('.filter-actions');
+    return {
+      layout: element.querySelector('[data-filter-layout]')?.getAttribute('data-filter-layout'),
+      widths: fields.map(field => Math.round(field.getBoundingClientRect().width)),
+      panelOverflow: element.scrollWidth - element.clientWidth,
+      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      actionsOverflow: actions
+        ? actions.getBoundingClientRect().right - element.getBoundingClientRect().right
+        : null,
+    };
+  });
+  if (metrics.layout !== 'content' || metrics.widths.join(',') !== expectedWidths.join(',')
+    || metrics.panelOverflow > 1 || metrics.pageOverflow > 1
+    || metrics.actionsOverflow === null || metrics.actionsOverflow > 1) {
+    throw new Error(`内容适配筛选布局异常：${JSON.stringify(metrics)}`);
+  }
+}
+
 async function assertSharedListChrome(page, { summaryLabel, filterLabel }) {
   const summary = page.getByRole('region', { name: summaryLabel });
   const filter = page.getByRole('search', { name: filterLabel });
@@ -489,5 +511,6 @@ module.exports = {
   clickRefreshAndAssertLoading,
   clickResetAndAssertLoading,
   assertPolishedFilterPanel,
+  assertContentSizedFilter,
   assertSharedListChrome,
 };

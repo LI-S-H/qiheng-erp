@@ -608,12 +608,12 @@ function confirmBatchDelete() {
 
     <ListSummaryStrip :items="summaryItems" aria-label="产品分类数据汇总" />
 
-    <ListFilterPanel grid-class="filter-grid--depts" aria-label="产品分类筛选">
-        <div class="space-y-1">
+    <ListFilterPanel layout="content" aria-label="产品分类筛选">
+        <div class="space-y-1" data-filter-size="standard">
           <Label class="text-xs">分类名称</Label>
           <Input v-model="query.categoryName" placeholder="如 食品饮料" @keyup.enter="handleSearch" />
         </div>
-        <div class="space-y-1">
+        <div class="space-y-1" data-filter-size="compact">
           <Label class="text-xs">状态</Label>
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>

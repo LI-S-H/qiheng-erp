@@ -48,10 +48,11 @@ runSmoke({
       background: getComputedStyle(element).backgroundColor,
       marker: getComputedStyle(element).boxShadow,
     }))));
-    if (await warningRow.getAttribute('data-stock-risk') !== 'warning'
+    if (await normalRow.getAttribute('data-stock-risk') !== 'normal'
+      || await warningRow.getAttribute('data-stock-risk') !== 'warning'
       || riskVisuals[0].background === riskVisuals[1].background
-      || !riskVisuals[1].marker.includes('inset')) {
-      throw new Error(`低库存行缺少清晰背景与左侧风险标识：${JSON.stringify(riskVisuals)}`);
+      || !riskVisuals[0].marker.includes('inset') || !riskVisuals[1].marker.includes('inset')) {
+      throw new Error(`正常与低库存行缺少统一浅色背景或左侧状态标识：${JSON.stringify(riskVisuals)}`);
     }
     const warningBackground = riskVisuals[1].background;
     await warningRow.hover();
@@ -114,7 +115,8 @@ runSmoke({
       background: getComputedStyle(element).backgroundColor,
       marker: getComputedStyle(element).boxShadow,
     }));
-    if (criticalVisual.risk !== 'critical' || criticalVisual.background === riskVisuals[0].background || !criticalVisual.marker.includes('inset')) {
+    if (criticalVisual.risk !== 'critical' || criticalVisual.background === riskVisuals[0].background
+      || criticalVisual.background === riskVisuals[1].background || !criticalVisual.marker.includes('inset')) {
       throw new Error(`零库存行缺少清晰红色背景与左侧风险标识：${JSON.stringify(criticalVisual)}`);
     }
     await page.screenshot({ path: 'smoke-warehouse-stocks-zero-contrast.png', fullPage: true });

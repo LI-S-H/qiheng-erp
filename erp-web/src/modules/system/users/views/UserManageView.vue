@@ -36,6 +36,7 @@ import MultiSelect from '@/components/common/MultiSelect.vue';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
@@ -641,8 +642,7 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
           <AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" />
         </div>
         <template #actions>
-          <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+          <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" />
         </template>
       <template v-if="appliedFilters.length > 0" #footer>
       <div

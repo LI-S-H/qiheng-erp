@@ -40,28 +40,17 @@ withDefaults(defineProps<{
 .list-filter-panel {
   position: relative;
   overflow: hidden;
-  padding: 18px;
-  border-color: color-mix(in srgb, var(--foreground) 9%, var(--border));
-  background: color-mix(in srgb, var(--card) 98%, var(--primary));
+  border-radius: 10px;
+  padding: 16px;
+  border-color: color-mix(in srgb, var(--foreground) 8%, var(--border));
+  background: color-mix(in srgb, var(--card) 97%, var(--muted));
   box-shadow:
-    0 1px 2px rgb(15 23 42 / 5%),
-    0 12px 30px -22px rgb(15 23 42 / 34%),
-    inset 0 1px 0 rgb(255 255 255 / 78%);
-}
-
-.list-filter-panel::before {
-  position: absolute;
-  inset: 0 18px auto;
-  height: 2px;
-  border-radius: 0 0 999px 999px;
-  background: color-mix(in srgb, var(--primary) 46%, transparent);
-  content: '';
-  opacity: 0.72;
-  pointer-events: none;
+    0 1px 2px rgb(15 23 42 / 4%),
+    0 6px 18px -16px rgb(15 23 42 / 24%);
 }
 
 .list-filter-panel__grid {
-  gap: 14px 16px;
+  gap: 12px 14px;
 }
 
 .list-filter-panel__grid--content {
@@ -93,8 +82,7 @@ withDefaults(defineProps<{
 .list-filter-panel :deep([data-slot='label']) {
   color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
   font-size: 13px;
-  font-weight: 650;
-  letter-spacing: 0.01em;
+  font-weight: 600;
 }
 
 .list-filter-panel :deep([data-slot='input']),
@@ -102,7 +90,7 @@ withDefaults(defineProps<{
   min-height: 36px;
   border-color: color-mix(in srgb, var(--foreground) 9%, var(--border));
   background: var(--card);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 2%);
   transition:
     border-color var(--motion-duration-fast) ease,
     background-color var(--motion-duration-fast) ease,
@@ -116,10 +104,19 @@ withDefaults(defineProps<{
 
 .list-filter-panel :deep([data-slot='input']:focus-visible),
 .list-filter-panel :deep([role='combobox']:focus-visible) {
-  border-color: color-mix(in srgb, var(--ring) 58%, var(--border));
+  border-color: color-mix(in srgb, var(--ring) 42%, var(--border));
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--ring) 8%, transparent),
-    0 0 10px color-mix(in srgb, var(--ring) 14%, transparent);
+    0 0 0 2px color-mix(in srgb, var(--ring) 10%, transparent),
+    0 1px 2px rgb(15 23 42 / 3%);
+}
+
+.list-filter-panel :deep([data-slot='input']:disabled),
+.list-filter-panel :deep([role='combobox'][aria-disabled='true']) {
+  border-color: color-mix(in srgb, var(--foreground) 5%, var(--border));
+  background: color-mix(in srgb, var(--muted) 72%, var(--card));
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .list-filter-panel__actions {
@@ -141,9 +138,14 @@ withDefaults(defineProps<{
   margin-top: 12px;
   border-top: 1px solid color-mix(in srgb, var(--foreground) 7%, var(--border));
   padding-top: 12px;
+  color: var(--muted-foreground);
 }
 
 @media (max-width: 640px) {
+  .list-filter-panel {
+    padding: 14px;
+  }
+
   .list-filter-panel__grid--content :slotted([data-filter-size]) {
     width: 100%;
     max-width: none;

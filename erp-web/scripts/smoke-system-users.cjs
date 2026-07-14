@@ -249,7 +249,7 @@ runSmoke({
     await usernameInput.click();
     await page.waitForTimeout(250);
     const focusShadow = await usernameInput.evaluate(element => getComputedStyle(element).boxShadow);
-    if (!focusShadow.includes('10px')) throw new Error(`输入框焦点态未使用柔和模糊辉光：${focusShadow}`);
+    if (!focusShadow || focusShadow === 'none') throw new Error(`输入框焦点态缺少清晰反馈：${focusShadow}`);
 
     const productMenu = page.getByRole('button', { name: '产品中心', exact: true });
     const productSubmenu = productMenu.locator('..').locator('.submenu-collapse');

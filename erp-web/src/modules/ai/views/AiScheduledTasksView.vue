@@ -12,6 +12,7 @@ import {
   Plus,
   Play,
   RefreshCw,
+  Repeat2,
 } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
@@ -579,8 +580,8 @@ onMounted(async () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" class="ai-task-dimension ai-task-dimension--frequency">
-                      <CalendarDays class="h-3.5 w-3.5" aria-hidden="true" />
+                    <Badge variant="outline" class="ai-task-dimension ai-task-dimension--frequency" data-task-frequency>
+                      <Repeat2 class="h-3.5 w-3.5" aria-hidden="true" data-task-frequency-icon />
                       {{ frequencyText(task.frequency) }}
                     </Badge>
                   </TableCell>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Columns3, RotateCcw } from 'lucide-vue-next';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
@@ -8,6 +8,7 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
@@ -39,6 +40,7 @@ import type { ProductListItem } from '@/modules/product/products/types';
 import { listWarehouses } from '../../warehouses/api';
 import type { WarehouseListItem } from '../../warehouses/types';
 import { stockBillListColumns, stockBillOptionalColumns, useStockBillTableColumns } from '../composables/use-stock-bill-table-columns';
+import type { StockBillOptionalColumnKey } from '../composables/use-stock-bill-table-columns';
 import {
   cancelStockBill,
   confirmStockBill,
@@ -87,12 +89,152 @@ const pageDirection = computed<StockBillDirection>(() => String(route.meta.stock
 const isInboundPage = computed(() => pageDirection.value === 'INBOUND');
 const {
   isVisible: isListColumnVisible,
-  reset: resetListColumns,
-  setVisible: setListColumnVisible,
+  reset: resetListColumnsImmediately,
+  setVisible: setListColumnVisibleImmediately,
   tableMinWidth,
   visibleColumnCount,
   visibleOptionalCount,
 } = useStockBillTableColumns(pageDirection);
+
+type ColumnLayoutState = 'idle' | 'leaving' | 'entering';
+
+const stockBillTableScroll = ref<HTMLElement | null>(null);
+const columnLayoutState = ref<ColumnLayoutState>('idle');
+const columnLayoutAnnouncement = ref('');
+const pendingColumnVisibility = reactive<Partial<Record<StockBillOptionalColumnKey, boolean>>>({});
+let pendingColumnReset = false;
+let columnLayoutGeneration = 0;
+let columnLayoutDisposed = false;
+let columnLeaveTimer: number | undefined;
+let columnEnterTimer: number | undefined;
+let columnStableFrame: number | undefined;
+let resolveColumnStableFrame: ((valid: boolean) => void) | undefined;
+const preservedColumnScrollLeft = ref(0);
+
+function prefersReducedColumnMotion() {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function getStockBillTableViewport() {
+  return stockBillTableScroll.value?.querySelector<HTMLElement>('[data-slot="table-container"]') ?? null;
+}
+
+function restoreColumnScrollLeft(viewport: HTMLElement) {
+  viewport.scrollLeft = Number.MAX_SAFE_INTEGER;
+  const maxScrollLeft = viewport.scrollLeft;
+  viewport.scrollLeft = Math.min(preservedColumnScrollLeft.value, maxScrollLeft);
+}
+
+function isPendingListColumnVisible(key: StockBillOptionalColumnKey) {
+  return pendingColumnVisibility[key] ?? isListColumnVisible(key);
+}
+
+function announceColumnLayoutUpdated(generation: number) {
+  columnLayoutAnnouncement.value = '';
+  void nextTick(() => {
+    if (columnLayoutDisposed || generation !== columnLayoutGeneration) return;
+    columnLayoutAnnouncement.value = '显示字段已更新';
+  });
+}
+
+function clearColumnStableFrame() {
+  if (columnStableFrame !== undefined) window.cancelAnimationFrame(columnStableFrame);
+  columnStableFrame = undefined;
+  resolveColumnStableFrame?.(false);
+  resolveColumnStableFrame = undefined;
+}
+
+function waitForColumnStableFrame(generation: number) {
+  clearColumnStableFrame();
+  return new Promise<boolean>(resolve => {
+    resolveColumnStableFrame = resolve;
+    columnStableFrame = window.requestAnimationFrame(() => {
+      columnStableFrame = undefined;
+      resolveColumnStableFrame = undefined;
+      resolve(!columnLayoutDisposed && generation === columnLayoutGeneration);
+    });
+  });
+}
+
+function cancelColumnLayoutWork() {
+  columnLayoutGeneration += 1;
+  if (columnLeaveTimer !== undefined) window.clearTimeout(columnLeaveTimer);
+  if (columnEnterTimer !== undefined) window.clearTimeout(columnEnterTimer);
+  columnLeaveTimer = undefined;
+  columnEnterTimer = undefined;
+  clearColumnStableFrame();
+}
+
+async function flushColumnLayoutUpdate(generation: number) {
+  columnLeaveTimer = undefined;
+  if (columnLayoutDisposed || generation !== columnLayoutGeneration) return;
+  if (pendingColumnReset) {
+    resetListColumnsImmediately();
+  } else {
+    for (const column of stockBillOptionalColumns) {
+      const visible = pendingColumnVisibility[column.key];
+      if (typeof visible === 'boolean') setListColumnVisibleImmediately(column.key, visible);
+    }
+  }
+  pendingColumnReset = false;
+  for (const column of stockBillOptionalColumns) delete pendingColumnVisibility[column.key];
+
+  await nextTick();
+  if (columnLayoutDisposed || generation !== columnLayoutGeneration) return;
+  if (!await waitForColumnStableFrame(generation)) return;
+  const viewport = getStockBillTableViewport();
+  if (viewport) restoreColumnScrollLeft(viewport);
+  announceColumnLayoutUpdated(generation);
+
+  if (prefersReducedColumnMotion()) {
+    columnLayoutState.value = 'idle';
+    return;
+  }
+
+  columnLayoutState.value = 'entering';
+  columnEnterTimer = window.setTimeout(() => {
+    columnEnterTimer = undefined;
+    if (columnLayoutDisposed || generation !== columnLayoutGeneration) return;
+    columnLayoutState.value = 'idle';
+    const stableViewport = getStockBillTableViewport();
+    if (stableViewport) restoreColumnScrollLeft(stableViewport);
+  }, 140);
+}
+
+function scheduleColumnLayoutUpdate() {
+  if (columnLayoutState.value !== 'leaving') {
+    preservedColumnScrollLeft.value = getStockBillTableViewport()?.scrollLeft ?? 0;
+  }
+  cancelColumnLayoutWork();
+  const generation = columnLayoutGeneration;
+  columnLayoutState.value = 'leaving';
+
+  if (prefersReducedColumnMotion()) {
+    void flushColumnLayoutUpdate(generation);
+    return;
+  }
+
+  columnLeaveTimer = window.setTimeout(() => {
+    void flushColumnLayoutUpdate(generation);
+  }, 90);
+}
+
+function setListColumnVisible(key: StockBillOptionalColumnKey, visible: boolean) {
+  pendingColumnReset = false;
+  pendingColumnVisibility[key] = visible;
+  scheduleColumnLayoutUpdate();
+}
+
+function resetListColumns() {
+  pendingColumnReset = true;
+  for (const column of stockBillOptionalColumns) pendingColumnVisibility[column.key] = true;
+  scheduleColumnLayoutUpdate();
+}
+
+onBeforeUnmount(() => {
+  columnLayoutDisposed = true;
+  cancelColumnLayoutWork();
+});
 const defaultBillType = computed<ManualStockBillType>(() => isInboundPage.value ? 'ADJUST_IN' : 'ADJUST_OUT');
 const pageText = computed(() => ({
   title: isInboundPage.value ? '入库单' : '出库单',
@@ -856,6 +998,11 @@ async function runConfirmAction() {
 }
 
 watch(pageDirection, () => {
+  cancelColumnLayoutWork();
+  pendingColumnReset = false;
+  for (const column of stockBillOptionalColumns) delete pendingColumnVisibility[column.key];
+  columnLayoutState.value = 'idle';
+  columnLayoutAnnouncement.value = '';
   handleReset();
   form.billType = defaultBillType.value;
 });
@@ -903,8 +1050,7 @@ onMounted(async () => {
           <AnchoredSelect v-model="query.status" :options="statusOptions" />
         </div>
       <template #actions>
-          <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+          <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" />
       </template>
     </ListFilterPanel>
 
@@ -930,23 +1076,18 @@ onMounted(async () => {
                 <span class="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">{{ visibleOptionalCount }}/{{ stockBillOptionalColumns.length }}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent class="w-64 rounded-xl border-slate-200 p-2 shadow-xl" align="end" :side-offset="6" data-stock-bill-column-menu>
-              <DropdownMenuLabel class="px-2 py-2">
-                <div class="flex items-start gap-2.5">
-                  <span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary"><Columns3 class="size-4" /></span>
-                  <span class="min-w-0">
-                    <strong class="block text-sm font-semibold text-foreground">显示字段</strong>
-                    <small class="mt-0.5 block font-normal leading-4 text-muted-foreground">按需精简列表，偏好仅保存在当前浏览器</small>
-                  </span>
-                </div>
+            <DropdownMenuContent class="w-64 rounded-[10px] border-border/80 p-1.5 shadow-lg" align="end" :side-offset="6" data-stock-bill-column-menu>
+              <DropdownMenuLabel class="px-2.5 py-2">
+                <strong class="block text-sm font-semibold text-foreground">显示字段</strong>
+                <small class="mt-0.5 block font-normal leading-4 text-muted-foreground">按需精简列表，偏好仅保存在当前浏览器</small>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuLabel class="px-2 pb-1 pt-1.5">可选字段</DropdownMenuLabel>
               <DropdownMenuCheckboxItem
                 v-for="column in stockBillOptionalColumns"
                 :key="column.key"
-                class="min-h-9 px-2 pr-9 text-[13px]"
-                :model-value="isListColumnVisible(column.key)"
+                indicator-style="checkbox"
+                class="min-h-9 text-[13px]"
+                :model-value="isPendingListColumnVisible(column.key)"
                 :data-stock-bill-column-key="column.key"
                 @select.prevent
                 @update:model-value="setListColumnVisible(column.key, Boolean($event))"
@@ -969,7 +1110,13 @@ onMounted(async () => {
           <Button size="sm" @click="openCreateDialog">{{ pageText.createButton }}</Button>
         </div>
       </div>
-      <div class="stock-bill-table-scroll w-full">
+      <p class="sr-only" aria-live="polite">{{ columnLayoutAnnouncement }}</p>
+      <div
+        ref="stockBillTableScroll"
+        class="stock-bill-table-scroll w-full"
+        :data-column-layout-state="columnLayoutState"
+        :data-column-layout-scroll-left="preservedColumnScrollLeft"
+      >
         <Table class="stock-bill-list-table table-fixed" :style="{ '--stock-bill-table-min-width': `${tableMinWidth}px` }" :scroll-label="`${pageText.title}列表`" data-stock-bill-list-table>
           <colgroup>
             <template v-for="column in stockBillListColumns" :key="column.key">
@@ -1280,10 +1427,35 @@ onMounted(async () => {
 <style scoped>
 .stock-bill-table-scroll :deep(.stock-bill-list-table) {
   min-width: var(--stock-bill-table-min-width);
+  transform-origin: top center;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.stock-bill-table-scroll[data-column-layout-state='leaving'] :deep(.stock-bill-list-table) {
+  opacity: 0.46;
+  transform: translateY(2px);
+}
+
+.stock-bill-table-scroll[data-column-layout-state='entering'] :deep(.stock-bill-list-table) {
+  opacity: 1;
+  transform: none;
 }
 
 .stock-bill-table-scroll {
   border-bottom: 1px solid var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stock-bill-table-scroll :deep(.stock-bill-list-table) {
+    transition: none;
+  }
+
+  .stock-bill-table-scroll[data-column-layout-state] :deep(.stock-bill-list-table) {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .stock-bill-table-scroll > :deep([data-slot="table-container"]) {

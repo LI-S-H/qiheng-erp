@@ -4,6 +4,7 @@ import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
@@ -159,15 +160,17 @@ function reservationState(row: WarehouseStockListItem) {
   return { label: '部分锁定', className: 'border-blue-200 bg-blue-50 text-blue-700' };
 }
 
-function stockRiskLevel(row: WarehouseStockListItem) {
+type StockRiskLevel = 'normal' | 'warning' | 'critical';
+
+function stockRiskLevel(row: WarehouseStockListItem): StockRiskLevel {
   if (row.stockQty === 0 || row.availableQty === 0) return 'critical';
   if (row.availableQty <= row.safetyStockQty) return 'warning';
-  return undefined;
+  return 'normal';
 }
 
 function stockRowClass(row: WarehouseStockListItem) {
   const riskLevel = stockRiskLevel(row);
-  return riskLevel ? ['inventory-risk-row', `inventory-risk-row--${riskLevel}`] : undefined;
+  return ['inventory-risk-row', `inventory-risk-row--${riskLevel}`];
 }
 
 onMounted(() => {
@@ -194,8 +197,7 @@ onMounted(() => {
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">库存健康</Label><AnchoredSelect v-model="query.inventoryHealth" :options="inventoryHealthOptions" placeholder="全部健康状态" /></div>
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">占用情况</Label><AnchoredSelect v-model="query.reservationState" :options="reservationStateOptions" placeholder="全部占用情况" /></div>
       <template #actions>
-          <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" />
       </template>
     </ListFilterPanel>
 
@@ -241,28 +243,40 @@ onMounted(() => {
   transition: background-color var(--motion-duration-fast) ease;
 }
 
+.inventory-risk-row--normal :deep([data-slot='table-cell']) {
+  background-color: color-mix(in srgb, #22c55e 5%, var(--card));
+}
+
+.inventory-risk-row--normal:hover :deep([data-slot='table-cell']) {
+  background-color: color-mix(in srgb, #22c55e 8%, var(--card));
+}
+
 .inventory-risk-row--warning :deep([data-slot='table-cell']) {
-  background-color: color-mix(in srgb, #f59e0b 13%, var(--card));
+  background-color: color-mix(in srgb, #f59e0b 7%, var(--card));
 }
 
 .inventory-risk-row--warning:hover :deep([data-slot='table-cell']) {
-  background-color: color-mix(in srgb, #f59e0b 18%, var(--card));
+  background-color: color-mix(in srgb, #f59e0b 10%, var(--card));
 }
 
 .inventory-risk-row--critical :deep([data-slot='table-cell']) {
-  background-color: color-mix(in srgb, #f43f5e 13%, var(--card));
+  background-color: color-mix(in srgb, #f43f5e 7%, var(--card));
 }
 
 .inventory-risk-row--critical:hover :deep([data-slot='table-cell']) {
-  background-color: color-mix(in srgb, #f43f5e 18%, var(--card));
+  background-color: color-mix(in srgb, #f43f5e 10%, var(--card));
+}
+
+.inventory-risk-row--normal :deep([data-slot='table-cell']:first-child) {
+  box-shadow: inset 2px 0 #86efac;
 }
 
 .inventory-risk-row--warning :deep([data-slot='table-cell']:first-child) {
-  box-shadow: inset 3px 0 #d97706;
+  box-shadow: inset 2px 0 #fbbf24;
 }
 
 .inventory-risk-row--critical :deep([data-slot='table-cell']:first-child) {
-  box-shadow: inset 3px 0 #e11d48;
+  box-shadow: inset 2px 0 #fb7185;
 }
 
 </style>

@@ -5,6 +5,7 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
+import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
@@ -326,8 +327,7 @@ function handleBatchDelete() {
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">联系电话</Label><Input v-model="query.contactPhone" placeholder="请输入联系电话" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">状态</Label><AnchoredSelect v-model="query.status" :options="statusFilterOptions" placeholder="全部状态" /></div>
       <template #actions>
-          <Button size="sm" variant="outline" :disabled="queryBusy" @click="handleReset">重置</Button>
-          <Button size="sm" :disabled="queryBusy" @click="handleSearch"><span v-if="queryBusy" class="page-loading-spinner !size-3.5" />{{ queryBusy ? '查询中' : '查询' }}</Button>
+        <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" />
       </template>
     </ListFilterPanel>
 

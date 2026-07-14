@@ -420,6 +420,8 @@ async function assertPolishedFilterPanel(page) {
       backgroundImage: style.backgroundImage,
       backgroundColor: style.backgroundColor,
       borderColor: style.borderColor,
+      borderRadius: Number.parseFloat(style.borderRadius),
+      borderTopWidth: Number.parseFloat(style.borderTopWidth),
       boxShadow: style.boxShadow,
       paddingTop: Number.parseFloat(style.paddingTop),
       accentHeight: Number.parseFloat(accent.height),
@@ -432,14 +434,14 @@ async function assertPolishedFilterPanel(page) {
   });
   const hasPanelBackground = state.backgroundImage !== 'none' || state.backgroundColor !== 'rgba(0, 0, 0, 0)';
   const hasAccent = state.accentBackground !== 'none' || state.accentColor !== 'rgba(0, 0, 0, 0)';
-  if (!hasPanelBackground || state.boxShadow === 'none' || state.paddingTop < 18
-    || state.accentHeight < 1 || !hasAccent
+  if (!hasPanelBackground || state.boxShadow === 'none' || state.paddingTop !== 16
+    || state.borderTopWidth !== 1 || state.borderRadius !== 10 || hasAccent
     || state.labelFontSize < 13 || state.labelWeight < 600 || state.controlHeight < 36) {
     throw new Error(`筛选区视觉层级或控件尺寸异常：${JSON.stringify(state)}`);
   }
 
-  const actionTexts = await panel.locator('.filter-actions > *').allTextContents();
-  if (!actionTexts[0]?.includes('重置') || !actionTexts[1]?.includes('查询')) {
+  const actionTexts = await panel.locator('.filter-actions button').allTextContents();
+  if (!actionTexts[0]?.includes('查询') || !actionTexts[1]?.includes('重置')) {
     throw new Error(`筛选操作主次顺序异常：${JSON.stringify(actionTexts)}`);
   }
   const firstControl = panel.locator('[data-slot="input"], [role="combobox"]').first();
@@ -492,7 +494,7 @@ async function assertSharedListChrome(page, { summaryLabel, filterLabel }) {
     throw new Error('列表页筛选操作区未使用共享组件的 actions 插槽');
   }
   const actionLabels = (await actions.getByRole('button').allTextContents()).map(label => label.trim());
-  if (actionLabels.length !== 2 || actionLabels[0] !== '重置' || !['查询', '查询中'].includes(actionLabels[1])) {
+  if (actionLabels.length !== 2 || !['查询', '查询中'].includes(actionLabels[0]) || actionLabels[1] !== '重置') {
     throw new Error(`列表页筛选操作按钮顺序异常：${JSON.stringify(actionLabels)}`);
   }
   await assertPolishedFilterPanel(page);

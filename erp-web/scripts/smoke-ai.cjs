@@ -226,6 +226,8 @@ async function smokeTasksDesktopLayout() {
           bodyFontSize: bodyCell ? Number.parseFloat(getComputedStyle(bodyCell).fontSize) : 0,
           typeFontSize: typeBadge ? Number.parseFloat(getComputedStyle(typeBadge).fontSize) : 0,
           frequencyFontSize: frequencyBadge ? Number.parseFloat(getComputedStyle(frequencyBadge).fontSize) : 0,
+          frequencyUsesRepeatIcon: Boolean(frequencyBadge?.querySelector('[data-task-frequency-icon].lucide-repeat-2')),
+          frequencyUsesCalendarIcon: Boolean(frequencyBadge?.querySelector('.lucide-calendar-days')),
           actionsFit: Boolean(actions && actions.scrollWidth <= actionContentWidth + 1),
         };
       });
@@ -234,6 +236,9 @@ async function smokeTasksDesktopLayout() {
       }
       if (state.bodyFontSize < 14 || state.typeFontSize < 13 || state.frequencyFontSize < 13) {
         throw new Error(`任务类型、频率或表格正文字号层级不足：${JSON.stringify(state)}`);
+      }
+      if (!state.frequencyUsesRepeatIcon || state.frequencyUsesCalendarIcon) {
+        throw new Error(`任务频率应使用循环语义图标：${JSON.stringify(state)}`);
       }
     },
   });

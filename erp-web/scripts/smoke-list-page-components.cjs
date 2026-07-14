@@ -9,10 +9,11 @@ fs.mkdirSync(screenshotDirectory, { recursive: true });
 
 async function mountComponentHarness(page) {
   await page.evaluate(async () => {
-    const [{ createApp, h }, { default: ListSummaryStrip }, { default: ListFilterPanel }] = await Promise.all([
+    const [{ createApp, h, ref }, { default: ListSummaryStrip }, { default: ListFilterPanel }, { default: ListFilterActions }] = await Promise.all([
       import('/@id/vue'),
       import('/src/components/common/ListSummaryStrip.vue'),
       import('/src/components/common/ListFilterPanel.vue'),
+      import('/src/components/common/ListFilterActions.vue'),
     ]);
 
     const host = document.createElement('div');
@@ -40,7 +41,14 @@ async function mountComponentHarness(page) {
     ]);
 
     createApp({
-      render: () => h('main', { class: 'mx-auto max-w-[1120px] space-y-5' }, [
+      setup() {
+        const busy = ref(false);
+        const queryCount = ref(0);
+        const resetCount = ref(0);
+        return { busy, queryCount, resetCount };
+      },
+      render() {
+        return h('main', { class: 'mx-auto max-w-[1120px] space-y-5' }, [
         h('div', {}, [
           h('h1', { class: 'page-title' }, '列表页共享组件验收'),
           h('p', { class: 'page-description' }, '验证统一汇总层级、筛选布局和响应式表现'),
@@ -60,10 +68,11 @@ async function mountComponentHarness(page) {
             field('业务单号', '请输入业务单号', 'standard'),
             field('往来单位', '请输入名称或编码', 'wide'),
           ],
-          actions: () => [
-            h('button', { 'data-slot': 'button', class: 'h-9 rounded-md border px-4 text-sm' }, '重置'),
-            h('button', { 'data-slot': 'button', class: 'h-9 rounded-md bg-primary px-4 text-sm text-primary-foreground' }, '查询'),
-          ],
+          actions: () => h(ListFilterActions, {
+            busy: this.busy,
+            onQuery: () => { this.queryCount += 1; },
+            onReset: () => { this.resetCount += 1; },
+          }),
           footer: () => h('p', { class: 'text-xs text-muted-foreground' }, '已生效 2 个筛选条件'),
         }),
         h('div', {
@@ -85,7 +94,16 @@ async function mountComponentHarness(page) {
             default: () => field('旧字段', '保持网格布局'),
           }),
         ]),
-      ]),
+        h('div', {
+          id: 'list-filter-actions-state',
+          'data-query-count': this.queryCount,
+          'data-reset-count': this.resetCount,
+        }, [
+          h(ListFilterActions, { busy: true }),
+          h(ListFilterActions, { disabled: true }),
+        ]),
+      ]);
+      },
     }).mount(host);
   });
   await page.getByRole('region', { name: '测试汇总' }).waitFor();
@@ -128,7 +146,7 @@ runSmoke({
         filterDisplay: getComputedStyle(grid).display,
         filterWrap: getComputedStyle(grid).flexWrap,
         sizedFields,
-        actionOrder: [...filterElement.querySelectorAll('.filter-actions > *')].map(item => item.textContent.trim()),
+        actionOrder: [...filterElement.querySelectorAll('[data-list-filter-actions] > button')].map(item => item.textContent.trim()),
         hasFooter: Boolean(filterElement.querySelector('.list-filter-panel__footer')),
       };
     });
@@ -141,7 +159,7 @@ runSmoke({
         { size: 'compact', width: 168 },
         { size: 'standard', width: 220 },
         { size: 'wide', width: 280 },
-      ]) || desktopState.actionOrder.join(',') !== '重置,查询'
+      ]) || desktopState.actionOrder.join(',') !== '查询,重置'
       || !desktopState.hasFooter) {
       throw new Error(`列表页共享组件桌面布局异常：${JSON.stringify(desktopState)}`);
     }
@@ -180,6 +198,24 @@ runSmoke({
     }));
     if (focusState.outline === 'none' && focusState.shadow === 'none') {
       throw new Error(`筛选控件缺少键盘焦点反馈：${JSON.stringify(focusState)}`);
+    }
+
+    await filter.getByRole('button', { name: '查询' }).click();
+    await filter.getByRole('button', { name: '重置' }).click();
+    const actionState = await page.evaluate(() => {
+      const eventState = document.querySelector('#list-filter-actions-state');
+      const stateGroups = [...eventState.querySelectorAll('[data-list-filter-actions]')];
+      return {
+        queryCount: Number(eventState.getAttribute('data-query-count')),
+        resetCount: Number(eventState.getAttribute('data-reset-count')),
+        busy: stateGroups[0].getAttribute('aria-busy'),
+        busyLabels: [...stateGroups[0].querySelectorAll('button')].map(button => button.getAttribute('aria-label')),
+        allStateButtonsDisabled: stateGroups.every(group => [...group.querySelectorAll('button')].every(button => button.disabled)),
+      };
+    });
+    if (actionState.queryCount !== 1 || actionState.resetCount !== 1 || actionState.busy !== 'true'
+      || actionState.busyLabels.join(',') !== '查询中,重置' || !actionState.allStateButtonsDisabled) {
+      throw new Error(`筛选操作组件状态或事件异常：${JSON.stringify(actionState)}`);
     }
     await page.screenshot({ path: path.join(screenshotDirectory, 'list-page-components-desktop.png'), fullPage: true });
 

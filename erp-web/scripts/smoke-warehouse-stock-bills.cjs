@@ -22,9 +22,14 @@ async function openColumnMenu(page) {
   await page.locator('[data-stock-bill-column-menu]').waitFor();
 }
 
+async function waitColumnLayoutSettled(page) {
+  await page.locator('.stock-bill-table-scroll[data-column-layout-state="idle"]').waitFor();
+}
+
 async function resetCurrentColumnPreference(page) {
   await openColumnMenu(page);
   await page.locator('[data-stock-bill-column-reset]').click();
+  await waitColumnLayoutSettled(page);
 }
 
 async function assertStockBillColumnPreferences(page) {
@@ -55,10 +60,73 @@ async function assertStockBillColumnPreferences(page) {
   }
   const triggerLabel = await page.locator('[data-stock-bill-column-trigger]').getAttribute('aria-label');
   if (triggerLabel !== '选择显示字段，当前 7/7') throw new Error(`字段选择触发器缺少当前状态说明：${triggerLabel}`);
+  const checkboxVisuals = await columnMenu.locator('[data-stock-bill-column-key]').evaluateAll(items => items.map(item => {
+    const indicator = item.querySelector('[data-slot="dropdown-menu-checkbox-item-indicator"]');
+    const style = indicator ? getComputedStyle(indicator) : null;
+    return {
+      width: indicator?.getBoundingClientRect().width ?? 0,
+      height: indicator?.getBoundingClientRect().height ?? 0,
+      borderWidth: style?.borderTopWidth ?? '0px',
+      borderRadius: style?.borderRadius ?? '0px',
+    };
+  }));
+  if (checkboxVisuals.length !== 7 || checkboxVisuals.some(item => Math.abs(item.width - 16) > 0.5 || Math.abs(item.height - 16) > 0.5
+    || item.borderWidth !== '1px' || Number.parseFloat(item.borderRadius) < 4)) {
+    throw new Error(`字段选择未使用统一方框勾选样式：${JSON.stringify(checkboxVisuals)}`);
+  }
+
+  const keyboardItem = page.locator('[data-stock-bill-column-key="sourceType"]');
+  await keyboardItem.focus();
+  if (!await keyboardItem.evaluate(element => document.activeElement === element)) {
+    throw new Error('字段选择菜单项无法获得键盘焦点');
+  }
+  await page.keyboard.press('Space');
+  await page.keyboard.press('Space');
+  await waitColumnLayoutSettled(page);
+  if (await keyboardItem.getAttribute('aria-checked') !== 'true' || !await columnMenu.isVisible()) {
+    throw new Error('字段快速键盘切换后状态或菜单焦点上下文异常');
+  }
+
   await page.screenshot({ path: screenshotPath('stock-bill-column-menu.png'), fullPage: true });
+  const tableViewport = page.locator('.stock-bill-table-scroll [data-slot="table-container"]').first();
+  const scrollBeforeColumnChange = await tableViewport.evaluate(element => {
+    element.scrollLeft = Math.min(320, Math.max(0, element.scrollWidth - element.clientWidth));
+    return element.scrollLeft;
+  });
   await page.locator('[data-stock-bill-column-key="entryMode"]').click();
+  const leavingTable = page.locator('.stock-bill-table-scroll[data-column-layout-state="leaving"]');
+  await leavingTable.waitFor();
+  const preservedScrollLeft = Number(await leavingTable.getAttribute('data-column-layout-scroll-left'));
   await page.locator('[data-stock-bill-column-key="createTime"]').click();
   await page.keyboard.press('Escape');
+  await waitColumnLayoutSettled(page);
+
+  const idleVisual = await page.locator('.stock-bill-list-table').first().evaluate(element => ({
+    opacity: getComputedStyle(element).opacity,
+    transform: getComputedStyle(element).transform,
+  }));
+  await page.waitForTimeout(160);
+  const settledVisual = await page.locator('.stock-bill-list-table').first().evaluate(element => ({
+    opacity: getComputedStyle(element).opacity,
+    transform: getComputedStyle(element).transform,
+  }));
+  if (JSON.stringify(idleVisual) !== JSON.stringify(settledVisual)
+    || idleVisual.opacity !== '1' || idleVisual.transform !== 'none') {
+    throw new Error(`字段布局进入 idle 后仍有二次过渡：${JSON.stringify({ idleVisual, settledVisual })}`);
+  }
+
+  const scrollAfterColumnChange = await tableViewport.evaluate(element => {
+    const scrollLeft = element.scrollLeft;
+    element.scrollLeft = Number.MAX_SAFE_INTEGER;
+    const maxScrollLeft = element.scrollLeft;
+    element.scrollLeft = scrollLeft;
+    return { scrollLeft, maxScrollLeft };
+  });
+  const expectedScrollLeft = Math.min(preservedScrollLeft, scrollAfterColumnChange.maxScrollLeft);
+  if (Math.abs(scrollAfterColumnChange.scrollLeft - expectedScrollLeft) > 1) {
+    throw new Error(`字段切换后横向滚动位置未正确恢复：${JSON.stringify({ scrollBeforeColumnChange, preservedScrollLeft, scrollAfterColumnChange })}`);
+  }
+  await page.getByText('显示字段已更新', { exact: true }).waitFor();
 
   const inboundHeader = await outerHeaderText(page);
   if (inboundHeader.includes('录入方式') || inboundHeader.includes('创建时间')) {
@@ -84,6 +152,7 @@ async function assertStockBillColumnPreferences(page) {
   await openColumnMenu(page);
   await page.locator('[data-stock-bill-column-key="sourceNo"]').click();
   await page.keyboard.press('Escape');
+  await waitColumnLayoutSettled(page);
   await assertFixedTableLayout(page, 11);
 
   const isolatedPreferences = await page.evaluate(([inboundKey, outboundKey]) => ({
@@ -718,6 +787,21 @@ runSmoke({
   screenshot: screenshotPath('warehouse-stock-bills-reduced-motion.png'),
   async test(page) {
     await page.getByRole('heading', { name: '入库单' }).waitFor();
+    await openColumnMenu(page);
+    await page.locator('[data-stock-bill-column-key="entryMode"]').click();
+    await waitColumnLayoutSettled(page);
+    const reducedColumnMotion = await page.locator('.stock-bill-table-scroll').evaluate(element => ({
+      state: element.getAttribute('data-column-layout-state'),
+      duration: getComputedStyle(element.querySelector('.stock-bill-list-table')).transitionDuration,
+    }));
+    const reducedColumnDuration = reducedColumnMotion.duration.endsWith('ms')
+      ? Number.parseFloat(reducedColumnMotion.duration)
+      : Number.parseFloat(reducedColumnMotion.duration) * 1000;
+    if (reducedColumnMotion.state !== 'idle' || reducedColumnDuration > 0.1) {
+      throw new Error(`减少动态效果模式下字段切换仍有动画：${JSON.stringify(reducedColumnMotion)}`);
+    }
+    await page.keyboard.press('Escape');
+    await resetCurrentColumnPreference(page);
     const row = tableRow(page, 'IB202606140001');
     await row.waitFor();
     await row.getByRole('button', { name: '展开明细' }).click();

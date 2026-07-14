@@ -21,7 +21,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
-  Send,
   ShoppingCart,
   Sparkles,
   Trash2,
@@ -54,6 +53,7 @@ import { createStockBill } from '@/modules/warehouse/stock-bills/api';
 import type { StockBillCreatePayload } from '@/modules/warehouse/stock-bills/types';
 import { listWarehouses } from '@/modules/warehouse/warehouses/api';
 import AiChartCard from '../components/AiChartCard.vue';
+import AiComposerDock from '../components/AiComposerDock.vue';
 import AiFadeSwitch from '../components/AiFadeSwitch.vue';
 import { useAiChartGeometry } from '../composables/use-ai-chart-geometry';
 import {
@@ -1440,22 +1440,7 @@ onMounted(loadOverview);
         </Transition>
         </div>
 
-      <form class="ai-composer" @submit.prevent="submitMessage()">
-        <Textarea
-          v-model="inputMessage"
-          class="ai-composer__input"
-          placeholder="输入经营问题，例如：分析 A4复印纸未来 14 天补货建议"
-          aria-label="经营问题"
-          aria-describedby="ai-composer-hint"
-          :disabled="sending"
-          @keydown.enter.exact.prevent="submitMessage()"
-        />
-        <span id="ai-composer-hint" class="sr-only">按 Enter 发送，按 Shift+Enter 换行</span>
-        <Button class="ai-composer__send" type="submit" size="sm" :aria-label="sending ? '正在分析' : '发送消息'" :disabled="sending || !inputMessage.trim()">
-          <LoaderCircle v-if="sending" class="h-4 w-4 animate-spin" />
-          <Send v-else class="h-4 w-4" />
-        </Button>
-      </form>
+      <AiComposerDock v-model="inputMessage" :sending="sending" @submit="submitMessage()" />
       </section>
       </main>
 
@@ -2080,7 +2065,7 @@ onMounted(loadOverview);
 .ai-chat-stage {
   position: relative;
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -2091,8 +2076,8 @@ onMounted(loadOverview);
 .ai-chat-scroll {
   min-height: 0;
   overflow-y: auto;
-  padding: 22px 22px 122px;
-  scroll-padding-bottom: 130px;
+  padding: 22px;
+  scroll-padding-bottom: 22px;
 }
 
 .ai-chat-stream {
@@ -2474,48 +2459,6 @@ onMounted(loadOverview);
 
 .ai-thinking span:nth-child(3) {
   animation-delay: 240ms;
-}
-
-.ai-composer {
-  position: absolute;
-  right: 24px;
-  bottom: 18px;
-  left: 24px;
-  z-index: 8;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 38px;
-  gap: 8px;
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: white;
-  box-shadow: 0 18px 42px rgb(15 23 42 / 14%);
-  padding: 7px;
-  transition:
-    border-color var(--motion-duration-base) ease,
-    box-shadow var(--motion-duration-base) ease,
-    transform var(--motion-duration-base) var(--motion-ease-standard);
-}
-
-.ai-composer:focus-within {
-  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
-  box-shadow: 0 20px 46px rgb(15 23 42 / 16%), 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
-  transform: translateY(-1px);
-}
-
-.ai-composer__input {
-  min-height: 38px;
-  max-height: 96px;
-  border: 0;
-  resize: none;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.ai-composer__send {
-  width: 38px;
-  height: 38px;
-  padding: 0;
 }
 
 .ai-prompt-dialog {

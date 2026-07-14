@@ -230,7 +230,10 @@ const fallbackFieldLabels: Record<string, string> = {
   </article>
 
   <Dialog v-model:open="expanded">
-    <DialogContent class="ai-chart-dialog !w-[min(980px,calc(100vw-2rem))] !max-w-[min(980px,calc(100vw-2rem))]">
+    <DialogContent
+      placement="app-content"
+      class="ai-chart-dialog !w-[min(980px,calc(100vw-var(--app-shell-sidebar-width)-2rem))] !max-w-[min(980px,calc(100vw-var(--app-shell-sidebar-width)-2rem))]"
+    >
       <DialogHeader>
         <DialogTitle>{{ chart.title }}</DialogTitle>
         <DialogDescription>{{ chart.description || '图表放大查看' }}</DialogDescription>
@@ -449,7 +452,7 @@ const fallbackFieldLabels: Record<string, string> = {
 }
 
 .ai-chart-dialog {
-  max-height: calc(100dvh - 2rem);
+  max-height: calc(100dvh - var(--app-shell-header-height) - 2rem);
   overflow: auto;
 }
 

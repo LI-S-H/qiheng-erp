@@ -40,6 +40,31 @@ async function readObservedTransition(page, label) {
   return durationToMilliseconds(duration);
 }
 
+async function assertExpandedChartCenteredInContent(page, label) {
+  const geometry = await page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
+    const main = document.querySelector('main');
+    if (!main) throw new Error('未找到应用主内容区');
+
+    const mainRect = main.getBoundingClientRect();
+    const dialogRect = dialog.getBoundingClientRect();
+    return {
+      mainCenterX: mainRect.left + mainRect.width / 2,
+      mainCenterY: mainRect.top + mainRect.height / 2,
+      dialogCenterX: dialogRect.left + dialogRect.width / 2,
+      dialogCenterY: dialogRect.top + dialogRect.height / 2,
+      dialogLeft: dialogRect.left,
+      dialogRight: dialogRect.right,
+      mainLeft: mainRect.left,
+      mainRight: mainRect.right,
+    };
+  });
+  const deltaX = Math.abs(geometry.dialogCenterX - geometry.mainCenterX);
+  const deltaY = Math.abs(geometry.dialogCenterY - geometry.mainCenterY);
+  if (deltaX > 1 || deltaY > 1 || geometry.dialogLeft < geometry.mainLeft - 1 || geometry.dialogRight > geometry.mainRight + 1) {
+    throw new Error(`${label}未按主内容区居中：${JSON.stringify({ ...geometry, deltaX, deltaY })}`);
+  }
+}
+
 async function smokeAssistant() {
   await runSmoke({
     route: '/ai/assistant',
@@ -65,17 +90,36 @@ async function smokeAssistant() {
 
       const composer = await page.locator('.ai-composer').evaluate(element => {
         const rect = element.getBoundingClientRect();
-        const parentRect = element.parentElement?.getBoundingClientRect();
+        const dock = element.closest('[data-ai-composer-dock]');
+        const dockRect = dock?.getBoundingClientRect();
+        const stageRect = element.closest('.ai-chat-stage')?.getBoundingClientRect();
+        const scrollRect = element.closest('.ai-chat-stage')?.querySelector('.ai-chat-scroll')?.getBoundingClientRect();
         const style = window.getComputedStyle(element);
+        const dockStyle = dock ? window.getComputedStyle(dock) : null;
         return {
           height: rect.height,
           width: rect.width,
-          bottomGap: parentRect ? Number((parentRect.bottom - rect.bottom).toFixed(1)) : -1,
+          dockBottomGap: dockRect ? Number((dockRect.bottom - rect.bottom).toFixed(1)) : -1,
+          stageBottomGap: stageRect && dockRect ? Number((stageRect.bottom - dockRect.bottom).toFixed(1)) : -1,
+          rowGap: dockRect && scrollRect ? Number((dockRect.top - scrollRect.bottom).toFixed(1)) : -1,
+          dockBackground: dockStyle?.backgroundColor || '',
+          boxShadow: style.boxShadow,
           parentClass: element.parentElement?.className || '',
           position: style.position,
+          transform: style.transform,
         };
       });
-      if (composer.height > 76 || composer.width < 360 || composer.bottomGap < 8 || composer.bottomGap > 32 || composer.position !== 'absolute' || !composer.parentClass.includes('ai-chat-stage')) {
+      if (composer.height > 76
+        || composer.width < 360
+        || composer.dockBottomGap < 12
+        || composer.dockBottomGap > 24
+        || Math.abs(composer.stageBottomGap) > 1
+        || Math.abs(composer.rowGap) > 1
+        || composer.dockBackground === 'rgba(0, 0, 0, 0)'
+        || composer.boxShadow !== 'none'
+        || composer.position !== 'static'
+        || composer.transform !== 'none'
+        || !composer.parentClass.includes('ai-composer-dock')) {
         throw new Error(`AI composer layout invalid: ${JSON.stringify(composer)}`);
       }
 
@@ -143,6 +187,7 @@ async function smokeAssistant() {
 
       await page.locator('.ai-chart-card__zoom').first().click();
       await page.locator('[data-ai-chart-expanded]').waitFor();
+      await assertExpandedChartCenteredInContent(page, 'AI 助手放大图表');
       await page.locator('[data-slot="dialog-close"]').click();
       await page.locator('[data-ai-chart-expanded]').waitFor({ state: 'hidden' });
 
@@ -384,6 +429,7 @@ async function smokeTasks() {
 
       await page.locator('.ai-chart-card__zoom').first().click();
       await page.locator('[data-ai-chart-expanded]').waitFor();
+      await assertExpandedChartCenteredInContent(page, '经营任务中心放大图表');
       await page.locator('[data-slot="dialog-close"]').click();
       await page.locator('[data-ai-chart-expanded]').waitFor({ state: 'hidden' });
 

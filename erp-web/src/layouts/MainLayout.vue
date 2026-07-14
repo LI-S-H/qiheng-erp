@@ -259,11 +259,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-background text-foreground">
+  <div class="app-shell flex h-screen bg-background text-foreground">
     <!-- Sidebar -->
-    <aside class="app-sidebar flex w-[224px] shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
+    <aside class="app-sidebar flex shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
       <!-- Brand -->
-      <div class="flex h-16 items-center gap-3 px-4 text-sidebar-foreground border-b border-sidebar-border">
+      <div class="app-shell__brand flex items-center gap-3 px-4 text-sidebar-foreground border-b border-sidebar-border">
         <img class="h-9 w-9 rounded-lg" :src="logoUrl" alt="启衡 ERP" />
         <div class="min-w-0">
           <div class="text-[18px] font-bold leading-tight tracking-tight">启衡 ERP</div>
@@ -327,7 +327,7 @@ onBeforeUnmount(() => {
     <!-- Main content -->
     <div class="flex flex-col flex-1 min-w-0">
       <!-- Header -->
-      <header class="flex h-16 items-center justify-between bg-sidebar px-5 text-sidebar-foreground border-b border-sidebar-border">
+      <header class="app-shell__header flex items-center justify-between bg-sidebar px-5 text-sidebar-foreground border-b border-sidebar-border">
         <div class="min-w-0">
           <div class="text-[13px] font-medium text-sidebar-foreground/55">{{ currentSection?.title || '工作台' }}</div>
           <div class="mt-0.5 truncate text-[16px] font-semibold">{{ currentPageTitle }}</div>
@@ -437,6 +437,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.app-sidebar {
+  width: var(--app-shell-sidebar-width);
+}
+
+.app-shell__brand,
+.app-shell__header {
+  height: var(--app-shell-header-height);
+}
+
 .app-sidebar__submenu-link {
   color: color-mix(in srgb, var(--sidebar-foreground) 78%, var(--sidebar));
 }

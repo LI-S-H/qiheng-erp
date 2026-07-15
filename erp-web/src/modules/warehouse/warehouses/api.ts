@@ -1,11 +1,11 @@
 import { getResult, http, postResult } from '@/api/http';
-import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeStringId } from '@/shared/utils/api-normalizers';
 import type {
   WarehouseBatchIdsPayload,
   WarehouseBatchStatusPayload,
   WarehouseCreatePayload,
   WarehouseListItem,
+  WarehousePage,
   WarehouseQuery,
   WarehouseUpdatePayload,
 } from './types';
@@ -67,18 +67,19 @@ function normalizeWarehouse(item: WarehouseListItem): WarehouseListItem {
   };
 }
 
-function normalizeWarehousePage(page: PageResult<WarehouseListItem>): PageResult<WarehouseListItem> {
+function normalizeWarehousePage(page: WarehousePage): WarehousePage {
   const records = page.records.map(normalizeWarehouse);
-  const total = Number(page.total);
+  const total = page.total === null || page.total === undefined ? null : Number(page.total);
   return {
     records,
-    total: Number.isFinite(total) ? total : records.length,
+    total: total === null ? null : Number.isFinite(total) ? total : null,
+    ...(typeof page.hasNext === 'boolean' ? { hasNext: page.hasNext } : {}),
     pageNum: normalizeFiniteNumber(page.pageNum, 'pageNum'),
     pageSize: normalizeFiniteNumber(page.pageSize, 'pageSize'),
   };
 }
 
-function filterWarehouses(params: WarehouseQuery): PageResult<WarehouseListItem> {
+function filterWarehouses(params: WarehouseQuery): WarehousePage {
   let filtered = [...mockWarehouses];
   const warehouseCode = params.warehouseCode?.trim().toLocaleLowerCase();
   const warehouseName = params.warehouseName?.trim().toLocaleLowerCase();
@@ -97,6 +98,7 @@ function filterWarehouses(params: WarehouseQuery): PageResult<WarehouseListItem>
   return {
     records: filtered.slice(start, start + params.pageSize).map(({ referenced: _, ...item }) => item),
     total,
+    hasNext: start + params.pageSize < total,
     pageNum: params.pageNum,
     pageSize: params.pageSize,
   };
@@ -116,7 +118,7 @@ function generateMockWarehouseCode() {
 export function listWarehouses(params: WarehouseQuery) {
   if (useMockApi) return Promise.resolve(normalizeWarehousePage(filterWarehouses(params)));
   const { warehouseCode, warehouseName, contactName, contactPhone, status, ...rest } = params;
-  return getResult<PageResult<WarehouseListItem>>('/warehouse/warehouses', {
+  return getResult<WarehousePage>('/warehouse/warehouses', {
     ...rest,
     ...(warehouseCode?.trim() ? { warehouseCode: warehouseCode.trim() } : {}),
     ...(warehouseName?.trim() ? { warehouseName: warehouseName.trim() } : {}),

@@ -14,7 +14,7 @@
 
 ## 当前表清单
 
-MVP 阶段共设计 26 张表。
+MVP 阶段共设计 28 张表。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
@@ -43,6 +43,8 @@ MVP 阶段共设计 26 张表。
 | AI | `ai_document` | 知识库文档 |
 | AI | `ai_document_chunk` | 文档切片和向量 key |
 | AI | `ai_interaction_log` | AI 问答、Tool 调用和权限审计 |
+| AI | `ai_conversation` | 当前用户的经营助手会话摘要 |
+| AI | `ai_message` | 经营助手完整消息历史和结构化结果 |
 | 系统 | `system_exception` | AI/MCP、消息队列、第三方回调、定时任务和补偿任务异常记录 |
 
 ## 系统异常记录表扩展建议
@@ -827,6 +829,8 @@ flowchart LR
     document["ai_document AI知识库文档表<br/>id 主键<br/>title 文档标题<br/>file_name 原始文件名<br/>file_ext 文件扩展名<br/>storage_path 文件存储路径<br/>content_hash 文件内容哈希<br/>status 处理状态<br/>chunk_count 切片数量<br/>uploaded_by 上传人信息<br/>parsed_at 解析完成时间<br/>indexed_at 向量索引完成时间<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
     chunk["ai_document_chunk AI文档切片表<br/>id 主键<br/>document_id 文档ID<br/>chunk_index 切片序号<br/>content 切片内容<br/>content_hash 切片哈希<br/>token_count token估算<br/>vector_key RedisStack向量key<br/>status 索引状态<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
     log["ai_interaction_log AI交互审计表<br/>id 主键<br/>request_id 请求ID<br/>parent_request_id 父请求ID<br/>interaction_type 交互类型<br/>user_id / username 用户信息<br/>user_question 用户原始问题<br/>tool_name Tool或Workflow名称<br/>permission_code 权限码<br/>permission_passed 权限是否通过<br/>request_params 调用入参<br/>result_summary 返回摘要<br/>result_count 返回条数<br/>cited_chunk_ids 引用切片ID列表<br/>desensitized 是否脱敏<br/>success 是否成功<br/>error_message 错误信息<br/>duration_ms 调用耗时"]
+    conversation["ai_conversation 会话表<br/>id 主键<br/>user_id 所属用户<br/>title / description<br/>last_message_at<br/>deleted / version"]
+    message["ai_message 消息表<br/>id 主键<br/>conversation_id / user_id<br/>role / content<br/>结构化 JSON<br/>create_time / update_time<br/>deleted"]
     redis["RedisStack 向量索引<br/>vector_key 向量key<br/>embedding 向量本体"]
     userRef["sys_user 用户表<br/>id 用户ID<br/>username 登录账号"]
 
@@ -834,6 +838,8 @@ flowchart LR
     chunk -.->|"向量索引：vector_key -> RedisStack.vector_key"| redis
     log -.->|"RAG引用：cited_chunk_ids -> chunk.id 列表"| chunk
     userRef -.->|"AI调用用户：user_id -> id，可空"| log
+    userRef -.->|"会话所属用户：user_id -> id"| conversation
+    conversation -->|"消息历史：conversation_id -> id"| message
 ```
 
 AI 关系里有两个特殊点：
@@ -860,7 +866,7 @@ AI 关系里有两个特殊点：
 | 财务库存台账表 | `stock_bill` / `stock_bill_item` 先承担已确认库存凭证 | 财务台账复杂后扩展 |
 | 销售退货单、采购退货单 | 先复用 `SALES_RETURN` 入库单、`PURCHASE_RETURN` 出库单 | 退货流程复杂后补单据 |
 | 通用业务审计表 | AI 先用 `ai_interaction_log`，普通业务靠状态和流水追溯 | 审计要求提高后新增 `audit_log` |
-| AI 会话表、Prompt 表、Workflow 节点日志表 | 先用 `ai_interaction_log` 统一记录 | AI 功能复杂后拆分 |
+| Prompt 表、Workflow 节点日志表 | Prompt 暂放配置，调用过程写 `ai_interaction_log` | AI 功能复杂后拆分 |
 
 ## 后续扩展方向
 

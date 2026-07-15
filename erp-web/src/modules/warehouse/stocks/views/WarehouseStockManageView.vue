@@ -52,7 +52,7 @@ const query = reactive<WarehouseStockQuery>({
 });
 
 const queryBusy = computed(() => loading.value || queryPending.value);
-const hasNextPage = computed(() => stocks.value.length >= query.pageSize);
+const hasNextPage = ref(false);
 const selectedWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
 const summaryItems = computed(() => [
   { key: 'warehouse', label: '本页仓库', value: summary.warehouseCount },
@@ -116,6 +116,7 @@ async function fetchStocks() {
     const page = await listWarehouseStocks(query);
     if (currentSequence !== requestSequence.value) return;
     stocks.value = page.records;
+    hasNextPage.value = page.hasNext ?? page.records.length >= page.pageSize;
     Object.assign(summary, page.summary);
   } catch (error) {
     if (currentSequence === requestSequence.value) toast.warning(getApiErrorMessage(error) || '库存查询失败');

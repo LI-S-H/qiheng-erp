@@ -1,5 +1,3 @@
-import type { PageResult } from '@/shared/types/api';
-
 export type InventoryHealth = 'NORMAL' | 'LOW_STOCK' | 'NO_AVAILABLE' | 'OUT_OF_STOCK';
 export type ReservationState = 'UNLOCKED' | 'PARTIALLY_LOCKED' | 'FULLY_LOCKED';
 
@@ -28,7 +26,12 @@ export interface WarehouseStockSummary {
   lockedCount: number;
 }
 
-export interface WarehouseStockPage extends PageResult<WarehouseStockListItem> {
+export interface WarehouseStockPage {
+  records: WarehouseStockListItem[];
+  total: number | null;
+  hasNext?: boolean;
+  pageNum: number;
+  pageSize: number;
   summary: WarehouseStockSummary;
 }
 

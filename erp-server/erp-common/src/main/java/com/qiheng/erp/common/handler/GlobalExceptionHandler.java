@@ -2,6 +2,8 @@ package com.qiheng.erp.common.handler;
 
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
+import com.qiheng.erp.common.exception.NotFoundBizException;
+import com.qiheng.erp.common.exception.ServiceUnavailableBizException;
 import com.qiheng.erp.common.result.Result;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -24,6 +26,20 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(NotFoundBizException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Result<Void> handleNotFoundBizException(NotFoundBizException e) {
+        log.warn("资源不存在: code={}, message={}", e.getCode(), e.getMessage());
+        return Result.fail(e.getCode(), e.getMessage());
+    }
+
+    @ExceptionHandler(ServiceUnavailableBizException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<Void> handleServiceUnavailableBizException(ServiceUnavailableBizException e) {
+        log.warn("依赖能力不可用: code={}, message={}", e.getCode(), e.getMessage());
+        return Result.fail(e.getCode(), e.getMessage());
+    }
 
     /**
      * 业务异常

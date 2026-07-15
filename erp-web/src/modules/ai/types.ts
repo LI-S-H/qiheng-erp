@@ -20,6 +20,7 @@ export interface AiQuickPrompt {
   intentCode: string;
   promptTemplate: string;
   fields: AiPromptField[];
+  actionPreview: AiActionPreview | null;
 }
 
 export interface AiContextSource {
@@ -80,6 +81,48 @@ export interface AiChatMessage {
   sources: AiContextSource[];
   agentTraces: AiAgentTrace[];
   taskCard: AiTaskCard | null;
+  workbench: AiAssistantWorkbench | null;
+}
+
+export interface AiActionPreview {
+  title: string;
+  description: string;
+  steps: string[];
+  route: string | null;
+  confirmLabel: string;
+}
+
+export interface AiWorkbenchSection {
+  title: string;
+  items: string[];
+}
+
+export interface AiWorkbenchLine {
+  lineId: string;
+  productId: string;
+  productName: string;
+  warehouseId: string;
+  warehouseName: string;
+  suggestedQty: number;
+  reason: string;
+  supplierProductId: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  unitPrice: number | null;
+  selectedSupplierScore: number | null;
+  targetWarehouseId: string | null;
+  targetWarehouseName: string | null;
+  sourceNo: string | null;
+}
+
+export interface AiAssistantWorkbench {
+  workbenchId: string;
+  title: string;
+  description: string;
+  workbenchType: 'PURCHASE_DRAFT' | 'TRANSFER_DRAFT' | 'LOCK_RELEASE' | 'STOCK_FILTER';
+  route: string | null;
+  lines: AiWorkbenchLine[];
+  sections: AiWorkbenchSection[];
 }
 
 export interface AiActionCard {
@@ -89,6 +132,7 @@ export interface AiActionCard {
   actionType: 'NAVIGATE' | 'WORKFLOW' | 'PREVIEW';
   route: string | null;
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  preview: AiActionPreview | null;
 }
 
 export interface AiAgentTrace {
@@ -107,6 +151,14 @@ export interface AiChatRequest {
 export interface AiChatResponse {
   conversationId: string;
   message: AiChatMessage;
+}
+
+export interface AiConversationMessagePage {
+  records: AiChatMessage[];
+  pageNum: number;
+  pageSize: number;
+  total: number;
+  hasNext?: boolean;
 }
 
 export interface AiConversationUpdateRequest {

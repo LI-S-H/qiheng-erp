@@ -33,6 +33,14 @@ export interface WarehouseFormPayload {
   remark: string;
 }
 
+export interface WarehousePage {
+  records: WarehouseListItem[];
+  total: number | null;
+  hasNext?: boolean;
+  pageNum: number;
+  pageSize: number;
+}
+
 export type WarehouseCreatePayload = WarehouseFormPayload;
 export type WarehouseUpdatePayload = WarehouseFormPayload & { version: number };
 

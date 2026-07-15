@@ -33,6 +33,8 @@ const warehouseStockViewSource = readProjectFile('erp-web', 'src', 'modules', 'w
 const stockBillApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'api.ts');
 const stockBillTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'types.ts');
 const stockBillViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'views', 'StockBillManageView.vue');
+const aiApiSource = readProjectFile('erp-web', 'src', 'modules', 'ai', 'api.ts');
+const aiViewSource = readProjectFile('erp-web', 'src', 'modules', 'ai', 'views', 'AiAssistantView.vue');
 
 const routerSource = readProjectFile('erp-web', 'src', 'router', 'index.ts');
 const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
@@ -70,6 +72,7 @@ const allSql = fs.readdirSync(sqlDirectory)
 const requiredPaths = [
   '/auth/login:',
   '/auth/me:',
+  '/ai/assistant/conversations/{conversationId}/messages:',
   '/system/users:',
   '/system/roles:',
   '/system/depts:',
@@ -462,9 +465,51 @@ if (updateRequestStart < 0 || updateRequestEnd < 0 || updateRequest.includes('pe
 }
 
 const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)].length;
-if (tableCount !== 26) throw new Error(`数据库设计文档声明 26 张表，当前 DDL 实际为 ${tableCount} 张`);
-if (!databaseOverview.includes('共设计 26 张表') || !databaseOverview.includes('`sys_permission`')) {
-  throw new Error('数据库总览未同步 26 张表或 sys_permission 权限目录表');
+if (tableCount !== 28) throw new Error(`数据库设计文档声明 28 张表，当前 DDL 实际为 ${tableCount} 张`);
+if (!databaseOverview.includes('共设计 28 张表') || !databaseOverview.includes('`sys_permission`')) {
+  throw new Error('数据库总览未同步 28 张表或 sys_permission 权限目录表');
+}
+for (const [name, apiSource, typeSource, viewSource] of [
+  ['仓库列表', warehouseApiSource, warehouseTypeSource, warehouseViewSource],
+  ['库存余额', warehouseStockApiSource, warehouseStockTypeSource, warehouseStockViewSource],
+]) {
+  if (!typeSource.includes('total: number | null') || !typeSource.includes('hasNext?: boolean')) {
+    throw new Error(`${name}前端类型未保留可空 total 和可选 hasNext`);
+  }
+  if (!apiSource.includes("typeof page.hasNext === 'boolean'") || !apiSource.includes('page.total === null')) {
+    throw new Error(`${name}接口适配层丢失 total/hasNext 契约字段`);
+  }
+  if (!viewSource.includes('hasNext ??') || !viewSource.includes('records.length >=')) {
+    throw new Error(`${name}页面未优先使用后端 hasNext`);
+  }
+}
+const paginationContractCases = [
+  { name: '满页但后端确认无下一页', page: { records: Array(10), pageSize: 10, hasNext: false }, expected: false },
+  { name: '总数为空且后端确认有下一页', page: { records: Array(10), pageSize: 10, total: null, hasNext: true }, expected: true },
+  { name: '后端未返回 hasNext 时按满页降级', page: { records: Array(10), pageSize: 10 }, expected: true },
+];
+for (const testCase of paginationContractCases) {
+  const actual = testCase.page.hasNext ?? testCase.page.records.length >= testCase.page.pageSize;
+  if (actual !== testCase.expected) throw new Error(`分页契约用例失败：${testCase.name}`);
+}
+for (const forbidden of [
+  'buildWorkbenchFromMessage',
+  'createPurchaseOrder',
+  'createStockBill',
+  '1920000000000000007',
+  "content.includes('采购')",
+  "content.includes('调拨')",
+]) {
+  if (aiViewSource.includes(forbidden)) throw new Error(`AI 生产组件仍包含前端业务数据推断：${forbidden}`);
+}
+if (!aiApiSource.includes("import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true'")) {
+  throw new Error('AI Mock 未受 DEV 环境边界保护');
+}
+if (!aiApiSource.includes('/ai/assistant/conversations/${conversationId}/messages')
+  || !aiApiSource.includes('signal')
+  || !aiViewSource.includes('historySequence')
+  || !aiViewSource.includes('message.workbench')) {
+  throw new Error('AI 非 Mock 历史请求、竞态保护或结构化工作框消费未完整接入');
 }
 
 const stalePermissionDescriptions = [
@@ -478,4 +523,4 @@ for (const document of [databaseOverview, permissionSchema, projectPlan]) {
   }
 }
 
-console.log(`OPENAPI_OK: ${references.length} 个引用完整，26 张数据库表、系统权限、产品与仓库库存契约已对齐`);
+console.log(`OPENAPI_OK: ${references.length} 个引用完整，28 张数据库表、系统权限、产品与仓库库存契约已对齐`);

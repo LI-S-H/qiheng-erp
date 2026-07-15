@@ -77,3 +77,37 @@ CREATE TABLE IF NOT EXISTS ai_interaction_log (
     KEY idx_ai_interaction_tool (tool_name),
     KEY idx_ai_interaction_create_time (create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI交互审计表';
+
+CREATE TABLE IF NOT EXISTS ai_conversation (
+    id BIGINT NOT NULL COMMENT '会话ID',
+    user_id BIGINT NOT NULL COMMENT '所属用户ID，只允许服务端从登录上下文写入',
+    title VARCHAR(40) NOT NULL DEFAULT '新的经营会话' COMMENT '会话标题',
+    description VARCHAR(200) NOT NULL DEFAULT '尚未开始分析' COMMENT '会话摘要',
+    last_message_at DATETIME DEFAULT NULL COMMENT '最后一条消息时间',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
+    PRIMARY KEY (id),
+    KEY idx_ai_conversation_user_list (user_id, deleted, last_message_at, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI经营助手会话表';
+
+CREATE TABLE IF NOT EXISTS ai_message (
+    id BIGINT NOT NULL COMMENT '消息ID',
+    conversation_id BIGINT NOT NULL COMMENT '会话ID',
+    user_id BIGINT NOT NULL COMMENT '所属用户ID，用于所有权校验',
+    role VARCHAR(16) NOT NULL COMMENT '消息角色：user、assistant',
+    content TEXT NOT NULL COMMENT '消息正文',
+    charts_json JSON COMMENT '后端业务 Tool 生成的图表规格',
+    action_cards_json JSON COMMENT '后端受控动作卡片，不允许模型直接拼装业务主键',
+    workbench_json JSON COMMENT '后端业务 Tool 校验后的只读工作框',
+    sources_json JSON COMMENT '本轮数据来源',
+    agent_traces_json JSON COMMENT '多智能体协同轨迹',
+    task_card_json JSON COMMENT '快捷任务展示卡片',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0正常，1删除',
+    PRIMARY KEY (id),
+    KEY idx_ai_message_history (conversation_id, deleted, create_time, id),
+    KEY idx_ai_message_user (user_id, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI经营助手消息表';

@@ -6,9 +6,9 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 
 ## 简化原则
 
-- MVP 设计 3 张表：`ai_document`、`ai_document_chunk`、`ai_interaction_log`。
+- MVP 设计 5 张表：`ai_document`、`ai_document_chunk`、`ai_interaction_log`、`ai_conversation`、`ai_message`。
 - 向量数据不放 MySQL，Embedding 写入 RedisStack；MySQL 只保存文档、切片、向量 key 和审计信息。
-- 暂不设计复杂聊天会话表，多轮聊天记录先用 `ai_interaction_log.request_id` 串联。
+- 经营助手的会话和完整消息分别写入 `ai_conversation`、`ai_message`；`ai_interaction_log` 继续只承担模型、Tool 和 Workflow 审计，不能替代历史消息。
 - 暂不设计 Prompt 模板表，MVP 阶段 Prompt 先放代码或配置文件。
 - AI Tool 调用、RAG 问答、后续 Workflow 调用统一写入 `ai_interaction_log`，减少表数量。
 - 评分和百分率字段如后续加入，统一遵守 `database-design-conventions.md`：用 `int` 存放大 100 倍后的整数。
@@ -82,10 +82,40 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 
 关系说明：AI Tool 必须记录权限校验结果、入参、返回摘要和是否脱敏。RAG 问答记录引用切片 ID，方便追溯回答来源。
 
+## 表：ai_conversation（AI 经营助手会话表）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | bigint PK | 会话ID |
+| user_id | bigint | 所属用户ID，只能从服务端登录上下文取得 |
+| title / description | varchar | 会话标题与摘要 |
+| last_message_at | datetime | 最后一条消息时间，用于会话列表排序 |
+| create_time / update_time | datetime | 审计时间 |
+| deleted / version | tinyint / int | 逻辑删除和乐观锁版本 |
+
+跨用户访问、已删除会话和不存在会话统一按不存在处理，避免通过错误差异枚举其他用户的会话。会话删除在同一事务内先逻辑删除其消息，再逻辑删除会话；项目采用弱外键约定，不创建物理外键。
+
+## 表：ai_message（AI 经营助手消息表）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | bigint PK | 消息ID |
+| conversation_id / user_id | bigint | 所属会话和用户，用于关联与归属校验 |
+| role / content | varchar / text | 消息角色与正文 |
+| charts_json / action_cards_json / workbench_json | json | 经后端业务 Tool 校验后的图表、动作卡片和只读工作框 |
+| sources_json / agent_traces_json / task_card_json | json | 来源、协同轨迹和快捷任务卡片 |
+| create_time / update_time | datetime | 审计时间 |
+| deleted | tinyint | 逻辑删除 |
+
+历史按 `create_time ASC, id ASC` 稳定排序，使用 `(conversation_id, deleted, create_time, id)` 索引分页。生产环境未接入真实 AI Tool 时不得写入示例助手消息或固定业务标识。
+
 ## 表间关系
 
 - `ai_document_chunk.document_id` -> `ai_document.id`
 - `ai_interaction_log.cited_chunk_ids` -> `ai_document_chunk.id` 列表，JSON 形式保存
+- `ai_conversation.user_id` -> `sys_user.id`，弱外键
+- `ai_message.conversation_id` -> `ai_conversation.id`，由 Service 事务维护级联逻辑删除
+- `ai_message.user_id` -> `sys_user.id`，冗余保存用于归属过滤
 
 ## MVP 业务规则
 
@@ -95,6 +125,8 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 - AI Tool 调用必须先校验粗粒度权限码，例如 `ai:query:stock`、`ai:query:sales`、`ai:query:purchase`。
 - AI Tool 不直接执行大模型生成 SQL，只能调用已有业务 Service。
 - AI Tool 返回大量数据时，日志只保存摘要和条数，不保存完整结果。
+- 会话和消息接口必须从 Sa-Token 登录上下文取得 `user_id`，请求 DTO 不接收该字段。
+- AI 服务未启用时消息发送接口明确返回能力不可用，不得返回固定回复、固定商品或内存历史。
 - 涉及客户手机号、成本、信用额度等敏感字段时，返回前必须脱敏，并记录 `desensitized = 1`。
 
 ## 测试场景

@@ -365,6 +365,7 @@ paths:
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
 
   /ai/assistant/conversations:
     post:
@@ -446,6 +447,44 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
 
+  /ai/assistant/conversations/{conversationId}/messages:
+    get:
+      tags: [AIAssistant]
+      summary: 分页查询经营助手会话消息
+      description: |
+        只返回当前登录用户所属且未删除会话的真实持久化消息。不存在、已删除和属于其他用户的会话统一返回 404，避免通过错误差异枚举会话。
+        消息按 `create_time ASC, id ASC` 稳定排序。前端从第 1 页开始拉取并根据总数加载全部分页，跨页按 `messageId` 去重；切换会话时必须取消或丢弃旧会话请求结果。
+      operationId: aiAssistantConversationMessages
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string }
+          description: 当前用户会话 ID
+        - name: pageNum
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: 查询成功；空会话返回空 records
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiConversationMessagePage' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
   /ai/scheduled-tasks:
     get:
       tags: [AIAssistant]
@@ -4285,6 +4324,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResult'
+    ServiceUnavailable:
+      description: AI 模型或受控业务 Tool 尚未启用或临时不可用
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResult'
   schemas:
     AiAssistantOverview:
       type: object
@@ -4315,6 +4360,18 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 40, description: 会话标题；前端提交前 trim }
 
+    AiConversationMessagePage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/AiChatMessage' }
+        total: { type: integer, minimum: 0, description: 当前用户该会话的未删除消息总数 }
+        hasNext: { type: boolean, description: 可选兼容字段；未返回时前端根据 total、pageNum 和 pageSize 判断 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+
     AiAgentProfile:
       type: object
       required: [agentCode, agentName, role, description, status]
@@ -4339,11 +4396,16 @@ components:
         title: { type: string, description: 快捷提示标题 }
         description: { type: string, description: 快捷提示说明 }
         intentCode: { type: string, description: 建议触发的多智能体任务编码，仅用于后端路由或观测，不允许前端绕过后端校验直接执行 }
-        promptTemplate: { type: string, description: 后端可识别的提示词模板，使用 `{{fieldKey}}` 占位 }
+        promptTemplate: { type: string, description: "后端可识别的提示词模板，使用 `{{fieldKey}}` 占位" }
         fields:
           type: array
           description: 前端需要用户填写的参数字段；调拨类快捷任务禁止返回预测天数字段
           items: { $ref: '#/components/schemas/AiPromptField' }
+        actionPreview:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AiActionPreview'
+          description: 可选的受控下一步预览；缺失或校验失败时前端不得自行按标题或提示词推断动作
 
     AiPromptField:
       type: object
@@ -4481,6 +4543,11 @@ components:
           allOf:
             - $ref: '#/components/schemas/AiTaskCard'
           description: 用户通过常用任务发起分析时的对话卡片；普通文本消息返回 `null`
+        workbench:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AiAssistantWorkbench'
+          description: 后端业务 Tool 生成并校验的只读工作框；未接入真实 Tool 时返回 `null` 或不返回，前端不得从自然语言补造
 
     AiTaskCard:
       type: object
@@ -4521,6 +4588,70 @@ components:
           nullable: true
           description: 前端内部跳转路由；非跳转动作返回 `null`
         riskLevel: { type: string, enum: [LOW, MEDIUM, HIGH], description: 动作风险等级；中高风险动作前端应展示确认或进入业务草稿页面 }
+        preview:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AiActionPreview'
+          description: 受控动作预览；为空时只能按 route 导航，不能在前端生成业务载荷
+
+    AiActionPreview:
+      type: object
+      required: [title, description, steps, route, confirmLabel]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        steps:
+          type: array
+          items: { type: string }
+        route: { type: string, nullable: true, description: 仅允许应用内部路由 }
+        confirmLabel: { type: string }
+
+    AiAssistantWorkbench:
+      type: object
+      required: [workbenchId, title, description, workbenchType, route, lines, sections]
+      description: |
+        只读业务建议 DTO，必须由后端受控 Tool/Service 查询并校验后生成。当前采购、仓储业务 Service 尚未接入 AI 动作执行，前端只能预览或导航，不得直接调用业务写接口。
+      properties:
+        workbenchId: { type: string }
+        title: { type: string }
+        description: { type: string }
+        workbenchType: { type: string, enum: [PURCHASE_DRAFT, TRANSFER_DRAFT, LOCK_RELEASE, STOCK_FILTER] }
+        route: { type: string, nullable: true, description: 仅允许应用内部路由 }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/AiWorkbenchLine' }
+        sections:
+          type: array
+          items: { $ref: '#/components/schemas/AiWorkbenchSection' }
+
+    AiWorkbenchLine:
+      type: object
+      required: [lineId, productId, productName, warehouseId, warehouseName, suggestedQty, reason]
+      properties:
+        lineId: { type: string }
+        productId: { type: string, description: 由后端业务 Service 校验后的产品 ID }
+        productName: { type: string }
+        warehouseId: { type: string, description: 由后端业务 Service 校验后的仓库 ID }
+        warehouseName: { type: string }
+        suggestedQty: { type: number, minimum: 0, exclusiveMinimum: true }
+        reason: { type: string }
+        supplierProductId: { type: string, nullable: true }
+        supplierId: { type: string, nullable: true }
+        supplierName: { type: string, nullable: true }
+        unitPrice: { type: number, minimum: 0, nullable: true }
+        selectedSupplierScore: { type: number, minimum: 0, maximum: 100, nullable: true }
+        targetWarehouseId: { type: string, nullable: true }
+        targetWarehouseName: { type: string, nullable: true }
+        sourceNo: { type: string, nullable: true }
+
+    AiWorkbenchSection:
+      type: object
+      required: [title, items]
+      properties:
+        title: { type: string }
+        items:
+          type: array
+          items: { type: string }
 
     AiScheduledTaskPage:
       type: object
@@ -5997,7 +6128,7 @@ components:
         productCode: { type: string, maxLength: 64, description: 对应 `purchase_order_item.product_code` 产品快照 }
         productName: { type: string, maxLength: 200, description: 对应 `purchase_order_item.product_name` 产品快照 }
         unitName: { type: string, maxLength: 32, description: 对应 `purchase_order_item.unit_name` 产品单位快照 }
-        quantity: { type: number, format: double, exclusiveMinimum: 0, description: 对应 `purchase_order_item.quantity` }
+        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, description: 对应 `purchase_order_item.quantity` }
         inboundQty: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.inbound_qty` }
         unitPrice: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.unit_price` }
         totalAmount: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.total_amount` }
@@ -6038,7 +6169,7 @@ components:
         purchaseOrderItemId: { type: string, nullable: true, description: 编辑草稿时传已有明细 ID，对应 `purchase_order_item.id`；新增明细或创建订单时不传 }
         supplierProductId: { type: string, nullable: true, description: 选中的供货关系 ID，对应 `supplier_product.id`；前端应按单头供应商和产品双向过滤后传入，若为空或与 `supplierId`、`productId` 不匹配，后端必须拒绝或按启用供货关系重新校验 }
         productId: { type: string, description: 启用产品 ID；后端保存产品编码、名称和单位快照 }
-        quantity: { type: number, format: double, exclusiveMinimum: 0 }
+        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true }
         unitPrice: { type: number, format: double, minimum: 0 }
         selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100 }
         remark: { type: string, maxLength: 500 }
@@ -6176,7 +6307,7 @@ components:
         productCode: { type: string, maxLength: 64, description: 对应 `sales_order_item.product_code` 产品快照 }
         productName: { type: string, maxLength: 200, description: 对应 `sales_order_item.product_name` 产品快照 }
         unitName: { type: string, maxLength: 32, description: 对应 `sales_order_item.unit_name` 产品单位快照 }
-        quantity: { type: number, format: double, exclusiveMinimum: 0, description: 对应 `sales_order_item.quantity` }
+        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, description: 对应 `sales_order_item.quantity` }
         lockedQty: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.locked_qty`，提交或审核锁定库存后由后端写入 }
         outboundQty: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.outbound_qty`，仓库确认出库后回写 }
         unitPrice: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.unit_price` }
@@ -6216,7 +6347,7 @@ components:
       properties:
         salesOrderItemId: { type: string, nullable: true, description: 编辑草稿时传已有明细 ID，对应 `sales_order_item.id`；新增明细或创建订单时不传 }
         productId: { type: string, description: 启用产品 ID；后端保存产品编码、名称和单位快照 }
-        quantity: { type: number, format: double, exclusiveMinimum: 0 }
+        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true }
         unitPrice: { type: number, format: double, minimum: 0 }
         remark: { type: string, maxLength: 500 }
 
@@ -6240,7 +6371,7 @@ components:
       properties:
         stockBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
         productId: { type: string, description: 产品 ID，后端保存当前产品编码、名称和单位快照 }
-        quantity: { type: number, format: double, exclusiveMinimum: 0, multipleOf: 0.01, description: 本次出入库业务真实值，最多两位小数；后端按产品数量精度校验并按 100 倍整数持久化 }
+        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, multipleOf: 0.01, description: 本次出入库业务真实值，最多两位小数；后端按产品数量精度校验并按 100 倍整数持久化 }
         qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的合格数量，其他类型传 0 }
         defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的不合格数量，其他类型传 0 }
         remark: { type: string, maxLength: 500 }

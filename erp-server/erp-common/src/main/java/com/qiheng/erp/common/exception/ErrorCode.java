@@ -62,6 +62,10 @@ public enum ErrorCode {
     CUSTOMER_CODE_DUPLICATE(70001, "客户编码已存在"),
 
     // 未知错误
+    // AI 模块 8xxxx
+    AI_CONVERSATION_NOT_FOUND(80001, "AI 会话不存在"),
+    AI_SERVICE_UNAVAILABLE(80002, "AI 服务尚未启用"),
+
     UNKNOWN(99999, "系统内部错误");
 
     private final int code;

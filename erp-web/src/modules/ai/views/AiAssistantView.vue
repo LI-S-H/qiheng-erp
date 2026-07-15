@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
@@ -46,11 +46,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
-import { createPurchaseOrder, listEnabledWarehouseOptions, searchSupplierOptions } from '@/modules/purchase/api';
-import type { PurchaseOrderFormPayload } from '@/modules/purchase/types';
 import { listProducts } from '@/modules/product/products/api';
-import { createStockBill } from '@/modules/warehouse/stock-bills/api';
-import type { StockBillCreatePayload } from '@/modules/warehouse/stock-bills/types';
 import { listWarehouses } from '@/modules/warehouse/warehouses/api';
 import AiChartCard from '../components/AiChartCard.vue';
 import AiComposerDock from '../components/AiComposerDock.vue';
@@ -60,59 +56,23 @@ import {
   createAiConversation,
   deleteAiConversation,
   getAiAssistantOverview,
+  getAiConversationHistory,
   sendAiAssistantMessage,
   updateAiConversation,
 } from '../api';
-import type { AiActionCard, AiAssistantOverview, AiChartSpec, AiChatMessage, AiContextSource, AiPromptField, AiQuickPrompt, AiTaskCard } from '../types';
+import type { AiActionCard, AiActionPreview, AiAssistantOverview, AiAssistantWorkbench, AiChartSpec, AiChatMessage, AiContextSource, AiPromptField, AiQuickPrompt, AiTaskCard } from '../types';
 
-interface BusinessPromptAction {
-  label: string;
-  description: string;
-  route: string | null;
-  previewTitle: string;
-  steps: string[];
-}
-
-interface WorkbenchLine {
-  lineId: string;
-  productId: string;
-  productName: string;
-  supplierProductId?: string | null;
-  unitPrice?: number;
-  selectedSupplierScore?: number;
-  warehouseId: string;
-  warehouseName: string;
-  targetWarehouseId?: string;
-  targetWarehouseName?: string;
-  suggestedQty: string;
-  supplierId?: string;
-  supplierName?: string;
-  sourceNo?: string;
-  reason: string;
-}
-
-interface AssistantWorkbench {
-  workbenchId: string;
-  title: string;
-  description: string;
-  workbenchType: 'PURCHASE_DRAFT' | 'TRANSFER_DRAFT' | 'LOCK_RELEASE' | 'STOCK_FILTER';
-  status: '待确认' | '已修改' | '草稿已创建' | '预览已更新（未保存）';
-  route: string | null;
-  generatedNos: string[];
-  lines: WorkbenchLine[];
-  sections: Array<{
-    title: string;
-    items: string[];
-  }>;
+interface ConversationHistoryState {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  error: string | null;
 }
 
 const router = useRouter();
 const loading = ref(false);
-const transitionLoading = ref(false);
 const sending = ref(false);
 const overview = ref<AiAssistantOverview | null>(null);
 const inputMessage = ref('');
-const conversationId = ref<string | null>('conv-today');
+const conversationId = ref<string | null>(null);
 const sidebarCollapsed = ref(false);
 const conversationListExpanded = ref(false);
 const conversationListCollapsed = ref(false);
@@ -128,17 +88,15 @@ const productPickerValue = ref('');
 const warehousePickerValue = ref('');
 const productPickerKey = ref(0);
 const warehousePickerKey = ref(0);
-const actionPreviewOpen = ref(false);
-const actionPreviewTitle = ref('');
-const actionPreviewDescription = ref('');
-const actionPreviewRoute = ref<string | null>(null);
-const actionPreviewSteps = ref<string[]>([]);
-const activeWorkbench = ref<AssistantWorkbench | null>(null);
+const actionPreview = ref<AiActionPreview | null>(null);
+const actionPreviewOpen = computed(() => Boolean(actionPreview.value));
+const activeWorkbench = ref<AiAssistantWorkbench | null>(null);
 const workbenchCollapsed = ref(false);
 const workbenchWidth = ref(360);
 const resizingWorkbench = ref(false);
-const workbenchSubmitting = ref(false);
-let conversationTransitionTimer: number | null = null;
+const historyStateByConversation = reactive<Record<string, ConversationHistoryState>>({});
+let historySequence = 0;
+let historyController: AbortController | null = null;
 
 const chartPalette = ['#2563eb', '#059669', '#d97706', '#7c3aed'];
 const chartFrame = {
@@ -153,47 +111,6 @@ const chartFrame = {
   tickX: 638,
 } as const;
 
-const purchaseDemoCharts: AiChartSpec[] = [
-  {
-    chartId: 'demo-purchase-demand',
-    type: 'line',
-    title: '补货商品近 7 日需求趋势',
-    description: '这类图由后端返回字段映射和数据行，前端统一渲染样式。',
-    xField: 'date',
-    yFields: ['usbDemand', 'labelDemand'],
-    fieldLabels: { usbDemand: 'USB-C扩展坞需求', labelDemand: '热敏标签纸需求' },
-    yUnit: '件',
-    nameField: null,
-    valueField: null,
-    data: [
-      { date: '06-25', usbDemand: 4, labelDemand: 18 },
-      { date: '06-26', usbDemand: 5, labelDemand: 21 },
-      { date: '06-27', usbDemand: 7, labelDemand: 20 },
-      { date: '06-28', usbDemand: 8, labelDemand: 24 },
-      { date: '06-29', usbDemand: 10, labelDemand: 28 },
-      { date: '06-30', usbDemand: 12, labelDemand: 31 },
-      { date: '07-01', usbDemand: 14, labelDemand: 35 },
-    ],
-  },
-  {
-    chartId: 'demo-purchase-gap',
-    type: 'bar',
-    title: '安全库存缺口',
-    description: '缺口越高，越适合进入右侧采购草稿工作框复核。',
-    xField: 'productName',
-    yFields: ['gapQty'],
-    fieldLabels: { gapQty: '安全库存缺口' },
-    yUnit: '件',
-    nameField: null,
-    valueField: null,
-    data: [
-      { productName: 'USB-C扩展坞', gapQty: 8 },
-      { productName: '热敏标签纸', gapQty: 40 },
-      { productName: 'A4复印纸', gapQty: 78 },
-    ],
-  },
-];
-
 const daysOptions = [
   { value: '7', label: '7 天' },
   { value: '14', label: '14 天' },
@@ -201,51 +118,8 @@ const daysOptions = [
   { value: '60', label: '60 天' },
 ];
 
-const promptActionMap: Record<string, BusinessPromptAction> = {
-  risk: {
-    label: '库存筛选结果',
-    description: '完成分析后跳到库存余额并带着风险范围复核',
-    route: '/warehouse/stocks',
-    previewTitle: '库存风险处理预览',
-    steps: ['确认本次巡检的商品和仓库范围', '打开库存余额列表核对可用库存、锁定库存和安全库存', '人工筛选后再决定补货、调拨或释放锁定库存'],
-  },
-  purchase: {
-    label: '采购草稿预览',
-    description: '先生成采购建议卡片，再由用户确认草稿',
-    route: '/purchase/orders',
-    previewTitle: '采购建议确认预览',
-    steps: ['核对销量预测、库存缺口和采购在途', '预览建议补货商品、数量和供应商', '生成采购草稿，人工确认后再提交正式采购订单'],
-  },
-  transfer: {
-    label: '调拨草稿工作框',
-    description: '基于销量预测和库存缺口生成可修改调拨明细',
-    route: '/warehouse/outbound-bills',
-    previewTitle: '调拨建议确认预览',
-    steps: ['读取已完成的销量预测、库存缺口和跨仓可用库存', '预览调出仓、调入仓、调拨数量和原因', '后端提供调拨单接口后生成正式调拨草稿'],
-  },
-  release: {
-    label: '锁定释放工作框',
-    description: '把可释放锁定库存整理成待复核清单',
-    route: '/warehouse/stocks',
-    previewTitle: '锁定库存释放预览',
-    steps: ['核对销售订单锁定来源和未出库状态', '修改释放数量和复核原因', '人工确认后再进入库存或销售单据处理'],
-  },
-  sales: {
-    label: '预测报告卡片',
-    description: '沉淀为一张可跟进的销量预测报告',
-    route: '/ai/tasks',
-    previewTitle: '销量预测报告预览',
-    steps: ['确认预测商品、仓库和时间窗口', '生成趋势结论、缺货影响和风险商品', '归档报告卡片，后续在任务中心跟踪变化'],
-  },
-};
-
 const promptForm = reactive<Record<string, string | string[]>>({});
-const messagesByConversation = reactive<Record<string, AiChatMessage[]>>({
-  'conv-today': [buildWelcomeMessage('welcome')],
-  'conv-replenish': buildPurchaseDemoMessages(),
-  'conv-inventory': buildTransferDemoMessages(),
-  'conv-supplier': buildSupplierDemoMessages(),
-});
+const messagesByConversation = reactive<Record<string, AiChatMessage[]>>({});
 
 const activeConversation = computed(() => overview.value?.conversations.find(item => item.conversationId === conversationId.value) || overview.value?.conversations[0]);
 const conversationDateGroups = computed(() => {
@@ -268,11 +142,16 @@ const pinnedConversations = computed(() => filteredConversations.value.slice(0, 
 const extraConversations = computed(() => filteredConversations.value.slice(5));
 const hiddenConversationCount = computed(() => extraConversations.value.length);
 const currentMessages = computed(() => {
-  const id = conversationId.value || 'conv-today';
-  return messagesByConversation[id] || [];
+  const id = conversationId.value;
+  return id ? messagesByConversation[id] || [] : [];
 });
+const currentHistoryState = computed<ConversationHistoryState>(() => {
+  const id = conversationId.value;
+  return id ? historyStateByConversation[id] || { status: 'idle', error: null } : { status: 'idle', error: null };
+});
+const transitionLoading = computed(() => currentHistoryState.value.status === 'loading');
 const isWelcomeStage = computed(() => currentMessages.value.length <= 1 && !sending.value);
-const selectedPromptAction = computed(() => selectedPrompt.value ? promptActionMap[selectedPrompt.value.promptId] : null);
+const selectedPromptAction = computed(() => selectedPrompt.value?.actionPreview || null);
 
 function nowText() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -303,265 +182,68 @@ function formatChartTick(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
 }
 
-function buildWelcomeMessage(messageId: string): AiChatMessage {
-  return {
-    messageId,
-    role: 'assistant',
-    createdAt: '2026-07-01 10:18:00',
-    content: '我是智能经营助手。你可以直接描述经营目标，也可以从左侧快捷分析开始，我会把问题拆给合适的智能体协同处理。',
-    charts: [],
-    actionCards: [],
-    sources: [],
-    agentTraces: [],
-    taskCard: null,
-  };
+function syncWorkbenchFromMessages(messages: AiChatMessage[]) {
+  activeWorkbench.value = [...messages].reverse().find(message => message.role === 'assistant' && message.workbench)?.workbench || null;
 }
 
-function buildPurchaseDemoMessages(): AiChatMessage[] {
-  return [
-    {
-      messageId: 'demo-purchase-user',
-      role: 'user',
-      createdAt: '2026-07-01 09:42:00',
-      content: '帮我看一下 USB-C扩展坞、热敏标签纸和 A4复印纸今天要不要补货。',
-      charts: [],
-      actionCards: [],
-      sources: [],
-      agentTraces: [],
-      taskCard: null,
-    },
-    {
-      messageId: 'demo-purchase-assistant',
-      role: 'assistant',
-      createdAt: '2026-07-01 09:42:18',
-      content: '已结合销售订单、库存余额、采购在途和供应商履约评分完成补货分析。USB-C扩展坞可用库存为 0，建议先生成 8 个补货草稿；热敏标签纸安全库存缺口 40 卷，建议优先华南中心仓；A4复印纸只补华南中心仓安全库存，华东中心仓暂不补货。右侧工作框已经把草稿明细列出来，你可以直接修改数量、供应商和原因，再生成草稿。',
-      charts: purchaseDemoCharts,
-      actionCards: [
-        { actionId: 'demo-open-purchase', title: '预览采购草稿', description: '在右侧工作框复核补货明细', actionType: 'PREVIEW', route: null, riskLevel: 'MEDIUM' },
-        { actionId: 'demo-open-stock', title: '查看库存余额', description: '跳转库存余额核对可用库存', actionType: 'NAVIGATE', route: '/warehouse/stocks', riskLevel: 'LOW' },
-      ],
-      sources: [
-        { sourceId: 'demo-sales', sourceType: 'TOOL', title: '销售订单', description: '近 7 日商品需求和未出库订单', freshness: '今日 10:00' },
-        { sourceId: 'demo-stock', sourceType: 'TOOL', title: '库存余额', description: '可用库存、安全库存和锁定占用', freshness: '实时查询' },
-        { sourceId: 'demo-purchase', sourceType: 'TOOL', title: '采购在途', description: '未完成采购订单和供应商交期', freshness: '今日 10:00' },
-      ],
-      agentTraces: [
-        { traceId: 'demo-router', agentCode: 'chief-router-agent', agentName: '主控智能体', summary: '识别为补货建议任务，调度库存、销量预测和供应商评估。', status: 'DONE' },
-        { traceId: 'demo-purchase-agent', agentCode: 'purchase-advice-agent', agentName: '采购建议智能体', summary: '将库存缺口、在途采购和供应商评分合并为草稿建议。', status: 'DONE' },
-      ],
-      taskCard: null,
-    },
-  ];
+function isRequestCancelled(error: unknown) {
+  return Boolean(error && typeof error === 'object' && (
+    ('name' in error && (error.name === 'AbortError' || error.name === 'CanceledError'))
+    || ('code' in error && error.code === 'ERR_CANCELED')
+  ));
 }
 
-function buildTransferDemoMessages(): AiChatMessage[] {
-  return [
-    {
-      messageId: 'demo-transfer-user',
-      role: 'user',
-      createdAt: '2026-06-30 16:40:00',
-      content: '华南中心仓标签纸缺口比较大，帮我看下能不能从其他仓调拨。',
-      charts: [],
-      actionCards: [],
-      sources: [],
-      agentTraces: [],
-      taskCard: null,
-    },
-    {
-      messageId: 'demo-transfer-assistant',
-      role: 'assistant',
-      createdAt: '2026-06-30 16:40:16',
-      content: '已检查库存余额、已完成销量预测结果和锁定占用。热敏标签纸建议从华东中心仓调拨 24 卷到华南中心仓；A4复印纸建议从南京备货仓调拨 18 箱到华南中心仓。右侧已生成调拨草稿工作框，你可以修改调出仓、调入仓和调拨数量。',
-      charts: [
-        {
-          chartId: 'demo-transfer-gap',
-          type: 'bar',
-          title: '跨仓安全库存缺口',
-          description: '用于判断是否优先调拨，而不是直接采购。',
-          xField: 'productName',
-          yFields: ['gapQty'],
-          fieldLabels: { gapQty: '安全库存缺口' },
-          yUnit: '件',
-          nameField: null,
-          valueField: null,
-          data: [
-            { productName: '热敏标签纸', gapQty: 24 },
-            { productName: 'A4复印纸', gapQty: 18 },
-            { productName: '中性签字笔', gapQty: 12 },
-          ],
-        },
-      ],
-      actionCards: [
-        { actionId: 'demo-transfer-preview', title: '预览调拨草稿', description: '在右侧工作框复核调拨明细', actionType: 'PREVIEW', route: null, riskLevel: 'MEDIUM' },
-        { actionId: 'demo-transfer-stock', title: '查看库存余额', description: '跳转库存余额核对跨仓可用库存', actionType: 'NAVIGATE', route: '/warehouse/stocks', riskLevel: 'LOW' },
-      ],
-      sources: [
-        { sourceId: 'demo-transfer-stock', sourceType: 'TOOL', title: '库存余额', description: '跨仓可用库存、安全库存和锁定占用', freshness: '实时查询' },
-        { sourceId: 'demo-transfer-sales', sourceType: 'TOOL', title: '销售订单', description: '近 7 日未出库需求', freshness: '今日 10:00' },
-      ],
-      agentTraces: [
-        { traceId: 'demo-transfer-router', agentCode: 'chief-router-agent', agentName: '主控智能体', summary: '识别为跨仓调拨任务，调度库存分析智能体。', status: 'DONE' },
-        { traceId: 'demo-transfer-stock-agent', agentCode: 'inventory-analysis-agent', agentName: '库存分析智能体', summary: '按仓库可用库存和安全库存缺口生成调拨建议。', status: 'DONE' },
-      ],
-      taskCard: null,
-    },
-  ];
-}
+async function loadConversationHistory(id: string) {
+  const sequence = ++historySequence;
+  historyController?.abort();
+  const controller = new AbortController();
+  historyController = controller;
+  switchingConversationId.value = id;
+  historyStateByConversation[id] = { status: 'loading', error: null };
+  activeWorkbench.value = null;
 
-function buildLockReleaseDemoMessages(): AiChatMessage[] {
-  return [
-    {
-      messageId: 'demo-release-user',
-      role: 'user',
-      createdAt: '2026-06-29 15:12:00',
-      content: '帮我找一下哪些锁定库存可以释放。',
-      charts: [],
-      actionCards: [],
-      sources: [],
-      agentTraces: [],
-      taskCard: null,
-    },
-    {
-      messageId: 'demo-release-assistant',
-      role: 'assistant',
-      createdAt: '2026-06-29 15:12:20',
-      content: '已检查销售订单锁定、出库进度和库存余额。发现两条销售单锁定超过 48 小时且未进入出库确认，建议先复核后释放部分锁定库存。右侧已生成锁定释放工作框。',
-      charts: [
-        {
-          chartId: 'demo-release-lock',
-          type: 'bar',
-          title: '可复核锁定数量',
-          description: '按来源单据展示可复核数量，便于逐单判断是否释放。',
-          xField: 'sourceNo',
-          yFields: ['releaseQty'],
-          fieldLabels: { releaseQty: '可复核锁定数量' },
-          yUnit: '件',
-          nameField: null,
-          valueField: null,
-          data: [
-            { sourceNo: 'SO012', releaseQty: 12 },
-            { sourceNo: 'SO018', releaseQty: 30 },
-            { sourceNo: 'SO021', releaseQty: 8 },
-          ],
-        },
-      ],
-      actionCards: [
-        { actionId: 'demo-release-preview', title: '预览释放清单', description: '在右侧工作框复核锁定来源', actionType: 'PREVIEW', route: null, riskLevel: 'MEDIUM' },
-        { actionId: 'demo-release-stock', title: '查看库存余额', description: '跳转库存余额核对锁定库存', actionType: 'NAVIGATE', route: '/warehouse/stocks', riskLevel: 'LOW' },
-      ],
-      sources: [
-        { sourceId: 'demo-release-sales', sourceType: 'TOOL', title: '销售订单', description: '锁定来源、审核状态和出库进度', freshness: '今日 10:00' },
-        { sourceId: 'demo-release-stock', sourceType: 'TOOL', title: '库存余额', description: '锁定库存和可用库存', freshness: '实时查询' },
-      ],
-      agentTraces: [
-        { traceId: 'demo-release-agent', agentCode: 'inventory-analysis-agent', agentName: '库存分析智能体', summary: '识别长时间未出库锁定库存，生成释放复核清单。', status: 'DONE' },
-      ],
-      taskCard: null,
-    },
-  ];
-}
-
-function buildSupplierDemoMessages(): AiChatMessage[] {
-  return [
-    {
-      messageId: 'demo-supplier-user',
-      role: 'user',
-      createdAt: '2026-06-29 15:12:00',
-      content: '帮我复盘一下近期供应商履约有没有异常。',
-      charts: [],
-      actionCards: [],
-      sources: [],
-      agentTraces: [],
-      taskCard: null,
-    },
-    {
-      messageId: 'demo-supplier-assistant',
-      role: 'assistant',
-      createdAt: '2026-06-29 15:12:20',
-      content: '已按近 30 天供货记录、到货及时率和异常反馈完成履约复盘。森纸纸业集团准时率 97.4%，纸品供货仍可优先选择；拓联数码配件近两周准时率从 92.1% 降至 84.6%，建议下单前先复核延期原因和备选供方。',
-      charts: [
-        {
-          chartId: 'demo-supplier-performance',
-          type: 'bar',
-          title: '供应商准时率对比',
-          description: '按近 30 天到货记录计算，值越低越需要复核履约风险。',
-          xField: 'supplierName',
-          yFields: ['onTimeRate'],
-          fieldLabels: { onTimeRate: '准时率' },
-          yUnit: '%',
-          nameField: null,
-          valueField: null,
-          data: [
-            { supplierName: '森纸纸业', onTimeRate: 97.4 },
-            { supplierName: '华东饮品', onTimeRate: 93.8 },
-            { supplierName: '拓联数码', onTimeRate: 84.6 },
-          ],
-        },
-      ],
-      actionCards: [
-        { actionId: 'demo-supplier-review', title: '查看供应商资料', description: '复核履约、价格和异常记录', actionType: 'NAVIGATE', route: '/purchase/suppliers', riskLevel: 'LOW' },
-      ],
-      sources: [
-        { sourceId: 'demo-supplier-orders', sourceType: 'TOOL', title: '采购在途', description: '到货日期、逾期记录和供应商供货关系', freshness: '今日 10:00' },
-        { sourceId: 'demo-supplier-feedback', sourceType: 'TOOL', title: '履约反馈', description: '延期、缺量和质量异常记录', freshness: '今日 10:00' },
-      ],
-      agentTraces: [
-        { traceId: 'demo-supplier-agent', agentCode: 'supplier-evaluation-agent', agentName: '供应商评估智能体', summary: '按准时率、延期次数和异常反馈识别履约风险。', status: 'DONE' },
-      ],
-      taskCard: null,
-    },
-  ];
-}
-
-function ensureConversationMessages(id: string) {
-  if (messagesByConversation[id]) return;
-  messagesByConversation[id] = [{
-    ...buildWelcomeMessage(`welcome-${id}`),
-    createdAt: nowText(),
-    content: '新的经营会话已准备好。你可以输入问题，或选择一个快捷分析填写参数后直接发起分析。',
-  }];
-}
-
-function syncWorkbenchFromConversation(id: string) {
-  const messages = messagesByConversation[id] || [];
-  const assistantMessage = [...messages].reverse().find(message => message.role === 'assistant');
-  activeWorkbench.value = assistantMessage ? buildWorkbenchFromMessage(assistantMessage, assistantMessage.taskCard) : null;
-}
-
-function clearConversationTransitionTimer() {
-  if (conversationTransitionTimer !== null) {
-    window.clearTimeout(conversationTransitionTimer);
-    conversationTransitionTimer = null;
+  try {
+    const messages = await getAiConversationHistory(id, controller.signal);
+    if (sequence !== historySequence || conversationId.value !== id) return;
+    messagesByConversation[id] = messages;
+    historyStateByConversation[id] = { status: 'success', error: null };
+    syncWorkbenchFromMessages(messages);
+  } catch (error) {
+    if (isRequestCancelled(error) || sequence !== historySequence || conversationId.value !== id) return;
+    historyStateByConversation[id] = {
+      status: 'error',
+      error: getApiErrorMessage(error) || '会话历史加载失败，请重试',
+    };
+  } finally {
+    if (sequence === historySequence && conversationId.value === id) {
+      switchingConversationId.value = null;
+      if (historyController === controller) historyController = null;
+    }
   }
 }
 
-function playConversationTransition(targetId: string) {
-  clearConversationTransitionTimer();
-  switchingConversationId.value = targetId;
-  transitionLoading.value = true;
-  conversationTransitionTimer = window.setTimeout(() => {
-    if (switchingConversationId.value === targetId) {
-      switchingConversationId.value = null;
-      transitionLoading.value = false;
-    }
-    conversationTransitionTimer = null;
-  }, 280);
+async function switchConversation(id: string, force = false) {
+  conversationId.value = id;
+  const currentState = historyStateByConversation[id];
+  if (!force && currentState?.status === 'success') {
+    syncWorkbenchFromMessages(messagesByConversation[id] || []);
+    return;
+  }
+  await loadConversationHistory(id);
 }
 
-function switchConversation(id: string) {
-  conversationId.value = id;
-  ensureConversationMessages(id);
-  syncWorkbenchFromConversation(id);
-  playConversationTransition(id);
+async function retryConversationHistory() {
+  const id = conversationId.value;
+  if (id) await switchConversation(id, true);
 }
 
 async function loadOverview() {
   loading.value = true;
   try {
     overview.value = await getAiAssistantOverview();
-    const firstId = overview.value.conversations[0]?.conversationId || 'conv-today';
+    const firstId = overview.value.conversations[0]?.conversationId || null;
     conversationId.value = firstId;
-    ensureConversationMessages(firstId);
+    if (firstId) await switchConversation(firstId, true);
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '智能经营助手概览加载失败');
   } finally {
@@ -570,17 +252,16 @@ async function loadOverview() {
 }
 
 async function selectConversation(id: string) {
-  if (id === conversationId.value) return;
-  switchConversation(id);
+  if (id === conversationId.value && historyStateByConversation[id]?.status !== 'error') return;
+  await switchConversation(id, historyStateByConversation[id]?.status === 'error');
 }
-
 async function createConversation() {
   if (loading.value) return;
   loading.value = true;
   try {
     const conversation = await createAiConversation();
     if (overview.value) overview.value.conversations = [conversation, ...overview.value.conversations];
-    switchConversation(conversation.conversationId);
+    await switchConversation(conversation.conversationId, true);
     toast.success('新会话已创建');
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '新建会话失败');
@@ -617,15 +298,30 @@ async function saveRename() {
 async function removeConversation(id: string) {
   const conversation = overview.value?.conversations.find(item => item.conversationId === id);
   if (!conversation || !window.confirm(`确认删除会话「${conversation.title}」吗？`)) return;
+  const deletingActiveConversation = conversationId.value === id;
+  const previousHistoryState = historyStateByConversation[id];
   try {
+    if (deletingActiveConversation) {
+      historyController?.abort();
+      historyController = null;
+      historySequence += 1;
+      switchingConversationId.value = null;
+    }
     await deleteAiConversation(id);
     if (overview.value) overview.value.conversations = overview.value.conversations.filter(item => item.conversationId !== id);
     delete messagesByConversation[id];
+    delete historyStateByConversation[id];
     const next = overview.value?.conversations[0]?.conversationId || null;
     conversationId.value = next;
-    if (next) ensureConversationMessages(next);
+    if (next) await switchConversation(next, true);
+    else activeWorkbench.value = null;
     toast.success('会话已删除');
   } catch (error) {
+    if (deletingActiveConversation && conversationId.value === id) {
+      historyStateByConversation[id] = previousHistoryState?.status === 'success'
+        ? previousHistoryState
+        : { status: 'error', error: '删除失败，会话记录加载已中止，请重试' };
+    }
     toast.warning(getApiErrorMessage(error) || '删除会话失败');
   }
 }
@@ -688,23 +384,6 @@ async function fetchWarehouseOptions(keyword: string): Promise<RemoteSearchOptio
   }));
 }
 
-async function fetchWorkbenchSupplierOptions(keyword: string): Promise<RemoteSearchOption[]> {
-  const suppliers = await searchSupplierOptions(keyword, 10);
-  return suppliers.map(item => ({
-    value: item.supplierId,
-    label: `${item.supplierCode} ${item.supplierName}`,
-    disabled: item.status === 0,
-  }));
-}
-
-async function fetchWorkbenchWarehouseOptions(keyword: string): Promise<RemoteSearchOption[]> {
-  const warehouses = await listEnabledWarehouseOptions(keyword, 10);
-  return warehouses.map(item => ({
-    value: item.value,
-    label: item.label,
-  }));
-}
-
 function fieldArrayValue(field: AiPromptField) {
   const value = promptForm[field.fieldKey];
   return Array.isArray(value) ? value : [];
@@ -762,88 +441,6 @@ function buildPromptTaskCard(prompt: AiQuickPrompt): AiTaskCard {
   };
 }
 
-function buildWorkbenchFromMessage(message: AiChatMessage, taskCard: AiTaskCard | null): AssistantWorkbench | null {
-  const taskTitle = taskCard?.title || '';
-  const content = `${taskTitle} ${message.content}`;
-  if (content.includes('调拨')) {
-    return {
-      workbenchId: `workbench-transfer-${Date.now()}`,
-      title: '调拨草稿工作框',
-      description: '来自 AI 库存分析的跨仓调拨建议。当前先生成调出/调入库存草稿，独立调拨单接口接入后可切换为正式调拨草稿。',
-      workbenchType: 'TRANSFER_DRAFT',
-      status: '待确认',
-      route: '/warehouse/outbound-bills',
-      generatedNos: [],
-      lines: [
-        { lineId: 'transfer-label', productId: '1920000000000000008', productName: '热敏标签纸', warehouseId: '1930000000000000001', warehouseName: 'WH001 华东中心仓', targetWarehouseId: '1930000000000000002', targetWarehouseName: 'WH002 华南中心仓', suggestedQty: '24', reason: '华南中心仓低于安全库存，华东中心仓可用库存充足' },
-        { lineId: 'transfer-a4', productId: '1920000000000000007', productName: 'A4复印纸', warehouseId: '1930000000000000008', warehouseName: 'WH008 南京备货仓', targetWarehouseId: '1930000000000000002', targetWarehouseName: 'WH002 华南中心仓', suggestedQty: '18', reason: '已完成销量预测显示华南中心仓存在缺口，南京备货仓周转偏慢' },
-      ],
-      sections: [
-        { title: '调拨条件', items: ['调出仓必须有足够可用库存', '调入仓低于安全库存或未来销量预测存在缺口'] },
-        { title: '接口状态', items: ['当前先生成调出/调入库存草稿', '独立调拨单接口接入后可直接创建正式调拨草稿'] },
-      ],
-    };
-  }
-  if (content.includes('释放') || content.includes('锁定')) {
-    return {
-      workbenchId: `workbench-release-${Date.now()}`,
-      title: '锁定库存释放工作框',
-      description: '来自 AI 库存巡检的释放建议。先复核来源单据，再决定是否进入库存余额或销售订单处理。',
-      workbenchType: 'LOCK_RELEASE',
-      status: '待确认',
-      route: '/warehouse/stocks',
-      generatedNos: [],
-      lines: [
-        { lineId: 'release-so-001', productId: '1920000000000000007', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: '12', sourceNo: 'SO202606260012', reason: '销售单审核后 72 小时未进入出库确认，可先复核客户交期' },
-        { lineId: 'release-so-002', productId: '1920000000000000005', productName: '中性签字笔', warehouseId: '1930000000000000001', warehouseName: 'WH001 华东中心仓', suggestedQty: '30', sourceNo: 'SO202606270018', reason: '客户改期且锁定库存占用安全库存，建议释放或调整交期' },
-      ],
-      sections: [
-        { title: '处理边界', items: ['AI 只标记可释放候选，不直接改库存', '正式释放仍需人工复核销售订单和库存余额'] },
-      ],
-    };
-  }
-  if (content.includes('补货') || content.includes('采购')) {
-    return {
-      workbenchId: `workbench-purchase-${Date.now()}`,
-      title: '采购草稿工作框',
-      description: '来自 AI 采购建议的草稿预览，可先修改数量、供应商和原因，再进入采购订单生成正式草稿。',
-      workbenchType: 'PURCHASE_DRAFT',
-      status: '待确认',
-      route: '/purchase/orders',
-      generatedNos: [],
-      lines: [
-        { lineId: 'line-a4', productId: '1920000000000000007', productName: 'A4复印纸', supplierProductId: '1941000000000000006', unitPrice: 89.4, selectedSupplierScore: 94.8, warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: '78', supplierId: '1940000000000000005', supplierName: 'S005 森纸纸业集团', reason: '补足安全库存，华东中心仓暂不补货' },
-        { lineId: 'line-pen', productId: '1920000000000000005', productName: '中性签字笔', supplierProductId: '1941000000000000005', unitPrice: 13.8, selectedSupplierScore: 87.2, warehouseId: '1930000000000000001', warehouseName: 'WH001 华东中心仓', suggestedQty: '30', supplierId: '1940000000000000004', supplierName: 'S004 文仪办公渠道', reason: '办公用品订单上升，建议补足最小起订量' },
-        { lineId: 'line-coffee', productId: '1920000000000000002', productName: '速溶黑咖啡', supplierProductId: '1941000000000000002', unitPrice: 40.5, selectedSupplierScore: 88.9, warehouseId: '1930000000000000001', warehouseName: 'WH001 华东中心仓', suggestedQty: '16', supplierId: '1940000000000000002', supplierName: 'S002 晨岛咖啡贸易', reason: '近 7 日销量抬升，当前在途不足以覆盖 14 天预测' },
-      ],
-      sections: [
-        { title: '数据范围', items: ['销售订单、库存余额、采购在途', '截至今日 10:30', '华东中心仓、华南中心仓，未来 14 天预测'] },
-        { title: '安全边界', items: ['AI 只生成草稿建议，不直接写入正式采购订单', '正式单据需要人工在采购模块确认'] },
-      ],
-    };
-  }
-  if (content.includes('销量') || content.includes('预测')) {
-    return null;
-  }
-  if (content.includes('库存') || content.includes('风险')) {
-    return {
-      workbenchId: `workbench-stock-${Date.now()}`,
-      title: '库存风险筛选工作框',
-      description: 'AI 返回风险范围后，右侧保留可复核的筛选条件，再跳转库存余额列表处理。',
-      workbenchType: 'STOCK_FILTER',
-      status: '待确认',
-      route: '/warehouse/stocks',
-      generatedNos: [],
-      lines: [],
-      sections: [
-        { title: '筛选范围', items: ['仓库：华东中心仓、华南中心仓、南京备货仓', '维度：可用库存、安全库存、锁定库存'] },
-        { title: '下一步', items: ['跳转库存余额筛选结果', '由用户确认补货、调拨或释放锁定库存'] },
-      ],
-    };
-  }
-  return null;
-}
-
 async function submitPromptTask() {
   const prompt = selectedPrompt.value;
   if (!prompt) return;
@@ -859,11 +456,11 @@ async function submitPromptTask() {
 async function submitMessage(messageOverride?: string, taskCard: AiTaskCard | null = null) {
   const message = (messageOverride || inputMessage.value).trim();
   if (!message || sending.value) return;
-  const id = conversationId.value || 'conv-today';
-  ensureConversationMessages(id);
-
-  messagesByConversation[id] = [...messagesByConversation[id], {
-    messageId: `user-${Date.now()}`,
+  const id = conversationId.value;
+  if (!id || historyStateByConversation[id]?.status !== 'success') return;
+  const previousMessages = messagesByConversation[id] || [];
+  const optimisticMessage: AiChatMessage = {
+    messageId: `local-user-${Date.now()}`,
     role: 'user',
     content: taskCard ? `发起任务：${taskCard.title}` : message,
     createdAt: nowText(),
@@ -872,161 +469,30 @@ async function submitMessage(messageOverride?: string, taskCard: AiTaskCard | nu
     sources: [],
     agentTraces: [],
     taskCard,
-  }];
+    workbench: null,
+  };
+  messagesByConversation[id] = [...previousMessages, optimisticMessage];
   inputMessage.value = '';
   sending.value = true;
 
   try {
     const response = await sendAiAssistantMessage({ conversationId: id, message });
-    conversationId.value = response.conversationId;
-    ensureConversationMessages(response.conversationId);
-    messagesByConversation[response.conversationId] = [...messagesByConversation[response.conversationId], response.message];
-    activeWorkbench.value = buildWorkbenchFromMessage(response.message, taskCard);
+    const targetMessages = response.conversationId === id
+      ? messagesByConversation[id]
+      : [...(messagesByConversation[response.conversationId] || []), optimisticMessage];
+    messagesByConversation[response.conversationId] = [...targetMessages, response.message];
+    historyStateByConversation[response.conversationId] = { status: 'success', error: null };
+    if (conversationId.value === id) {
+      conversationId.value = response.conversationId;
+      activeWorkbench.value = response.message.workbench;
+    }
   } catch (error) {
+    if (messagesByConversation[id]?.some(item => item.messageId === optimisticMessage.messageId)) {
+      messagesByConversation[id] = previousMessages;
+    }
     toast.warning(getApiErrorMessage(error) || '智能经营助手响应失败');
   } finally {
     sending.value = false;
-  }
-}
-
-function updateWorkbenchLine(lineId: string, field: keyof WorkbenchLine, value: string) {
-  if (!activeWorkbench.value) return;
-  activeWorkbench.value.lines = activeWorkbench.value.lines.map(line => line.lineId === lineId ? { ...line, [field]: value } : line);
-  activeWorkbench.value.status = '已修改';
-}
-
-function selectWorkbenchSupplier(lineId: string, option: RemoteSearchOption) {
-  if (!activeWorkbench.value) return;
-  activeWorkbench.value.lines = activeWorkbench.value.lines.map(line => line.lineId === lineId
-    ? { ...line, supplierId: String(option.value), supplierName: option.label, supplierProductId: null }
-    : line);
-  activeWorkbench.value.status = '已修改';
-}
-
-function selectWorkbenchWarehouse(lineId: string, option: RemoteSearchOption) {
-  if (!activeWorkbench.value) return;
-  activeWorkbench.value.lines = activeWorkbench.value.lines.map(line => line.lineId === lineId
-    ? { ...line, warehouseId: String(option.value), warehouseName: option.label }
-    : line);
-  activeWorkbench.value.status = '已修改';
-}
-
-function selectWorkbenchTargetWarehouse(lineId: string, option: RemoteSearchOption) {
-  if (!activeWorkbench.value) return;
-  activeWorkbench.value.lines = activeWorkbench.value.lines.map(line => line.lineId === lineId
-    ? { ...line, targetWarehouseId: String(option.value), targetWarehouseName: option.label }
-    : line);
-  activeWorkbench.value.status = '已修改';
-}
-
-function purchaseDraftGroups(lines: WorkbenchLine[]) {
-  const groups = new Map<string, WorkbenchLine[]>();
-  lines.forEach(line => {
-    const key = `${line.supplierId || ''}__${line.warehouseId}`;
-    groups.set(key, [...(groups.get(key) || []), line]);
-  });
-  return Array.from(groups.values());
-}
-
-function buildPurchaseDraftPayload(lines: WorkbenchLine[]): PurchaseOrderFormPayload {
-  const first = lines[0];
-  return {
-    supplierId: first.supplierId || '',
-    warehouseId: first.warehouseId,
-    expectedArrivalDate: null,
-    remark: '由智能经营助手生成的采购草稿，正式提交前请人工复核数量、价格和供应商。',
-    items: lines.map(line => ({
-      supplierProductId: line.supplierProductId || null,
-      productId: line.productId,
-      quantity: Number(line.suggestedQty),
-      unitPrice: Number(line.unitPrice || 0),
-      selectedSupplierScore: Number(line.selectedSupplierScore || 0),
-      remark: line.reason,
-    })),
-  };
-}
-
-function buildTransferStockBillPayload(type: 'ADJUST_OUT' | 'ADJUST_IN', warehouseId: string, lines: WorkbenchLine[]): StockBillCreatePayload {
-  return {
-    billType: type,
-    sourceNo: '',
-    warehouseId,
-    manualReason: type === 'ADJUST_OUT'
-      ? 'AI 调拨建议生成的调出草稿，正式确认前需人工复核。'
-      : 'AI 调拨建议生成的调入草稿，正式确认前需人工复核。',
-    remark: '由智能经营助手根据销量预测、库存缺口和跨仓可用库存生成。',
-    items: lines.map(line => ({
-      productId: line.productId,
-      quantity: Number(line.suggestedQty),
-      qualifiedQty: 0,
-      defectiveQty: 0,
-      remark: line.reason,
-    })),
-  };
-}
-
-function transferDraftGroups(lines: WorkbenchLine[]) {
-  const outbound = new Map<string, WorkbenchLine[]>();
-  const inbound = new Map<string, WorkbenchLine[]>();
-  lines.forEach(line => {
-    outbound.set(line.warehouseId, [...(outbound.get(line.warehouseId) || []), line]);
-    if (line.targetWarehouseId) inbound.set(line.targetWarehouseId, [...(inbound.get(line.targetWarehouseId) || []), line]);
-  });
-  return { outbound: Array.from(outbound.entries()), inbound: Array.from(inbound.entries()) };
-}
-
-async function createWorkbenchDraft() {
-  const workbench = activeWorkbench.value;
-  if (!workbench || workbenchSubmitting.value) return;
-  if (workbench.workbenchType === 'TRANSFER_DRAFT') {
-    const invalidLine = workbench.lines.find(line => !line.productId || !line.warehouseId || !line.targetWarehouseId || line.warehouseId === line.targetWarehouseId || !Number.isFinite(Number(line.suggestedQty)) || Number(line.suggestedQty) <= 0);
-    if (invalidLine) {
-      toast.warning(`请先补全「${invalidLine.productName}」的调出仓、调入仓和调拨数量，且两个仓库不能相同`);
-      return;
-    }
-    workbenchSubmitting.value = true;
-    try {
-      const groups = transferDraftGroups(workbench.lines);
-      const createdBills = [];
-      for (const [warehouseId, lines] of groups.outbound) {
-        createdBills.push(await createStockBill(buildTransferStockBillPayload('ADJUST_OUT', warehouseId, lines)));
-      }
-      for (const [warehouseId, lines] of groups.inbound) {
-        createdBills.push(await createStockBill(buildTransferStockBillPayload('ADJUST_IN', warehouseId, lines)));
-      }
-      workbench.generatedNos = createdBills.map(bill => bill.billNo);
-      workbench.status = '草稿已创建';
-      toast.success(`已生成 ${createdBills.length} 张调拨相关库存草稿：${workbench.generatedNos.join('、')}`);
-    } catch (error) {
-      toast.warning(getApiErrorMessage(error) || '生成调拨草稿失败，请复核仓库和调拨数量');
-    } finally {
-      workbenchSubmitting.value = false;
-    }
-    return;
-  }
-  if (workbench.workbenchType !== 'PURCHASE_DRAFT') {
-    workbench.status = '预览已更新（未保存）';
-    toast.info('当前仅更新本次预览；未调用业务写入接口，也不会保存为草稿。');
-    return;
-  }
-  const invalidLine = workbench.lines.find(line => !line.productId || !line.supplierId || !line.warehouseId || !Number.isFinite(Number(line.suggestedQty)) || Number(line.suggestedQty) <= 0);
-  if (invalidLine) {
-    toast.warning(`请先补全「${invalidLine.productName}」的商品、供应商、仓库和数量`);
-    return;
-  }
-  workbenchSubmitting.value = true;
-  try {
-    const createdOrders = [];
-    for (const group of purchaseDraftGroups(workbench.lines)) {
-      createdOrders.push(await createPurchaseOrder(buildPurchaseDraftPayload(group)));
-    }
-    workbench.generatedNos = createdOrders.map(order => order.purchaseNo);
-    workbench.status = '草稿已创建';
-    toast.success(`已生成 ${createdOrders.length} 张采购草稿：${workbench.generatedNos.join('、')}`);
-  } catch (error) {
-    toast.warning(getApiErrorMessage(error) || '生成采购草稿失败，请复核供应商供货关系');
-  } finally {
-    workbenchSubmitting.value = false;
   }
 }
 
@@ -1058,64 +524,40 @@ function startWorkbenchResize(event: MouseEvent | PointerEvent) {
   window.addEventListener('mouseup', handleUp, { once: true });
 }
 
-function openActionPreview(payload: {
-  title: string;
-  description: string;
-  route: string | null;
-  steps: string[];
-}) {
-  actionPreviewTitle.value = payload.title;
-  actionPreviewDescription.value = payload.description;
-  actionPreviewRoute.value = payload.route;
-  actionPreviewSteps.value = payload.steps;
-  actionPreviewOpen.value = true;
+function openActionPreview(preview: AiActionPreview | null) {
+  if (!preview) return;
+  actionPreview.value = preview;
+}
+
+function closeActionPreview() {
+  actionPreview.value = null;
 }
 
 function previewPromptAction(prompt: AiQuickPrompt) {
-  const action = promptActionMap[prompt.promptId];
-  if (!action) return;
-  openActionPreview({
-    title: action.previewTitle,
-    description: action.description,
-    route: action.route,
-    steps: action.steps,
-  });
+  openActionPreview(prompt.actionPreview);
 }
 
 function handleAction(card: AiActionCard) {
-  activeWorkbench.value = buildWorkbenchFromMessage({
-    messageId: `action-${card.actionId}`,
-    role: 'assistant',
-    content: `${card.title} ${card.description}`,
-    createdAt: nowText(),
-    charts: [],
-    actionCards: [],
-    sources: [],
-    agentTraces: [],
-    taskCard: null,
-  }, null);
-  const steps = card.actionType === 'NAVIGATE'
-    ? ['查看 AI 回答中引用的数据范围', '进入对应业务列表筛选和核对明细', '由用户决定是否继续生成草稿或处理单据']
-    : ['复核 AI 建议的范围、数据来源和风险等级', '预览将要生成的业务草稿或报告卡片', '人工确认后再进入正式业务流程'];
-  openActionPreview({
-    title: card.title,
-    description: card.description,
-    route: card.route,
-    steps,
-  });
+  if (card.preview) {
+    openActionPreview(card.preview);
+    return;
+  }
+  if (card.actionType === 'NAVIGATE' && card.route) router.push(card.route);
 }
 
 function confirmPreviewAction() {
-  const route = actionPreviewRoute.value;
-  actionPreviewOpen.value = false;
+  const route = actionPreview.value?.route || null;
+  closeActionPreview();
   if (route) {
     router.push(route);
-    return;
   }
-  toast.success('已生成待确认草稿预览');
 }
 
 onMounted(loadOverview);
+onBeforeUnmount(() => {
+  historyController?.abort();
+  historySequence += 1;
+});
 </script>
 
 <template>
@@ -1264,9 +706,9 @@ onMounted(loadOverview);
                 <span>
                   <strong>{{ prompt.title }}</strong>
                   <small>{{ prompt.description }}</small>
-                  <em v-if="promptActionMap[prompt.promptId]">
+                  <em v-if="prompt.actionPreview">
                     <ClipboardCheck class="h-3 w-3" />
-                    {{ promptActionMap[prompt.promptId].label }}
+                    {{ prompt.actionPreview.confirmLabel }}
                   </em>
                 </span>
               </button>
@@ -1280,7 +722,20 @@ onMounted(loadOverview);
         <div class="ai-chat-scroll">
         <Transition name="ai-conversation-panel" mode="out-in">
         <div :key="conversationId || 'empty-conversation'" class="ai-chat-stream" aria-live="polite" aria-relevant="additions text">
-          <article v-for="message in currentMessages" :key="message.messageId" class="ai-chat-message" :class="`is-${message.role}`">
+          <div v-if="currentHistoryState.status === 'loading'" class="ai-history-state" role="status">
+            <LoaderCircle class="h-5 w-5 animate-spin" />
+            <span>正在加载会话记录...</span>
+          </div>
+          <div v-else-if="currentHistoryState.status === 'error'" class="ai-history-state is-error" role="alert">
+            <span>{{ currentHistoryState.error || '会话记录加载失败' }}</span>
+            <Button size="sm" variant="outline" @click="retryConversationHistory">重试</Button>
+          </div>
+          <div v-else-if="currentMessages.length === 0" class="ai-history-state is-empty">
+            <Bot class="h-5 w-5" />
+            <span>暂无消息，可以开始提问。</span>
+          </div>
+
+          <article v-for="message in currentHistoryState.status === 'success' ? currentMessages : []" :key="message.messageId" class="ai-chat-message" :class="`is-${message.role}`">
             <div class="ai-chat-avatar">
               <UserRound v-if="message.role === 'user'" class="h-4 w-4" />
               <Bot v-else class="h-4 w-4" />
@@ -1440,7 +895,7 @@ onMounted(loadOverview);
         </Transition>
         </div>
 
-      <AiComposerDock v-model="inputMessage" :sending="sending" @submit="submitMessage()" />
+      <AiComposerDock v-model="inputMessage" :sending="sending" :disabled="currentHistoryState.status !== 'success'" @submit="submitMessage()" />
       </section>
       </main>
 
@@ -1484,12 +939,9 @@ onMounted(loadOverview);
             <div>
               <div class="ai-workbench-title__row">
                 <strong>{{ activeWorkbench.title }}</strong>
-                <span class="ai-workbench-status">{{ activeWorkbench.status }}</span>
+                <Badge variant="outline">只读建议</Badge>
               </div>
               <small>{{ activeWorkbench.description }}</small>
-              <div v-if="activeWorkbench.generatedNos.length" class="ai-workbench-generated">
-                <Badge v-for="no in activeWorkbench.generatedNos" :key="no" variant="outline">{{ no }}</Badge>
-              </div>
             </div>
           </div>
 
@@ -1502,55 +954,28 @@ onMounted(loadOverview);
               <div class="ai-workbench-fields">
                 <div class="ai-field">
                   <Label>{{ activeWorkbench.workbenchType === 'LOCK_RELEASE' ? '释放数量' : activeWorkbench.workbenchType === 'TRANSFER_DRAFT' ? '调拨数量' : '建议数量' }}</Label>
-                  <Input :model-value="line.suggestedQty" @update:model-value="value => updateWorkbenchLine(line.lineId, 'suggestedQty', String(value))" />
+                  <span>{{ line.suggestedQty }}</span>
                 </div>
                 <div class="ai-field">
                   <Label>{{ activeWorkbench.workbenchType === 'TRANSFER_DRAFT' ? '调出仓库' : activeWorkbench.workbenchType === 'LOCK_RELEASE' ? '锁定仓库' : '入库仓库' }}</Label>
-                  <RemoteSearchSelect
-                    compact
-                    :model-value="line.warehouseId"
-                    :selected-label="line.warehouseName"
-                    :fetch-options="fetchWorkbenchWarehouseOptions"
-                    placeholder="请选择仓库"
-                    search-placeholder="输入仓库编码或名称"
-                    empty-text="暂无匹配仓库"
-                    @select="option => selectWorkbenchWarehouse(line.lineId, option)"
-                  />
+                  <span>{{ line.warehouseName }}</span>
                 </div>
                 <div v-if="activeWorkbench.workbenchType === 'TRANSFER_DRAFT'" class="ai-field ai-workbench-field-wide">
                   <Label>调入仓库</Label>
-                  <RemoteSearchSelect
-                    compact
-                    :model-value="line.targetWarehouseId"
-                    :selected-label="line.targetWarehouseName"
-                    :fetch-options="fetchWorkbenchWarehouseOptions"
-                    placeholder="请选择调入仓库"
-                    search-placeholder="输入仓库编码或名称"
-                    empty-text="暂无匹配仓库"
-                    @select="option => selectWorkbenchTargetWarehouse(line.lineId, option)"
-                  />
+                  <span>{{ line.targetWarehouseName }}</span>
                 </div>
                 <div v-if="activeWorkbench.workbenchType === 'PURCHASE_DRAFT'" class="ai-field ai-workbench-field-wide">
                   <Label>供应商</Label>
-                  <RemoteSearchSelect
-                    compact
-                    :model-value="line.supplierId"
-                    :selected-label="line.supplierName"
-                    :fetch-options="fetchWorkbenchSupplierOptions"
-                    placeholder="请选择供应商"
-                    search-placeholder="输入供应商编码或名称"
-                    empty-text="暂无匹配供应商"
-                    @select="option => selectWorkbenchSupplier(line.lineId, option)"
-                  />
+                  <span>{{ line.supplierName }}</span>
                 </div>
                 <div v-if="activeWorkbench.workbenchType === 'LOCK_RELEASE'" class="ai-field ai-workbench-field-wide">
                   <Label>来源单号</Label>
-                  <Input :model-value="line.sourceNo" @update:model-value="value => updateWorkbenchLine(line.lineId, 'sourceNo', String(value))" />
+                  <span>{{ line.sourceNo }}</span>
                 </div>
               </div>
               <div class="ai-field">
                 <Label>{{ activeWorkbench.workbenchType === 'LOCK_RELEASE' ? '复核原因' : '建议原因' }}</Label>
-                <Textarea :model-value="line.reason" class="min-h-[62px]" @update:model-value="value => updateWorkbenchLine(line.lineId, 'reason', String(value))" />
+                <span>{{ line.reason }}</span>
               </div>
             </article>
           </div>
@@ -1565,9 +990,6 @@ onMounted(loadOverview);
           </div>
 
           <div class="ai-workbench-actions">
-            <Button v-if="activeWorkbench.workbenchType !== 'STOCK_FILTER'" size="sm" :disabled="workbenchSubmitting" @click="createWorkbenchDraft">
-              {{ workbenchSubmitting ? '生成中...' : activeWorkbench.workbenchType === 'PURCHASE_DRAFT' ? '生成采购草稿' : activeWorkbench.workbenchType === 'TRANSFER_DRAFT' ? '生成调拨草稿' : '生成释放预览' }}
-            </Button>
             <Button size="sm" variant="outline" :disabled="!activeWorkbench.route" @click="openWorkbenchRoute">
               进入业务页
             </Button>
@@ -1591,7 +1013,7 @@ onMounted(loadOverview);
             <div>
               <PackageCheck class="h-4 w-4 text-primary" />
               <span>
-                <strong>{{ selectedPromptAction.label }}</strong>
+                <strong>{{ selectedPromptAction.title }}</strong>
                 <small>{{ selectedPromptAction.description }}</small>
               </span>
             </div>
@@ -1656,11 +1078,11 @@ onMounted(loadOverview);
     </Dialog>
 
     <div v-if="actionPreviewOpen" class="ai-modal-click-shield" aria-hidden="true" />
-    <AlertDialog :open="actionPreviewOpen" @update:open="actionPreviewOpen = $event">
+    <AlertDialog :open="actionPreviewOpen" @update:open="value => { if (!value) closeActionPreview(); }">
       <AlertDialogContent class="ai-action-preview-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>{{ actionPreviewTitle }}</AlertDialogTitle>
-          <AlertDialogDescription>{{ actionPreviewDescription }}</AlertDialogDescription>
+          <AlertDialogTitle>{{ actionPreview?.title }}</AlertDialogTitle>
+          <AlertDialogDescription>{{ actionPreview?.description }}</AlertDialogDescription>
         </AlertDialogHeader>
         <div class="ai-action-preview">
           <div class="ai-action-preview__hero">
@@ -1673,15 +1095,15 @@ onMounted(loadOverview);
             </span>
           </div>
           <div class="ai-action-preview__steps">
-            <span v-for="(step, index) in actionPreviewSteps" :key="step">
+            <span v-for="(step, index) in actionPreview?.steps || []" :key="step">
               <i>{{ index + 1 }}</i>
               <b>{{ step }}</b>
             </span>
           </div>
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction @click="confirmPreviewAction">{{ actionPreviewRoute ? '进入业务页面' : '生成草稿预览' }}</AlertDialogAction>
+          <AlertDialogCancel @click="closeActionPreview">取消</AlertDialogCancel>
+          <AlertDialogAction @click="confirmPreviewAction">{{ actionPreview?.confirmLabel || '确认' }}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

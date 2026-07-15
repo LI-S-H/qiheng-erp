@@ -98,7 +98,7 @@ const summaryItems = computed(() => [
   { key: 'contact-ready', label: '联系方式完整', value: contactReadyCount.value },
   { key: 'contact-missing', label: '联系方式待补', value: contactMissingCount.value, tone: 'warning' as const },
 ]);
-const hasNextPage = computed(() => warehouses.value.length >= query.pageSize);
+const hasNextPage = ref(false);
 const allSelected = computed(() => warehouses.value.length > 0 && warehouses.value.every(item => selectedIds.value.has(item.warehouseId)));
 
 async function fetchWarehouses() {
@@ -108,6 +108,7 @@ async function fetchWarehouses() {
     const result = await listWarehouses({ ...query });
     if (sequence !== fetchSequence) return;
     warehouses.value = result.records;
+    hasNextPage.value = result.hasNext ?? result.records.length >= result.pageSize;
     selectedIds.value = new Set();
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '仓库列表加载失败');

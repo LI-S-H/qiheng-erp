@@ -125,10 +125,11 @@ function normalizeSummary(summary: WarehouseStockSummary): WarehouseStockSummary
 
 function normalizeStockPage(page: WarehouseStockPage): WarehouseStockPage {
   const records = page.records.map(normalizeStock);
-  const total = Number(page.total);
+  const total = page.total === null || page.total === undefined ? null : Number(page.total);
   return {
     records,
-    total: Number.isFinite(total) ? total : records.length,
+    total: total === null ? null : Number.isFinite(total) ? total : null,
+    ...(typeof page.hasNext === 'boolean' ? { hasNext: page.hasNext } : {}),
     pageNum: normalizeFiniteNumber(page.pageNum, 'pageNum'),
     pageSize: normalizeFiniteNumber(page.pageSize, 'pageSize'),
     summary: normalizeSummary(buildSummary(records)),
@@ -175,6 +176,7 @@ function filterStocks(params: WarehouseStockQuery): WarehouseStockPage {
   return normalizeStockPage({
     records: filtered.slice(start, start + params.pageSize),
     total: filtered.length,
+    hasNext: start + params.pageSize < filtered.length,
     pageNum: params.pageNum,
     pageSize: params.pageSize,
     summary: buildSummary(filtered.slice(start, start + params.pageSize)),

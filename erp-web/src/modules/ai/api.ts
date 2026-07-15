@@ -3,14 +3,17 @@ import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } f
 import type { Result } from '@/shared/types/api';
 import type {
   AiActionCard,
+  AiActionPreview,
   AiAgentTrace,
   AiAssistantOverview,
+  AiAssistantWorkbench,
   AiChartSpec,
   AiChatMessage,
   AiChatRequest,
   AiChatResponse,
   AiContextSource,
   AiConversationSummary,
+  AiConversationMessagePage,
   AiConversationUpdateRequest,
   AiPromptField,
   AiQuickPrompt,
@@ -26,6 +29,8 @@ import type {
   AiTaskExecution,
   AiTaskExecutionAction,
   AiTaskExecutionMetric,
+  AiWorkbenchLine,
+  AiWorkbenchSection,
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
@@ -196,6 +201,7 @@ const mockOverview: AiAssistantOverview = {
         { fieldKey: 'warehouses', label: '仓库范围', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择需要巡检的仓库', defaultValue: ['全部仓库'] },
         { fieldKey: 'focus', label: '关注事项', fieldType: 'TEXT', required: false, placeholder: '例如：优先看缺货和滞销', defaultValue: '优先识别缺货、滞销、锁定占用和采购交期风险' },
       ],
+      actionPreview: { title: '库存风险处理预览', description: '完成分析后进入库存余额复核风险范围。', steps: ['确认巡检范围', '核对库存与锁定占用', '人工决定后续处理'], route: '/warehouse/stocks', confirmLabel: '查看流程' },
     },
     {
       promptId: 'purchase',
@@ -208,6 +214,7 @@ const mockOverview: AiAssistantOverview = {
         { fieldKey: 'warehouses', label: '关注仓库', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择仓库', defaultValue: ['华东中心仓', '华南中心仓'] },
         { fieldKey: 'days', label: '预测天数', fieldType: 'DAYS', required: true, placeholder: '填写预测天数', defaultValue: '14' },
       ],
+      actionPreview: { title: '采购建议确认预览', description: '先复核建议范围，再进入采购订单处理。', steps: ['核对销量与库存缺口', '预览补货建议', '人工进入采购模块处理'], route: '/purchase/orders', confirmLabel: '查看流程' },
     },
     {
       promptId: 'transfer',
@@ -219,6 +226,7 @@ const mockOverview: AiAssistantOverview = {
         { fieldKey: 'products', label: '调拨商品', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['A4复印纸', '热敏标签纸'] },
         { fieldKey: 'warehouses', label: '参与仓库', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择调出/调入仓库', defaultValue: ['华东中心仓', '华南中心仓'] },
       ],
+      actionPreview: { title: '调拨建议工作框预览', description: '复核调出仓、调入仓和建议数量。', steps: ['核对跨仓库存', '预览调拨建议', '人工进入库存模块处理'], route: '/warehouse/outbound-bills', confirmLabel: '查看流程' },
     },
     {
       promptId: 'release',
@@ -231,6 +239,7 @@ const mockOverview: AiAssistantOverview = {
         { fieldKey: 'warehouses', label: '仓库范围', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择仓库', defaultValue: ['全部仓库'] },
         { fieldKey: 'focus', label: '释放条件', fieldType: 'TEXT', required: false, placeholder: '例如：锁定超过 48 小时且未出库', defaultValue: '锁定超过 48 小时且未进入出库确认' },
       ],
+      actionPreview: { title: '锁定库存释放预览', description: '只展示可复核候选，不直接修改库存。', steps: ['核对来源订单', '复核建议释放数量', '进入业务页面人工处理'], route: '/warehouse/stocks', confirmLabel: '查看流程' },
     },
     {
       promptId: 'sales',
@@ -243,8 +252,87 @@ const mockOverview: AiAssistantOverview = {
         { fieldKey: 'warehouses', label: '仓库范围', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择仓库', defaultValue: ['全部仓库'] },
         { fieldKey: 'days', label: '预测天数', fieldType: 'DAYS', required: true, placeholder: '填写预测天数', defaultValue: '7' },
       ],
+      actionPreview: { title: '销量预测报告预览', description: '生成趋势结论并在任务中心持续跟踪。', steps: ['确认预测范围', '生成趋势和风险结论', '进入任务中心跟踪'], route: '/ai/tasks', confirmLabel: '查看流程' },
     },
   ],
+};
+
+const mockPurchaseWorkbench: AiAssistantWorkbench = {
+  workbenchId: 'mock-workbench-purchase',
+  title: '采购建议工作框',
+  description: '由开发环境 Mock 返回的只读采购建议，正式处理请进入采购模块。',
+  workbenchType: 'PURCHASE_DRAFT',
+  route: '/purchase/orders',
+  lines: [
+    { lineId: 'mock-line-a4', productId: '1920000000000000026', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 78, reason: '补足安全库存', supplierProductId: null, supplierId: '1940000000000000005', supplierName: 'S005 森纸纸业集团', unitPrice: 89.4, selectedSupplierScore: 94.8, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
+    { lineId: 'mock-line-label', productId: '1920000000000000027', productName: '热敏标签纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 40, reason: '当前可用库存为零', supplierProductId: null, supplierId: '1940000000000000005', supplierName: 'S005 森纸纸业集团', unitPrice: 8.5, selectedSupplierScore: 94.8, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
+  ],
+  sections: [
+    { title: '数据范围', items: ['销售订单、库存余额、采购在途', '华东中心仓、华南中心仓'] },
+    { title: '安全边界', items: ['本工作框仅供预览', '正式单据必须在采购模块人工处理'] },
+  ],
+};
+
+const mockTransferWorkbench: AiAssistantWorkbench = {
+  workbenchId: 'mock-workbench-transfer',
+  title: '调拨建议工作框',
+  description: '由开发环境 Mock 返回的只读跨仓调拨建议。',
+  workbenchType: 'TRANSFER_DRAFT',
+  route: '/warehouse/outbound-bills',
+  lines: [
+    { lineId: 'mock-transfer-label', productId: '1920000000000000027', productName: '热敏标签纸', warehouseId: '1930000000000000001', warehouseName: 'WH001 华东中心仓', suggestedQty: 24, reason: '华南中心仓低于安全库存', supplierProductId: null, supplierId: null, supplierName: null, unitPrice: null, selectedSupplierScore: null, targetWarehouseId: '1930000000000000002', targetWarehouseName: 'WH002 华南中心仓', sourceNo: null },
+  ],
+  sections: [{ title: '处理边界', items: ['仅展示调拨建议', '正式调拨需进入库存模块人工处理'] }],
+};
+
+function mockActionCard(actionId: string, title: string, description: string, route: string | null): AiActionCard {
+  return {
+    actionId,
+    title,
+    description,
+    actionType: route ? 'NAVIGATE' : 'PREVIEW',
+    route,
+    riskLevel: 'MEDIUM',
+    preview: {
+      title,
+      description,
+      steps: ['复核 AI 使用的数据范围', '检查建议明细和风险', '进入业务模块人工处理'],
+      route,
+      confirmLabel: route ? '进入业务页面' : '关闭预览',
+    },
+  };
+}
+
+function mockMessage(messageId: string, role: 'assistant' | 'user', content: string, createdAt: string, options: Partial<AiChatMessage> = {}): AiChatMessage {
+  return {
+    messageId,
+    role,
+    content,
+    createdAt,
+    charts: options.charts || [],
+    actionCards: options.actionCards || [],
+    sources: options.sources || [],
+    agentTraces: options.agentTraces || [],
+    taskCard: options.taskCard || null,
+    workbench: options.workbench || null,
+  };
+}
+
+const mockMessagesByConversation: Record<string, AiChatMessage[]> = {
+  'conv-today': [mockMessage('mock-welcome', 'assistant', '我是智能经营助手。请选择快捷分析或直接描述经营问题。', '2026-07-01 10:18:00')],
+  'conv-replenish': [
+    mockMessage('mock-replenish-user', 'user', '帮我分析今天需要优先补货的商品。', '2026-07-01 09:42:00'),
+    mockMessage('mock-replenish-assistant', 'assistant', '已结合销售订单、库存余额和采购在途完成补货分析，请在右侧工作框复核建议。', '2026-07-01 09:42:18', {
+      charts: mockPurchaseCharts,
+      actionCards: [mockActionCard('mock-open-purchase', '查看采购建议', '进入采购订单页面继续人工处理。', '/purchase/orders')],
+      sources: mockSources,
+      workbench: mockPurchaseWorkbench,
+    }),
+  ],
+  'conv-sales': [mockMessage('mock-sales-assistant', 'assistant', '销量预测已完成。', '2026-06-30 18:20:00', { charts: mockSalesCharts, sources: mockSources })],
+  'conv-inventory': [mockMessage('mock-inventory-assistant', 'assistant', '已识别跨仓库存缺口，请复核调拨建议。', '2026-06-30 16:40:00', { charts: mockStockCharts, actionCards: [mockActionCard('mock-open-stock', '查看库存余额', '进入库存余额页面继续人工处理。', '/warehouse/stocks')], sources: mockSources, workbench: mockTransferWorkbench })],
+  'conv-supplier': [mockMessage('mock-supplier-assistant', 'assistant', '供应商履约分析已完成。', '2026-06-29 15:12:00', { charts: mockSupplierCharts, sources: mockSources })],
+  'conv-weekly': [mockMessage('mock-weekly-assistant', 'assistant', '本周经营复盘已完成。', '2026-06-29 09:05:00', { charts: mockPurchaseCharts.slice(1), sources: mockSources })],
 };
 
 let mockTasks: AiScheduledTask[] = [
@@ -499,6 +587,112 @@ function normalizeStringArray(value: unknown) {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 }
 
+const allowedBusinessRoutes = new Set([
+  '/ai/tasks',
+  '/purchase/orders',
+  '/purchase/suppliers',
+  '/sales/orders',
+  '/warehouse/inbound-bills',
+  '/warehouse/outbound-bills',
+  '/warehouse/stocks',
+]);
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function requiredText(value: unknown, fieldName: string) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized) throw new Error(`接口字段 ${fieldName} 必须为非空字符串`);
+  return normalized;
+}
+
+function normalizeBusinessRoute(value: unknown, fieldName: string): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  const route = requiredText(value, fieldName);
+  if (!allowedBusinessRoutes.has(route)) throw new Error(`接口字段 ${fieldName} 不是允许的业务路由`);
+  return route;
+}
+
+function normalizeActionPreview(value: unknown): AiActionPreview | null {
+  try {
+    const item = asRecord(value);
+    if (!item || !Array.isArray(item.steps) || item.steps.length === 0) return null;
+    const steps = item.steps.map((step, index) => requiredText(step, `preview.steps[${index}]`));
+    return {
+      title: requiredText(item.title, 'preview.title'),
+      description: requiredText(item.description, 'preview.description'),
+      steps,
+      route: normalizeBusinessRoute(item.route, 'preview.route'),
+      confirmLabel: requiredText(item.confirmLabel, 'preview.confirmLabel'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeWorkbenchSection(value: unknown, index: number): AiWorkbenchSection {
+  const item = asRecord(value);
+  if (!item || !Array.isArray(item.items) || item.items.length === 0) throw new Error('工作框说明区结构无效');
+  return {
+    title: requiredText(item.title, `workbench.sections[${index}].title`),
+    items: item.items.map((text, itemIndex) => requiredText(text, `workbench.sections[${index}].items[${itemIndex}]`)),
+  };
+}
+
+function normalizeWorkbenchLine(value: unknown, workbenchType: AiAssistantWorkbench['workbenchType'], index: number): AiWorkbenchLine {
+  const item = asRecord(value);
+  if (!item) throw new Error('工作框明细结构无效');
+  const suggestedQty = normalizeFiniteNumber(item.suggestedQty, `workbench.lines[${index}].suggestedQty`);
+  if (suggestedQty <= 0) throw new Error('工作框建议数量必须大于零');
+  const line: AiWorkbenchLine = {
+    lineId: normalizeStringId(item.lineId, `workbench.lines[${index}].lineId`),
+    productId: normalizeStringId(item.productId, `workbench.lines[${index}].productId`),
+    productName: requiredText(item.productName, `workbench.lines[${index}].productName`),
+    warehouseId: normalizeStringId(item.warehouseId, `workbench.lines[${index}].warehouseId`),
+    warehouseName: requiredText(item.warehouseName, `workbench.lines[${index}].warehouseName`),
+    suggestedQty,
+    reason: requiredText(item.reason, `workbench.lines[${index}].reason`),
+    supplierProductId: normalizeNullableStringId(item.supplierProductId, `workbench.lines[${index}].supplierProductId`),
+    supplierId: normalizeNullableStringId(item.supplierId, `workbench.lines[${index}].supplierId`),
+    supplierName: item.supplierName == null || item.supplierName === '' ? null : requiredText(item.supplierName, `workbench.lines[${index}].supplierName`),
+    unitPrice: item.unitPrice == null ? null : normalizeFiniteNumber(item.unitPrice, `workbench.lines[${index}].unitPrice`),
+    selectedSupplierScore: item.selectedSupplierScore == null ? null : normalizeFiniteNumber(item.selectedSupplierScore, `workbench.lines[${index}].selectedSupplierScore`),
+    targetWarehouseId: normalizeNullableStringId(item.targetWarehouseId, `workbench.lines[${index}].targetWarehouseId`),
+    targetWarehouseName: item.targetWarehouseName == null || item.targetWarehouseName === '' ? null : requiredText(item.targetWarehouseName, `workbench.lines[${index}].targetWarehouseName`),
+    sourceNo: item.sourceNo == null || item.sourceNo === '' ? null : requiredText(item.sourceNo, `workbench.lines[${index}].sourceNo`),
+  };
+  if (workbenchType === 'PURCHASE_DRAFT' && (!line.supplierId || !line.supplierName || line.unitPrice === null || line.unitPrice < 0)) {
+    throw new Error('采购建议缺少受控供应商或价格');
+  }
+  if (workbenchType === 'TRANSFER_DRAFT' && (!line.targetWarehouseId || !line.targetWarehouseName || line.targetWarehouseId === line.warehouseId)) {
+    throw new Error('调拨建议缺少合法调入仓');
+  }
+  return line;
+}
+
+function normalizeWorkbench(value: unknown): AiAssistantWorkbench | null {
+  try {
+    const item = asRecord(value);
+    if (!item) return null;
+    const workbenchType = item.workbenchType;
+    if (workbenchType !== 'PURCHASE_DRAFT' && workbenchType !== 'TRANSFER_DRAFT' && workbenchType !== 'LOCK_RELEASE' && workbenchType !== 'STOCK_FILTER') return null;
+    if (!Array.isArray(item.lines) || !Array.isArray(item.sections)) return null;
+    if (workbenchType !== 'STOCK_FILTER' && item.lines.length === 0) return null;
+    return {
+      workbenchId: normalizeStringId(item.workbenchId, 'workbench.workbenchId'),
+      title: requiredText(item.title, 'workbench.title'),
+      description: requiredText(item.description, 'workbench.description'),
+      workbenchType,
+      route: normalizeBusinessRoute(item.route, 'workbench.route'),
+      lines: item.lines.map((line, index) => normalizeWorkbenchLine(line, workbenchType, index)),
+      sections: item.sections.map(normalizeWorkbenchSection),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function normalizeSource(item: AiContextSource): AiContextSource {
   const sourceType = ['TOOL', 'WORKFLOW', 'KNOWLEDGE', 'TASK'].includes(item.sourceType) ? item.sourceType : 'TOOL';
   return {
@@ -520,15 +714,26 @@ function normalizeTrace(item: AiAgentTrace): AiAgentTrace {
   };
 }
 
-function normalizeActionCard(item: AiActionCard): AiActionCard {
-  return {
-    actionId: normalizeStringId(item.actionId, 'actionId'),
-    title: String(item.title || ''),
-    description: String(item.description || ''),
-    actionType: item.actionType === 'NAVIGATE' || item.actionType === 'PREVIEW' ? item.actionType : 'WORKFLOW',
-    route: normalizeNullableStringId(item.route, 'route'),
-    riskLevel: item.riskLevel === 'HIGH' || item.riskLevel === 'MEDIUM' ? item.riskLevel : 'LOW',
-  };
+function normalizeActionCard(value: unknown): AiActionCard | null {
+  try {
+    const item = asRecord(value);
+    if (!item || (item.actionType !== 'NAVIGATE' && item.actionType !== 'PREVIEW' && item.actionType !== 'WORKFLOW')) return null;
+    if (item.riskLevel !== 'LOW' && item.riskLevel !== 'MEDIUM' && item.riskLevel !== 'HIGH') return null;
+    const preview = normalizeActionPreview(item.preview);
+    const route = normalizeBusinessRoute(item.route, 'action.route');
+    if (item.actionType === 'NAVIGATE' ? !route : !preview) return null;
+    return {
+      actionId: normalizeStringId(item.actionId, 'actionId'),
+      title: requiredText(item.title, 'action.title'),
+      description: requiredText(item.description, 'action.description'),
+      actionType: item.actionType,
+      route,
+      riskLevel: item.riskLevel,
+      preview,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeTaskCard(card: AiTaskCard | null | undefined): AiTaskCard | null {
@@ -582,10 +787,11 @@ function normalizeMessage(item: AiChatMessage): AiChatMessage {
     content: String(item.content || ''),
     createdAt: String(item.createdAt || ''),
     charts: Array.isArray(item.charts) ? item.charts.map(normalizeChart) : [],
-    actionCards: Array.isArray(item.actionCards) ? item.actionCards.map(normalizeActionCard) : [],
+    actionCards: Array.isArray(item.actionCards) ? item.actionCards.map(normalizeActionCard).filter((card): card is AiActionCard => Boolean(card)) : [],
     sources: Array.isArray(item.sources) ? item.sources.map(normalizeSource) : [],
     agentTraces: Array.isArray(item.agentTraces) ? item.agentTraces.map(normalizeTrace) : [],
     taskCard: normalizeTaskCard(item.taskCard),
+    workbench: normalizeWorkbench(item.workbench),
   };
 }
 
@@ -609,6 +815,7 @@ function normalizeQuickPrompt(prompt: AiQuickPrompt): AiQuickPrompt {
     intentCode: String(prompt.intentCode || ''),
     promptTemplate: String(prompt.promptTemplate || ''),
     fields: Array.isArray(prompt.fields) ? prompt.fields.map(normalizePromptField) : [],
+    actionPreview: normalizeActionPreview(prompt.actionPreview),
   };
 }
 
@@ -627,6 +834,59 @@ function normalizeOverview(data: AiAssistantOverview): AiAssistantOverview {
     conversations: data.conversations.map(normalizeConversation),
     quickPrompts: data.quickPrompts.map(normalizeQuickPrompt),
   };
+}
+
+function normalizeConversationMessagePage(data: AiConversationMessagePage): AiConversationMessagePage {
+  const pageNum = normalizeFiniteNumber(data.pageNum, 'pageNum');
+  const pageSize = normalizeFiniteNumber(data.pageSize, 'pageSize');
+  const total = normalizeFiniteNumber(data.total, 'total');
+  if (pageNum < 1 || pageSize < 1 || total < 0) throw new Error('会话历史分页字段不符合约束');
+  return {
+    records: Array.isArray(data.records) ? data.records.map(normalizeMessage) : [],
+    pageNum,
+    pageSize,
+    total,
+    ...(typeof data.hasNext === 'boolean' ? { hasNext: data.hasNext } : {}),
+  };
+}
+
+async function getAiConversationMessagePage(conversationId: string, pageNum: number, pageSize: number, signal?: AbortSignal) {
+  if (useMockApi) {
+    await delay(120);
+    if (signal?.aborted) throw new DOMException('会话历史请求已取消', 'AbortError');
+    const messages = mockMessagesByConversation[conversationId] || [];
+    const start = (pageNum - 1) * pageSize;
+    return normalizeConversationMessagePage({
+      records: messages.slice(start, start + pageSize),
+      pageNum,
+      pageSize,
+      total: messages.length,
+      hasNext: start + pageSize < messages.length,
+    });
+  }
+  const response = await http.get<Result<AiConversationMessagePage>>(`/ai/assistant/conversations/${conversationId}/messages`, {
+    params: { pageNum, pageSize },
+    signal,
+  });
+  return normalizeConversationMessagePage(response.data.data);
+}
+
+export async function getAiConversationHistory(conversationId: string, signal?: AbortSignal) {
+  const pageSize = 50;
+  const messageById = new Map<string, AiChatMessage>();
+  let pageNum = 1;
+  for (;;) {
+    const page = await getAiConversationMessagePage(conversationId, pageNum, pageSize, signal);
+    const sizeBefore = messageById.size;
+    page.records.forEach(message => messageById.set(message.messageId, message));
+    const hasNext = typeof page.hasNext === 'boolean'
+      ? page.hasNext
+      : page.records.length >= page.pageSize && page.pageNum * page.pageSize < page.total;
+    if (!hasNext) break;
+    if (messageById.size === sizeBefore) throw new Error('会话历史分页重复，已停止继续加载');
+    pageNum += 1;
+  }
+  return Array.from(messageById.values()).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.messageId.localeCompare(right.messageId));
 }
 
 function buildMockAssistantReply(request: AiChatRequest): AiChatResponse {
@@ -671,8 +931,8 @@ function buildMockAssistantReply(request: AiChatRequest): AiChatResponse {
       createdAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
       charts,
       actionCards: [
-        { actionId: isTransfer ? 'preview-transfer' : isRelease ? 'preview-release' : isSupplier ? 'view-supplier' : 'view-stock', title: isTransfer ? '预览调拨草稿' : isRelease ? '预览释放清单' : isSupplier ? '查看供应商资料' : '打开库存管理', description: isTransfer ? '在右侧工作框复核调拨明细' : isRelease ? '在右侧工作框复核锁定来源' : isSupplier ? '查看履约、价格和异常记录' : '查看风险 SKU 的库存余额', actionType: isTransfer || isRelease ? 'PREVIEW' : 'NAVIGATE', route: isTransfer || isRelease ? null : isSupplier ? '/purchase/suppliers' : '/warehouse/stocks', riskLevel: isTransfer || isRelease ? 'MEDIUM' : 'LOW' },
-        { actionId: 'view-task', title: '查看任务结果', description: '进入经营任务中心查看最近执行报告', actionType: 'NAVIGATE', route: '/ai/tasks', riskLevel: 'LOW' },
+        mockActionCard(isTransfer ? 'preview-transfer' : isRelease ? 'preview-release' : isSupplier ? 'view-supplier' : 'view-stock', isTransfer ? '预览调拨建议' : isRelease ? '预览释放清单' : isSupplier ? '查看供应商资料' : '打开库存管理', isTransfer ? '在右侧工作框复核调拨明细' : isRelease ? '复核锁定来源和建议数量' : isSupplier ? '查看履约、价格和异常记录' : '查看风险 SKU 的库存余额', isTransfer ? '/warehouse/outbound-bills' : isRelease ? '/warehouse/stocks' : isSupplier ? '/purchase/suppliers' : '/warehouse/stocks'),
+        mockActionCard('view-task', '查看任务结果', '进入经营任务中心查看最近执行报告', '/ai/tasks'),
       ],
       sources: isPurchase || isSupplier ? [mockSources[0], mockSources[2]] : [mockSources[0], mockSources[1]],
       agentTraces: [
@@ -681,6 +941,7 @@ function buildMockAssistantReply(request: AiChatRequest): AiChatResponse {
         { traceId: isSales ? 'trace-sales' : isSupplier ? 'trace-supplier' : isTransfer || isRelease ? 'trace-stock-action' : 'trace-purchase', agentCode: isSales ? 'sales-forecast-agent' : isSupplier ? 'supplier-evaluation-agent' : isTransfer || isRelease ? 'inventory-analysis-agent' : 'purchase-advice-agent', agentName: isSales ? '销量预测智能体' : isSupplier ? '供应商评估智能体' : isTransfer || isRelease ? '库存分析智能体' : '采购建议智能体', summary: isSales ? '分析销量趋势并预测未来需求。' : isSupplier ? '按准时率、延期次数和异常反馈识别履约风险。' : isTransfer ? '结合跨仓可用库存和安全库存缺口生成调拨建议。' : isRelease ? '识别长期锁定且未进入出库确认的库存。' : '结合库存缺口和供应商评分生成补货建议。', status: 'DONE' },
       ],
       taskCard: null,
+      workbench: isTransfer ? mockTransferWorkbench : isPurchase ? mockPurchaseWorkbench : null,
     },
   };
 }
@@ -845,7 +1106,18 @@ export async function getAiAssistantOverview() {
 export async function sendAiAssistantMessage(request: AiChatRequest) {
   if (useMockApi) {
     await delay(420);
-    return buildMockAssistantReply(request);
+    const response = buildMockAssistantReply(request);
+    const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const current = mockMessagesByConversation[response.conversationId] || [];
+    mockMessagesByConversation[response.conversationId] = [
+      ...current,
+      mockMessage(`mock-user-${Date.now()}`, 'user', request.message, createdAt),
+      response.message,
+    ];
+    return {
+      conversationId: response.conversationId,
+      message: normalizeMessage(response.message),
+    };
   }
   return http.post<Result<AiChatResponse>>('/ai/assistant/messages', request).then(response => ({
     conversationId: normalizeStringId(response.data.data.conversationId, 'conversationId'),
@@ -863,6 +1135,7 @@ export async function createAiConversation() {
       updatedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
     };
     mockConversations = [conversation, ...mockConversations];
+    mockMessagesByConversation[conversation.conversationId] = [];
     return normalizeConversation(conversation);
   }
   return http.post<Result<AiConversationSummary>>('/ai/assistant/conversations').then(response => normalizeConversation(response.data.data));
@@ -883,6 +1156,7 @@ export async function deleteAiConversation(conversationId: string) {
   if (useMockApi) {
     await delay(180);
     mockConversations = mockConversations.filter(item => item.conversationId !== conversationId);
+    delete mockMessagesByConversation[conversationId];
     return;
   }
   await http.delete(`/ai/assistant/conversations/${conversationId}`);

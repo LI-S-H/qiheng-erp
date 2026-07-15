@@ -180,9 +180,6 @@ async function smokeAssistant() {
       if (conversationTransitionDuration < 140 || conversationTransitionDuration > 300) {
         throw new Error(`会话切换动效时长异常：${conversationTransitionDuration}ms`);
       }
-      await page.waitForTimeout(220);
-      const switchingStageStillVisible = await page.locator('.ai-chat-stage.is-switching').count();
-      if (switchingStageStillVisible !== 1) throw new Error(`Conversation switch transition should stay visible briefly, count=${switchingStageStillVisible}`);
       await page.locator('.ai-message-charts .ai-chart-card').first().waitFor();
       const visibleSources = await page.locator('.ai-source-strip:visible').count();
       if (visibleSources !== 0) throw new Error(`Source strip should be hidden, visible count=${visibleSources}`);

@@ -7,16 +7,18 @@ const inputMessage = defineModel<string>({ default: '' });
 const props = withDefaults(defineProps<{
   placeholder?: string;
   sending?: boolean;
+  disabled?: boolean;
 }>(), {
   placeholder: '输入经营问题，例如：分析 A4复印纸未来 14 天补货建议',
   sending: false,
+  disabled: false,
 });
 const emit = defineEmits<{
   submit: [];
 }>();
 
 function submitMessage() {
-  if (props.sending || !inputMessage.value.trim()) return;
+  if (props.sending || props.disabled || !inputMessage.value.trim()) return;
   emit('submit');
 }
 </script>
@@ -30,7 +32,7 @@ function submitMessage() {
         :placeholder="placeholder"
         aria-label="经营问题"
         aria-describedby="ai-composer-hint"
-        :disabled="sending"
+        :disabled="sending || disabled"
         @keydown.enter.exact.prevent="submitMessage"
       />
       <span id="ai-composer-hint" class="sr-only">按 Enter 发送，按 Shift+Enter 换行</span>
@@ -39,7 +41,7 @@ function submitMessage() {
         type="submit"
         size="sm"
         :aria-label="sending ? '正在分析' : '发送消息'"
-        :disabled="sending || !inputMessage.trim()"
+        :disabled="sending || disabled || !inputMessage.trim()"
       >
         <LoaderCircle v-if="sending" class="h-4 w-4 animate-spin" />
         <Send v-else class="h-4 w-4" />

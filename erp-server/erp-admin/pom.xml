@@ -41,13 +41,11 @@
             <artifactId>erp-sales</artifactId>
         </dependency>
 
-        <!-- AI 模块（开发 AI 模块时取消注释） -->
-        <!--
+        <!-- AI 模块 -->
         <dependency>
             <groupId>com.qiheng</groupId>
             <artifactId>erp-ai</artifactId>
         </dependency>
-        -->
 
         <!-- Knife4j -->
         <dependency>

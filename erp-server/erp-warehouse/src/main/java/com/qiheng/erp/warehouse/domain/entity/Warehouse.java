@@ -1,13 +1,9 @@
 package com.qiheng.erp.warehouse.domain.entity;
 
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.Version;
+import com.baomidou.mybatisplus.annotation.*;
 
 import java.io.Serial;
 import java.time.LocalDateTime;
-import com.baomidou.mybatisplus.annotation.TableId;
 import java.io.Serializable;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -76,7 +72,7 @@ public class Warehouse implements Serializable {
     private LocalDateTime updateTime;
 
     @Schema(description = "逻辑删除：0正常，1删除")
-    @com.baomidou.mybatisplus.annotation.TableLogic
+    @TableLogic
     @TableField("deleted")
     private Integer deleted;
 

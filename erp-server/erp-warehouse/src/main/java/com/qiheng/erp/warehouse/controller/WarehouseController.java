@@ -135,6 +135,23 @@ public class WarehouseController {
     }
 
     /**
+     * 仓库更新
+     * @param warehouseId 仓库ID
+     * @param warehouse 仓库实体
+     * @return 仓库VO
+     */
+    @PutMapping("/{warehouseId}")
+    @Operation(summary = "仓库更新")
+    public Result<WarehouseVo> update(@PathVariable("warehouseId") Long warehouseId,
+                                      @Valid @RequestBody Warehouse warehouse) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("仓库更新，参数: warehouseId={}, warehouse={}", warehouseId, warehouse);
+        warehouse.setId(warehouseId);
+        WarehouseVo vo = warehouseService.update(warehouse);
+        return Result.ok(vo);
+    }
+
+    /**
      * 根据ID删除仓库
      * @param warehouseId 仓库ID
      * @param body 请求体，包含 version 字段
@@ -146,15 +163,26 @@ public class WarehouseController {
                                    @RequestBody Map<String, Object> body) {
         StpUtil.checkPermission("warehouse:manage");
         log.info("删除仓库，参数: warehouseId={}, body={}", warehouseId, body);
-        String version = body.get("version").toString();
-        if (!version.equals("0") && !version.equals("1")) {
+        Object versionObj = body.get("version");
+        if (versionObj == null) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
-                    "版本号错误，请重试");
+                    "版本号不能为空");
+        }
+        int version;
+        try {
+            version = Integer.parseInt(versionObj.toString());
+            if (version != 0 && version != 1) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "版本号只能是0或1");
+            }
+        } catch (NumberFormatException e) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "版本号格式错误");
         }
         // 构建批量删除参数DTO
         WarehouseBatchDeleteDto dto = new WarehouseBatchDeleteDto();
         dto.setWarehouseIds(Collections.singletonList(warehouseId.toString()));
-        dto.setVersionByWarehouseId(Collections.singletonMap(warehouseId.toString(), Integer.parseInt(version)));
+        dto.setVersionByWarehouseId(Collections.singletonMap(warehouseId.toString(), version));
         Map<String, String> failures = warehouseService.batchDelete(dto);
         if (failures.isEmpty()) {
             return Result.ok();

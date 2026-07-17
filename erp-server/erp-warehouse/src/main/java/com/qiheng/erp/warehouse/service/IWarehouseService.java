@@ -61,4 +61,11 @@ public interface IWarehouseService extends IService<Warehouse> {
      * @return 失败的仓库信息：key=仓库ID，value=失败原因；空 map 表示全部成功
      */
     Map<String, String> batchDelete(WarehouseBatchDeleteDto dto);
+
+    /**
+     * 仓库更新（乐观锁实现）
+     * @param warehouse 仓库实体（需包含 id 和 version）
+     * @return 仓库VO
+     */
+    WarehouseVo update(Warehouse warehouse);
 }

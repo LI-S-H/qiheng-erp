@@ -4,11 +4,10 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.annotation.DistributedLock;
-import com.qiheng.erp.common.exception.BizException;
-import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
+import com.qiheng.erp.warehouse.domain.dto.WarehouseStatusDto;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
@@ -133,6 +132,25 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
         return failures;
     }
 
+    /**
+     * 更新仓库状态（乐观锁实现）
+     * @param warehouseId 仓库ID
+     * @param dto 状态更新参数
+     */
+    @Override
+    public void updateStatus(Long warehouseId, WarehouseStatusDto dto) {
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(warehouseId);
+        warehouse.setStatus(dto.getStatus());
+        warehouse.setVersion(dto.getVersion());
+        int rows = warehouseMapper.updateById(warehouse);
+        if (rows == 0) {
+            throw new com.qiheng.erp.common.exception.BizException(
+                    com.qiheng.erp.common.exception.ErrorCode.OPERATION_FAILED.getCode(),
+                    "仓库不存在或数据已发生变化，请刷新后重试");
+        }
+    }
+
     @NotNull
     private WarehouseVo getWarehouseVo(Warehouse w) {
         WarehouseVo vo = new WarehouseVo();
@@ -149,4 +167,6 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
         vo.setUpdateTime(w.getUpdateTime());
         return vo;
     }
+
+
 }

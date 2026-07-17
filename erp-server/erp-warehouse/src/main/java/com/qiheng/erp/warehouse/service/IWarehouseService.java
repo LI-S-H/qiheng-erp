@@ -46,4 +46,11 @@ public interface IWarehouseService extends IService<Warehouse> {
      * @return 失败的仓库信息：key=仓库编码，value=失败原因；空 map 表示全部成功
      */
     Map<String, String> updateBatchStatus(WarehouseBatchStatusDto dto);
+
+    /**
+     * 更新仓库状态
+     * @param warehouseId 仓库ID
+     * @param dto 状态更新参数
+     */
+    void updateStatus(Long warehouseId, com.qiheng.erp.warehouse.domain.dto.WarehouseStatusDto dto);
 }

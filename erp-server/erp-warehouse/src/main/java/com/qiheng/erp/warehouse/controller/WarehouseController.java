@@ -6,6 +6,7 @@ import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
+import com.qiheng.erp.warehouse.domain.dto.WarehouseStatusDto;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
@@ -79,6 +80,21 @@ public class WarehouseController {
         log.info("仓库新增，参数: {}", warehouse);
         WarehouseVo vo = warehouseService.add(warehouse);
         return Result.ok(vo);
+    }
+
+    /**
+     * 更新仓库状态
+     * @param warehouseId 仓库ID
+     * @return 无
+     */
+    @PatchMapping("/{warehouseId}/status")
+    @Operation(summary = "更新仓库状态")
+    public Result<Void> updateStatus(@PathVariable Long warehouseId,
+            @Valid @RequestBody WarehouseStatusDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("更新仓库状态，参数: warehouseId={}, dto={}", warehouseId, dto);
+        warehouseService.updateStatus(warehouseId, dto);
+        return Result.ok();
     }
 
     /**

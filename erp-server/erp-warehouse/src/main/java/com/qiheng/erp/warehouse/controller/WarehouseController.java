@@ -4,6 +4,7 @@ package com.qiheng.erp.warehouse.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
+import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
@@ -13,11 +14,14 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 /**
  * <p>
@@ -75,5 +79,24 @@ public class WarehouseController {
         log.info("仓库新增，参数: {}", warehouse);
         WarehouseVo vo = warehouseService.add(warehouse);
         return Result.ok(vo);
+    }
+
+    /**
+     * 批量更新仓库状态
+     * @param dto 批量更新仓库状态参数DTO
+     * @return 有失败返回 fail（含失败详情），全部成功返回 ok
+     */
+    @PatchMapping("/batch/status")
+    @Operation(summary = "批量更新仓库状态")
+    public Result<java.util.Map<String, String>> updateBatchStatus(@Valid @RequestBody WarehouseBatchStatusDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("批量更新仓库状态，参数: {}", dto);
+        Map<String, String> failures = warehouseService.updateBatchStatus(dto);
+        if (failures.isEmpty()) {
+            return Result.ok();
+        }
+        log.warn("批量更新仓库状态部分失败: {}", failures);
+        return Result.fail(com.qiheng.erp.common.exception.ErrorCode.OPERATION_FAILED.getCode(),
+                "部分仓库状态更新失败: " + failures);
     }
 }

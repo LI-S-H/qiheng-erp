@@ -1,10 +1,13 @@
 package com.qiheng.erp.warehouse.service;
 
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
 import com.baomidou.mybatisplus.extension.service.IService;
+
+import java.util.Map;
 
 /**
  * <p>
@@ -36,4 +39,11 @@ public interface IWarehouseService extends IService<Warehouse> {
      * @return 仓库VO
      */
     WarehouseVo add(Warehouse warehouse);
+
+    /**
+     * 批量更新仓库状态
+     * @param dto 批量更新仓库状态参数DTO
+     * @return 失败的仓库信息：key=仓库编码，value=失败原因；空 map 表示全部成功
+     */
+    Map<String, String> updateBatchStatus(WarehouseBatchStatusDto dto);
 }

@@ -19,6 +19,7 @@
             <groupId>com.qiheng</groupId>
             <artifactId>erp-common</artifactId>
         </dependency>
+        <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

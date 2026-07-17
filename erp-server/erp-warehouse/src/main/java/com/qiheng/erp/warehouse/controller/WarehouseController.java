@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -43,5 +44,19 @@ public class WarehouseController {
         log.info("分页查询仓库，参数: {}", dto);
         PageResult<WarehouseVo> page = warehouseService.page(dto);
         return Result.ok(page);
+    }
+
+    /**
+     * 根据ID查询仓库详情
+     * @param warehouseId 仓库ID
+     * @return 仓库VO
+     */
+    @GetMapping("/{warehouseId}")
+    @Operation(summary = "根据ID查询仓库详情")
+    public Result<WarehouseVo> getDetailById(@PathVariable Long warehouseId) {
+        StpUtil.checkPermission("warehouse:query");
+        log.info("根据ID查询仓库详情，参数: {}", warehouseId);
+        WarehouseVo vo = warehouseService.getDetailById(warehouseId);
+        return Result.ok(vo);
     }
 }

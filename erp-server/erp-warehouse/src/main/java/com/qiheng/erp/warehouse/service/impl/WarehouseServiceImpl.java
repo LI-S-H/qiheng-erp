@@ -10,6 +10,7 @@ import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -52,22 +53,39 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
         Page<Warehouse> result = warehouseMapper.selectPage(page, wrapper);
 
         // 转换为VO
-        List<WarehouseVo> voList = result.getRecords().stream().map(w -> {
-            WarehouseVo vo = new WarehouseVo();
-            vo.setWarehouseId(w.getId());
-            vo.setWarehouseCode(w.getWarehouseCode());
-            vo.setWarehouseName(w.getWarehouseName());
-            vo.setContactName(w.getContactName());
-            vo.setContactPhone(w.getContactPhone());
-            vo.setAddress(w.getAddress());
-            vo.setStatus(w.getStatus());
-            vo.setVersion(w.getVersion());
-            vo.setRemark(w.getRemark());
-            vo.setCreateTime(w.getCreateTime());
-            vo.setUpdateTime(w.getUpdateTime());
-            return vo;
-        }).collect(Collectors.toList());
+        List<WarehouseVo> voList = result.getRecords().stream().map(this::getWarehouseVo).collect(Collectors.toList());
 
         return PageResult.of(voList, (int) result.getTotal(), (int) result.getCurrent(), (int) result.getSize());
+    }
+
+    /**
+     * 根据ID查询仓库详情
+     * @param id 仓库ID
+     * @return 仓库VO
+     */
+    @Override
+    public WarehouseVo getDetailById(Long id) {
+        Warehouse warehouse = warehouseMapper.selectById(id);
+        if (warehouse == null) {
+            return null;
+        }
+        return getWarehouseVo(warehouse);
+    }
+
+    @NotNull
+    private WarehouseVo getWarehouseVo(Warehouse w) {
+        WarehouseVo vo = new WarehouseVo();
+        vo.setWarehouseId(w.getId());
+        vo.setWarehouseCode(w.getWarehouseCode());
+        vo.setWarehouseName(w.getWarehouseName());
+        vo.setContactName(w.getContactName());
+        vo.setContactPhone(w.getContactPhone());
+        vo.setAddress(w.getAddress());
+        vo.setStatus(w.getStatus());
+        vo.setVersion(w.getVersion());
+        vo.setRemark(w.getRemark());
+        vo.setCreateTime(w.getCreateTime());
+        vo.setUpdateTime(w.getUpdateTime());
+        return vo;
     }
 }

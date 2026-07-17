@@ -76,6 +76,7 @@ public class Warehouse implements Serializable {
     private LocalDateTime updateTime;
 
     @Schema(description = "逻辑删除：0正常，1删除")
+    @com.baomidou.mybatisplus.annotation.TableLogic
     @TableField("deleted")
     private Integer deleted;
 

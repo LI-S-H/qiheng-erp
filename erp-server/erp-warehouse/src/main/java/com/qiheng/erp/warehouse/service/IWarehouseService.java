@@ -1,6 +1,7 @@
 package com.qiheng.erp.warehouse.service;
 
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchDeleteDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
@@ -53,4 +54,11 @@ public interface IWarehouseService extends IService<Warehouse> {
      * @param dto 状态更新参数
      */
     void updateStatus(Long warehouseId, com.qiheng.erp.warehouse.domain.dto.WarehouseStatusDto dto);
+
+    /**
+     * 批量删除仓库（逻辑删除）
+     * @param dto 批量删除参数（含 warehouseIds 和 versionByWarehouseId）
+     * @return 失败的仓库信息：key=仓库ID，value=失败原因；空 map 表示全部成功
+     */
+    Map<String, String> batchDelete(WarehouseBatchDeleteDto dto);
 }

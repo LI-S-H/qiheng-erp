@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchDeleteDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehouseStatusDto;
@@ -149,6 +150,33 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
                     com.qiheng.erp.common.exception.ErrorCode.OPERATION_FAILED.getCode(),
                     "仓库不存在或数据已发生变化，请刷新后重试");
         }
+    }
+
+    /**
+     * 批量删除仓库（逻辑删除，最佳努力模式）
+     * @param dto 批量删除参数
+     * @return 失败的仓库信息：key=仓库ID，value=失败原因；空 map 表示全部成功
+     */
+    @Override
+    public Map<String, String> batchDelete(WarehouseBatchDeleteDto dto) {
+        Map<String, String> failures = new LinkedHashMap<>();
+        for (String warehouseIdStr : dto.getWarehouseIds()) {
+            Long warehouseId = Long.parseLong(warehouseIdStr);
+            Integer expectedVersion = dto.getVersionByWarehouseId().get(warehouseIdStr);
+            if (expectedVersion == null) {
+                failures.put(warehouseIdStr, "未找到版本号");
+                continue;
+            }
+            // TODO: 以下模块完成后，补充数据关联校验，有引用则禁止删除：
+            //   1. 库存模块：检查仓库下是否存在库存（quantity > 0）
+            //   2. 出入库单模块：检查是否存在该仓库的出入库单据，有则禁止删除（需要溯源）
+            //   3. 库存流水模块：检查是否存在该仓库的库存流水记录，有则禁止删除（需要溯源）
+            int rows = warehouseMapper.deleteByIdWithVersion(warehouseId, expectedVersion);
+            if (rows == 0) {
+                failures.put(warehouseIdStr, "仓库不存在或数据已发生变化，请刷新后重试");
+            }
+        }
+        return failures;
     }
 
     @NotNull

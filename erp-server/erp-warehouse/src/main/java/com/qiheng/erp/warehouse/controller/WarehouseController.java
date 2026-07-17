@@ -2,6 +2,7 @@ package com.qiheng.erp.warehouse.controller;
 
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
@@ -18,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -93,6 +95,7 @@ public class WarehouseController {
         return Result.ok();
     }
 
+
     /**
      * 批量更新仓库状态
      * @param dto 批量更新仓库状态参数DTO
@@ -129,5 +132,35 @@ public class WarehouseController {
         log.warn("批量删除仓库部分失败: {}", failures);
         return Result.fail(ErrorCode.OPERATION_FAILED.getCode(),
                 "部分仓库删除失败: " + failures);
+    }
+
+    /**
+     * 根据ID删除仓库
+     * @param warehouseId 仓库ID
+     * @param body 请求体，包含 version 字段
+     * @return 无
+     */
+    @DeleteMapping("/{warehouseId}")
+    @Operation(summary = "根据ID删除仓库")
+    public Result<Void> deleteById(@PathVariable Long warehouseId,
+                                   @RequestBody Map<String, Object> body) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("删除仓库，参数: warehouseId={}, body={}", warehouseId, body);
+        String version = body.get("version").toString();
+        if (!version.equals("0") && !version.equals("1")) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "版本号错误，请重试");
+        }
+        // 构建批量删除参数DTO
+        WarehouseBatchDeleteDto dto = new WarehouseBatchDeleteDto();
+        dto.setWarehouseIds(Collections.singletonList(warehouseId.toString()));
+        dto.setVersionByWarehouseId(Collections.singletonMap(warehouseId.toString(), Integer.parseInt(version)));
+        Map<String, String> failures = warehouseService.batchDelete(dto);
+        if (failures.isEmpty()) {
+            return Result.ok();
+        }
+        log.warn("删除仓库失败: {}", failures);
+        return Result.fail(ErrorCode.OPERATION_FAILED.getCode(),
+                "仓库删除失败: " + failures);
     }
 }

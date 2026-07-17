@@ -4,6 +4,8 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.annotation.DistributedLock;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchDeleteDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
@@ -22,7 +24,6 @@ import org.springframework.stereotype.Service;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -85,7 +86,6 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
      * @return 仓库VO
      */
     @Override
-    @DistributedLock(key = "'warehouse:lock:global'", waitTime = 5, leaseTime = 10, timeUnit = TimeUnit.SECONDS)
     public WarehouseVo add(Warehouse warehouse) {
         warehouse.setWarehouseCode(generateWarehouseCode());
         if (warehouse.getStatus() == null) {
@@ -146,8 +146,8 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
         warehouse.setVersion(dto.getVersion());
         int rows = warehouseMapper.updateById(warehouse);
         if (rows == 0) {
-            throw new com.qiheng.erp.common.exception.BizException(
-                    com.qiheng.erp.common.exception.ErrorCode.OPERATION_FAILED.getCode(),
+            throw new BizException(
+                    ErrorCode.OPERATION_FAILED.getCode(),
                     "仓库不存在或数据已发生变化，请刷新后重试");
         }
     }
@@ -163,8 +163,8 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
         for (String warehouseIdStr : dto.getWarehouseIds()) {
             Long warehouseId = Long.parseLong(warehouseIdStr);
             Integer expectedVersion = dto.getVersionByWarehouseId().get(warehouseIdStr);
-            if (expectedVersion == null) {
-                failures.put(warehouseIdStr, "未找到版本号");
+            if (expectedVersion != 1 && expectedVersion != 0) {
+                failures.put(warehouseIdStr, "版本号错误，请重试");
                 continue;
             }
             // TODO: 以下模块完成后，补充数据关联校验，有引用则禁止删除：

@@ -87,7 +87,7 @@ runSmoke({
 
     const foodRow = tableRow(page, '食品饮料');
     await foodRow.getByRole('checkbox').click();
-    await page.getByText('已选 3 项').waitFor();
+    await page.getByText('已选 4 项').waitFor();
     await page.getByRole('button', { name: '批量停用' }).click();
     const stopDialog = page.getByRole('alertdialog', { name: '批量停用' });
     await stopDialog.waitFor();

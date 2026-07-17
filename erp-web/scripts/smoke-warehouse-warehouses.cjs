@@ -33,7 +33,7 @@ runSmoke({
     if (await warehouseRemark.getAttribute('data-overflowing') !== 'true') throw new Error('仓库备注被省略后未标记为可查看完整内容');
     await warehouseRemark.hover();
     const warehouseRemarkTooltip = page.locator('[data-slot="tooltip-content"]');
-    await warehouseRemarkTooltip.getByText('区域主仓，承担日常收发与调拨', { exact: true }).waitFor();
+    await warehouseRemarkTooltip.getByText('华东区域日常收发与调拨仓库', { exact: true }).waitFor();
     const describedBy = await warehouseRemark.getAttribute('aria-describedby');
     if (!describedBy || await page.locator(`#${describedBy}`).count() !== 1) throw new Error('仓库备注完整提示缺少无障碍描述关联');
     await page.screenshot({ path: 'smoke-warehouse-remark-tooltip.png', fullPage: true });

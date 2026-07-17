@@ -48,12 +48,12 @@ const agentNameMap: Record<string, string> = {
 };
 
 let mockConversations: AiConversationSummary[] = [
-  { conversationId: 'conv-today', title: '今日经营分析', description: '库存、销量和采购风险协同分析', updatedAt: '2026-07-01 10:18:00' },
-  { conversationId: 'conv-replenish', title: '补货建议讨论', description: '指定商品生成采购建议', updatedAt: '2026-07-01 09:42:00' },
-  { conversationId: 'conv-sales', title: '销量异常复盘', description: '解释下滑商品和预测需求', updatedAt: '2026-06-30 18:20:00' },
-  { conversationId: 'conv-inventory', title: '库存风险巡检', description: '低库存、锁定库存和调拨建议', updatedAt: '2026-06-30 16:40:00' },
-  { conversationId: 'conv-supplier', title: '供应商履约分析', description: '交期、价格和异常履约复盘', updatedAt: '2026-06-29 15:12:00' },
-  { conversationId: 'conv-weekly', title: '周经营复盘', description: '周销量、采购和库存状态汇总', updatedAt: '2026-06-29 09:05:00' },
+  { conversationId: '1960000000000000001', title: '今日经营分析', description: '库存、销量和采购风险协同分析', updatedAt: '2026-07-01 10:18:00' },
+  { conversationId: '1960000000000000002', title: '补货建议讨论', description: '指定商品生成采购建议', updatedAt: '2026-07-01 09:42:00' },
+  { conversationId: '1960000000000000003', title: '销量异常复盘', description: '解释下滑商品和预测需求', updatedAt: '2026-06-30 18:20:00' },
+  { conversationId: '1960000000000000004', title: '库存风险巡检', description: '低库存、锁定库存和调拨建议', updatedAt: '2026-06-30 16:40:00' },
+  { conversationId: '1960000000000000005', title: '供应商履约分析', description: '交期、价格和异常履约复盘', updatedAt: '2026-06-29 15:12:00' },
+  { conversationId: '1960000000000000006', title: '周经营复盘', description: '周销量、采购和库存状态汇总', updatedAt: '2026-06-29 09:05:00' },
 ];
 
 const mockSources: AiContextSource[] = [
@@ -70,7 +70,7 @@ const mockPurchaseCharts: AiChartSpec[] = [
     description: '用于判断补货优先级，数值来自销售订单和出库汇总。',
     xField: 'date',
     yFields: ['usbDemand', 'labelDemand'],
-    fieldLabels: { usbDemand: 'USB-C扩展坞需求', labelDemand: '热敏标签纸需求' },
+    fieldLabels: { usbDemand: '速溶黑咖啡需求', labelDemand: '热敏标签纸需求' },
     yUnit: '件',
     nameField: null,
     valueField: null,
@@ -96,7 +96,7 @@ const mockPurchaseCharts: AiChartSpec[] = [
     nameField: null,
     valueField: null,
     data: [
-      { productName: 'USB-C扩展坞', gapQty: 8 },
+      { productName: '速溶黑咖啡', gapQty: 1 },
       { productName: '热敏标签纸', gapQty: 40 },
       { productName: 'A4复印纸', gapQty: 78 },
     ],
@@ -210,7 +210,7 @@ const mockOverview: AiAssistantOverview = {
       intentCode: 'multi-agent-purchase-advice',
       promptTemplate: '请为以下商品生成补货建议：{{products}}；关注仓库：{{warehouses}}；预测天数：{{days}} 天。需要结合销量预测、可用库存、安全库存、在途采购和供应商评分。',
       fields: [
-        { fieldKey: 'products', label: '关注商品', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['A4复印纸', 'USB-C扩展坞'] },
+        { fieldKey: 'products', label: '关注商品', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['A4复印纸', '速溶黑咖啡'] },
         { fieldKey: 'warehouses', label: '关注仓库', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择仓库', defaultValue: ['华东中心仓', '华南中心仓'] },
         { fieldKey: 'days', label: '预测天数', fieldType: 'DAYS', required: true, placeholder: '填写预测天数', defaultValue: '14' },
       ],
@@ -248,7 +248,7 @@ const mockOverview: AiAssistantOverview = {
       intentCode: 'multi-agent-sales-forecast',
       promptTemplate: '请预测以下商品未来 {{days}} 天销量：{{products}}；仓库范围：{{warehouses}}。需要解释增长或下滑原因，并提示缺货对销量的影响。',
       fields: [
-        { fieldKey: 'products', label: '预测商品', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['A4复印纸', 'USB-C扩展坞', '热敏标签纸'] },
+        { fieldKey: 'products', label: '预测商品', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['A4复印纸', '速溶黑咖啡', '热敏标签纸'] },
         { fieldKey: 'warehouses', label: '仓库范围', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择仓库', defaultValue: ['全部仓库'] },
         { fieldKey: 'days', label: '预测天数', fieldType: 'DAYS', required: true, placeholder: '填写预测天数', defaultValue: '7' },
       ],
@@ -264,8 +264,8 @@ const mockPurchaseWorkbench: AiAssistantWorkbench = {
   workbenchType: 'PURCHASE_DRAFT',
   route: '/purchase/orders',
   lines: [
-    { lineId: 'mock-line-a4', productId: '1920000000000000026', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 78, reason: '补足安全库存', supplierProductId: null, supplierId: '1940000000000000005', supplierName: 'S005 森纸纸业集团', unitPrice: 89.4, selectedSupplierScore: 94.8, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
-    { lineId: 'mock-line-label', productId: '1920000000000000027', productName: '热敏标签纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 40, reason: '当前可用库存为零', supplierProductId: null, supplierId: '1940000000000000005', supplierName: 'S005 森纸纸业集团', unitPrice: 8.5, selectedSupplierScore: 94.8, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
+    { lineId: 'mock-line-a4', productId: '1920000000000000026', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 20, reason: '补足安全库存', supplierProductId: null, supplierId: null, supplierName: null, unitPrice: null, selectedSupplierScore: null, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
+    { lineId: 'mock-line-label', productId: '1920000000000000027', productName: '热敏标签纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 40, reason: '当前可用库存为零', supplierProductId: null, supplierId: null, supplierName: null, unitPrice: null, selectedSupplierScore: null, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
   ],
   sections: [
     { title: '数据范围', items: ['销售订单、库存余额、采购在途', '华东中心仓、华南中心仓'] },
@@ -319,20 +319,20 @@ function mockMessage(messageId: string, role: 'assistant' | 'user', content: str
 }
 
 const mockMessagesByConversation: Record<string, AiChatMessage[]> = {
-  'conv-today': [mockMessage('mock-welcome', 'assistant', '我是智能经营助手。请选择快捷分析或直接描述经营问题。', '2026-07-01 10:18:00')],
-  'conv-replenish': [
-    mockMessage('mock-replenish-user', 'user', '帮我分析今天需要优先补货的商品。', '2026-07-01 09:42:00'),
-    mockMessage('mock-replenish-assistant', 'assistant', '已结合销售订单、库存余额和采购在途完成补货分析，请在右侧工作框复核建议。', '2026-07-01 09:42:18', {
+  '1960000000000000001': [mockMessage('1963000000000000001', 'assistant', '我是智能经营助手。请选择快捷分析或直接描述经营问题。', '2026-07-01 10:18:00')],
+  '1960000000000000002': [
+    mockMessage('1963000000000000002', 'user', '帮我分析今天需要优先补货的商品。', '2026-07-01 09:42:00'),
+    mockMessage('1963000000000000003', 'assistant', '已结合销售订单、库存余额和采购在途完成补货分析，请在右侧工作框复核建议。', '2026-07-01 09:42:18', {
       charts: mockPurchaseCharts,
       actionCards: [mockActionCard('mock-open-purchase', '查看采购建议', '进入采购订单页面继续人工处理。', '/purchase/orders')],
       sources: mockSources,
       workbench: mockPurchaseWorkbench,
     }),
   ],
-  'conv-sales': [mockMessage('mock-sales-assistant', 'assistant', '销量预测已完成。', '2026-06-30 18:20:00', { charts: mockSalesCharts, sources: mockSources })],
-  'conv-inventory': [mockMessage('mock-inventory-assistant', 'assistant', '已识别跨仓库存缺口，请复核调拨建议。', '2026-06-30 16:40:00', { charts: mockStockCharts, actionCards: [mockActionCard('mock-open-stock', '查看库存余额', '进入库存余额页面继续人工处理。', '/warehouse/stocks')], sources: mockSources, workbench: mockTransferWorkbench })],
-  'conv-supplier': [mockMessage('mock-supplier-assistant', 'assistant', '供应商履约分析已完成。', '2026-06-29 15:12:00', { charts: mockSupplierCharts, sources: mockSources })],
-  'conv-weekly': [mockMessage('mock-weekly-assistant', 'assistant', '本周经营复盘已完成。', '2026-06-29 09:05:00', { charts: mockPurchaseCharts.slice(1), sources: mockSources })],
+  '1960000000000000003': [mockMessage('1963000000000000004', 'assistant', '销量预测已完成。', '2026-06-30 18:20:00', { charts: mockSalesCharts, sources: mockSources })],
+  '1960000000000000004': [mockMessage('1963000000000000005', 'assistant', '已识别跨仓库存缺口，请复核调拨建议。', '2026-06-30 16:40:00', { charts: mockStockCharts, actionCards: [mockActionCard('mock-open-stock', '查看库存余额', '进入库存余额页面继续人工处理。', '/warehouse/stocks')], sources: mockSources, workbench: mockTransferWorkbench })],
+  '1960000000000000005': [mockMessage('1963000000000000006', 'assistant', '供应商履约分析已完成。', '2026-06-29 15:12:00', { charts: mockSupplierCharts, sources: mockSources })],
+  '1960000000000000006': [mockMessage('1963000000000000007', 'assistant', '本周经营复盘已完成。', '2026-06-29 09:05:00', { charts: mockPurchaseCharts.slice(1), sources: mockSources })],
 };
 
 let mockTasks: AiScheduledTask[] = [
@@ -360,14 +360,14 @@ let mockTasks: AiScheduledTask[] = [
   },
   {
     taskId: 'task-inventory-health',
-    productIds: ['product-dock', 'product-label', 'product-mouse'],
-    warehouseIds: ['warehouse-east', 'warehouse-south', 'warehouse-nanjing'],
+    productIds: ['1920000000000000002', '1920000000000000027', '1920000000000000026'],
+    warehouseIds: ['1930000000000000001', '1930000000000000002', '1930000000000000008'],
     recipientRoleIds: ['1900000000000001004', '1900000000000001003'],
     taskName: '库存健康巡检',
     category: 'INVENTORY',
     frequency: 'DAILY',
     cronExpression: '0 30 9 * * ?',
-    productScope: ['USB-C扩展坞', '热敏标签纸', '无线办公鼠标'],
+    productScope: ['速溶黑咖啡', '热敏标签纸', 'A4复印纸'],
     warehouseScope: ['华东中心仓', '华南中心仓', '南京备货仓'],
     analysisGoal: '识别低库存、无可用库存、高锁定库存和滞销商品，并给出补货或调拨建议。',
     nextRunAt: '2026-07-02 09:30:00',
@@ -382,14 +382,14 @@ let mockTasks: AiScheduledTask[] = [
   },
   {
     taskId: 'task-purchase-advice',
-    productIds: ['product-paper', 'product-dock', 'product-label'],
-    warehouseIds: ['warehouse-east', 'warehouse-south'],
+    productIds: ['1920000000000000026', '1920000000000000002', '1920000000000000027'],
+    warehouseIds: ['1930000000000000001', '1930000000000000002'],
     recipientRoleIds: ['1900000000000001003'],
     taskName: '采购补货建议',
     category: 'PURCHASE',
     frequency: 'DAILY',
     cronExpression: '0 0 10 * * ?',
-    productScope: ['A4复印纸', 'USB-C扩展坞', '热敏标签纸'],
+    productScope: ['A4复印纸', '速溶黑咖啡', '热敏标签纸'],
     warehouseScope: ['华东中心仓', '华南中心仓'],
     analysisGoal: '根据指定商品的销量预测、当前库存、安全库存、在途采购和供应商评分给出补货建议。',
     nextRunAt: '2026-07-02 10:00:00',
@@ -416,7 +416,7 @@ let mockTasks: AiScheduledTask[] = [
     analysisGoal: '总结 Top 商品、下滑商品、客户贡献和未来一周销量预测。',
     nextRunAt: '2026-07-06 09:00:00',
     lastRunAt: '2026-06-29 09:00:03',
-    lastResultSummary: 'A4复印纸、苏打水增长明显，USB-C扩展坞因缺货影响销量。',
+    lastResultSummary: 'A4复印纸、苏打水增长明显，速溶黑咖啡因库存偏低影响销量。',
     recipients: ['销售主管', '经营负责人'],
     status: 'ENABLED',
     agentCodes: ['chief-router-agent', 'data-analysis-agent', 'sales-forecast-agent'],
@@ -448,7 +448,7 @@ const mockTemplates: AiScheduledTaskTemplate[] = [
     description: '采购、库存、销量预测和供应商评估智能体协同。',
     defaultCronExpression: '0 0 10 * * ?',
     agentCodes: ['purchase-advice-agent', 'sales-forecast-agent', 'supplier-evaluation-agent'],
-    defaultProductScope: ['A4复印纸', 'USB-C扩展坞'],
+    defaultProductScope: ['A4复印纸', '速溶黑咖啡'],
     defaultWarehouseScope: ['华东中心仓', '华南中心仓'],
     defaultAnalysisGoal: '根据指定商品的销量预测、当前库存、安全库存、在途采购和供应商评分给出补货建议。',
     outputFormat: 'REPORT',
@@ -477,10 +477,10 @@ let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
     startedAt: '2026-07-01 10:00:05',
     finishedAt: '2026-07-01 10:00:16',
     status: 'SUCCESS',
-    resultSummary: '建议补货 5 个商品，USB-C扩展坞和热敏标签纸优先级最高；A4复印纸在华南中心仓需要补安全库存。',
+    resultSummary: '建议补货 3 个商品，速溶黑咖啡和热敏标签纸优先级最高；A4复印纸在华南中心仓需要补安全库存。',
     agents: ['主控智能体', '采购建议智能体', '销量预测智能体', '供应商评估智能体'],
-    findings: ['USB-C扩展坞可用库存为 0，近 7 日需求仍在上升。', '热敏标签纸安全库存缺口 40 卷，华南中心仓已无可用库存。', '森纸纸业集团准时率 97.4%，适合作为纸品补货首选供应商。'],
-    suggestions: ['生成 USB-C扩展坞补货草稿 8 个。', '热敏标签纸建议补货 40 卷。', '采购前复核拓联数码配件近期履约下降原因。'],
+    findings: ['速溶黑咖啡在华东中心仓可用库存为 7 盒，低于安全库存。', '热敏标签纸安全库存缺口 40 卷，华南中心仓已无可用库存。', '供应商信息属于外部采购数据，创建正式采购单前需人工复核。'],
+    suggestions: ['生成速溶黑咖啡补货草稿 12 盒。', '热敏标签纸建议补货 40 卷。', '采购前复核外部供应商近期履约信息。'],
     metrics: [
       { label: '高优先级商品', value: '2 个', tone: 'risk' },
       { label: '建议补货量', value: '126 件', tone: 'watch' },
@@ -489,9 +489,9 @@ let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
     ],
     charts: mockPurchaseCharts,
     sections: [
-      { sectionId: 'scope', title: '分析范围', items: ['商品：A4复印纸、USB-C扩展坞、热敏标签纸。', '仓库：华东中心仓、华南中心仓。', '预测窗口：未来 14 天销量与安全库存缺口。'] },
-      { sectionId: 'purchase', title: '采购建议明细', items: ['USB-C扩展坞：建议补货 8 个，优先华东中心仓，原因是可用库存为 0 且近 7 日订单需求未下降。', '热敏标签纸：建议补货 40 卷，华南中心仓优先，需覆盖安全库存缺口。', 'A4复印纸：华南中心仓建议补 78 包，华东中心仓暂不补，避免重复占用库存。'] },
-      { sectionId: 'supplier', title: '供应商评估', items: ['森纸纸业集团纸品准时率 97.4%，报价稳定，可作为 A4复印纸首选。', '拓联数码配件近 30 日交付延迟 1 次，USB-C扩展坞下单前建议复核交期承诺。'] },
+      { sectionId: 'scope', title: '分析范围', items: ['商品：A4复印纸、速溶黑咖啡、热敏标签纸。', '仓库：华东中心仓、华南中心仓。', '预测窗口：未来 14 天销量与安全库存缺口。'] },
+      { sectionId: 'purchase', title: '采购建议明细', items: ['速溶黑咖啡：华东中心仓可用库存为 7 盒，建议补货 12 盒。', '热敏标签纸：建议补货 40 卷，华南中心仓优先，需覆盖安全库存缺口。', 'A4复印纸：华南中心仓建议补 20 箱，避免重复占用库存。'] },
+      { sectionId: 'supplier', title: '数据边界', items: ['供应商履约与报价来自外部采购数据，正式下单前必须在采购模块人工复核。'] },
     ],
     nextActions: [
       { actionId: 'open-purchase', title: '进入采购订单', description: '复核后生成采购草稿', route: '/purchase/orders' },
@@ -507,7 +507,7 @@ let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
     status: 'SUCCESS',
     resultSummary: '发现 8 个库存风险 SKU，其中 4 个无可用库存，2 个存在高锁定占用。',
     agents: ['主控智能体', '库存分析智能体', '采购建议智能体'],
-    findings: ['南京备货仓 USB-C扩展坞可用库存为 0。', '华南中心仓热敏标签纸低于安全库存。'],
+    findings: ['华东中心仓速溶黑咖啡可用库存为 7 盒。', '华南中心仓热敏标签纸低于安全库存。'],
     suggestions: ['优先生成补货建议。', '复核是否存在待确认入库单。'],
     metrics: [
       { label: '风险 SKU', value: '8 个', tone: 'risk' },
@@ -517,7 +517,7 @@ let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
     ],
     charts: mockStockCharts,
     sections: [
-      { sectionId: 'risk', title: '库存风险', items: ['USB-C扩展坞在南京备货仓无可用库存，且销售订单仍有未出库需求。', '热敏标签纸华南中心仓低于安全库存，建议从华东中心仓调拨或追加采购。'] },
+      { sectionId: 'risk', title: '库存风险', items: ['速溶黑咖啡在华东中心仓低于安全库存，建议补货。', '热敏标签纸华南中心仓低于安全库存，建议从华东中心仓调拨或追加采购。'] },
       { sectionId: 'operation', title: '处理建议', items: ['先复核待确认入库单，避免重复采购。', '对锁定超过 24 小时的销售单做出库或释放库存处理。'] },
     ],
     nextActions: [
@@ -531,10 +531,10 @@ let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
     startedAt: '2026-06-30 10:00:04',
     finishedAt: '2026-06-30 10:00:13',
     status: 'SUCCESS',
-    resultSummary: '建议补货 4 个商品，A4复印纸和热敏标签纸优先级最高；USB-C扩展坞库存将在 3 天内触发风险。',
+    resultSummary: '建议补货 3 个商品，A4复印纸和热敏标签纸优先级最高；速溶黑咖啡库存处于安全线以下。',
     agents: ['主控智能体', '采购建议智能体', '销量预测智能体', '供应商评估智能体'],
-    findings: ['A4复印纸华南中心仓低于安全库存。', '热敏标签纸华南中心仓安全库存缺口 32 卷。', 'USB-C扩展坞预计 3 天内低于安全库存。'],
-    suggestions: ['A4复印纸建议补货 60 包。', '热敏标签纸建议补货 32 卷。', '提前复核 USB-C扩展坞供应商交期。'],
+    findings: ['A4复印纸华南中心仓低于安全库存。', '热敏标签纸华南中心仓安全库存缺口 40 卷。', '速溶黑咖啡华东中心仓可用库存为 7 盒。'],
+    suggestions: ['A4复印纸建议补货 20 箱。', '热敏标签纸建议补货 40 卷。', '速溶黑咖啡建议补货 12 盒。'],
     metrics: [
       { label: '高优先级商品', value: '2 个', tone: 'risk' },
       { label: '建议补货量', value: '92 件', tone: 'watch' },
@@ -543,8 +543,8 @@ let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
     ],
     charts: mockPurchaseCharts.slice(1),
     sections: [
-      { sectionId: 'scope', title: '分析范围', items: ['商品：A4复印纸、USB-C扩展坞、热敏标签纸。', '仓库：华东中心仓、华南中心仓。', '预测窗口：未来 14 天销量与安全库存缺口。'] },
-      { sectionId: 'purchase', title: '采购建议明细', items: ['A4复印纸：华南中心仓建议补 60 包。', '热敏标签纸：华南中心仓建议补 32 卷。', 'USB-C扩展坞：暂不下单，先复核供应商交期。'] },
+      { sectionId: 'scope', title: '分析范围', items: ['商品：A4复印纸、速溶黑咖啡、热敏标签纸。', '仓库：华东中心仓、华南中心仓。', '预测窗口：未来 14 天销量与安全库存缺口。'] },
+      { sectionId: 'purchase', title: '采购建议明细', items: ['A4复印纸：华南中心仓建议补 20 箱。', '热敏标签纸：华南中心仓建议补 40 卷。', '速溶黑咖啡：华东中心仓建议补 12 盒。'] },
     ],
     nextActions: [
       { actionId: 'open-purchase', title: '进入采购订单', description: '复核后生成采购草稿', route: '/purchase/orders' },
@@ -560,8 +560,8 @@ let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
     status: 'SUCCESS',
     resultSummary: '发现 7 个库存风险 SKU，其中 3 个无可用库存，3 个存在高锁定占用。',
     agents: ['主控智能体', '库存分析智能体', '采购建议智能体'],
-    findings: ['华南中心仓热敏标签纸低于安全库存。', '无线办公鼠标存在高锁定占用。'],
-    suggestions: ['热敏标签纸建议补货或调拨。', '复核无线办公鼠标锁定库存。'],
+    findings: ['华南中心仓热敏标签纸低于安全库存。', '华东中心仓中性签字笔存在锁定占用。'],
+    suggestions: ['热敏标签纸建议补货或调拨。', '复核中性签字笔锁定库存。'],
     metrics: [
       { label: '风险 SKU', value: '7 个', tone: 'risk' },
       { label: '无可用库存', value: '3 个', tone: 'risk' },
@@ -570,7 +570,7 @@ let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
     ],
     charts: mockStockCharts,
     sections: [
-      { sectionId: 'risk', title: '库存风险', items: ['热敏标签纸华南中心仓低于安全库存。', '无线办公鼠标锁定库存偏高，建议复核销售单状态。'] },
+      { sectionId: 'risk', title: '库存风险', items: ['热敏标签纸华南中心仓低于安全库存。', '中性签字笔锁定库存偏高，建议复核销售单状态。'] },
       { sectionId: 'operation', title: '处理建议', items: ['先处理热敏标签纸调拨。', '释放超过 24 小时未出库的锁定库存。'] },
     ],
     nextActions: [
@@ -904,9 +904,9 @@ function buildMockAssistantReply(request: AiChatRequest): AiChatResponse {
       : isSupplier
         ? '已完成近 30 天供应商履约复盘。森纸纸业集团准时率保持 97.4%，可作为纸品供货优先供方；拓联数码配件准时率降至 84.6%，建议下单前先复核延期原因和备选供方。'
       : isPurchase
-    ? '已完成初步拆解：先看库存缺口和销量预测，再用供应商评分校验采购可行性。当前建议 USB-C扩展坞和热敏标签纸优先补货，A4复印纸只补华南中心仓安全库存。'
+    ? '已完成初步拆解：先看库存缺口和销量预测，再用外部采购数据校验采购可行性。当前建议速溶黑咖啡和热敏标签纸优先补货，A4复印纸只补华南中心仓安全库存。'
     : isSales
-      ? '销量预测显示：A4复印纸仍保持稳定增长，USB-C扩展坞受缺货影响导致销量被压制。建议先恢复可用库存，再观察未来 7 天销量回弹。'
+      ? '销量预测显示：A4复印纸仍保持稳定增长，速溶黑咖啡受库存偏低影响导致销量被压制。建议先恢复可用库存，再观察未来 7 天销量回弹。'
       : '我会按经营目标自动选择数据分析、采购、库存、销量或供应商方向，并把结果汇总为可执行建议。';
   const charts = isTransfer
     ? mockPurchaseCharts.slice(1)

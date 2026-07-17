@@ -57,7 +57,7 @@ runSmoke({
 
     await page.getByPlaceholder('请输入产品名称').first().fill('A4');
     await clickQueryAndAssertLoading(page, screenshotPath('product-products-query-loading.png'));
-    await tableRow(page, 'P000007').waitFor();
+    await tableRow(page, 'P000026').waitFor();
     await tableRow(page, 'P000001').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page, screenshotPath('product-products-reset-loading.png'));
     await tableRow(page, 'P000001').waitFor();
@@ -72,21 +72,22 @@ runSmoke({
       await page.getByRole('button', { name: '查询', exact: true }).click();
     };
     await selectCategory('办公用品');
-    await tableRow(page, 'P000005').waitFor();
-    await tableRow(page, 'P000007').waitFor();
-    await tableRow(page, 'P000008').waitFor();
+    await tableRow(page, 'P000021').waitFor();
+    await tableRow(page, 'P000022').waitFor();
+    await tableRow(page, 'P000026').waitFor();
+    await tableRow(page, 'P000027').waitFor();
     await tableRow(page, 'P000001').waitFor({ state: 'detached' });
     await selectCategory('办公用品 / 办公纸品');
-    await tableRow(page, 'P000007').waitFor();
-    await tableRow(page, 'P000008').waitFor();
-    await tableRow(page, 'P000005').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000026').waitFor();
+    await tableRow(page, 'P000027').waitFor();
+    await tableRow(page, 'P000021').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page);
 
     await page.getByPlaceholder('请输入品牌名称').fill('森纸');
-    await page.getByPlaceholder('请输入完整条码').fill('6901000000073');
+    await page.getByPlaceholder('请输入完整条码').fill('6901000000264');
     await page.getByRole('button', { name: '查询', exact: true }).click();
-    await tableRow(page, 'P000007').waitFor();
-    await tableRow(page, 'P000008').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000026').waitFor();
+    await tableRow(page, 'P000027').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page);
 
     const queryInput = page.getByPlaceholder('请输入产品名称').first();
@@ -95,7 +96,7 @@ runSmoke({
     const queryInputShadow = await queryInput.evaluate(element => getComputedStyle(element).boxShadow);
 
     await clickPaginationAndAssertLoading(page, '下一页');
-    await tableRow(page, 'P000011').waitFor();
+    await tableRow(page, 'P000034').waitFor();
     await tableRow(page, 'P000001').waitFor({ state: 'detached' });
     await clickPaginationAndAssertLoading(page, '上一页');
     await tableRow(page, 'P000001').waitFor();
@@ -161,7 +162,7 @@ runSmoke({
     await page.getByText('产品已创建', { exact: true }).waitFor();
     await page.getByPlaceholder('请输入产品名称').first().fill('系统编码测试产品');
     await page.getByRole('button', { name: '查询', exact: true }).click();
-    const uncategorizedRow = tableRow(page, 'P000016');
+    const uncategorizedRow = tableRow(page, 'P000046');
     await uncategorizedRow.waitFor();
     await uncategorizedRow.getByText('未分类', { exact: true }).waitFor();
     await clickResetAndAssertLoading(page);
@@ -203,15 +204,15 @@ runSmoke({
     await stopDialog.getByRole('button', { name: '取消', exact: true }).click();
     await page.getByRole('dialog', { name: '编辑产品' }).getByRole('button', { name: '取消', exact: true }).click();
 
-    const removableRow = tableRow(page, 'P000010');
-    await removableRow.getByRole('button', { name: '更多 P000010 操作' }).click();
+    const removableRow = tableRow(page, 'P000033');
+    await removableRow.getByRole('button', { name: '更多 P000033 操作' }).click();
     await page.getByRole('menuitem', { name: '删除产品', exact: true }).click();
     await page.getByRole('alertdialog', { name: '删除产品' }).getByRole('button', { name: '删除', exact: true }).click();
     await removableRow.waitFor({ state: 'detached' });
 
     await clickPaginationAndAssertLoading(page, '下一页');
-    const disabledCategoryRow = tableRow(page, 'P000013');
-    await disabledCategoryRow.getByRole('button', { name: '更多 P000013 操作' }).click();
+    const disabledCategoryRow = tableRow(page, 'P000043');
+    await disabledCategoryRow.getByRole('button', { name: '更多 P000043 操作' }).click();
     await page.getByRole('menuitem', { name: '启用产品', exact: true }).click();
     await page.getByRole('alertdialog', { name: '启用产品' }).getByRole('button', { name: '启用', exact: true }).click();
     await page.getByText('停用分类下不能保存启用产品', { exact: true }).waitFor();

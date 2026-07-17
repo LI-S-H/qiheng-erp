@@ -61,7 +61,7 @@ runSmoke({
     await page.screenshot({ path: 'smoke-warehouse-stocks-risk-contrast.png', fullPage: true });
 
     const summaryText = await page.locator('.summary-strip').innerText();
-    for (const expected of ['本页仓库\n4', '本页产品\n9', '本页低库存\n4', '本页已锁定\n7']) {
+    for (const expected of ['本页仓库\n4', '本页产品\n9', '本页低库存\n4', '本页已锁定\n5']) {
       if (!summaryText.includes(expected)) throw new Error(`库存摘要不正确：缺少 ${expected}`);
     }
     const paginationText = await page.locator('[data-table-pagination]').innerText();
@@ -72,7 +72,7 @@ runSmoke({
 
     await page.getByPlaceholder('请输入产品名称').fill('复印纸');
     await clickQueryAndAssertLoading(page, 'smoke-warehouse-stocks-query-loading.png');
-    await tableRow(page, 'P000007').waitFor();
+    await tableRow(page, 'P000026').waitFor();
     await tableRow(page, 'P000001').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page, 'smoke-warehouse-stocks-reset-loading.png');
 
@@ -88,16 +88,16 @@ runSmoke({
     await selectFilter(page, 1, '低库存');
     await selectFilter(page, 2, '部分锁定');
     await clickQueryAndAssertLoading(page);
-    await tableRow(page, 'P000002').waitFor();
-    await tableRow(page, 'P000009').waitFor({ state: 'detached' });
-    await tableRow(page, 'P000003').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000021').waitFor();
+    await tableRow(page, 'P000002').waitFor({ state: 'detached' });
+    await tableRow(page, 'P000033').waitFor({ state: 'detached' });
     const lowRows = page.locator('tbody tr');
-    if (await lowRows.count() !== 4) throw new Error('库存健康与占用情况未按独立维度执行 AND 组合');
+    if (await lowRows.count() !== 6) throw new Error('库存健康与占用情况未按独立维度执行 AND 组合');
     await clickResetAndAssertLoading(page);
 
-    await page.getByPlaceholder('如 P000001').fill('P000014');
+    await page.getByPlaceholder('如 P000001').fill('P000044');
     await clickQueryAndAssertLoading(page);
-    const lockedOutRow = tableRow(page, 'P000014');
+    const lockedOutRow = tableRow(page, 'P000044');
     await lockedOutRow.waitFor();
     const lockedOutText = await lockedOutRow.innerText();
     if (!lockedOutText.includes('8') || !lockedOutText.includes('0') || !lockedOutText.includes('无可用库存') || !lockedOutText.includes('全部锁定')) {
@@ -107,7 +107,7 @@ runSmoke({
 
     await selectFilter(page, 1, '零库存');
     await clickQueryAndAssertLoading(page);
-    const outOfStockRow = tableRow(page, 'P000008');
+    const outOfStockRow = tableRow(page, 'P000027');
     await outOfStockRow.waitFor();
     if (await page.locator('tbody tr').count() !== 1) throw new Error('零库存筛选应只返回当前库存为 0 的记录');
     const criticalVisual = await outOfStockRow.locator('[data-slot="table-cell"]').first().evaluate(element => ({
@@ -123,7 +123,7 @@ runSmoke({
     await clickResetAndAssertLoading(page);
 
     await clickPaginationAndAssertLoading(page, '下一页');
-    await tableRow(page, 'P000004').waitFor();
+    await tableRow(page, 'P000037').waitFor();
     await tableRow(page, 'P000001').waitFor({ state: 'detached' });
     await clickPaginationAndAssertLoading(page, '上一页');
     await tableRow(page, 'P000001').waitFor();

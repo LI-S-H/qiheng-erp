@@ -15,18 +15,16 @@ const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 
 // ── Mock data ──
 
 const mockFlatDepts: SystemDeptListItem[] = [
-  { deptId: '1900000000000000100', parentId: '0', ancestors: '0', deptName: '行政部', status: 1, userCount: 1, createTime: '2026-06-05 20:10:00', updateTime: '2026-06-08 09:10:00' },
-  { deptId: '1900000000000000101', parentId: '0', ancestors: '0', deptName: '财务部', status: 1, userCount: 0, createTime: '2026-06-05 20:12:00', updateTime: '2026-06-07 15:00:00' },
-  { deptId: '1900000000000000102', parentId: '0', ancestors: '0', deptName: '采购部', status: 1, userCount: 1, createTime: '2026-06-05 20:13:00', updateTime: '2026-06-07 17:24:11' },
-  { deptId: '1900000000000000103', parentId: '0', ancestors: '0', deptName: '销售部', status: 1, userCount: 1, createTime: '2026-06-05 20:14:00', updateTime: '2026-06-07 13:00:00' },
-  { deptId: '1900000000000000104', parentId: '0', ancestors: '0', deptName: '仓储部', status: 1, userCount: 1, createTime: '2026-06-05 20:15:00', updateTime: '2026-06-06 11:05:19' },
-  { deptId: '1900000000000000105', parentId: '0', ancestors: '0', deptName: '产品部', status: 1, userCount: 0, createTime: '2026-06-06 09:20:00', updateTime: '2026-06-07 12:00:00' },
-  { deptId: '1900000000000000106', parentId: '1900000000000000102', ancestors: '0,1900000000000000102', deptName: '供应商维护组', status: 1, userCount: 0, createTime: '2026-06-07 09:30:00', updateTime: '2026-06-07 09:30:00' },
-  { deptId: '1900000000000000107', parentId: '1900000000000000102', ancestors: '0,1900000000000000102', deptName: '采购跟单组', status: 1, userCount: 0, createTime: '2026-06-07 09:40:00', updateTime: '2026-06-07 09:40:00' },
-  { deptId: '1900000000000000108', parentId: '1900000000000000103', ancestors: '0,1900000000000000103', deptName: '华东销售组', status: 1, userCount: 1, createTime: '2026-06-07 10:20:00', updateTime: '2026-06-07 10:20:00' },
-  { deptId: '1900000000000000109', parentId: '1900000000000000103', ancestors: '0,1900000000000000103', deptName: '华南销售组', status: 0, userCount: 0, createTime: '2026-06-07 10:30:00', updateTime: '2026-06-07 10:30:00' },
-  { deptId: '1900000000000000110', parentId: '1900000000000000104', ancestors: '0,1900000000000000104', deptName: '入库作业组', status: 1, userCount: 0, createTime: '2026-06-07 11:00:00', updateTime: '2026-06-07 11:00:00' },
-  { deptId: '1900000000000000111', parentId: '1900000000000000104', ancestors: '0,1900000000000000104', deptName: '出库复核组', status: 1, userCount: 0, createTime: '2026-06-07 11:10:00', updateTime: '2026-06-07 11:10:00' },
+  { deptId: '1900000000000000100', parentId: '0', ancestors: '0', deptName: '行政部', status: 1, userCount: 2, createTime: '2026-06-05 20:10:00', updateTime: '2026-06-08 09:10:00' },
+  { deptId: '1900000000000000102', parentId: '0', ancestors: '0', deptName: '采购部', status: 1, userCount: 1, createTime: '2026-06-05 20:13:00', updateTime: '2026-06-23 07:03:59' },
+  { deptId: '1900000000000000103', parentId: '0', ancestors: '0', deptName: '销售部', status: 1, userCount: 1, createTime: '2026-06-05 20:14:00', updateTime: '2026-06-23 07:03:59' },
+  { deptId: '1900000000000000104', parentId: '0', ancestors: '0', deptName: '仓储部', status: 1, userCount: 1, createTime: '2026-06-05 20:15:00', updateTime: '2026-07-03 17:01:09' },
+  { deptId: '1900000000000000106', parentId: '1900000000000000102', ancestors: '0,1900000000000000102', deptName: '供应商维护组', status: 1, userCount: 0, createTime: '2026-06-07 09:30:00', updateTime: '2026-06-23 07:03:59' },
+  { deptId: '1900000000000000107', parentId: '1900000000000000102', ancestors: '0,1900000000000000102', deptName: '采购跟单组', status: 1, userCount: 0, createTime: '2026-06-07 09:31:00', updateTime: '2026-06-23 07:03:59' },
+  { deptId: '1900000000000000108', parentId: '1900000000000000103', ancestors: '0,1900000000000000103', deptName: '华东销售组', status: 0, userCount: 1, createTime: '2026-06-07 09:32:00', updateTime: '2026-06-23 06:51:22' },
+  { deptId: '1900000000000000109', parentId: '1900000000000000103', ancestors: '0,1900000000000000103', deptName: '华南销售组', status: 1, userCount: 0, createTime: '2026-06-07 09:33:00', updateTime: '2026-06-23 07:03:59' },
+  { deptId: '1900000000000000110', parentId: '1900000000000000104', ancestors: '0,1900000000000000104', deptName: '入库作业组', status: 1, userCount: 0, createTime: '2026-06-07 09:34:00', updateTime: '2026-07-03 17:01:09' },
+  { deptId: '1900000000000000111', parentId: '1900000000000000104', ancestors: '0,1900000000000000104', deptName: '出库复核组', status: 1, userCount: 0, createTime: '2026-06-07 09:35:00', updateTime: '2026-07-03 17:01:09' },
 ];
 
 function getDescendantIds(deptId: string): string[] {

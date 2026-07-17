@@ -225,3 +225,284 @@ CREATE TABLE IF NOT EXISTS stock_bill_item (
     KEY idx_stock_bill_item_business_source_item (business_source_item_id),
     CONSTRAINT chk_stock_bill_item_quantity_precision CHECK (quantity_precision BETWEEN 0 AND 2)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存流水凭证明细表';
+
+-- ============================================================
+-- 仓库库存模块种子数据
+-- 说明：
+-- 1. 以 qiheng-2026_07_17_02_57_22-dump.sql 为基线，现有 193 号段数据仅使用 INSERT IGNORE 补空库，绝不覆盖。
+-- 2. 新增种子逐项对应前端 warehouse Mock；系统操作人统一使用 warehouse01（1900000000000000004）。
+-- 3. 采购、销售和退货来源表尚未初始化，保留来源类型、单号和对象名称快照，来源ID统一为 NULL。
+-- 4. BIGINT 数量字段统一按 100 倍整数存储，例如 12 箱保存为 1200。
+-- 5. warehouse_stock 表示当前余额，期间存在未展示历史流水，不能仅靠下方工作单反推全部余额。
+-- 6. 最终包含 17 张工作单、19 条工作单明细；仅 11 张 CONFIRMED 工作单生成 11 张流水和 12 条流水明细。
+-- 7. 新增种子使用全字段 UPSERT，可重复执行并纠正 seed-owned 行；脚本不执行数据清理。
+-- ============================================================
+
+START TRANSACTION;
+
+INSERT IGNORE INTO warehouse (
+    id, warehouse_code, warehouse_name, contact_name, contact_phone, address,
+    status, create_time, update_time, deleted, remark, version
+) VALUES
+(1930000000000000001, 'WH001', '华东中心仓', '周宁', '021-5558-1001', '上海市嘉定区汇源路88号', 1, '2026-06-01 09:30:00', '2026-07-01 10:05:00', 0, '华东区域日常收发与调拨仓库', 0),
+(1930000000000000003, 'WH003', '华北中心仓', '许峰', '010-5558-1003', '北京市顺义区物流园北路16号', 1, '2026-06-03 09:30:00', '2026-07-01 09:12:00', 0, '华北区域日常收发与调拨仓库', 0);
+
+INSERT INTO warehouse (
+    id, warehouse_code, warehouse_name, contact_name, contact_phone, address,
+    status, create_time, update_time, deleted, remark, version
+) VALUES
+(1930000000000000002, 'WH002', '华南中心仓', '林敏', '020-5558-1002', '广州市黄埔区开创大道168号', 1, '2026-06-02 09:30:00', '2026-06-11 15:20:00', 0, '华南区域日常收发与调拨仓库', 0),
+(1930000000000000004, 'WH004', '西南中心仓', '高洁', '028-5558-1004', '成都市双流区航空港大道52号', 1, '2026-06-04 09:30:00', '2026-06-13 15:20:00', 0, '西南区域日常收发与调拨仓库', 0),
+(1930000000000000005, 'WH005', '武汉中转仓', '陈航', '027-5558-1005', '武汉市东西湖区新城十一路30号', 1, '2026-06-05 09:30:00', '2026-06-10 15:20:00', 0, '', 0),
+(1930000000000000006, 'WH006', '西安中转仓', '赵然', '029-5558-1006', '西安市灞桥区港务大道109号', 1, '2026-06-06 09:30:00', '2026-06-11 15:20:00', 0, '', 0),
+(1930000000000000007, 'WH007', '杭州电商仓', '沈佳', '0571-5558-1007', '杭州市余杭区仁和街道云创路9号', 1, '2026-06-07 09:30:00', '2026-06-12 15:20:00', 0, '', 0),
+(1930000000000000008, 'WH008', '南京备货仓', '王澄', '025-5558-1008', '南京市江宁区秣陵工业园21号', 1, '2026-06-08 09:30:00', '2026-06-13 15:20:00', 0, '', 0),
+(1930000000000000009, 'WH009', '青岛周转仓', '方圆', '0532-5558-1009', '青岛市城阳区双元路66号', 0, '2026-06-01 09:30:00', '2026-06-10 15:20:00', 0, '', 0),
+(1930000000000000010, 'WH010', '长沙临时仓', '唐月', '0731-5558-1010', '长沙市雨花区环保东路18号', 0, '2026-06-02 09:30:00', '2026-06-11 15:20:00', 0, '', 0),
+(1930000000000000011, 'WH011', '郑州临时仓', '', '', '郑州市经开区航海东路1268号', 1, '2026-06-03 09:30:00', '2026-06-12 15:20:00', 0, '', 0),
+(1930000000000000012, 'WH012', '合肥样品仓', '宋哲', '0551-5558-1012', '合肥市蜀山区创新大道2800号', 1, '2026-06-04 09:30:00', '2026-06-13 15:20:00', 0, '', 0)
+ON DUPLICATE KEY UPDATE warehouse_code = VALUES(warehouse_code), warehouse_name = VALUES(warehouse_name),
+contact_name = VALUES(contact_name), contact_phone = VALUES(contact_phone), address = VALUES(address),
+status = VALUES(status), create_time = VALUES(create_time), update_time = VALUES(update_time),
+deleted = VALUES(deleted), remark = VALUES(remark), version = VALUES(version);
+
+INSERT IGNORE INTO warehouse_stock (
+    id, warehouse_id, warehouse_code, warehouse_name,
+    product_id, product_code, product_name, unit_name,
+    stock_qty, locked_qty, create_time, update_time, version
+) VALUES
+(1931000000000000001, 1930000000000000003, 'WH003', '华北中心仓', 1920000000000000007, 'P000007', '每日坚果混合装', '盒', 3100, 0, '2026-07-01 09:12:00', '2026-07-01 09:12:00', 0),
+(1931000000000000002, 1930000000000000001, 'WH001', '华东中心仓', 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 700, 0, '2026-07-01 10:05:00', '2026-07-01 10:05:00', 0);
+
+INSERT INTO warehouse_stock (
+    id, warehouse_id, warehouse_code, warehouse_name,
+    product_id, product_code, product_name, unit_name,
+    stock_qty, locked_qty, create_time, update_time, version
+) VALUES
+(1940000000000000001, 1930000000000000001, 'WH001', '华东中心仓', 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 8600, 1800, '2026-06-14 09:20:00', '2026-06-14 09:20:00', 0),
+(1940000000000000002, 1930000000000000001, 'WH001', '华东中心仓', 1920000000000000021, 'P000021', '中性签字笔', '盒', 4200, 1200, '2026-06-14 09:15:00', '2026-06-14 09:15:00', 0),
+(1940000000000000003, 1930000000000000002, 'WH002', '华南中心仓', 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 5400, 0, '2026-06-14 08:50:00', '2026-06-14 08:50:00', 0),
+(1940000000000000004, 1930000000000000002, 'WH002', '华南中心仓', 1920000000000000026, 'P000026', 'A4复印纸', '箱', 1300, 300, '2026-06-14 08:45:00', '2026-06-14 08:45:00', 0),
+(1940000000000000005, 1930000000000000002, 'WH002', '华南中心仓', 1920000000000000027, 'P000027', '热敏标签纸', '卷', 0, 0, '2026-06-14 08:40:00', '2026-06-14 08:40:00', 0),
+(1940000000000000006, 1930000000000000003, 'WH003', '华北中心仓', 1920000000000000033, 'P000033', '浓缩洗衣液', '瓶', 900, 0, '2026-06-13 17:25:00', '2026-06-13 17:25:00', 0),
+(1940000000000000007, 1930000000000000004, 'WH004', '西南中心仓', 1920000000000000034, 'P000034', '厨房清洁湿巾', '包', 4800, 1600, '2026-06-13 16:48:00', '2026-06-13 16:48:00', 0),
+(1940000000000000008, 1930000000000000004, 'WH004', '西南中心仓', 1920000000000000037, 'P000037', '加厚垃圾袋', '卷', 2500, 500, '2026-06-13 16:45:00', '2026-06-13 16:45:00', 0),
+(1940000000000000009, 1930000000000000005, 'WH005', '武汉中转仓', 1920000000000000008, 'P000008', '海盐苏打饼干', '箱', 1900, 0, '2026-06-13 15:20:00', '2026-06-13 15:20:00', 0),
+(1940000000000000010, 1930000000000000005, 'WH005', '武汉中转仓', 1920000000000000038, 'P000038', '无痕粘钩', '卡', 1100, 100, '2026-06-13 15:18:00', '2026-06-13 15:18:00', 0),
+(1940000000000000011, 1930000000000000006, 'WH006', '西安中转仓', 1920000000000000022, 'P000022', '彩色便利贴', '本', 6300, 0, '2026-06-13 14:35:00', '2026-06-13 14:35:00', 0),
+(1940000000000000012, 1930000000000000007, 'WH007', '杭州电商仓', 1920000000000000044, 'P000044', '无线办公鼠标', '个', 800, 800, '2026-06-13 13:10:00', '2026-06-13 13:10:00', 0),
+(1940000000000000013, 1930000000000000008, 'WH008', '南京备货仓', 1920000000000000043, 'P000043', 'USB-C扩展坞', '个', 400, 400, '2026-06-13 11:55:00', '2026-06-13 11:55:00', 0),
+(1940000000000000014, 1930000000000000003, 'WH003', '华北中心仓', 1920000000000000008, 'P000008', '海盐苏打饼干', '箱', 2400, 400, '2026-07-01 09:15:00', '2026-07-01 09:15:00', 0),
+(1940000000000000015, 1930000000000000006, 'WH006', '西安中转仓', 1920000000000000026, 'P000026', 'A4复印纸', '箱', 1800, 400, '2026-07-02 14:20:00', '2026-07-02 14:20:00', 0),
+(1940000000000000016, 1930000000000000008, 'WH008', '南京备货仓', 1920000000000000012, 'P000012', '东北长粒香大米', 'kg', 2550, 0, '2026-07-03 10:30:00', '2026-07-03 10:30:00', 0),
+(1940000000000000017, 1930000000000000011, 'WH011', '郑州临时仓', 1920000000000000034, 'P000034', '厨房清洁湿巾', '包', 2700, 0, '2026-07-04 11:10:00', '2026-07-04 11:10:00', 0),
+(1940000000000000018, 1930000000000000012, 'WH012', '合肥样品仓', 1920000000000000037, 'P000037', '加厚垃圾袋', '卷', 1600, 200, '2026-07-05 16:45:00', '2026-07-05 16:45:00', 0)
+ON DUPLICATE KEY UPDATE warehouse_id = VALUES(warehouse_id), warehouse_code = VALUES(warehouse_code),
+warehouse_name = VALUES(warehouse_name), product_id = VALUES(product_id), product_code = VALUES(product_code),
+product_name = VALUES(product_name), unit_name = VALUES(unit_name), stock_qty = VALUES(stock_qty),
+locked_qty = VALUES(locked_qty), create_time = VALUES(create_time), update_time = VALUES(update_time), version = VALUES(version);
+
+INSERT IGNORE INTO inbound_bill (
+    id, inbound_no, inbound_type, source_type, source_id, source_no,
+    source_party_id, source_party_name, entry_mode,
+    warehouse_id, warehouse_name, status, expected_arrival_date,
+    confirmed_by_id, confirmed_by_name, confirmed_at,
+    created_by_id, created_by_name, responsible_by_id, responsible_by_name,
+    create_time, update_time, manual_reason, remark, version
+) VALUES
+(1932000000000000001, 'IB202607010001', 'ADJUST_IN', 'STOCK_ADJUST', NULL, 'ADJ202607010001', 1930000000000000003, '华北中心仓', 'MANUAL_ADJUSTMENT', 1930000000000000003, '华北中心仓', 'CONFIRMED', NULL, 1900000000000000004, '仓管主管', '2026-07-01 09:12:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-07-01 08:45:00', '2026-07-01 09:12:00', '月末盘点发现库存盘盈', '盘盈16盒每日坚果混合装', 0);
+
+INSERT INTO inbound_bill (
+    id, inbound_no, inbound_type, source_type, source_id, source_no,
+    source_party_id, source_party_name, entry_mode,
+    warehouse_id, warehouse_name, status, expected_arrival_date,
+    confirmed_by_id, confirmed_by_name, confirmed_at,
+    created_by_id, created_by_name, responsible_by_id, responsible_by_name,
+    create_time, update_time, manual_reason, remark, version
+) VALUES
+(1950000000000000001, 'IB202606140001', 'PURCHASE_IN', 'PURCHASE_ORDER', NULL, 'PO202606001', NULL, '华东饮品供应链', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CONFIRMED', NULL, 1900000000000000004, '仓管主管', '2026-06-14 09:12:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-14 09:12:00', '2026-06-14 09:12:00', '', '', 0),
+(1950000000000000003, 'IB202606140003', 'ADJUST_IN', 'STOCK_ADJUST', NULL, 'ADJ202606001', 1930000000000000002, '华南中心仓', 'MANUAL_ADJUSTMENT', 1930000000000000002, '华南中心仓', 'DRAFT', NULL, NULL, '', NULL, 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-14 10:30:00', '2026-06-14 10:30:00', '库存盘点调整', '', 0),
+(1950000000000000004, 'IB202606140004', 'SALES_RETURN', 'SALES_RETURN_ORDER', NULL, 'SRO202606001', NULL, '广州天河门店', 'SOURCE_GENERATED', 1930000000000000002, '华南中心仓', 'CONFIRMED', NULL, 1900000000000000004, '仓管主管', '2026-06-14 11:15:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-14 11:15:00', '2026-06-14 11:15:00', '', '', 0),
+(1950000000000000006, 'IB202606130006', 'PURCHASE_IN', 'PURCHASE_ORDER', NULL, 'PO202606002', NULL, '谷仓食品批发', 'SOURCE_GENERATED', 1930000000000000003, '华北中心仓', 'PENDING_CONFIRM', NULL, NULL, '', NULL, 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-13 15:28:00', '2026-06-13 15:28:00', '', '', 0),
+(1950000000000000009, 'IB202606120009', 'PURCHASE_IN', 'PURCHASE_ORDER', NULL, 'PO202606003', NULL, '文仪办公渠道', 'SOURCE_GENERATED', 1930000000000000005, '武汉中转仓', 'PENDING_CONFIRM', NULL, NULL, '', NULL, 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-12 17:36:00', '2026-06-12 17:36:00', '', '', 0),
+(1950000000000000010, 'IB202606120010', 'SALES_RETURN', 'SALES_RETURN_ORDER', NULL, 'SRO202606002', NULL, '武汉江岸客户', 'SOURCE_GENERATED', 1930000000000000005, '武汉中转仓', 'CONFIRMED', NULL, 1900000000000000004, '仓管主管', '2026-06-12 16:18:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-12 16:18:00', '2026-06-12 16:18:00', '', '', 0),
+(1950000000000000013, 'IB202606110013', 'ADJUST_IN', 'STOCK_ADJUST', NULL, 'ADJ202606003', 1930000000000000008, '南京备货仓', 'MANUAL_ADJUSTMENT', 1930000000000000008, '南京备货仓', 'CONFIRMED', NULL, 1900000000000000004, '仓管主管', '2026-06-11 15:32:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-11 15:32:00', '2026-06-11 15:32:00', '库存盘点调整', '', 0),
+(1950000000000000014, 'IB202606100014', 'PURCHASE_IN', 'PURCHASE_ORDER', NULL, 'PO202606004', NULL, '文仪办公渠道', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CANCELLED', NULL, NULL, '', NULL, 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-10 11:25:00', '2026-06-10 11:25:00', '', '业务单据取消，库存未发生变化', 0)
+ON DUPLICATE KEY UPDATE inbound_no = VALUES(inbound_no), inbound_type = VALUES(inbound_type),
+source_type = VALUES(source_type), source_id = VALUES(source_id), source_no = VALUES(source_no),
+source_party_id = VALUES(source_party_id), source_party_name = VALUES(source_party_name), entry_mode = VALUES(entry_mode),
+warehouse_id = VALUES(warehouse_id), warehouse_name = VALUES(warehouse_name), status = VALUES(status),
+expected_arrival_date = VALUES(expected_arrival_date), confirmed_by_id = VALUES(confirmed_by_id),
+confirmed_by_name = VALUES(confirmed_by_name), confirmed_at = VALUES(confirmed_at), created_by_id = VALUES(created_by_id),
+created_by_name = VALUES(created_by_name), responsible_by_id = VALUES(responsible_by_id),
+responsible_by_name = VALUES(responsible_by_name), create_time = VALUES(create_time), update_time = VALUES(update_time),
+manual_reason = VALUES(manual_reason), remark = VALUES(remark), version = VALUES(version);
+
+INSERT IGNORE INTO inbound_bill_item (
+    id, inbound_bill_id, inbound_no, source_item_id,
+    product_id, product_code, product_name, unit_name, quantity_precision,
+    plan_qty, processed_qty, current_qty, pending_qty,
+    qualified_qty, defective_qty, stock_bill_item_id,
+    create_time, update_time, remark
+) VALUES
+(1932100000000000001, 1932000000000000001, 'IB202607010001', NULL, 1920000000000000007, 'P000007', '每日坚果混合装', '盒', 0, 0, 0, 1600, 0, 0, 0, 1934100000000000001, '2026-07-01 08:45:00', '2026-07-16 18:18:51', '库存盘盈调整');
+
+INSERT INTO inbound_bill_item (
+    id, inbound_bill_id, inbound_no, source_item_id,
+    product_id, product_code, product_name, unit_name, quantity_precision,
+    plan_qty, processed_qty, current_qty, pending_qty,
+    qualified_qty, defective_qty, stock_bill_item_id,
+    create_time, update_time, remark
+) VALUES
+(1960000000000001001, 1950000000000000001, 'IB202606140001', NULL, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 4800, 0, 3000, 1800, 2900, 100, 1991000000000000001, '2026-06-14 09:12:00', '2026-06-14 09:12:00', '含 1 个不合格品，已记录质检结果'),
+(1960000000000001002, 1950000000000000001, 'IB202606140001', NULL, 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 0, 2000, 0, 1200, 800, 1200, 0, 1991000000000000002, '2026-06-14 09:12:00', '2026-06-14 09:12:00', ''),
+(1960000000000003001, 1950000000000000003, 'IB202606140003', NULL, 1920000000000000026, 'P000026', 'A4复印纸', '箱', 0, 0, 0, 300, 0, 0, 0, NULL, '2026-06-14 10:30:00', '2026-06-14 10:30:00', ''),
+(1960000000000004001, 1950000000000000004, 'IB202606140004', NULL, 1920000000000000027, 'P000027', '热敏标签纸', '卷', 0, 1000, 0, 1000, 0, 900, 100, 1991000000000000004, '2026-06-14 11:15:00', '2026-06-14 11:15:00', '含 1 个不合格品，已记录质检结果'),
+(1960000000000006001, 1950000000000000006, 'IB202606130006', NULL, 1920000000000000007, 'P000007', '每日坚果混合装', '盒', 0, 6000, 2000, 0, 4000, 0, 0, NULL, '2026-06-13 15:28:00', '2026-06-13 15:28:00', ''),
+(1960000000000006002, 1950000000000000006, 'IB202606130006', NULL, 1920000000000000033, 'P000033', '浓缩洗衣液', '瓶', 0, 2700, 900, 0, 1800, 0, 0, NULL, '2026-06-13 15:28:00', '2026-06-13 15:28:00', ''),
+(1960000000000009001, 1950000000000000009, 'IB202606120009', NULL, 1920000000000000038, 'P000038', '无痕粘钩', '卡', 0, 4000, 0, 0, 4000, 0, 0, NULL, '2026-06-12 17:36:00', '2026-06-12 17:36:00', ''),
+(1960000000000010001, 1950000000000000010, 'IB202606120010', NULL, 1920000000000000008, 'P000008', '海盐苏打饼干', '箱', 0, 400, 0, 400, 0, 300, 100, 1991000000000000007, '2026-06-12 16:18:00', '2026-06-12 16:18:00', '含 1 个不合格品，已记录质检结果'),
+(1960000000000013001, 1950000000000000013, 'IB202606110013', NULL, 1920000000000000043, 'P000043', 'USB-C扩展坞', '个', 0, 0, 0, 200, 0, 0, 0, 1991000000000000010, '2026-06-11 15:32:00', '2026-06-11 15:32:00', ''),
+(1960000000000014001, 1950000000000000014, 'IB202606100014', NULL, 1920000000000000021, 'P000021', '中性签字笔', '盒', 0, 2000, 0, 2000, 0, 2000, 0, NULL, '2026-06-10 11:25:00', '2026-06-10 11:25:00', '')
+ON DUPLICATE KEY UPDATE inbound_bill_id = VALUES(inbound_bill_id), inbound_no = VALUES(inbound_no),
+source_item_id = VALUES(source_item_id), product_id = VALUES(product_id), product_code = VALUES(product_code),
+product_name = VALUES(product_name), unit_name = VALUES(unit_name), quantity_precision = VALUES(quantity_precision),
+plan_qty = VALUES(plan_qty), processed_qty = VALUES(processed_qty), current_qty = VALUES(current_qty),
+pending_qty = VALUES(pending_qty), qualified_qty = VALUES(qualified_qty), defective_qty = VALUES(defective_qty),
+stock_bill_item_id = VALUES(stock_bill_item_id), create_time = VALUES(create_time),
+update_time = VALUES(update_time), remark = VALUES(remark);
+
+INSERT IGNORE INTO outbound_bill (
+    id, outbound_no, outbound_type, source_type, source_id, source_no,
+    source_party_id, source_party_name, entry_mode,
+    warehouse_id, warehouse_name, status,
+    confirmed_by_id, confirmed_by_name, confirmed_at,
+    created_by_id, created_by_name, responsible_by_id, responsible_by_name,
+    create_time, update_time, manual_reason, remark, version
+) VALUES
+(1933000000000000001, 'OB202607010001', 'ADJUST_OUT', 'STOCK_ADJUST', NULL, 'ADJ202607010002', 1930000000000000001, '华东中心仓', 'MANUAL_ADJUSTMENT', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-01 10:05:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-07-01 09:30:00', '2026-07-01 10:05:00', '月末盘点发现库存盘亏', '盘亏10盒速溶黑咖啡', 0);
+
+INSERT INTO outbound_bill (
+    id, outbound_no, outbound_type, source_type, source_id, source_no,
+    source_party_id, source_party_name, entry_mode,
+    warehouse_id, warehouse_name, status,
+    confirmed_by_id, confirmed_by_name, confirmed_at,
+    created_by_id, created_by_name, responsible_by_id, responsible_by_name,
+    create_time, update_time, manual_reason, remark, version
+) VALUES
+(1950000000000000002, 'OB202606140002', 'SALES_OUT', 'SALES_ORDER', NULL, 'SO202606001', NULL, '上海星河便利店', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-14 10:05:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-14 10:05:00', '2026-06-14 10:05:00', '', '', 0),
+(1950000000000000005, 'OB202606130005', 'PURCHASE_RETURN', 'PURCHASE_RETURN_ORDER', NULL, 'PRO202606001', NULL, '谷仓食品批发', 'SOURCE_GENERATED', 1930000000000000003, '华北中心仓', 'CANCELLED', NULL, '', NULL, 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-13 16:42:00', '2026-06-13 16:42:00', '', '业务单据取消，库存未发生变化', 0),
+(1950000000000000007, 'OB202606130007', 'SALES_OUT', 'SALES_ORDER', NULL, 'SO202606002', NULL, '成都青柠商贸', 'SOURCE_GENERATED', 1930000000000000004, '西南中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-13 14:50:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-13 14:50:00', '2026-06-13 14:50:00', '', '', 0),
+(1950000000000000008, 'OB202606130008', 'ADJUST_OUT', 'STOCK_ADJUST', NULL, 'ADJ202606002', 1930000000000000004, '西南中心仓', 'MANUAL_ADJUSTMENT', 1930000000000000004, '西南中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-13 13:20:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-13 13:20:00', '2026-06-13 13:20:00', '库存盘点调整', '', 0),
+(1950000000000000011, 'OB202606120011', 'PURCHASE_RETURN', 'PURCHASE_RETURN_ORDER', NULL, 'PRO202606002', NULL, '森纸纸业集团', 'SOURCE_GENERATED', 1930000000000000006, '西安中转仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-12 14:45:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-12 14:45:00', '2026-06-12 14:45:00', '', '', 0),
+(1950000000000000012, 'OB202606110012', 'SALES_OUT', 'SALES_ORDER', NULL, 'SO202606003', NULL, '杭州电商客户', 'SOURCE_GENERATED', 1930000000000000007, '杭州电商仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-11 18:05:00', 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-11 18:05:00', '2026-06-11 18:05:00', '', '', 0),
+(1950000000000000015, 'OB202606100015', 'SALES_OUT', 'SALES_ORDER', NULL, 'SO202606004', NULL, '广州天河门店', 'SOURCE_GENERATED', 1930000000000000002, '华南中心仓', 'PENDING_CONFIRM', NULL, '', NULL, 1900000000000000004, '仓管主管', 1900000000000000004, '仓管主管', '2026-06-10 09:40:00', '2026-06-10 09:40:00', '', '', 0)
+ON DUPLICATE KEY UPDATE outbound_no = VALUES(outbound_no), outbound_type = VALUES(outbound_type),
+source_type = VALUES(source_type), source_id = VALUES(source_id), source_no = VALUES(source_no),
+source_party_id = VALUES(source_party_id), source_party_name = VALUES(source_party_name), entry_mode = VALUES(entry_mode),
+warehouse_id = VALUES(warehouse_id), warehouse_name = VALUES(warehouse_name), status = VALUES(status),
+confirmed_by_id = VALUES(confirmed_by_id), confirmed_by_name = VALUES(confirmed_by_name),
+confirmed_at = VALUES(confirmed_at), created_by_id = VALUES(created_by_id), created_by_name = VALUES(created_by_name),
+responsible_by_id = VALUES(responsible_by_id), responsible_by_name = VALUES(responsible_by_name),
+create_time = VALUES(create_time), update_time = VALUES(update_time), manual_reason = VALUES(manual_reason),
+remark = VALUES(remark), version = VALUES(version);
+
+INSERT IGNORE INTO outbound_bill_item (
+    id, outbound_bill_id, outbound_no, source_item_id,
+    product_id, product_code, product_name, unit_name, quantity_precision,
+    plan_qty, processed_qty, current_qty, pending_qty, stock_bill_item_id,
+    create_time, update_time, remark
+) VALUES
+(1933100000000000001, 1933000000000000001, 'OB202607010001', NULL, 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 0, 0, 0, 1000, 0, 1934100000000000002, '2026-07-01 09:30:00', '2026-07-16 18:18:51', '库存盘亏调整');
+
+INSERT INTO outbound_bill_item (
+    id, outbound_bill_id, outbound_no, source_item_id,
+    product_id, product_code, product_name, unit_name, quantity_precision,
+    plan_qty, processed_qty, current_qty, pending_qty, stock_bill_item_id,
+    create_time, update_time, remark
+) VALUES
+(1960000000000002001, 1950000000000000002, 'OB202606140002', NULL, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 800, 0, 800, 0, 1991000000000000003, '2026-06-14 10:05:00', '2026-06-14 10:05:00', ''),
+(1960000000000005001, 1950000000000000005, 'OB202606130005', NULL, 1920000000000000007, 'P000007', '每日坚果混合装', '盒', 0, 600, 200, 200, 200, NULL, '2026-06-13 16:42:00', '2026-06-13 16:42:00', ''),
+(1960000000000007001, 1950000000000000007, 'OB202606130007', NULL, 1920000000000000034, 'P000034', '厨房清洁湿巾', '包', 0, 1200, 0, 1200, 0, 1991000000000000005, '2026-06-13 14:50:00', '2026-06-13 14:50:00', ''),
+(1960000000000008001, 1950000000000000008, 'OB202606130008', NULL, 1920000000000000037, 'P000037', '加厚垃圾袋', '卷', 0, 0, 0, 300, 0, 1991000000000000006, '2026-06-13 13:20:00', '2026-06-13 13:20:00', ''),
+(1960000000000011001, 1950000000000000011, 'OB202606120011', NULL, 1920000000000000022, 'P000022', '彩色便利贴', '本', 0, 700, 0, 700, 0, 1991000000000000008, '2026-06-12 14:45:00', '2026-06-12 14:45:00', ''),
+(1960000000000012001, 1950000000000000012, 'OB202606110012', NULL, 1920000000000000044, 'P000044', '无线办公鼠标', '个', 0, 600, 0, 600, 0, 1991000000000000009, '2026-06-11 18:05:00', '2026-06-11 18:05:00', ''),
+(1960000000000015001, 1950000000000000015, 'OB202606100015', NULL, 1920000000000000026, 'P000026', 'A4复印纸', '箱', 0, 1000, 0, 0, 1000, NULL, '2026-06-10 09:40:00', '2026-06-10 09:40:00', '')
+ON DUPLICATE KEY UPDATE outbound_bill_id = VALUES(outbound_bill_id), outbound_no = VALUES(outbound_no),
+source_item_id = VALUES(source_item_id), product_id = VALUES(product_id), product_code = VALUES(product_code),
+product_name = VALUES(product_name), unit_name = VALUES(unit_name), quantity_precision = VALUES(quantity_precision),
+plan_qty = VALUES(plan_qty), processed_qty = VALUES(processed_qty), current_qty = VALUES(current_qty),
+pending_qty = VALUES(pending_qty), stock_bill_item_id = VALUES(stock_bill_item_id),
+create_time = VALUES(create_time), update_time = VALUES(update_time), remark = VALUES(remark);
+
+INSERT IGNORE INTO stock_bill (
+    id, bill_no, bill_type, direction,
+    source_bill_type, source_bill_id, source_bill_no,
+    business_source_type, business_source_id, business_source_no,
+    warehouse_id, warehouse_name, status,
+    confirmed_by_id, confirmed_by_name, confirmed_at,
+    create_time, update_time, remark, version
+) VALUES
+(1934000000000000001, 'SB202607010001', 'ADJUST_IN', 'INBOUND', 'INBOUND_BILL', 1932000000000000001, 'IB202607010001', 'STOCK_ADJUST', NULL, 'ADJ202607010001', 1930000000000000003, '华北中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-01 09:12:00', '2026-07-01 09:12:00', '2026-07-01 09:12:00', '盘盈调整入库确认后自动生成', 0),
+(1934000000000000002, 'SB202607010002', 'ADJUST_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1933000000000000001, 'OB202607010001', 'STOCK_ADJUST', NULL, 'ADJ202607010002', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-01 10:05:00', '2026-07-01 10:05:00', '2026-07-01 10:05:00', '盘亏调整出库确认后自动生成', 0);
+
+INSERT INTO stock_bill (
+    id, bill_no, bill_type, direction,
+    source_bill_type, source_bill_id, source_bill_no,
+    business_source_type, business_source_id, business_source_no,
+    warehouse_id, warehouse_name, status,
+    confirmed_by_id, confirmed_by_name, confirmed_at,
+    create_time, update_time, remark, version
+) VALUES
+(1990000000000000001, 'SB202606140001', 'PURCHASE_IN', 'INBOUND', 'INBOUND_BILL', 1950000000000000001, 'IB202606140001', 'PURCHASE_ORDER', NULL, 'PO202606001', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-14 09:12:00', '2026-06-14 09:12:00', '2026-06-14 09:12:00', '由确认工作单自动生成', 0),
+(1990000000000000002, 'SB202606140002', 'SALES_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000002, 'OB202606140002', 'SALES_ORDER', NULL, 'SO202606001', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-14 10:05:00', '2026-06-14 10:05:00', '2026-06-14 10:05:00', '由确认工作单自动生成', 0),
+(1990000000000000003, 'SB202606140004', 'SALES_RETURN', 'INBOUND', 'INBOUND_BILL', 1950000000000000004, 'IB202606140004', 'SALES_RETURN_ORDER', NULL, 'SRO202606001', 1930000000000000002, '华南中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-14 11:15:00', '2026-06-14 11:15:00', '2026-06-14 11:15:00', '由确认工作单自动生成', 0),
+(1990000000000000004, 'SB202606130007', 'SALES_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000007, 'OB202606130007', 'SALES_ORDER', NULL, 'SO202606002', 1930000000000000004, '西南中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-13 14:50:00', '2026-06-13 14:50:00', '2026-06-13 14:50:00', '由确认工作单自动生成', 0),
+(1990000000000000005, 'SB202606130008', 'ADJUST_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000008, 'OB202606130008', 'STOCK_ADJUST', NULL, 'ADJ202606002', 1930000000000000004, '西南中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-13 13:20:00', '2026-06-13 13:20:00', '2026-06-13 13:20:00', '由确认工作单自动生成', 0),
+(1990000000000000006, 'SB202606120010', 'SALES_RETURN', 'INBOUND', 'INBOUND_BILL', 1950000000000000010, 'IB202606120010', 'SALES_RETURN_ORDER', NULL, 'SRO202606002', 1930000000000000005, '武汉中转仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-12 16:18:00', '2026-06-12 16:18:00', '2026-06-12 16:18:00', '由确认工作单自动生成', 0),
+(1990000000000000007, 'SB202606120011', 'PURCHASE_RETURN', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000011, 'OB202606120011', 'PURCHASE_RETURN_ORDER', NULL, 'PRO202606002', 1930000000000000006, '西安中转仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-12 14:45:00', '2026-06-12 14:45:00', '2026-06-12 14:45:00', '由确认工作单自动生成', 0),
+(1990000000000000008, 'SB202606110012', 'SALES_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000012, 'OB202606110012', 'SALES_ORDER', NULL, 'SO202606003', 1930000000000000007, '杭州电商仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-11 18:05:00', '2026-06-11 18:05:00', '2026-06-11 18:05:00', '由确认工作单自动生成', 0),
+(1990000000000000009, 'SB202606110013', 'ADJUST_IN', 'INBOUND', 'INBOUND_BILL', 1950000000000000013, 'IB202606110013', 'STOCK_ADJUST', NULL, 'ADJ202606003', 1930000000000000008, '南京备货仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-11 15:32:00', '2026-06-11 15:32:00', '2026-06-11 15:32:00', '由确认工作单自动生成', 0)
+ON DUPLICATE KEY UPDATE bill_no = VALUES(bill_no), bill_type = VALUES(bill_type),
+direction = VALUES(direction), source_bill_type = VALUES(source_bill_type), source_bill_id = VALUES(source_bill_id),
+source_bill_no = VALUES(source_bill_no), business_source_type = VALUES(business_source_type),
+business_source_id = VALUES(business_source_id), business_source_no = VALUES(business_source_no),
+warehouse_id = VALUES(warehouse_id), warehouse_name = VALUES(warehouse_name), status = VALUES(status),
+confirmed_by_id = VALUES(confirmed_by_id), confirmed_by_name = VALUES(confirmed_by_name),
+confirmed_at = VALUES(confirmed_at), create_time = VALUES(create_time), update_time = VALUES(update_time),
+remark = VALUES(remark), version = VALUES(version);
+
+INSERT IGNORE INTO stock_bill_item (
+    id, bill_id, bill_no, source_bill_item_id, business_source_item_id,
+    product_id, product_code, product_name, unit_name, quantity_precision,
+    quantity, qualified_qty, defective_qty, before_qty, change_qty, after_qty,
+    create_time, update_time, remark
+) VALUES
+(1934100000000000001, 1934000000000000001, 'SB202607010001', 1932100000000000001, NULL, 1920000000000000007, 'P000007', '每日坚果混合装', '盒', 0, 1600, 0, 0, 1500, 1600, 3100, '2026-07-01 09:12:00', '2026-07-01 09:12:00', '盘盈16盒'),
+(1934100000000000002, 1934000000000000002, 'SB202607010002', 1933100000000000001, NULL, 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 0, 1000, 0, 0, 1700, -1000, 700, '2026-07-01 10:05:00', '2026-07-01 10:05:00', '盘亏10盒');
+
+INSERT INTO stock_bill_item (
+    id, bill_id, bill_no, source_bill_item_id, business_source_item_id,
+    product_id, product_code, product_name, unit_name, quantity_precision,
+    quantity, qualified_qty, defective_qty, before_qty, change_qty, after_qty,
+    create_time, update_time, remark
+) VALUES
+(1991000000000000001, 1990000000000000001, 'SB202606140001', 1960000000000001001, NULL, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 3000, 2900, 100, 1200, 3000, 4200, '2026-06-14 09:12:00', '2026-06-14 09:12:00', '含 1 个不合格品，已记录质检结果'),
+(1991000000000000002, 1990000000000000001, 'SB202606140001', 1960000000000001002, NULL, 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 0, 1200, 1200, 0, 500, 1200, 1700, '2026-06-14 09:12:00', '2026-06-14 09:12:00', ''),
+(1991000000000000003, 1990000000000000002, 'SB202606140002', 1960000000000002001, NULL, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 800, 0, 0, 9400, -800, 8600, '2026-06-14 10:05:00', '2026-06-14 10:05:00', ''),
+(1991000000000000004, 1990000000000000003, 'SB202606140004', 1960000000000004001, NULL, 1920000000000000027, 'P000027', '热敏标签纸', '卷', 0, 1000, 900, 100, 0, 1000, 1000, '2026-06-14 11:15:00', '2026-06-14 11:15:00', '含 1 个不合格品，已记录质检结果'),
+(1991000000000000005, 1990000000000000004, 'SB202606130007', 1960000000000007001, NULL, 1920000000000000034, 'P000034', '厨房清洁湿巾', '包', 0, 1200, 0, 0, 6000, -1200, 4800, '2026-06-13 14:50:00', '2026-06-13 14:50:00', ''),
+(1991000000000000006, 1990000000000000005, 'SB202606130008', 1960000000000008001, NULL, 1920000000000000037, 'P000037', '加厚垃圾袋', '卷', 0, 300, 0, 0, 2800, -300, 2500, '2026-06-13 13:20:00', '2026-06-13 13:20:00', ''),
+(1991000000000000007, 1990000000000000006, 'SB202606120010', 1960000000000010001, NULL, 1920000000000000008, 'P000008', '海盐苏打饼干', '箱', 0, 400, 300, 100, 1500, 400, 1900, '2026-06-12 16:18:00', '2026-06-12 16:18:00', '含 1 个不合格品，已记录质检结果'),
+(1991000000000000008, 1990000000000000007, 'SB202606120011', 1960000000000011001, NULL, 1920000000000000022, 'P000022', '彩色便利贴', '本', 0, 700, 0, 0, 7000, -700, 6300, '2026-06-12 14:45:00', '2026-06-12 14:45:00', ''),
+(1991000000000000009, 1990000000000000008, 'SB202606110012', 1960000000000012001, NULL, 1920000000000000044, 'P000044', '无线办公鼠标', '个', 0, 600, 0, 0, 1400, -600, 800, '2026-06-11 18:05:00', '2026-06-11 18:05:00', ''),
+(1991000000000000010, 1990000000000000009, 'SB202606110013', 1960000000000013001, NULL, 1920000000000000043, 'P000043', 'USB-C扩展坞', '个', 0, 200, 0, 0, 1500, 200, 1700, '2026-06-11 15:32:00', '2026-06-11 15:32:00', '')
+ON DUPLICATE KEY UPDATE bill_id = VALUES(bill_id), bill_no = VALUES(bill_no),
+source_bill_item_id = VALUES(source_bill_item_id), business_source_item_id = VALUES(business_source_item_id),
+product_id = VALUES(product_id), product_code = VALUES(product_code), product_name = VALUES(product_name),
+unit_name = VALUES(unit_name), quantity_precision = VALUES(quantity_precision), quantity = VALUES(quantity),
+qualified_qty = VALUES(qualified_qty), defective_qty = VALUES(defective_qty), before_qty = VALUES(before_qty),
+change_qty = VALUES(change_qty), after_qty = VALUES(after_qty), create_time = VALUES(create_time),
+update_time = VALUES(update_time), remark = VALUES(remark);
+
+COMMIT;

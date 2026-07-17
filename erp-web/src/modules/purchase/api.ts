@@ -1,9 +1,8 @@
 import { getResult, http, postResult } from '@/api/http';
 import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
-import { listProducts } from '@/modules/product/products/api';
+import { getMockProductSnapshot, listProducts } from '@/modules/product/products/api';
 import { listWarehouses } from '@/modules/warehouse/warehouses/api';
-import type { ProductListItem } from '@/modules/product/products/types';
 import type { WarehouseListItem } from '@/modules/warehouse/warehouses/types';
 import type {
   PurchaseOrderFormPayload,
@@ -38,7 +37,7 @@ const supplierSeed = [
 ] as const;
 
 let mockSuppliers: Array<SupplierListItem & { referenced: boolean }> = supplierSeed.map((item, index) => ({
-  supplierId: `1940000000000000${String(index + 1).padStart(3, '0')}`,
+  supplierId: `2010000000000000${String(index + 1).padStart(3, '0')}`,
   supplierCode: item[0],
   supplierName: item[1],
   contactName: item[2],
@@ -66,18 +65,21 @@ type SupplierProductSeed = [string, string, string, number, number, number, numb
 const supplierProductSeed: SupplierProductSeed[] = [
   ['S001', 'P000001', 'HD-SD330', 35.2, 10, 3, 94.2, 96.1, 88.4, 92.3, '2026-06-13 10:20:00', 1, true],
   ['S002', 'P000002', 'CD-CF50', 40.5, 8, 5, 89.7, 93.4, 84.2, 88.9, '2026-06-10 11:20:00', 1, true],
-  ['S003', 'P000003', 'GC-NUT30', 65.8, 6, 4, 92.4, 95.2, 87.6, 91.8, '2026-06-11 14:10:00', 1, true],
-  ['S003', 'P000004', 'GC-CK06', 55.6, 5, 4, 92.4, 95.2, 87.6, 91.4, '2026-06-09 09:40:00', 1, true],
-  ['S004', 'P000005', 'WY-PEN12', 13.8, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
-  ['S005', 'P000007', 'SZ-A4-70G', 89.4, 12, 3, 95.8, 97.2, 91.6, 94.8, '2026-06-12 13:50:00', 1, true],
-  ['S006', 'P000013', 'TL-HUB8', 148.8, 2, 8, 78.2, 82.4, 84.6, 81.3, null, 0, false],
+  ['S003', 'P000007', 'GC-NUT30', 68, 6, 4, 92.4, 95.2, 87.6, 91.8, '2026-06-11 14:10:00', 1, true],
+  ['S003', 'P000008', 'GC-CK06', 58, 5, 4, 92.4, 95.2, 87.6, 91.4, '2026-06-09 09:40:00', 1, true],
+  ['S004', 'P000021', 'WY-PEN12', 12.5, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
+  ['S005', 'P000026', 'SZ-A4-70G', 92, 12, 3, 95.8, 97.2, 91.6, 94.8, '2026-06-12 13:50:00', 1, true],
+  ['S006', 'P000043', 'TL-HUB8', 126, 2, 8, 78.2, 82.4, 84.6, 81.3, null, 0, false],
+  ['S001', 'P000002', 'HD-CF50-HIS', 40.5, 8, 5, 94.2, 96.1, 88.4, 91.4, '2026-06-14 09:12:00', 0, true],
+  ['S003', 'P000033', 'GC-LD2K-HIS', 28, 6, 4, 92.4, 95.2, 87.6, 90.1, '2026-06-13 15:28:00', 0, true],
+  ['S004', 'P000038', 'WY-HOOK6-HIS', 7.8, 20, 6, 85.4, 90.5, 88.1, 86.8, '2026-06-12 17:36:00', 0, true],
 ];
 
 let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean }> = supplierProductSeed.map((item, index) => {
   const supplier = mockSuppliers.find(s => s.supplierCode === item[0])!;
   const product = mockProductSnapshot(item[1]);
   return {
-    supplierProductId: `1941000000000000${String(index + 1).padStart(3, '0')}`,
+    supplierProductId: `2011000000000000${String(index + 1).padStart(3, '0')}`,
     supplierId: supplier.supplierId,
     supplierCode: supplier.supplierCode,
     supplierName: supplier.supplierName,
@@ -104,18 +106,22 @@ let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean 
 });
 
 let mockOrders: PurchaseOrderDetail[] = [
-  buildOrderSeed('PO202606001', 'S001', 'WH001', 'APPROVED', '2026-06-24', [['HD-SD330', 24, 35.2]], '采购主管', true),
-  buildOrderSeed('PO202606002', 'S005', 'WH008', 'PARTIAL_INBOUND', '2026-06-22', [['SZ-A4-70G', 18, 89.4]], '采购主管', true),
-  buildOrderSeed('PO202606003', 'S004', 'WH005', 'DRAFT', '2026-06-28', [['WY-PEN12', 30, 13.8]], '系统管理员', false),
-  buildOrderSeed('PO202606004', 'S003', 'WH003', 'SUBMITTED', '2026-06-30', [['GC-NUT30', 16, 65.8]], '采购专员', true),
-  buildOrderSeed('PO202606005', 'S001', 'WH001', 'SUBMITTED', '2026-06-30', [['HD-SD330', 12, 35.2], ['CD-CF50', 10, 40.5]], '采购专员', true),
-  buildOrderSeed('PO202606006', 'S004', 'WH005', 'INBOUND_DONE', '2026-06-20', [['WY-PEN12', 20, 13.8]], '采购主管', true),
-  buildOrderSeed('PO202606007', 'S002', 'WH001', 'CANCELLED', '2026-06-26', [['CD-CF50', 8, 40.5]], '系统管理员', true),
+  buildOrderSeed('PO202607001', 'S001', 'WH001', 'APPROVED', '2026-07-24', [['HD-SD330', 24, 35.2]], '采购主管', true),
+  buildOrderSeed('PO202607002', 'S005', 'WH008', 'PARTIAL_INBOUND', '2026-07-22', [['SZ-A4-70G', 18, 92]], '采购主管', true),
+  buildOrderSeed('PO202607003', 'S004', 'WH005', 'DRAFT', '2026-07-28', [['WY-PEN12', 30, 12.5]], '系统管理员', false),
+  buildOrderSeed('PO202607004', 'S003', 'WH003', 'SUBMITTED', '2026-07-30', [['GC-NUT30', 16, 68]], '采购主管', true),
+  buildOrderSeed('PO202607005', 'S001', 'WH001', 'SUBMITTED', '2026-07-30', [['HD-SD330', 12, 35.2], ['CD-CF50', 10, 40.5]], '采购主管', true),
+  buildOrderSeed('PO202607006', 'S004', 'WH005', 'INBOUND_DONE', '2026-07-20', [['WY-PEN12', 20, 12.5]], '采购主管', true),
+  buildOrderSeed('PO202607007', 'S002', 'WH001', 'CANCELLED', '2026-07-26', [['CD-CF50', 8, 40.5]], '系统管理员', true),
+  buildOrderSeed('PO202606001', 'S001', 'WH001', 'INBOUND_DONE', '2026-06-14', [['HD-SD330', 48, 35.2, '对应 IB202606140001'], ['HD-CF50-HIS', 20, 40.5, '对应 IB202606140001']], '采购主管', true),
+  buildOrderSeed('PO202606002', 'S003', 'WH003', 'APPROVED', '2026-06-13', [['GC-NUT30', 60, 68, '对应 IB202606130006，待确认'], ['GC-LD2K-HIS', 27, 28, '对应 IB202606130006，待确认']], '采购主管', true),
+  buildOrderSeed('PO202606003', 'S004', 'WH005', 'APPROVED', '2026-06-12', [['WY-HOOK6-HIS', 40, 7.8, '对应 IB202606120009，待确认']], '采购主管', true),
+  buildOrderSeed('PO202606004', 'S004', 'WH001', 'CANCELLED', '2026-06-11', [['WY-PEN12', 20, 12.5, '历史取消采购单']], '采购主管', true),
 ];
 
 let nextSupplierSequence = supplierSeed.length + 1;
 let nextSupplierProductSequence = mockSupplierProducts.length + 1;
-let nextPurchaseOrderSequence = mockOrders.length + 1;
+let nextPurchaseOrderSequence = 8;
 
 function nowText() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -126,16 +132,10 @@ function assertOptimisticVersion(current: number, expected: number | undefined) 
 }
 
 function mockProductSnapshot(productCode: string) {
-  const productMap: Record<string, Pick<ProductListItem, 'productId' | 'productCode' | 'productName' | 'unitName'>> = {
-    P000001: { productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱' },
-    P000002: { productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒' },
-    P000003: { productId: '1920000000000000003', productCode: 'P000003', productName: '每日坚果混合装', unitName: '盒' },
-    P000004: { productId: '1920000000000000004', productCode: 'P000004', productName: '海盐苏打饼干', unitName: '箱' },
-    P000005: { productId: '1920000000000000005', productCode: 'P000005', productName: '中性签字笔', unitName: '盒' },
-    P000007: { productId: '1920000000000000007', productCode: 'P000007', productName: 'A4复印纸', unitName: '箱' },
-    P000013: { productId: '1920000000000000013', productCode: 'P000013', productName: 'USB-C扩展坞', unitName: '个' },
-  };
-  return productMap[productCode] || productMap.P000001;
+  const productId = (1920000000000000000n + BigInt(productCode.slice(1))).toString();
+  const product = getMockProductSnapshot(productId);
+  if (!product) throw new Error(`产品 ${productCode} 不存在`);
+  return product;
 }
 
 function buildOrderSeed(
@@ -144,7 +144,7 @@ function buildOrderSeed(
   warehouseCode: string,
   status: PurchaseOrderStatus,
   expectedArrivalDate: string,
-  lines: Array<[string, number, number]>,
+  lines: Array<[string, number, number, string?]>,
   createdByName: string,
   submitted: boolean,
 ): PurchaseOrderDetail {
@@ -157,12 +157,31 @@ function buildOrderSeed(
     WH008: { warehouseId: '1930000000000000008', warehouseName: '南京备货仓' },
   };
   const warehouse = warehouses[warehouseCode] || warehouses.WH001;
-  const purchaseOrderId = `1942000000000000${purchaseNo.slice(-3)}`;
+  const orderIds: Record<string, string> = {
+    PO202606001: '2012000000000000101',
+    PO202606002: '2012000000000000102',
+    PO202606003: '2012000000000000103',
+    PO202606004: '2012000000000000104',
+  };
+  const purchaseOrderId = orderIds[purchaseNo] || `2012000000000000${purchaseNo.slice(-3)}`;
+  const itemIds: Record<string, string[]> = {
+    PO202606001: ['2012100000000000101', '2012100000000000102'],
+    PO202606002: ['2012100000000000103', '2012100000000000104'],
+    PO202606003: ['2012100000000000105'],
+    PO202606004: ['2012100000000000106'],
+    PO202607001: ['2012100000000000001'],
+    PO202607002: ['2012100000000000002'],
+    PO202607003: ['2012100000000000003'],
+    PO202607004: ['2012100000000000004'],
+    PO202607005: ['2012100000000000005', '2012100000000000006'],
+    PO202607006: ['2012100000000000007'],
+    PO202607007: ['2012100000000000008'],
+  };
   const items = lines.map((line, index) => {
     const supplierProduct = mockSupplierProducts.find(item => item.supplierProductCode === line[0]);
     const product = supplierProduct || mockSupplierProducts[0];
     return normalizeOrderItem({
-      purchaseOrderItemId: `${purchaseOrderId}${index + 1}`,
+      purchaseOrderItemId: itemIds[purchaseNo][index],
       purchaseOrderId,
       purchaseNo,
       supplierProductId: product.supplierProductId,
@@ -175,10 +194,17 @@ function buildOrderSeed(
       unitPrice: line[2],
       totalAmount: line[1] * line[2],
       selectedSupplierScore: product.aiScore,
-      remark: '',
+      remark: line[3] || '',
     });
   });
-  const timestamp = '2026-06-12 10:30:00';
+  const historicalTimes: Record<string, { createTime: string; updateTime: string; submittedAt: string; approvedAt: string | null; remark: string }> = {
+    PO202606001: { createTime: '2026-06-13 09:10:00', updateTime: '2026-06-14 09:12:00', submittedAt: '2026-06-13 09:10:00', approvedAt: '2026-06-13 10:00:00', remark: '对应 IB202606140001，已确认入库' },
+    PO202606002: { createTime: '2026-06-12 14:20:00', updateTime: '2026-06-13 15:28:00', submittedAt: '2026-06-12 14:20:00', approvedAt: '2026-06-12 15:00:00', remark: '对应 IB202606130006，待确认入库' },
+    PO202606003: { createTime: '2026-06-11 16:10:00', updateTime: '2026-06-12 17:36:00', submittedAt: '2026-06-11 16:10:00', approvedAt: '2026-06-11 16:40:00', remark: '对应 IB202606120009，待确认入库' },
+    PO202606004: { createTime: '2026-06-10 11:00:00', updateTime: '2026-06-11 09:00:00', submittedAt: '2026-06-10 11:00:00', approvedAt: null, remark: '历史取消采购单，未生成入库工作单' },
+  };
+  const auditTime = historicalTimes[purchaseNo];
+  const timestamp = auditTime?.createTime || '2026-07-12 10:30:00';
   return {
     purchaseOrderId,
     purchaseNo,
@@ -190,16 +216,16 @@ function buildOrderSeed(
     status,
     totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
     expectedArrivalDate,
-    createdById: '1900000000000000001',
+    createdById: createdByName === '系统管理员' ? '1900000000000000001' : '1900000000000000002',
     createdByName,
-    submittedAt: submitted ? timestamp : null,
-    approvedById: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '1900000000000000001' : null,
+    submittedAt: submitted ? (auditTime?.submittedAt || timestamp) : null,
+    approvedById: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '1900000000000000002' : null,
     approvedByName: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '采购主管' : '',
-    approvedAt: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '2026-06-13 09:20:00' : null,
+    approvedAt: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? (auditTime?.approvedAt || '2026-07-13 09:20:00') : null,
     createTime: timestamp,
-    updateTime: timestamp,
+    updateTime: auditTime?.updateTime || timestamp,
     version: 0,
-    remark: '',
+    remark: auditTime?.remark || '',
     items,
   };
 }
@@ -481,7 +507,7 @@ export function createSupplierProduct(payload: SupplierProductFormPayload) {
     }
     const timestamp = nowText();
     const created: SupplierProductListItem & { referenced: boolean } = {
-      supplierProductId: `1941000000000009${String(nextSupplierProductSequence++).padStart(2, '0')}`,
+      supplierProductId: `2011000000000009${String(nextSupplierProductSequence++).padStart(2, '0')}`,
       supplierCode: supplier.supplierCode,
       supplierName: supplier.supplierName,
       productCode: product.productCode,
@@ -592,7 +618,7 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
     if (!supplier || supplier.status === 0) return Promise.reject(new Error('请选择启用状态的供应商'));
     const warehouse = mockWarehouseSnapshot(payload.warehouseId);
     const purchaseOrderId = String(Date.now());
-    const purchaseNo = `PO202606${String(nextPurchaseOrderSequence++).padStart(3, '0')}`;
+    const purchaseNo = `PO202607${String(nextPurchaseOrderSequence++).padStart(3, '0')}`;
     const timestamp = nowText();
     const items = payload.items.map((line, index) => {
       const supplierProduct = resolveOrderSupplierProduct(payload.supplierId, line);
@@ -723,18 +749,9 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'subm
 }
 
 function mockProductSnapshotById(productId: string) {
-  const existing = mockSupplierProducts.find(item => item.productId === productId);
-  if (existing) return existing;
-  const byStatic = Object.values({
-    P000001: mockProductSnapshot('P000001'),
-    P000002: mockProductSnapshot('P000002'),
-    P000003: mockProductSnapshot('P000003'),
-    P000004: mockProductSnapshot('P000004'),
-    P000005: mockProductSnapshot('P000005'),
-    P000007: mockProductSnapshot('P000007'),
-    P000013: mockProductSnapshot('P000013'),
-  }).find(item => item.productId === productId);
-  return byStatic || mockProductSnapshot('P000001');
+  const product = getMockProductSnapshot(productId);
+  if (!product) throw new Error(`产品 ${productId} 不存在`);
+  return product;
 }
 
 function mockWarehouseSnapshot(warehouseId: string): Pick<WarehouseListItem, 'warehouseId' | 'warehouseName'> {

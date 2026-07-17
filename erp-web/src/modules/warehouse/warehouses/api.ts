@@ -12,35 +12,22 @@ import type {
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
 
-const warehouseSeed = [
-  ['WH001', '华东中心仓', '周宁', '021-5558-1001', '上海市嘉定区汇源路 88 号', 1, true],
-  ['WH002', '华南中心仓', '林敏', '020-5558-1002', '广州市黄埔区开创大道 168 号', 1, true],
-  ['WH003', '华北中心仓', '许峰', '010-5558-1003', '北京市顺义区物流园北路 16 号', 1, true],
-  ['WH004', '西南中心仓', '高洁', '028-5558-1004', '成都市双流区航空港大道 52 号', 1, true],
-  ['WH005', '武汉中转仓', '陈航', '027-5558-1005', '武汉市东西湖区新城十一路 30 号', 1, true],
-  ['WH006', '西安中转仓', '赵然', '029-5558-1006', '西安市灞桥区港务大道 109 号', 1, true],
-  ['WH007', '杭州电商仓', '沈佳', '0571-5558-1007', '杭州市余杭区仁和街道云创路 9 号', 1, true],
-  ['WH008', '南京备货仓', '王澄', '025-5558-1008', '南京市江宁区秣陵工业园 21 号', 1, true],
-  ['WH009', '青岛周转仓', '方圆', '0532-5558-1009', '青岛市城阳区双元路 66 号', 0, true],
-  ['WH010', '长沙临时仓', '唐月', '0731-5558-1010', '长沙市雨花区环保东路 18 号', 0, false],
-  ['WH011', '郑州临时仓', '', '', '郑州市经开区航海东路 1268 号', 1, false],
-  ['WH012', '合肥样品仓', '宋哲', '0551-5558-1012', '合肥市蜀山区创新大道 2800 号', 1, false],
-] as const;
+const warehouseSeed: Array<WarehouseListItem & { referenced: boolean }> = [
+  { warehouseId: '1930000000000000001', warehouseCode: 'WH001', warehouseName: '华东中心仓', contactName: '周宁', contactPhone: '021-5558-1001', address: '上海市嘉定区汇源路88号', status: 1, version: 0, remark: '华东区域日常收发与调拨仓库', createTime: '2026-06-01 09:30:00', updateTime: '2026-07-01 10:05:00', referenced: true },
+  { warehouseId: '1930000000000000002', warehouseCode: 'WH002', warehouseName: '华南中心仓', contactName: '林敏', contactPhone: '020-5558-1002', address: '广州市黄埔区开创大道168号', status: 1, version: 0, remark: '华南区域日常收发与调拨仓库', createTime: '2026-06-02 09:30:00', updateTime: '2026-06-11 15:20:00', referenced: true },
+  { warehouseId: '1930000000000000003', warehouseCode: 'WH003', warehouseName: '华北中心仓', contactName: '许峰', contactPhone: '010-5558-1003', address: '北京市顺义区物流园北路16号', status: 1, version: 0, remark: '华北区域日常收发与调拨仓库', createTime: '2026-06-03 09:30:00', updateTime: '2026-07-01 09:12:00', referenced: true },
+  { warehouseId: '1930000000000000004', warehouseCode: 'WH004', warehouseName: '西南中心仓', contactName: '高洁', contactPhone: '028-5558-1004', address: '成都市双流区航空港大道52号', status: 1, version: 0, remark: '西南区域日常收发与调拨仓库', createTime: '2026-06-04 09:30:00', updateTime: '2026-06-13 15:20:00', referenced: true },
+  { warehouseId: '1930000000000000005', warehouseCode: 'WH005', warehouseName: '武汉中转仓', contactName: '陈航', contactPhone: '027-5558-1005', address: '武汉市东西湖区新城十一路30号', status: 1, version: 0, remark: '', createTime: '2026-06-05 09:30:00', updateTime: '2026-06-10 15:20:00', referenced: true },
+  { warehouseId: '1930000000000000006', warehouseCode: 'WH006', warehouseName: '西安中转仓', contactName: '赵然', contactPhone: '029-5558-1006', address: '西安市灞桥区港务大道109号', status: 1, version: 0, remark: '', createTime: '2026-06-06 09:30:00', updateTime: '2026-06-11 15:20:00', referenced: true },
+  { warehouseId: '1930000000000000007', warehouseCode: 'WH007', warehouseName: '杭州电商仓', contactName: '沈佳', contactPhone: '0571-5558-1007', address: '杭州市余杭区仁和街道云创路9号', status: 1, version: 0, remark: '', createTime: '2026-06-07 09:30:00', updateTime: '2026-06-12 15:20:00', referenced: true },
+  { warehouseId: '1930000000000000008', warehouseCode: 'WH008', warehouseName: '南京备货仓', contactName: '王澄', contactPhone: '025-5558-1008', address: '南京市江宁区秣陵工业园21号', status: 1, version: 0, remark: '', createTime: '2026-06-08 09:30:00', updateTime: '2026-06-13 15:20:00', referenced: true },
+  { warehouseId: '1930000000000000009', warehouseCode: 'WH009', warehouseName: '青岛周转仓', contactName: '方圆', contactPhone: '0532-5558-1009', address: '青岛市城阳区双元路66号', status: 0, version: 0, remark: '', createTime: '2026-06-01 09:30:00', updateTime: '2026-06-10 15:20:00', referenced: true },
+  { warehouseId: '1930000000000000010', warehouseCode: 'WH010', warehouseName: '长沙临时仓', contactName: '唐月', contactPhone: '0731-5558-1010', address: '长沙市雨花区环保东路18号', status: 0, version: 0, remark: '', createTime: '2026-06-02 09:30:00', updateTime: '2026-06-11 15:20:00', referenced: false },
+  { warehouseId: '1930000000000000011', warehouseCode: 'WH011', warehouseName: '郑州临时仓', contactName: '', contactPhone: '', address: '郑州市经开区航海东路1268号', status: 1, version: 0, remark: '', createTime: '2026-06-03 09:30:00', updateTime: '2026-06-12 15:20:00', referenced: true },
+  { warehouseId: '1930000000000000012', warehouseCode: 'WH012', warehouseName: '合肥样品仓', contactName: '宋哲', contactPhone: '0551-5558-1012', address: '合肥市蜀山区创新大道2800号', status: 1, version: 0, remark: '', createTime: '2026-06-04 09:30:00', updateTime: '2026-06-13 15:20:00', referenced: true },
+];
 
-let mockWarehouses: Array<WarehouseListItem & { referenced: boolean }> = warehouseSeed.map((item, index) => ({
-  warehouseId: `1930000000000000${String(index + 1).padStart(3, '0')}`,
-  warehouseCode: item[0],
-  warehouseName: item[1],
-  contactName: item[2],
-  contactPhone: item[3],
-  address: item[4],
-  status: item[5],
-  version: 0,
-  remark: index < 4 ? '区域主仓，承担日常收发与调拨' : '',
-  createTime: `2026-06-${String(1 + (index % 8)).padStart(2, '0')} 09:30:00`,
-  updateTime: `2026-06-${String(10 + (index % 4)).padStart(2, '0')} 15:20:00`,
-  referenced: item[6],
-}));
+let mockWarehouses = warehouseSeed.map(item => ({ ...item }));
 
 function nowText() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -65,6 +52,10 @@ function normalizeWarehouse(item: WarehouseListItem): WarehouseListItem {
     createTime: String(item.createTime),
     updateTime: String(item.updateTime),
   };
+}
+
+export function getMockWarehouseSnapshot() {
+  return mockWarehouses.map(({ referenced: _, ...item }) => normalizeWarehouse({ ...item }));
 }
 
 function normalizeWarehousePage(page: WarehousePage): WarehousePage {

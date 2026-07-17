@@ -20,17 +20,24 @@ const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 
 
 const mockRoleOptions: RoleOption[] = [
   { roleId: '1900000000000001001', roleCode: 'SUPER_ADMIN', roleName: '超级管理员', status: 1 },
-  { roleId: '1900000000000001002', roleCode: 'SYSTEM_ADMIN', roleName: '系统管理员', status: 1 },
-  { roleId: '1900000000000001003', roleCode: 'BUSINESS_MANAGER', roleName: '业务主管', status: 1 },
-  { roleId: '1900000000000001004', roleCode: 'WAREHOUSE_OPERATOR', roleName: '仓库操作员', status: 1 },
+  { roleId: '1900000000000001002', roleCode: 'PURCHASE_STAFF', roleName: '采购员', status: 1 },
+  { roleId: '1900000000000001003', roleCode: 'SALES_STAFF', roleName: '销售员', status: 1 },
+  { roleId: '1900000000000001004', roleCode: 'WAREHOUSE_STAFF', roleName: '仓管员', status: 1 },
+  { roleId: '1900000000000001005', roleCode: 'BUSINESS_MANAGER', roleName: '业务主管', status: 1 },
+  { roleId: '1900000000000001006', roleCode: 'AI_ANALYST', roleName: 'AI分析师', status: 1 },
 ];
 
 const mockDeptOptions: DeptOption[] = [
   { deptId: '1900000000000000100', deptName: '行政部', parentId: '0', status: 1 },
-  { deptId: '1900000000000000101', deptName: '财务部', parentId: '0', status: 1 },
   { deptId: '1900000000000000102', deptName: '采购部', parentId: '0', status: 1 },
   { deptId: '1900000000000000103', deptName: '销售部', parentId: '0', status: 1 },
   { deptId: '1900000000000000104', deptName: '仓储部', parentId: '0', status: 1 },
+  { deptId: '1900000000000000106', deptName: '供应商维护组', parentId: '1900000000000000102', status: 1 },
+  { deptId: '1900000000000000107', deptName: '采购跟单组', parentId: '1900000000000000102', status: 1 },
+  { deptId: '1900000000000000108', deptName: '华东销售组', parentId: '1900000000000000103', status: 0 },
+  { deptId: '1900000000000000109', deptName: '华南销售组', parentId: '1900000000000000103', status: 1 },
+  { deptId: '1900000000000000110', deptName: '入库作业组', parentId: '1900000000000000104', status: 1 },
+  { deptId: '1900000000000000111', deptName: '出库复核组', parentId: '1900000000000000104', status: 1 },
 ];
 
 let mockUsers: SystemUserListItem[] = [
@@ -38,25 +45,37 @@ let mockUsers: SystemUserListItem[] = [
     userId: '1900000000000000001', username: 'admin', realName: '系统管理员',
     deptId: '1900000000000000100', deptName: '行政部', isAdmin: true, status: 1,
     roleIds: ['1900000000000001001'], roleNames: ['超级管理员'],
-    lastLoginAt: '2026-06-08 09:12:30', createTime: '2026-06-05 20:30:00', updateTime: '2026-06-08 09:12:30',
+    lastLoginAt: '2026-07-04 12:39:43', createTime: '2026-06-05 20:30:00', updateTime: '2026-07-04 04:39:43',
   },
   {
     userId: '1900000000000000002', username: 'purchase01', realName: '采购主管',
     deptId: '1900000000000000102', deptName: '采购部', isAdmin: false, status: 1,
-    roleIds: ['1900000000000001003'], roleNames: ['业务主管'],
-    lastLoginAt: '2026-06-07 17:24:11', createTime: '2026-06-06 10:18:22', updateTime: '2026-06-07 17:24:11',
+    roleIds: ['1900000000000001002'], roleNames: ['采购员'],
+    lastLoginAt: null, createTime: '2026-06-05 20:35:00', updateTime: '2026-06-23 14:40:11',
   },
   {
-    userId: '1900000000000000003', username: 'warehouse01', realName: '仓库操作员',
+    userId: '1900000000000000003', username: 'sales01', realName: '销售主管',
+    deptId: '1900000000000000103', deptName: '销售部', isAdmin: false, status: 1,
+    roleIds: ['1900000000000001003'], roleNames: ['销售员'],
+    lastLoginAt: null, createTime: '2026-06-05 20:36:00', updateTime: '2026-06-23 14:20:16',
+  },
+  {
+    userId: '1900000000000000004', username: 'warehouse01', realName: '仓管主管',
     deptId: '1900000000000000104', deptName: '仓储部', isAdmin: false, status: 1,
-    roleIds: ['1900000000000001004'], roleNames: ['仓库操作员'],
-    lastLoginAt: null, createTime: '2026-06-06 11:05:19', updateTime: '2026-06-06 11:05:19',
+    roleIds: ['1900000000000001004'], roleNames: ['仓管员'],
+    lastLoginAt: null, createTime: '2026-06-05 20:37:00', updateTime: '2026-06-07 17:24:11',
   },
   {
-    userId: '1900000000000000004', username: 'sales_stop', realName: '停用销售账号',
-    deptId: '1900000000000000103', deptName: '销售部', isAdmin: false, status: 0,
-    roleIds: ['1900000000000001003'], roleNames: ['业务主管'],
-    lastLoginAt: '2026-06-06 14:42:02', createTime: '2026-06-05 22:10:00', updateTime: '2026-06-07 13:00:00',
+    userId: '1900000000000000005', username: 'manager01', realName: '业务主管',
+    deptId: '1900000000000000100', deptName: '行政部', isAdmin: false, status: 1,
+    roleIds: ['1900000000000001005'], roleNames: ['业务主管'],
+    lastLoginAt: null, createTime: '2026-06-05 20:38:00', updateTime: '2026-06-07 17:24:11',
+  },
+  {
+    userId: '1900000000000000006', username: 'sales_stop', realName: '已停用销售',
+    deptId: '1900000000000000108', deptName: '华东销售组', isAdmin: false, status: 0,
+    roleIds: ['1900000000000001003', '1900000000000001002'], roleNames: ['销售员', '采购员'],
+    lastLoginAt: null, createTime: '2026-06-05 20:40:00', updateTime: '2026-07-03 16:55:13',
   },
 ];
 

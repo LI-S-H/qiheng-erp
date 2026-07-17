@@ -573,7 +573,7 @@ runSmoke({
     for (const expected of ['采购入库', '来源生成', '采购订单', '谷仓食品批发', '2 条商品', '待确认']) {
       if (!pendingInboundText.includes(expected)) throw new Error(`待确认入库单列表缺少 ${expected}`);
     }
-    for (const forbidden of ['P000003', 'P000009', '本次', '计划', '已处理', '剩余未入库']) {
+    for (const forbidden of ['P000007', 'P000033', '本次', '计划', '已处理', '剩余未入库']) {
       if (pendingInboundText.includes(forbidden)) throw new Error(`入库单列表不应展示订单进度字段：${forbidden}`);
     }
     const inboundItem = page.locator('[data-stock-bill-expanded-item-id]').filter({ hasText: '每日坚果混合装' });
@@ -584,7 +584,7 @@ runSmoke({
     await assertExpandedDetailTable(page, 'INBOUND');
     if (await inboundItem.locator('[data-overflow-tooltip]').count() === 0) throw new Error('入库单明细备注未接入统一溢出提示');
     const inboundItemText = await inboundItem.innerText();
-    for (const expected of ['P000003', '每日坚果混合装', '0 盒', '40 盒']) {
+    for (const expected of ['P000007', '每日坚果混合装', '0 盒', '40 盒']) {
       if (!inboundItemText.includes(expected)) throw new Error(`入库单商品子行缺少 ${expected}`);
     }
     await page.screenshot({ path: screenshotPath('warehouse-inbound-expanded.png'), fullPage: true });
@@ -612,7 +612,7 @@ runSmoke({
     for (const expected of ['采购数量', '累计已入库', '本次入库数量', '剩余未入库']) {
       if (!editInboundText.includes(expected)) throw new Error(`入库编辑弹窗缺少 ${expected}`);
     }
-    for (const expected of ['P000003', '每日坚果混合装']) {
+    for (const expected of ['P000007', '每日坚果混合装']) {
       if (!editInboundText.includes(expected)) throw new Error(`入库编辑弹窗产品快照缺少 ${expected}`);
     }
     const editInboundValues = await editInbound.locator('input').evaluateAll(inputs => inputs.map(input => input.value).join('\n'));

@@ -1,9 +1,8 @@
 import { getResult, http, postResult } from '@/api/http';
 import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
-import { listProducts } from '@/modules/product/products/api';
+import { getMockProductSnapshot, listProducts } from '@/modules/product/products/api';
 import { listWarehouses } from '@/modules/warehouse/warehouses/api';
-import type { ProductListItem } from '@/modules/product/products/types';
 import type { WarehouseListItem } from '@/modules/warehouse/warehouses/types';
 import type {
   CustomerBatchIdsPayload,
@@ -29,10 +28,21 @@ const customerSeed = [
   ['C003', '南京星火校园超市', '陈可', '025-7728-2003', '南京市栖霞区仙林大道', 120000, 1, true],
   ['C004', '广州云帆商贸', '林沐', '020-7728-2004', '广州市天河区体育西路', 60000, 1, false],
   ['C005', '苏州森活社区团购', '周晨', '0512-7728-2005', '苏州市工业园区星湖街', 75000, 0, false],
+  ['C006', '上海星河便利店', '陈宁', '021-7728-2101', '上海市浦东新区张江镇', 60000, 1, true],
+  ['C007', '成都青柠商贸', '李青', '028-7728-2102', '成都市武侯区天府大道', 80000, 1, true],
+  ['C008', '杭州电商客户', '周帆', '0571-7728-2103', '杭州市余杭区电商园', 100000, 1, true],
+  ['C009', '广州天河门店', '何俊', '020-7728-2104', '广州市天河区体育西路', 70000, 1, true],
 ] as const;
 
+const historicalCustomerIds: Record<string, string> = {
+  C006: '2020000000000000101',
+  C007: '2020000000000000102',
+  C008: '2020000000000000103',
+  C009: '2020000000000000104',
+};
+
 let mockCustomers: Array<CustomerListItem & { referenced: boolean }> = customerSeed.map((item, index) => ({
-  customerId: `1950000000000000${String(index + 1).padStart(3, '0')}`,
+  customerId: historicalCustomerIds[item[0]] || `2020000000000000${String(index + 1).padStart(3, '0')}`,
   customerCode: item[0],
   customerName: item[1],
   contactName: item[2],
@@ -48,17 +58,21 @@ let mockCustomers: Array<CustomerListItem & { referenced: boolean }> = customerS
 }));
 
 let mockOrders: SalesOrderDetail[] = [
-  buildOrderSeed('SO202606001', 'C001', 'WH001', 'APPROVED', '2026-06-27', [['P000001', 12, 49.9], ['P000003', 8, 99]], '销售主管', true),
-  buildOrderSeed('SO202606002', 'C003', 'WH002', 'PARTIAL_OUTBOUND', '2026-06-24', [['P000005', 20, 19.9]], '销售主管', true),
-  buildOrderSeed('SO202606003', 'C004', 'WH008', 'DRAFT', '2026-06-30', [['P000007', 6, 119]], '系统管理员', false),
-  buildOrderSeed('SO202606004', 'C002', 'WH001', 'SUBMITTED', '2026-06-30', [['P000002', 10, 69]], '销售专员', true),
-  buildOrderSeed('SO202606005', 'C003', 'WH002', 'SUBMITTED', '2026-06-30', [['P000007', 8, 119]], '销售专员', true),
-  buildOrderSeed('SO202606006', 'C001', 'WH001', 'OUTBOUND_DONE', '2026-06-20', [['P000001', 6, 49.9]], '销售主管', true),
-  buildOrderSeed('SO202606007', 'C004', 'WH008', 'CANCELLED', '2026-06-26', [['P000003', 4, 99]], '系统管理员', true),
+  buildOrderSeed('SO202607001', 'C001', 'WH001', 'APPROVED', '2026-07-27', [['P000001', 12, 49.9], ['P000007', 8, 99]], '销售主管', true),
+  buildOrderSeed('SO202607002', 'C003', 'WH002', 'PARTIAL_OUTBOUND', '2026-07-24', [['P000021', 20, 19.9]], '销售主管', true),
+  buildOrderSeed('SO202607003', 'C004', 'WH008', 'DRAFT', '2026-07-30', [['P000026', 6, 119]], '系统管理员', false),
+  buildOrderSeed('SO202607004', 'C002', 'WH001', 'SUBMITTED', '2026-07-30', [['P000002', 10, 69]], '销售主管', true),
+  buildOrderSeed('SO202607005', 'C003', 'WH002', 'SUBMITTED', '2026-07-30', [['P000026', 8, 119]], '销售主管', true),
+  buildOrderSeed('SO202607006', 'C001', 'WH001', 'OUTBOUND_DONE', '2026-07-20', [['P000001', 6, 49.9]], '销售主管', true),
+  buildOrderSeed('SO202607007', 'C004', 'WH008', 'CANCELLED', '2026-07-26', [['P000007', 4, 99]], '系统管理员', true),
+  buildOrderSeed('SO202606001', 'C006', 'WH001', 'OUTBOUND_DONE', '2026-06-14', [['P000001', 8, 49.9, '对应 OB202606140002']], '销售主管', true),
+  buildOrderSeed('SO202606002', 'C007', 'WH004', 'OUTBOUND_DONE', '2026-06-13', [['P000034', 12, 16.9, '对应 OB202606130007']], '销售主管', true),
+  buildOrderSeed('SO202606003', 'C008', 'WH007', 'OUTBOUND_DONE', '2026-06-11', [['P000044', 6, 69, '停用产品仅保留历史追溯']], '销售主管', true),
+  buildOrderSeed('SO202606004', 'C009', 'WH002', 'APPROVED', '2026-06-10', [['P000026', 10, 119, '对应 OB202606100015，待确认']], '销售主管', true),
 ];
 
 let nextCustomerSequence = customerSeed.length + 1;
-let nextSalesOrderSequence = mockOrders.length + 1;
+let nextSalesOrderSequence = 8;
 
 function nowText() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -73,28 +87,24 @@ function generateCode(prefix: string, sequence: number, width = 3) {
 }
 
 function mockProductSnapshot(productCode: string) {
-  const productMap: Record<string, Pick<ProductListItem, 'productId' | 'productCode' | 'productName' | 'unitName' | 'referenceSalePrice' | 'quantityPrecision'>> = {
-    P000001: { productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', referenceSalePrice: 49.9, quantityPrecision: 0 },
-    P000002: { productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', referenceSalePrice: 69, quantityPrecision: 0 },
-    P000003: { productId: '1920000000000000003', productCode: 'P000003', productName: '每日坚果混合装', unitName: '盒', referenceSalePrice: 99, quantityPrecision: 0 },
-    P000005: { productId: '1920000000000000005', productCode: 'P000005', productName: '中性签字笔', unitName: '盒', referenceSalePrice: 19.9, quantityPrecision: 0 },
-    P000007: { productId: '1920000000000000007', productCode: 'P000007', productName: 'A4复印纸', unitName: '箱', referenceSalePrice: 119, quantityPrecision: 0 },
-    P000015: { productId: '1920000000000000015', productCode: 'P000015', productName: '散装东北大米', unitName: 'kg', referenceSalePrice: 7.9, quantityPrecision: 2 },
-  };
-  return productMap[productCode] || productMap.P000001;
+  const productId = (1920000000000000000n + BigInt(productCode.slice(1))).toString();
+  const product = getMockProductSnapshot(productId);
+  if (!product) throw new Error(`产品 ${productCode} 不存在`);
+  return product;
 }
 
 function mockProductSnapshotById(productId: string) {
-  const byStatic = ['P000001', 'P000002', 'P000003', 'P000005', 'P000007', 'P000015']
-    .map(mockProductSnapshot)
-    .find(item => item.productId === productId);
-  return byStatic || mockProductSnapshot('P000001');
+  const product = getMockProductSnapshot(productId);
+  if (!product) throw new Error(`产品 ${productId} 不存在`);
+  return product;
 }
 
 function mockWarehouseSnapshot(warehouseId: string): Pick<WarehouseListItem, 'warehouseId' | 'warehouseName'> {
   const warehouses: Record<string, Pick<WarehouseListItem, 'warehouseId' | 'warehouseName'>> = {
     '1930000000000000001': { warehouseId: '1930000000000000001', warehouseName: '华东中心仓' },
     '1930000000000000002': { warehouseId: '1930000000000000002', warehouseName: '华南中心仓' },
+    '1930000000000000004': { warehouseId: '1930000000000000004', warehouseName: '西南中心仓' },
+    '1930000000000000007': { warehouseId: '1930000000000000007', warehouseName: '杭州电商仓' },
     '1930000000000000008': { warehouseId: '1930000000000000008', warehouseName: '南京备货仓' },
   };
   return warehouses[warehouseId] || { warehouseId, warehouseName: '出库仓库' };
@@ -106,7 +116,7 @@ function buildOrderSeed(
   warehouseCode: string,
   status: SalesOrderStatus,
   expectedDeliveryDate: string,
-  lines: Array<[string, number, number]>,
+  lines: Array<[string, number, number, string?]>,
   createdByName: string,
   submitted: boolean,
 ): SalesOrderDetail {
@@ -114,14 +124,35 @@ function buildOrderSeed(
   const warehouses: Record<string, { warehouseId: string; warehouseName: string }> = {
     WH001: { warehouseId: '1930000000000000001', warehouseName: '华东中心仓' },
     WH002: { warehouseId: '1930000000000000002', warehouseName: '华南中心仓' },
+    WH004: { warehouseId: '1930000000000000004', warehouseName: '西南中心仓' },
+    WH007: { warehouseId: '1930000000000000007', warehouseName: '杭州电商仓' },
     WH008: { warehouseId: '1930000000000000008', warehouseName: '南京备货仓' },
   };
   const warehouse = warehouses[warehouseCode] || warehouses.WH001;
-  const salesOrderId = `1952000000000000${salesNo.slice(-3)}`;
+  const orderIds: Record<string, string> = {
+    SO202606001: '2022000000000000101',
+    SO202606002: '2022000000000000102',
+    SO202606003: '2022000000000000103',
+    SO202606004: '2022000000000000104',
+  };
+  const salesOrderId = orderIds[salesNo] || `2022000000000000${salesNo.slice(-3)}`;
+  const itemIds: Record<string, string[]> = {
+    SO202606001: ['2022100000000000101'],
+    SO202606002: ['2022100000000000102'],
+    SO202606003: ['2022100000000000103'],
+    SO202606004: ['2022100000000000104'],
+    SO202607001: ['2022100000000000001', '2022100000000000002'],
+    SO202607002: ['2022100000000000003'],
+    SO202607003: ['2022100000000000004'],
+    SO202607004: ['2022100000000000005'],
+    SO202607005: ['2022100000000000006'],
+    SO202607006: ['2022100000000000007'],
+    SO202607007: ['2022100000000000008'],
+  };
   const items = lines.map((line, index) => {
     const product = mockProductSnapshot(line[0]);
     return normalizeOrderItem({
-      salesOrderItemId: `${salesOrderId}${index + 1}`,
+      salesOrderItemId: itemIds[salesNo][index],
       salesOrderId,
       salesNo,
       productId: product.productId,
@@ -129,14 +160,25 @@ function buildOrderSeed(
       productName: product.productName,
       unitName: product.unitName,
       quantity: line[1],
-      lockedQty: status === 'DRAFT' || status === 'CANCELLED' ? 0 : line[1],
+      lockedQty: status === 'DRAFT' || status === 'CANCELLED' || status === 'OUTBOUND_DONE'
+        ? 0
+        : status === 'PARTIAL_OUTBOUND'
+          ? line[1] - Math.floor(line[1] / 2)
+          : line[1],
       outboundQty: status === 'PARTIAL_OUTBOUND' ? Math.floor(line[1] / 2) : status === 'OUTBOUND_DONE' ? line[1] : 0,
       unitPrice: line[2],
       totalAmount: line[1] * line[2],
-      remark: '',
+      remark: line[3] || '',
     });
   });
-  const timestamp = '2026-06-12 10:40:00';
+  const historicalTimes: Record<string, { createTime: string; updateTime: string; submittedAt: string; approvedAt: string; lockedAt: string | null; remark: string }> = {
+    SO202606001: { createTime: '2026-06-13 09:20:00', updateTime: '2026-06-14 10:05:00', submittedAt: '2026-06-13 09:20:00', approvedAt: '2026-06-13 10:00:00', lockedAt: null, remark: '对应 OB202606140002，已确认出库' },
+    SO202606002: { createTime: '2026-06-12 13:50:00', updateTime: '2026-06-13 14:50:00', submittedAt: '2026-06-12 13:50:00', approvedAt: '2026-06-12 14:20:00', lockedAt: null, remark: '对应 OB202606130007，已确认出库' },
+    SO202606003: { createTime: '2026-06-10 17:10:00', updateTime: '2026-06-11 18:05:00', submittedAt: '2026-06-10 17:10:00', approvedAt: '2026-06-10 17:40:00', lockedAt: null, remark: '对应 OB202606110012，停用产品仅保留历史追溯' },
+    SO202606004: { createTime: '2026-06-09 16:00:00', updateTime: '2026-06-10 09:40:00', submittedAt: '2026-06-09 16:00:00', approvedAt: '2026-06-09 16:30:00', lockedAt: '2026-06-10 09:40:00', remark: '对应 OB202606100015，待确认出库' },
+  };
+  const auditTime = historicalTimes[salesNo];
+  const timestamp = auditTime?.createTime || '2026-07-12 10:40:00';
   return {
     salesOrderId,
     salesNo,
@@ -148,17 +190,17 @@ function buildOrderSeed(
     status,
     totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
     expectedDeliveryDate,
-    lockedAt: status === 'DRAFT' || status === 'CANCELLED' ? null : '2026-06-13 09:15:00',
-    createdById: '1900000000000000001',
+    lockedAt: auditTime ? auditTime.lockedAt : (status === 'DRAFT' || status === 'CANCELLED' || status === 'OUTBOUND_DONE' ? null : '2026-07-13 09:15:00'),
+    createdById: createdByName === '系统管理员' ? '1900000000000000001' : '1900000000000000003',
     createdByName,
-    submittedAt: submitted ? timestamp : null,
-    approvedById: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? '1900000000000000001' : null,
+    submittedAt: submitted ? (auditTime?.submittedAt || timestamp) : null,
+    approvedById: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? '1900000000000000003' : null,
     approvedByName: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? '销售主管' : '',
-    approvedAt: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? '2026-06-13 09:30:00' : null,
+    approvedAt: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? (auditTime?.approvedAt || '2026-07-13 09:30:00') : null,
     createTime: timestamp,
-    updateTime: timestamp,
+    updateTime: auditTime?.updateTime || timestamp,
     version: 0,
-    remark: '',
+    remark: auditTime?.remark || '',
     items,
   };
 }
@@ -416,7 +458,7 @@ export function createSalesOrder(payload: SalesOrderFormPayload) {
     if (!customer || customer.status === 0) return Promise.reject(new Error('请选择启用状态的客户'));
     const warehouse = mockWarehouseSnapshot(payload.warehouseId);
     const salesOrderId = String(Date.now());
-    const salesNo = `SO202606${String(nextSalesOrderSequence++).padStart(3, '0')}`;
+    const salesNo = `SO202607${String(nextSalesOrderSequence++).padStart(3, '0')}`;
     const timestamp = nowText();
     const items = buildOrderItems(salesOrderId, salesNo, payload);
     const created = normalizeOrderDetail({

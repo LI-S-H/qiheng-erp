@@ -199,7 +199,7 @@ async function smokeAssistant() {
       const chartUnit = await page.locator('.ai-message-charts .ai-chart-card__unit').first().evaluate(element => element.textContent || '');
       if (!chartUnit.includes('单位')) throw new Error(`Assistant chart should render y-axis unit, got=${chartUnit}`);
       const legendText = await page.locator('.ai-message-charts .ai-chart-card__legend').first().innerText();
-      if (!legendText.includes('USB-C扩展坞需求') || !legendText.includes('热敏标签纸需求')) {
+      if (!legendText.includes('速溶黑咖啡需求') || !legendText.includes('热敏标签纸需求')) {
         throw new Error(`Assistant line legend should use business labels, got=${legendText}`);
       }
       const baseline = await page.locator('.ai-message-charts .ai-chart-card__bar-layer rect').first().evaluate(rect => {

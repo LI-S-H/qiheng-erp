@@ -87,8 +87,8 @@ runSmoke({
     }
     await page.getByRole('button', { name: '7天' }).click();
     await page.getByText('业务待办').waitFor();
-    if ((await page.locator('.dashboard-todo').count()) < 8) {
-      throw new Error('业务待办主卡应展示至少 8 条摘要');
+    if ((await page.locator('.dashboard-todo').count()) < 7) {
+      throw new Error('业务待办主卡应展示至少 7 条摘要');
     }
     const firstTodoText = await page.locator('.dashboard-todo').first().innerText();
     if (!firstTodoText.includes('系统异常')) {
@@ -182,18 +182,8 @@ runSmoke({
 
     const salesApproveTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '销售单待审核' });
     await salesApproveTodo.getByRole('button', { name: '查看详情' }).click();
-    await salesApproveTodo.getByText('SO202606004').waitFor();
+    await salesApproveTodo.getByText('SO202607004').waitFor();
     await salesApproveTodo.getByText('授信占用偏高').waitFor();
-
-    const priceReviewTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '采购价偏离参考价' });
-    await priceReviewTodo.getByRole('button', { name: '查看详情' }).click();
-    await priceReviewTodo.getByText('USB-C扩展坞（P000013）').waitFor();
-    if ((await priceReviewTodo.getByText('参考采购价').count()) < 2) {
-      throw new Error('采购价格复核应展示参考采购价证据指标');
-    }
-    if ((await priceReviewTodo.getByText('最近采购价').count()) < 2) {
-      throw new Error('采购价格复核应展示最近采购价证据指标');
-    }
 
     const creditReviewTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '客户信用待复核' });
     await creditReviewTodo.getByRole('button', { name: '查看详情' }).click();

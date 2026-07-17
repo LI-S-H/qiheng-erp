@@ -13,16 +13,17 @@ const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 
 
 const mockFlatCategories: ProductCategoryListItem[] = [
   { categoryId: '1910000000000000100', parentId: '0', categoryName: '食品饮料', status: 1, productCount: 0, createTime: '2026-06-09 09:10:00', updateTime: '2026-06-12 14:20:00' },
-  { categoryId: '1910000000000000101', parentId: '1910000000000000100', categoryName: '饮料冲调', status: 1, productCount: 18, createTime: '2026-06-09 09:20:00', updateTime: '2026-06-12 10:16:00' },
-  { categoryId: '1910000000000000102', parentId: '1910000000000000100', categoryName: '休闲零食', status: 1, productCount: 26, createTime: '2026-06-09 09:25:00', updateTime: '2026-06-11 16:40:00' },
+  { categoryId: '1910000000000000101', parentId: '1910000000000000100', categoryName: '饮料冲调', status: 1, productCount: 2, createTime: '2026-06-09 09:20:00', updateTime: '2026-06-12 10:16:00' },
+  { categoryId: '1910000000000000102', parentId: '1910000000000000100', categoryName: '休闲零食', status: 1, productCount: 2, createTime: '2026-06-09 09:25:00', updateTime: '2026-06-11 16:40:00' },
+  { categoryId: '1910000000000000111', parentId: '1910000000000000100', categoryName: '粮油调味', status: 1, productCount: 1, createTime: '2026-06-09 09:30:00', updateTime: '2026-06-12 11:05:00' },
   { categoryId: '1910000000000000103', parentId: '0', categoryName: '办公用品', status: 1, productCount: 0, createTime: '2026-06-09 10:00:00', updateTime: '2026-06-12 09:30:00' },
-  { categoryId: '1910000000000000104', parentId: '1910000000000000103', categoryName: '书写文具', status: 1, productCount: 12, createTime: '2026-06-09 10:10:00', updateTime: '2026-06-10 15:20:00' },
-  { categoryId: '1910000000000000105', parentId: '1910000000000000103', categoryName: '办公纸品', status: 1, productCount: 9, createTime: '2026-06-09 10:15:00', updateTime: '2026-06-10 15:22:00' },
-  { categoryId: '1910000000000000106', parentId: '0', categoryName: '日用百货', status: 1, productCount: 3, createTime: '2026-06-09 11:00:00', updateTime: '2026-06-12 11:45:00' },
-  { categoryId: '1910000000000000107', parentId: '1910000000000000106', categoryName: '清洁用品', status: 1, productCount: 15, createTime: '2026-06-09 11:10:00', updateTime: '2026-06-12 11:46:00' },
-  { categoryId: '1910000000000000108', parentId: '1910000000000000106', categoryName: '家居耗材', status: 1, productCount: 8, createTime: '2026-06-09 11:20:00', updateTime: '2026-06-11 12:00:00' },
+  { categoryId: '1910000000000000104', parentId: '1910000000000000103', categoryName: '书写文具', status: 1, productCount: 2, createTime: '2026-06-09 10:10:00', updateTime: '2026-06-10 15:20:00' },
+  { categoryId: '1910000000000000105', parentId: '1910000000000000103', categoryName: '办公纸品', status: 1, productCount: 2, createTime: '2026-06-09 10:15:00', updateTime: '2026-06-10 15:22:00' },
+  { categoryId: '1910000000000000106', parentId: '0', categoryName: '日用百货', status: 1, productCount: 0, createTime: '2026-06-09 11:00:00', updateTime: '2026-06-12 11:45:00' },
+  { categoryId: '1910000000000000107', parentId: '1910000000000000106', categoryName: '清洁用品', status: 1, productCount: 2, createTime: '2026-06-09 11:10:00', updateTime: '2026-06-12 11:46:00' },
+  { categoryId: '1910000000000000108', parentId: '1910000000000000106', categoryName: '家居耗材', status: 1, productCount: 2, createTime: '2026-06-09 11:20:00', updateTime: '2026-06-11 12:00:00' },
   { categoryId: '1910000000000000109', parentId: '0', categoryName: '电子配件', status: 0, productCount: 0, createTime: '2026-06-10 09:00:00', updateTime: '2026-06-12 16:30:00' },
-  { categoryId: '1910000000000000110', parentId: '1910000000000000109', categoryName: '电脑周边', status: 0, productCount: 6, createTime: '2026-06-10 09:10:00', updateTime: '2026-06-12 16:30:00' },
+  { categoryId: '1910000000000000110', parentId: '1910000000000000109', categoryName: '电脑周边', status: 0, productCount: 2, createTime: '2026-06-10 09:10:00', updateTime: '2026-06-12 16:30:00' },
 ];
 
 function nowText() {

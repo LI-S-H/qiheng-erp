@@ -122,6 +122,9 @@ runSmoke({
     await assertSharedListChrome(page, { summaryLabel: '供货产品数据汇总', filterLabel: '供货产品筛选' });
     await assertContentSizedFilter(page, [280, 220, 220, 168]);
     await tableRow(page, 'HD-SD330').waitFor();
+    const nutSupplierProduct = tableRow(page, 'GC-NUT30');
+    await nutSupplierProduct.getByText('P000007', { exact: true }).waitFor();
+    await nutSupplierProduct.getByText('每日坚果混合装', { exact: true }).waitFor();
     await assertFixedTableLayout(page, 10);
     await page.getByPlaceholder('请输入产品名称').fill('苏打水');
     await clickQueryAndAssertLoading(page, screenshotPath('purchase-supplier-products-query.png'));
@@ -140,7 +143,7 @@ runSmoke({
     await page.getByRole('heading', { name: '采购订单' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '采购订单数据汇总', filterLabel: '采购订单筛选' });
     await assertContentSizedFilter(page, [220, 280, 280, 168]);
-    await tableRow(page, 'PO202606001').waitFor();
+    await tableRow(page, 'PO202607001').waitFor();
     await assertFixedTableLayout(page, 9);
     const desktopTableState = await page.locator('[data-slot="table-container"]').first().evaluate((element) => {
       const row = element.querySelector('tbody [data-slot="table-row"]');
@@ -160,14 +163,14 @@ runSmoke({
       || desktopTableState.actionWhiteSpace !== 'nowrap') {
       throw new Error(`1440px 采购订单未实现无固定列紧凑布局：${JSON.stringify(desktopTableState)}`);
     }
-    await page.getByPlaceholder('如 PO202606001').fill('PO202606001');
+    await page.getByPlaceholder('如 PO202606001').fill('PO202607001');
     await clickQueryAndAssertLoading(page, screenshotPath('purchase-orders-query.png'));
-    await tableRow(page, 'PO202606001').waitFor();
+    await tableRow(page, 'PO202607001').waitFor();
     await clickResetAndAssertLoading(page);
 
-    const draftOrderRow = tableRow(page, 'PO202606003');
+    const draftOrderRow = tableRow(page, 'PO202607003');
     if (!(await draftOrderRow.innerText()).includes('待提交')) throw new Error('采购草稿缺少下一步状态提示');
-    await draftOrderRow.getByRole('button', { name: '更多 PO202606003 操作' }).focus();
+    await draftOrderRow.getByRole('button', { name: '更多 PO202607003 操作' }).focus();
     await page.keyboard.press('Enter');
     const draftMenu = page.getByRole('menu');
     for (const expected of ['编辑采购单', '提交采购单', '取消采购单']) {
@@ -177,7 +180,7 @@ runSmoke({
     await page.screenshot({ path: screenshotPath('purchase-orders-row-actions.png'), fullPage: true });
     await draftMenu.getByRole('menuitem', { name: '编辑采购单', exact: true }).click();
     const editOrderDialog = page.getByRole('dialog', { name: '编辑采购单' });
-    await editOrderDialog.getByText('PO202606003').waitFor();
+    await editOrderDialog.getByText('PO202607003').waitFor();
     await editOrderDialog.getByText('预计到货').waitFor();
     await editOrderDialog.getByText('示例：2026-06-30').waitFor();
     if ((await editOrderDialog.innerText()).includes('明细预计到货')) throw new Error('采购明细不应再展示预计到货字段');
@@ -185,7 +188,7 @@ runSmoke({
     await editOrderDialog.getByRole('button', { name: '保存修改' }).click();
     await editOrderDialog.waitFor({ state: 'hidden' });
 
-    await selectRowAction(page, tableRow(page, 'PO202606003'), 'PO202606003', '提交采购单');
+    await selectRowAction(page, tableRow(page, 'PO202607003'), 'PO202607003', '提交采购单');
     const submitPreviewDialog = page.getByRole('dialog', { name: '采购单详情' });
     await submitPreviewDialog.getByText('请先核对采购单头和全部采购明细，再提交进入待审核。').waitFor();
     if (await submitPreviewDialog.getByRole('button', { name: '提交采购单' }).isDisabled()) {
@@ -197,9 +200,9 @@ runSmoke({
     await submitDialog.getByRole('button', { name: '取消' }).click();
     await submitPreviewDialog.getByRole('button', { name: '关闭' }).click();
 
-    const submittedOrderRow = tableRow(page, 'PO202606004');
+    const submittedOrderRow = tableRow(page, 'PO202607004');
     if (!(await submittedOrderRow.innerText()).includes('待审核')) throw new Error('已提交采购单缺少待审核提示');
-    await submittedOrderRow.getByRole('button', { name: '更多 PO202606004 操作' }).click();
+    await submittedOrderRow.getByRole('button', { name: '更多 PO202607004 操作' }).click();
     const submittedMenu = page.getByRole('menu');
     for (const expected of ['编辑采购单', '审核采购单', '取消采购单']) {
       await submittedMenu.getByRole('menuitem', { name: expected, exact: true }).waitFor();
@@ -209,18 +212,19 @@ runSmoke({
     await approvePreviewDialog.getByText('审核通过后将生成待确认入库单').waitFor();
     await approvePreviewDialog.getByRole('button', { name: '关闭' }).click();
 
-    await tableRow(page, 'PO202606001').getByRole('button', { name: '详情' }).click();
+    await tableRow(page, 'PO202607001').getByRole('button', { name: '详情' }).click();
     const detailDialog = page.getByRole('dialog', { name: '采购单详情' });
     await detailDialog.getByText('采购单号').waitFor();
+    await detailDialog.getByText('经典原味苏打水', { exact: true }).waitFor();
     if (await detailDialog.locator('[data-overflow-tooltip]').count() === 0) {
       throw new Error('采购明细备注未接入统一的溢出内容提示');
     }
     await detailDialog.getByRole('button', { name: '关闭' }).click();
     const readonlyStatusExpectations = {
-      PO202606001: '待入库',
-      PO202606002: '入库中',
-      PO202606006: '已完成',
-      PO202606007: '已终止',
+      PO202607001: '待入库',
+      PO202607002: '入库中',
+      PO202607006: '已完成',
+      PO202607007: '已终止',
     };
     for (const [readonlyOrder, statusHint] of Object.entries(readonlyStatusExpectations)) {
       const readonlyRow = tableRow(page, readonlyOrder);
@@ -303,7 +307,7 @@ runSmoke({
   screenshot: screenshotPath('purchase-orders-reduced-motion.png'),
   async test(page) {
     await page.getByRole('heading', { name: '采购订单' }).waitFor();
-    const row = tableRow(page, 'PO202606003');
+    const row = tableRow(page, 'PO202607003');
     const compactCellState = await row.evaluate((element) => {
       const updateCell = element.children[7];
       const actionCell = element.children[8];
@@ -319,7 +323,7 @@ runSmoke({
       || compactCellState.actionOverflow > 1 || compactCellState.actionWhiteSpace !== 'nowrap') {
       throw new Error(`采购更新时间或操作列紧凑布局异常：${JSON.stringify(compactCellState)}`);
     }
-    const trigger = row.getByRole('button', { name: '更多 PO202606003 操作' });
+    const trigger = row.getByRole('button', { name: '更多 PO202607003 操作' });
     await trigger.focus();
     await page.keyboard.press('Enter');
     const menuItem = page.getByRole('menuitem', { name: '提交采购单', exact: true });

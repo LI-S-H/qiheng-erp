@@ -3,6 +3,9 @@ package com.qiheng.erp.warehouse.service.impl;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.qiheng.erp.common.annotation.DistributedLock;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
@@ -10,11 +13,14 @@ import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+
 import jakarta.validation.constraints.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -30,6 +36,9 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
 
     @Autowired
     private WarehouseMapper warehouseMapper;
+
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
 
     /**
      * 分页查询仓库
@@ -70,6 +79,36 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
             return null;
         }
         return getWarehouseVo(warehouse);
+    }
+
+    /**
+     * 仓库新增
+     * @param warehouse 仓库实体
+     * @return 仓库VO
+     */
+    @Override
+    public WarehouseVo add(Warehouse warehouse) {
+        // 自动生成仓库编码
+        warehouse.setWarehouseCode(generateWarehouseCode());
+        // 默认状态为启用（如未传）
+        if (warehouse.getStatus() == null) {
+            warehouse.setStatus(1);
+        }
+        // 校验仓库名不能为空
+        if (StrUtil.isBlank(warehouse.getWarehouseName())) {
+            throw new BizException(ErrorCode.PARAM_ERROR);
+        }
+        warehouseMapper.insert(warehouse);
+        return getDetailById(warehouse.getId());
+    }
+
+    /**
+     * 生成仓库编码
+     * @return 仓库编码
+     */
+    private String generateWarehouseCode() {
+        Long seq = stringRedisTemplate.opsForValue().increment("warehouse:code");
+        return "WH" + String.format("%03d", seq);
     }
 
     @NotNull

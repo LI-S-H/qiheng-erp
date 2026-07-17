@@ -5,6 +5,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
+import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,6 +14,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -57,6 +60,20 @@ public class WarehouseController {
         StpUtil.checkPermission("warehouse:query");
         log.info("根据ID查询仓库详情，参数: {}", warehouseId);
         WarehouseVo vo = warehouseService.getDetailById(warehouseId);
+        return Result.ok(vo);
+    }
+
+    /**
+     * 仓库新增
+     * @param warehouse 仓库实体
+     * @return 仓库VO
+     */
+    @PostMapping
+    @Operation(summary = "仓库新增")
+    public Result<WarehouseVo> save(@Valid @RequestBody Warehouse warehouse) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("仓库新增，参数: {}", warehouse);
+        WarehouseVo vo = warehouseService.add(warehouse);
         return Result.ok(vo);
     }
 }

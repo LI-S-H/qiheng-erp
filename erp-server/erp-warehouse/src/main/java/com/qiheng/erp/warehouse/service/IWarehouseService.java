@@ -22,4 +22,18 @@ public interface IWarehouseService extends IService<Warehouse> {
      * @return 分页结果集
      */
     PageResult<WarehouseVo> page(WarehousePageDto dto);
+
+    /**
+     * 仓库详情查询
+     * @param id 仓库ID
+     * @return 仓库VO
+     */
+    WarehouseVo getDetailById(Long id);
+
+    /**
+     * 仓库新增
+     * @param warehouse 仓库实体
+     * @return 仓库VO
+     */
+    WarehouseVo add(Warehouse warehouse);
 }

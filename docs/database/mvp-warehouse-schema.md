@@ -41,7 +41,7 @@
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
-| remark | varchar(500) | 备注 |
+| remark | varchar(500) | 备注，选填；新增请求可省略，落库默认空字符串 |
 
 ## 表：warehouse_stock（库存余额表）
 

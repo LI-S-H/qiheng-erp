@@ -265,15 +265,23 @@ if (warehouseUpdateStart < 0 || warehouseUpdateEnd < 0 || warehouseUpdateSchema.
 }
 const warehouseCreateStart = source.indexOf('    WarehouseCreateRequest:');
 const warehouseCreateEnd = source.indexOf('    WarehouseUpdateRequest:', warehouseCreateStart);
+const warehouseCreateSchema = source.slice(warehouseCreateStart, warehouseCreateEnd);
+const warehouseCreateRequired = warehouseCreateSchema.match(/required:\s*\[([^\]]*)\]/)?.[1] || '';
 if (warehouseCreateStart < 0 || warehouseCreateEnd < 0
-  || source.slice(warehouseCreateStart, warehouseCreateEnd).includes('warehouseCode:')) {
+  || warehouseCreateSchema.includes('warehouseCode:')) {
   throw new Error('仓库创建请求不得包含由后端生成的 warehouseCode');
+}
+if (warehouseCreateRequired.split(',').map(field => field.trim()).includes('remark')) {
+  throw new Error('仓库创建请求的 remark 为选填字段，不得列入 required');
 }
 const warehouseFormTypeStart = warehouseTypeSource.indexOf('export interface WarehouseFormPayload');
 const warehouseFormTypeEnd = warehouseTypeSource.indexOf('export type WarehouseCreatePayload', warehouseFormTypeStart);
 if (warehouseFormTypeStart < 0 || warehouseFormTypeEnd < 0
   || warehouseTypeSource.slice(warehouseFormTypeStart, warehouseFormTypeEnd).includes('warehouseCode:')) {
   throw new Error('前端仓库创建和编辑 DTO 不得包含 warehouseCode');
+}
+if (!warehouseTypeSource.includes("Omit<WarehouseFormPayload, 'remark'> & { remark?: string }")) {
+  throw new Error('前端仓库创建 DTO 必须将 remark 声明为选填字段');
 }
 for (const fragment of ['normalizeStringId', 'normalizeBinaryStatus', 'normalizeWarehousePage']) {
   if (!warehouseApiSource.includes(fragment)) throw new Error(`仓库 API 缺少响应字段转换：${fragment}`);

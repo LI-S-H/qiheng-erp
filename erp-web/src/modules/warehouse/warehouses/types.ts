@@ -41,7 +41,7 @@ export interface WarehousePage {
   pageSize: number;
 }
 
-export type WarehouseCreatePayload = WarehouseFormPayload;
+export type WarehouseCreatePayload = Omit<WarehouseFormPayload, 'remark'> & { remark?: string };
 export type WarehouseUpdatePayload = WarehouseFormPayload & { version: number };
 
 export interface WarehouseBatchIdsPayload {

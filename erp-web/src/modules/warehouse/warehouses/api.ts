@@ -120,13 +120,20 @@ export function listWarehouses(params: WarehouseQuery) {
 }
 
 export function createWarehouse(payload: WarehouseCreatePayload) {
+  const { remark, ...requiredPayload } = payload;
+  const normalizedRemark = remark?.trim();
+  const requestPayload: WarehouseCreatePayload = {
+    ...requiredPayload,
+    ...(normalizedRemark ? { remark: normalizedRemark } : {}),
+  };
   if (useMockApi) {
     const timestamp = nowText();
     const created: WarehouseListItem & { referenced: boolean } = {
       warehouseId: String(Date.now()),
-      ...payload,
+      ...requestPayload,
       warehouseCode: generateMockWarehouseCode(),
       version: 0,
+      remark: requestPayload.remark ?? '',
       createTime: timestamp,
       updateTime: timestamp,
       referenced: false,
@@ -134,7 +141,7 @@ export function createWarehouse(payload: WarehouseCreatePayload) {
     mockWarehouses = [...mockWarehouses, created];
     return Promise.resolve(normalizeWarehouse(created));
   }
-  return postResult<WarehouseListItem, WarehouseCreatePayload>('/warehouse/warehouses', payload).then(normalizeWarehouse);
+  return postResult<WarehouseListItem, WarehouseCreatePayload>('/warehouse/warehouses', requestPayload).then(normalizeWarehouse);
 }
 
 export async function updateWarehouse(warehouseId: string, payload: WarehouseUpdatePayload) {

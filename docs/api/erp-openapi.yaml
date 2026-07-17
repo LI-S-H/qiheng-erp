@@ -3547,7 +3547,7 @@ paths:
     post:
       tags: [Warehouse]
       summary: 新增仓库
-      description: 仓库编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交仓库编码；生成后的编码不可修改。本接口需要 `warehouse:manage` 权限。
+      description: 仓库编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交仓库编码；生成后的编码不可修改。备注为选填字段，未填写时创建请求可以省略 `remark`。本接口需要 `warehouse:manage` 权限。
       operationId: warehouseCreate
       security:
         - SaTokenAuth: []
@@ -6623,14 +6623,14 @@ components:
 
     WarehouseCreateRequest:
       type: object
-      required: [warehouseName, contactName, contactPhone, address, status, remark]
+      required: [warehouseName, contactName, contactPhone, address, status]
       properties:
         warehouseName: { type: string, minLength: 1, maxLength: 100 }
         contactName: { type: string, maxLength: 100 }
         contactPhone: { type: string, maxLength: 32 }
         address: { type: string, maxLength: 255 }
         status: { type: integer, enum: [0, 1] }
-        remark: { type: string, maxLength: 500 }
+        remark: { type: string, maxLength: 500, description: 选填；省略或传空字符串均表示没有备注 }
 
     WarehouseUpdateRequest:
       type: object

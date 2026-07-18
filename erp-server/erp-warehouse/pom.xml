@@ -19,6 +19,10 @@
             <groupId>com.qiheng</groupId>
             <artifactId>erp-common</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-product</artifactId>
+        </dependency>
 
         <!-- Knife4j -->
         <dependency>

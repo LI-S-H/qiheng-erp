@@ -24,7 +24,8 @@
 
 ## 3. 字体与颜色
 
-- 全站使用 `Microsoft YaHei`、`PingFang SC`、`Noto Sans SC`、`system-ui` 中文系统字体栈
+- 全站主字体使用随前端打包的 `HarmonyOS Sans SC` 官方 `Regular`、`Medium`、`Semibold` 字重，系统回退顺序为 `PingFang SC`、`Noto Sans SC`、`Microsoft YaHei`、`system-ui`；不得把平台字体放在 `HarmonyOS Sans SC` 前面，避免不同电脑呈现不一致
+- 正文使用 `400`，导航、按钮和筛选标签使用 `500`，页面标题和核心数字使用 `600` 至 `650`；业务数量、金额和编号启用等宽数字，禁止用文字阴影模拟字重或立体感
 - 页面业务正文、筛选标签、输入内容和表格主文字统一使用 shadcn `text-sm`，即 `14px`；所有 shadcn 文字按钮统一为 `13px`；页面标题约 `24px`，一级与二级菜单为 `15px`
 - 导航文字使用中等以上字重，非激活菜单也要保证足够对比度，不能依赖低透明度制造层级
 - 主色只用于主操作、当前导航和关键链接；普通信息使用中性灰

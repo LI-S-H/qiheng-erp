@@ -115,7 +115,7 @@ const compactColumnCount = computed(() => Math.min(columnCount.value, 2));
   margin: 6px 0 0;
   color: var(--foreground);
   font-size: 24px;
-  font-weight: 720;
+  font-weight: 650;
   line-height: 1.15;
   letter-spacing: -0.02em;
 }

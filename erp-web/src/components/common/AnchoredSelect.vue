@@ -49,7 +49,7 @@ function selectOption(value: string | number) {
         :aria-expanded="open"
         :aria-invalid="props.invalid"
         :disabled="props.disabled"
-        class="h-9 w-full justify-between bg-transparent px-3 text-sm font-normal shadow-xs"
+        class="h-9 w-full justify-between bg-transparent px-[11px] text-sm font-normal leading-none shadow-xs"
       >
         <span class="truncate">{{ selectedLabel }}</span>
         <ChevronsUpDown class="ml-2 size-4 shrink-0 text-muted-foreground" />

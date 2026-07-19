@@ -68,6 +68,13 @@ runSmoke({
     if (!paginationText.includes('不统计总数') || paginationText.includes('共 15 条')) {
       throw new Error(`库存分页应使用无总数模式，当前为：${paginationText}`);
     }
+    const simplePaginationState = await page.locator('[data-table-pagination]').evaluate(element => ({
+      previous: Boolean(element.querySelector('[data-slot="pagination-previous"] svg[data-icon="inline-start"]')),
+      next: Boolean(element.querySelector('[data-slot="pagination-next"] svg[data-icon="inline-end"]')),
+    }));
+    if (!simplePaginationState.previous || !simplePaginationState.next) {
+      throw new Error(`库存无总数分页未复用统一箭头样式：${JSON.stringify(simplePaginationState)}`);
+    }
     await clickRefreshAndAssertLoading(page, 'smoke-warehouse-stocks-refresh-loading.png');
 
     await page.getByPlaceholder('请输入产品名称').fill('复印纸');

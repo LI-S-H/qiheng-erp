@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoaderCircle, RotateCcw, Search } from 'lucide-vue-next';
+import { LoaderCircle } from 'lucide-vue-next';
 
 import { Button } from '@/components/ui/button';
 
@@ -25,22 +25,22 @@ const emit = defineEmits<{
   <div class="list-filter-actions" data-list-filter-actions :aria-busy="busy">
     <Button
       type="button"
+      size="sm"
       :disabled="disabled || busy"
       :aria-label="busy ? `${queryLabel}中` : queryLabel"
       @click="emit('query')"
     >
       <LoaderCircle v-if="busy" class="animate-spin" aria-hidden="true" />
-      <Search v-else aria-hidden="true" />
       {{ busy ? `${queryLabel}中` : queryLabel }}
     </Button>
     <Button
       type="button"
+      size="sm"
       variant="outline"
       :disabled="disabled || busy"
       :aria-label="resetLabel"
       @click="emit('reset')"
     >
-      <RotateCcw aria-hidden="true" />
       {{ resetLabel }}
     </Button>
   </div>

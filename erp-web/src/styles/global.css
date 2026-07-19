@@ -289,6 +289,71 @@ a {
     0 0 10px color-mix(in srgb, var(--ring) 14%, transparent);
 }
 
+/* HarmonyOS Sans 的左侧字面略窄，筛选触发器统一使用 11px 左留白做光学校正。 */
+[data-list-filter-panel] [data-slot="input"],
+[data-list-filter-panel] [data-slot="select-trigger"],
+[data-list-filter-panel] [role="combobox"] {
+  padding-left: 11px;
+}
+
+/* 所有下拉触发框共用可感知但不过重的悬停层级，打开时保留相同的反馈。 */
+[data-slot="select-trigger"],
+[role="combobox"] {
+  line-height: 1.35;
+  transition:
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+[data-slot="select-trigger"]:not(:disabled):hover,
+[role="combobox"]:not(:disabled):hover,
+[data-slot="select-trigger"][aria-expanded="true"],
+[role="combobox"][aria-expanded="true"] {
+  /* Tailwind 的 shadow 工具类在构建产物中靠后，组合框必须显式保持本交互层级。 */
+  border-color: color-mix(in srgb, var(--ring) 34%, var(--border)) !important;
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 5%),
+    0 4px 10px rgb(15 23 42 / 10%) !important;
+}
+
+/* HarmonyOS Sans 的可视字面偏上，按钮保留更自然的行高并向下校正 1px。 */
+[data-slot="button"],
+[data-slot="select-trigger"] {
+  line-height: 1.45;
+}
+
+[data-slot="button"] {
+  padding-top: 2px;
+  padding-bottom: 0;
+}
+
+/* 展开后的下拉选项只在鼠标悬停或键盘聚焦时突出，选中项不保持悬停外观。 */
+[data-slot="command-item"],
+[data-slot="select-item"],
+[data-select-option] {
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+[data-slot="command-item"]:hover,
+[data-slot="command-item"]:focus-visible,
+[data-slot="select-item"]:hover,
+[data-slot="select-item"]:focus-visible,
+[data-select-option]:hover,
+[data-select-option]:focus-visible {
+  background: color-mix(in srgb, var(--primary) 10%, var(--card)) !important;
+  color: var(--accent-foreground) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ring) 18%, transparent),
+    0 4px 10px rgb(15 23 42 / 18%) !important;
+  transform: translateY(-1px);
+}
+
 [data-slot="dialog-content"],
 [data-slot="alert-dialog-content"] {
   scrollbar-gutter: stable;

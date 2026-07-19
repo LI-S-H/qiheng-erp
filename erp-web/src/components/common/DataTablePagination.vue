@@ -15,7 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
 
 interface Props {
   total?: number | null;
@@ -43,11 +42,15 @@ const emit = defineEmits<{
 const simpleMode = computed(() => props.simple || props.total === null || props.total === undefined || props.total < 0);
 const totalPages = computed(() => Math.max(1, Math.ceil((props.total ?? 0) / props.pageSize)));
 const currentCountText = computed(() => (typeof props.currentCount === 'number' ? props.currentCount : '-'));
-const canPrevious = computed(() => props.pageNum > 1);
 const canNext = computed(() => {
   if (!simpleMode.value) return props.pageNum < totalPages.value;
   if (typeof props.hasNext === 'boolean') return props.hasNext;
   return typeof props.currentCount === 'number' ? props.currentCount >= props.pageSize : true;
+});
+const simplePaginationTotal = computed(() => {
+  // 无总数分页仅暴露当前页和可前往的下一页，仍复用统一的箭头分页组件。
+  const visiblePageCount = props.pageNum + (canNext.value ? 1 : 0);
+  return visiblePageCount * props.pageSize;
 });
 const pageSizeValue = computed({
   get: () => String(props.pageSize),
@@ -116,25 +119,29 @@ function goToPage(page: number) {
         <PaginationNext size="sm" />
       </PaginationContent>
     </Pagination>
-    <div v-else class="flex items-center gap-2 justify-self-center">
-      <Button
-        variant="outline"
-        size="sm"
-        :disabled="props.loading || !canPrevious"
-        @click="goToPage(props.pageNum - 1)"
-      >
-        上一页
-      </Button>
-      <span class="min-w-16 text-center text-sm text-foreground">第 {{ props.pageNum }} 页</span>
-      <Button
-        variant="outline"
-        size="sm"
-        :disabled="props.loading || !canNext"
-        @click="goToPage(props.pageNum + 1)"
-      >
-        下一页
-      </Button>
-    </div>
+    <Pagination
+      v-else
+      :page="props.pageNum"
+      :total="simplePaginationTotal"
+      :items-per-page="props.pageSize"
+      :disabled="props.loading"
+      class="w-auto justify-self-center"
+      @update:page="goToPage"
+    >
+      <PaginationContent>
+        <PaginationPrevious size="sm" />
+        <PaginationItem
+          :value="props.pageNum"
+          :is-active="true"
+          size="sm"
+          data-current-page
+          class="border-0 bg-transparent shadow-none"
+        >
+          {{ props.pageNum }}
+        </PaginationItem>
+        <PaginationNext size="sm" />
+      </PaginationContent>
+    </Pagination>
 
     <span v-if="simpleMode" class="justify-self-end max-sm:justify-self-center">不统计总数</span>
     <span v-else class="justify-self-end max-sm:justify-self-center">共 {{ totalPages }} 页</span>

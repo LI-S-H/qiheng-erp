@@ -63,7 +63,7 @@ function isChecked(value: string) {
         variant="outline"
         role="combobox"
         :aria-expanded="isOpen"
-        class="w-full justify-between font-normal min-h-[36px] h-auto py-1"
+        class="w-full justify-between px-[11px] font-normal leading-none min-h-[36px] h-auto py-1"
       >
         <div class="flex flex-wrap gap-1 flex-1 items-center">
           <template v-if="selectedLabels.length === 0">
@@ -95,6 +95,7 @@ function isChecked(value: string) {
         <div
           v-for="option in props.options"
           :key="option.value"
+          data-select-option
           class="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer"
           @click="toggleOption(option.value)"
         >

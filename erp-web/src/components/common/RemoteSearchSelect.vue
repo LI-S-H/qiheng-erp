@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
-import { Check, ChevronsUpDown, Loader2, Search } from 'lucide-vue-next';
+import { ChevronsUpDown, Loader2, Search } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -114,9 +114,9 @@ watch(keyword, () => {
         :aria-expanded="open"
         :aria-invalid="invalid"
         :disabled="disabled"
-        class="w-full justify-between font-normal"
+        class="w-full justify-between font-normal leading-none"
         :class="[
-          compact ? 'h-8 px-2 text-xs' : 'h-9 px-3',
+          compact ? 'h-8 px-2 text-xs' : 'h-9 px-[11px]',
           !normalizedValue ? 'text-muted-foreground' : '',
           invalid ? 'border-destructive focus-visible:ring-destructive' : '',
         ]"
@@ -140,12 +140,12 @@ watch(keyword, () => {
       <div class="max-h-64 overflow-auto p-1">
         <button
           v-if="clearable"
+          data-select-option
           type="button"
           class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
           :class="compact ? 'min-h-8 text-xs' : 'min-h-9 text-sm'"
           @click="selectClear"
         >
-          <Check class="shrink-0" :class="[compact ? 'size-3.5' : 'size-4', String(clearValue) === normalizedValue ? 'opacity-100' : 'opacity-0']" />
           <span class="truncate">{{ clearLabel }}</span>
         </button>
         <div v-if="loading" class="flex items-center justify-center gap-2 text-muted-foreground" :class="compact ? 'h-16 text-xs' : 'h-20 text-sm'">
@@ -157,15 +157,15 @@ watch(keyword, () => {
         </div>
         <template v-else>
           <button
-            v-for="option in options"
-            :key="String(option.value)"
-            type="button"
+          v-for="option in options"
+          :key="String(option.value)"
+          type="button"
+          data-select-option
             class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             :class="compact ? 'min-h-8 text-xs' : 'min-h-9 text-sm'"
             :disabled="option.disabled"
             @click="selectOption(option)"
           >
-            <Check class="shrink-0" :class="[compact ? 'size-3.5' : 'size-4', String(option.value) === normalizedValue ? 'opacity-100' : 'opacity-0']" />
             <span class="truncate">{{ option.label }}</span>
           </button>
         </template>

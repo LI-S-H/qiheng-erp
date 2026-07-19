@@ -94,7 +94,7 @@ function selectNode(id: string) {
         variant="outline"
         role="combobox"
         :aria-expanded="isOpen"
-        class="w-full justify-between font-normal"
+        class="w-full justify-between px-[11px] font-normal leading-none"
         :class="{ 'border-destructive ring-destructive/20': props.invalid }"
       >
         <span :class="{ 'text-muted-foreground': selectedLabel === props.placeholder }">

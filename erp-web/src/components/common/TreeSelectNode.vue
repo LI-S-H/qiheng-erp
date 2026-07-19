@@ -31,6 +31,7 @@ const isSelected = computed(() => props.node.deptId === props.selectedId);
 <template>
   <div>
     <div
+      data-select-option
       class="flex w-full items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer"
       :style="{ paddingLeft: `${props.level * 16 + 8}px` }"
       :class="{ 'bg-accent font-medium': isSelected }"

@@ -657,13 +657,12 @@ export async function cancelStockBill(stockBillId: string, version: number) {
 }
 
 export function listStockBills(params: StockBillQuery) {
+  if (params.direction !== 'INBOUND' && params.direction !== 'OUTBOUND') {
+    throw new Error('工作单查询必须指定入库或出库方向；库存流水请使用 listStockLedgers');
+  }
   if (useMockApi) return Promise.resolve(filterMockBills(params));
   const { direction, billNo, sourceNo, warehouseId, billType, entryMode, status, ...rest } = params;
-  const endpoint = direction === 'INBOUND'
-    ? '/warehouse/inbound-bills'
-    : direction === 'OUTBOUND'
-      ? '/warehouse/outbound-bills'
-      : '/warehouse/stock-bills';
+  const endpoint = direction === 'INBOUND' ? '/warehouse/inbound-bills' : '/warehouse/outbound-bills';
   return getResult<StockBillPage>(endpoint, {
     ...rest,
     ...(billNo?.trim() ? { billNo: billNo.trim() } : {}),

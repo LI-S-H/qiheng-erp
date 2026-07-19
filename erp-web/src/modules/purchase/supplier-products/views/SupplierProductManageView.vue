@@ -35,7 +35,7 @@ import type { SupplierProductFormPayload, SupplierProductListItem, SupplierProdu
 interface ProductOption {
   value: string;
   label: string;
-  product: { productId: string; productCode: string; productName: string; unitName: string; referencePurchasePrice: number };
+  product: { productId: string; productCode: string; productName: string; unitName: string; quantityPrecision: number; referencePurchasePrice: number };
 }
 
 const statusOptions = [
@@ -107,6 +107,7 @@ const summaryItems = computed(() => [
 const allSelected = computed(() => records.value.length > 0 && records.value.every(item => selectedIds.value.has(item.supplierProductId)));
 const selectedSupplierLabel = computed(() => supplierOptions.value.find(item => item.value === form.supplierId)?.label || (detailRow.value?.supplierId === form.supplierId ? `${detailRow.value.supplierCode} ${detailRow.value.supplierName}` : ''));
 const selectedProductLabel = computed(() => productOptions.value.find(item => item.value === form.productId)?.label || (detailRow.value?.productId === form.productId ? `${detailRow.value.productCode} ${detailRow.value.productName}` : ''));
+const selectedProductPrecision = computed(() => productOptions.value.find(item => item.value === form.productId)?.product.quantityPrecision ?? detailRow.value?.quantityPrecision ?? 0);
 const querySupplierLabel = computed(() => query.supplierId === 'all' ? '全部供应商' : supplierOptions.value.find(item => item.value === query.supplierId)?.label || '');
 
 function mergeSupplierOptions(options: Array<{ value: string; label: string; disabled?: boolean }>) {
@@ -147,6 +148,7 @@ function cacheSupplierProductRow(row: SupplierProductListItem) {
       productCode: row.productCode,
       productName: row.productName,
       unitName: row.unitName,
+      quantityPrecision: row.quantityPrecision,
       referencePurchasePrice: row.latestPurchasePrice,
     },
   }]);
@@ -282,6 +284,7 @@ function validateForm() {
   if (form.supplierProductCode.trim().length > 100) formErrors.supplierProductCode = '供应商侧编码不能超过 100 个字符';
   if (!Number.isFinite(Number(form.latestPurchasePrice)) || Number(form.latestPurchasePrice) < 0) formErrors.latestPurchasePrice = '采购价不能小于 0';
   if (!Number.isFinite(Number(form.minOrderQty)) || Number(form.minOrderQty) <= 0) formErrors.minOrderQty = '起订量必须大于 0';
+  else if (!matchesQuantityPrecision(Number(form.minOrderQty), selectedProductPrecision.value)) formErrors.minOrderQty = `起订量最多保留 ${selectedProductPrecision.value} 位小数`;
   if (!Number.isInteger(Number(form.leadTimeDays)) || Number(form.leadTimeDays) < 0) formErrors.leadTimeDays = '交期必须是非负整数';
   validateScore('deliveryScore', '交付评分');
   validateScore('qualityScore', '质量评分');
@@ -315,6 +318,15 @@ function syncProductPrice(productId: string | number) {
   if (selected && dialogMode.value === 'create') {
     form.latestPurchasePrice = selected.product.referencePurchasePrice;
   }
+}
+
+function minOrderQtyStep() {
+  return 10 ** -selectedProductPrecision.value;
+}
+
+function matchesQuantityPrecision(value: number, precision: number) {
+  const decimal = String(value).split('.')[1] || '';
+  return decimal.length <= precision;
 }
 
 function showConfirm(title: string, description: string, confirmText: string, variant: 'default' | 'destructive' | 'warning', onConfirm: () => void | Promise<void>) {
@@ -469,7 +481,7 @@ onMounted(() => {
             <div class="space-y-1"><Label>供应商侧编码</Label><Input v-model="form.supplierProductCode" /><p v-if="formErrors.supplierProductCode" class="form-error">{{ formErrors.supplierProductCode }}</p></div>
             <div class="space-y-1"><Label>状态</Label><AnchoredSelect v-model="form.status" :options="statusOptions.filter(item => item.value !== 'all')" /></div>
             <div class="space-y-1"><Label>最近采购价</Label><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="form.latestPurchasePrice" type="number" min="0" step="0.01" class="pl-8" /></div><p v-if="formErrors.latestPurchasePrice" class="form-error">{{ formErrors.latestPurchasePrice }}</p></div>
-            <div class="space-y-1"><Label>最小起订量</Label><Input v-model.number="form.minOrderQty" type="number" min="0" step="0.0001" /><p v-if="formErrors.minOrderQty" class="form-error">{{ formErrors.minOrderQty }}</p></div>
+            <div class="space-y-1"><Label>最小起订量</Label><Input v-model.number="form.minOrderQty" type="number" min="0" :step="minOrderQtyStep()" /><p v-if="formErrors.minOrderQty" class="form-error">{{ formErrors.minOrderQty }}</p></div>
             <div class="space-y-1"><Label>预计交期天数</Label><Input v-model.number="form.leadTimeDays" type="number" min="0" step="1" /><p v-if="formErrors.leadTimeDays" class="form-error">{{ formErrors.leadTimeDays }}</p></div>
             <div class="space-y-1"><Label>推荐分</Label><Input v-model.number="form.aiScore" type="number" min="0" max="100" step="0.1" /><p v-if="formErrors.aiScore" class="form-error">{{ formErrors.aiScore }}</p></div>
             <div class="space-y-1"><Label>交付评分</Label><Input v-model.number="form.deliveryScore" type="number" min="0" max="100" step="0.1" /><p v-if="formErrors.deliveryScore" class="form-error">{{ formErrors.deliveryScore }}</p></div>

@@ -14,6 +14,7 @@ const ProductManageView = () => import('@/modules/product/products/views/Product
 const WarehouseManageView = () => import('@/modules/warehouse/warehouses/views/WarehouseManageView.vue');
 const WarehouseStockManageView = () => import('@/modules/warehouse/stocks/views/WarehouseStockManageView.vue');
 const StockBillManageView = () => import('@/modules/warehouse/stock-bills/views/StockBillManageView.vue');
+const StockLedgerManageView = () => import('@/modules/warehouse/stock-ledgers/views/StockLedgerManageView.vue');
 const SupplierManageView = () => import('@/modules/purchase/suppliers/views/SupplierManageView.vue');
 const SupplierProductManageView = () => import('@/modules/purchase/supplier-products/views/SupplierProductManageView.vue');
 const PurchaseOrderManageView = () => import('@/modules/purchase/orders/views/PurchaseOrderManageView.vue');
@@ -112,7 +113,14 @@ const routes: RouteRecordRaw[] = [
           title: '库存管理',
         },
       },
-      { path: 'warehouse/stock-bills', redirect: '/warehouse/inbound-bills' },
+      {
+        path: 'warehouse/stock-bills',
+        name: 'warehouse-stock-ledgers',
+        component: StockLedgerManageView,
+        meta: {
+          title: '库存流水',
+        },
+      },
       {
         path: 'warehouse/inbound-bills',
         name: 'warehouse-inbound-bills',

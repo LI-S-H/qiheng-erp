@@ -62,6 +62,7 @@ export interface SalesOrderItem {
   productCode: string;
   productName: string;
   unitName: string;
+  quantityPrecision: number;
   quantity: number;
   lockedQty: number;
   outboundQty: number;

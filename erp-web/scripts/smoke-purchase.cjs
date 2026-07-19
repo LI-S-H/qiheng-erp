@@ -184,7 +184,7 @@ runSmoke({
     await draftMenu.getByRole('menuitem', { name: '编辑采购单', exact: true }).click();
     const editOrderDialog = page.getByRole('dialog', { name: '编辑采购单' });
     await editOrderDialog.getByText('PO202607003').waitFor();
-    await editOrderDialog.getByText('预计到货').waitFor();
+    await editOrderDialog.getByText('预计到货', { exact: true }).waitFor();
     await editOrderDialog.getByText('示例：2026-06-30').waitFor();
     if ((await editOrderDialog.innerText()).includes('明细预计到货')) throw new Error('采购明细不应再展示预计到货字段');
     await assertRequiredLabels(editOrderDialog, ['供应商', '入库仓库']);

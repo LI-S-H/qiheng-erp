@@ -106,7 +106,7 @@ runSmoke({
     await draftMenu.getByRole('menuitem', { name: '编辑销售单', exact: true }).click();
     const editOrderDialog = page.getByRole('dialog', { name: '编辑销售单' });
     await editOrderDialog.getByText('SO202607003').waitFor();
-    await editOrderDialog.getByText('预计发货').waitFor();
+    await editOrderDialog.getByText('预计发货', { exact: true }).waitFor();
     await assertRequiredLabels(editOrderDialog, ['客户', '出库仓库']);
     await editOrderDialog.getByRole('button', { name: '保存修改' }).click();
     await editOrderDialog.waitFor({ state: 'hidden' });

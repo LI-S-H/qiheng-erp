@@ -358,8 +358,8 @@ async function assertDetailToggleMotion(page, row, item, collapseScreenshotPath)
         hidden: element.hasAttribute('hidden'),
         cardX: element.querySelector('.stock-bill-detail-card')?.getBoundingClientRect().x ?? null,
         cardWidth: element.querySelector('.stock-bill-detail-card')?.getBoundingClientRect().width ?? null,
-        detailViewportClientWidth: element.querySelector('.stock-bill-detail-row-scroll [data-slot="table-container"]')?.clientWidth ?? null,
-        detailViewportScrollWidth: element.querySelector('.stock-bill-detail-row-scroll [data-slot="table-container"]')?.scrollWidth ?? null,
+        detailViewportClientWidth: element.querySelector('.warehouse-detail-table-scroll [data-slot="table-container"]')?.clientWidth ?? null,
+        detailViewportScrollWidth: element.querySelector('.warehouse-detail-table-scroll [data-slot="table-container"]')?.scrollWidth ?? null,
       })),
       adjacentRow.evaluate(element => element.getBoundingClientRect().top),
     ]);
@@ -514,7 +514,7 @@ async function assertDistinctTypeBadges(page, labels) {
 }
 
 async function assertExpandedDetailTable(page, direction) {
-  const detail = page.locator('.stock-bill-detail-row-scroll').first();
+  const detail = page.locator('.warehouse-detail-table-scroll').first();
   const state = await detail.evaluate((element) => {
     const card = element.closest('.stock-bill-detail-card');
     const headerText = element.querySelector('thead')?.innerText ?? '';
@@ -522,6 +522,8 @@ async function assertExpandedDetailTable(page, direction) {
       headerText,
       cardWidth: card ? Math.round(card.getBoundingClientRect().width) : 0,
       tableWidth: Math.round(element.querySelector('[data-slot="table"]')?.getBoundingClientRect().width ?? 0),
+      alignments: [...element.querySelectorAll('[data-slot="table-head"], [data-slot="table-cell"]')]
+        .map(cell => getComputedStyle(cell).textAlign),
     };
   });
   const qtyLabel = direction === 'INBOUND' ? '入库量' : '出库量';
@@ -532,6 +534,9 @@ async function assertExpandedDetailTable(page, direction) {
   if (state.headerText.includes('质检')) throw new Error('展开明细不应再使用“质检”汇总列');
   if (state.cardWidth > 1040 || state.tableWidth > 1040) {
     throw new Error(`展开明细表格过宽，字段间距会被拉开：${JSON.stringify(state)}`);
+  }
+  if (state.alignments.length < 16 || state.alignments.some(alignment => alignment !== 'center')) {
+    throw new Error(`展开明细表头和数据单元格必须全部居中：${JSON.stringify(state)}`);
   }
 }
 
@@ -733,6 +738,9 @@ runSmoke({
       const keyHeader = element.querySelector('thead .stock-bill-key-column')?.getBoundingClientRect();
       const keyCell = element.querySelector('tbody .stock-bill-key-column')?.getBoundingClientRect();
       const actionHeader = element.querySelector('thead .stock-bill-actions-column')?.getBoundingClientRect();
+      const normalHeader = element.querySelector('thead [data-slot="table-head"]:not(.stock-bill-key-column):not(.stock-bill-actions-column)');
+      const keyHeaderStyle = keyHeader ? getComputedStyle(element.querySelector('thead .stock-bill-key-column')) : null;
+      const normalHeaderStyle = normalHeader ? getComputedStyle(normalHeader) : null;
       const keyHeaderHit = keyHeader
         ? document.elementFromPoint(keyHeader.left + keyHeader.width / 2, keyHeader.top + keyHeader.height / 2)
         : null;
@@ -744,13 +752,16 @@ runSmoke({
         keyCellLeft: keyCell ? keyCell.left - container.left : null,
         actionHeaderRight: actionHeader ? container.right - actionHeader.right : null,
         keyHeaderText: keyHeaderHit?.closest('.stock-bill-key-column')?.textContent?.trim() || '',
+        keyHeaderZIndex: keyHeaderStyle?.zIndex ?? null,
+        normalHeaderZIndex: normalHeaderStyle?.zIndex ?? null,
       };
     });
     if (stickyLayout.overflow <= 2 || stickyLayout.scrolled <= 2 || stickyLayout.canScrollStart !== 'true'
       || stickyLayout.keyHeaderLeft === null || Math.abs(stickyLayout.keyHeaderLeft) > 2
       || stickyLayout.keyCellLeft === null || Math.abs(stickyLayout.keyCellLeft) > 2
       || stickyLayout.actionHeaderRight === null || Math.abs(stickyLayout.actionHeaderRight) > 2
-      || stickyLayout.keyHeaderText !== '出库单号') {
+      || stickyLayout.keyHeaderText !== '出库单号'
+      || Number(stickyLayout.keyHeaderZIndex) <= Number(stickyLayout.normalHeaderZIndex)) {
       throw new Error(`仓储宽表单号列或操作列未保持可见：${JSON.stringify(stickyLayout)}`);
     }
     if (await outboundRow.getByRole('button', { name: '更多 OB202606140002 操作' }).count()) {

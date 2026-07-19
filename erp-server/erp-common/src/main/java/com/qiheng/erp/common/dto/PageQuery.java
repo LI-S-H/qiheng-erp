@@ -3,7 +3,6 @@ package com.qiheng.erp.common.dto;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 // erp-common/dto/PageQuery.java
@@ -19,8 +18,8 @@ public class PageQuery {
 
     /**
      * 转换方法,转成 MyBatis-Plus 的 Page 对象
-     * @return
-     * @param <T>
+     * @return 分页对象
+     * @param <T> 分页对象类型
      */
     public <T> Page<T> toPage() {
         return new Page<>(this.pageNum, this.pageSize);

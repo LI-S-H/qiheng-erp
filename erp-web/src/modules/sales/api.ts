@@ -159,6 +159,7 @@ function buildOrderSeed(
       productCode: product.productCode,
       productName: product.productName,
       unitName: product.unitName,
+      quantityPrecision: product.quantityPrecision,
       quantity: line[1],
       lockedQty: status === 'DRAFT' || status === 'CANCELLED' || status === 'OUTBOUND_DONE'
         ? 0
@@ -227,6 +228,7 @@ function normalizeOrderItem(item: SalesOrderItem): SalesOrderItem {
     salesOrderItemId: normalizeStringId(item.salesOrderItemId, 'salesOrderItemId'),
     salesOrderId: normalizeStringId(item.salesOrderId, 'salesOrderId'),
     productId: normalizeStringId(item.productId, 'productId'),
+    quantityPrecision: normalizeFiniteNumber(item.quantityPrecision, 'quantityPrecision'),
     quantity: normalizeFiniteNumber(item.quantity, 'quantity'),
     lockedQty: normalizeFiniteNumber(item.lockedQty, 'lockedQty'),
     outboundQty: normalizeFiniteNumber(item.outboundQty, 'outboundQty'),
@@ -442,6 +444,7 @@ function buildOrderItems(orderId: string, salesNo: string, payload: SalesOrderFo
       productCode: product.productCode,
       productName: product.productName,
       unitName: product.unitName,
+      quantityPrecision: product.quantityPrecision,
       quantity: line.quantity,
       lockedQty: 0,
       outboundQty: 0,

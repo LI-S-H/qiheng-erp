@@ -14,6 +14,7 @@ import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
+import WarehouseDetailTableFrame from '@/components/common/WarehouseDetailTableFrame.vue';
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
@@ -1125,7 +1126,7 @@ onMounted(async () => {
           </colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead class="stock-bill-key-column sticky left-0 z-50 border-r border-border/60 bg-muted" data-table-sticky-edge="start">{{ pageText.billNoLabel }}</TableHead>
+              <TableHead class="stock-bill-key-column sticky left-0 z-20 border-r border-border/60 bg-muted" data-table-sticky-edge="start">{{ pageText.billNoLabel }}</TableHead>
               <TableHead>类型</TableHead>
               <TableHead v-if="isListColumnVisible('entryMode')">录入方式</TableHead>
               <TableHead v-if="isListColumnVisible('sourceType')">来源类型</TableHead>
@@ -1136,7 +1137,7 @@ onMounted(async () => {
               <TableHead class="text-center">状态</TableHead>
               <TableHead v-if="isListColumnVisible('responsible')">负责人</TableHead>
               <TableHead v-if="isListColumnVisible('createTime')">创建时间</TableHead>
-              <TableHead class="stock-bill-actions-column sticky right-0 z-50 border-l border-border/60 bg-muted text-center" data-table-sticky-edge="end">操作</TableHead>
+              <TableHead class="stock-bill-actions-column sticky right-0 z-20 border-l border-border/60 bg-muted text-center" data-table-sticky-edge="end">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1188,8 +1189,7 @@ onMounted(async () => {
                           <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.stockBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
                           <div v-else-if="detailLoadErrors[row.stockBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.stockBillId">{{ detailLoadErrors[row.stockBillId] }}</div>
                           <div v-else-if="expandedItems(row).length === 0" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-empty-id="row.stockBillId">暂无商品明细</div>
-                          <div v-else class="stock-bill-detail-card detail-table-floating overflow-hidden rounded-md bg-background">
-                            <div class="stock-bill-detail-row-scroll w-full">
+                          <WarehouseDetailTableFrame v-else class="stock-bill-detail-card">
                               <Table class="min-w-[880px] table-fixed">
                                 <colgroup>
                                   <col class="w-[104px]" />
@@ -1203,31 +1203,30 @@ onMounted(async () => {
                                 </colgroup>
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead>产品编码</TableHead>
-                                    <TableHead>产品名称</TableHead>
+                                    <TableHead class="text-center">产品编码</TableHead>
+                                    <TableHead class="text-center">产品名称</TableHead>
                                     <TableHead class="text-center">单位</TableHead>
-                                    <TableHead class="text-right">{{ pageText.listQtyLabel }}</TableHead>
-                                    <TableHead class="text-right">合格数量</TableHead>
-                                    <TableHead class="text-right">不合格数量</TableHead>
-                                    <TableHead class="text-right">{{ pageText.pendingQtyLabel }}</TableHead>
-                                    <TableHead>备注</TableHead>
+                                    <TableHead class="text-center">{{ pageText.listQtyLabel }}</TableHead>
+                                    <TableHead class="text-center">合格数量</TableHead>
+                                    <TableHead class="text-center">不合格数量</TableHead>
+                                    <TableHead class="text-center">{{ pageText.pendingQtyLabel }}</TableHead>
+                                    <TableHead class="text-center">备注</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                   <TableRow v-for="item in expandedItems(row)" :key="item.stockBillItemId" :data-stock-bill-expanded-item-id="item.stockBillItemId">
-                                    <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
-                                    <TableCell class="truncate font-medium" :title="item.productName">{{ item.productName }}</TableCell>
+                                    <TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
+                                    <TableCell class="truncate text-center font-medium" :title="item.productName">{{ item.productName }}</TableCell>
                                     <TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell>
-                                    <TableCell class="text-right font-medium tabular-nums">{{ itemQuantityText(item) }}</TableCell>
-                                    <TableCell class="text-right tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
-                                    <TableCell class="text-right tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(row.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
-                                    <TableCell class="text-right tabular-nums">{{ remainingQtyText(item) }}</TableCell>
-                                    <TableCell><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell>
+                                    <TableCell class="text-center font-medium tabular-nums">{{ itemQuantityText(item) }}</TableCell>
+                                    <TableCell class="text-center tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
+                                    <TableCell class="text-center tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(row.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
+                                    <TableCell class="text-center tabular-nums">{{ remainingQtyText(item) }}</TableCell>
+                                    <TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell>
                                   </TableRow>
                                 </TableBody>
                               </Table>
-                            </div>
-                          </div>
+                          </WarehouseDetailTableFrame>
                         </div>
                       </CollapsibleContent>
                     </CollapsibleRoot>
@@ -1298,7 +1297,7 @@ onMounted(async () => {
                     <col class="w-[220px]" />
                     <col class="w-[90px]" />
                     <col class="w-[90px]" />
-                    <col class="w-[120px]" />
+                    <col class="w-[160px]" />
                     <col class="w-[110px]" />
                     <col class="w-[100px]" />
                     <col class="w-[100px]" />
@@ -1331,8 +1330,7 @@ onMounted(async () => {
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty)} ${itemUnitName(item)}` : '-' }}</TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.processedQty)} ${itemUnitName(item)}` : '-' }}</TableCell>
                       <TableCell class="align-top">
-                        <Input v-model.number="item.quantity" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" />
-                        <p class="mt-1 text-xs" :class="formErrors[`items.${index}.quantity`] ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors[`items.${index}.quantity`] || quantityHint(item) }}</p>
+                        <div class="stock-bill-form-quantity-control"><Input v-model.number="item.quantity" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" /><span :class="formErrors[`items.${index}.quantity`] ? 'text-destructive' : 'text-muted-foreground'" :title="formErrors[`items.${index}.quantity`] || quantityHint(item)">{{ formErrors[`items.${index}.quantity`] || quantityHint(item) }}</span></div>
                       </TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : '-' }}</TableCell>
                       <TableCell class="align-top">
@@ -1467,7 +1465,8 @@ onMounted(async () => {
 
 .stock-bill-table-scroll :deep([data-slot="table-head"].stock-bill-key-column),
 .stock-bill-table-scroll :deep([data-slot="table-head"].stock-bill-actions-column) {
-  z-index: 60;
+  /* 必须低于 Dialog（50），否则底层固定表头会覆盖新增/编辑弹窗。 */
+  z-index: 40;
   background-color: var(--muted);
 }
 
@@ -1598,6 +1597,26 @@ onMounted(async () => {
   text-align: center;
 }
 
+.stock-bill-form-quantity-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stock-bill-form-quantity-control :deep(input) {
+  min-width: 0;
+  flex: 1;
+}
+
+.stock-bill-form-quantity-control span {
+  max-width: 72px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stock-bill-form-table-scroll :deep([role="combobox"]) {
   min-height: 32px;
   font-size: 12px;
@@ -1685,7 +1704,8 @@ onMounted(async () => {
 }
 
 :global(.stock-bill-table-scroll [data-slot="table-head"]) {
-  z-index: 40;
+  /* 普通表头必须低于左右固定表头，否则横向滚动时会遮住单号标题。 */
+  z-index: 30;
 }
 
 :global(.stock-bill-detail-row-scroll [data-slot="table-head"]),

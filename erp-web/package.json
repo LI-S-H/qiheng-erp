@@ -22,15 +22,17 @@
     "smoke:warehouse-warehouses": "node scripts/smoke-warehouse-warehouses.cjs",
     "smoke:warehouse-stocks": "node scripts/smoke-warehouse-stocks.cjs",
     "smoke:warehouse-stock-bills": "node scripts/smoke-warehouse-stock-bills.cjs",
+    "smoke:warehouse-stock-ledgers": "node scripts/smoke-warehouse-stock-ledgers.cjs",
     "smoke:dashboard": "node scripts/smoke-dashboard.cjs",
     "smoke:ai": "node scripts/smoke-ai.cjs",
     "smoke:purchase": "node scripts/smoke-purchase.cjs",
     "smoke:sales": "node scripts/smoke-sales.cjs",
     "check:openapi": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs",
-    "test:delivery": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-list-page-components.cjs && node scripts/smoke-overflow-tooltip.cjs && node scripts/smoke-shared-ui.cjs && node scripts/smoke-auth.cjs && node scripts/smoke-dashboard.cjs && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-bills.cjs && node scripts/smoke-purchase.cjs && node scripts/smoke-sales.cjs && node scripts/smoke-ai.cjs",
+    "test:delivery": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-list-page-components.cjs && node scripts/smoke-overflow-tooltip.cjs && node scripts/smoke-shared-ui.cjs && node scripts/smoke-auth.cjs && node scripts/smoke-dashboard.cjs && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-bills.cjs && node scripts/smoke-warehouse-stock-ledgers.cjs && node scripts/smoke-purchase.cjs && node scripts/smoke-sales.cjs && node scripts/smoke-ai.cjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
+    "@internationalized/date": "^3.12.2",
     "@lucide/vue": "^1.17.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/vue-table": "^8.21.3",

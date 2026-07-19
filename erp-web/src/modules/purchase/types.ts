@@ -79,6 +79,7 @@ export interface SupplierProductListItem {
   productCode: string;
   productName: string;
   unitName: string;
+  quantityPrecision: number;
   supplierProductCode: string;
   latestPurchasePrice: number;
   minOrderQty: number;
@@ -138,6 +139,7 @@ export interface PurchaseOrderItem {
   productCode: string;
   productName: string;
   unitName: string;
+  quantityPrecision: number;
   quantity: number;
   inboundQty: number;
   unitPrice: number;

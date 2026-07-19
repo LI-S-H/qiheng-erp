@@ -3276,7 +3276,7 @@ paths:
       description: |
         查询 `stock_bill` 已确认库存流水主表，并按 `stock_bill_item.bill_id` 聚合返回 `itemCount`；列表不跨不同产品单位汇总数量。
         入库单和出库单的创建、编辑、提交与确认使用 `/warehouse/inbound-bills`、`/warehouse/outbound-bills` 及工作单操作接口；本路径只读返回已经确认并实际改变库存的流水事实。
-        流水号和来源单号分别使用包含匹配，仓库、出入库类型和录入方式使用精确匹配，多个有效条件按 AND 组合。
+        流水号和来源单号分别使用包含匹配，仓库、出入库类型和录入方式使用精确匹配，多个有效条件按 AND 组合。列表只返回单头和 `itemCount`；需要产品变动前后数量时按流水 ID 调用详情接口，避免分页列表重复携带明细数组。
         入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`；出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`。
         本接口只用于追溯库存凭证，需要 `warehouse:query` 权限。
       operationId: stockBillPage
@@ -3328,6 +3328,35 @@ paths:
                       data: { $ref: '#/components/schemas/StockLedgerPage' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
+
+  /warehouse/stock-bills/{stockLedgerId}:
+    get:
+      tags: [WarehouseStockBill]
+      summary: 获取库存流水变动明细
+      description: 返回一条已确认库存流水及全部 `stock_bill_item` 明细，用于展开查看产品、单位、变动前数量、正负变动数量、变动后数量和备注。该资源只读，需要 `warehouse:query` 权限。
+      operationId: stockBillDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: stockLedgerId
+          in: path
+          required: true
+          schema: { type: string }
+          description: 库存流水 ID，对应 `stock_bill.id`，BIGINT 按字符串传输
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StockLedgerDetail' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
 
   /warehouse/work-bills/{workBillId}:
     get:
@@ -3430,7 +3459,7 @@ paths:
       summary: 确认入库/出库
       description: |
         仅允许 `PENDING_CONFIRM -> CONFIRMED`。前端必须先展示入库单/出库单详情及全部产品明细，再在详情页提供确认按钮并进行二次确认。
-        后端必须锁定入库单/出库单和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，生成 `stock_bill` / `stock_bill_item`，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已入库/已出库数量。
+        后端必须锁定入库单/出库单和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，生成 `stock_bill` / `stock_bill_item`，将工作单的 `entry_mode`、原业务来源类型、真实来源 ID 和来源单号固化为库存流水快照，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已入库/已出库数量。
         来源生成的待确认单确认时，后端必须校验本次入库/出库数量大于 0 且不超过来源明细剩余数量，并重新计算确认后的剩余未入库/未出库数量；`pendingQty` 是只读结果，前端不得作为提交字段传入。
         已确认单据不得直接改回草稿或取消；错误凭证通过反向库存调整纠正。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
       operationId: warehouseWorkBillConfirm
@@ -6000,7 +6029,7 @@ components:
 
     PurchaseSupplierProduct:
       type: object
-      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, supplierProductCode, latestPurchasePrice, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, lastPurchaseAt, status, version, remark, createTime, updateTime]
+      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, quantityPrecision, supplierProductCode, latestPurchasePrice, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, lastPurchaseAt, status, version, remark, createTime, updateTime]
       properties:
         supplierProductId: { type: string, description: 对应 `supplier_product.id`，BIGINT 按字符串传输 }
         supplierId: { type: string, description: 对应 `supplier_product.supplier_id`，BIGINT 按字符串传输 }
@@ -6010,6 +6039,7 @@ components:
         productCode: { type: string, maxLength: 64, description: 对应 `supplier_product.product_code` 产品快照 }
         productName: { type: string, maxLength: 200, description: 对应 `supplier_product.product_name` 产品快照 }
         unitName: { type: string, maxLength: 32, description: 对应 `supplier_product.unit_name` 产品单位快照 }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 关联产品当前允许的小数位；采购数量和最小起订量的输入步进必须据此确定，0 表示步进 1，1 表示 0.1，2 表示 0.01 }
         supplierProductCode: { type: string, maxLength: 100, description: 对应 `supplier_product.supplier_product_code` }
         latestPurchasePrice: { type: number, format: double, minimum: 0, description: 对应 `supplier_product.latest_purchase_price` }
         minOrderQty: { type: number, format: double, minimum: 0, description: 对应 `supplier_product.min_order_qty` }
@@ -6118,7 +6148,7 @@ components:
 
     PurchaseOrderItem:
       type: object
-      required: [purchaseOrderItemId, purchaseOrderId, purchaseNo, supplierProductId, productId, productCode, productName, unitName, quantity, inboundQty, unitPrice, totalAmount, selectedSupplierScore, remark]
+      required: [purchaseOrderItemId, purchaseOrderId, purchaseNo, supplierProductId, productId, productCode, productName, unitName, quantityPrecision, quantity, inboundQty, unitPrice, totalAmount, selectedSupplierScore, remark]
       properties:
         purchaseOrderItemId: { type: string, description: 对应 `purchase_order_item.id`，BIGINT 按字符串传输 }
         purchaseOrderId: { type: string, description: 对应 `purchase_order_item.purchase_order_id`，BIGINT 按字符串传输 }
@@ -6128,7 +6158,8 @@ components:
         productCode: { type: string, maxLength: 64, description: 对应 `purchase_order_item.product_code` 产品快照 }
         productName: { type: string, maxLength: 200, description: 对应 `purchase_order_item.product_name` 产品快照 }
         unitName: { type: string, maxLength: 32, description: 对应 `purchase_order_item.unit_name` 产品单位快照 }
-        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, description: 对应 `purchase_order_item.quantity` }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 下单时固化的产品数量精度快照；只读，前端不得提交修改 }
+        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, description: 对应 `purchase_order_item.quantity`；小数位不得超过该明细的 `quantityPrecision`，0 时仅允许整数 }
         inboundQty: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.inbound_qty` }
         unitPrice: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.unit_price` }
         totalAmount: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.total_amount` }
@@ -6298,7 +6329,7 @@ components:
 
     SalesOrderItem:
       type: object
-      required: [salesOrderItemId, salesOrderId, salesNo, productId, productCode, productName, unitName, quantity, lockedQty, outboundQty, unitPrice, totalAmount, remark]
+      required: [salesOrderItemId, salesOrderId, salesNo, productId, productCode, productName, unitName, quantityPrecision, quantity, lockedQty, outboundQty, unitPrice, totalAmount, remark]
       properties:
         salesOrderItemId: { type: string, description: 对应 `sales_order_item.id`，BIGINT 按字符串传输 }
         salesOrderId: { type: string, description: 对应 `sales_order_item.sales_order_id`，BIGINT 按字符串传输 }
@@ -6307,7 +6338,8 @@ components:
         productCode: { type: string, maxLength: 64, description: 对应 `sales_order_item.product_code` 产品快照 }
         productName: { type: string, maxLength: 200, description: 对应 `sales_order_item.product_name` 产品快照 }
         unitName: { type: string, maxLength: 32, description: 对应 `sales_order_item.unit_name` 产品单位快照 }
-        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, description: 对应 `sales_order_item.quantity` }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 下单时固化的产品数量精度快照；只读，前端不得提交修改 }
+        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, description: 对应 `sales_order_item.quantity`；小数位不得超过该明细的 `quantityPrecision`，0 时仅允许整数 }
         lockedQty: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.locked_qty`，提交或审核锁定库存后由后端写入 }
         outboundQty: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.outbound_qty`，仓库确认出库后回写 }
         unitPrice: { type: number, format: double, minimum: 0, description: 对应 `sales_order_item.unit_price` }
@@ -6507,19 +6539,20 @@ components:
       properties:
         records:
           type: array
-          items: { $ref: '#/components/schemas/StockLedger' }
+          items: { $ref: '#/components/schemas/StockLedgerListItem' }
         total: { type: integer, minimum: 0 }
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1 }
 
-    StockLedger:
+    StockLedgerListItem:
       type: object
       description: 已经确认并产生库存变动的只读库存流水，不承载草稿、提交或取消状态。
-      required: [stockLedgerId, billNo, billType, sourceType, sourceId, sourceNo, warehouseId, warehouseName, itemCount, confirmedById, confirmedByName, confirmedAt, createTime]
+      required: [stockLedgerId, billNo, billType, entryMode, sourceType, sourceId, sourceNo, warehouseId, warehouseName, itemCount, confirmedById, confirmedByName, confirmedAt, createTime]
       properties:
         stockLedgerId: { type: string, description: 对应 `stock_bill.id`，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 对应 `stock_bill.bill_no` }
         billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT] }
+        entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 对应 `stock_bill.entry_mode`，确认时从工作单复制的历史快照 }
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST] }
         sourceId: { type: string, nullable: true, description: 原业务单据 ID }
         sourceNo: { type: string, maxLength: 64, description: 原业务单号或调整单号 }
@@ -6530,10 +6563,17 @@ components:
         confirmedByName: { type: string, maxLength: 100 }
         confirmedAt: { type: string }
         createTime: { type: string }
-        items:
-          type: array
-          readOnly: true
-          items: { $ref: '#/components/schemas/StockLedgerItem' }
+    StockLedgerDetail:
+      description: 已确认库存流水的只读详情；仅详情接口返回完整 `items`。
+      allOf:
+        - $ref: '#/components/schemas/StockLedgerListItem'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              readOnly: true
+              items: { $ref: '#/components/schemas/StockLedgerItem' }
 
     StockLedgerItem:
       type: object

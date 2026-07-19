@@ -9,6 +9,7 @@ import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
@@ -216,7 +217,7 @@ function cacheOrderOptions(row: SalesOrderDetail) {
     value: item.productId,
     label: `${item.productCode} ${item.productName}`,
     referenceSalePrice: item.unitPrice,
-    quantityPrecision: 2,
+    quantityPrecision: item.quantityPrecision,
     unitName: item.unitName,
   })));
 }
@@ -365,7 +366,7 @@ function selectProduct(line: DraftItem, productId: string | number) {
 }
 
 function getProductPrecision(productId: string) {
-  return productOptions.value.find(item => item.value === productId)?.quantityPrecision ?? 2;
+  return productOptions.value.find(item => item.value === productId)?.quantityPrecision ?? 0;
 }
 
 function quantityStep(productId: string) {
@@ -621,7 +622,7 @@ onMounted(() => {
     </div>
 
     <Dialog v-model:open="createDialogOpen">
-      <DialogContent class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-5xl">
+      <DialogContent class="order-form-dialog flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-5xl">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增销售单草稿' : '编辑销售单' }}</DialogTitle><DialogDescription>销售单保存为草稿后可提交审核，提交时校验并锁定可用库存，审核后生成待确认出库单。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div class="space-y-4 p-1">
@@ -633,14 +634,14 @@ onMounted(() => {
             <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
               <div class="space-y-1"><Label>客户 <span class="text-destructive">*</span></Label><RemoteSearchSelect v-model="form.customerId" :selected-label="selectedCustomerLabel" :fetch-options="fetchCustomerSearchOptions" placeholder="请选择客户" search-placeholder="输入客户编码或名称" :invalid="Boolean(formErrors.customerId)" /><p v-if="formErrors.customerId" class="form-error">{{ formErrors.customerId }}</p></div>
               <div class="space-y-1"><Label>出库仓库 <span class="text-destructive">*</span></Label><RemoteSearchSelect v-model="form.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="请选择仓库" search-placeholder="输入仓库编码或名称" :invalid="Boolean(formErrors.warehouseId)" /><p v-if="formErrors.warehouseId" class="form-error">{{ formErrors.warehouseId }}</p></div>
-              <div class="space-y-1"><Label>预计发货</Label><Input v-model="form.expectedDeliveryDate" type="date" /><p v-if="formErrors.expectedDeliveryDate" class="form-error">{{ formErrors.expectedDeliveryDate }}</p><p v-else class="text-xs text-muted-foreground">示例：2026-06-30</p></div>
+              <div class="space-y-1"><Label>预计发货</Label><OrderDatePicker v-model="form.expectedDeliveryDate" :invalid="Boolean(formErrors.expectedDeliveryDate)" /><p v-if="formErrors.expectedDeliveryDate" class="form-error">{{ formErrors.expectedDeliveryDate }}</p><p v-else class="text-sm text-muted-foreground">请选择预计发货日期</p></div>
             </div>
             <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" rows="2" /><p v-if="formErrors.remark" class="form-error">{{ formErrors.remark }}</p></div>
 
             <div class="rounded-md border border-border">
               <div class="flex min-h-11 items-center justify-between border-b border-border px-3"><strong class="text-sm">销售明细</strong><Button size="sm" variant="outline" type="button" @click="addLine">添加产品</Button></div>
               <ScrollArea class="w-full purchase-order-line-scroll">
-                <Table class="min-w-[830px] table-fixed">
+                <Table class="order-line-table min-w-[830px] table-fixed">
                   <colgroup><col class="w-[230px]" /><col class="w-[115px]" /><col class="w-[120px]" /><col class="w-[115px]" /><col class="w-[170px]" /><col class="w-[80px]" /></colgroup>
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">销售价</TableHead><TableHead class="text-right">小计</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
@@ -710,3 +711,12 @@ onMounted(() => {
     <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
   </section>
 </template>
+
+<style scoped>
+.order-form-dialog :deep(input),
+.order-form-dialog :deep(textarea),
+.order-form-dialog :deep([role="combobox"]),
+.order-form-dialog :deep([data-anchored-select-trigger]) { font-size: .875rem; }
+.order-line-table :deep(th), .order-line-table :deep(td) { font-size: .875rem; }
+.order-line-table :deep(input::placeholder) { font-size: .875rem; }
+</style>

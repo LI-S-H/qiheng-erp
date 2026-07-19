@@ -126,35 +126,3 @@ export type WarehouseWorkBillItem = Omit<StockBillItem, 'beforeQty' | 'changeQty
 export type WarehouseWorkBillDetail = Omit<StockBillDetail, 'items'> & { items: WarehouseWorkBillItem[] };
 
 /** 确认工作单后生成的只读库存流水，不用于新建或编辑工作单。 */
-export interface StockLedgerItem {
-  stockBillItemId: string;
-  stockBillId: string;
-  productId: string;
-  productCode: string;
-  productName: string;
-  unitName: string;
-  quantityPrecision: number;
-  beforeQty: number;
-  changeQty: number;
-  afterQty: number;
-  createTime: string;
-  remark: string;
-}
-
-export interface StockLedger {
-  stockBillId: string;
-  billNo: string;
-  direction: StockBillDirection;
-  sourceBillType: 'INBOUND_BILL' | 'OUTBOUND_BILL';
-  sourceBillId: string;
-  sourceBillNo: string;
-  warehouseId: string;
-  warehouseName: string;
-  confirmedById: string;
-  confirmedByName: string;
-  confirmedAt: string;
-  createTime: string;
-  items: StockLedgerItem[];
-}
-
-export type StockLedgerPage = PageResult<StockLedger>;

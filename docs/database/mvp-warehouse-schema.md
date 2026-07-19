@@ -179,8 +179,9 @@
 | source_bill_id | bigint | 入库单或出库单ID |
 | source_bill_no | varchar(64) | 入库单号或出库单号 |
 | business_source_type | varchar(32) | 原业务来源类型 |
-| business_source_id | bigint | 原业务单据ID |
+| business_source_id | bigint | 原业务单据ID；采购/销售订单必须写真实主键，库存调整与尚未建表的退货来源可为空 |
 | business_source_no | varchar(64) | 原业务单据号 |
+| entry_mode | varchar(32) | 来源工作单的录入方式快照：`SOURCE_GENERATED`、`MANUAL_SUPPLEMENT`、`MANUAL_ADJUSTMENT` |
 | warehouse_id | bigint | 仓库ID |
 | warehouse_name | varchar(100) | 仓库名称快照 |
 | status | varchar(32) | 固定为 `CONFIRMED`，冲销另建反向单据 |
@@ -241,8 +242,8 @@
 - `DRAFT` 和 `PENDING_CONFIRM` 状态允许编辑，但普通采购/销售创建人只能编辑草稿；草稿可修改仓库、手工来源信息、产品明细、本次数量、合格数量、不合格数量和备注，来源生成单据不能增删或更换产品；单据提交后需要具备审核/仓库确认权限的用户才能编辑本次数量、合格数量、不合格数量和备注，仓库、来源信息和产品结构锁定。
 - 提交或确认入库单/出库单前，前端必须强制展示完整详情和全部产品明细，并从详情页发起二次确认；列表操作不得直接执行提交或确认。
 - `CONFIRMED` 后不允许任何修改或取消；发现错误时必须通过反向入库/出库或库存调整纠正，保留完整流水链路。
-- 确认入库单时，后端必须在同一事务内锁定入库单、库存余额和来源采购明细，生成 `stock_bill` / `stock_bill_item`，更新 `warehouse_stock.stock_qty`，并累加 `purchase_order_item.inbound_qty`。
-- 确认出库单时，后端必须在同一事务内锁定出库单、库存余额和来源销售明细，生成 `stock_bill` / `stock_bill_item`，扣减 `warehouse_stock.stock_qty`，并同步扣减销售锁定库存。
+- 确认入库单时，后端必须在同一事务内锁定入库单、库存余额和来源采购明细，生成 `stock_bill` / `stock_bill_item`；`stock_bill.entry_mode`、`business_source_type/id/no` 必须从工作单来源复制为历史快照，更新 `warehouse_stock.stock_qty`，并累加 `purchase_order_item.inbound_qty`。
+- 确认出库单时，后端必须在同一事务内锁定出库单、库存余额和来源销售明细，生成 `stock_bill` / `stock_bill_item`；`stock_bill.entry_mode`、`business_source_type/id/no` 必须从工作单来源复制为历史快照，扣减 `warehouse_stock.stock_qty`，并同步扣减销售锁定库存。
 - 销售单占用库存时只更新 `warehouse_stock.locked_qty`；确认出库后再扣减 `stock_qty` 和 `locked_qty`。
 - 手工补录使用 `entry_mode=MANUAL_SUPPLEMENT`，必须填写原业务单号和补录原因，`source_id` 可为空。
 - 库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`，只允许 `ADJUST_IN` 或 `ADJUST_OUT`，调整原因必填，`source_party_id/name` 保存受影响仓库 ID 和名称快照；库存调整是单仓库余额增减，不自动生成反向入库单或出库单，跨仓移动应由后续库存调拨单承载。

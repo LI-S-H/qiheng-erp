@@ -65,14 +65,28 @@ const emptySummary = (): SalesOrderSummary => ({
   outboundPendingCount: 0,
 });
 
+const statusLabels: Record<SalesOrderStatus, string> = {
+  DRAFT: '草稿',
+  SUBMITTED: '待审核',
+  APPROVED: '待出库',
+  PARTIAL_OUTBOUND: '部分出库',
+  OUTBOUND_DONE: '已出库',
+  CANCELLED: '已取消',
+};
+
+const statusClassNames: Record<SalesOrderStatus, string> = {
+  DRAFT: 'border-slate-200 bg-slate-50 text-slate-600',
+  SUBMITTED: 'border-blue-200 bg-blue-50 text-blue-700',
+  APPROVED: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  PARTIAL_OUTBOUND: 'border-amber-200 bg-amber-50 text-amber-700',
+  OUTBOUND_DONE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  CANCELLED: 'border-rose-200 bg-rose-50 text-rose-700',
+};
+
 const statusOptions: Array<{ value: SalesOrderStatus | 'all'; label: string }> = [
   { value: 'all', label: '全部状态' },
-  { value: 'DRAFT', label: '草稿' },
-  { value: 'SUBMITTED', label: '已提交' },
-  { value: 'APPROVED', label: '已审核' },
-  { value: 'PARTIAL_OUTBOUND', label: '部分出库' },
-  { value: 'OUTBOUND_DONE', label: '出库完成' },
-  { value: 'CANCELLED', label: '已取消' },
+  ...(['DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL_OUTBOUND', 'OUTBOUND_DONE', 'CANCELLED'] as const)
+    .map(value => ({ value, label: statusLabels[value] })),
 ];
 
 const orders = ref<SalesOrderListItem[]>([]);
@@ -80,9 +94,9 @@ const total = ref(0);
 const summary = reactive(emptySummary());
 const summaryItems = computed(() => [
   { key: 'draft', label: '本页草稿', value: summary.draftCount },
-  { key: 'submitted', label: '本页已提交', value: summary.submittedCount },
-  { key: 'approved', label: '本页已审核', value: summary.approvedCount, tone: 'positive' as const },
-  { key: 'outbound-pending', label: '本页待出库', value: summary.outboundPendingCount, tone: 'warning' as const },
+  { key: 'submitted', label: '本页待审核', value: summary.submittedCount },
+  { key: 'approved', label: '本页待出库', value: summary.approvedCount, tone: 'positive' as const },
+  { key: 'outbound-pending', label: '本页出库未完成', value: summary.outboundPendingCount, tone: 'warning' as const },
 ]);
 const loading = ref(false);
 const queryPending = ref(false);
@@ -505,25 +519,17 @@ function runDetailAction(row: SalesOrderListItem) {
 }
 
 function statusMeta(status: SalesOrderStatus) {
-  const map: Record<SalesOrderStatus, { label: string; className: string }> = {
-    DRAFT: { label: '草稿', className: 'border-slate-200 bg-slate-50 text-slate-600' },
-    SUBMITTED: { label: '已提交', className: 'border-blue-200 bg-blue-50 text-blue-700' },
-    APPROVED: { label: '已审核', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-    PARTIAL_OUTBOUND: { label: '部分出库', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-    OUTBOUND_DONE: { label: '出库完成', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-    CANCELLED: { label: '已取消', className: 'border-rose-200 bg-rose-50 text-rose-700' },
-  };
-  return map[status];
+  return { label: statusLabels[status], className: statusClassNames[status] };
 }
 
 function statusHint(status: SalesOrderStatus) {
   const map: Record<SalesOrderStatus, string> = {
     DRAFT: '待提交',
-    SUBMITTED: '待审核',
-    APPROVED: '待出库',
-    PARTIAL_OUTBOUND: '出库中',
-    OUTBOUND_DONE: '已完成',
-    CANCELLED: '已终止',
+    SUBMITTED: '等待审核',
+    APPROVED: '等待出库',
+    PARTIAL_OUTBOUND: '出库处理中',
+    OUTBOUND_DONE: '流程完成',
+    CANCELLED: '流程终止',
   };
   return map[status];
 }

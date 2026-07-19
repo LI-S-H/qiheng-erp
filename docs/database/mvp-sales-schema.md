@@ -101,6 +101,7 @@
 - 提交或审核销售订单时，服务层校验可用库存 `warehouse_stock.stock_qty - warehouse_stock.locked_qty`。
 - 库存锁定成功后，更新 `warehouse_stock.locked_qty` 和 `sales_order_item.locked_qty`。
 - 销售订单审核后生成仓库模块 `SALES_OUT` 待确认出库单，不直接扣减库存；本次出库数量初始为 0 或空业务值。
+- 前端状态名称统一按当前业务阶段显示：`DRAFT` 为“草稿”、`SUBMITTED` 为“待审核”、`APPROVED` 为“待出库”、`PARTIAL_OUTBOUND` 为“部分出库”、`OUTBOUND_DONE` 为“已出库”、`CANCELLED` 为“已取消”；筛选项、表格标签、详情和摘要不得再使用“已提交”“已审核”表达当前状态。
 - 仓库人员按实物发货填写并确认本次出库数量后，生成 `stock_bill` 库存流水，扣减 `warehouse_stock.stock_qty` 和 `warehouse_stock.locked_qty`，并回写 `sales_order_item.outbound_qty`。
 - 确认销售出库时，后端必须校验本次出库数量大于 0 且不超过来源明细剩余未出库数量；确认后的剩余未出库数量由后端计算，不作为前端提交字段。
 - 当明细 `outbound_qty < quantity` 时订单为 `PARTIAL_OUTBOUND`，全部出库后为 `OUTBOUND_DONE`。

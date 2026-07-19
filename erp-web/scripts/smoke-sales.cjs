@@ -59,6 +59,9 @@ runSmoke({
     await assertSharedListChrome(page, { summaryLabel: '销售订单数据汇总', filterLabel: '销售订单筛选' });
     await assertContentSizedFilter(page, [220, 280, 280, 168]);
     await tableRow(page, 'SO202607001').waitFor();
+    for (const summaryLabel of ['本页待审核', '本页待出库', '本页出库未完成']) {
+      await page.getByText(summaryLabel, { exact: true }).waitFor();
+    }
     await assertFixedTableLayout(page, 9);
     const desktopTableState = await page.locator('[data-slot="table-container"]').first().evaluate((element) => {
       const row = element.querySelector('tbody [data-slot="table-row"]');
@@ -121,8 +124,9 @@ runSmoke({
     await submitPreviewDialog.getByRole('button', { name: '关闭' }).click();
 
     const submittedOrderRow = tableRow(page, 'SO202607004');
-    if (!(await submittedOrderRow.innerText()).includes('待审核') || !(await submittedOrderRow.innerText()).includes('已锁定')) {
-      throw new Error('已提交销售单缺少待审核或库存锁定提示');
+    const submittedBadgeText = await submittedOrderRow.locator('[data-slot="badge"]').innerText();
+    if (submittedBadgeText !== '待审核' || !(await submittedOrderRow.innerText()).includes('等待审核') || !(await submittedOrderRow.innerText()).includes('已锁定')) {
+      throw new Error(`待审核销售单状态名称或库存锁定提示不一致：${submittedBadgeText}`);
     }
     await submittedOrderRow.getByRole('button', { name: '更多 SO202607004 操作' }).click();
     const submittedMenu = page.getByRole('menu');
@@ -143,13 +147,17 @@ runSmoke({
     }
     await detailDialog.getByRole('button', { name: '关闭' }).click();
     const readonlyStatusExpectations = {
-      SO202607001: ['待出库', '已锁定'],
-      SO202607002: ['出库中', '已锁定'],
-      SO202607006: ['已完成', '已出库'],
-      SO202607007: ['已终止', '已释放'],
+      SO202607001: { statusLabel: '待出库', expectedTexts: ['等待出库', '已锁定'] },
+      SO202607002: { statusLabel: '部分出库', expectedTexts: ['出库处理中', '已锁定'] },
+      SO202607006: { statusLabel: '已出库', expectedTexts: ['流程完成', '已出库'] },
+      SO202607007: { statusLabel: '已取消', expectedTexts: ['流程终止', '已释放'] },
     };
-    for (const [readonlyOrder, expectedTexts] of Object.entries(readonlyStatusExpectations)) {
+    for (const [readonlyOrder, { statusLabel, expectedTexts }] of Object.entries(readonlyStatusExpectations)) {
       const readonlyRow = tableRow(page, readonlyOrder);
+      const badgeText = await readonlyRow.locator('[data-slot="badge"]').innerText();
+      if (badgeText !== statusLabel) {
+        throw new Error(`销售单 ${readonlyOrder} 状态标签应为 ${statusLabel}，实际为 ${badgeText}`);
+      }
       const readonlyText = await readonlyRow.innerText();
       for (const expected of expectedTexts) {
         if (!readonlyText.includes(expected)) throw new Error(`销售单 ${readonlyOrder} 缺少状态或库存提示：${expected}`);

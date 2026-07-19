@@ -2,11 +2,11 @@
 
 ## 设计目标
 
-本项目数据库设计先服务第一版 ERP MVP，目标不是一次性覆盖完整 ERP 的所有能力，而是先把产品、仓库、采购、销售、权限和 AI 查询这条主链路跑通。
+本项目数据库设计先服务第一版 ERP MVP，目标不是一次性覆盖完整 ERP 的所有能力，而是先把产品、仓库、采购、销售、退货、权限和 AI 查询这条主链路跑通。
 
 整体设计遵循几个核心目标：
 
-- 业务闭环完整：能维护产品、供应商、客户、仓库，能完成采购入库、销售出库和库存更新。
+- 业务闭环完整：能维护产品、供应商、客户、仓库，能完成采购入库、销售出库、销售/采购退货和库存更新。
 - 表数量可控：第一版避免一开始拆出过多配置表、关系表和日志表，降低开发复杂度。
 - 查询性能友好：ERP 列表和大表查询频繁，适当冗余名称、编码等快照字段，减少高频多表联查。
 - AI 可用：供应商评分、库存余额、入库单、出库单、库存流水、销售采购数据要能支撑后续 AI Tool 查询和采购建议。
@@ -14,7 +14,7 @@
 
 ## 当前表清单
 
-MVP 阶段共设计 28 张表。
+MVP 阶段共设计 30 张表。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
@@ -40,6 +40,8 @@ MVP 阶段共设计 28 张表。
 | 销售 | `customer` | 客户主数据 |
 | 销售 | `sales_order` | 销售订单主表 |
 | 销售 | `sales_order_item` | 销售订单明细 |
+| 退货 | `return_order` | 统一承接销售退货和采购退货申请、审核与执行状态 |
+| 退货 | `return_order_item` | 退货明细、来源订单明细快照和仓库累计处理数量 |
 | AI | `ai_document` | 知识库文档 |
 | AI | `ai_document_chunk` | 文档切片和向量 key |
 | AI | `ai_interaction_log` | AI 问答、Tool 调用和权限审计 |
@@ -74,17 +76,17 @@ MVP 阶段共设计 28 张表。
 
 这套表设计在面试里可以重点表达成一句话：
 
-> 我没有一开始把 ERP 表全部铺满，而是围绕采购、销售、库存这条业务主链路做 MVP 建模。库存变化统一收口到仓库模块，订单只表达业务事实；同时为 AI 查询和供应商推荐预留评分、审计和可追溯数据。这样既能快速落地，也保留了后续扩展权限、批次、退货、财务和 AI Workflow 的空间。
+> 我没有一开始把 ERP 表全部铺满，而是围绕采购、销售、退货和库存这条业务主链路做 MVP 建模。库存变化统一收口到仓库模块，订单和退货单只表达业务事实；同时为 AI 查询和供应商推荐预留评分、审计和可追溯数据。这样既能快速落地，也保留了后续扩展权限、批次、财务和 AI Workflow 的空间。
 
 面试官通常关注的不是“你有多少张表”，而是你能不能讲清楚这些问题：
 
 | 面试关注点 | 本设计的回答 |
 |---|---|
-| 业务是否闭环 | 产品、供应商、采购、仓库、库存、客户、销售都能串起来 |
-| 数据是否一致 | 采购和销售不直接改库存，先生成入库单/出库单，仓库确认后通过 `stock_bill` 更新库存 |
+| 业务是否闭环 | 产品、供应商、采购、仓库、库存、客户、销售和退货都能串起来 |
+| 数据是否一致 | 采购、销售和退货不直接改库存，先生成入库单/出库单，仓库确认后通过 `stock_bill` 更新库存 |
 | 查询是否高效 | 库存余额单独存，订单和明细冗余名称、编码，减少高频联表 |
-| 是否可追溯 | 入库单/出库单承接待处理业务，库存流水带来源业务和来源单据链路 |
-| 是否可扩展 | 权限、退货、批次、财务、AI Workflow 都有明确扩展路径 |
+| 是否可追溯 | 入库单/出库单承接待处理业务，退货单保留原订单来源，库存流水带完整来源单据链路 |
+| 是否可扩展 | 权限、批次、退货结算、财务、AI Workflow 都有明确扩展路径 |
 | AI 是否可信 | AI 不直接改业务数据，只通过受控 Tool 读 Service，并写审计日志 |
 
 因此讲这套设计时，不要只背表名，要围绕三个关键词展开：
@@ -168,9 +170,10 @@ flowchart LR
 |---|---|---|
 | 采购模块 | 供应商、采购订单、采购明细、采购价格 | 不直接改库存 |
 | 销售模块 | 客户、销售订单、销售明细、库存锁定 | 不直接扣库存 |
-| 仓库模块 | 库存余额、入库确认、出库确认、库存变动追溯 | 不负责采购或销售业务规则 |
+| 退货模块 | 销售退货、采购退货、审核和执行进度 | 不直接增减库存 |
+| 仓库模块 | 库存余额、入库确认、出库确认、库存变动追溯 | 不负责采购、销售或退货申请审核规则 |
 
-这样做的好处是模块边界清楚。以后增加销售退货、采购退货、库存调整，也不需要让采购和销售模块各自维护一套库存逻辑。
+这样做的好处是模块边界清楚。销售退货、采购退货和库存调整都通过仓库工作单执行，不需要让采购、销售和退货模块各自维护一套库存逻辑。
 
 ### 4. 为什么拆出入库单和库存流水
 
@@ -411,16 +414,16 @@ AI 选择供应商时，不需要每次实时扫描所有历史订单，可以�
 
 所以同时保留库存余额、入库/出库作业单和库存流水，是 ERP 库存模块的基本设计。
 
-### 4. 退货为什么先复用入库单/出库单
+### 4. 退货为什么独立业务单据、复用仓库执行链路
 
-MVP 没有单独设计销售退货单和采购退货单。
+销售退货和采购退货已经使用统一的 `return_order` / `return_order_item` 表表达退货申请、审核、原因、处理方式和执行进度，详细字段与状态规则见 [MVP 销售退货与采购退货库表设计](./mvp-return-schema.md)。
 
-这是因为第一版只需要支持库存方向的变化：
+退货单不直接修改库存，审核后继续复用仓库执行链路：
 
-- 销售退货：客户退货入库，使用 `SALES_RETURN`。
-- 采购退货：退回供应商出库，使用 `PURCHASE_RETURN`。
+- 销售退货：生成 `SALES_RETURN` 入库工作单，仓库确认后生成入库方向库存流水。
+- 采购退货：生成 `PURCHASE_RETURN` 出库工作单，仓库确认后生成出库方向库存流水。
 
-如果后续退货涉及退款、质检、责任判定、售后审批，再补独立退货单表。当前先复用入库单/出库单，可以减少表数量，同时保留库存追溯能力。
+这样既保留独立的退货业务语义，又不让销售和采购模块各自维护库存逻辑；实际库存变化仍然统一收口到仓库确认事务。
 
 ### 5. AI 查询为什么必须写审计
 
@@ -621,9 +624,11 @@ flowchart LR
     customer["customer<br/>客户表<br/>id 主键<br/>customer_code 客户编码<br/>customer_name 客户名称"]
     salesOrder["sales_order<br/>销售订单主表<br/>customer_id 客户ID<br/>warehouse_id 出库仓库ID<br/>status 销售状态"]
     salesItem["sales_order_item<br/>销售订单明细表<br/>sales_order_id 销售订单ID<br/>product_id 产品ID<br/>quantity 销售数量<br/>locked_qty 锁定数量<br/>outbound_qty 已出库数量"]
+    returnOrder["return_order<br/>退货单主表<br/>return_type 退货类型<br/>source_order_id 原订单ID<br/>warehouse_id 执行仓库ID<br/>status 退货状态"]
+    returnItem["return_order_item<br/>退货单明细<br/>return_order_id 退货单ID<br/>source_order_item_id 原订单明细ID<br/>requested_qty / approved_qty / processed_qty"]
     inboundBill["inbound_bill<br/>入库单主表<br/>inbound_type 入库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_party_name 供应商/客户快照"]
     outboundBill["outbound_bill<br/>出库单主表<br/>outbound_type 出库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_party_name 客户/供应商快照"]
-    stockBill["stock_bill<br/>库存流水凭证主表<br/>source_bill_type 来源单类型<br/>source_bill_id 入库单或出库单ID<br/>business_source_id 原业务单据ID"]
+    stockBill["stock_bill<br/>库存流水凭证主表<br/>source_bill_type 来源单类型<br/>source_bill_id 入库单或出库单ID<br/>business_source_id 原业务单据ID<br/>entry_mode 录入方式快照"]
     stockItem["stock_bill_item<br/>库存流水凭证明细<br/>source_bill_item_id 入库/出库明细ID<br/>business_source_item_id 原业务明细ID<br/>before_qty / change_qty / after_qty"]
     stock["warehouse_stock<br/>库存余额表<br/>warehouse_id 仓库ID<br/>product_id 产品ID<br/>stock_qty 当前库存<br/>locked_qty 锁定库存"]
 
@@ -639,6 +644,14 @@ flowchart LR
     salesOrder -->|"sales_order_id"| salesItem
     product -->|"product_id"| salesItem
 
+    salesOrder -.->|"销售退货来源"| returnOrder
+    purchaseOrder -.->|"采购退货来源"| returnOrder
+    returnOrder -->|"return_order_id"| returnItem
+    salesItem -.->|"销售退货来源明细"| returnItem
+    purchaseItem -.->|"采购退货来源明细"| returnItem
+    returnOrder -.->|"销售退货入库"| inboundBill
+    returnOrder -.->|"采购退货出库"| outboundBill
+
     warehouse -->|"warehouse_id"| stock
     product -->|"product_id"| stock
     warehouse -->|"warehouse_id"| stockBill
@@ -649,6 +662,8 @@ flowchart LR
     purchaseItem -.->|"采购入库明细<br/>source_item_id 指向采购明细"| stockItem
     salesOrder -.->|"销售出库<br/>source_type=SALES_ORDER<br/>source_id 指向销售订单"| stockBill
     salesItem -.->|"销售出库明细<br/>source_item_id 指向销售明细"| stockItem
+    returnOrder -.->|"退货业务来源<br/>business_source_id 指向退货单"| stockBill
+    returnItem -.->|"退货来源明细<br/>business_source_item_id 指向退货明细"| stockItem
 ```
 
 图中实线表示固定字段关联；虚线表示按 `source_type` 解释的业务追溯关系，不是固定物理外键。
@@ -660,6 +675,8 @@ flowchart LR
 | 采购入库明细 | `inbound_bill_item.source_item_id = purchase_order_item.id` | 入库单明细可以反查采购明细 |
 | 销售出库 | `outbound_bill.source_type = SALES_ORDER`、`outbound_bill.source_id = sales_order.id` | 出库单可以反查销售订单 |
 | 销售出库明细 | `outbound_bill_item.source_item_id = sales_order_item.id` | 出库单明细可以反查销售明细 |
+| 销售退货 | `inbound_bill.source_type = SALES_RETURN_ORDER`、`inbound_bill.source_id = return_order.id` | 销售退货审核后进入仓库入库链路 |
+| 采购退货 | `outbound_bill.source_type = PURCHASE_RETURN_ORDER`、`outbound_bill.source_id = return_order.id` | 采购退货审核后进入仓库出库链路 |
 | 库存流水 | `stock_bill.source_bill_type/source_bill_id`、`stock_bill.business_source_type/business_source_id` | 库存流水可同时反查仓库作业单和原业务单据 |
 | 库存余额 | `warehouse_stock(warehouse_id, product_id)` | 一个仓库中一个产品只有一条当前库存记录 |
 
@@ -785,7 +802,7 @@ flowchart LR
     inboundItem["inbound_bill_item 入库单明细<br/>id 主键<br/>inbound_bill_id 入库单ID<br/>source_item_id 来源明细ID<br/>plan_qty 计划数量<br/>processed_qty 累计已入库快照<br/>current_qty 本次入库数量<br/>pending_qty 剩余未入库快照"]
     outboundBill["outbound_bill 出库单主表<br/>id 主键<br/>outbound_no 出库单号<br/>outbound_type 出库类型<br/>source_type/source_id/source_no 原业务来源<br/>source_party_name 客户或供应商快照<br/>status 出库单状态<br/>confirmed_by / confirmed_at 确认信息"]
     outboundItem["outbound_bill_item 出库单明细<br/>id 主键<br/>outbound_bill_id 出库单ID<br/>source_item_id 来源明细ID<br/>plan_qty 计划数量<br/>processed_qty 累计已出库快照<br/>current_qty 本次出库数量<br/>pending_qty 剩余未出库快照"]
-    stockBill["stock_bill 库存流水凭证<br/>id 主键<br/>bill_no 库存流水号<br/>source_bill_type/source_bill_id 入库单或出库单<br/>business_source_type/business_source_id 原业务单据<br/>warehouse_id 仓库ID<br/>status CONFIRMED"]
+    stockBill["stock_bill 库存流水凭证<br/>id 主键<br/>bill_no 库存流水号<br/>source_bill_type/source_bill_id 入库单或出库单<br/>business_source_type/business_source_id 原业务单据<br/>entry_mode 录入方式快照<br/>warehouse_id 仓库ID<br/>status CONFIRMED"]
     stockItem["stock_bill_item 库存流水明细<br/>id 主键<br/>bill_id 库存流水ID<br/>source_bill_item_id 入库/出库明细ID<br/>business_source_item_id 原业务明细ID<br/>quantity 本次数量<br/>before_qty / change_qty / after_qty"]
     warehouseRef["warehouse 仓库表<br/>id 仓库ID<br/>warehouse_name 仓库名称"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]
@@ -811,14 +828,14 @@ flowchart LR
     salesItemRef -.->|"销售出库明细来源：source_item_id -> sales_order_item.id"| outboundItem
 ```
 
-入库单、出库单的业务来源追溯不是固定物理外键，而是由 `source_type` 决定 `source_id` 指向哪类业务单据；库存流水再通过 `source_bill_type/source_bill_id` 关联已经确认的入库单或出库单。
+入库单、出库单的业务来源追溯不是固定物理外键，而是由 `source_type` 决定 `source_id` 指向哪类业务单据；库存流水再通过 `source_bill_type/source_bill_id` 关联已经确认的入库单或出库单，并将 `business_source_type/id/no`、`entry_mode` 固化为确认时快照。库存调整没有独立原业务单据，`business_source_id` 保持为空；退货来源写入 `return_order.id`，来源明细写入 `return_order_item.id`。
 
 | 业务类型 | 作业单类型 | 作业单来源 | 作业单来源明细 | 确认后库存流水 |
 |---|---|---|---|---|
 | 采购入库 | `inbound_bill.inbound_type = PURCHASE_IN` | `purchase_order.id` | `purchase_order_item.id` | `stock_bill.bill_type = PURCHASE_IN` |
 | 销售出库 | `outbound_bill.outbound_type = SALES_OUT` | `sales_order.id` | `sales_order_item.id` | `stock_bill.bill_type = SALES_OUT` |
-| 采购退货 | `outbound_bill.outbound_type = PURCHASE_RETURN` | 后续采购退货单 ID | 后续采购退货明细 ID | `stock_bill.bill_type = PURCHASE_RETURN` |
-| 销售退货 | `inbound_bill.inbound_type = SALES_RETURN` | 后续销售退货单 ID | 后续销售退货明细 ID | `stock_bill.bill_type = SALES_RETURN` |
+| 采购退货 | `outbound_bill.outbound_type = PURCHASE_RETURN` | `return_order.id`，`return_type = PURCHASE_RETURN` | `return_order_item.id` | `stock_bill.bill_type = PURCHASE_RETURN` |
+| 销售退货 | `inbound_bill.inbound_type = SALES_RETURN` | `return_order.id`，`return_type = SALES_RETURN` | `return_order_item.id` | `stock_bill.bill_type = SALES_RETURN` |
 | 库存调整入库 | `inbound_bill.inbound_type = ADJUST_IN` | `STOCK_ADJUST` | 可空 | `stock_bill.bill_type = ADJUST_IN` |
 | 库存调整出库 | `outbound_bill.outbound_type = ADJUST_OUT` | `STOCK_ADJUST` | 可空 | `stock_bill.bill_type = ADJUST_OUT` |
 
@@ -864,7 +881,7 @@ AI 关系里有两个特殊点：
 | SPU/SKU | `product` 直接代表可交易产品 | 商品体系复杂后拆分 |
 | 库位、批次、序列号 | 先按仓库 + 产品管理库存 | 仓储精细化后扩展 |
 | 财务库存台账表 | `stock_bill` / `stock_bill_item` 先承担已确认库存凭证 | 财务台账复杂后扩展 |
-| 销售退货单、采购退货单 | 先复用 `SALES_RETURN` 入库单、`PURCHASE_RETURN` 出库单 | 退货流程复杂后补单据 |
+| 退货财务结算、退款单和换货订单关联 | `return_order.handling_type` 先记录处理意向 | 财务与换货流程落地后增加独立单据和关联 |
 | 通用业务审计表 | AI 先用 `ai_interaction_log`，普通业务靠状态和流水追溯 | 审计要求提高后新增 `audit_log` |
 | Prompt 表、Workflow 节点日志表 | Prompt 暂放配置，调用过程写 `ai_interaction_log` | AI 功能复杂后拆分 |
 
@@ -875,7 +892,7 @@ AI 关系里有两个特殊点：
 1. 权限扩展：动态菜单、按钮权限、字段权限、部门和仓库数据范围。
 2. 商品扩展：品牌、单位、SPU/SKU、条码多单位。
 3. 仓储扩展：库位、批次、序列号、保质期、库存预警表。
-4. 退货扩展：销售退货单、采购退货单、质检和退款流程。
+4. 退货扩展：不合格品隔离库存、退款结算和换货订单关联。
 5. 审计扩展：通用业务审计表和操作日志检索。
 6. AI 扩展：采购建议 Workflow、销量预测、库存风险分析、供应商评分解释。
 7. 财务扩展：应收应付、发票、付款、收款、对账和结算。

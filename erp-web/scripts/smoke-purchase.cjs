@@ -144,6 +144,9 @@ runSmoke({
     await assertSharedListChrome(page, { summaryLabel: '采购订单数据汇总', filterLabel: '采购订单筛选' });
     await assertContentSizedFilter(page, [220, 280, 280, 168]);
     await tableRow(page, 'PO202607001').waitFor();
+    for (const summaryLabel of ['本页待审核', '本页待入库', '本页入库未完成']) {
+      await page.getByText(summaryLabel, { exact: true }).waitFor();
+    }
     await assertFixedTableLayout(page, 9);
     const desktopTableState = await page.locator('[data-slot="table-container"]').first().evaluate((element) => {
       const row = element.querySelector('tbody [data-slot="table-row"]');
@@ -201,7 +204,10 @@ runSmoke({
     await submitPreviewDialog.getByRole('button', { name: '关闭' }).click();
 
     const submittedOrderRow = tableRow(page, 'PO202607004');
-    if (!(await submittedOrderRow.innerText()).includes('待审核')) throw new Error('已提交采购单缺少待审核提示');
+    const submittedBadgeText = await submittedOrderRow.locator('[data-slot="badge"]').innerText();
+    if (submittedBadgeText !== '待审核' || !(await submittedOrderRow.innerText()).includes('等待审核')) {
+      throw new Error(`待审核采购单状态名称不一致：${submittedBadgeText}`);
+    }
     await submittedOrderRow.getByRole('button', { name: '更多 PO202607004 操作' }).click();
     const submittedMenu = page.getByRole('menu');
     for (const expected of ['编辑采购单', '审核采购单', '取消采购单']) {
@@ -221,13 +227,17 @@ runSmoke({
     }
     await detailDialog.getByRole('button', { name: '关闭' }).click();
     const readonlyStatusExpectations = {
-      PO202607001: '待入库',
-      PO202607002: '入库中',
-      PO202607006: '已完成',
-      PO202607007: '已终止',
+      PO202607001: ['待入库', '等待入库'],
+      PO202607002: ['部分入库', '入库处理中'],
+      PO202607006: ['已入库', '流程完成'],
+      PO202607007: ['已取消', '流程终止'],
     };
-    for (const [readonlyOrder, statusHint] of Object.entries(readonlyStatusExpectations)) {
+    for (const [readonlyOrder, [statusLabel, statusHint]] of Object.entries(readonlyStatusExpectations)) {
       const readonlyRow = tableRow(page, readonlyOrder);
+      const badgeText = await readonlyRow.locator('[data-slot="badge"]').innerText();
+      if (badgeText !== statusLabel) {
+        throw new Error(`采购单 ${readonlyOrder} 状态标签应为 ${statusLabel}，实际为 ${badgeText}`);
+      }
       if (!(await readonlyRow.innerText()).includes(statusHint)) {
         throw new Error(`采购单 ${readonlyOrder} 缺少状态提示：${statusHint}`);
       }

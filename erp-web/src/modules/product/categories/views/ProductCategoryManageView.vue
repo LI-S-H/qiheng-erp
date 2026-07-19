@@ -719,17 +719,17 @@ function confirmBatchDelete() {
                   </div>
                 </div>
               </TableCell>
-              <TableCell class="text-center text-xs text-muted-foreground">
-                <div class="tree-table-cell-reveal">{{ getParentName(row.parentId) }}</div>
+              <TableCell class="text-center text-sm text-muted-foreground">
+                <div class="tree-table-cell-reveal" data-category-parent-name>{{ getParentName(row.parentId) }}</div>
               </TableCell>
               <TableCell>
                 <div class="tree-table-cell-reveal">
-                  <span class="text-xs text-muted-foreground truncate">{{ getCategoryPath(row) }}</span>
+                  <span data-category-path class="text-sm leading-5 text-muted-foreground truncate">{{ getCategoryPath(row) }}</span>
                 </div>
               </TableCell>
               <TableCell class="text-center">
                 <div class="tree-table-cell-reveal">
-                  <Badge variant="outline" class="min-w-[38px] justify-center font-semibold" :class="row.productCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'">{{ row.productCount }}</Badge>
+                  <Badge data-product-count variant="outline" class="h-6 min-w-[38px] justify-center leading-none font-semibold" :class="row.productCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'">{{ row.productCount }}</Badge>
                 </div>
               </TableCell>
               <TableCell class="text-center">

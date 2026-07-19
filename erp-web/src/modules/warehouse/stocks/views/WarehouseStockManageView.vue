@@ -249,7 +249,7 @@ onMounted(() => {
 }
 
 .inventory-risk-row--normal:hover :deep([data-slot='table-cell']) {
-  background-color: color-mix(in srgb, #22c55e 8%, var(--card));
+  background-color: color-mix(in srgb, #22c55e 15%, var(--card)) !important;
 }
 
 .inventory-risk-row--warning :deep([data-slot='table-cell']) {
@@ -257,7 +257,7 @@ onMounted(() => {
 }
 
 .inventory-risk-row--warning:hover :deep([data-slot='table-cell']) {
-  background-color: color-mix(in srgb, #f59e0b 10%, var(--card));
+  background-color: color-mix(in srgb, #f59e0b 20%, var(--card)) !important;
 }
 
 .inventory-risk-row--critical :deep([data-slot='table-cell']) {
@@ -265,7 +265,7 @@ onMounted(() => {
 }
 
 .inventory-risk-row--critical:hover :deep([data-slot='table-cell']) {
-  background-color: color-mix(in srgb, #f43f5e 10%, var(--card));
+  background-color: color-mix(in srgb, #f43f5e 20%, var(--card)) !important;
 }
 
 .inventory-risk-row--normal :deep([data-slot='table-cell']:first-child) {
@@ -278,6 +278,18 @@ onMounted(() => {
 
 .inventory-risk-row--critical :deep([data-slot='table-cell']:first-child) {
   box-shadow: inset 2px 0 #fb7185;
+}
+
+.inventory-risk-row--normal:hover :deep([data-slot='table-cell']:first-child) {
+  box-shadow: inset 4px 0 #22c55e;
+}
+
+.inventory-risk-row--warning:hover :deep([data-slot='table-cell']:first-child) {
+  box-shadow: inset 4px 0 #f59e0b;
+}
+
+.inventory-risk-row--critical:hover :deep([data-slot='table-cell']:first-child) {
+  box-shadow: inset 4px 0 #f43f5e;
 }
 
 </style>

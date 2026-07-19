@@ -12,6 +12,26 @@ runSmoke({
     await page.getByText('无上级分类').first().waitFor();
     await page.getByText('饮料冲调', { exact: true }).waitFor();
     await page.getByText('食品饮料 / 饮料冲调', { exact: true }).waitFor();
+    const categoryTypography = await page.evaluate(() => {
+      const parentName = document.querySelector('[data-category-parent-name]');
+      const categoryPath = document.querySelector('[data-category-path]');
+      const productCount = document.querySelector('[data-product-count]');
+      return {
+        parentNameSize: parentName ? getComputedStyle(parentName).fontSize : '',
+        categoryPathSize: categoryPath ? getComputedStyle(categoryPath).fontSize : '',
+        categoryPathLineHeight: categoryPath ? getComputedStyle(categoryPath).lineHeight : '',
+        productCountHeight: productCount ? getComputedStyle(productCount).height : '',
+        productCountScrollHeight: productCount?.scrollHeight ?? 0,
+        productCountClientHeight: productCount?.clientHeight ?? 0,
+      };
+    });
+    if (categoryTypography.parentNameSize !== '14px'
+      || categoryTypography.categoryPathSize !== '14px'
+      || categoryTypography.categoryPathLineHeight !== '20px'
+      || categoryTypography.productCountHeight !== '24px'
+      || categoryTypography.productCountScrollHeight > categoryTypography.productCountClientHeight) {
+      throw new Error(`产品分类层级文本或产品数量标签存在字体过小、行高不足或内容裁切：${JSON.stringify(categoryTypography)}`);
+    }
     await clickRefreshAndAssertLoading(page, 'smoke-product-categories-refresh-loading.png');
 
     const treeToggle = page.getByRole('button', { name: '收起当前分类' }).first();
@@ -53,7 +73,7 @@ runSmoke({
     const buttonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)
       .map(element => ({ text: element.textContent.trim(), fontSize: getComputedStyle(element).fontSize, fontWeight: getComputedStyle(element).fontWeight })));
-    const inconsistentButton = buttonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '400');
+    const inconsistentButton = buttonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '500');
     if (inconsistentButton) throw new Error(`分类页按钮文字未统一：${JSON.stringify(inconsistentButton)}`);
 
     await page.getByRole('button', { name: '新增分类' }).click();

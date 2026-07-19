@@ -44,6 +44,8 @@ runSmoke({
 
     const normalRow = tableRow(page, 'P000001');
     const warningRow = tableRow(page, 'P000002');
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(120);
     const riskVisuals = await Promise.all([normalRow, warningRow].map(row => row.locator('[data-slot="table-cell"]').first().evaluate(element => ({
       background: getComputedStyle(element).backgroundColor,
       marker: getComputedStyle(element).boxShadow,
@@ -56,8 +58,15 @@ runSmoke({
     }
     const warningBackground = riskVisuals[1].background;
     await warningRow.hover();
-    const warningHoverBackground = await warningRow.locator('[data-slot="table-cell"]').first().evaluate(element => getComputedStyle(element).backgroundColor);
-    if (warningHoverBackground === warningBackground) throw new Error('低库存行悬停后缺少可辨认的背景反馈');
+    const warningHoverVisual = await warningRow.locator('[data-slot="table-cell"]').first().evaluate(element => ({
+      background: getComputedStyle(element).backgroundColor,
+      marker: getComputedStyle(element).boxShadow,
+    }));
+    if (warningHoverVisual.background === warningBackground
+      || warningHoverVisual.marker === riskVisuals[1].marker
+      || !warningHoverVisual.marker.includes('4px')) {
+      throw new Error(`低库存行悬停后缺少加重的背景或左侧风险标识：${JSON.stringify({ warningBackground, warningHoverVisual, riskVisuals })}`);
+    }
     await page.screenshot({ path: 'smoke-warehouse-stocks-risk-contrast.png', fullPage: true });
 
     const summaryText = await page.locator('.summary-strip').innerText();

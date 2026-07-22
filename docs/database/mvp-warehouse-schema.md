@@ -169,52 +169,52 @@
 
 ## 表：stock_bill（库存流水凭证主表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 库存流水凭证ID |
-| bill_no | varchar(64) | 库存流水号，唯一，确认入库单/出库单时生成 |
-| bill_type | varchar(32) | `PURCHASE_IN`、`SALES_OUT`、`PURCHASE_RETURN`、`SALES_RETURN`、`ADJUST_IN`、`ADJUST_OUT` |
-| direction | varchar(16) | `INBOUND` 或 `OUTBOUND` |
-| source_bill_type | varchar(32) | `INBOUND_BILL` 或 `OUTBOUND_BILL` |
-| source_bill_id | bigint | 入库单或出库单ID |
-| source_bill_no | varchar(64) | 入库单号或出库单号 |
-| business_source_type | varchar(32) | 原业务来源类型 |
-| business_source_id | bigint | 原业务单据ID；采购/销售订单必须写真实主键，库存调整与尚未建表的退货来源可为空 |
-| business_source_no | varchar(64) | 原业务单据号 |
-| entry_mode | varchar(32) | 来源工作单的录入方式快照：`SOURCE_GENERATED`、`MANUAL_SUPPLEMENT`、`MANUAL_ADJUSTMENT` |
-| warehouse_id | bigint | 仓库ID |
-| warehouse_name | varchar(100) | 仓库名称快照 |
-| status | varchar(32) | 固定为 `CONFIRMED`，冲销另建反向单据 |
-| confirmed_by_id | bigint | 确认人ID |
-| confirmed_by_name | varchar(100) | 确认人姓名 |
-| confirmed_at | datetime | 确认时间 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| remark | varchar(500) | 备注 |
+| 字段                   | 类型           | 说明                                                                                  |
+| -------------------- | ------------ | ----------------------------------------------------------------------------------- |
+| id                   | bigint PK    | 库存流水凭证ID                                                                            |
+| bill_no              | varchar(64)  | 库存流水号，唯一，确认入库单/出库单时生成                                                               |
+| bill_type            | varchar(32)  | `PURCHASE_IN`、`SALES_OUT`、`PURCHASE_RETURN`、`SALES_RETURN`、`ADJUST_IN`、`ADJUST_OUT` |
+| direction            | varchar(16)  | `INBOUND` 或 `OUTBOUND`                                                              |
+| source_bill_type     | varchar(32)  | `INBOUND_BILL` 或 `OUTBOUND_BILL`                                                    |
+| source_bill_id       | bigint       | 入库单或出库单ID                                                                           |
+| source_bill_no       | varchar(64)  | 入库单号或出库单号                                                                           |
+| business_source_type | varchar(32)  | 原业务来源类型                                                                             |
+| business_source_id   | bigint       | 原业务单据ID；订单id必须写真实主键                                                                 |
+| business_source_no   | varchar(64)  | 原业务单据号                                                                              |
+| entry_mode           | varchar(32)  | 来源工作单的录入方式快照：`SOURCE_GENERATED`、`MANUAL_SUPPLEMENT`、`MANUAL_ADJUSTMENT`             |
+| warehouse_id         | bigint       | 仓库ID                                                                                |
+| warehouse_name       | varchar(100) | 仓库名称快照                                                                              |
+| status               | varchar(32)  | 固定为 `CONFIRMED`，冲销另建反向单据                                                            |
+| confirmed_by_id      | bigint       | 确认人ID                                                                               |
+| confirmed_by_name    | varchar(100) | 确认人姓名                                                                               |
+| confirmed_at         | datetime     | 确认时间                                                                                |
+| create_time          | datetime     | 创建时间                                                                                |
+| update_time          | datetime     | 更新时间                                                                                |
+| remark               | varchar(500) | 备注                                                                                  |
 
 ## 表：stock_bill_item（库存流水凭证明细表）
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 明细ID |
-| bill_id | bigint | 库存流水凭证ID |
-| bill_no | varchar(64) | 库存流水号冗余 |
-| source_bill_item_id | bigint | 入库单明细或出库单明细ID |
-| business_source_item_id | bigint | 原业务来源明细ID |
-| product_id | bigint | 产品ID |
-| product_code | varchar(64) | 产品编码快照 |
-| product_name | varchar(200) | 产品名称快照 |
-| unit_name | varchar(32) | 单位名称快照 |
-| quantity_precision | tinyint | 数量小数位快照，0-2 |
-| quantity | bigint | 本次入库/出库数量，正数 |
-| qualified_qty | bigint | 合格数量，入库质检使用；前端按独立列展示 |
-| defective_qty | bigint | 不合格数量，入库质检使用；前端按独立列展示 |
-| before_qty | bigint | 变动前库存 |
-| change_qty | bigint | 库存变动数量，入库为正，出库为负 |
-| after_qty | bigint | 变动后库存 |
-| create_time | datetime | 创建时间 |
-| update_time | datetime | 更新时间 |
-| remark | varchar(500) | 备注 |
+| 字段                      | 类型           | 说明                    |
+| ----------------------- | ------------ | --------------------- |
+| id                      | bigint PK    | 明细ID                  |
+| bill_id                 | bigint       | 库存流水凭证ID              |
+| bill_no                 | varchar(64)  | 库存流水号冗余               |
+| source_bill_item_id     | bigint       | 入库单明细或出库单明细ID         |
+| business_source_item_id | bigint       | 原业务来源明细ID             |
+| product_id              | bigint       | 产品ID                  |
+| product_code            | varchar(64)  | 产品编码快照                |
+| product_name            | varchar(200) | 产品名称快照                |
+| unit_name               | varchar(32)  | 单位名称快照                |
+| quantity_precision      | tinyint      | 数量小数位快照，0-2           |
+| quantity                | bigint       | 本次入库/出库数量，正数          |
+| qualified_qty           | bigint       | 合格数量，入库质检使用；前端按独立列展示  |
+| defective_qty           | bigint       | 不合格数量，入库质检使用；前端按独立列展示 |
+| before_qty              | bigint       | 变动前库存                 |
+| change_qty              | bigint       | 库存变动数量，入库为正，出库为负      |
+| after_qty               | bigint       | 变动后库存                 |
+| create_time             | datetime     | 创建时间                  |
+| update_time             | datetime     | 更新时间                  |
+| remark                  | varchar(500) | 备注                    |
 
 ## 表间关系
 

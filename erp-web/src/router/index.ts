@@ -18,8 +18,10 @@ const StockLedgerManageView = () => import('@/modules/warehouse/stock-ledgers/vi
 const SupplierManageView = () => import('@/modules/purchase/suppliers/views/SupplierManageView.vue');
 const SupplierProductManageView = () => import('@/modules/purchase/supplier-products/views/SupplierProductManageView.vue');
 const PurchaseOrderManageView = () => import('@/modules/purchase/orders/views/PurchaseOrderManageView.vue');
+const PurchaseReturnManageView = () => import('@/modules/purchase/returns/views/PurchaseReturnManageView.vue');
 const CustomerManageView = () => import('@/modules/sales/customers/views/CustomerManageView.vue');
 const SalesOrderManageView = () => import('@/modules/sales/orders/views/SalesOrderManageView.vue');
+const SalesReturnManageView = () => import('@/modules/sales/returns/views/SalesReturnManageView.vue');
 const AiAssistantView = () => import('@/modules/ai/views/AiAssistantView.vue');
 const AiScheduledTasksView = () => import('@/modules/ai/views/AiScheduledTasksView.vue');
 
@@ -164,6 +166,14 @@ const routes: RouteRecordRaw[] = [
           title: '采购订单',
         },
       },
+      {
+        path: 'purchase/returns',
+        name: 'purchase-returns',
+        component: PurchaseReturnManageView,
+        meta: {
+          title: '采购退回',
+        },
+      },
       { path: 'sales', redirect: '/sales/customers' },
       {
         path: 'sales/customers',
@@ -179,6 +189,14 @@ const routes: RouteRecordRaw[] = [
         component: SalesOrderManageView,
         meta: {
           title: '销售订单',
+        },
+      },
+      {
+        path: 'sales/returns',
+        name: 'sales-returns',
+        component: SalesReturnManageView,
+        meta: {
+          title: '销售退货',
         },
       },
       { path: 'ai', redirect: '/ai/assistant' },

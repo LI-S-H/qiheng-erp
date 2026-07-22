@@ -24,6 +24,13 @@ const productTypeSource = readProjectFile('erp-web', 'src', 'modules', 'product'
 const productViewSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'views', 'ProductManageView.vue');
 const warehouseSql = readProjectFile('docs', 'database', 'sql', '003_mvp_warehouse.sql');
 const warehouseSchema = readProjectFile('docs', 'database', 'mvp-warehouse-schema.md');
+const returnSchema = readProjectFile('docs', 'database', 'mvp-return-schema.md');
+const returnTypeSource = readProjectFile('erp-web', 'src', 'modules', 'returns', 'types.ts');
+const returnViewSource = readProjectFile('erp-web', 'src', 'modules', 'returns', 'views', 'ReturnOrderManagePage.vue');
+const purchaseReturnApiSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'returns', 'api.ts');
+const purchaseReturnViewSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'returns', 'views', 'PurchaseReturnManageView.vue');
+const salesReturnApiSource = readProjectFile('erp-web', 'src', 'modules', 'sales', 'returns', 'api.ts');
+const salesReturnViewSource = readProjectFile('erp-web', 'src', 'modules', 'sales', 'returns', 'views', 'SalesReturnManageView.vue');
 const warehouseApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'api.ts');
 const warehouseTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'types.ts');
 const warehouseViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'views', 'WarehouseManageView.vue');
@@ -52,6 +59,7 @@ const listViewSources = [
   readProjectFile('erp-web', 'src', 'modules', 'purchase', 'suppliers', 'views', 'SupplierManageView.vue'),
   readProjectFile('erp-web', 'src', 'modules', 'purchase', 'supplier-products', 'views', 'SupplierProductManageView.vue'),
   readProjectFile('erp-web', 'src', 'modules', 'purchase', 'orders', 'views', 'PurchaseOrderManageView.vue'),
+  returnViewSource,
   readProjectFile('erp-web', 'src', 'modules', 'sales', 'customers', 'views', 'CustomerManageView.vue'),
   readProjectFile('erp-web', 'src', 'modules', 'sales', 'orders', 'views', 'SalesOrderManageView.vue'),
 ];
@@ -104,6 +112,22 @@ const requiredPaths = [
   '/warehouse/work-bills/{workBillId}/submit:',
   '/warehouse/work-bills/{workBillId}/confirm:',
   '/warehouse/work-bills/{workBillId}/cancel:',
+  '/purchase/returns:',
+  '/purchase/returns/source-orders:',
+  '/purchase/returns/source-orders/{sourceOrderId}/items:',
+  '/purchase/returns/{returnOrderId}:',
+  '/purchase/returns/{returnOrderId}/submit:',
+  '/purchase/returns/{returnOrderId}/approve:',
+  '/purchase/returns/{returnOrderId}/reject:',
+  '/purchase/returns/{returnOrderId}/cancel:',
+  '/sales/returns:',
+  '/sales/returns/source-orders:',
+  '/sales/returns/source-orders/{sourceOrderId}/items:',
+  '/sales/returns/{returnOrderId}:',
+  '/sales/returns/{returnOrderId}/submit:',
+  '/sales/returns/{returnOrderId}/approve:',
+  '/sales/returns/{returnOrderId}/reject:',
+  '/sales/returns/{returnOrderId}/cancel:',
 ];
 
 for (const requiredPath of requiredPaths) {
@@ -122,6 +146,236 @@ if (!source.includes('product_category` 未删除数据的扁平数组') || !sou
 }
 if (/\n\s*- name: keyword\s*$/m.test(source)) {
   throw new Error('OpenAPI 列表查询不得使用未声明匹配边界的 keyword 参数');
+}
+const purchaseReturnListStart = source.indexOf('  /purchase/returns:');
+const purchaseReturnSourcesStart = source.indexOf('  /purchase/returns/source-orders:', purchaseReturnListStart);
+const purchaseReturnListContract = source.slice(purchaseReturnListStart, purchaseReturnSourcesStart);
+if (purchaseReturnListStart < 0 || purchaseReturnSourcesStart < 0
+  || !purchaseReturnListContract.includes('\n    get:') || !purchaseReturnListContract.includes('\n    post:')) {
+  throw new Error('采购退回列表必须同时提供 GET 查询和 POST 创建接口');
+}
+for (const parameterName of ['returnNo', 'sourceOrderNo', 'supplierId', 'warehouseId', 'status', 'pageNum', 'pageSize']) {
+  if (!purchaseReturnListContract.includes(`- name: ${parameterName}`)) {
+    throw new Error(`采购退回列表缺少独立查询参数：${parameterName}`);
+  }
+}
+if (purchaseReturnListContract.includes('- name: keyword')) {
+  throw new Error('采购退回列表不得使用含义不明的 keyword 参数');
+}
+for (const fragment of [
+  'availableReturnQty',
+  'sourceFulfilledQty - occupiedQty',
+  'returnType: { type: string, enum: [PURCHASE_RETURN]',
+  'source_type=PURCHASE_RETURN_ORDER',
+  'entry_mode=SOURCE_GENERATED',
+  'purchase:query',
+  'purchase:create',
+  'purchase:manage',
+]) {
+  if (!source.includes(fragment)) throw new Error(`采购退回 OpenAPI 缺少关键契约：${fragment}`);
+}
+for (const fragment of ['`return_order`', '`return_order_item`', '草稿不占用数量', '采购退货确认前必须重新校验对应仓库的可用库存']) {
+  if (!returnSchema.includes(fragment)) throw new Error(`退货数据库设计缺少权威规则：${fragment}`);
+}
+const purchaseReturnCreateStart = source.indexOf('    PurchaseReturnOrderCreateRequest:');
+const purchaseReturnUpdateStart = source.indexOf('    ReturnOrderUpdateRequest:', purchaseReturnCreateStart);
+const purchaseReturnCreateSchema = source.slice(purchaseReturnCreateStart, purchaseReturnUpdateStart);
+if (purchaseReturnCreateStart < 0 || purchaseReturnUpdateStart < 0
+  || !purchaseReturnCreateSchema.includes('enum: [PURCHASE_RETURN]')) {
+  throw new Error('采购退回创建请求必须由 adapter 固定提交 PURCHASE_RETURN');
+}
+const purchaseReturnUpdateEnd = source.indexOf('    ReturnOrderDraftItemRequest:', purchaseReturnUpdateStart);
+const purchaseReturnUpdateSchema = source.slice(purchaseReturnUpdateStart, purchaseReturnUpdateEnd);
+if (purchaseReturnUpdateStart < 0 || purchaseReturnUpdateEnd < 0 || /\n\s+returnType:/.test(purchaseReturnUpdateSchema)) {
+  throw new Error('采购退回类型创建后不可修改，更新 DTO 不得包含 returnType');
+}
+const returnDraftItemStart = source.indexOf('    ReturnOrderDraftItemRequest:');
+const returnDraftItemEnd = source.indexOf('    ReturnOrderApproveRequest:', returnDraftItemStart);
+const returnDraftItemSchema = source.slice(returnDraftItemStart, returnDraftItemEnd);
+if (returnDraftItemStart < 0 || returnDraftItemEnd < 0 || /\n\s+returnOrderItemId:/.test(returnDraftItemSchema)) {
+  throw new Error('退货草稿明细 DTO 只允许来源明细 ID、申请数量和备注，不得提交后端生成的 returnOrderItemId');
+}
+for (const [schemaName, schemaText] of [
+  ['采购退回创建请求', purchaseReturnCreateSchema],
+  ['采购退回更新请求', purchaseReturnUpdateSchema],
+]) {
+  for (const readOnlyField of [
+    'sourceOrderNo', 'partyId', 'partyCode', 'partyName', 'warehouseName', 'productId', 'productCode',
+    'productName', 'unitName', 'quantityPrecision', 'sourceFulfilledQty', 'occupiedQty', 'availableReturnQty',
+    'unitPrice', 'totalAmount', 'status', 'statusReason', 'createdById', 'submittedAt', 'approvedById',
+    'approvedQty', 'processedQty', 'createTime', 'updateTime',
+  ]) {
+    if (new RegExp(`\\n\\s+${readOnlyField}:`).test(schemaText)) {
+      throw new Error(`${schemaName}不得提交只读字段：${readOnlyField}`);
+    }
+  }
+}
+const purchaseReturnDetailPathStart = source.indexOf('  /purchase/returns/{returnOrderId}:');
+const purchaseReturnSubmitPathStart = source.indexOf('  /purchase/returns/{returnOrderId}/submit:', purchaseReturnDetailPathStart);
+const purchaseReturnDetailPath = source.slice(purchaseReturnDetailPathStart, purchaseReturnSubmitPathStart);
+for (const method of ['get:', 'put:', 'delete:']) {
+  if (!purchaseReturnDetailPath.includes(`    ${method}`)) throw new Error(`采购退回详情资源缺少 ${method}`);
+}
+for (const action of ['submit', 'approve', 'reject', 'cancel']) {
+  const actionStart = source.indexOf(`  /purchase/returns/{returnOrderId}/${action}:`);
+  const nextPath = source.indexOf('\n  /', actionStart + 4);
+  const actionContract = source.slice(actionStart, nextPath < 0 ? source.length : nextPath);
+  if (actionStart < 0 || !actionContract.includes('\n    post:') || !actionContract.includes('requestBody:')) {
+    throw new Error(`采购退回 ${action} 动作缺少 POST 或请求体契约`);
+  }
+}
+for (const fragment of [
+  "getResult<ReturnOrderPage>('/purchase/returns', params)",
+  "postResult<ReturnOrderDetail, ReturnOrderCreateRequest>('/purchase/returns', request)",
+  'http.put<Result<ReturnOrderDetail>>(`/purchase/returns/${returnOrderId}`, payload)',
+  'http.delete(`/purchase/returns/${returnOrderId}`, { data: { version } })',
+  '`/purchase/returns/${returnOrderId}/submit`',
+  '`/purchase/returns/${returnOrderId}/approve`',
+  '`/purchase/returns/${returnOrderId}/reject`',
+  '`/purchase/returns/${returnOrderId}/cancel`',
+  "getResult<ReturnableSourceOrderPage>('/purchase/returns/source-orders'",
+  '`/purchase/returns/source-orders/${sourceOrderId}/items`',
+  "returnType: 'PURCHASE_RETURN'",
+  "supplierId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined",
+]) {
+  if (!purchaseReturnApiSource.includes(fragment)) throw new Error(`采购退回前端适配层缺少接口契约：${fragment}`);
+}
+for (const fragment of ['normalizeReturnDetail', 'normalizeReturnItem', 'normalizeSourceItem', 'availableReturnQty']) {
+  if (!purchaseReturnApiSource.includes(fragment)) throw new Error(`采购退回前端适配层缺少响应规范化或服务端可退量字段：${fragment}`);
+}
+for (const fragment of [
+  'ListFilterPanel', 'ListFilterActions', 'ListSummaryStrip', 'ListLoadingOverlay', 'DataTablePagination',
+  'RemoteSearchSelect', 'AnchoredSelect', 'OrderDatePicker', 'RowActionsMenu', 'ConfirmDialog', 'PromptDialog',
+  'usePagedQuery', 'props.config.service', 'availableReturnQty', 'businessLabel',
+]) {
+  if (!returnViewSource.includes(fragment)) throw new Error(`通用退货页面未复用标准组件或缺少关键实现：${fragment}`);
+}
+for (const fragment of [
+  "returnType: 'PURCHASE_RETURN'", "query: 'purchase:query'", "create: 'purchase:create'", "manage: 'purchase:manage'",
+  'listReturns: listPurchaseReturns', 'createReturn: createPurchaseReturn', 'searchSourceOrders: searchPurchaseReturnSourceOrders',
+]) {
+  if (!purchaseReturnViewSource.includes(fragment)) throw new Error(`采购退回页面配置缺少适配或权限：${fragment}`);
+}
+if (returnViewSource.includes("@/modules/purchase/") || returnViewSource.includes("@/modules/sales/")) {
+  throw new Error('通用退货页面不得反向依赖采购或销售模块');
+}
+for (const readonlyField of ['returnOrderItemId', 'sourceOrderNo', 'partyId', 'partyName', 'warehouseName', 'availableReturnQty', 'approvedQty', 'processedQty']) {
+  const formPayloadStart = returnTypeSource.indexOf('export interface ReturnOrderFormPayload');
+  const createRequestStart = returnTypeSource.indexOf('export interface ReturnOrderCreateRequest', formPayloadStart);
+  const formPayloadSource = returnTypeSource.slice(formPayloadStart, createRequestStart);
+  if (new RegExp(`\\n\\s+${readonlyField}[?:]:`).test(formPayloadSource)) {
+    throw new Error(`采购退回前端表单 DTO 不得包含只读字段：${readonlyField}`);
+  }
+}
+for (const fragment of ['normalizeQuantityPrecision', 'normalizeQuantity(item.sourceFulfilledQty', 'normalizeQuantity(item.availableReturnQty']) {
+  if (!purchaseReturnApiSource.includes(fragment)) throw new Error(`采购退回数量精度边界缺少显式校验：${fragment}`);
+}
+if (!purchaseReturnApiSource.includes("normalizeQuantity(draft.requestedQty, sourceItem.quantityPrecision, 'requestedQty')")
+  || purchaseReturnApiSource.includes('Number.isInteger(draft.requestedQty * factor)')) {
+  throw new Error('采购退回 Mock 数量精度校验必须使用浮点容差，不得直接依赖乘法后的 Number.isInteger');
+}
+if (purchaseReturnApiSource.includes('Math.min(2, Math.max(0, item.quantityPrecision))')) {
+  throw new Error('采购退回来源数量精度不得静默夹到 0～2');
+}
+if (!purchaseReturnApiSource.includes('function nextMockReturnItemId()')
+  || purchaseReturnApiSource.includes('`${returnOrderId}1${String(index + 1)')) {
+  throw new Error('采购退回 Mock 明细必须使用独立 19 位 ID，不得在 19 位主键后继续拼接');
+}
+const salesReturnListStart = source.indexOf('  /sales/returns:');
+const salesReturnSourcesStart = source.indexOf('  /sales/returns/source-orders:', salesReturnListStart);
+const salesReturnListContract = source.slice(salesReturnListStart, salesReturnSourcesStart);
+if (salesReturnListStart < 0 || salesReturnSourcesStart < 0
+  || !salesReturnListContract.includes('\n    get:') || !salesReturnListContract.includes('\n    post:')) {
+  throw new Error('销售退货列表必须同时提供 GET 查询和 POST 创建接口');
+}
+for (const parameterName of ['returnNo', 'sourceOrderNo', 'customerId', 'warehouseId', 'status', 'pageNum', 'pageSize']) {
+  if (!salesReturnListContract.includes(`- name: ${parameterName}`)) {
+    throw new Error(`销售退货列表缺少独立查询参数：${parameterName}`);
+  }
+}
+if (salesReturnListContract.includes('- name: keyword')) throw new Error('销售退货列表不得使用含义不明的 keyword 参数');
+for (const fragment of [
+  'sales_order_item.outbound_qty',
+  'returnType: { type: string, enum: [SALES_RETURN]',
+  'source_type=SALES_RETURN_ORDER',
+  'inbound_type=SALES_RETURN',
+  'sales:query',
+  'sales:create',
+  'sales:manage',
+]) {
+  if (!source.includes(fragment)) throw new Error(`销售退货 OpenAPI 缺少关键契约：${fragment}`);
+}
+const salesReturnCreateStart = source.indexOf('    SalesReturnOrderCreateRequest:');
+const salesReturnCreateEnd = source.indexOf('    ReturnOrderUpdateRequest:', salesReturnCreateStart);
+const salesReturnCreateSchema = source.slice(salesReturnCreateStart, salesReturnCreateEnd);
+if (salesReturnCreateStart < 0 || salesReturnCreateEnd < 0 || !salesReturnCreateSchema.includes('enum: [SALES_RETURN]')) {
+  throw new Error('销售退货创建请求必须由 adapter 固定提交 SALES_RETURN');
+}
+for (const readOnlyField of [
+  'sourceOrderNo', 'partyId', 'partyCode', 'partyName', 'warehouseName', 'productId', 'productCode',
+  'productName', 'unitName', 'quantityPrecision', 'sourceFulfilledQty', 'occupiedQty', 'availableReturnQty',
+  'unitPrice', 'totalAmount', 'status', 'statusReason', 'createdById', 'submittedAt', 'approvedById',
+  'approvedQty', 'processedQty', 'createTime', 'updateTime',
+]) {
+  if (new RegExp(`\\n\\s+${readOnlyField}:`).test(salesReturnCreateSchema)) {
+    throw new Error(`销售退货创建请求不得提交只读字段：${readOnlyField}`);
+  }
+}
+const salesReturnDetailPathStart = source.indexOf('  /sales/returns/{returnOrderId}:');
+const salesReturnSubmitPathStart = source.indexOf('  /sales/returns/{returnOrderId}/submit:', salesReturnDetailPathStart);
+const salesReturnDetailPath = source.slice(salesReturnDetailPathStart, salesReturnSubmitPathStart);
+for (const method of ['get:', 'put:', 'delete:']) {
+  if (!salesReturnDetailPath.includes(`    ${method}`)) throw new Error(`销售退货详情资源缺少 ${method}`);
+}
+for (const action of ['submit', 'approve', 'reject', 'cancel']) {
+  const actionStart = source.indexOf(`  /sales/returns/{returnOrderId}/${action}:`);
+  const nextPath = source.indexOf('\n  /', actionStart + 4);
+  const actionContract = source.slice(actionStart, nextPath < 0 ? source.length : nextPath);
+  if (actionStart < 0 || !actionContract.includes('\n    post:') || !actionContract.includes('requestBody:')) {
+    throw new Error(`销售退货 ${action} 动作缺少 POST 或请求体契约`);
+  }
+}
+for (const fragment of [
+  "getResult<ReturnOrderPage>('/sales/returns', params)",
+  "postResult<ReturnOrderDetail, ReturnOrderCreateRequest>('/sales/returns', request)",
+  'http.put<Result<ReturnOrderDetail>>(`/sales/returns/${returnOrderId}`, payload)',
+  'http.delete(`/sales/returns/${returnOrderId}`, { data: { version } })',
+  '`/sales/returns/${returnOrderId}/submit`',
+  '`/sales/returns/${returnOrderId}/approve`',
+  '`/sales/returns/${returnOrderId}/reject`',
+  '`/sales/returns/${returnOrderId}/cancel`',
+  "getResult<ReturnableSourceOrderPage>('/sales/returns/source-orders'",
+  '`/sales/returns/source-orders/${sourceOrderId}/items`',
+  "returnType: 'SALES_RETURN'",
+  "customerId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined",
+  'item.outboundQty',
+]) {
+  if (!salesReturnApiSource.includes(fragment)) throw new Error(`销售退货前端适配层缺少接口契约：${fragment}`);
+}
+for (const fragment of ['normalizeReturnDetail', 'normalizeReturnItem', 'normalizeSourceItem', 'availableReturnQty', 'normalizeQuantityPrecision']) {
+  if (!salesReturnApiSource.includes(fragment)) throw new Error(`销售退货前端适配层缺少响应规范化或数量边界：${fragment}`);
+}
+if (!salesReturnApiSource.includes("normalizeQuantity(draft.requestedQty, sourceItem.quantityPrecision, 'requestedQty')")
+  || salesReturnApiSource.includes('Number.isInteger(draft.requestedQty * factor)')
+  || salesReturnApiSource.includes('Math.min(2, Math.max(0, item.quantityPrecision))')) {
+  throw new Error('销售退货数量精度必须显式校验并使用浮点容差，不得静默截断或夹取');
+}
+if (!salesReturnApiSource.includes('function nextMockReturnItemId()')
+  || salesReturnApiSource.includes('`${returnOrderId}1${String(index + 1)')) {
+  throw new Error('销售退货 Mock 明细必须使用独立 19 位 ID，不得在 19 位主键后继续拼接');
+}
+if (source.includes('原采购明细单价快照')) {
+  throw new Error('共享退货来源明细单价描述不得残留采购专属语义');
+}
+for (const fragment of [
+  "returnType: 'SALES_RETURN'", "query: 'sales:query'", "create: 'sales:create'", "manage: 'sales:manage'",
+  "returnNoPlaceholder: '如 SR202607001'", "fulfilledQuantityLabel: '已出库'", 'listReturns: listSalesReturns', 'createReturn: createSalesReturn',
+  'searchSourceOrders: searchSalesReturnSourceOrders',
+]) {
+  if (!salesReturnViewSource.includes(fragment)) throw new Error(`销售退货页面配置缺少适配、权限或履约文案：${fragment}`);
+}
+if (!routerSource.includes("path: 'sales/returns'") || !readProjectFile('erp-web', 'src', 'layouts', 'MainLayout.vue').includes("index: '/sales/returns'")) {
+  throw new Error('销售退货缺少路由或导航入口');
 }
 for (const fragment of [
   '查询范围包含当前分类及其全部后代分类',
@@ -473,9 +727,11 @@ if (updateRequestStart < 0 || updateRequestEnd < 0 || updateRequest.includes('pe
 }
 
 const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)].length;
-if (tableCount !== 28) throw new Error(`数据库设计文档声明 28 张表，当前 DDL 实际为 ${tableCount} 张`);
-if (!databaseOverview.includes('共设计 28 张表') || !databaseOverview.includes('`sys_permission`')) {
-  throw new Error('数据库总览未同步 28 张表或 sys_permission 权限目录表');
+if (tableCount !== 30) throw new Error(`数据库设计文档声明 30 张表，当前 DDL 实际为 ${tableCount} 张`);
+if (!databaseOverview.includes('共设计并已落 DDL 30 张表') || !databaseOverview.includes('`sys_permission`')
+  || !returnSchema.includes('表：return_order（退货单主表）')
+  || !returnSchema.includes('表：return_order_item（退货单明细表）')) {
+  throw new Error('数据库总览必须同步 30 张已落 DDL 的表，并包含 sys_permission 与两张退货表');
 }
 for (const [name, apiSource, typeSource, viewSource] of [
   ['仓库列表', warehouseApiSource, warehouseTypeSource, warehouseViewSource],
@@ -531,4 +787,4 @@ for (const document of [databaseOverview, permissionSchema, projectPlan]) {
   }
 }
 
-console.log(`OPENAPI_OK: ${references.length} 个引用完整，28 张数据库表、系统权限、产品与仓库库存契约已对齐`);
+console.log(`OPENAPI_OK: ${references.length} 个引用完整，30 张表已落 DDL，系统权限、退货、产品与仓库库存契约已对齐`);

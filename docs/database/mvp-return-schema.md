@@ -70,36 +70,36 @@
 
 ## 表：return_order（退货单主表）
 
-| 字段 | 类型 | 是否为空 | 默认值 | 说明 |
-|---|---|---:|---|---|
-| `id` | `bigint` PK | 否 | — | 退货单ID，由 MyBatis-Plus `ASSIGN_ID` 生成 |
-| `return_no` | `varchar(64)` | 否 | — | 退货单号，由后端生成，唯一 |
-| `return_type` | `varchar(32)` | 否 | — | `SALES_RETURN`、`PURCHASE_RETURN`，创建后不可修改 |
-| `source_order_id` | `bigint` | 否 | — | 原销售订单ID或采购订单ID |
-| `source_order_no` | `varchar(64)` | 否 | — | 原订单号快照，由后端查询写入 |
-| `party_id` | `bigint` | 否 | — | 销售退货为客户ID，采购退货为供应商ID |
-| `party_code` | `varchar(64)` | 否 | — | 客户或供应商编码快照 |
-| `party_name` | `varchar(200)` | 否 | — | 客户或供应商名称快照 |
-| `warehouse_id` | `bigint` | 否 | — | 退货执行仓库ID |
-| `warehouse_name` | `varchar(100)` | 否 | — | 仓库名称快照 |
-| `expected_execution_date` | `date` | 是 | `NULL` | 预计退货执行日期；草稿可空，提交前必填 |
-| `handling_type` | `varchar(32)` | 否 | `REFUND` | `REFUND`、`EXCHANGE`、`OTHER` |
-| `reason_code` | `varchar(32)` | 否 | `OTHER` | 退货原因编码 |
-| `return_reason` | `varchar(500)` | 否 | `''` | 退货原因补充说明 |
-| `total_amount` | `decimal(18,2)` | 否 | `0.00` | 当前有效退货总金额，由后端汇总明细 |
-| `status` | `varchar(32)` | 否 | `DRAFT` | 退货单状态 |
-| `status_reason` | `varchar(500)` | 否 | `''` | 最近一次审核退回或取消原因 |
-| `created_by_id` | `bigint` | 是 | `NULL` | 创建人ID，来自当前登录用户 |
-| `created_by_name` | `varchar(100)` | 否 | `''` | 创建人姓名快照 |
-| `submitted_at` | `datetime` | 是 | `NULL` | 提交时间 |
-| `approved_by_id` | `bigint` | 是 | `NULL` | 审核人ID |
-| `approved_by_name` | `varchar(100)` | 否 | `''` | 审核人姓名快照 |
-| `approved_at` | `datetime` | 是 | `NULL` | 审核时间 |
-| `create_time` | `datetime` | 否 | `CURRENT_TIMESTAMP` | 创建时间 |
-| `update_time` | `datetime` | 否 | 自动更新 | 更新时间 |
-| `deleted` | `tinyint` | 否 | `0` | 逻辑删除：`0` 正常，`1` 删除 |
-| `remark` | `varchar(500)` | 否 | `''` | 备注 |
-| `version` | `int` | 否 | `0` | 乐观锁版本号 |
+| 字段                        | 类型              | 是否为空 | 默认值                 | 说明                                       |
+| ------------------------- | --------------- | ---: | ------------------- | ---------------------------------------- |
+| `id`                      | `bigint` PK     |    否 | —                   | 退货单ID，由 MyBatis-Plus `ASSIGN_ID` 生成      |
+| `return_no`               | `varchar(64)`   |    否 | —                   | 退货单号，由后端生成，唯一                            |
+| `return_type`             | `varchar(32)`   |    否 | —                   | `SALES_RETURN`、`PURCHASE_RETURN`，创建后不可修改 |
+| `source_order_id`         | `bigint`        |    否 | —                   | 原销售订单ID或采购订单ID                           |
+| `source_order_no`         | `varchar(64)`   |    否 | —                   | 原订单号快照，由后端查询写入                           |
+| `party_id`                | `bigint`        |    否 | —                   | 销售退货为客户ID，采购退货为供应商ID                     |
+| `party_code`              | `varchar(64)`   |    否 | —                   | 客户或供应商编码快照                               |
+| `party_name`              | `varchar(200)`  |    否 | —                   | 客户或供应商名称快照                               |
+| `warehouse_id`            | `bigint`        |    否 | —                   | 退货执行仓库ID                                 |
+| `warehouse_name`          | `varchar(100)`  |    否 | —                   | 仓库名称快照                                   |
+| `expected_execution_date` | `date`          |    是 | `NULL`              | 预计退货执行日期；草稿可空，提交前必填                      |
+| `handling_type`           | `varchar(32)`   |    否 | `REFUND`            | `REFUND`、`EXCHANGE`、`OTHER`              |
+| `reason_code`             | `varchar(32)`   |    否 | `OTHER`             | 退货原因编码                                   |
+| `return_reason`           | `varchar(500)`  |    否 | `''`                | 退货原因补充说明                                 |
+| `total_amount`            | `decimal(18,2)` |    否 | `0.00`              | 当前有效退货总金额，由后端汇总明细                        |
+| `status`                  | `varchar(32)`   |    否 | `DRAFT`             | 退货单状态                                    |
+| `status_reason`           | `varchar(500)`  |    否 | `''`                | 最近一次审核退回或取消原因                            |
+| `created_by_id`           | `bigint`        |    是 | `NULL`              | 创建人ID，来自当前登录用户                           |
+| `created_by_name`         | `varchar(100)`  |    否 | `''`                | 创建人姓名快照                                  |
+| `submitted_at`            | `datetime`      |    是 | `NULL`              | 提交时间                                     |
+| `approved_by_id`          | `bigint`        |    是 | `NULL`              | 审核人ID                                    |
+| `approved_by_name`        | `varchar(100)`  |    否 | `''`                | 审核人姓名快照                                  |
+| `approved_at`             | `datetime`      |    是 | `NULL`              | 审核时间                                     |
+| `create_time`             | `datetime`      |    否 | `CURRENT_TIMESTAMP` | 创建时间                                     |
+| `update_time`             | `datetime`      |    否 | 自动更新                | 更新时间                                     |
+| `deleted`                 | `tinyint`       |    否 | `0`                 | 逻辑删除：`0` 正常，`1` 删除                       |
+| `remark`                  | `varchar(500)`  |    否 | `''`                | 备注                                       |
+| `version`                 | `int`           |    否 | `0`                 | 乐观锁版本号                                   |
 
 建议索引：
 
@@ -187,6 +187,7 @@
 - `DRAFT`、`SUBMITTED`：明细金额为 `requested_qty × unit_price`。
 - `APPROVED`、`PARTIAL_EXECUTED`：明细金额为 `approved_qty × unit_price`。
 - `COMPLETED`：明细金额为 `processed_qty × unit_price`，此时 `processed_qty = approved_qty`。
+- `CANCELLED`：保留取消前的申请金额快照，明细金额为 `requested_qty × unit_price`；取消后占用数量仍为 0，金额只用于历史追溯，不代表应退款或应付款。
 - 主表 `return_order.total_amount` 等于全部明细 `total_amount` 之和。
 
 金额使用 `RoundingMode.HALF_UP` 四舍五入到两位。前端计算结果只能用于即时展示，落库金额以服务端计算为准。
@@ -371,7 +372,7 @@ flowchart LR
 - 检查现有仓库确认逻辑是否把销售退货不合格数量计入了 `warehouse_stock.stock_qty`，并按本设计统一口径。
 - 检查 `SALES_RETURN_ORDER`、`PURCHASE_RETURN_ORDER` 在 Java 枚举、OpenAPI、Mock 和前端映射中的值完全一致。
 - 检查仓库工作单确认事务能够调用退货来源回写逻辑，并避免仓库模块与退货模块形成循环依赖。
-- 正式生成 DDL、接口和页面时，以本文档为退货字段、状态、数量和来源关联的权威契约。
+- 退货 DDL 与幂等种子已落在 `docs/database/sql/008_mvp_return.sql`；`APPROVED` 种子同步包含待确认仓库工作单，`PARTIAL_EXECUTED`、`COMPLETED` 种子同步包含已确认工作单、库存流水及最终库存余额，确保 `processed_qty` 可按退货单和退货明细追溯。接口、页面和后端实现仍以本文档为退货字段、状态、数量和来源关联的权威契约。
 
 ## 测试场景
 

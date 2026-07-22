@@ -103,6 +103,7 @@ const menus: MenuItem[] = [
       { index: '/purchase/suppliers', title: '供应商管理' },
       { index: '/purchase/supplier-products', title: '供货产品' },
       { index: '/purchase/orders', title: '采购订单' },
+      { index: '/purchase/returns', title: '采购退回' },
     ],
   },
   {
@@ -113,6 +114,7 @@ const menus: MenuItem[] = [
     children: [
       { index: '/sales/customers', title: '客户管理' },
       { index: '/sales/orders', title: '销售订单' },
+      { index: '/sales/returns', title: '销售退货' },
     ],
   },
   {

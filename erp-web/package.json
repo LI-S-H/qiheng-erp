@@ -26,9 +26,13 @@
     "smoke:dashboard": "node scripts/smoke-dashboard.cjs",
     "smoke:ai": "node scripts/smoke-ai.cjs",
     "smoke:purchase": "node scripts/smoke-purchase.cjs",
+    "smoke:purchase-returns": "node scripts/smoke-purchase-returns.cjs",
+    "smoke:purchase-returns-contract": "node scripts/smoke-purchase-returns-contract.cjs",
     "smoke:sales": "node scripts/smoke-sales.cjs",
-    "check:openapi": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs",
-    "test:delivery": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-list-page-components.cjs && node scripts/smoke-overflow-tooltip.cjs && node scripts/smoke-shared-ui.cjs && node scripts/smoke-auth.cjs && node scripts/smoke-dashboard.cjs && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-bills.cjs && node scripts/smoke-warehouse-stock-ledgers.cjs && node scripts/smoke-purchase.cjs && node scripts/smoke-sales.cjs && node scripts/smoke-ai.cjs",
+    "smoke:sales-returns": "node scripts/smoke-sales-returns.cjs",
+    "smoke:sales-returns-contract": "node scripts/smoke-sales-returns-contract.cjs",
+    "check:openapi": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs && node scripts/check-return-contract.cjs",
+    "test:delivery": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs && node scripts/check-return-contract.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-list-page-components.cjs && node scripts/smoke-overflow-tooltip.cjs && node scripts/smoke-shared-ui.cjs && node scripts/smoke-auth.cjs && node scripts/smoke-dashboard.cjs && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-bills.cjs && node scripts/smoke-warehouse-stock-ledgers.cjs && node scripts/smoke-purchase.cjs && node scripts/smoke-purchase-returns.cjs && node scripts/smoke-purchase-returns-contract.cjs && node scripts/smoke-sales.cjs && node scripts/smoke-sales-returns.cjs && node scripts/smoke-sales-returns-contract.cjs && node scripts/smoke-ai.cjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

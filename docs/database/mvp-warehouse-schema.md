@@ -199,11 +199,10 @@
 | product_name            | varchar(200) | 产品名称快照                |
 | unit_name               | varchar(32)  | 单位名称快照                |
 | quantity_precision      | tinyint      | 数量小数位快照，0-2           |
-| quantity                | bigint       | 本次入库/出库数量，正数          |
 | qualified_qty           | bigint       | 合格数量，入库质检使用；前端按独立列展示  |
 | defective_qty           | bigint       | 不合格数量，入库质检使用；前端按独立列展示 |
 | before_qty              | bigint       | 变动前库存                 |
-| change_qty              | bigint       | 库存变动数量，入库为正，出库为负      |
+| change_qty              | bigint       | 库存变动数量，入库为正，出库为负；绝对值等于本次工作单数量 |
 | after_qty               | bigint       | 变动后库存                 |
 | create_time             | datetime     | 创建时间                  |
 | remark                  | varchar(500) | 备注                    |

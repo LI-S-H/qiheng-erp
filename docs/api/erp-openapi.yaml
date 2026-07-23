@@ -7417,23 +7417,23 @@ components:
         stockBillId: { type: string, description: 所属工作单稳定 ID，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 所属入库单号或出库单号 }
         sourceItemId: { type: string, nullable: true, description: 原业务来源明细 ID，BIGINT 按字符串传输 }
-        productId: { type: string, description: 对应 `stock_bill_item.product_id`，BIGINT 按字符串传输 }
-        productCode: { type: string, maxLength: 64, description: 对应 `stock_bill_item.product_code` }
-        productName: { type: string, maxLength: 200, description: 对应 `stock_bill_item.product_name` }
-        unitName: { type: string, maxLength: 32, description: 对应 `stock_bill_item.unit_name` }
-        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应 `stock_bill_item.quantity_precision`，产品数量精度快照 }
+        productId: { type: string, description: 对应入库或出库工作单明细的 `product_id`，BIGINT 按字符串传输 }
+        productCode: { type: string, maxLength: 64, description: 对应入库或出库工作单明细的 `product_code` 快照 }
+        productName: { type: string, maxLength: 200, description: 对应入库或出库工作单明细的 `product_name` 快照 }
+        unitName: { type: string, maxLength: 32, description: 对应入库或出库工作单明细的 `unit_name` 快照 }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应入库或出库工作单明细的 `quantity_precision`，产品数量精度快照 }
         planQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 来源单据计划数量；库存调整可为 null }
         processedQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 生成本单前来源明细累计已入库或已出库数量；库存调整可为 null }
         pendingQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 确认本单后来源明细预计剩余未入库或未出库数量，由后端按 planQty - processedQty - quantity 计算；库存调整可为 null；前端展开明细独立展示为剩余未入库或剩余未出库列，不允许用户手动提交 }
-        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 本次入库/出库业务真实值；来源生成的待确认单初始为 0 或空业务值，由仓库人员确认前填写，确认时必须大于 0 且不能超过来源剩余数量；数据库 `stock_bill_item.quantity` 按 100 倍整数存储；前端展开明细独立展示为入库量或出库量列 }
-        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 合格数量业务真实值；数据库 `stock_bill_item.qualified_qty` 按 100 倍整数存储；前端展开明细独立展示，不得与不合格数量拼接为一个质检字段 }
-        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 不合格数量业务真实值；数据库 `stock_bill_item.defective_qty` 按 100 倍整数存储；前端展开明细独立展示，不得与合格数量拼接为一个质检字段 }
+        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 入库或出库工作单的本次业务数量，对应工作单明细 `current_qty`；来源生成的待确认单初始为 0 或空业务值，由仓库人员确认前填写，确认时必须大于 0 且不能超过来源剩余数量；数据库按 100 倍整数存储；前端展开明细独立展示为入库量或出库量列 }
+        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 工作单的合格数量业务真实值；数据库按 100 倍整数存储；前端展开明细独立展示，不得与不合格数量拼接为一个质检字段 }
+        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 工作单的不合格数量业务真实值；数据库按 100 倍整数存储；前端展开明细独立展示，不得与合格数量拼接为一个质检字段 }
         beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.before_qty` 按 100 倍整数存储 }
         changeQty: { type: number, format: double, multipleOf: 0.01, description: 业务真实值，入库为正、出库为负；数据库按 100 倍整数存储 }
         afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.after_qty` 按 100 倍整数存储 }
-        createTime: { type: string, description: 对应 `stock_bill_item.create_time` }
-        updateTime: { type: string, description: 对应 `stock_bill_item.update_time` }
-        remark: { type: string, maxLength: 500, description: 对应 `stock_bill_item.remark` }
+        createTime: { type: string, description: 对应入库或出库工作单明细的 `create_time` }
+        updateTime: { type: string, description: 对应入库或出库工作单明细的 `update_time` }
+        remark: { type: string, maxLength: 500, description: 对应入库或出库工作单明细的 `remark` }
 
     StockLedgerPage:
       type: object
@@ -7481,7 +7481,7 @@ components:
     StockLedgerItem:
       type: object
       description: 库存流水明细，只记录本次变动及变动前后库存，不包含工作单的计划、累计处理和待处理字段。
-      required: [stockLedgerItemId, stockLedgerId, productId, productCode, productName, unitName, beforeQty, changeQty, afterQty]
+      required: [stockLedgerItemId, stockLedgerId, productId, productCode, productName, unitName, beforeQty, qualifiedQty, defectiveQty, changeQty, afterQty]
       properties:
         stockLedgerItemId: { type: string, description: 对应 `stock_bill_item.id` }
         stockLedgerId: { type: string, description: 对应 `stock_bill_item.bill_id` }
@@ -7490,7 +7490,9 @@ components:
         productName: { type: string, maxLength: 200 }
         unitName: { type: string, maxLength: 32 }
         beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01 }
-        changeQty: { type: number, format: double, multipleOf: 0.01, description: 入库为正，出库为负 }
+        qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 合格数量；采购入库、销售退货按实际记录返回，其他出入库类型返回 0 }
+        defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 不合格数量；采购入库、销售退货按实际记录返回，其他出入库类型返回 0 }
+        changeQty: { type: number, format: double, multipleOf: 0.01, description: 对应 `stock_bill_item.change_qty`；入库为正，出库为负，其绝对值等于关联工作单的本次数量 }
         afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01 }
         remark: { type: string, maxLength: 500 }
 

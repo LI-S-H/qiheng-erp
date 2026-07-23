@@ -108,10 +108,14 @@ const requiredPaths = [
   '/warehouse/inbound-bills:',
   '/warehouse/outbound-bills:',
   '/warehouse/stock-bills:',
-  '/warehouse/work-bills/{workBillId}:',
-  '/warehouse/work-bills/{workBillId}/submit:',
-  '/warehouse/work-bills/{workBillId}/confirm:',
-  '/warehouse/work-bills/{workBillId}/cancel:',
+  '/warehouse/inbound-bills/{inboundBillId}:',
+  '/warehouse/inbound-bills/{inboundBillId}/submit:',
+  '/warehouse/inbound-bills/{inboundBillId}/confirm:',
+  '/warehouse/inbound-bills/{inboundBillId}/cancel:',
+  '/warehouse/outbound-bills/{outboundBillId}:',
+  '/warehouse/outbound-bills/{outboundBillId}/submit:',
+  '/warehouse/outbound-bills/{outboundBillId}/confirm:',
+  '/warehouse/outbound-bills/{outboundBillId}/cancel:',
   '/purchase/returns:',
   '/purchase/returns/source-orders:',
   '/purchase/returns/source-orders/{sourceOrderId}/items:',
@@ -600,6 +604,37 @@ for (const fragment of [
   if (!stockBillApiSource.includes(fragment) && !stockBillTypeSource.includes(fragment)) {
     throw new Error(`入库单/出库单前端契约缺少：${fragment}`);
   }
+}
+if (source.includes('/warehouse/work-bills/') || stockBillApiSource.includes('/warehouse/work-bills/')) {
+  throw new Error('入库单/出库单不得再使用无法区分数据表的共享 work-bills 路由');
+}
+for (const fragment of [
+  "'/warehouse/inbound-bills'",
+  "'/warehouse/outbound-bills'",
+  'function billResourceEndpoint(direction: StockBillDirection, stockBillId: string, action?:',
+  "billResourceEndpoint(direction, stockBillId, 'submit')",
+  "billResourceEndpoint(direction, stockBillId, 'confirm')",
+  "billResourceEndpoint(direction, stockBillId, 'cancel')",
+  'http.put(billResourceEndpoint(direction, stockBillId), payload)',
+  'getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId))',
+]) {
+  if (!stockBillApiSource.includes(fragment)) throw new Error(`入库单/出库单前端路由映射缺少：${fragment}`);
+}
+for (const fragment of [
+  'InboundBillId:',
+  'OutboundBillId:',
+  'operationId: inboundBillDetail',
+  'operationId: inboundBillUpdate',
+  'operationId: inboundBillSubmit',
+  'operationId: inboundBillConfirm',
+  'operationId: inboundBillCancel',
+  'operationId: outboundBillDetail',
+  'operationId: outboundBillUpdate',
+  'operationId: outboundBillSubmit',
+  'operationId: outboundBillConfirm',
+  'operationId: outboundBillCancel',
+]) {
+  if (!source.includes(fragment)) throw new Error(`入库单/出库单 OpenAPI 路由映射缺少：${fragment}`);
 }
 for (const fragment of [
   '按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要',

@@ -474,7 +474,7 @@ async function toggleRowDetail(row: StockBillListItem) {
   detailLoadErrors[row.stockBillId] = undefined;
   setRowDetailLoading(row.stockBillId, true);
   try {
-    expandedDetails[row.stockBillId] = await getStockBillDetail(row.stockBillId);
+    expandedDetails[row.stockBillId] = await getStockBillDetail(billDirection(row.billType), row.stockBillId);
   } catch (error) {
     detailLoadErrors[row.stockBillId] = getApiErrorMessage(error) || '商品明细加载失败';
   } finally {
@@ -621,7 +621,7 @@ async function openDetail(row: StockBillListItem, actionMode: 'view' | 'submit' 
   detailLoading.value = true;
   detail.value = null;
   try {
-    detail.value = await getStockBillDetail(row.stockBillId);
+    detail.value = await getStockBillDetail(billDirection(row.billType), row.stockBillId);
   } catch (error) {
     detailVisible.value = false;
     toast.warning(getApiErrorMessage(error) || `${pageText.value.title}详情加载失败`);
@@ -650,7 +650,7 @@ async function openEditDialog(row: StockBillListItem) {
   editingDetail.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   try {
-    const current = await getStockBillDetail(row.stockBillId);
+    const current = await getStockBillDetail(billDirection(row.billType), row.stockBillId);
     if (current.status !== 'DRAFT' && current.status !== 'PENDING_CONFIRM') throw new Error('只有草稿或待确认状态可以编辑');
     editingDetail.value = current;
     mergeProducts(current.items.map(item => ({
@@ -840,7 +840,7 @@ async function submitForm() {
         items: buildItemPayloads(),
         remark: form.remark.trim(),
       };
-      await updateStockBill(editingDetail.value.stockBillId, payload);
+      await updateStockBill(billDirection(editingDetail.value.billType), editingDetail.value.stockBillId, payload);
       toast.success(`${pageText.value.formTitle}已保存`);
     }
     formVisible.value = false;
@@ -904,7 +904,7 @@ function handleConfirm(row: StockBillListItem | StockBillDetail) {
     confirmText: '确认执行',
     variant: 'warning',
     onConfirm: async () => {
-      await confirmStockBill(row.stockBillId, row.version);
+      await confirmStockBill(billDirection(row.billType), row.stockBillId, row.version);
       toast.success(`${row.billNo} 已确认`);
       detailVisible.value = false;
       await fetchRecords();
@@ -943,7 +943,7 @@ function handleSubmit(row: StockBillListItem | StockBillDetail) {
     confirmText: '确认提交',
     variant: 'warning',
     onConfirm: async () => {
-      await submitStockBill(row.stockBillId, row.version);
+      await submitStockBill(billDirection(row.billType), row.stockBillId, row.version);
       toast.success(`${row.billNo} 已提交待确认`);
       detailVisible.value = false;
       await fetchRecords();
@@ -958,7 +958,7 @@ function handleCancel(row: StockBillListItem) {
     confirmText: '确认取消',
     variant: 'destructive',
     onConfirm: async () => {
-      await cancelStockBill(row.stockBillId, row.version);
+      await cancelStockBill(billDirection(row.billType), row.stockBillId, row.version);
       toast.success(`${row.billNo} 已取消`);
       await fetchRecords();
     },

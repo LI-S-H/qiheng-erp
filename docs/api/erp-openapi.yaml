@@ -4064,163 +4064,168 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
 
-  /warehouse/work-bills/{workBillId}:
+  /warehouse/inbound-bills/{inboundBillId}:
     get:
       tags: [WarehouseStockBill]
-      summary: 获取入库单或出库单工作单详情
-      description: 返回可写工作单主表信息及全部明细，用于追溯来源单据、供应商或客户、确认信息和本次数量。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口。本接口需要 `warehouse:query` 权限。
-      operationId: warehouseWorkBillDetail
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - $ref: '#/components/parameters/WorkBillId'
+      summary: 获取入库单详情
+      description: 仅查询 `inbound_bill` 及其明细。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
+      operationId: inboundBillDetail
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
       responses:
-        "200":
-          description: 获取成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
     put:
       tags: [WarehouseStockBill]
-      summary: 编辑入库单/出库单工作单草稿或待确认单
-      description: |
-        `DRAFT` 和 `PENDING_CONFIRM` 状态允许编辑数量、质量数量和备注；提交后或来源生成单据需要具备仓库确认/审核权限。
-        `DRAFT` 状态允许修改仓库；进入 `PENDING_CONFIRM` 后仓库、来源信息、产品结构均锁定，只允许调整本次数量、合格数量、不合格数量和备注。
-        来源业务单据生成的单据不能在本接口增删或更换产品，也不能修改来源和出入库类型；手工补录或库存调整草稿允许维护产品明细。
-        流水号、来源信息、审计字段、变动前后库存均由后端维护，前端不得提交；需要 `warehouse:manage` 权限。
-      operationId: warehouseWorkBillUpdate
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - $ref: '#/components/parameters/WorkBillId'
+      summary: 编辑入库单草稿或待确认单
+      description: 仅编辑 `inbound_bill`。`DRAFT` 可修改仓库；`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
+      operationId: inboundBillUpdate
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }
       responses:
-        "200":
-          description: 更新成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /warehouse/work-bills/{workBillId}/submit:
+  /warehouse/inbound-bills/{inboundBillId}/submit:
     post:
       tags: [WarehouseStockBill]
-      summary: 提交入库单/出库单草稿为待确认
-      description: |
-        仅允许 `DRAFT -> PENDING_CONFIRM`。提交不改变库存、不生成库存流水，只表示单据明细已完成录入并进入仓库确认队列。
-        前端必须先展示入库单/出库单详情及全部产品明细，再在详情页提供提交确认按钮并进行二次确认。
-        提交前后端必须重新校验仓库、产品明细、本次数量、质检数量、手工补录原业务单号和补录/调整原因；来源生成单据还必须保留来源计划数量、生成本单前累计已处理数量和确认后剩余未处理数量。
-        待确认状态仍允许具备仓库管理权限的人员调整本次数量、质检数量和备注；确认后才禁止修改。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
-      operationId: warehouseWorkBillSubmit
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - $ref: '#/components/parameters/WorkBillId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
+      summary: 提交入库单草稿为待确认
+      description: 仅允许 `DRAFT -> PENDING_CONFIRM`，不改变库存、不生成库存流水；需要 `warehouse:manage` 权限并保证幂等。
+      operationId: inboundBillSubmit
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
       responses:
-        "200":
-          description: 提交成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /warehouse/work-bills/{workBillId}/confirm:
+  /warehouse/inbound-bills/{inboundBillId}/confirm:
     post:
       tags: [WarehouseStockBill]
-      summary: 确认入库/出库
-      description: |
-        仅允许 `PENDING_CONFIRM -> CONFIRMED`。前端必须先展示入库单/出库单详情及全部产品明细，再在详情页提供确认按钮并进行二次确认。
-        后端必须锁定入库单/出库单和相关库存记录，在同一事务内重新校验仓库、产品、库存和锁定库存，生成 `stock_bill` / `stock_bill_item`，将工作单的 `entry_mode`、原业务来源类型、真实来源 ID 和来源单号固化为库存流水快照，更新 `warehouse_stock`，写入明细变动前后数量并回写采购或销售来源单据的已入库/已出库数量。
-        来源生成的待确认单确认时，后端必须校验本次入库/出库数量大于 0 且不超过来源明细剩余数量，并重新计算确认后的剩余未入库/未出库数量；`pendingQty` 是只读结果，前端不得作为提交字段传入。
-        已确认单据不得直接改回草稿或取消；错误凭证通过反向库存调整纠正。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
-      operationId: warehouseWorkBillConfirm
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - $ref: '#/components/parameters/WorkBillId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
+      summary: 确认入库单
+      description: 仅允许 `PENDING_CONFIRM -> CONFIRMED`。后端在同一事务内校验入库单与库存、生成库存流水并增加库存；`pendingQty` 为只读结果，前端不得提交；需要 `warehouse:manage` 权限并保证幂等。
+      operationId: inboundBillConfirm
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
       responses:
-        "200":
-          description: 确认成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /warehouse/work-bills/{workBillId}/cancel:
+  /warehouse/inbound-bills/{inboundBillId}/cancel:
     post:
       tags: [WarehouseStockBill]
-      summary: 取消入库单/出库单草稿或待确认单
-      description: 仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`，取消不改变库存，取消后的单据保留追溯且不能再次编辑或确认。接口需要 `warehouse:manage` 权限并保证重复请求幂等。
-      operationId: warehouseWorkBillCancel
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - $ref: '#/components/parameters/WorkBillId'
+      summary: 取消入库单草稿或待确认单
+      description: 仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`，不改变库存；需要 `warehouse:manage` 权限并保证幂等。
+      operationId: inboundBillCancel
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
+      responses:
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/outbound-bills/{outboundBillId}:
+    get:
+      tags: [WarehouseStockBill]
+      summary: 获取出库单详情
+      description: 仅查询 `outbound_bill` 及其明细。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
+      operationId: outboundBillDetail
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
+      responses:
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [WarehouseStockBill]
+      summary: 编辑出库单草稿或待确认单
+      description: 仅编辑 `outbound_bill`。`DRAFT` 可修改仓库；`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
+      operationId: outboundBillUpdate
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
+            schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }
       responses:
-        "200":
-          description: 取消成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/StockBillDetail' }
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/outbound-bills/{outboundBillId}/submit:
+    post:
+      tags: [WarehouseStockBill]
+      summary: 提交出库单草稿为待确认
+      description: 仅允许 `DRAFT -> PENDING_CONFIRM`，不改变库存、不生成库存流水；需要 `warehouse:manage` 权限并保证幂等。
+      operationId: outboundBillSubmit
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
+      responses:
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/outbound-bills/{outboundBillId}/confirm:
+    post:
+      tags: [WarehouseStockBill]
+      summary: 确认出库单
+      description: 仅允许 `PENDING_CONFIRM -> CONFIRMED`。后端在同一事务内校验出库单与库存、生成库存流水并扣减库存；`pendingQty` 为只读结果，前端不得提交；需要 `warehouse:manage` 权限并保证幂等。
+      operationId: outboundBillConfirm
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
+      responses:
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /warehouse/outbound-bills/{outboundBillId}/cancel:
+    post:
+      tags: [WarehouseStockBill]
+      summary: 取消出库单草稿或待确认单
+      description: 仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`，不改变库存；需要 `warehouse:manage` 权限并保证幂等。
+      operationId: outboundBillCancel
+      security: [{ SaTokenAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
+      responses:
+        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -4986,13 +4991,20 @@ components:
       schema:
         type: string
       description: 入库单、出库单或库存流水 ID，BIGINT 按字符串传输
-    WorkBillId:
-      name: workBillId
+    InboundBillId:
+      name: inboundBillId
       in: path
       required: true
       schema:
         type: string
-      description: 入库单或出库单工作单 ID，BIGINT 按字符串传输
+      description: 入库单 ID，对应 `inbound_bill.id`，BIGINT 按字符串传输
+    OutboundBillId:
+      name: outboundBillId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 出库单 ID，对应 `outbound_bill.id`，BIGINT 按字符串传输
     SupplierId:
       name: supplierId
       in: path
@@ -5029,6 +5041,16 @@ components:
         type: string
       description: 销售订单 ID，对应 `sales_order.id`，BIGINT 按字符串传输
   responses:
+    StockBillDetailSuccess:
+      description: 单据详情
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Result'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/StockBillDetail' }
     BadRequest:
       description: 请求参数错误
       content:

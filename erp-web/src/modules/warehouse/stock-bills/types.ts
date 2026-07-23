@@ -66,8 +66,6 @@ export interface StockBillDetail extends StockBillListItem {
 }
 
 export interface StockBillSummary {
-  inboundCount: number;
-  outboundCount: number;
   sourceGeneratedCount: number;
   pendingCount: number;
   confirmedCount: number;

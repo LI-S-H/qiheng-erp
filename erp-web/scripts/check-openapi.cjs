@@ -9,6 +9,7 @@ const pageDesign = readProjectFile('docs', 'frontend-page-design.md');
 const databaseOverview = readProjectFile('docs', 'database', 'mvp-database-design-overview.md');
 const permissionSchema = readProjectFile('docs', 'database', 'mvp-system-permission-schema.md');
 const projectPlan = readProjectFile('docs', 'erp-project-plan.md');
+const productRequirement = readProjectFile('docs', 'product', 'PRD.md');
 const databaseSql = readProjectFile('docs', 'database', 'sql', '001_mvp_system_permission.sql');
 const productSql = readProjectFile('docs', 'database', 'sql', '002_mvp_product.sql');
 const authStoreSource = readProjectFile('erp-web', 'src', 'modules', 'auth', 'stores', 'authStore.ts');
@@ -606,8 +607,33 @@ for (const fragment of [
     throw new Error(`入库单/出库单前端契约缺少：${fragment}`);
   }
 }
-if (source.includes('/warehouse/work-bills/') || stockBillApiSource.includes('/warehouse/work-bills/')) {
+for (const summaryField of ['inboundCount', 'outboundCount']) {
+  if (stockBillApiSource.includes(summaryField) || stockBillTypeSource.includes(summaryField) || stockBillViewSource.includes(summaryField)) {
+    throw new Error(`Stock-bill frontend must not retain unused summary field: ${summaryField}`);
+  }
+  if (source.includes(`${summaryField}: { type: integer`)) {
+    throw new Error(`Stock-bill OpenAPI must not retain unused summary field: ${summaryField}`);
+  }
+}
+for (const fragment of [
+  'InboundBillCreateRequest:',
+  'OutboundBillCreateRequest:',
+  "schema: { $ref: '#/components/schemas/InboundBillCreateRequest' }",
+  "schema: { $ref: '#/components/schemas/OutboundBillCreateRequest' }",
+  'enum: [PURCHASE_IN, SALES_RETURN, ADJUST_IN], description: 入库单类型',
+  'enum: [SALES_OUT, PURCHASE_RETURN, ADJUST_OUT], description: 出库单类型',
+  'required: [sourceGeneratedCount, pendingCount, confirmedCount, cancelledCount]',
+]) {
+  if (!source.includes(fragment)) throw new Error(`Stock-bill contract fragment missing: ${fragment}`);
+}
+if (source.includes('/warehouse/work-bills/') || stockBillApiSource.includes('/warehouse/work-bills/') || pageDesign.includes('/warehouse/work-bills/') || productRequirement.includes('/warehouse/work-bills/')) {
   throw new Error('入库单/出库单不得再使用无法区分数据表的共享 work-bills 路由');
+}
+if (!stockBillApiSource.includes('function billCollectionEndpoint(direction: StockBillDirection)')
+  || !stockBillApiSource.includes('if (billDirection(payload.billType) !== direction)')
+  || !stockBillApiSource.includes('summary: normalizeSummary(page.summary)')
+  || !stockBillViewSource.includes('createStockBill(pageDirection.value, payload)')) {
+  throw new Error('Stock-bill frontend direction dispatch or summary mapping is incomplete');
 }
 if (stockBillViewSource.includes('来源生成') || stockLedgerViewSource.includes('来源生成')) {
   throw new Error('仓库前端展示必须将 SOURCE_GENERATED 统一命名为“系统生成”');
@@ -663,7 +689,8 @@ for (const fragment of [
   'processedQty',
   'pendingQty',
   'quantityPrecision',
-  "schema: { $ref: '#/components/schemas/StockBillCreateRequest' }",
+  "schema: { $ref: '#/components/schemas/InboundBillCreateRequest' }",
+  "schema: { $ref: '#/components/schemas/OutboundBillCreateRequest' }",
   "schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }",
   '仅允许 `DRAFT -> PENDING_CONFIRM`',
   '仅允许 `PENDING_CONFIRM -> CONFIRMED`',

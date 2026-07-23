@@ -80,7 +80,7 @@ interface DraftFormItem extends StockBillDraftItemPayload {
 
 const route = useRoute();
 const authStore = useAuthStore();
-const emptySummary = (): StockBillSummary => ({ inboundCount: 0, outboundCount: 0, sourceGeneratedCount: 0, pendingCount: 0, confirmedCount: 0, cancelledCount: 0 });
+const emptySummary = (): StockBillSummary => ({ sourceGeneratedCount: 0, pendingCount: 0, confirmedCount: 0, cancelledCount: 0 });
 
 const inboundTypes = new Set<StockBillType>(['PURCHASE_IN', 'SALES_RETURN', 'ADJUST_IN']);
 const outboundTypes = new Set<StockBillType>(['SALES_OUT', 'PURCHASE_RETURN', 'ADJUST_OUT']);
@@ -830,7 +830,7 @@ async function submitForm() {
         items: buildItemPayloads(),
         remark: form.remark.trim(),
       };
-      await createStockBill(payload);
+      await createStockBill(pageDirection.value, payload);
       toast.success(`${pageText.value.formTitle}草稿已创建`);
     } else if (editingDetail.value) {
       const payload: StockBillUpdatePayload = {

@@ -3857,7 +3857,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/StockBillCreateRequest' }
+            schema: { $ref: '#/components/schemas/InboundBillCreateRequest' }
       responses:
         "200":
           description: 创建成功
@@ -3950,7 +3950,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/StockBillCreateRequest' }
+            schema: { $ref: '#/components/schemas/OutboundBillCreateRequest' }
       responses:
         "200":
           description: 创建成功
@@ -7348,6 +7348,20 @@ components:
           items: { $ref: '#/components/schemas/StockBillDraftItemRequest' }
         remark: { type: string, maxLength: 500 }
 
+    InboundBillCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/StockBillCreateRequest'
+        - type: object
+          properties:
+            billType: { type: string, enum: [PURCHASE_IN, SALES_RETURN, ADJUST_IN], description: 入库单类型 }
+
+    OutboundBillCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/StockBillCreateRequest'
+        - type: object
+          properties:
+            billType: { type: string, enum: [SALES_OUT, PURCHASE_RETURN, ADJUST_OUT], description: 出库单类型 }
+
     StockBillUpdateRequest:
       type: object
       description: 入库/出库工作单更新 DTO；不直接更新确认后的库存流水。
@@ -7378,10 +7392,8 @@ components:
 
     StockBillSummary:
       type: object
-      required: [inboundCount, outboundCount, sourceGeneratedCount, pendingCount, confirmedCount, cancelledCount]
+      required: [sourceGeneratedCount, pendingCount, confirmedCount, cancelledCount]
       properties:
-        inboundCount: { type: integer, minimum: 0, description: 当前页 `records` 中的入库方向数量 }
-        outboundCount: { type: integer, minimum: 0, description: 当前页 `records` 中的出库方向数量 }
         sourceGeneratedCount: { type: integer, minimum: 0, description: 当前页 `records` 中 `entryMode = SOURCE_GENERATED` 的单据数 }
         pendingCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 PENDING_CONFIRM 的单据数 }
         confirmedCount: { type: integer, minimum: 0, description: 当前页 `records` 中状态为 CONFIRMED 的单据数 }

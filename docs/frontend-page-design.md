@@ -792,11 +792,17 @@ GET /warehouse/inbound-bills
 POST /warehouse/inbound-bills
 GET /warehouse/outbound-bills
 POST /warehouse/outbound-bills
-GET /warehouse/work-bills/{workBillId}
-PUT /warehouse/work-bills/{workBillId}
-POST /warehouse/work-bills/{workBillId}/submit
-POST /warehouse/work-bills/{workBillId}/confirm
-POST /warehouse/work-bills/{workBillId}/cancel
+GET /warehouse/inbound-bills/{inboundBillId}
+PUT /warehouse/inbound-bills/{inboundBillId}
+POST /warehouse/inbound-bills/{inboundBillId}/submit
+POST /warehouse/inbound-bills/{inboundBillId}/confirm
+POST /warehouse/inbound-bills/{inboundBillId}/cancel
+
+GET /warehouse/outbound-bills/{outboundBillId}
+PUT /warehouse/outbound-bills/{outboundBillId}
+POST /warehouse/outbound-bills/{outboundBillId}/submit
+POST /warehouse/outbound-bills/{outboundBillId}/confirm
+POST /warehouse/outbound-bills/{outboundBillId}/cancel
 ```
 
 ## 17. 仓库库存模块：库存调整（合并至入库单/出库单）
@@ -808,7 +814,7 @@ POST /warehouse/work-bills/{workBillId}/cancel
 - 不新增库存调整专表，复用 `inbound_bill` / `outbound_bill` 与对应明细；确认后生成 `stock_bill` / `stock_bill_item`。库存调整是单仓库库存增减，不自动生成反向入库单或出库单；如果业务需要 A 仓到 B 仓移动，应后续新增“库存调拨单”来关联调出和调入两边。
 - 调整类型只允许 `ADJUST_IN` 和 `ADJUST_OUT`，来源类型固定为 `STOCK_ADJUST`；调整流水号和调整单号由后端生成；`source_party_id/name` 记录受影响仓库 ID 和名称快照，前端显示为“调整仓库”。
 - 入库单/出库单页面同时展示系统生成单据、人工补录单据和库存调整单据，通过录入方式筛选区分。
-- 摘要基于当前页 `records` 统计待确认、已确认、已取消和系统生成等业务指标，不展示当前页单据数，不跨不同产品单位汇总数量；分页器是否展示总数由对应列表契约决定。
+- 摘要由接口的 `summary` 返回，且只统计当前页 `records` 中的系统生成、待确认、已确认、已取消四项业务指标；不返回入库方向或出库方向数量，不展示当前页单据数，也不跨不同产品单位汇总数量；分页器是否展示总数由对应列表契约决定。
 
 ### 17.2 页面操作
 
@@ -826,11 +832,17 @@ POST /warehouse/work-bills/{workBillId}/cancel
 ```text
 GET /warehouse/inbound-bills?entryMode=MANUAL_ADJUSTMENT
 GET /warehouse/outbound-bills?entryMode=MANUAL_ADJUSTMENT
-GET /warehouse/work-bills/{workBillId}
-PUT /warehouse/work-bills/{workBillId}
-POST /warehouse/work-bills/{workBillId}/submit
-POST /warehouse/work-bills/{workBillId}/confirm
-POST /warehouse/work-bills/{workBillId}/cancel
+GET /warehouse/inbound-bills/{inboundBillId}
+PUT /warehouse/inbound-bills/{inboundBillId}
+POST /warehouse/inbound-bills/{inboundBillId}/submit
+POST /warehouse/inbound-bills/{inboundBillId}/confirm
+POST /warehouse/inbound-bills/{inboundBillId}/cancel
+
+GET /warehouse/outbound-bills/{outboundBillId}
+PUT /warehouse/outbound-bills/{outboundBillId}
+POST /warehouse/outbound-bills/{outboundBillId}/submit
+POST /warehouse/outbound-bills/{outboundBillId}/confirm
+POST /warehouse/outbound-bills/{outboundBillId}/cancel
 ```
 
 ## 18. 采购业务模块：供应商、供货产品与采购订单

@@ -41,8 +41,8 @@ function billDirection(billType: StockBillType): StockBillDirection {
   return inboundTypes.has(billType) ? 'INBOUND' : 'OUTBOUND';
 }
 
-function billCollectionEndpoint(billType: StockBillType) {
-  return billDirection(billType) === 'INBOUND'
+function billCollectionEndpoint(direction: StockBillDirection) {
+  return direction === 'INBOUND'
     ? '/warehouse/inbound-bills'
     : '/warehouse/outbound-bills';
 }
@@ -291,8 +291,6 @@ function normalizeStockBillDetail(detail: StockBillDetail): StockBillDetail {
 
 function normalizeSummary(summary: StockBillSummary): StockBillSummary {
   return {
-    inboundCount: normalizeFiniteNumber(summary.inboundCount, 'inboundCount'),
-    outboundCount: normalizeFiniteNumber(summary.outboundCount, 'outboundCount'),
     sourceGeneratedCount: normalizeFiniteNumber(summary.sourceGeneratedCount, 'sourceGeneratedCount'),
     pendingCount: normalizeFiniteNumber(summary.pendingCount, 'pendingCount'),
     confirmedCount: normalizeFiniteNumber(summary.confirmedCount, 'confirmedCount'),
@@ -302,8 +300,6 @@ function normalizeSummary(summary: StockBillSummary): StockBillSummary {
 
 function buildSummary(records: StockBillListItem[]): StockBillSummary {
   return {
-    inboundCount: records.filter(item => inboundTypes.has(item.billType)).length,
-    outboundCount: records.filter(item => !inboundTypes.has(item.billType)).length,
     sourceGeneratedCount: records.filter(item => item.entryMode === 'SOURCE_GENERATED').length,
     pendingCount: records.filter(item => item.status === 'PENDING_CONFIRM').length,
     confirmedCount: records.filter(item => item.status === 'CONFIRMED').length,
@@ -341,7 +337,7 @@ function normalizeStockBillPage(page: StockBillPage): StockBillPage {
     total: normalizeFiniteNumber(page.total, 'total'),
     pageNum: normalizeFiniteNumber(page.pageNum, 'pageNum'),
     pageSize: normalizeFiniteNumber(page.pageSize, 'pageSize'),
-    summary: normalizeSummary(buildSummary(records)),
+    summary: normalizeSummary(page.summary),
   };
 }
 
@@ -404,7 +400,10 @@ function nextBillIdentity(billType: StockBillType) {
   return { billNo: `${billDirection(billType) === 'INBOUND' ? 'IB' : 'OB'}${dateKey()}${sequence}`, sourceNo: `ADJ${dateKey()}${sequence}` };
 }
 
-export async function createStockBill(payload: StockBillCreatePayload) {
+export async function createStockBill(direction: StockBillDirection, payload: StockBillCreatePayload) {
+  if (billDirection(payload.billType) !== direction) {
+    throw new Error('入库页面只能创建入库单，出库页面只能创建出库单');
+  }
   if (useMockApi) {
     const { warehouses, products } = await loadMockMasterData(payload.items.map(item => item.productId));
     validateDraftItems(payload.items, payload.billType, new Map(products.map(item => [item.productId, item.quantityPrecision])));
@@ -480,7 +479,7 @@ export async function createStockBill(payload: StockBillCreatePayload) {
     mockBills = [created, ...mockBills];
     return normalizeStockBillDetail(created);
   }
-  return postResult<StockBillDetail, StockBillCreatePayload>(billCollectionEndpoint(payload.billType), payload)
+  return postResult<StockBillDetail, StockBillCreatePayload>(billCollectionEndpoint(direction), payload)
     .then(normalizeStockBillDetail);
 }
 

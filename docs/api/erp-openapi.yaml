@@ -4039,7 +4039,7 @@ paths:
     get:
       tags: [WarehouseStockBill]
       summary: 获取库存流水变动明细
-      description: 返回一条已确认库存流水及全部 `stock_bill_item` 明细，用于展开查看产品、单位、变动前数量、正负变动数量、变动后数量和备注。该资源只读，需要 `warehouse:query` 权限。
+      description: 返回一条已确认库存流水及全部 `stock_bill_item` 明细，用于展开查看产品、单位、变动前数量、合格数量、不合格数量、正负变动数量、变动后数量和备注。该资源只读，需要 `warehouse:query` 权限。
       operationId: stockBillDetail
       security:
         - SaTokenAuth: []

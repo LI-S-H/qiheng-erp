@@ -95,6 +95,7 @@ async function runSmoke({
   reducedMotion = 'no-preference',
   autoLogin = true,
   serverMode = 'dev',
+  setupPage,
 }) {
   const targetBaseUrl = serverMode === 'preview' ? previewBaseUrl : baseUrl;
   const devServer = await ensureServer(serverMode, targetBaseUrl);
@@ -111,6 +112,7 @@ async function runSmoke({
   page.on('pageerror', error => errors.push(`[pageerror] ${error.message}`));
 
   try {
+    if (setupPage) await setupPage(page);
     await page.goto(`${targetBaseUrl}${route}`, { waitUntil: 'domcontentloaded' });
     if (autoLogin) await loginIfNeeded(page, route, targetBaseUrl);
     await test(page);

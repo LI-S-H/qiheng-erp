@@ -25,15 +25,15 @@ runSmoke({
     await page.locator('[data-anchored-select-content][data-state="open"]').getByText('停用', { exact: true }).click();
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'SUPER_ADMIN').waitFor({ state: 'detached' });
-    await tableRow(page, 'AI_ANALYST').waitFor();
-    if (await tableRow(page, 'SUPER_ADMIN').count()) throw new Error('角色停用状态筛选未生效');
+    if (await tableRow(page, 'AI_ANALYST').count()) throw new Error('启用角色不应出现在停用状态筛选结果中');
+    await page.getByText('暂无数据', { exact: true }).waitFor();
     await clickResetAndAssertLoading(page);
 
     const roleButtonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)
       .map(element => ({ text: element.textContent.trim(), fontSize: getComputedStyle(element).fontSize, fontWeight: getComputedStyle(element).fontWeight })));
-    const inconsistentRoleButton = roleButtonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '400');
-    if (inconsistentRoleButton) throw new Error(`角色页按钮文字未统一：${JSON.stringify(inconsistentRoleButton)}`);
+    const inconsistentRoleButton = roleButtonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '500');
+    if (inconsistentRoleButton) throw new Error(`角色页按钮文字未统一为 13px 中等字重：${JSON.stringify(inconsistentRoleButton)}`);
 
     await page.setViewportSize({ width: 1115, height: 520 });
     await page.getByRole('button', { name: '新增角色' }).click();

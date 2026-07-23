@@ -92,7 +92,7 @@ function barX(index: number) {
 }
 
 function barY(row: Record<string, string | number | null>) {
-  return yFor(Math.max(chartNumber(row, barField()), 0));
+  return frame.bottom - barHeight(row);
 }
 
 function barHeight(row: Record<string, string | number | null>) {

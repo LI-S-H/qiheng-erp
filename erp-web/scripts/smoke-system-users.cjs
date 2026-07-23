@@ -116,8 +116,8 @@ runSmoke({
         fontSize: getComputedStyle(element).fontSize,
         fontWeight: getComputedStyle(element).fontWeight,
       })));
-    const inconsistentButton = buttonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '400');
-    if (inconsistentButton) throw new Error(`按钮文字未统一为 13px 常规字重：${JSON.stringify(inconsistentButton)}`);
+    const inconsistentButton = buttonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '500');
+    if (inconsistentButton) throw new Error(`按钮文字未统一为 13px 中等字重：${JSON.stringify(inconsistentButton)}`);
 
     const departmentTrigger = selectTriggers.first();
     await departmentTrigger.click();
@@ -169,7 +169,7 @@ runSmoke({
     if (await tableRow(page, 'sales_stop').count()) throw new Error('用户启用状态筛选未生效');
     await activeFilters.getByText('状态：启用', { exact: true }).waitFor();
 
-    await selectFilter(roleTrigger, '业务主管');
+    await selectFilter(roleTrigger, '采购员');
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, 'admin').waitFor({ state: 'detached' });
     await tableRow(page, 'purchase01').waitFor();
@@ -177,7 +177,7 @@ runSmoke({
       throw new Error('用户角色与启用状态组合筛选未按 AND 条件生效');
     }
     await activeFilters.getByText('已生效 2 个条件', { exact: true }).waitFor();
-    await activeFilters.getByText('角色：业务主管', { exact: true }).waitFor();
+    await activeFilters.getByText('角色：采购员', { exact: true }).waitFor();
 
     await selectFilter(statusTrigger, '停用');
     await page.getByRole('button', { name: '查询', exact: true }).click();
@@ -185,7 +185,7 @@ runSmoke({
     await tableRow(page, 'sales_stop').waitFor();
     if (await tableRow(page, 'purchase01').count()) throw new Error('用户角色与停用状态组合筛选未生效');
     await selectFilter(roleTrigger, '超级管理员');
-    await activeFilters.getByText('角色：业务主管', { exact: true }).waitFor();
+    await activeFilters.getByText('角色：采购员', { exact: true }).waitFor();
     if (await activeFilters.getByText('角色：超级管理员', { exact: true }).count()) {
       throw new Error('未查询的角色草稿不应提前显示为已生效条件');
     }
@@ -195,7 +195,7 @@ runSmoke({
     await tableRow(page, 'purchase01').waitFor();
     await tableRow(page, 'sales_stop').waitFor();
     await activeFilters.getByText('已生效 1 个条件', { exact: true }).waitFor();
-    await roleTrigger.getByText('业务主管', { exact: true }).waitFor();
+    await roleTrigger.getByText('采购员', { exact: true }).waitFor();
     if (await activeFilters.getByText('状态：停用', { exact: true }).count()) {
       throw new Error('移除状态条件后仍显示旧筛选标签');
     }

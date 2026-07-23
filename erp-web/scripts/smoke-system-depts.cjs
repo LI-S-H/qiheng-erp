@@ -45,15 +45,15 @@ runSmoke({
     await page.locator('[data-anchored-select-content][data-state="open"]').getByText('停用', { exact: true }).click();
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await tableRow(page, '行政部').waitFor({ state: 'detached' });
-    await tableRow(page, '华南销售组').waitFor();
+    await tableRow(page, '华东销售组').waitFor();
     if (await tableRow(page, '行政部').count()) throw new Error('部门停用状态筛选未生效');
     await clickResetAndAssertLoading(page);
 
     const deptButtonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)
       .map(element => ({ text: element.textContent.trim(), fontSize: getComputedStyle(element).fontSize, fontWeight: getComputedStyle(element).fontWeight })));
-    const inconsistentDeptButton = deptButtonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '400');
-    if (inconsistentDeptButton) throw new Error(`部门页按钮文字未统一：${JSON.stringify(inconsistentDeptButton)}`);
+    const inconsistentDeptButton = deptButtonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '500');
+    if (inconsistentDeptButton) throw new Error(`部门页按钮文字未统一为 13px 中等字重：${JSON.stringify(inconsistentDeptButton)}`);
 
     await page.getByRole('button', { name: '新增部门' }).click();
     const createDeptDialog = page.getByRole('dialog', { name: '新增部门' });

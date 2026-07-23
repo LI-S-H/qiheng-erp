@@ -185,7 +185,7 @@ runSmoke({
     const editOrderDialog = page.getByRole('dialog', { name: '编辑采购单' });
     await editOrderDialog.getByText('PO202607003').waitFor();
     await editOrderDialog.getByText('预计到货', { exact: true }).waitFor();
-    await editOrderDialog.getByText('示例：2026-06-30').waitFor();
+    await editOrderDialog.getByLabel('请选择日期').waitFor();
     if ((await editOrderDialog.innerText()).includes('明细预计到货')) throw new Error('采购明细不应再展示预计到货字段');
     await assertRequiredLabels(editOrderDialog, ['供应商', '入库仓库']);
     await editOrderDialog.getByRole('button', { name: '保存修改' }).click();
@@ -249,7 +249,7 @@ runSmoke({
     await page.getByRole('button', { name: '新增采购单' }).click();
     const orderDialog = page.getByRole('dialog', { name: '新增采购单草稿' });
     const orderDialogText = await orderDialog.innerText();
-    if (!orderDialogText.includes('后端自动生成') || !orderDialogText.includes('保存后为草稿') || !orderDialogText.includes('预计到货') || !orderDialogText.includes('示例：2026-06-30')) {
+    if (!orderDialogText.includes('后端自动生成') || !orderDialogText.includes('保存后为草稿') || !orderDialogText.includes('预计到货') || !orderDialogText.includes('请选择日期')) {
       throw new Error('采购订单新增弹窗缺少系统生成字段或单头预计到货字段');
     }
     await selectRemoteOption(page, orderDialog, 0, 'S001', 'S001');

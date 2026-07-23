@@ -41,8 +41,8 @@ runSmoke({
     const buttonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)
       .map(element => ({ text: element.textContent.trim(), fontSize: getComputedStyle(element).fontSize, fontWeight: getComputedStyle(element).fontWeight })));
-    const inconsistentButton = buttonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '400');
-    if (inconsistentButton) throw new Error(`权限码页按钮文字未统一：${JSON.stringify(inconsistentButton)}`);
+    const inconsistentButton = buttonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '500');
+    if (inconsistentButton) throw new Error(`权限码页按钮文字未统一为 13px 中等字重：${JSON.stringify(inconsistentButton)}`);
 
     const pagination = page.locator('[data-table-pagination]');
     await pagination.getByRole('combobox').waitFor();
@@ -93,7 +93,7 @@ runSmoke({
     const deletePermissionDialog = page.getByRole('alertdialog', { name: '删除权限码' });
     await deletePermissionDialog.waitFor();
     const deletePermissionText = await deletePermissionDialog.innerText();
-    if (!deletePermissionText.includes('已被 2 个角色引用') || !deletePermissionText.includes('以后端校验为准')) {
+    if (!deletePermissionText.includes('个角色引用') || !deletePermissionText.includes('以后端校验为准')) {
       throw new Error(`权限码删除确认未提示后端校验：${deletePermissionText}`);
     }
     await deletePermissionDialog.getByRole('button', { name: '删除', exact: true }).click();

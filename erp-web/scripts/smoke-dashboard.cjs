@@ -183,11 +183,12 @@ runSmoke({
     const salesApproveTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '销售单待审核' });
     await salesApproveTodo.getByRole('button', { name: '查看详情' }).click();
     await salesApproveTodo.getByText('SO202607004').waitFor();
-    await salesApproveTodo.getByText('授信占用偏高').waitFor();
+    await salesApproveTodo.getByText('审核前需复核客户信用').waitFor();
 
     const creditReviewTodo = todoDialog.locator('.dashboard-detail-todo').filter({ hasText: '客户信用待复核' });
     await creditReviewTodo.getByRole('button', { name: '查看详情' }).click();
     await creditReviewTodo.getByText('杭州蓝湖办公采购（C002）').waitFor();
+    await creditReviewTodo.getByText('授信占用偏高').waitFor();
     if ((await creditReviewTodo.getByText('授信额度').count()) < 2) {
       throw new Error('客户信用复核应展示授信额度证据指标');
     }

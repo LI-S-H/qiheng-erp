@@ -79,7 +79,7 @@ const billTypeOptions: Array<{ value: StockLedgerBillType | 'all'; label: string
 ];
 const entryModeOptions: Array<{ value: StockLedgerEntryMode | 'all'; label: string }> = [
   { value: 'all', label: '全部录入方式' },
-  { value: 'SOURCE_GENERATED', label: '来源生成' },
+  { value: 'SOURCE_GENERATED', label: '系统生成' },
   { value: 'MANUAL_SUPPLEMENT', label: '人工补录' },
   { value: 'MANUAL_ADJUSTMENT', label: '人工调整' },
 ];

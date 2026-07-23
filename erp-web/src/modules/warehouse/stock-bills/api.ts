@@ -456,7 +456,7 @@ export async function createStockBill(payload: StockBillCreatePayload) {
       sourceType: sourceTypeByBillType[payload.billType],
       sourceId: null,
       sourceNo: isAdjustment ? identity.sourceNo : sourceNo,
-      sourcePartyName: isAdjustment ? '' : '手工补录',
+      sourcePartyName: isAdjustment ? warehouse.warehouseName : '手工补录',
       entryMode: isAdjustment ? 'MANUAL_ADJUSTMENT' : 'MANUAL_SUPPLEMENT',
       warehouseId: warehouse.warehouseId,
       warehouseName: warehouse.warehouseName,
@@ -493,7 +493,7 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
     const structureLocked = sourceGenerated || current.status === 'PENDING_CONFIRM';
     if (structureLocked && (payload.items.length !== current.items.length
       || payload.items.some(item => !item.stockBillItemId || !current.items.some(existing => existing.stockBillItemId === item.stockBillItemId && existing.productId === item.productId)))) {
-      throw new Error('来源生成单或待确认单不能增删或更换产品');
+      throw new Error('系统生成单或待确认单不能增删或更换产品');
     }
     const { warehouses, products } = await loadMockMasterData(payload.items.map(item => item.productId));
     const warehouseChanged = Boolean(payload.warehouseId && payload.warehouseId !== current.warehouseId);
@@ -545,7 +545,7 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
       ...current,
       warehouseId: warehouse.warehouseId,
       warehouseName: warehouse.warehouseName,
-      sourcePartyName: current.entryMode === 'MANUAL_ADJUSTMENT' ? '' : current.sourcePartyName,
+      sourcePartyName: current.entryMode === 'MANUAL_ADJUSTMENT' ? warehouse.warehouseName : current.sourcePartyName,
       sourceNo,
       manualReason,
       items,

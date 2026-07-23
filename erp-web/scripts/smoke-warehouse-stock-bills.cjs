@@ -49,7 +49,7 @@ async function assertStockBillColumnPreferences(page) {
   if (columnMenuText.includes('固定关键列') || columnMenuText.includes('单号与展开')) {
     throw new Error(`字段选择菜单不应展示无作用的固定关键列：${columnMenuText}`);
   }
-  for (const optionalLabel of ['录入方式', '来源类型', '来源单号', '供应商', '仓库', '负责人', '创建时间']) {
+  for (const optionalLabel of ['录入方式', '来源类型', '来源单号', '来源对象', '仓库', '负责人', '创建时间']) {
     const item = page.getByRole('menuitemcheckbox', { name: optionalLabel, exact: true });
     await item.waitFor();
     if (await item.isDisabled()) throw new Error(`可选字段“${optionalLabel}”不应被禁用`);
@@ -183,6 +183,12 @@ async function selectFilter(page, index, label) {
   const trigger = page.locator('.filter-panel').getByRole('combobox').nth(index);
   await trigger.click();
   await page.locator('[data-anchored-select-content][data-state="open"]').getByText(label, { exact: true }).click();
+}
+
+async function selectRemoteOption(page, dialog, index, label) {
+  await dialog.getByRole('combobox').nth(index).click();
+  const options = page.locator('[data-remote-search-select-content]:visible');
+  await options.locator('[data-select-option]').filter({ hasText: label }).first().click();
 }
 
 async function clickButton(page, name) {
@@ -556,15 +562,15 @@ runSmoke({
     const initialInboundItem = page.locator('[data-stock-bill-expanded-item-id]').filter({ hasText: '经典原味苏打水' });
     await assertDetailToggleMotion(page, initialInboundRow, initialInboundItem, path.resolve(__dirname, '..', 'docs', 'qa-screenshots', '2026-07-14-134409-stock-bill-collapse-stability', 'inbound-collapse-110ms.png'));
     const inboundHeaderText = await outerHeaderText(page);
-    for (const expected of ['入库单号', '类型', '录入方式', '来源类型', '来源单号', '供应商', '仓库', '入库量', '状态', '负责人', '创建时间', '操作']) {
+    for (const expected of ['入库单号', '类型', '录入方式', '来源类型', '来源单号', '来源对象', '仓库', '入库量', '状态', '负责人', '创建时间', '操作']) {
       if (!inboundHeaderText.includes(expected)) throw new Error(`入库单列表表头缺少独立列：${expected}`);
     }
-    for (const forbidden of ['入库单号 / 商品', '类型 / 来源', '往来方', '供应商/客户', '供应商 / 仓库', '状态 / 操作']) {
+    for (const forbidden of ['入库单号 / 商品', '类型 / 来源', '往来方', '供应商/客户', '来源对象 / 仓库', '状态 / 操作']) {
       if (inboundHeaderText.includes(forbidden)) throw new Error(`入库单列表不应使用混合表头：${forbidden}`);
     }
 
     const summaryText = await page.locator('.summary-strip').innerText();
-    for (const expected of ['本页待确认', '本页已确认', '本页已取消', '本页来源生成']) {
+    for (const expected of ['本页待确认', '本页已确认', '本页已取消', '本页系统生成']) {
       if (!summaryText.includes(expected)) throw new Error(`入库单摘要缺少 ${expected}`);
     }
     await clickButton(page, '刷新');
@@ -575,7 +581,7 @@ runSmoke({
     await pendingInboundRow.waitFor();
     await assertStockBillTableUsable(page, 'IB202606130006');
     const pendingInboundText = await pendingInboundRow.innerText();
-    for (const expected of ['采购入库', '来源生成', '采购订单', '谷仓食品批发', '2 条商品', '待确认']) {
+    for (const expected of ['采购入库', '系统生成', '采购订单', '谷仓食品批发', '2 条商品', '待确认']) {
       if (!pendingInboundText.includes(expected)) throw new Error(`待确认入库单列表缺少 ${expected}`);
     }
     for (const forbidden of ['P000007', 'P000033', '本次', '计划', '已处理', '剩余未入库']) {
@@ -597,7 +603,7 @@ runSmoke({
     await pendingInboundRow.getByRole('button', { name: '详情' }).click();
     const inboundDetail = page.getByRole('dialog', { name: '入库单详情' });
     const inboundDetailText = await inboundDetail.innerText();
-    for (const expected of ['供应商', '采购数量', '累计已入库', '本次入库数量', '剩余未入库', '每日坚果混合装']) {
+    for (const expected of ['来源对象', '采购数量', '累计已入库', '本次入库数量', '剩余未入库', '每日坚果混合装']) {
       if (!inboundDetailText.includes(expected)) throw new Error(`入库单详情缺少 ${expected}`);
     }
     await assertDetailFieldGrid(inboundDetail);
@@ -625,7 +631,7 @@ runSmoke({
       if (!editInboundValues.includes(expected)) throw new Error(`入库编辑弹窗输入数据缺少 ${expected}`);
     }
     if (await editInbound.getByRole('button', { name: '添加产品' }).isVisible().catch(() => false)) {
-      throw new Error('来源生成的待确认入库单不应允许新增产品');
+      throw new Error('系统生成的待确认入库单不应允许新增产品');
     }
     const pendingEditComboboxCount = await editInbound.getByRole('combobox').count();
     if (pendingEditComboboxCount !== 0) throw new Error(`待确认入库单不应暴露仓库或产品选择器，当前 ${pendingEditComboboxCount} 个`);
@@ -650,12 +656,31 @@ runSmoke({
     if (!(await draftInboundRow.innerText()).includes('草稿')) throw new Error('草稿入库单状态缺失');
     await selectRowAction(page, draftInboundRow, 'IB202606140003', '编辑入库单');
     const editDraftInbound = page.getByRole('dialog', { name: '编辑入库单' });
-    if (!((await editDraftInbound.innerText()).includes('添加产品'))) throw new Error('手工草稿入库单应允许维护产品明细');
+    const draftInboundText = await editDraftInbound.innerText();
+    if (!draftInboundText.includes('添加产品')) throw new Error('手工草稿入库单应允许维护产品明细');
+    for (const expected of ['来源仓库', '华南中心仓']) {
+      if (!draftInboundText.includes(expected)) throw new Error(`调整入库编辑弹窗缺少 ${expected}`);
+    }
     const draftEditComboboxCount = await editDraftInbound.getByRole('combobox').count();
     if (draftEditComboboxCount < 2) throw new Error(`草稿入库单应允许选择仓库和产品，当前选择器 ${draftEditComboboxCount} 个`);
+    await selectRemoteOption(page, editDraftInbound, 0, '华东中心仓');
+    const changedDraftValues = await editDraftInbound.locator('input').evaluateAll(inputs => inputs.map(input => input.value).join('\n'));
+    if (!changedDraftValues.includes('华东中心仓')) throw new Error('调整入库编辑时切换仓库后，来源仓库未即时更新');
+    await editDraftInbound.getByRole('button', { name: '保存修改' }).click();
+    await page.getByText('入库单已保存', { exact: true }).waitFor();
+    await editDraftInbound.waitFor({ state: 'hidden' });
+    if (!(await tableRow(page, 'IB202606140003').innerText()).includes('华东中心仓')) {
+      throw new Error('调整入库保存后未回写来源仓库快照');
+    }
+    await clickButton(page, '新增入库单');
+    const createInbound = page.getByRole('dialog', { name: '新增入库单' });
+    if (!(await createInbound.innerText()).includes('来源仓库')) throw new Error('新建调整入库单缺少来源仓库字段');
+    await selectRemoteOption(page, createInbound, 1, '华东中心仓');
+    const createInboundValues = await createInbound.locator('input').evaluateAll(inputs => inputs.map(input => input.value).join('\n'));
+    if (!createInboundValues.includes('华东中心仓')) throw new Error('新建调整入库单选择仓库后未显示来源仓库');
+    await createInbound.getByRole('button', { name: '关闭' }).click();
     await page.waitForTimeout(350);
     await page.screenshot({ path: screenshotPath('warehouse-inbound-draft-edit.png'), fullPage: true });
-    await editDraftInbound.getByRole('button', { name: '关闭' }).click();
     await selectRowAction(page, draftInboundRow, 'IB202606140003', '提交确认');
     const submitInboundDetail = page.getByRole('dialog', { name: '入库单详情' });
     const submitInboundDetailText = await submitInboundDetail.innerText();
@@ -681,10 +706,10 @@ runSmoke({
     await assertFixedTableLayout(page, 12);
     await assertDistinctTypeBadges(page, ['销售出库', '采购退货出库', '调整出库']);
     const outboundHeaderText = await outerHeaderText(page);
-    for (const expected of ['出库单号', '类型', '录入方式', '来源类型', '来源单号', '客户', '仓库', '出库量', '状态', '负责人', '创建时间', '操作']) {
+    for (const expected of ['出库单号', '类型', '录入方式', '来源类型', '来源单号', '来源对象', '仓库', '出库量', '状态', '负责人', '创建时间', '操作']) {
       if (!outboundHeaderText.includes(expected)) throw new Error(`出库单列表表头缺少独立列：${expected}`);
     }
-    for (const forbidden of ['出库单号 / 商品', '类型 / 来源', '往来方', '客户/供应商', '客户 / 仓库', '状态 / 操作']) {
+    for (const forbidden of ['出库单号 / 商品', '类型 / 来源', '往来方', '客户/供应商', '来源对象 / 仓库', '状态 / 操作']) {
       if (outboundHeaderText.includes(forbidden)) throw new Error(`出库单列表不应使用混合表头：${forbidden}`);
     }
     const outboundRow = tableRow(page, 'OB202606140002');
@@ -710,7 +735,7 @@ runSmoke({
     await outboundRow.getByRole('button', { name: '详情' }).click();
     const outboundDetail = page.getByRole('dialog', { name: '出库单详情' });
     const outboundDetailText = await outboundDetail.innerText();
-    for (const expected of ['客户', '销售数量', '累计已出库', '本次出库数量', '剩余未出库']) {
+    for (const expected of ['来源对象', '销售数量', '累计已出库', '本次出库数量', '剩余未出库']) {
       if (!outboundDetailText.includes(expected)) throw new Error(`出库单详情缺少 ${expected}`);
     }
     await assertDetailFieldGrid(outboundDetail);

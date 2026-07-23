@@ -40,6 +40,7 @@ const warehouseStockViewSource = readProjectFile('erp-web', 'src', 'modules', 'w
 const stockBillApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'api.ts');
 const stockBillTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'types.ts');
 const stockBillViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'views', 'StockBillManageView.vue');
+const stockLedgerViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-ledgers', 'views', 'StockLedgerManageView.vue');
 const aiApiSource = readProjectFile('erp-web', 'src', 'modules', 'ai', 'api.ts');
 const aiViewSource = readProjectFile('erp-web', 'src', 'modules', 'ai', 'views', 'AiAssistantView.vue');
 
@@ -608,6 +609,9 @@ for (const fragment of [
 if (source.includes('/warehouse/work-bills/') || stockBillApiSource.includes('/warehouse/work-bills/')) {
   throw new Error('入库单/出库单不得再使用无法区分数据表的共享 work-bills 路由');
 }
+if (stockBillViewSource.includes('来源生成') || stockLedgerViewSource.includes('来源生成')) {
+  throw new Error('仓库前端展示必须将 SOURCE_GENERATED 统一命名为“系统生成”');
+}
 for (const fragment of [
   "'/warehouse/inbound-bills'",
   "'/warehouse/outbound-bills'",
@@ -617,6 +621,8 @@ for (const fragment of [
   "billResourceEndpoint(direction, stockBillId, 'cancel')",
   'http.put(billResourceEndpoint(direction, stockBillId), payload)',
   'getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId))',
+  "sourcePartyName: isAdjustment ? warehouse.warehouseName : '手工补录'",
+  "sourcePartyName: current.entryMode === 'MANUAL_ADJUSTMENT' ? warehouse.warehouseName : current.sourcePartyName",
 ]) {
   if (!stockBillApiSource.includes(fragment)) throw new Error(`入库单/出库单前端路由映射缺少：${fragment}`);
 }
@@ -639,9 +645,9 @@ for (const fragment of [
 for (const fragment of [
   '按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要',
   '按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要',
-  '入库列表主列固定显示供应商',
-  '出库列表主列固定显示客户',
-  '库存调整没有来源对象时不展示来源对象字段，且不自动生成反向入库单或出库单',
+  '入库列表的“来源对象”列按单据类型显示供应商、客户或调整单的来源仓库',
+  '出库列表的“来源对象”列按单据类型显示客户、供应商或调整单的来源仓库',
+  '调整单详情和编辑态标注为“来源仓库”',
   'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
   'enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]',
   'enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]',
@@ -671,6 +677,12 @@ if (!stockBillViewSource.includes('新增入库单')
   || !stockBillViewSource.includes('新增出库单')
   || !stockBillViewSource.includes('手工补录')
   || !stockBillViewSource.includes('sourcePartyName')
+  || !stockBillViewSource.includes("partyColumnLabel: '来源对象'")
+  || !stockBillViewSource.includes("SOURCE_GENERATED: '系统生成'")
+  || !stockBillViewSource.includes("return '来源仓库'")
+  || !stockBillViewSource.includes('const sourcePartyFormDisplay = computed(() =>')
+  || !stockBillViewSource.includes("if (adjustmentTypes.has(formBillType.value)) return selectedFormWarehouseLabel.value || '请选择调整仓库';")
+  || stockBillViewSource.includes("row.billType === 'ADJUST_IN' || row.billType === 'ADJUST_OUT') return '-'")
   || !stockBillViewSource.includes('planQtyLabel')
   || !stockBillViewSource.includes('pendingQtyLabel')
   || !stockBillViewSource.includes('remainingAfterText')

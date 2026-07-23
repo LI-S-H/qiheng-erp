@@ -245,7 +245,7 @@ const pageText = computed(() => ({
   pendingLabel: '本页待确认',
   confirmedLabel: '本页已确认',
   cancelledLabel: '本页已取消',
-  sourceGeneratedLabel: '本页来源生成',
+  sourceGeneratedLabel: '本页系统生成',
   billNoLabel: isInboundPage.value ? '入库单号' : '出库单号',
   sourceNoPlaceholder: isInboundPage.value ? '如 PO202606001' : '如 SO202606001',
   listQtyLabel: isInboundPage.value ? '入库量' : '出库量',
@@ -256,7 +256,7 @@ const pageText = computed(() => ({
   formTitle: isInboundPage.value ? '入库单' : '出库单',
   confirmTitle: isInboundPage.value ? '确认入库' : '确认出库',
   emptyText: isInboundPage.value ? '暂无符合条件的入库单' : '暂无符合条件的出库单',
-  partyColumnLabel: isInboundPage.value ? '供应商' : '客户',
+  partyColumnLabel: '来源对象',
 }));
 
 const loading = ref(false);
@@ -332,6 +332,10 @@ const summaryCards = computed(() => [
 ]);
 const selectedQueryWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(item => item.value === query.warehouseId)?.label || '');
 const selectedFormWarehouseLabel = computed(() => formWarehouseOptions.value.find(item => item.value === form.warehouseId)?.label || (editingDetail.value?.warehouseId === form.warehouseId ? editingDetail.value.warehouseName : ''));
+const sourcePartyFormDisplay = computed(() => {
+  if (adjustmentTypes.has(formBillType.value)) return selectedFormWarehouseLabel.value || '请选择调整仓库';
+  return editingDetail.value ? sourcePartyDisplay(editingDetail.value) : '手工补录';
+});
 const warehouseFieldLabel = computed(() => isInboundPage.value ? '入库仓库' : '出库仓库');
 
 const allBillTypeOptions: Array<{ value: StockBillType; label: string }> = [
@@ -360,7 +364,7 @@ const statusOptions: Array<{ value: StockBillStatus | 'all'; label: string }> = 
 ];
 const entryModeOptions: Array<{ value: StockBillEntryMode | 'all'; label: string }> = [
   { value: 'all', label: '全部录入方式' },
-  { value: 'SOURCE_GENERATED', label: '来源生成' },
+  { value: 'SOURCE_GENERATED', label: '系统生成' },
   { value: 'MANUAL_SUPPLEMENT', label: '人工补录' },
   { value: 'MANUAL_ADJUSTMENT', label: '人工调整' },
 ];
@@ -386,7 +390,7 @@ const sourceTypeMap = {
   STOCK_ADJUST: '库存调整单',
 } as const;
 const entryModeMap = {
-  SOURCE_GENERATED: '来源生成',
+  SOURCE_GENERATED: '系统生成',
   MANUAL_SUPPLEMENT: '人工补录',
   MANUAL_ADJUSTMENT: '人工调整',
 } as const;
@@ -396,15 +400,12 @@ function billDirection(billType: StockBillType): StockBillDirection {
 }
 
 function sourcePartyLabel(billType: StockBillType) {
-  if (billType === 'ADJUST_IN' || billType === 'ADJUST_OUT') return '来源对象';
-  if (billType === 'PURCHASE_IN' || billType === 'PURCHASE_RETURN') return '供应商';
-  if (billType === 'SALES_OUT' || billType === 'SALES_RETURN') return '客户';
+  if (billType === 'ADJUST_IN' || billType === 'ADJUST_OUT') return '来源仓库';
   return '来源对象';
 }
 
 function sourcePartyDisplay(row: Pick<StockBillListItem, 'billType' | 'sourcePartyName' | 'warehouseName'> | null | undefined) {
   if (!row) return '-';
-  if (row.billType === 'ADJUST_IN' || row.billType === 'ADJUST_OUT') return '-';
   return row.sourcePartyName || '-';
 }
 
@@ -883,7 +884,7 @@ function getSubmitValidationError(row: StockBillDetail) {
       if (!Number.isFinite(item.qualifiedQty) || !Number.isFinite(item.defectiveQty) || item.qualifiedQty < 0 || item.defectiveQty < 0) return `产品 ${item.productCode} 的合格数量和不合格数量不能小于 0`;
       if (Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) return `产品 ${item.productCode} 的合格数量与不合格数量之和必须等于本次数量`;
     }
-    if (row.entryMode === 'SOURCE_GENERATED' && (item.planQty === null || item.processedQty === null || item.pendingQty === null)) return `来源生成单据的产品 ${item.productCode} 缺少计划、累计或剩余数量`;
+    if (row.entryMode === 'SOURCE_GENERATED' && (item.planQty === null || item.processedQty === null || item.pendingQty === null)) return `系统生成单据的产品 ${item.productCode} 缺少计划、累计或剩余数量`;
   }
   return '';
 }
@@ -1271,9 +1272,9 @@ onMounted(async () => {
                 <Input v-else :model-value="dialogMode === 'create' ? '保存后由系统生成' : form.sourceNo" readonly class="bg-muted/55 text-muted-foreground" />
                 <p v-if="formErrors.sourceNo" class="text-xs text-destructive">{{ formErrors.sourceNo }}</p>
               </div>
-              <div v-if="!isAdjustmentForm" class="space-y-1">
-                <Label>{{ editingDetail ? sourcePartyLabel(editingDetail.billType) : '来源对象' }}</Label>
-                <Input :model-value="editingDetail ? sourcePartyDisplay(editingDetail) : '手工补录'" readonly class="bg-muted/55 text-muted-foreground" />
+              <div class="space-y-1">
+                <Label>{{ sourcePartyLabel(formBillType) }}</Label>
+                <Input :model-value="sourcePartyFormDisplay" readonly class="bg-muted/55 text-muted-foreground" />
               </div>
               <div class="space-y-1"><Label>负责人</Label><Input :model-value="editingDetail?.responsibleByName || authStore.displayName" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">由后端按当前登录用户写入，不允许代填</p></div>
             </div>
@@ -1373,7 +1374,7 @@ onMounted(async () => {
               <div class="detail-field"><span>录入方式</span><strong>{{ entryModeMap[detail.entryMode] }}</strong></div>
               <div class="detail-field"><span>来源类型</span><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></div>
               <div class="detail-field"><span>来源单号</span><code>{{ detail.sourceNo || '-' }}</code></div>
-              <div v-if="!adjustmentTypes.has(detail.billType)" class="detail-field"><span>{{ sourcePartyLabel(detail.billType) }}</span><strong>{{ sourcePartyDisplay(detail) }}</strong></div>
+              <div class="detail-field"><span>{{ sourcePartyLabel(detail.billType) }}</span><strong>{{ sourcePartyDisplay(detail) }}</strong></div>
               <div class="detail-field"><span>负责人</span><strong>{{ detail.responsibleByName }}</strong></div>
               <div class="detail-field"><span>创建人 / 时间</span><strong>{{ detail.createdByName || '系统' }}</strong><small>{{ detail.createTime }}</small></div>
               <div class="detail-field"><span>确认人 / 时间</span><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></div>

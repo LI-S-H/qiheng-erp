@@ -1,6 +1,8 @@
 package com.qiheng.erp.warehouse.service;
 
-import com.qiheng.erp.warehouse.entity.StockBill;
+import com.qiheng.erp.warehouse.domain.dto.StockBillPageDto;
+import com.qiheng.erp.warehouse.domain.entity.StockBill;
+import com.qiheng.erp.warehouse.domain.vo.StockBillPageVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**
@@ -12,5 +14,12 @@ import com.baomidou.mybatisplus.extension.service.IService;
  * @since 2026-07-19
  */
 public interface IStockBillService extends IService<StockBill> {
+
+    /**
+     * 分页查询库存流水记录
+     * @param dto 分页查询请求
+     * @return 库存流水分页结果
+     */
+    StockBillPageVo page(StockBillPageDto dto);
 
 }

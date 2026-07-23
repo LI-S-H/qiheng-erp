@@ -15,7 +15,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import java.util.Arrays;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -26,6 +28,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    private static final Pattern DUPLICATE_KEY_PATTERN = Pattern.compile("Duplicate entry '(.*?)' for key");
 
     @ExceptionHandler(NotFoundBizException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
@@ -80,6 +83,34 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 参数类型转换异常
+     * 1. 路径参数或查询参数类型不匹配（如 Long 传了非数字字符串）
+     * 2. 枚举类接收到错误值
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e) {
+        String paramName = e.getName();
+        Class<?> requiredType = e.getRequiredType();
+        Object value = e.getValue();
+
+        String message;
+        if (requiredType != null && requiredType.isEnum()) {
+            String validValues = Arrays.stream(requiredType.getEnumConstants())
+                    .map(Object::toString)
+                    .collect(Collectors.joining(", "));
+            message = String.format("参数错误：%s 值 [%s] 无效，可选值：%s", paramName, value, validValues);
+        } else if (requiredType != null && Number.class.isAssignableFrom(requiredType)) {
+            message = String.format("参数错误：%s 必须是有效的数字格式，当前值：[%s]", paramName, value);
+        } else {
+            message = String.format("参数错误：%s 类型无效，当前值：[%s]", paramName, value);
+        }
+
+        log.error("参数类型转换异常: {}", message);
+        return Result.fail(ErrorCode.PARAM_ERROR.getCode(), message);
+    }
+
+    /**
      * 唯一键冲突异常
      */
     @ExceptionHandler(DuplicateKeyException.class)
@@ -91,8 +122,7 @@ public class GlobalExceptionHandler {
     }
 
     private String extractDuplicateMessage(String errorMsg) {
-        Pattern pattern = Pattern.compile("Duplicate entry '(.*?)' for key");
-        Matcher matcher = pattern.matcher(errorMsg);
+        Matcher matcher = DUPLICATE_KEY_PATTERN.matcher(errorMsg);
         if (matcher.find()) {
             return "数据重复，值 '" + matcher.group(1) + "' 已存在";
         }

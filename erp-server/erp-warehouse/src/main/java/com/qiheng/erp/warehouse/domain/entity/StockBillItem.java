@@ -1,4 +1,4 @@
-package com.qiheng.erp.warehouse.entity;
+package com.qiheng.erp.warehouse.domain.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -40,17 +40,13 @@ public class StockBillItem implements Serializable {
     @TableField("bill_id")
     private Long billId;
 
-    @Schema(description = "库存流水号冗余")
-    @TableField("bill_no")
-    private String billNo;
-
-    @Schema(description = "入库单明细或出库单明细ID")
-    @TableField("source_bill_item_id")
-    private Long sourceBillItemId;
-
     @Schema(description = "原业务来源明细ID")
     @TableField("business_source_item_id")
     private Long businessSourceItemId;
+
+    @Schema(description = "出入库单明细ID")
+    @TableField("work_bill_item_id")
+    private Long workBillItemId;
 
     @Schema(description = "产品ID")
     @TableField("product_id")
@@ -72,18 +68,6 @@ public class StockBillItem implements Serializable {
     @TableField("quantity_precision")
     private Integer quantityPrecision;
 
-    @Schema(description = "本次入库/出库数量，正数，按100倍整数存储")
-    @TableField("quantity")
-    private Long quantity;
-
-    @Schema(description = "合格数量，按100倍整数存储；仅质检适用类型使用")
-    @TableField("qualified_qty")
-    private Long qualifiedQty;
-
-    @Schema(description = "不合格数量，按100倍整数存储；仅质检适用类型使用")
-    @TableField("defective_qty")
-    private Long defectiveQty;
-
     @Schema(description = "变动前库存，按100倍整数存储")
     @TableField("before_qty")
     private Long beforeQty;
@@ -96,13 +80,17 @@ public class StockBillItem implements Serializable {
     @TableField("after_qty")
     private Long afterQty;
 
+    @Schema(description = "合格数量，按100倍整数存储")
+    @TableField("qualified_qty")
+    private Long qualifiedQty;
+
+    @Schema(description = "不合格数量，按100倍整数存储")
+    @TableField("defective_qty")
+    private Long defectiveQty;
+
     @Schema(description = "创建时间")
     @TableField("create_time")
     private LocalDateTime createTime;
-
-    @Schema(description = "更新时间")
-    @TableField("update_time")
-    private LocalDateTime updateTime;
 
     @Schema(description = "备注")
     @TableField("remark")

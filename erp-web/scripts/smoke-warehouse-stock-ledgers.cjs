@@ -25,9 +25,9 @@ runSmoke({
     await assertSharedListChrome(page, { summaryLabel: '库存流水数据汇总', filterLabel: '库存流水筛选' });
     const firstRow = tableRow(page, 'SL202607180001');
     await firstRow.waitFor();
-    await assertFixedTableLayout(page, 8);
+    await assertFixedTableLayout(page, 9);
     const firstRowText = await firstRow.innerText();
-    for (const expected of ['采购入库', '采购订单', 'PO202607180001', '华东中心仓', '管理员']) {
+    for (const expected of ['采购入库', '采购订单', 'PO202607180001', '来源生成', '华东中心仓', '管理员']) {
       if (!firstRowText.includes(expected)) throw new Error(`库存流水列表缺少 ${expected}：${firstRowText}`);
     }
     if (!(await firstRow.getByRole('button', { name: /展开.*2 条变动明细/ }).count())) {
@@ -37,14 +37,14 @@ runSmoke({
       throw new Error('库存流水页面不应提供写操作入口');
     }
 
-    const expandButton = firstRow.getByRole('button', { name: /展开明细/ });
+    const expandButton = firstRow.getByRole('button', { name: /展开.*明细/ });
     await expandButton.click();
     const detail = page.locator('[data-stock-ledger-detail-id="1950000000000000001"]');
     await detail.waitFor();
     if (!(await detail.innerText()).includes('P000001') || !(await detail.innerText()).includes('+20')) {
       throw new Error('库存流水展开明细未展示产品和正负变动数量');
     }
-    await firstRow.getByRole('button', { name: /收起明细/ }).click();
+    await firstRow.getByRole('button', { name: /收起.*明细/ }).click();
 
     await clickRefreshAndAssertLoading(page);
     await page.getByPlaceholder('如 SL202607180001').fill('SL202607180002');
@@ -53,7 +53,15 @@ runSmoke({
     await tableRow(page, 'SL202607180001').waitFor({ state: 'detached' });
     await clickResetAndAssertLoading(page);
 
-    await selectFilter(page, 1, '销售出库');
+    await selectFilter(page, 0, '销售订单');
+    await clickQueryAndAssertLoading(page);
+    const sourceTypeRows = page.locator('[data-stock-ledger-id]');
+    if (await sourceTypeRows.count() !== 1 || !(await sourceTypeRows.first().innerText()).includes('SL202607180002')) {
+      throw new Error('库存流水来源业务类型筛选未生效');
+    }
+    await clickResetAndAssertLoading(page);
+
+    await selectFilter(page, 2, '销售出库');
     await clickQueryAndAssertLoading(page);
     const filteredRows = page.locator('[data-stock-ledger-id]');
     if (await filteredRows.count() !== 1 || !(await filteredRows.first().innerText()).includes('SL202607180002')) {
@@ -61,7 +69,7 @@ runSmoke({
     }
     await clickResetAndAssertLoading(page);
 
-    await selectFilter(page, 2, '人工调整');
+    await selectFilter(page, 3, '人工调整');
     await clickQueryAndAssertLoading(page);
     const adjustmentRows = page.locator('[data-stock-ledger-id]');
     if (await adjustmentRows.count() !== 2) {

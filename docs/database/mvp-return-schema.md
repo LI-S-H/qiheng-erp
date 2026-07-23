@@ -275,8 +275,6 @@ inbound_bill_item.source_item_id = return_order_item.id
 
 ```text
 stock_bill.bill_type = SALES_RETURN
-stock_bill.direction = INBOUND
-stock_bill.business_source_type = SALES_RETURN_ORDER
 stock_bill.business_source_id = return_order.id
 stock_bill.business_source_no = return_order.return_no
 
@@ -306,8 +304,6 @@ outbound_bill_item.source_item_id = return_order_item.id
 
 ```text
 stock_bill.bill_type = PURCHASE_RETURN
-stock_bill.direction = OUTBOUND
-stock_bill.business_source_type = PURCHASE_RETURN_ORDER
 stock_bill.business_source_id = return_order.id
 stock_bill.business_source_no = return_order.return_no
 

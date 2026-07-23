@@ -3974,7 +3974,7 @@ paths:
       description: |
         查询 `stock_bill` 已确认库存流水主表，并按 `stock_bill_item.bill_id` 聚合返回 `itemCount`；列表不跨不同产品单位汇总数量。
         入库单和出库单的创建、编辑、提交与确认使用 `/warehouse/inbound-bills`、`/warehouse/outbound-bills` 及工作单操作接口；本路径只读返回已经确认并实际改变库存的流水事实。
-        流水号和来源单号分别使用包含匹配，仓库、出入库类型和录入方式使用精确匹配，多个有效条件按 AND 组合。列表只返回单头和 `itemCount`；需要产品变动前后数量时按流水 ID 调用详情接口，避免分页列表重复携带明细数组。
+        流水号和来源业务单号分别使用包含匹配，仓库、来源业务类型、出入库类型和录入方式使用精确匹配，多个有效条件按 AND 组合。来源业务类型是由出入库类型稳定推导的展示字段，不作为 `stock_bill` 的持久化列；后端实现 `sourceType` 查询时必须映射为对应的 `billType` 集合后过滤。列表只返回单头和 `itemCount`；需要产品变动前后数量时按流水 ID 调用详情接口，避免分页列表重复携带明细数组。
         入库类型为 `PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN`；出库类型为 `SALES_OUT`、`PURCHASE_RETURN`、`ADJUST_OUT`。
         本接口只用于追溯库存凭证，需要 `warehouse:query` 权限。
       operationId: stockBillPage
@@ -3988,7 +3988,15 @@ paths:
         - name: sourceNo
           in: query
           schema: { type: string, maxLength: 64 }
-          description: 来源单号，对应 `stock_bill.source_no`，使用包含匹配
+          description: 来源业务单号，对应 `stock_bill.business_source_no`，使用包含匹配
+        - name: sourceType
+          in: query
+          schema:
+            type: string
+            enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST]
+          description: |
+            来源业务类型，精确匹配；这是派生查询参数，不对应 `stock_bill` 持久化列。
+            后端实现备注：`PURCHASE_ORDER -> PURCHASE_IN`、`SALES_ORDER -> SALES_OUT`、`PURCHASE_RETURN_ORDER -> PURCHASE_RETURN`、`SALES_RETURN_ORDER -> SALES_RETURN`、`STOCK_ADJUST -> ADJUST_IN/ADJUST_OUT`，再按映射后的 `billType IN (...)` 过滤。
         - name: warehouseId
           in: query
           schema: { type: string }
@@ -7448,7 +7456,7 @@ components:
         billNo: { type: string, maxLength: 64, description: 对应 `stock_bill.bill_no` }
         billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT] }
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 对应 `stock_bill.entry_mode`，确认时从工作单复制的历史快照 }
-        sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST] }
+        sourceType: { type: string, readOnly: true, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 由 billType 派生：采购入库、销售出库、采购退货出库、销售退货入库、调整入出库分别对应采购订单、销售订单、采购退货单、销售退货单、库存调整单；不对应 stock_bill 持久化字段 }
         sourceId: { type: string, nullable: true, description: 原业务单据 ID }
         sourceNo: { type: string, maxLength: 64, description: 原业务单号或调整单号 }
         warehouseId: { type: string }

@@ -628,8 +628,8 @@ flowchart LR
     returnItem["return_order_item<br/>退货单明细<br/>return_order_id 退货单ID<br/>source_order_item_id 原订单明细ID<br/>requested_qty / approved_qty / processed_qty"]
     inboundBill["inbound_bill<br/>入库单主表<br/>inbound_type 入库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_party_name 供应商/客户快照"]
     outboundBill["outbound_bill<br/>出库单主表<br/>outbound_type 出库类型<br/>source_type 来源类型<br/>source_id 来源单据ID<br/>source_party_name 客户/供应商快照"]
-    stockBill["stock_bill<br/>库存流水凭证主表<br/>source_bill_type 来源单类型<br/>source_bill_id 入库单或出库单ID<br/>business_source_id 原业务单据ID<br/>entry_mode 录入方式快照"]
-    stockItem["stock_bill_item<br/>库存流水凭证明细<br/>source_bill_item_id 入库/出库明细ID<br/>business_source_item_id 原业务明细ID<br/>before_qty / change_qty / after_qty"]
+    stockBill["stock_bill<br/>库存流水凭证主表<br/>work_bill_id 入库单或出库单ID<br/>business_source_id 原业务单据ID<br/>entry_mode 录入方式快照"]
+    stockItem["stock_bill_item<br/>库存流水凭证明细<br/>work_bill_item_id 入库/出库明细ID<br/>business_source_item_id 原业务明细ID<br/>before_qty / change_qty / after_qty"]
     stock["warehouse_stock<br/>库存余额表<br/>warehouse_id 仓库ID<br/>product_id 产品ID<br/>stock_qty 当前库存<br/>locked_qty 锁定库存"]
 
     supplier -->|"supplier_id"| supplierProduct
@@ -677,7 +677,7 @@ flowchart LR
 | 销售出库明细 | `outbound_bill_item.source_item_id = sales_order_item.id` | 出库单明细可以反查销售明细 |
 | 销售退货 | `inbound_bill.source_type = SALES_RETURN_ORDER`、`inbound_bill.source_id = return_order.id` | 销售退货审核后进入仓库入库链路 |
 | 采购退货 | `outbound_bill.source_type = PURCHASE_RETURN_ORDER`、`outbound_bill.source_id = return_order.id` | 采购退货审核后进入仓库出库链路 |
-| 库存流水 | `stock_bill.source_bill_type/source_bill_id`、`stock_bill.business_source_type/business_source_id` | 库存流水可同时反查仓库作业单和原业务单据 |
+| 库存流水 | `stock_bill.work_bill_id`、`stock_bill.business_source_id` | 库存流水可同时反查仓库作业单和原业务单据；类型均由 `bill_type` 推导 |
 | 库存余额 | `warehouse_stock(warehouse_id, product_id)` | 一个仓库中一个产品只有一条当前库存记录 |
 
 ### 权限与 AI 关系图
@@ -802,8 +802,8 @@ flowchart LR
     inboundItem["inbound_bill_item 入库单明细<br/>id 主键<br/>inbound_bill_id 入库单ID<br/>source_item_id 来源明细ID<br/>plan_qty 计划数量<br/>processed_qty 累计已入库快照<br/>current_qty 本次入库数量<br/>pending_qty 剩余未入库快照"]
     outboundBill["outbound_bill 出库单主表<br/>id 主键<br/>outbound_no 出库单号<br/>outbound_type 出库类型<br/>source_type/source_id/source_no 原业务来源<br/>source_party_name 客户或供应商快照<br/>status 出库单状态<br/>confirmed_by / confirmed_at 确认信息"]
     outboundItem["outbound_bill_item 出库单明细<br/>id 主键<br/>outbound_bill_id 出库单ID<br/>source_item_id 来源明细ID<br/>plan_qty 计划数量<br/>processed_qty 累计已出库快照<br/>current_qty 本次出库数量<br/>pending_qty 剩余未出库快照"]
-    stockBill["stock_bill 库存流水凭证<br/>id 主键<br/>bill_no 库存流水号<br/>source_bill_type/source_bill_id 入库单或出库单<br/>business_source_type/business_source_id 原业务单据<br/>entry_mode 录入方式快照<br/>warehouse_id 仓库ID<br/>status CONFIRMED"]
-    stockItem["stock_bill_item 库存流水明细<br/>id 主键<br/>bill_id 库存流水ID<br/>source_bill_item_id 入库/出库明细ID<br/>business_source_item_id 原业务明细ID<br/>quantity 本次数量<br/>before_qty / change_qty / after_qty"]
+    stockBill["stock_bill 库存流水凭证<br/>id 主键<br/>bill_no 库存流水号<br/>work_bill_id 入库单或出库单<br/>business_source_id 原业务单据<br/>entry_mode 录入方式快照<br/>warehouse_id 仓库ID<br/>confirmed_at 确认时间"]
+    stockItem["stock_bill_item 库存流水明细<br/>id 主键<br/>bill_id 库存流水ID<br/>work_bill_item_id 入库/出库明细ID<br/>business_source_item_id 原业务明细ID<br/>quantity 本次数量<br/>before_qty / change_qty / after_qty"]
     warehouseRef["warehouse 仓库表<br/>id 仓库ID<br/>warehouse_name 仓库名称"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]
     purchaseOrderRef["purchase_order 采购订单<br/>id 采购订单ID<br/>purchase_no 采购单号"]
@@ -828,7 +828,7 @@ flowchart LR
     salesItemRef -.->|"销售出库明细来源：source_item_id -> sales_order_item.id"| outboundItem
 ```
 
-入库单、出库单的业务来源追溯不是固定物理外键，而是由 `source_type` 决定 `source_id` 指向哪类业务单据；库存流水再通过 `source_bill_type/source_bill_id` 关联已经确认的入库单或出库单，并将 `business_source_type/id/no`、`entry_mode` 固化为确认时快照。库存调整没有独立原业务单据，`business_source_id` 保持为空；退货来源写入 `return_order.id`，来源明细写入 `return_order_item.id`。
+入库单、出库单的业务来源追溯不是固定物理外键，而是由 `source_type` 决定 `source_id` 指向哪类业务单据；库存流水再通过 `work_bill_id` 关联已经确认的入库单或出库单，目标单据表和来源业务类型均由 `bill_type` 推导，并将 `business_source_id/no`、`entry_mode` 固化为确认时快照。库存调整没有独立原业务单据，`business_source_id` 保持为空；退货来源写入 `return_order.id`，来源明细写入 `return_order_item.id`。
 
 | 业务类型 | 作业单类型 | 作业单来源 | 作业单来源明细 | 确认后库存流水 |
 |---|---|---|---|---|

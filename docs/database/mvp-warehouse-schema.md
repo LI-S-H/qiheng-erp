@@ -174,22 +174,16 @@
 | id                   | bigint PK    | 库存流水凭证ID                                                                            |
 | bill_no              | varchar(64)  | 库存流水号，唯一，确认入库单/出库单时生成                                                               |
 | bill_type            | varchar(32)  | `PURCHASE_IN`、`SALES_OUT`、`PURCHASE_RETURN`、`SALES_RETURN`、`ADJUST_IN`、`ADJUST_OUT` |
-| direction            | varchar(16)  | `INBOUND` 或 `OUTBOUND`                                                              |
-| source_bill_type     | varchar(32)  | `INBOUND_BILL` 或 `OUTBOUND_BILL`                                                    |
-| source_bill_id       | bigint       | 入库单或出库单ID                                                                           |
-| source_bill_no       | varchar(64)  | 入库单号或出库单号                                                                           |
-| business_source_type | varchar(32)  | 原业务来源类型                                                                             |
+| work_bill_id         | bigint       | 已确认入库单或出库单ID；单据表由 `bill_type` 推导                                            |
 | business_source_id   | bigint       | 原业务单据ID；订单id必须写真实主键                                                                 |
 | business_source_no   | varchar(64)  | 原业务单据号                                                                              |
 | entry_mode           | varchar(32)  | 来源工作单的录入方式快照：`SOURCE_GENERATED`、`MANUAL_SUPPLEMENT`、`MANUAL_ADJUSTMENT`             |
 | warehouse_id         | bigint       | 仓库ID                                                                                |
 | warehouse_name       | varchar(100) | 仓库名称快照                                                                              |
-| status               | varchar(32)  | 固定为 `CONFIRMED`，冲销另建反向单据                                                            |
 | confirmed_by_id      | bigint       | 确认人ID                                                                               |
 | confirmed_by_name    | varchar(100) | 确认人姓名                                                                               |
 | confirmed_at         | datetime     | 确认时间                                                                                |
 | create_time          | datetime     | 创建时间                                                                                |
-| update_time          | datetime     | 更新时间                                                                                |
 | remark               | varchar(500) | 备注                                                                                  |
 
 ## 表：stock_bill_item（库存流水凭证明细表）
@@ -198,8 +192,7 @@
 | ----------------------- | ------------ | --------------------- |
 | id                      | bigint PK    | 明细ID                  |
 | bill_id                 | bigint       | 库存流水凭证ID              |
-| bill_no                 | varchar(64)  | 库存流水号冗余               |
-| source_bill_item_id     | bigint       | 入库单明细或出库单明细ID         |
+| work_bill_item_id       | bigint       | 已确认入库单明细或出库单明细ID；明细表由主表 `bill_type` 推导 |
 | business_source_item_id | bigint       | 原业务来源明细ID             |
 | product_id              | bigint       | 产品ID                  |
 | product_code            | varchar(64)  | 产品编码快照                |
@@ -213,7 +206,6 @@
 | change_qty              | bigint       | 库存变动数量，入库为正，出库为负      |
 | after_qty               | bigint       | 变动后库存                 |
 | create_time             | datetime     | 创建时间                  |
-| update_time             | datetime     | 更新时间                  |
 | remark                  | varchar(500) | 备注                    |
 
 ## 表间关系
@@ -224,8 +216,8 @@
 - `inbound_bill_item.inbound_bill_id` -> `inbound_bill.id`
 - `outbound_bill.warehouse_id` -> `warehouse.id`
 - `outbound_bill_item.outbound_bill_id` -> `outbound_bill.id`
-- `stock_bill.source_bill_id` 根据 `source_bill_type` 指向 `inbound_bill.id` 或 `outbound_bill.id`
-- `stock_bill_item.source_bill_item_id` 根据 `stock_bill.source_bill_type` 指向入库单明细或出库单明细
+- `stock_bill.work_bill_id` 根据 `bill_type` 指向 `inbound_bill.id` 或 `outbound_bill.id`；`PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN` 对应入库单，其余类型对应出库单
+- `stock_bill_item.work_bill_item_id` 根据主表 `bill_type` 指向入库单明细或出库单明细
 - `inbound_bill_item.source_item_id` 可指向 `purchase_order_item.id` 或后续销售退货明细ID
 - `outbound_bill_item.source_item_id` 可指向 `sales_order_item.id` 或后续采购退货明细ID
 
@@ -242,8 +234,8 @@
 - `DRAFT` 和 `PENDING_CONFIRM` 状态允许编辑，但普通采购/销售创建人只能编辑草稿；草稿可修改仓库、手工来源信息、产品明细、本次数量、合格数量、不合格数量和备注，来源生成单据不能增删或更换产品；单据提交后需要具备审核/仓库确认权限的用户才能编辑本次数量、合格数量、不合格数量和备注，仓库、来源信息和产品结构锁定。
 - 提交或确认入库单/出库单前，前端必须强制展示完整详情和全部产品明细，并从详情页发起二次确认；列表操作不得直接执行提交或确认。
 - `CONFIRMED` 后不允许任何修改或取消；发现错误时必须通过反向入库/出库或库存调整纠正，保留完整流水链路。
-- 确认入库单时，后端必须在同一事务内锁定入库单、库存余额和来源采购明细，生成 `stock_bill` / `stock_bill_item`；`stock_bill.entry_mode`、`business_source_type/id/no` 必须从工作单来源复制为历史快照，更新 `warehouse_stock.stock_qty`，并累加 `purchase_order_item.inbound_qty`。
-- 确认出库单时，后端必须在同一事务内锁定出库单、库存余额和来源销售明细，生成 `stock_bill` / `stock_bill_item`；`stock_bill.entry_mode`、`business_source_type/id/no` 必须从工作单来源复制为历史快照，扣减 `warehouse_stock.stock_qty`，并同步扣减销售锁定库存。
+- 确认入库单时，后端必须在同一事务内锁定入库单、库存余额和来源采购明细，生成 `stock_bill` / `stock_bill_item`，固化 `entry_mode`、`business_source_id/no` 和审计快照；来源业务类型由 `bill_type` 推导，更新 `warehouse_stock.stock_qty`，并累加 `purchase_order_item.inbound_qty`。
+- 确认出库单时，后端必须在同一事务内锁定出库单、库存余额和来源销售明细，生成 `stock_bill` / `stock_bill_item`，固化 `entry_mode`、`business_source_id/no` 和审计快照；来源业务类型由 `bill_type` 推导，扣减 `warehouse_stock.stock_qty`，并同步扣减销售锁定库存。
 - 销售单占用库存时只更新 `warehouse_stock.locked_qty`；确认出库后再扣减 `stock_qty` 和 `locked_qty`。
 - 手工补录使用 `entry_mode=MANUAL_SUPPLEMENT`，必须填写原业务单号和补录原因，`source_id` 可为空。
 - 库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`，只允许 `ADJUST_IN` 或 `ADJUST_OUT`，调整原因必填，`source_party_id/name` 保存受影响仓库 ID 和名称快照；库存调整是单仓库余额增减，不自动生成反向入库单或出库单，跨仓移动应由后续库存调拨单承载。

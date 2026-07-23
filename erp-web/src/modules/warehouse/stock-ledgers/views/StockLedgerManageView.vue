@@ -22,12 +22,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { listWarehouses } from '../../warehouses/api';
 import { getStockLedgerDetail, listStockLedgers } from '../api';
+import { getStockLedgerSourceType } from '../types';
 import type {
   StockLedgerBillType,
   StockLedgerDetail,
   StockLedgerEntryMode,
   StockLedgerListItem,
   StockLedgerQuery,
+  StockLedgerSourceType,
 } from '../types';
 
 const inboundTypes = new Set<StockLedgerBillType>(['PURCHASE_IN', 'SALES_RETURN', 'ADJUST_IN']);
@@ -45,6 +47,7 @@ const warehouseOptions = ref<Array<{ value: string; label: string }>>([{ value: 
 const query = reactive<StockLedgerQuery>({
   billNo: '',
   sourceNo: '',
+  sourceType: 'all',
   warehouseId: 'all',
   billType: 'all',
   entryMode: 'all',
@@ -93,6 +96,14 @@ const sourceTypeMap = {
   SALES_RETURN_ORDER: '销售退货单',
   STOCK_ADJUST: '库存调整单',
 } as const;
+const sourceTypeOptions: Array<{ value: StockLedgerSourceType | 'all'; label: string }> = [
+  { value: 'all', label: '全部来源类型' },
+  { value: 'PURCHASE_ORDER', label: sourceTypeMap.PURCHASE_ORDER },
+  { value: 'SALES_ORDER', label: sourceTypeMap.SALES_ORDER },
+  { value: 'PURCHASE_RETURN_ORDER', label: sourceTypeMap.PURCHASE_RETURN_ORDER },
+  { value: 'SALES_RETURN_ORDER', label: sourceTypeMap.SALES_RETURN_ORDER },
+  { value: 'STOCK_ADJUST', label: sourceTypeMap.STOCK_ADJUST },
+];
 
 function warehouseKeywordQuery(keyword: string) {
   const value = keyword.trim();
@@ -204,7 +215,7 @@ const { handleSearch, handleReset, handlePageChange, handlePageSizeChange, refre
   pending: queryPending,
   load: fetchLedgers,
   resetFilters: () => {
-    Object.assign(query, { billNo: '', sourceNo: '', warehouseId: 'all', billType: 'all', entryMode: 'all' });
+    Object.assign(query, { billNo: '', sourceNo: '', sourceType: 'all', warehouseId: 'all', billType: 'all', entryMode: 'all' });
   },
 });
 
@@ -227,7 +238,8 @@ onMounted(() => {
 
     <ListFilterPanel layout="content" aria-label="库存流水筛选">
       <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">流水号</Label><Input v-model="query.billNo" placeholder="如 SL202607180001" @keyup.enter="handleSearch" /></div>
-      <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">来源单号</Label><Input v-model="query.sourceNo" placeholder="如 PO202607180001" @keyup.enter="handleSearch" /></div>
+      <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">来源业务单号</Label><Input v-model="query.sourceNo" placeholder="如 PO202607180001" @keyup.enter="handleSearch" /></div>
+      <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">来源业务类型</Label><AnchoredSelect v-model="query.sourceType" :options="sourceTypeOptions" placeholder="全部来源类型" /></div>
       <div class="space-y-1" data-filter-size="wide"><Label class="text-xs">仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
       <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">出入库类型</Label><AnchoredSelect v-model="query.billType" :options="billTypeOptions" placeholder="全部类型" /></div>
       <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">录入方式</Label><AnchoredSelect v-model="query.entryMode" :options="entryModeOptions" placeholder="全部录入方式" /></div>
@@ -242,25 +254,26 @@ onMounted(() => {
       </div>
 
       <ScrollArea class="w-full">
-        <Table class="min-w-[1130px] table-fixed">
-          <colgroup><col class="w-[190px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[175px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[170px]" /><col class="w-[170px]" /></colgroup>
-          <TableHeader><TableRow><TableHead>流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>来源类型</TableHead><TableHead>来源单号</TableHead><TableHead>仓库</TableHead><TableHead>确认人</TableHead><TableHead>确认时间</TableHead><TableHead>创建时间</TableHead></TableRow></TableHeader>
+        <Table class="min-w-[1240px] table-fixed">
+          <colgroup><col class="w-[190px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[175px]" /><col class="w-[130px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[170px]" /><col class="w-[170px]" /></colgroup>
+          <TableHeader><TableRow><TableHead>流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>来源业务类型</TableHead><TableHead>来源业务单号</TableHead><TableHead>录入方式</TableHead><TableHead>仓库</TableHead><TableHead>确认人</TableHead><TableHead>确认时间</TableHead><TableHead>创建时间</TableHead></TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading && records.length === 0"><TableCell colspan="8" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="records.length === 0"><TableCell colspan="8" class="h-28 text-center text-muted-foreground">暂无符合条件的库存流水</TableCell></TableRow>
+            <TableRow v-if="loading && records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
+            <TableRow v-else-if="records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无符合条件的库存流水</TableCell></TableRow>
             <template v-else v-for="row in records" :key="row.stockLedgerId">
               <TableRow class="group" :data-stock-ledger-id="row.stockLedgerId">
                 <TableCell><div class="flex items-center gap-2"><Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-ledger-detail-${row.stockLedgerId}`" :aria-label="`${isRowDetailCollapsed(row) ? '展开' : '收起'} ${row.billNo} 的 ${row.itemCount} 条变动明细`" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button><code class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.billNo }}</code></div></TableCell>
                 <TableCell class="text-center"><Badge variant="outline" :class="billTypeMap[row.billType].className">{{ billTypeMap[row.billType].label }}</Badge></TableCell>
-                <TableCell>{{ sourceTypeMap[row.sourceType] }}</TableCell>
+                <TableCell>{{ sourceTypeMap[getStockLedgerSourceType(row.billType)] }}</TableCell>
                 <TableCell><span class="block truncate" :title="row.sourceNo">{{ row.sourceNo || '-' }}</span></TableCell>
+                <TableCell>{{ entryModeOptions.find(item => item.value === row.entryMode)?.label || '-' }}</TableCell>
                 <TableCell><span class="block truncate" :title="row.warehouseName">{{ row.warehouseName }}</span></TableCell>
                 <TableCell>{{ row.confirmedByName || '-' }}</TableCell>
                 <TableCell class="text-xs text-muted-foreground">{{ row.confirmedAt }}</TableCell>
                 <TableCell class="text-xs text-muted-foreground">{{ row.createTime }}</TableCell>
               </TableRow>
               <TableRow class="stock-ledger-detail-host-row bg-background" :data-stock-ledger-detail-host-id="row.stockLedgerId">
-                <TableCell colspan="8" class="h-0 px-4 py-0">
+                <TableCell colspan="9" class="h-0 px-4 py-0">
                   <CollapsibleRoot :open="!isRowDetailCollapsed(row)" :unmount-on-hide="false">
                     <CollapsibleContent :id="`stock-ledger-detail-${row.stockLedgerId}`" class="stock-ledger-detail-drawer" :data-stock-ledger-detail-id="row.stockLedgerId">
                       <div class="stock-ledger-detail-drawer__inner">

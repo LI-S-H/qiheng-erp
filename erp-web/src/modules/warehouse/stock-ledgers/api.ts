@@ -1,5 +1,6 @@
 import { getResult } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { getStockLedgerSourceType } from './types';
 import type {
   StockLedgerDetail,
   StockLedgerBillType,
@@ -8,16 +9,12 @@ import type {
   StockLedgerListItem,
   StockLedgerPage,
   StockLedgerQuery,
-  StockLedgerSourceType,
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
 
 const billTypes = new Set<StockLedgerBillType>([
   'PURCHASE_IN', 'SALES_OUT', 'PURCHASE_RETURN', 'SALES_RETURN', 'ADJUST_IN', 'ADJUST_OUT',
-]);
-const sourceTypes = new Set<StockLedgerSourceType>([
-  'PURCHASE_ORDER', 'SALES_ORDER', 'PURCHASE_RETURN_ORDER', 'SALES_RETURN_ORDER', 'STOCK_ADJUST',
 ]);
 const entryModes = new Set<StockLedgerEntryMode>([
   'SOURCE_GENERATED', 'MANUAL_SUPPLEMENT', 'MANUAL_ADJUSTMENT',
@@ -55,12 +52,14 @@ function normalizeStockLedgerItem(item: StockLedgerItem): StockLedgerItem {
 }
 
 function normalizeStockLedgerListItem(item: StockLedgerListItem): StockLedgerListItem {
+  const billType = normalizeEnum(item.billType, billTypes, 'billType');
+
   return {
     stockLedgerId: normalizeStringId(item.stockLedgerId, 'stockLedgerId'),
     billNo: String(item.billNo),
-    billType: normalizeEnum(item.billType, billTypes, 'billType'),
+    billType,
     entryMode: normalizeEnum(item.entryMode, entryModes, 'entryMode'),
-    sourceType: normalizeEnum(item.sourceType, sourceTypes, 'sourceType'),
+    sourceType: getStockLedgerSourceType(billType),
     sourceId: normalizeNullableStringId(item.sourceId, 'sourceId'),
     sourceNo: String(item.sourceNo),
     warehouseId: normalizeStringId(item.warehouseId, 'warehouseId'),
@@ -95,6 +94,7 @@ function matchesLedger(item: StockLedgerListItem, params: StockLedgerQuery) {
   const sourceNo = params.sourceNo?.trim().toLocaleLowerCase();
   return (!billNo || item.billNo.toLocaleLowerCase().includes(billNo))
     && (!sourceNo || item.sourceNo.toLocaleLowerCase().includes(sourceNo))
+    && (!params.sourceType || params.sourceType === 'all' || getStockLedgerSourceType(item.billType) === params.sourceType)
     && (!params.warehouseId || params.warehouseId === 'all' || item.warehouseId === params.warehouseId)
     && (!params.billType || params.billType === 'all' || item.billType === params.billType)
     && (!params.entryMode || params.entryMode === 'all' || item.entryMode === params.entryMode);
@@ -114,11 +114,12 @@ function filterMockLedgers(params: StockLedgerQuery): StockLedgerPage {
 /** 查询已确认库存事实；该资源没有新建、编辑、提交、确认或取消操作。 */
 export function listStockLedgers(params: StockLedgerQuery) {
   if (useMockApi) return Promise.resolve(filterMockLedgers(params));
-  const { billNo, sourceNo, warehouseId, billType, entryMode, ...rest } = params;
+  const { billNo, sourceNo, sourceType, warehouseId, billType, entryMode, ...rest } = params;
   return getResult<StockLedgerPage>('/warehouse/stock-bills', {
     ...rest,
     ...(billNo?.trim() ? { billNo: billNo.trim() } : {}),
     ...(sourceNo?.trim() ? { sourceNo: sourceNo.trim() } : {}),
+    ...(sourceType && sourceType !== 'all' ? { sourceType } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(billType && billType !== 'all' ? { billType } : {}),
     ...(entryMode && entryMode !== 'all' ? { entryMode } : {}),

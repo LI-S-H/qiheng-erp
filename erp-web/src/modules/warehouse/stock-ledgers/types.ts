@@ -15,6 +15,20 @@ export type StockLedgerSourceType =
   | 'SALES_RETURN_ORDER'
   | 'STOCK_ADJUST';
 
+/** 来源业务类型由库存流水类型稳定推导，不作为库存流水事实重复存储。 */
+export const stockLedgerSourceTypeByBillType: Record<StockLedgerBillType, StockLedgerSourceType> = {
+  PURCHASE_IN: 'PURCHASE_ORDER',
+  SALES_OUT: 'SALES_ORDER',
+  PURCHASE_RETURN: 'PURCHASE_RETURN_ORDER',
+  SALES_RETURN: 'SALES_RETURN_ORDER',
+  ADJUST_IN: 'STOCK_ADJUST',
+  ADJUST_OUT: 'STOCK_ADJUST',
+};
+
+export function getStockLedgerSourceType(billType: StockLedgerBillType) {
+  return stockLedgerSourceTypeByBillType[billType];
+}
+
 export type StockLedgerEntryMode = 'SOURCE_GENERATED' | 'MANUAL_SUPPLEMENT' | 'MANUAL_ADJUSTMENT';
 
 export interface StockLedgerItem {
@@ -55,6 +69,7 @@ export interface StockLedgerDetail extends StockLedgerListItem {
 export interface StockLedgerQuery {
   billNo?: string;
   sourceNo?: string;
+  sourceType?: StockLedgerSourceType | 'all';
   warehouseId?: string | 'all';
   billType?: StockLedgerBillType | 'all';
   entryMode?: StockLedgerEntryMode | 'all';

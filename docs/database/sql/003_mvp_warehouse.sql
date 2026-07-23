@@ -172,39 +172,31 @@ CREATE TABLE IF NOT EXISTS stock_bill (
     id BIGINT NOT NULL COMMENT '库存流水凭证ID',
     bill_no VARCHAR(64) NOT NULL COMMENT '库存流水号',
     bill_type VARCHAR(32) NOT NULL COMMENT '类型：PURCHASE_IN、SALES_OUT、PURCHASE_RETURN、SALES_RETURN、ADJUST_IN、ADJUST_OUT',
-    direction VARCHAR(16) NOT NULL COMMENT '方向：INBOUND、OUTBOUND',
-    source_bill_type VARCHAR(32) NOT NULL COMMENT '来源单类型：INBOUND_BILL、OUTBOUND_BILL',
-    source_bill_id BIGINT NOT NULL COMMENT '入库单或出库单ID',
-    source_bill_no VARCHAR(64) NOT NULL COMMENT '入库单号或出库单号',
-    business_source_type VARCHAR(32) NOT NULL DEFAULT '' COMMENT '原业务来源类型',
+    work_bill_id BIGINT NOT NULL COMMENT '已确认入库单或出库单ID；单据表由bill_type推导',
     business_source_id BIGINT DEFAULT NULL COMMENT '原业务单据ID',
     business_source_no VARCHAR(64) NOT NULL DEFAULT '' COMMENT '原业务单据号',
     entry_mode VARCHAR(32) NOT NULL DEFAULT 'SOURCE_GENERATED' COMMENT '录入方式：SOURCE_GENERATED、MANUAL_SUPPLEMENT、MANUAL_ADJUSTMENT',
     warehouse_id BIGINT NOT NULL COMMENT '仓库ID',
     warehouse_name VARCHAR(100) NOT NULL COMMENT '仓库名称快照',
-    status VARCHAR(32) NOT NULL DEFAULT 'CONFIRMED' COMMENT '状态：CONFIRMED',
     confirmed_by_id BIGINT NOT NULL COMMENT '确认人ID',
     confirmed_by_name VARCHAR(100) NOT NULL COMMENT '确认人姓名',
     confirmed_at DATETIME NOT NULL COMMENT '确认时间',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
-    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_stock_bill_no (bill_no),
-    KEY idx_stock_bill_source_bill (source_bill_type, source_bill_id),
-    KEY idx_stock_bill_business_source (business_source_type, business_source_id),
+    KEY idx_stock_bill_work_bill (work_bill_id),
+    KEY idx_stock_bill_business_source (bill_type, business_source_id),
     KEY idx_stock_bill_business_source_no (business_source_no),
     KEY idx_stock_bill_entry_mode_confirmed_at (entry_mode, confirmed_at),
     KEY idx_stock_bill_warehouse (warehouse_id),
-    KEY idx_stock_bill_type_direction (bill_type, direction)
+    KEY idx_stock_bill_type_confirmed_at (bill_type, confirmed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存流水凭证主表';
 
 CREATE TABLE IF NOT EXISTS stock_bill_item (
     id BIGINT NOT NULL COMMENT '库存流水凭证明细ID',
     bill_id BIGINT NOT NULL COMMENT '库存流水凭证ID',
-    bill_no VARCHAR(64) NOT NULL COMMENT '库存流水号冗余',
-    source_bill_item_id BIGINT NOT NULL COMMENT '入库单明细或出库单明细ID',
+    work_bill_item_id BIGINT NOT NULL COMMENT '已确认入库单明细或出库单明细ID',
     business_source_item_id BIGINT DEFAULT NULL COMMENT '原业务来源明细ID',
     product_id BIGINT NOT NULL COMMENT '产品ID',
     product_code VARCHAR(64) NOT NULL COMMENT '产品编码快照',
@@ -218,12 +210,11 @@ CREATE TABLE IF NOT EXISTS stock_bill_item (
     change_qty BIGINT NOT NULL DEFAULT 0 COMMENT '库存变动数量，入库为正、出库为负，按100倍整数存储',
     after_qty BIGINT NOT NULL DEFAULT 0 COMMENT '变动后库存，按100倍整数存储',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '备注',
     PRIMARY KEY (id),
     KEY idx_stock_bill_item_bill (bill_id),
     KEY idx_stock_bill_item_product (product_id),
-    KEY idx_stock_bill_item_source_item (source_bill_item_id),
+    KEY idx_stock_bill_item_work_item (work_bill_item_id),
     KEY idx_stock_bill_item_business_source_item (business_source_item_id),
     CONSTRAINT chk_stock_bill_item_quantity_precision CHECK (quantity_precision BETWEEN 0 AND 2)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存流水凭证明细表';
@@ -438,73 +429,68 @@ pending_qty = VALUES(pending_qty), stock_bill_item_id = VALUES(stock_bill_item_i
 create_time = VALUES(create_time), update_time = VALUES(update_time), remark = VALUES(remark);
 
 INSERT IGNORE INTO stock_bill (
-    id, bill_no, bill_type, direction,
-    source_bill_type, source_bill_id, source_bill_no,
-    business_source_type, business_source_id, business_source_no, entry_mode,
-    warehouse_id, warehouse_name, status,
+    id, bill_no, bill_type, work_bill_id,
+    business_source_id, business_source_no, entry_mode,
+    warehouse_id, warehouse_name,
     confirmed_by_id, confirmed_by_name, confirmed_at,
-    create_time, update_time, remark, version
+    create_time, remark
 ) VALUES
-(1934000000000000001, 'SB202607010001', 'ADJUST_IN', 'INBOUND', 'INBOUND_BILL', 1932000000000000001, 'IB202607010001', 'STOCK_ADJUST', NULL, 'ADJ202607010001', 'MANUAL_ADJUSTMENT', 1930000000000000003, '华北中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-01 09:12:00', '2026-07-01 09:12:00', '2026-07-01 09:12:00', '盘盈调整入库确认后自动生成', 0),
-(1934000000000000002, 'SB202607010002', 'ADJUST_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1933000000000000001, 'OB202607010001', 'STOCK_ADJUST', NULL, 'ADJ202607010002', 'MANUAL_ADJUSTMENT', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-01 10:05:00', '2026-07-01 10:05:00', '2026-07-01 10:05:00', '盘亏调整出库确认后自动生成', 0);
+(1934000000000000001, 'SB202607010001', 'ADJUST_IN', 1932000000000000001, NULL, 'ADJ202607010001', 'MANUAL_ADJUSTMENT', 1930000000000000003, '华北中心仓', 1900000000000000004, '仓管主管', '2026-07-01 09:12:00', '2026-07-01 09:12:00', '盘盈调整入库确认后自动生成'),
+(1934000000000000002, 'SB202607010002', 'ADJUST_OUT', 1933000000000000001, NULL, 'ADJ202607010002', 'MANUAL_ADJUSTMENT', 1930000000000000001, '华东中心仓', 1900000000000000004, '仓管主管', '2026-07-01 10:05:00', '2026-07-01 10:05:00', '盘亏调整出库确认后自动生成');
 
 INSERT INTO stock_bill (
-    id, bill_no, bill_type, direction,
-    source_bill_type, source_bill_id, source_bill_no,
-    business_source_type, business_source_id, business_source_no, entry_mode,
-    warehouse_id, warehouse_name, status,
+    id, bill_no, bill_type, work_bill_id,
+    business_source_id, business_source_no, entry_mode,
+    warehouse_id, warehouse_name,
     confirmed_by_id, confirmed_by_name, confirmed_at,
-    create_time, update_time, remark, version
+    create_time, remark
 ) VALUES
-(1990000000000000001, 'SB202606140001', 'PURCHASE_IN', 'INBOUND', 'INBOUND_BILL', 1950000000000000001, 'IB202606140001', 'PURCHASE_ORDER', 2012000000000000101, 'PO202606001', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-14 09:12:00', '2026-06-14 09:12:00', '2026-06-14 09:12:00', '由确认工作单自动生成', 0),
-(1990000000000000002, 'SB202606140002', 'SALES_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000002, 'OB202606140002', 'SALES_ORDER', 2022000000000000101, 'SO202606001', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-14 10:05:00', '2026-06-14 10:05:00', '2026-06-14 10:05:00', '由确认工作单自动生成', 0),
-(1990000000000000003, 'SB202606140004', 'SALES_RETURN', 'INBOUND', 'INBOUND_BILL', 1950000000000000004, 'IB202606140004', 'SALES_RETURN_ORDER', NULL, 'SRO202606001', 'SOURCE_GENERATED', 1930000000000000002, '华南中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-14 11:15:00', '2026-06-14 11:15:00', '2026-06-14 11:15:00', '由确认工作单自动生成', 0),
-(1990000000000000004, 'SB202606130007', 'SALES_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000007, 'OB202606130007', 'SALES_ORDER', 2022000000000000102, 'SO202606002', 'SOURCE_GENERATED', 1930000000000000004, '西南中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-13 14:50:00', '2026-06-13 14:50:00', '2026-06-13 14:50:00', '由确认工作单自动生成', 0),
-(1990000000000000005, 'SB202606130008', 'ADJUST_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000008, 'OB202606130008', 'STOCK_ADJUST', NULL, 'ADJ202606002', 'MANUAL_ADJUSTMENT', 1930000000000000004, '西南中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-13 13:20:00', '2026-06-13 13:20:00', '2026-06-13 13:20:00', '由确认工作单自动生成', 0),
-(1990000000000000006, 'SB202606120010', 'SALES_RETURN', 'INBOUND', 'INBOUND_BILL', 1950000000000000010, 'IB202606120010', 'SALES_RETURN_ORDER', NULL, 'SRO202606002', 'SOURCE_GENERATED', 1930000000000000005, '武汉中转仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-12 16:18:00', '2026-06-12 16:18:00', '2026-06-12 16:18:00', '由确认工作单自动生成', 0),
-(1990000000000000007, 'SB202606120011', 'PURCHASE_RETURN', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000011, 'OB202606120011', 'PURCHASE_RETURN_ORDER', NULL, 'PRO202606002', 'SOURCE_GENERATED', 1930000000000000006, '西安中转仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-12 14:45:00', '2026-06-12 14:45:00', '2026-06-12 14:45:00', '由确认工作单自动生成', 0),
-(1990000000000000008, 'SB202606110012', 'SALES_OUT', 'OUTBOUND', 'OUTBOUND_BILL', 1950000000000000012, 'OB202606110012', 'SALES_ORDER', 2022000000000000103, 'SO202606003', 'SOURCE_GENERATED', 1930000000000000007, '杭州电商仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-11 18:05:00', '2026-06-11 18:05:00', '2026-06-11 18:05:00', '由确认工作单自动生成', 0),
-(1990000000000000009, 'SB202606110013', 'ADJUST_IN', 'INBOUND', 'INBOUND_BILL', 1950000000000000013, 'IB202606110013', 'STOCK_ADJUST', NULL, 'ADJ202606003', 'MANUAL_ADJUSTMENT', 1930000000000000008, '南京备货仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-06-11 15:32:00', '2026-06-11 15:32:00', '2026-06-11 15:32:00', '由确认工作单自动生成', 0)
+(1990000000000000001, 'SB202606140001', 'PURCHASE_IN', 1950000000000000001, 2012000000000000101, 'PO202606001', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 1900000000000000004, '仓管主管', '2026-06-14 09:12:00', '2026-06-14 09:12:00', '由确认工作单自动生成'),
+(1990000000000000002, 'SB202606140002', 'SALES_OUT', 1950000000000000002, 2022000000000000101, 'SO202606001', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 1900000000000000004, '仓管主管', '2026-06-14 10:05:00', '2026-06-14 10:05:00', '由确认工作单自动生成'),
+(1990000000000000003, 'SB202606140004', 'SALES_RETURN', 1950000000000000004, NULL, 'SRO202606001', 'SOURCE_GENERATED', 1930000000000000002, '华南中心仓', 1900000000000000004, '仓管主管', '2026-06-14 11:15:00', '2026-06-14 11:15:00', '由确认工作单自动生成'),
+(1990000000000000004, 'SB202606130007', 'SALES_OUT', 1950000000000000007, 2022000000000000102, 'SO202606002', 'SOURCE_GENERATED', 1930000000000000004, '西南中心仓', 1900000000000000004, '仓管主管', '2026-06-13 14:50:00', '2026-06-13 14:50:00', '由确认工作单自动生成'),
+(1990000000000000005, 'SB202606130008', 'ADJUST_OUT', 1950000000000000008, NULL, 'ADJ202606002', 'MANUAL_ADJUSTMENT', 1930000000000000004, '西南中心仓', 1900000000000000004, '仓管主管', '2026-06-13 13:20:00', '2026-06-13 13:20:00', '由确认工作单自动生成'),
+(1990000000000000006, 'SB202606120010', 'SALES_RETURN', 1950000000000000010, NULL, 'SRO202606002', 'SOURCE_GENERATED', 1930000000000000005, '武汉中转仓', 1900000000000000004, '仓管主管', '2026-06-12 16:18:00', '2026-06-12 16:18:00', '由确认工作单自动生成'),
+(1990000000000000007, 'SB202606120011', 'PURCHASE_RETURN', 1950000000000000011, NULL, 'PRO202606002', 'SOURCE_GENERATED', 1930000000000000006, '西安中转仓', 1900000000000000004, '仓管主管', '2026-06-12 14:45:00', '2026-06-12 14:45:00', '由确认工作单自动生成'),
+(1990000000000000008, 'SB202606110012', 'SALES_OUT', 1950000000000000012, 2022000000000000103, 'SO202606003', 'SOURCE_GENERATED', 1930000000000000007, '杭州电商仓', 1900000000000000004, '仓管主管', '2026-06-11 18:05:00', '2026-06-11 18:05:00', '由确认工作单自动生成'),
+(1990000000000000009, 'SB202606110013', 'ADJUST_IN', 1950000000000000013, NULL, 'ADJ202606003', 'MANUAL_ADJUSTMENT', 1930000000000000008, '南京备货仓', 1900000000000000004, '仓管主管', '2026-06-11 15:32:00', '2026-06-11 15:32:00', '由确认工作单自动生成')
 ON DUPLICATE KEY UPDATE bill_no = VALUES(bill_no), bill_type = VALUES(bill_type),
-direction = VALUES(direction), source_bill_type = VALUES(source_bill_type), source_bill_id = VALUES(source_bill_id),
-source_bill_no = VALUES(source_bill_no), business_source_type = VALUES(business_source_type),
-    business_source_id = VALUES(business_source_id), business_source_no = VALUES(business_source_no), entry_mode = VALUES(entry_mode),
-warehouse_id = VALUES(warehouse_id), warehouse_name = VALUES(warehouse_name), status = VALUES(status),
+work_bill_id = VALUES(work_bill_id), business_source_id = VALUES(business_source_id),
+business_source_no = VALUES(business_source_no), entry_mode = VALUES(entry_mode),
+warehouse_id = VALUES(warehouse_id), warehouse_name = VALUES(warehouse_name),
 confirmed_by_id = VALUES(confirmed_by_id), confirmed_by_name = VALUES(confirmed_by_name),
-confirmed_at = VALUES(confirmed_at), create_time = VALUES(create_time), update_time = VALUES(update_time),
-remark = VALUES(remark), version = VALUES(version);
+confirmed_at = VALUES(confirmed_at), create_time = VALUES(create_time), remark = VALUES(remark);
 
 INSERT IGNORE INTO stock_bill_item (
-    id, bill_id, bill_no, source_bill_item_id, business_source_item_id,
+    id, bill_id, work_bill_item_id, business_source_item_id,
     product_id, product_code, product_name, unit_name, quantity_precision,
     quantity, qualified_qty, defective_qty, before_qty, change_qty, after_qty,
-    create_time, update_time, remark
+    create_time, remark
 ) VALUES
-(1934100000000000001, 1934000000000000001, 'SB202607010001', 1932100000000000001, NULL, 1920000000000000007, 'P000007', '每日坚果混合装', '盒', 0, 1600, 0, 0, 1500, 1600, 3100, '2026-07-01 09:12:00', '2026-07-01 09:12:00', '盘盈16盒'),
-(1934100000000000002, 1934000000000000002, 'SB202607010002', 1933100000000000001, NULL, 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 0, 1000, 0, 0, 1700, -1000, 700, '2026-07-01 10:05:00', '2026-07-01 10:05:00', '盘亏10盒');
+(1934100000000000001, 1934000000000000001, 1932100000000000001, NULL, 1920000000000000007, 'P000007', '每日坚果混合装', '盒', 0, 1600, 0, 0, 1500, 1600, 3100, '2026-07-01 09:12:00', '盘盈16盒'),
+(1934100000000000002, 1934000000000000002, 1933100000000000001, NULL, 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 0, 1000, 0, 0, 1700, -1000, 700, '2026-07-01 10:05:00', '盘亏10盒');
 
 INSERT INTO stock_bill_item (
-    id, bill_id, bill_no, source_bill_item_id, business_source_item_id,
+    id, bill_id, work_bill_item_id, business_source_item_id,
     product_id, product_code, product_name, unit_name, quantity_precision,
     quantity, qualified_qty, defective_qty, before_qty, change_qty, after_qty,
-    create_time, update_time, remark
+    create_time, remark
 ) VALUES
-(1991000000000000001, 1990000000000000001, 'SB202606140001', 1960000000000001001, NULL, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 3000, 2900, 100, 1200, 3000, 4200, '2026-06-14 09:12:00', '2026-06-14 09:12:00', '含 1 个不合格品，已记录质检结果'),
-(1991000000000000002, 1990000000000000001, 'SB202606140001', 1960000000000001002, NULL, 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 0, 1200, 1200, 0, 500, 1200, 1700, '2026-06-14 09:12:00', '2026-06-14 09:12:00', ''),
-(1991000000000000003, 1990000000000000002, 'SB202606140002', 1960000000000002001, NULL, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 800, 0, 0, 9400, -800, 8600, '2026-06-14 10:05:00', '2026-06-14 10:05:00', ''),
-(1991000000000000004, 1990000000000000003, 'SB202606140004', 1960000000000004001, NULL, 1920000000000000027, 'P000027', '热敏标签纸', '卷', 0, 1000, 900, 100, 0, 1000, 1000, '2026-06-14 11:15:00', '2026-06-14 11:15:00', '含 1 个不合格品，已记录质检结果'),
-(1991000000000000005, 1990000000000000004, 'SB202606130007', 1960000000000007001, NULL, 1920000000000000034, 'P000034', '厨房清洁湿巾', '包', 0, 1200, 0, 0, 6000, -1200, 4800, '2026-06-13 14:50:00', '2026-06-13 14:50:00', ''),
-(1991000000000000006, 1990000000000000005, 'SB202606130008', 1960000000000008001, NULL, 1920000000000000037, 'P000037', '加厚垃圾袋', '卷', 0, 300, 0, 0, 2800, -300, 2500, '2026-06-13 13:20:00', '2026-06-13 13:20:00', ''),
-(1991000000000000007, 1990000000000000006, 'SB202606120010', 1960000000000010001, NULL, 1920000000000000008, 'P000008', '海盐苏打饼干', '箱', 0, 400, 300, 100, 1500, 400, 1900, '2026-06-12 16:18:00', '2026-06-12 16:18:00', '含 1 个不合格品，已记录质检结果'),
-(1991000000000000008, 1990000000000000007, 'SB202606120011', 1960000000000011001, NULL, 1920000000000000022, 'P000022', '彩色便利贴', '本', 0, 700, 0, 0, 7000, -700, 6300, '2026-06-12 14:45:00', '2026-06-12 14:45:00', ''),
-(1991000000000000009, 1990000000000000008, 'SB202606110012', 1960000000000012001, NULL, 1920000000000000044, 'P000044', '无线办公鼠标', '个', 0, 600, 0, 0, 1400, -600, 800, '2026-06-11 18:05:00', '2026-06-11 18:05:00', ''),
-(1991000000000000010, 1990000000000000009, 'SB202606110013', 1960000000000013001, NULL, 1920000000000000043, 'P000043', 'USB-C扩展坞', '个', 0, 200, 0, 0, 1500, 200, 1700, '2026-06-11 15:32:00', '2026-06-11 15:32:00', '')
-ON DUPLICATE KEY UPDATE bill_id = VALUES(bill_id), bill_no = VALUES(bill_no),
-source_bill_item_id = VALUES(source_bill_item_id), business_source_item_id = VALUES(business_source_item_id),
+(1991000000000000001, 1990000000000000001, 1960000000000001001, NULL, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 3000, 2900, 100, 1200, 3000, 4200, '2026-06-14 09:12:00', '含 1 个不合格品，已记录质检结果'),
+(1991000000000000002, 1990000000000000001, 1960000000000001002, NULL, 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 0, 1200, 1200, 0, 500, 1200, 1700, '2026-06-14 09:12:00', ''),
+(1991000000000000003, 1990000000000000002, 1960000000000002001, NULL, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 800, 0, 0, 9400, -800, 8600, '2026-06-14 10:05:00', ''),
+(1991000000000000004, 1990000000000000003, 1960000000000004001, NULL, 1920000000000000027, 'P000027', '热敏标签纸', '卷', 0, 1000, 900, 100, 0, 1000, 1000, '2026-06-14 11:15:00', '含 1 个不合格品，已记录质检结果'),
+(1991000000000000005, 1990000000000000004, 1960000000000007001, NULL, 1920000000000000034, 'P000034', '厨房清洁湿巾', '包', 0, 1200, 0, 0, 6000, -1200, 4800, '2026-06-13 14:50:00', ''),
+(1991000000000000006, 1990000000000000005, 1960000000000008001, NULL, 1920000000000000037, 'P000037', '加厚垃圾袋', '卷', 0, 300, 0, 0, 2800, -300, 2500, '2026-06-13 13:20:00', ''),
+(1991000000000000007, 1990000000000000006, 1960000000000010001, NULL, 1920000000000000008, 'P000008', '海盐苏打饼干', '箱', 0, 400, 300, 100, 1500, 400, 1900, '2026-06-12 16:18:00', '含 1 个不合格品，已记录质检结果'),
+(1991000000000000008, 1990000000000000007, 1960000000000011001, NULL, 1920000000000000022, 'P000022', '彩色便利贴', '本', 0, 700, 0, 0, 7000, -700, 6300, '2026-06-12 14:45:00', ''),
+(1991000000000000009, 1990000000000000008, 1960000000000012001, NULL, 1920000000000000044, 'P000044', '无线办公鼠标', '个', 0, 600, 0, 0, 1400, -600, 800, '2026-06-11 18:05:00', ''),
+(1991000000000000010, 1990000000000000009, 1960000000000013001, NULL, 1920000000000000043, 'P000043', 'USB-C扩展坞', '个', 0, 200, 0, 0, 1500, 200, 1700, '2026-06-11 15:32:00', '')
+ON DUPLICATE KEY UPDATE bill_id = VALUES(bill_id), work_bill_item_id = VALUES(work_bill_item_id),
+business_source_item_id = VALUES(business_source_item_id),
 product_id = VALUES(product_id), product_code = VALUES(product_code), product_name = VALUES(product_name),
 unit_name = VALUES(unit_name), quantity_precision = VALUES(quantity_precision), quantity = VALUES(quantity),
 qualified_qty = VALUES(qualified_qty), defective_qty = VALUES(defective_qty), before_qty = VALUES(before_qty),
-change_qty = VALUES(change_qty), after_qty = VALUES(after_qty), create_time = VALUES(create_time),
-update_time = VALUES(update_time), remark = VALUES(remark);
+change_qty = VALUES(change_qty), after_qty = VALUES(after_qty), create_time = VALUES(create_time), remark = VALUES(remark);
 
 COMMIT;

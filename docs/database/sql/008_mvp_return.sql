@@ -219,42 +219,38 @@ stock_bill_item_id = VALUES(stock_bill_item_id), create_time = VALUES(create_tim
 update_time = VALUES(update_time), remark = VALUES(remark);
 
 INSERT INTO stock_bill (
-    id, bill_no, bill_type, direction,
-    source_bill_type, source_bill_id, source_bill_no,
-    business_source_type, business_source_id, business_source_no, entry_mode,
-    warehouse_id, warehouse_name, status,
+    id, bill_no, bill_type, work_bill_id,
+    business_source_id, business_source_no, entry_mode,
+    warehouse_id, warehouse_name,
     confirmed_by_id, confirmed_by_name, confirmed_at,
-    create_time, update_time, remark, version
+    create_time, remark
 ) VALUES
-(2070000000000000001, 'SB202607140001', 'PURCHASE_RETURN', 'OUTBOUND', 'OUTBOUND_BILL', 2050000000000000002, 'OB202607140001', 'PURCHASE_RETURN_ORDER', 2030000000000000004, 'PR202607004', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-14 11:00:00', '2026-07-14 11:00:00', '2026-07-14 11:00:00', '采购退回出库确认后自动生成', 0),
-(2070000000000000002, 'SB202607150001', 'PURCHASE_RETURN', 'OUTBOUND', 'OUTBOUND_BILL', 2050000000000000003, 'OB202607150001', 'PURCHASE_RETURN_ORDER', 2030000000000000005, 'PR202607005', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-15 16:30:00', '2026-07-15 16:30:00', '2026-07-15 16:30:00', '采购退回出库确认后自动生成', 0),
-(2070000000000000003, 'SB202607140002', 'SALES_RETURN', 'INBOUND', 'INBOUND_BILL', 2060000000000000002, 'IB202607140001', 'SALES_RETURN_ORDER', 2040000000000000004, 'SR202607004', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-14 16:00:00', '2026-07-14 16:00:00', '2026-07-14 16:00:00', '销售退货入库确认后自动生成', 0),
-(2070000000000000004, 'SB202607150002', 'SALES_RETURN', 'INBOUND', 'INBOUND_BILL', 2060000000000000003, 'IB202607150001', 'SALES_RETURN_ORDER', 2040000000000000005, 'SR202607005', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 'CONFIRMED', 1900000000000000004, '仓管主管', '2026-07-15 17:30:00', '2026-07-15 17:30:00', '2026-07-15 17:30:00', '销售退货入库确认后自动生成', 0)
+(2070000000000000001, 'SB202607140001', 'PURCHASE_RETURN', 2050000000000000002, 2030000000000000004, 'PR202607004', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 1900000000000000004, '仓管主管', '2026-07-14 11:00:00', '2026-07-14 11:00:00', '采购退回出库确认后自动生成'),
+(2070000000000000002, 'SB202607150001', 'PURCHASE_RETURN', 2050000000000000003, 2030000000000000005, 'PR202607005', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 1900000000000000004, '仓管主管', '2026-07-15 16:30:00', '2026-07-15 16:30:00', '采购退回出库确认后自动生成'),
+(2070000000000000003, 'SB202607140002', 'SALES_RETURN', 2060000000000000002, 2040000000000000004, 'SR202607004', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 1900000000000000004, '仓管主管', '2026-07-14 16:00:00', '2026-07-14 16:00:00', '销售退货入库确认后自动生成'),
+(2070000000000000004, 'SB202607150002', 'SALES_RETURN', 2060000000000000003, 2040000000000000005, 'SR202607005', 'SOURCE_GENERATED', 1930000000000000001, '华东中心仓', 1900000000000000004, '仓管主管', '2026-07-15 17:30:00', '2026-07-15 17:30:00', '销售退货入库确认后自动生成')
 ON DUPLICATE KEY UPDATE bill_no = VALUES(bill_no), bill_type = VALUES(bill_type),
-direction = VALUES(direction), source_bill_type = VALUES(source_bill_type), source_bill_id = VALUES(source_bill_id),
-source_bill_no = VALUES(source_bill_no), business_source_type = VALUES(business_source_type),
-business_source_id = VALUES(business_source_id), business_source_no = VALUES(business_source_no), entry_mode = VALUES(entry_mode),
-warehouse_id = VALUES(warehouse_id), warehouse_name = VALUES(warehouse_name), status = VALUES(status),
-confirmed_by_id = VALUES(confirmed_by_id), confirmed_by_name = VALUES(confirmed_by_name), confirmed_at = VALUES(confirmed_at),
-create_time = VALUES(create_time), update_time = VALUES(update_time), remark = VALUES(remark), version = VALUES(version);
+work_bill_id = VALUES(work_bill_id), business_source_id = VALUES(business_source_id),
+business_source_no = VALUES(business_source_no), entry_mode = VALUES(entry_mode), warehouse_id = VALUES(warehouse_id),
+warehouse_name = VALUES(warehouse_name), confirmed_by_id = VALUES(confirmed_by_id), confirmed_by_name = VALUES(confirmed_by_name),
+confirmed_at = VALUES(confirmed_at), create_time = VALUES(create_time), remark = VALUES(remark);
 
 INSERT INTO stock_bill_item (
-    id, bill_id, bill_no, source_bill_item_id, business_source_item_id,
+    id, bill_id, work_bill_item_id, business_source_item_id,
     product_id, product_code, product_name, unit_name, quantity_precision,
     quantity, qualified_qty, defective_qty, before_qty, change_qty, after_qty,
-    create_time, update_time, remark
+    create_time, remark
 ) VALUES
-(2071000000000000001, 2070000000000000001, 'SB202607140001', 2051000000000000002, 2031000000000000004, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 200, 0, 0, 8600, -200, 8400, '2026-07-14 11:00:00', '2026-07-14 11:00:00', '采购退回出库 2 箱'),
-(2071000000000000002, 2070000000000000002, 'SB202607150001', 2051000000000000003, 2031000000000000005, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 200, 0, 0, 8500, -200, 8300, '2026-07-15 16:30:00', '2026-07-15 16:30:00', '采购退回出库 2 箱'),
-(2071000000000000003, 2070000000000000003, 'SB202607140002', 2061000000000000002, 2041000000000000004, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 100, 100, 0, 8400, 100, 8500, '2026-07-14 16:00:00', '2026-07-14 16:00:00', '销售退货合格入库 1 箱'),
-(2071000000000000004, 2070000000000000004, 'SB202607150002', 2061000000000000003, 2041000000000000005, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 100, 100, 0, 8300, 100, 8400, '2026-07-15 17:30:00', '2026-07-15 17:30:00', '销售退货合格入库 1 箱')
-ON DUPLICATE KEY UPDATE bill_id = VALUES(bill_id), bill_no = VALUES(bill_no),
-source_bill_item_id = VALUES(source_bill_item_id), business_source_item_id = VALUES(business_source_item_id),
+(2071000000000000001, 2070000000000000001, 2051000000000000002, 2031000000000000004, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 200, 0, 0, 8600, -200, 8400, '2026-07-14 11:00:00', '采购退回出库 2 箱'),
+(2071000000000000002, 2070000000000000002, 2051000000000000003, 2031000000000000005, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 200, 0, 0, 8500, -200, 8300, '2026-07-15 16:30:00', '采购退回出库 2 箱'),
+(2071000000000000003, 2070000000000000003, 2061000000000000002, 2041000000000000004, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 100, 100, 0, 8400, 100, 8500, '2026-07-14 16:00:00', '销售退货合格入库 1 箱'),
+(2071000000000000004, 2070000000000000004, 2061000000000000003, 2041000000000000005, 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 0, 100, 100, 0, 8300, 100, 8400, '2026-07-15 17:30:00', '销售退货合格入库 1 箱')
+ON DUPLICATE KEY UPDATE bill_id = VALUES(bill_id), work_bill_item_id = VALUES(work_bill_item_id),
+business_source_item_id = VALUES(business_source_item_id),
 product_id = VALUES(product_id), product_code = VALUES(product_code), product_name = VALUES(product_name),
 unit_name = VALUES(unit_name), quantity_precision = VALUES(quantity_precision), quantity = VALUES(quantity),
 qualified_qty = VALUES(qualified_qty), defective_qty = VALUES(defective_qty), before_qty = VALUES(before_qty),
-change_qty = VALUES(change_qty), after_qty = VALUES(after_qty), create_time = VALUES(create_time),
-update_time = VALUES(update_time), remark = VALUES(remark);
+change_qty = VALUES(change_qty), after_qty = VALUES(after_qty), create_time = VALUES(create_time), remark = VALUES(remark);
 
 -- 上述四笔已确认退货流水相对 003 脚本的 86 箱基线净减少 2 箱，最终为 84 箱。
 UPDATE warehouse_stock
@@ -406,13 +402,11 @@ WHERE ro.id BETWEEN 2030000000000000004 AND 2040000000000000005
   AND ro.status IN ('PARTIAL_EXECUTED', 'COMPLETED')
   AND (
     sb.id IS NULL OR sbi.id IS NULL
-    OR sb.bill_type <> ro.return_type OR sb.direction <> CASE WHEN ro.return_type = 'PURCHASE_RETURN' THEN 'OUTBOUND' ELSE 'INBOUND' END
-    OR sb.source_bill_type <> CASE WHEN ro.return_type = 'PURCHASE_RETURN' THEN 'OUTBOUND_BILL' ELSE 'INBOUND_BILL' END
-    OR sb.source_bill_id <> wb.work_bill_id OR sb.source_bill_no <> wb.work_bill_no
-    OR sb.business_source_type <> CONCAT(ro.return_type, '_ORDER')
+    OR sb.bill_type <> ro.return_type
+    OR sb.work_bill_id <> wb.work_bill_id
     OR sb.business_source_id <> ro.id OR sb.business_source_no <> ro.return_no
-    OR sb.warehouse_id <> ro.warehouse_id OR sb.status <> 'CONFIRMED'
-    OR sbi.source_bill_item_id <> wb.work_bill_item_id OR sbi.business_source_item_id <> roi.id
+    OR sb.warehouse_id <> ro.warehouse_id
+    OR sbi.work_bill_item_id <> wb.work_bill_item_id OR sbi.business_source_item_id <> roi.id
     OR sbi.product_id <> roi.product_id OR sbi.quantity <> ROUND(roi.processed_qty * 100)
     OR (ro.return_type = 'PURCHASE_RETURN' AND (sbi.change_qty <> -sbi.quantity OR sbi.qualified_qty <> 0 OR sbi.defective_qty <> 0))
     OR (ro.return_type = 'SALES_RETURN' AND (sbi.qualified_qty + sbi.defective_qty <> sbi.quantity OR sbi.change_qty <> sbi.qualified_qty))

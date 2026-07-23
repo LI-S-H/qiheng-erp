@@ -1,13 +1,15 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
   maxHeight?: string;
+  maxWidth?: string;
 }>(), {
   maxHeight: 'min(42vh, 420px)',
+  maxWidth: '900px',
 });
 </script>
 
 <template>
-  <div class="warehouse-detail-table-frame detail-table-floating overflow-hidden rounded-md bg-background">
+  <div class="warehouse-detail-table-frame detail-table-floating overflow-hidden rounded-md bg-background" :style="{ '--warehouse-detail-table-max-width': maxWidth }">
     <div class="warehouse-detail-table-scroll w-full" :style="{ '--warehouse-detail-table-max-height': maxHeight }">
       <slot />
     </div>
@@ -16,7 +18,7 @@ withDefaults(defineProps<{
 
 <style scoped>
 .warehouse-detail-table-frame {
-  width: min(100%, 900px);
+  width: min(100%, var(--warehouse-detail-table-max-width));
   border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
   border-left: 3px solid var(--primary);
   background: color-mix(in srgb, var(--muted) 36%, white);

@@ -44,7 +44,26 @@ runSmoke({
     if (!(await detail.innerText()).includes('P000001') || !(await detail.innerText()).includes('+20')) {
       throw new Error('库存流水展开明细未展示产品和正负变动数量');
     }
+    const purchaseItem = detail.locator('[data-stock-ledger-expanded-item-id="1950100000000000001"]');
+    if (await purchaseItem.locator('[data-stock-ledger-quality="qualified"]').innerText() !== '20'
+      || await purchaseItem.locator('[data-stock-ledger-quality="defective"]').innerText() !== '0') {
+      throw new Error('采购入库流水明细未展示合格数量或不合格数量');
+    }
+    const purchaseDetailTableContainer = detail.locator('.warehouse-detail-table-scroll [data-slot="table-container"]');
+    const hasHorizontalOverflow = await purchaseDetailTableContainer.evaluate(element => element.scrollWidth > element.clientWidth);
+    if (hasHorizontalOverflow) throw new Error('库存流水展开明细在常规桌面宽度下仍需要横向滚动');
     await firstRow.getByRole('button', { name: /收起.*明细/ }).click();
+
+    const salesOutRow = tableRow(page, 'SL202607180002');
+    await salesOutRow.getByRole('button', { name: /展开.*明细/ }).click();
+    const salesOutDetail = page.locator('[data-stock-ledger-detail-id="1950000000000000002"]');
+    await salesOutDetail.waitFor();
+    const salesOutItem = salesOutDetail.locator('[data-stock-ledger-expanded-item-id="1950100000000000002"]');
+    if (await salesOutItem.locator('[data-stock-ledger-quality="qualified"]').innerText() !== '-'
+      || await salesOutItem.locator('[data-stock-ledger-quality="defective"]').innerText() !== '-') {
+      throw new Error('销售出库流水明细的合格数量和不合格数量未显示为 -');
+    }
+    await salesOutRow.getByRole('button', { name: /收起.*明细/ }).click();
 
     await clickRefreshAndAssertLoading(page);
     await page.getByPlaceholder('如 SL202607180001').fill('SL202607180002');
@@ -85,6 +104,9 @@ runSmoke({
     if (new URL(page.url()).pathname !== '/warehouse/stock-bills') {
       throw new Error(`菜单未进入库存流水路由：${page.url()}`);
     }
+    await firstRow.getByRole('button', { name: /展开.*明细/ }).click();
+    await page.locator('[data-stock-ledger-detail-id="1950000000000000001"]').waitFor();
+    await page.waitForTimeout(300);
   },
 }).then(() => {
   console.log('SMOKE_OK: 库存流水独立路由、只读边界、查询筛选和菜单跳转通过');

@@ -20,4 +20,7 @@ public class InboundBillPageVo {
 
     @Schema(description = "每页条数")
     private int pageSize;
+
+    @Schema(description = "汇总信息")
+    private InboundBillSummaryVo summary;
 }

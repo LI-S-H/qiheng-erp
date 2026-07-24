@@ -1,7 +1,7 @@
 package com.qiheng.erp.warehouse.mapper;
 
+import com.github.yulichang.base.MPJBaseMapper;
 import com.qiheng.erp.warehouse.domain.entity.InboundBill;
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**
  * <p>
@@ -11,6 +11,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
  * @author Li
  * @since 2026-07-23
  */
-public interface InboundBillMapper extends BaseMapper<InboundBill> {
+public interface InboundBillMapper extends MPJBaseMapper<InboundBill> {
 
 }

@@ -78,7 +78,6 @@
 | warehouse_id          | bigint       | 仓库ID                                                       |
 | warehouse_name        | varchar(100) | 仓库名称快照                                                     |
 | status                | varchar(32)  | `DRAFT`、`PENDING_CONFIRM`、`CONFIRMED`、`CANCELLED`          |
-| expected_arrival_date | date         | 单头预计到货日期；来源采购订单带入，提交/审核后不能为空                               |
 | confirmed_by_id       | bigint       | 确认人ID                                                      |
 | confirmed_by_name     | varchar(100) | 确认人姓名                                                      |
 | confirmed_at          | datetime     | 确认时间                                                       |
@@ -162,6 +161,8 @@
 | processed_qty | bigint | 本出库单生成前来源明细累计已出库数量快照 |
 | current_qty | bigint | 本次出库数量，仓库人员确认时填写，按 100 倍整数存储 |
 | pending_qty | bigint | 确认本出库单后来源明细预计剩余未出库数量快照 |
+| qualified_qty | bigint | 合格数量，采购退货出库使用 |
+| defective_qty | bigint | 不合格数量，采购退货出库使用 |
 | stock_bill_item_id | bigint | 确认后生成的库存流水明细ID；未确认为空 |
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |

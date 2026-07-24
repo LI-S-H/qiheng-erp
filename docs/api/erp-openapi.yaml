@@ -3843,7 +3843,7 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/StockBillPage' }
+                      data: { $ref: '#/components/schemas/InboundBillPage' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
     post:
@@ -3936,7 +3936,7 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/StockBillPage' }
+                      data: { $ref: '#/components/schemas/OutboundBillPage' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
     post:
@@ -7324,11 +7324,11 @@ components:
     StockBillDraftItemRequest:
       type: object
       description: 工作单明细写入 DTO；保留历史 schema 名称仅为前端类型兼容，不表示直接写入 `stock_bill_item`。
-      required: [productId, quantity, qualifiedQty, defectiveQty, remark]
+      required: [productId, currentQty, qualifiedQty, defectiveQty, remark]
       properties:
-        stockBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
+        workBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
         productId: { type: string, description: 产品 ID，后端保存当前产品编码、名称和单位快照 }
-        quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, multipleOf: 0.01, description: 本次出入库业务真实值，最多两位小数；后端按产品数量精度校验并按 100 倍整数持久化 }
+        currentQty: { type: number, format: double, minimum: 0, exclusiveMinimum: true, multipleOf: 0.01, description: 本次出入库业务真实值，最多两位小数；后端按产品数量精度校验并按 100 倍整数持久化 }
         qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的合格数量，其他类型传 0 }
         defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的不合格数量，其他类型传 0 }
         remark: { type: string, maxLength: 500 }
@@ -7365,7 +7365,7 @@ components:
     StockBillUpdateRequest:
       type: object
       description: 入库/出库工作单更新 DTO；不直接更新确认后的库存流水。
-      required: [version, warehouseId, sourceNo, manualReason, items, remark]
+      required: [version, items]
       properties:
         version: { type: integer, minimum: 0, description: 当前入库单或出库单工作单版本，用于乐观锁。 }
         warehouseId: { type: string, description: 仓库 ID；仅 `DRAFT` 状态允许修改，`PENDING_CONFIRM` 必须保持原值 }
@@ -7376,6 +7376,50 @@ components:
           minItems: 1
           items: { $ref: '#/components/schemas/StockBillDraftItemRequest' }
         remark: { type: string, maxLength: 500 }
+
+    InboundBillPage:
+      type: object
+      description: 入库单分页。
+      required: [records, total, pageNum, pageSize, summary]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/InboundBillListItem' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        summary: { $ref: '#/components/schemas/StockBillSummary' }
+
+    OutboundBillPage:
+      type: object
+      description: 出库单分页。
+      required: [records, total, pageNum, pageSize, summary]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/OutboundBillListItem' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        summary: { $ref: '#/components/schemas/StockBillSummary' }
+
+    InboundBillListItem:
+      description: 入库单列表响应，billType 仅包含入库类型。
+      allOf:
+        - $ref: '#/components/schemas/StockBill'
+        - type: object
+          required: [billType]
+          properties:
+            billType: { type: string, enum: [PURCHASE_IN, SALES_RETURN, ADJUST_IN], description: 入库类型，对应 inbound_bill.inbound_type }
+
+    OutboundBillListItem:
+      description: 出库单列表响应，billType 仅包含出库类型。
+      allOf:
+        - $ref: '#/components/schemas/StockBill'
+        - type: object
+          required: [billType]
+          properties:
+            billType: { type: string, enum: [SALES_OUT, PURCHASE_RETURN, ADJUST_OUT], description: 出库类型，对应 outbound_bill.outbound_type }
 
     StockBillPage:
       type: object
@@ -7402,21 +7446,21 @@ components:
     StockBill:
       type: object
       description: 入库或出库工作单响应。保留历史 schema 名称仅为前端类型兼容；确认后生成的库存事实不通过本 schema 查询。
-      required: [stockBillId, billNo, billType, sourceType, sourceId, sourceNo, sourcePartyName, entryMode, warehouseId, warehouseName, status, itemCount, quantitySummary, totalCurrentQty, quantityUnitName, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, version, createTime, updateTime]
+      required: [workBillId, billNo, sourceType, sourceId, sourceNo, sourcePartyId, sourcePartyName, entryMode, warehouseId, warehouseName, status, itemCount, quantitySummary, totalCurrentQty, quantityUnitName, confirmedById, confirmedByName, confirmedAt, createdById, createdByName, responsibleById, responsibleByName, version, createTime, updateTime]
       properties:
-        stockBillId: { type: string, description: 工作单稳定 ID，对应入库单或出库单主表主键，BIGINT 按字符串传输 }
+        workBillId: { type: string, description: 工作单稳定 ID，对应入库单或出库单主表主键，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 入库单号或出库单号 }
-        billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 入库或出库工作单类型 }
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 原业务来源类型 }
         sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输 }
         sourceNo: { type: string, maxLength: 64, description: 原业务来源单号 }
+        sourcePartyId: { type: string, nullable: true, description: 来源对象 ID，BIGINT 按字符串传输；采购入库为供应商 ID，销售退货为客户 ID，库存调整为受影响仓库 ID }
         sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；采购相关单据表示供应商，销售相关单据表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示发生调整的来源仓库名称快照，前端统一显示在“来源对象”列，调整单详情和编辑态标注为“来源仓库” }
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 前端显示为系统生成、人工补录和人工调整 }
         warehouseId: { type: string, description: 仓库 ID，BIGINT 按字符串传输 }
         warehouseName: { type: string, maxLength: 100, description: 仓库名称快照 }
         status: { type: string, enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED], description: 入库单或出库单工作单状态 }
         itemCount: { type: integer, minimum: 0, description: 明细条数 }
-        quantitySummary: { type: string, description: 列表入库量/出库量摘要，例如“本次 20 箱”；不同单位时返回简短明细摘要，前端列表按页面方向展示为入库量或出库量，展开明细必须使用 `items.quantity`、`items.qualifiedQty`、`items.defectiveQty`、`items.pendingQty` 独立列展示，不使用拼接质检字段 }
+        quantitySummary: { type: string, description: 列表入库量/出库量摘要，例如“本次 20 箱”；不同单位时返回简短明细摘要，前端列表按页面方向展示为入库量或出库量，展开明细必须使用 `items.currentQty`、`items.qualifiedQty`、`items.defectiveQty`、`items.pendingQty` 独立列展示，不使用拼接质检字段 }
         totalCurrentQty: { type: number, format: double, nullable: true, description: 同单位时的入库量/出库量合计，不同单位返回 null }
         quantityUnitName: { type: string, description: 数量摘要单位；不同单位时返回空字符串 }
         confirmedById: { type: string, nullable: true, description: 工作单确认人 ID，BIGINT 按字符串传输 }
@@ -7434,8 +7478,9 @@ components:
       allOf:
         - $ref: '#/components/schemas/StockBill'
         - type: object
-          required: [manualReason, remark, items]
+          required: [billType, manualReason, remark, items]
           properties:
+            billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 入库或出库工作单类型 }
             manualReason: { type: string, maxLength: 500, description: 对应入库单或出库单的补录/调整原因；系统生成单据为空字符串 }
             remark: { type: string, maxLength: 500, description: 对应工作单备注 }
             items:
@@ -7445,10 +7490,10 @@ components:
     StockBillItem:
       type: object
       description: 工作单明细响应；`beforeQty`、`changeQty`、`afterQty` 仅在确认后作为关联库存流水快照返回，不能提交修改。
-      required: [stockBillItemId, stockBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, planQty, processedQty, pendingQty, quantity, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createTime, updateTime, remark]
+      required: [workBillItemId, workBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, planQty, processedQty, currentQty, pendingQty, qualifiedQty, defectiveQty, stockBillItemId, beforeQty, changeQty, afterQty, createTime, updateTime, remark]
       properties:
-        stockBillItemId: { type: string, description: 工作单明细稳定 ID，对应 `inbound_bill_item` 或 `outbound_bill_item` 主键，BIGINT 按字符串传输 }
-        stockBillId: { type: string, description: 所属工作单稳定 ID，BIGINT 按字符串传输 }
+        workBillItemId: { type: string, description: 工作单明细稳定 ID，对应 `inbound_bill_item` 或 `outbound_bill_item` 主键，BIGINT 按字符串传输 }
+        workBillId: { type: string, description: 所属工作单稳定 ID，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 所属入库单号或出库单号 }
         sourceItemId: { type: string, nullable: true, description: 原业务来源明细 ID，BIGINT 按字符串传输 }
         productId: { type: string, description: 对应入库或出库工作单明细的 `product_id`，BIGINT 按字符串传输 }
@@ -7458,13 +7503,14 @@ components:
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应入库或出库工作单明细的 `quantity_precision`，产品数量精度快照 }
         planQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 来源单据计划数量；库存调整可为 null }
         processedQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 生成本单前来源明细累计已入库或已出库数量；库存调整可为 null }
-        pendingQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 确认本单后来源明细预计剩余未入库或未出库数量，由后端按 planQty - processedQty - quantity 计算；库存调整可为 null；前端展开明细独立展示为剩余未入库或剩余未出库列，不允许用户手动提交 }
-        quantity: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 入库或出库工作单的本次业务数量，对应工作单明细 `current_qty`；系统生成的待确认单初始为 0 或空业务值，由仓库人员确认前填写，确认时必须大于 0 且不能超过来源剩余数量；数据库按 100 倍整数存储；前端展开明细独立展示为入库量或出库量列 }
+        pendingQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 确认本单后来源明细预计剩余未入库或未出库数量，由后端按 planQty - processedQty - currentQty 计算；库存调整可为 null；前端展开明细独立展示为剩余未入库或剩余未出库列，不允许用户手动提交 }
+        currentQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 入库或出库工作单的本次业务数量，对应工作单明细 `current_qty`；系统生成的待确认单初始为 0 或空业务值，由仓库人员确认前填写，确认时必须大于 0 且不能超过来源剩余数量；数据库按 100 倍整数存储；前端展开明细独立展示为入库量或出库量列 }
         qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 工作单的合格数量业务真实值；数据库按 100 倍整数存储；前端展开明细独立展示，不得与不合格数量拼接为一个质检字段 }
         defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 工作单的不合格数量业务真实值；数据库按 100 倍整数存储；前端展开明细独立展示，不得与合格数量拼接为一个质检字段 }
-        beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.before_qty` 按 100 倍整数存储 }
-        changeQty: { type: number, format: double, multipleOf: 0.01, description: 业务真实值，入库为正、出库为负；数据库按 100 倍整数存储 }
-        afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库 `stock_bill_item.after_qty` 按 100 倍整数存储 }
+        beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 变动前库存业务真实值。已确认工作单从关联库存流水 stock_bill_item.before_qty 返回；未确认工作单由后端从 warehouse_stock.stock_qty 取当前库存参考值返回。数据库按 100 倍整数存储 }
+        changeQty: { type: number, format: double, multipleOf: 0.01, description: 库存变动数量，入库为正、出库为负。已确认工作单从 stock_bill_item.change_qty 返回；未确认工作单返回 0（尚未产生实际库存变动）。数据库按 100 倍整数存储 }
+        afterQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 变动后库存业务真实值。已确认工作单从 stock_bill_item.after_qty 返回；未确认工作单与 beforeQty 相同（尚未产生实际库存变动）。数据库按 100 倍整数存储 }
+        stockBillItemId: { type: string, nullable: true, description: 确认后关联的库存流水明细 ID，BIGINT 按字符串传输；对应 inbound_bill_item.stock_bill_item_id 或 outbound_bill_item.stock_bill_item_id；未确认时为 null }
         createTime: { type: string, description: 对应入库或出库工作单明细的 `create_time` }
         updateTime: { type: string, description: 对应入库或出库工作单明细的 `update_time` }
         remark: { type: string, maxLength: 500, description: 对应入库或出库工作单明细的 `remark` }

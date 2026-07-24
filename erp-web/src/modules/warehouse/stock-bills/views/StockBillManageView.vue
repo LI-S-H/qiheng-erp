@@ -1242,7 +1242,7 @@ onMounted(async () => {
     </div>
 
     <Dialog v-model:open="formVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(820px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1120px]">
+      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" class="flex !h-[min(820px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1120px]">
         <DialogHeader>
           <DialogTitle>{{ dialogMode === 'create' ? pageText.createButton : `编辑${pageText.formTitle}` }}</DialogTitle>
           <DialogDescription>{{ dialogMode === 'create' ? '手工补录或库存调整先保存为草稿；草稿提交后进入待确认，确认入库/出库时才更新库存。' : '草稿可继续保存或提交确认；待确认状态只允许调整本次数量、合格数量、不合格数量和备注。' }}</DialogDescription>
@@ -1361,7 +1361,7 @@ onMounted(async () => {
     </Dialog>
 
     <Dialog v-model:open="detailVisible">
-      <DialogContent class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1180px]">
+      <DialogContent placement="app-content" class="flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1180px]">
         <DialogHeader><DialogTitle>{{ pageText.formTitle }}详情</DialogTitle><DialogDescription>查看业务来源、往来对象、确认信息、本次数量以及本次处理后来源订单的剩余数量。</DialogDescription></DialogHeader>
         <div v-if="detailLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
         <DialogScrollArea v-else-if="detail">

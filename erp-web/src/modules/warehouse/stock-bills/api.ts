@@ -66,15 +66,15 @@ function buildQuantitySummary(items: StockBillItem[]) {
   const singleUnit = unitNames.size === 1 ? items[0].unitName : '';
   if (!singleUnit) {
     const itemSummaries = items.slice(0, 2).map(item => {
-      return `${item.productCode} ${formatQty(item.quantity, item.unitName)}`;
+      return `${item.productCode} ${formatQty(item.currentQty, item.unitName)}`;
     });
     return {
       quantitySummary: `本次 ${items.length} 条明细：${itemSummaries.join('；')}${items.length > 2 ? ' 等' : ''}`,
-      totalCurrentQty: items.reduce((sum, item) => sum + item.quantity, 0),
+      totalCurrentQty: items.reduce((sum, item) => sum + item.currentQty, 0),
       quantityUnitName: '',
     };
   }
-  const totalCurrentQty = items.reduce((sum, item) => sum + item.quantity, 0);
+  const totalCurrentQty = items.reduce((sum, item) => sum + item.currentQty, 0);
   return {
     quantitySummary: `本次 ${formatQty(totalCurrentQty, singleUnit)}`,
     totalCurrentQty,
@@ -92,7 +92,7 @@ interface MockBillItemSeed {
   planQty: number | null;
   processedQty: number | null;
   pendingQty: number | null;
-  quantity: number;
+  currentQty: number;
   beforeQty: number;
   defectiveQty?: number;
   createTime?: string;
@@ -106,6 +106,7 @@ interface MockBillSeed {
   billType: StockBillType;
   sourceType: StockBillSourceType;
   sourceNo: string;
+  sourcePartyId?: string | null;
   sourcePartyName: string;
   warehouseId: string;
   warehouseName: string;
@@ -119,23 +120,23 @@ interface MockBillSeed {
 }
 
 const billSeed: MockBillSeed[] = [
-  { billId: '1932000000000000001', billNo: 'IB202607010001', billType: 'ADJUST_IN', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202607010001', sourcePartyName: '华北中心仓', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', status: 'CONFIRMED', createTime: '2026-07-01 08:45:00', updateTime: '2026-07-01 09:12:00', confirmedAt: '2026-07-01 09:12:00', manualReason: '月末盘点发现库存盘盈', remark: '盘盈16盒每日坚果混合装', items: [{ itemId: '1932100000000000001', productId: '1920000000000000007', productCode: 'P000007', productName: '每日坚果混合装', unitName: '盒', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, quantity: 16, beforeQty: 15, createTime: '2026-07-01 08:45:00', updateTime: '2026-07-16 18:18:51', remark: '库存盘盈调整' }] },
-  { billId: '1933000000000000001', billNo: 'OB202607010001', billType: 'ADJUST_OUT', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202607010002', sourcePartyName: '华东中心仓', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CONFIRMED', createTime: '2026-07-01 09:30:00', updateTime: '2026-07-01 10:05:00', confirmedAt: '2026-07-01 10:05:00', manualReason: '月末盘点发现库存盘亏', remark: '盘亏10盒速溶黑咖啡', items: [{ itemId: '1933100000000000001', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, quantity: 10, beforeQty: 17, createTime: '2026-07-01 09:30:00', updateTime: '2026-07-16 18:18:51', remark: '库存盘亏调整' }] },
-  { billId: '1950000000000000001', billNo: 'IB202606140001', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606001', sourcePartyName: '华东饮品供应链', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CONFIRMED', createTime: '2026-06-14 09:12:00', items: [{ itemId: '1960000000000001001', productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 0, planQty: 48, processedQty: 0, pendingQty: 18, quantity: 30, beforeQty: 12, defectiveQty: 1 }, { itemId: '1960000000000001002', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', quantityPrecision: 0, planQty: 20, processedQty: 0, pendingQty: 8, quantity: 12, beforeQty: 5 }] },
-  { billId: '1950000000000000002', billNo: 'OB202606140002', billType: 'SALES_OUT', sourceType: 'SALES_ORDER', sourceNo: 'SO202606001', sourcePartyName: '上海星河便利店', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CONFIRMED', createTime: '2026-06-14 10:05:00', items: [{ itemId: '1960000000000002001', productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 0, planQty: 8, processedQty: 0, pendingQty: 0, quantity: 8, beforeQty: 94 }] },
-  { billId: '1950000000000000003', billNo: 'IB202606140003', billType: 'ADJUST_IN', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202606001', sourcePartyName: '华南中心仓', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', status: 'DRAFT', createTime: '2026-06-14 10:30:00', items: [{ itemId: '1960000000000003001', productId: '1920000000000000026', productCode: 'P000026', productName: 'A4复印纸', unitName: '箱', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, quantity: 3, beforeQty: 13 }] },
-  { billId: '1950000000000000004', billNo: 'IB202606140004', billType: 'SALES_RETURN', sourceType: 'SALES_RETURN_ORDER', sourceNo: 'SRO202606001', sourcePartyName: '广州天河门店', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', status: 'CONFIRMED', createTime: '2026-06-14 11:15:00', items: [{ itemId: '1960000000000004001', productId: '1920000000000000027', productCode: 'P000027', productName: '热敏标签纸', unitName: '卷', quantityPrecision: 0, planQty: 10, processedQty: 0, pendingQty: 0, quantity: 10, beforeQty: 0, defectiveQty: 1 }] },
-  { billId: '1950000000000000005', billNo: 'OB202606130005', billType: 'PURCHASE_RETURN', sourceType: 'PURCHASE_RETURN_ORDER', sourceNo: 'PRO202606001', sourcePartyName: '谷仓食品批发', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', status: 'CANCELLED', createTime: '2026-06-13 16:42:00', items: [{ itemId: '1960000000000005001', productId: '1920000000000000007', productCode: 'P000007', productName: '每日坚果混合装', unitName: '盒', quantityPrecision: 0, planQty: 6, processedQty: 2, pendingQty: 2, quantity: 2, beforeQty: 31 }] },
-  { billId: '1950000000000000006', billNo: 'IB202606130006', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606002', sourcePartyName: '谷仓食品批发', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', status: 'PENDING_CONFIRM', createTime: '2026-06-13 15:28:00', items: [{ itemId: '1960000000000006001', productId: '1920000000000000007', productCode: 'P000007', productName: '每日坚果混合装', unitName: '盒', quantityPrecision: 0, planQty: 60, processedQty: 20, pendingQty: 40, quantity: 20, beforeQty: 11 }, { itemId: '1960000000000006002', productId: '1920000000000000033', productCode: 'P000033', productName: '浓缩洗衣液', unitName: '瓶', quantityPrecision: 0, planQty: 27, processedQty: 9, pendingQty: 18, quantity: 9, beforeQty: 0 }] },
-  { billId: '1950000000000000007', billNo: 'OB202606130007', billType: 'SALES_OUT', sourceType: 'SALES_ORDER', sourceNo: 'SO202606002', sourcePartyName: '成都青柠商贸', warehouseId: '1930000000000000004', warehouseName: '西南中心仓', status: 'CONFIRMED', createTime: '2026-06-13 14:50:00', items: [{ itemId: '1960000000000007001', productId: '1920000000000000034', productCode: 'P000034', productName: '厨房清洁湿巾', unitName: '包', quantityPrecision: 0, planQty: 12, processedQty: 0, pendingQty: 0, quantity: 12, beforeQty: 60 }] },
-  { billId: '1950000000000000008', billNo: 'OB202606130008', billType: 'ADJUST_OUT', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202606002', sourcePartyName: '西南中心仓', warehouseId: '1930000000000000004', warehouseName: '西南中心仓', status: 'CONFIRMED', createTime: '2026-06-13 13:20:00', items: [{ itemId: '1960000000000008001', productId: '1920000000000000037', productCode: 'P000037', productName: '加厚垃圾袋', unitName: '卷', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, quantity: 3, beforeQty: 28 }] },
-  { billId: '1950000000000000009', billNo: 'IB202606120009', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606003', sourcePartyName: '文仪办公渠道', warehouseId: '1930000000000000005', warehouseName: '武汉中转仓', status: 'PENDING_CONFIRM', createTime: '2026-06-12 17:36:00', items: [{ itemId: '1960000000000009001', productId: '1920000000000000038', productCode: 'P000038', productName: '无痕粘钩', unitName: '卡', quantityPrecision: 0, planQty: 40, processedQty: 0, pendingQty: 40, quantity: 20, beforeQty: 11 }] },
-  { billId: '1950000000000000010', billNo: 'IB202606120010', billType: 'SALES_RETURN', sourceType: 'SALES_RETURN_ORDER', sourceNo: 'SRO202606002', sourcePartyName: '武汉江岸客户', warehouseId: '1930000000000000005', warehouseName: '武汉中转仓', status: 'CONFIRMED', createTime: '2026-06-12 16:18:00', items: [{ itemId: '1960000000000010001', productId: '1920000000000000008', productCode: 'P000008', productName: '海盐苏打饼干', unitName: '箱', quantityPrecision: 0, planQty: 4, processedQty: 0, pendingQty: 0, quantity: 4, beforeQty: 15, defectiveQty: 1 }] },
-  { billId: '1950000000000000011', billNo: 'OB202606120011', billType: 'PURCHASE_RETURN', sourceType: 'PURCHASE_RETURN_ORDER', sourceNo: 'PRO202606002', sourcePartyName: '森纸纸业集团', warehouseId: '1930000000000000006', warehouseName: '西安中转仓', status: 'CONFIRMED', createTime: '2026-06-12 14:45:00', items: [{ itemId: '1960000000000011001', productId: '1920000000000000022', productCode: 'P000022', productName: '彩色便利贴', unitName: '本', quantityPrecision: 0, planQty: 7, processedQty: 0, pendingQty: 0, quantity: 7, beforeQty: 70 }] },
-  { billId: '1950000000000000012', billNo: 'OB202606110012', billType: 'SALES_OUT', sourceType: 'SALES_ORDER', sourceNo: 'SO202606003', sourcePartyName: '杭州电商客户', warehouseId: '1930000000000000007', warehouseName: '杭州电商仓', status: 'CONFIRMED', createTime: '2026-06-11 18:05:00', items: [{ itemId: '1960000000000012001', productId: '1920000000000000044', productCode: 'P000044', productName: '无线办公鼠标', unitName: '个', quantityPrecision: 0, planQty: 6, processedQty: 0, pendingQty: 0, quantity: 6, beforeQty: 14 }] },
-  { billId: '1950000000000000013', billNo: 'IB202606110013', billType: 'ADJUST_IN', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202606003', sourcePartyName: '南京备货仓', warehouseId: '1930000000000000008', warehouseName: '南京备货仓', status: 'CONFIRMED', createTime: '2026-06-11 15:32:00', items: [{ itemId: '1960000000000013001', productId: '1920000000000000043', productCode: 'P000043', productName: 'USB-C扩展坞', unitName: '个', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, quantity: 2, beforeQty: 15 }] },
-  { billId: '1950000000000000014', billNo: 'IB202606100014', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606004', sourcePartyName: '文仪办公渠道', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CANCELLED', createTime: '2026-06-10 11:25:00', items: [{ itemId: '1960000000000014001', productId: '1920000000000000021', productCode: 'P000021', productName: '中性签字笔', unitName: '盒', quantityPrecision: 0, planQty: 20, processedQty: 0, pendingQty: 0, quantity: 20, beforeQty: 42 }] },
-  { billId: '1950000000000000015', billNo: 'OB202606100015', billType: 'SALES_OUT', sourceType: 'SALES_ORDER', sourceNo: 'SO202606004', sourcePartyName: '广州天河门店', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', status: 'PENDING_CONFIRM', createTime: '2026-06-10 09:40:00', items: [{ itemId: '1960000000000015001', productId: '1920000000000000026', productCode: 'P000026', productName: 'A4复印纸', unitName: '箱', quantityPrecision: 0, planQty: 10, processedQty: 0, pendingQty: 10, quantity: 5, beforeQty: 13 }] },
+  { billId: '1932000000000000001', billNo: 'IB202607010001', billType: 'ADJUST_IN', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202607010001', sourcePartyName: '华北中心仓', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', status: 'CONFIRMED', createTime: '2026-07-01 08:45:00', updateTime: '2026-07-01 09:12:00', confirmedAt: '2026-07-01 09:12:00', manualReason: '月末盘点发现库存盘盈', remark: '盘盈16盒每日坚果混合装', items: [{ itemId: '1932100000000000001', productId: '1920000000000000007', productCode: 'P000007', productName: '每日坚果混合装', unitName: '盒', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 16, beforeQty: 15, createTime: '2026-07-01 08:45:00', updateTime: '2026-07-16 18:18:51', remark: '库存盘盈调整' }] },
+  { billId: '1933000000000000001', billNo: 'OB202607010001', billType: 'ADJUST_OUT', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202607010002', sourcePartyName: '华东中心仓', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CONFIRMED', createTime: '2026-07-01 09:30:00', updateTime: '2026-07-01 10:05:00', confirmedAt: '2026-07-01 10:05:00', manualReason: '月末盘点发现库存盘亏', remark: '盘亏10盒速溶黑咖啡', items: [{ itemId: '1933100000000000001', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 10, beforeQty: 17, createTime: '2026-07-01 09:30:00', updateTime: '2026-07-16 18:18:51', remark: '库存盘亏调整' }] },
+  { billId: '1950000000000000001', billNo: 'IB202606140001', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606001', sourcePartyName: '华东饮品供应链', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CONFIRMED', createTime: '2026-06-14 09:12:00', items: [{ itemId: '1960000000000001001', productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 0, planQty: 48, processedQty: 0, pendingQty: 18, currentQty: 30, beforeQty: 12, defectiveQty: 1 }, { itemId: '1960000000000001002', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', quantityPrecision: 0, planQty: 20, processedQty: 0, pendingQty: 8, currentQty: 12, beforeQty: 5 }] },
+  { billId: '1950000000000000002', billNo: 'OB202606140002', billType: 'SALES_OUT', sourceType: 'SALES_ORDER', sourceNo: 'SO202606001', sourcePartyName: '上海星河便利店', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CONFIRMED', createTime: '2026-06-14 10:05:00', items: [{ itemId: '1960000000000002001', productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 0, planQty: 8, processedQty: 0, pendingQty: 0, currentQty: 8, beforeQty: 94 }] },
+  { billId: '1950000000000000003', billNo: 'IB202606140003', billType: 'ADJUST_IN', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202606001', sourcePartyName: '华南中心仓', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', status: 'DRAFT', createTime: '2026-06-14 10:30:00', items: [{ itemId: '1960000000000003001', productId: '1920000000000000026', productCode: 'P000026', productName: 'A4复印纸', unitName: '箱', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 3, beforeQty: 13 }] },
+  { billId: '1950000000000000004', billNo: 'IB202606140004', billType: 'SALES_RETURN', sourceType: 'SALES_RETURN_ORDER', sourceNo: 'SRO202606001', sourcePartyName: '广州天河门店', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', status: 'CONFIRMED', createTime: '2026-06-14 11:15:00', items: [{ itemId: '1960000000000004001', productId: '1920000000000000027', productCode: 'P000027', productName: '热敏标签纸', unitName: '卷', quantityPrecision: 0, planQty: 10, processedQty: 0, pendingQty: 0, currentQty: 10, beforeQty: 0, defectiveQty: 1 }] },
+  { billId: '1950000000000000005', billNo: 'OB202606130005', billType: 'PURCHASE_RETURN', sourceType: 'PURCHASE_RETURN_ORDER', sourceNo: 'PRO202606001', sourcePartyName: '谷仓食品批发', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', status: 'CANCELLED', createTime: '2026-06-13 16:42:00', items: [{ itemId: '1960000000000005001', productId: '1920000000000000007', productCode: 'P000007', productName: '每日坚果混合装', unitName: '盒', quantityPrecision: 0, planQty: 6, processedQty: 2, pendingQty: 2, currentQty: 2, beforeQty: 31 }] },
+  { billId: '1950000000000000006', billNo: 'IB202606130006', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606002', sourcePartyName: '谷仓食品批发', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', status: 'PENDING_CONFIRM', createTime: '2026-06-13 15:28:00', items: [{ itemId: '1960000000000006001', productId: '1920000000000000007', productCode: 'P000007', productName: '每日坚果混合装', unitName: '盒', quantityPrecision: 0, planQty: 60, processedQty: 20, pendingQty: 40, currentQty: 20, beforeQty: 11 }, { itemId: '1960000000000006002', productId: '1920000000000000033', productCode: 'P000033', productName: '浓缩洗衣液', unitName: '瓶', quantityPrecision: 0, planQty: 27, processedQty: 9, pendingQty: 18, currentQty: 9, beforeQty: 0 }] },
+  { billId: '1950000000000000007', billNo: 'OB202606130007', billType: 'SALES_OUT', sourceType: 'SALES_ORDER', sourceNo: 'SO202606002', sourcePartyName: '成都青柠商贸', warehouseId: '1930000000000000004', warehouseName: '西南中心仓', status: 'CONFIRMED', createTime: '2026-06-13 14:50:00', items: [{ itemId: '1960000000000007001', productId: '1920000000000000034', productCode: 'P000034', productName: '厨房清洁湿巾', unitName: '包', quantityPrecision: 0, planQty: 12, processedQty: 0, pendingQty: 0, currentQty: 12, beforeQty: 60 }] },
+  { billId: '1950000000000000008', billNo: 'OB202606130008', billType: 'ADJUST_OUT', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202606002', sourcePartyName: '西南中心仓', warehouseId: '1930000000000000004', warehouseName: '西南中心仓', status: 'CONFIRMED', createTime: '2026-06-13 13:20:00', items: [{ itemId: '1960000000000008001', productId: '1920000000000000037', productCode: 'P000037', productName: '加厚垃圾袋', unitName: '卷', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 3, beforeQty: 28 }] },
+  { billId: '1950000000000000009', billNo: 'IB202606120009', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606003', sourcePartyName: '文仪办公渠道', warehouseId: '1930000000000000005', warehouseName: '武汉中转仓', status: 'PENDING_CONFIRM', createTime: '2026-06-12 17:36:00', items: [{ itemId: '1960000000000009001', productId: '1920000000000000038', productCode: 'P000038', productName: '无痕粘钩', unitName: '卡', quantityPrecision: 0, planQty: 40, processedQty: 0, pendingQty: 40, currentQty: 20, beforeQty: 11 }] },
+  { billId: '1950000000000000010', billNo: 'IB202606120010', billType: 'SALES_RETURN', sourceType: 'SALES_RETURN_ORDER', sourceNo: 'SRO202606002', sourcePartyName: '武汉江岸客户', warehouseId: '1930000000000000005', warehouseName: '武汉中转仓', status: 'CONFIRMED', createTime: '2026-06-12 16:18:00', items: [{ itemId: '1960000000000010001', productId: '1920000000000000008', productCode: 'P000008', productName: '海盐苏打饼干', unitName: '箱', quantityPrecision: 0, planQty: 4, processedQty: 0, pendingQty: 0, currentQty: 4, beforeQty: 15, defectiveQty: 1 }] },
+  { billId: '1950000000000000011', billNo: 'OB202606120011', billType: 'PURCHASE_RETURN', sourceType: 'PURCHASE_RETURN_ORDER', sourceNo: 'PRO202606002', sourcePartyName: '森纸纸业集团', warehouseId: '1930000000000000006', warehouseName: '西安中转仓', status: 'CONFIRMED', createTime: '2026-06-12 14:45:00', items: [{ itemId: '1960000000000011001', productId: '1920000000000000022', productCode: 'P000022', productName: '彩色便利贴', unitName: '本', quantityPrecision: 0, planQty: 7, processedQty: 0, pendingQty: 0, currentQty: 7, beforeQty: 70 }] },
+  { billId: '1950000000000000012', billNo: 'OB202606110012', billType: 'SALES_OUT', sourceType: 'SALES_ORDER', sourceNo: 'SO202606003', sourcePartyName: '杭州电商客户', warehouseId: '1930000000000000007', warehouseName: '杭州电商仓', status: 'CONFIRMED', createTime: '2026-06-11 18:05:00', items: [{ itemId: '1960000000000012001', productId: '1920000000000000044', productCode: 'P000044', productName: '无线办公鼠标', unitName: '个', quantityPrecision: 0, planQty: 6, processedQty: 0, pendingQty: 0, currentQty: 6, beforeQty: 14 }] },
+  { billId: '1950000000000000013', billNo: 'IB202606110013', billType: 'ADJUST_IN', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202606003', sourcePartyName: '南京备货仓', warehouseId: '1930000000000000008', warehouseName: '南京备货仓', status: 'CONFIRMED', createTime: '2026-06-11 15:32:00', items: [{ itemId: '1960000000000013001', productId: '1920000000000000043', productCode: 'P000043', productName: 'USB-C扩展坞', unitName: '个', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 2, beforeQty: 15 }] },
+  { billId: '1950000000000000014', billNo: 'IB202606100014', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606004', sourcePartyName: '文仪办公渠道', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CANCELLED', createTime: '2026-06-10 11:25:00', items: [{ itemId: '1960000000000014001', productId: '1920000000000000021', productCode: 'P000021', productName: '中性签字笔', unitName: '盒', quantityPrecision: 0, planQty: 20, processedQty: 0, pendingQty: 0, currentQty: 20, beforeQty: 42 }] },
+  { billId: '1950000000000000015', billNo: 'OB202606100015', billType: 'SALES_OUT', sourceType: 'SALES_ORDER', sourceNo: 'SO202606004', sourcePartyName: '广州天河门店', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', status: 'PENDING_CONFIRM', createTime: '2026-06-10 09:40:00', items: [{ itemId: '1960000000000015001', productId: '1920000000000000026', productCode: 'P000026', productName: 'A4复印纸', unitName: '箱', quantityPrecision: 0, planQty: 10, processedQty: 0, pendingQty: 10, currentQty: 5, beforeQty: 13 }] },
 ];
 
 function buildMockBills(): StockBillDetail[] {
@@ -146,7 +147,7 @@ function buildMockBills(): StockBillDetail[] {
     const timestamp = seed.createTime;
     const items: StockBillItem[] = seed.items.map((item) => {
       const sourceGeneratedWaiting = seed.sourceType !== 'STOCK_ADJUST' && seed.status === 'PENDING_CONFIRM';
-      const currentQuantity = sourceGeneratedWaiting ? 0 : item.quantity;
+      const currentQuantity = sourceGeneratedWaiting ? 0 : item.currentQty;
       const currentPendingQty = sourceGeneratedWaiting && item.planQty !== null && item.processedQty !== null
         ? Math.max(0, item.planQty - item.processedQty)
         : item.pendingQty;
@@ -155,10 +156,11 @@ function buildMockBills(): StockBillDetail[] {
       const isQualityInbound = seed.billType === 'PURCHASE_IN' || seed.billType === 'SALES_RETURN';
       const defectiveQty = isQualityInbound ? item.defectiveQty || 0 : 0;
       return {
-        stockBillItemId: item.itemId,
-        stockBillId,
+        workBillItemId: item.itemId,
+        workBillId: stockBillId,
         billNo: seed.billNo,
         sourceItemId: null,
+        stockBillItemId: null,
         productId: item.productId,
         productCode: item.productCode,
         productName: item.productName,
@@ -167,7 +169,7 @@ function buildMockBills(): StockBillDetail[] {
         planQty: item.planQty,
         processedQty: item.processedQty,
         pendingQty: currentPendingQty,
-        quantity: currentQuantity,
+        currentQty: currentQuantity,
         qualifiedQty: isQualityInbound ? currentQuantity - defectiveQty : 0,
         defectiveQty,
         beforeQty: item.beforeQty,
@@ -180,12 +182,13 @@ function buildMockBills(): StockBillDetail[] {
     });
     const quantitySummary = buildQuantitySummary(items);
     return {
-      stockBillId,
+      workBillId: stockBillId,
       billNo: seed.billNo,
       billType: seed.billType,
       sourceType: seed.sourceType,
       sourceId: null,
       sourceNo: seed.sourceNo,
+      sourcePartyId: seed.sourcePartyId ?? null,
       sourcePartyName: seed.sourcePartyName,
       entryMode: seed.sourceType === 'STOCK_ADJUST' ? 'MANUAL_ADJUSTMENT' : 'SOURCE_GENERATED',
       warehouseId: seed.warehouseId,
@@ -221,12 +224,13 @@ function normalizeEnum<T extends string>(value: unknown, values: readonly T[], f
 function normalizeStockBill(item: StockBillListItem): StockBillListItem {
   return {
     ...item,
-    stockBillId: normalizeStringId(item.stockBillId, 'stockBillId'),
+    workBillId: normalizeStringId(item.workBillId, 'workBillId'),
     billNo: String(item.billNo),
     billType: normalizeEnum(item.billType, billTypes, 'billType'),
     sourceType: normalizeEnum(item.sourceType, sourceTypes, 'sourceType'),
     sourceId: normalizeNullableStringId(item.sourceId, 'sourceId'),
     sourceNo: String(item.sourceNo),
+    sourcePartyId: normalizeNullableStringId(item.sourcePartyId, 'sourcePartyId'),
     sourcePartyName: String(item.sourcePartyName),
     entryMode: normalizeEnum(item.entryMode, entryModes, 'entryMode'),
     warehouseId: normalizeStringId(item.warehouseId, 'warehouseId'),
@@ -250,9 +254,9 @@ function normalizeStockBill(item: StockBillListItem): StockBillListItem {
 }
 
 function normalizeStockBillItem(item: StockBillItem): StockBillItem {
-  const quantityFields = ['quantity', 'qualifiedQty', 'defectiveQty', 'beforeQty', 'changeQty', 'afterQty'] as const;
+  const quantityFields = ['currentQty', 'qualifiedQty', 'defectiveQty', 'beforeQty', 'changeQty', 'afterQty'] as const;
   const quantities = Object.fromEntries(quantityFields.map(field => [field, normalizeFiniteNumber(item[field], field)]));
-  if (quantities.quantity < 0 || quantities.qualifiedQty < 0 || quantities.defectiveQty < 0 || quantities.beforeQty < 0 || quantities.afterQty < 0) {
+  if (quantities.currentQty < 0 || quantities.qualifiedQty < 0 || quantities.defectiveQty < 0 || quantities.beforeQty < 0 || quantities.afterQty < 0) {
     throw new Error('出入库明细数量不符合非负数约束');
   }
   const quantityPrecision = normalizeFiniteNumber(item.quantityPrecision, 'quantityPrecision');
@@ -261,10 +265,11 @@ function normalizeStockBillItem(item: StockBillItem): StockBillItem {
   }
   return {
     ...item,
-    stockBillItemId: normalizeStringId(item.stockBillItemId, 'stockBillItemId'),
-    stockBillId: normalizeStringId(item.stockBillId, 'stockBillId'),
+    workBillItemId: normalizeStringId(item.workBillItemId, 'workBillItemId'),
+    workBillId: normalizeStringId(item.workBillId, 'workBillId'),
     billNo: String(item.billNo),
     sourceItemId: normalizeNullableStringId(item.sourceItemId, 'sourceItemId'),
+    stockBillItemId: normalizeNullableStringId(item.stockBillItemId, 'stockBillItemId'),
     productId: normalizeStringId(item.productId, 'productId'),
     productCode: String(item.productCode),
     productName: String(item.productName),
@@ -273,7 +278,7 @@ function normalizeStockBillItem(item: StockBillItem): StockBillItem {
     planQty: nullableNumber(item.planQty, 'planQty'),
     processedQty: nullableNumber(item.processedQty, 'processedQty'),
     pendingQty: nullableNumber(item.pendingQty, 'pendingQty'),
-    quantity: quantities.quantity,
+    currentQty: quantities.currentQty,
     qualifiedQty: quantities.qualifiedQty,
     defectiveQty: quantities.defectiveQty,
     beforeQty: quantities.beforeQty,
@@ -354,7 +359,7 @@ function dateKey() {
 }
 
 function requireDraft(stockBillId: string) {
-  const bill = mockBills.find(item => item.stockBillId === stockBillId);
+  const bill = mockBills.find(item => item.workBillId === stockBillId);
   if (!bill) throw new Error('入库单或出库单不存在');
   if (bill.status !== 'DRAFT' && bill.status !== 'PENDING_CONFIRM') throw new Error('只有草稿或待确认状态的入库单/出库单可以操作');
   return bill;
@@ -370,15 +375,15 @@ function validateDraftItems(items: StockBillDraftItemPayload[], billType: StockB
   const qualityInbound = billType === 'PURCHASE_IN' || billType === 'SALES_RETURN';
   items.forEach(item => {
     if (!item.productId) throw new Error('请选择产品');
-    if (!Number.isFinite(item.quantity) || item.quantity <= 0) throw new Error('出入库数量必须大于 0');
+    if (!Number.isFinite(item.currentQty) || item.currentQty <= 0) throw new Error('出入库数量必须大于 0');
     const precision = precisionByProduct?.get(item.productId) ?? 2;
-    if (!matchesPrecision(item.quantity, precision) || !matchesPrecision(item.qualifiedQty, precision) || !matchesPrecision(item.defectiveQty, precision)) {
+    if (!matchesPrecision(item.currentQty, precision) || !matchesPrecision(item.qualifiedQty, precision) || !matchesPrecision(item.defectiveQty, precision)) {
       throw new Error(`产品数量最多保留 ${precision} 位小数`);
     }
     if (!Number.isFinite(item.qualifiedQty) || item.qualifiedQty < 0 || !Number.isFinite(item.defectiveQty) || item.defectiveQty < 0) {
       throw new Error('合格数量和不合格数量不能小于 0');
     }
-    if (qualityInbound && Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) {
+    if (qualityInbound && Math.abs(item.qualifiedQty + item.defectiveQty - item.currentQty) > 0.0001) {
       throw new Error('采购入库和销售退货的合格数量与不合格数量之和必须等于本次数量');
     }
   });
@@ -424,10 +429,11 @@ export async function createStockBill(direction: StockBillDirection, payload: St
       if (!product) throw new Error('只能选择启用状态的产品');
       const currentStock = getMockWarehouseStock(warehouse.warehouseId, product.productId);
       return {
-        stockBillItemId: `${stockBillId}${index + 1}`,
-        stockBillId,
+        workBillItemId: `${stockBillId}${index + 1}`,
+        workBillId: stockBillId,
         billNo: identity.billNo,
         sourceItemId: null,
+        stockBillItemId: null,
         productId: product.productId,
         productCode: product.productCode,
         productName: product.productName,
@@ -436,7 +442,7 @@ export async function createStockBill(direction: StockBillDirection, payload: St
         planQty: null,
         processedQty: null,
         pendingQty: null,
-        quantity: item.quantity,
+        currentQty: item.currentQty,
         qualifiedQty: payload.billType === 'PURCHASE_IN' || payload.billType === 'SALES_RETURN' ? item.qualifiedQty : 0,
         defectiveQty: payload.billType === 'PURCHASE_IN' || payload.billType === 'SALES_RETURN' ? item.defectiveQty : 0,
         beforeQty: currentStock?.stockQty || 0,
@@ -444,17 +450,18 @@ export async function createStockBill(direction: StockBillDirection, payload: St
         afterQty: currentStock?.stockQty || 0,
         createTime: timestamp,
         updateTime: timestamp,
-        remark: item.remark.trim(),
+        remark: item.remark?.trim() ?? '',
       } satisfies StockBillItem;
     });
     const quantitySummary = buildQuantitySummary(items);
     const created: StockBillDetail = {
-      stockBillId,
+      workBillId: stockBillId,
       billNo: identity.billNo,
       billType: payload.billType,
       sourceType: sourceTypeByBillType[payload.billType],
       sourceId: null,
       sourceNo: isAdjustment ? identity.sourceNo : sourceNo,
+      sourcePartyId: isAdjustment ? warehouse.warehouseId : null,
       sourcePartyName: isAdjustment ? warehouse.warehouseName : '手工补录',
       entryMode: isAdjustment ? 'MANUAL_ADJUSTMENT' : 'MANUAL_SUPPLEMENT',
       warehouseId: warehouse.warehouseId,
@@ -473,7 +480,7 @@ export async function createStockBill(direction: StockBillDirection, payload: St
       createTime: timestamp,
       updateTime: timestamp,
       manualReason,
-      remark: payload.remark.trim(),
+      remark: payload.remark?.trim() ?? '',
       items,
     };
     mockBills = [created, ...mockBills];
@@ -491,7 +498,7 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
     const sourceGenerated = current.entryMode === 'SOURCE_GENERATED';
     const structureLocked = sourceGenerated || current.status === 'PENDING_CONFIRM';
     if (structureLocked && (payload.items.length !== current.items.length
-      || payload.items.some(item => !item.stockBillItemId || !current.items.some(existing => existing.stockBillItemId === item.stockBillItemId && existing.productId === item.productId)))) {
+      || payload.items.some(item => !item.workBillItemId || !current.items.some(existing => existing.workBillItemId === item.workBillItemId && existing.productId === item.productId)))) {
       throw new Error('系统生成单或待确认单不能增删或更换产品');
     }
     const { warehouses, products } = await loadMockMasterData(payload.items.map(item => item.productId));
@@ -501,17 +508,18 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
     if (!warehouse) throw new Error('只能选择启用状态的仓库');
     const timestamp = nowText();
     const items = payload.items.map((item, index) => {
-      const existing = current.items.find(candidate => candidate.stockBillItemId === item.stockBillItemId);
+      const existing = current.items.find(candidate => candidate.workBillItemId === item.workBillItemId);
       const product = products.find(option => option.productId === item.productId);
       if (!product && !existing) throw new Error('产品不存在或已停用');
       const snapshot = sourceGenerated ? existing : product || existing;
       if (!snapshot) throw new Error('产品不存在');
       const currentStock = getMockWarehouseStock(warehouse.warehouseId, item.productId);
       return {
-        stockBillItemId: existing?.stockBillItemId || `${stockBillId}${Date.now()}${index + 1}`,
-        stockBillId,
+        workBillItemId: existing?.workBillItemId || `${stockBillId}${Date.now()}${index + 1}`,
+        workBillId: stockBillId,
         billNo: current.billNo,
         sourceItemId: existing?.sourceItemId || null,
+        stockBillItemId: null,
         productId: item.productId,
         productCode: snapshot.productCode,
         productName: snapshot.productName,
@@ -521,8 +529,8 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
         processedQty: existing?.processedQty ?? null,
         pendingQty: !existing || existing.planQty === null || existing.processedQty === null
           ? null
-          : Math.max(0, existing.planQty - existing.processedQty - item.quantity),
-        quantity: item.quantity,
+          : Math.max(0, existing.planQty - existing.processedQty - item.currentQty),
+        currentQty: item.currentQty,
         qualifiedQty: current.billType === 'PURCHASE_IN' || current.billType === 'SALES_RETURN' ? item.qualifiedQty : 0,
         defectiveQty: current.billType === 'PURCHASE_IN' || current.billType === 'SALES_RETURN' ? item.defectiveQty : 0,
         beforeQty: currentStock?.stockQty || 0,
@@ -530,12 +538,12 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
         afterQty: currentStock?.stockQty || 0,
         createTime: existing?.createTime || timestamp,
         updateTime: timestamp,
-        remark: item.remark.trim(),
+        remark: item.remark?.trim() ?? '',
       } satisfies StockBillItem;
     });
     const isSupplement = current.entryMode === 'MANUAL_SUPPLEMENT';
-    const sourceNo = isSupplement ? payload.sourceNo.trim() : current.sourceNo;
-    const manualReason = sourceGenerated ? current.manualReason : payload.manualReason.trim();
+    const sourceNo = isSupplement ? (payload.sourceNo ?? '').trim() : current.sourceNo;
+    const manualReason = sourceGenerated ? current.manualReason : (payload.manualReason ?? '').trim();
     if (isSupplement && !sourceNo) throw new Error('手工补录凭证必须填写原业务单号');
     if (sourceNo.length > 64) throw new Error('原业务单号不能超过 64 个字符');
     if (!sourceGenerated && !manualReason) throw new Error(current.entryMode === 'MANUAL_ADJUSTMENT' ? '请填写调整原因' : '请填写补录原因');
@@ -544,17 +552,18 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
       ...current,
       warehouseId: warehouse.warehouseId,
       warehouseName: warehouse.warehouseName,
+      sourcePartyId: current.entryMode === 'MANUAL_ADJUSTMENT' ? warehouse.warehouseId : current.sourcePartyId,
       sourcePartyName: current.entryMode === 'MANUAL_ADJUSTMENT' ? warehouse.warehouseName : current.sourcePartyName,
       sourceNo,
       manualReason,
       items,
       itemCount: items.length,
       ...buildQuantitySummary(items),
-      remark: payload.remark.trim(),
+      remark: payload.remark?.trim() ?? '',
       version: current.version + 1,
       updateTime: timestamp,
     };
-    mockBills = mockBills.map(item => item.stockBillId === stockBillId ? updated : item);
+    mockBills = mockBills.map(item => item.workBillId === stockBillId ? updated : item);
     return normalizeStockBillDetail(updated);
   }
   const response = await http.put(billResourceEndpoint(direction, stockBillId), payload);
@@ -563,18 +572,18 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
 
 export async function confirmStockBill(direction: StockBillDirection, stockBillId: string, version: number) {
   if (useMockApi) {
-    const existing = mockBills.find(item => item.stockBillId === stockBillId);
+    const existing = mockBills.find(item => item.workBillId === stockBillId);
     if (!existing) throw new Error('入库单或出库单不存在');
     assertOptimisticVersion(existing.version, version);
     if (existing.status === 'CONFIRMED') return normalizeStockBillDetail(existing);
     if (existing.status === 'CANCELLED') throw new Error('已取消的入库单或出库单不能确认');
     if (existing.status !== 'PENDING_CONFIRM') throw new Error('草稿必须先提交为待确认后才能确认入库/出库');
     const current = existing;
-    validateDraftItems(current.items, current.billType);
+    validateDraftItems(current.items.map(i => ({ productId: i.productId, currentQty: i.currentQty, qualifiedQty: i.qualifiedQty, defectiveQty: i.defectiveQty, remark: i.remark })), current.billType);
     current.items.forEach(item => {
       if (current.entryMode !== 'SOURCE_GENERATED' || item.planQty === null || item.processedQty === null) return;
       const remainingBefore = Math.max(0, item.planQty - item.processedQty);
-      if (item.quantity > remainingBefore) throw new Error(`产品 ${item.productCode} 的本次数量不能超过来源剩余数量`);
+      if (item.currentQty > remainingBefore) throw new Error(`产品 ${item.productCode} 的本次数量不能超过来源剩余数量`);
     });
     const { warehouses, products } = await loadMockMasterData(existing.items.map(item => item.productId));
     const warehouse = warehouses.find(item => item.warehouseId === current.warehouseId);
@@ -582,8 +591,8 @@ export async function confirmStockBill(direction: StockBillDirection, stockBillI
     const direction = inboundTypes.has(current.billType) ? 1 : -1;
     current.items.forEach(item => {
       const stock = getMockWarehouseStock(current.warehouseId, item.productId);
-      const afterQty = (stock?.stockQty || 0) + direction * item.quantity;
-      const afterLockedQty = (stock?.lockedQty || 0) - (current.billType === 'SALES_OUT' ? item.quantity : 0);
+      const afterQty = (stock?.stockQty || 0) + direction * item.currentQty;
+      const afterLockedQty = (stock?.lockedQty || 0) - (current.billType === 'SALES_OUT' ? item.currentQty : 0);
       if (afterQty < 0) throw new Error(`产品 ${item.productCode} 库存不足，无法确认出库`);
       if (afterLockedQty < 0) throw new Error(`产品 ${item.productCode} 的销售锁定库存不足`);
       if (afterQty < afterLockedQty) throw new Error(`产品 ${item.productCode} 出库后库存不能低于锁定库存`);
@@ -600,13 +609,13 @@ export async function confirmStockBill(direction: StockBillDirection, stockBillI
         productName: item.productName,
         unitName: item.unitName,
         safetyStockQty: product?.safetyStockQty || 0,
-        changeQty: direction * item.quantity,
-        lockedChangeQty: current.billType === 'SALES_OUT' ? -item.quantity : 0,
+        changeQty: direction * item.currentQty,
+        lockedChangeQty: current.billType === 'SALES_OUT' ? -item.currentQty : 0,
       });
       return {
         ...item,
         beforeQty: result.beforeQty,
-        changeQty: direction * item.quantity,
+        changeQty: direction * item.currentQty,
         afterQty: result.afterQty,
         updateTime: timestamp,
       };
@@ -622,7 +631,7 @@ export async function confirmStockBill(direction: StockBillDirection, stockBillI
       updateTime: timestamp,
       items,
     };
-    mockBills = mockBills.map(item => item.stockBillId === stockBillId ? confirmed : item);
+    mockBills = mockBills.map(item => item.workBillId === stockBillId ? confirmed : item);
     return normalizeStockBillDetail(confirmed);
   }
   return postResult<StockBillDetail, { version: number }>(billResourceEndpoint(direction, stockBillId, 'confirm'), { version }).then(normalizeStockBillDetail);
@@ -630,15 +639,15 @@ export async function confirmStockBill(direction: StockBillDirection, stockBillI
 
 export async function submitStockBill(direction: StockBillDirection, stockBillId: string, version: number) {
   if (useMockApi) {
-    const existing = mockBills.find(item => item.stockBillId === stockBillId);
+    const existing = mockBills.find(item => item.workBillId === stockBillId);
     if (!existing) throw new Error('入库单或出库单不存在');
     assertOptimisticVersion(existing.version, version);
     if (existing.status === 'PENDING_CONFIRM') return normalizeStockBillDetail(existing);
     if (existing.status !== 'DRAFT') throw new Error('只有草稿状态的入库单/出库单可以提交确认');
-    validateDraftItems(existing.items, existing.billType);
+    validateDraftItems(existing.items.map(i => ({ productId: i.productId, currentQty: i.currentQty, qualifiedQty: i.qualifiedQty, defectiveQty: i.defectiveQty, remark: i.remark })), existing.billType);
     const timestamp = nowText();
     const submitted: StockBillDetail = { ...existing, status: 'PENDING_CONFIRM', version: existing.version + 1, updateTime: timestamp };
-    mockBills = mockBills.map(item => item.stockBillId === stockBillId ? submitted : item);
+    mockBills = mockBills.map(item => item.workBillId === stockBillId ? submitted : item);
     return normalizeStockBillDetail(submitted);
   }
   return postResult<StockBillDetail, { version: number }>(billResourceEndpoint(direction, stockBillId, 'submit'), { version }).then(normalizeStockBillDetail);
@@ -646,7 +655,7 @@ export async function submitStockBill(direction: StockBillDirection, stockBillId
 
 export async function cancelStockBill(direction: StockBillDirection, stockBillId: string, version: number) {
   if (useMockApi) {
-    const existing = mockBills.find(item => item.stockBillId === stockBillId);
+    const existing = mockBills.find(item => item.workBillId === stockBillId);
     if (!existing) throw new Error('入库单或出库单不存在');
     assertOptimisticVersion(existing.version, version);
     if (existing.status === 'CANCELLED') return normalizeStockBillDetail(existing);
@@ -654,7 +663,7 @@ export async function cancelStockBill(direction: StockBillDirection, stockBillId
     const current = existing;
     const timestamp = nowText();
     const cancelled: StockBillDetail = { ...current, status: 'CANCELLED', version: current.version + 1, updateTime: timestamp };
-    mockBills = mockBills.map(item => item.stockBillId === stockBillId ? cancelled : item);
+    mockBills = mockBills.map(item => item.workBillId === stockBillId ? cancelled : item);
     return normalizeStockBillDetail(cancelled);
   }
   return postResult<StockBillDetail, { version: number }>(billResourceEndpoint(direction, stockBillId, 'cancel'), { version }).then(normalizeStockBillDetail);
@@ -680,7 +689,7 @@ export function listStockBills(params: StockBillQuery) {
 
 export function getStockBillDetail(direction: StockBillDirection, stockBillId: string) {
   if (useMockApi) {
-    const detail = mockBills.find(item => item.stockBillId === stockBillId);
+    const detail = mockBills.find(item => item.workBillId === stockBillId);
     return detail ? Promise.resolve(normalizeStockBillDetail(detail)) : Promise.reject(new Error('入库单或出库单不存在'));
   }
   return getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId)).then(normalizeStockBillDetail);

@@ -8,12 +8,13 @@ export type StockBillEntryMode = 'SOURCE_GENERATED' | 'MANUAL_SUPPLEMENT' | 'MAN
 export type ManualStockBillType = StockBillType;
 
 export interface StockBillListItem {
-  stockBillId: string;
+  workBillId: string;
   billNo: string;
   billType: StockBillType;
   sourceType: StockBillSourceType;
   sourceId: string | null;
   sourceNo: string;
+  sourcePartyId: string | null;
   sourcePartyName: string;
   entryMode: StockBillEntryMode;
   warehouseId: string;
@@ -36,10 +37,11 @@ export interface StockBillListItem {
 }
 
 export interface StockBillItem {
-  stockBillItemId: string;
-  stockBillId: string;
+  workBillItemId: string;
+  workBillId: string;
   billNo: string;
   sourceItemId: string | null;
+  stockBillItemId: string | null;
   productId: string;
   productCode: string;
   productName: string;
@@ -48,7 +50,7 @@ export interface StockBillItem {
   planQty: number | null;
   processedQty: number | null;
   pendingQty: number | null;
-  quantity: number;
+  currentQty: number;
   qualifiedQty: number;
   defectiveQty: number;
   beforeQty: number;
@@ -89,12 +91,12 @@ export interface StockBillQuery {
 }
 
 export interface StockBillDraftItemPayload {
-  stockBillItemId?: string;
+  workBillItemId?: string;
   productId: string;
-  quantity: number;
+  currentQty: number;
   qualifiedQty: number;
   defectiveQty: number;
-  remark: string;
+  remark?: string;
 }
 
 export interface StockBillCreatePayload {
@@ -103,16 +105,16 @@ export interface StockBillCreatePayload {
   warehouseId: string;
   manualReason: string;
   items: StockBillDraftItemPayload[];
-  remark: string;
+  remark?: string;
 }
 
 export interface StockBillUpdatePayload {
   version: number;
-  warehouseId: string;
-  sourceNo: string;
-  manualReason: string;
+  warehouseId?: string;
+  sourceNo?: string;
+  manualReason?: string;
   items: StockBillDraftItemPayload[];
-  remark: string;
+  remark?: string;
 }
 
 /**

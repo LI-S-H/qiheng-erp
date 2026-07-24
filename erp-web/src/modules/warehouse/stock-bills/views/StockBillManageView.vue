@@ -432,7 +432,7 @@ function billTotalQuantityText(row: StockBillListItem) {
 }
 
 function itemQuantityText(item: StockBillItem) {
-  const quantity = formatQty(item.quantity);
+  const quantity = formatQty(item.currentQty);
   return quantity === '-' ? '-' : `${quantity} ${item.unitName}`.trim();
 }
 
@@ -451,35 +451,35 @@ function qualityQtyText(item: StockBillItem, billType: StockBillType, field: 'qu
 }
 
 function expandedItems(row: StockBillListItem) {
-  return expandedDetails[row.stockBillId]?.items ?? [];
+  return expandedDetails[row.workBillId]?.items ?? [];
 }
 
 function isRowDetailLoading(row: StockBillListItem) {
-  return detailLoadingIds.value.has(row.stockBillId);
+  return detailLoadingIds.value.has(row.workBillId);
 }
 
 function isRowDetailCollapsed(row: StockBillListItem) {
-  return !expandedDetailIds.value.has(row.stockBillId);
+  return !expandedDetailIds.value.has(row.workBillId);
 }
 
 async function toggleRowDetail(row: StockBillListItem) {
   const next = new Set(expandedDetailIds.value);
-  if (next.has(row.stockBillId)) {
-    next.delete(row.stockBillId);
+  if (next.has(row.workBillId)) {
+    next.delete(row.workBillId);
     expandedDetailIds.value = next;
     return;
   }
-  next.add(row.stockBillId);
+  next.add(row.workBillId);
   expandedDetailIds.value = next;
-  if (expandedDetails[row.stockBillId]) return;
-  detailLoadErrors[row.stockBillId] = undefined;
-  setRowDetailLoading(row.stockBillId, true);
+  if (expandedDetails[row.workBillId]) return;
+  detailLoadErrors[row.workBillId] = undefined;
+  setRowDetailLoading(row.workBillId, true);
   try {
-    expandedDetails[row.stockBillId] = await getStockBillDetail(billDirection(row.billType), row.stockBillId);
+    expandedDetails[row.workBillId] = await getStockBillDetail(billDirection(row.billType), row.workBillId);
   } catch (error) {
-    detailLoadErrors[row.stockBillId] = getApiErrorMessage(error) || '商品明细加载失败';
+    detailLoadErrors[row.workBillId] = getApiErrorMessage(error) || '商品明细加载失败';
   } finally {
-    setRowDetailLoading(row.stockBillId, false);
+    setRowDetailLoading(row.workBillId, false);
   }
 }
 
@@ -491,7 +491,7 @@ function setRowDetailLoading(stockBillId: string, loadingDetail: boolean) {
 }
 
 function newDraftItem(): DraftFormItem {
-  return { key: `${Date.now()}-${Math.random()}`, productId: '', quantity: 1, qualifiedQty: qualityFieldsVisible.value ? 1 : 0, defectiveQty: 0, remark: '' };
+  return { key: `${Date.now()}-${Math.random()}`, productId: '', currentQty: 1, qualifiedQty: qualityFieldsVisible.value ? 1 : 0, defectiveQty: 0, remark: '' };
 }
 
 function productKeywordQuery(keyword: string) {
@@ -622,7 +622,7 @@ async function openDetail(row: StockBillListItem, actionMode: 'view' | 'submit' 
   detailLoading.value = true;
   detail.value = null;
   try {
-    detail.value = await getStockBillDetail(billDirection(row.billType), row.stockBillId);
+    detail.value = await getStockBillDetail(billDirection(row.billType), row.workBillId);
   } catch (error) {
     detailVisible.value = false;
     toast.warning(getApiErrorMessage(error) || `${pageText.value.title}详情加载失败`);
@@ -651,7 +651,7 @@ async function openEditDialog(row: StockBillListItem) {
   editingDetail.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   try {
-    const current = await getStockBillDetail(billDirection(row.billType), row.stockBillId);
+    const current = await getStockBillDetail(billDirection(row.billType), row.workBillId);
     if (current.status !== 'DRAFT' && current.status !== 'PENDING_CONFIRM') throw new Error('只有草稿或待确认状态可以编辑');
     editingDetail.value = current;
     mergeProducts(current.items.map(item => ({
@@ -667,8 +667,8 @@ async function openEditDialog(row: StockBillListItem) {
     form.manualReason = current.manualReason;
     form.remark = current.remark;
     form.items = current.items.map(item => ({
-      key: item.stockBillItemId,
-      stockBillItemId: item.stockBillItemId,
+      key: item.workBillItemId,
+      workBillItemId: item.workBillItemId,
       productId: item.productId,
       productCode: item.productCode,
       productName: item.productName,
@@ -677,7 +677,7 @@ async function openEditDialog(row: StockBillListItem) {
       planQty: item.planQty,
       processedQty: item.processedQty,
       pendingQty: item.pendingQty,
-      quantity: item.quantity,
+      currentQty: item.currentQty,
       qualifiedQty: item.qualifiedQty,
       defectiveQty: item.defectiveQty,
       remark: item.remark,
@@ -701,14 +701,14 @@ function removeFormItem(index: number) {
 
 function productLabel(item: DraftFormItem) {
   if (item.productCode || item.productName) return `${item.productCode || ''} ${item.productName || ''}（${item.unitName || ''}）`.trim();
-  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.stockBillItemId === item.stockBillItemId);
+  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.workBillItemId === item.workBillItemId);
   if (snapshot) return `${snapshot.productCode} ${snapshot.productName}（${snapshot.unitName}）`;
   const product = products.value.find(option => option.productId === item.productId);
   return product ? `${product.productCode} ${product.productName}（${product.unitName}）` : item.productId;
 }
 
 function productDisplay(item: DraftFormItem) {
-  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.stockBillItemId === item.stockBillItemId);
+  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.workBillItemId === item.workBillItemId);
   const product = products.value.find(option => option.productId === item.productId);
   return {
     code: item.productCode || snapshot?.productCode || product?.productCode || item.productId || '-',
@@ -718,7 +718,7 @@ function productDisplay(item: DraftFormItem) {
 }
 
 function detailItemFor(item: DraftFormItem) {
-  return editingDetail.value?.items.find(detailItem => detailItem.stockBillItemId === item.stockBillItemId) || null;
+  return editingDetail.value?.items.find(detailItem => detailItem.workBillItemId === item.workBillItemId) || null;
 }
 
 function handleProductChange(item: DraftFormItem, index: number) {
@@ -734,7 +734,7 @@ function handleProductChange(item: DraftFormItem, index: number) {
 function handleQuantityChange(item: DraftFormItem, index: number) {
   clearFormError(`items.${index}.quantity`);
   if (!qualityFieldsVisible.value) return;
-  const quantity = Number(item.quantity) || 0;
+  const quantity = Number(item.currentQty) || 0;
   const defectiveQty = Math.min(Math.max(Number(item.defectiveQty) || 0, 0), quantity);
   item.defectiveQty = defectiveQty;
   item.qualifiedQty = Math.max(0, quantity - defectiveQty);
@@ -743,7 +743,7 @@ function handleQuantityChange(item: DraftFormItem, index: number) {
 function remainingAfterText(item: DraftFormItem) {
   const snapshot = detailItemFor(item);
   if (snapshot?.planQty === null || snapshot?.planQty === undefined || snapshot.processedQty === null || snapshot.processedQty === undefined) return '-';
-  return formatQty(Math.max(0, snapshot.planQty - snapshot.processedQty - (Number(item.quantity) || 0)));
+  return formatQty(Math.max(0, snapshot.planQty - snapshot.processedQty - (Number(item.currentQty) || 0)));
 }
 
 function itemQuantityPrecision(item: DraftFormItem) {
@@ -786,21 +786,21 @@ function validateForm() {
     if (!item.productId) formErrors[`items.${index}.productId`] = '请选择产品';
     else if (selectedProducts.has(item.productId)) formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
     selectedProducts.add(item.productId);
-    if (!Number.isFinite(item.quantity) || item.quantity <= 0) formErrors[`items.${index}.quantity`] = '数量必须大于 0';
+    if (!Number.isFinite(item.currentQty) || item.currentQty <= 0) formErrors[`items.${index}.quantity`] = '数量必须大于 0';
     const precision = itemQuantityPrecision(item);
-    if (!formErrors[`items.${index}.quantity`] && !matchesQuantityPrecision(item.quantity, precision)) {
+    if (!formErrors[`items.${index}.quantity`] && !matchesQuantityPrecision(item.currentQty, precision)) {
       formErrors[`items.${index}.quantity`] = precision === 0 ? '该产品按整单位管理，数量必须是整数' : `该产品数量最多保留 ${precision} 位小数`;
     }
     if (qualityFieldsVisible.value) {
       if (!Number.isFinite(item.qualifiedQty) || item.qualifiedQty < 0 || !Number.isFinite(item.defectiveQty) || item.defectiveQty < 0) {
         formErrors[`items.${index}.quality`] = '质量数量不能小于 0';
-      } else if (Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) {
+      } else if (Math.abs(item.qualifiedQty + item.defectiveQty - item.currentQty) > 0.0001) {
         formErrors[`items.${index}.quality`] = '合格与不合格数量之和必须等于本次数量';
       } else if (!matchesQuantityPrecision(item.qualifiedQty, precision) || !matchesQuantityPrecision(item.defectiveQty, precision)) {
         formErrors[`items.${index}.quality`] = precision === 0 ? '质量数量必须是整数' : `质量数量最多保留 ${precision} 位小数`;
       }
     }
-    if (item.remark.trim().length > 500) formErrors[`items.${index}.remark`] = '明细备注不能超过 500 个字符';
+    if ((item.remark ?? '').trim().length > 500) formErrors[`items.${index}.remark`] = '明细备注不能超过 500 个字符';
   });
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   return Object.keys(formErrors).length === 0;
@@ -808,12 +808,12 @@ function validateForm() {
 
 function buildItemPayloads(): StockBillDraftItemPayload[] {
   return form.items.map(item => ({
-    ...(item.stockBillItemId ? { stockBillItemId: item.stockBillItemId } : {}),
+    ...(item.workBillItemId ? { workBillItemId: item.workBillItemId } : {}),
     productId: item.productId,
-    quantity: Number(item.quantity),
+    currentQty: Number(item.currentQty),
     qualifiedQty: qualityFieldsVisible.value ? Number(item.qualifiedQty) : 0,
     defectiveQty: qualityFieldsVisible.value ? Number(item.defectiveQty) : 0,
-    remark: item.remark.trim(),
+    remark: item.remark?.trim() ?? '',
   }));
 }
 
@@ -835,13 +835,13 @@ async function submitForm() {
     } else if (editingDetail.value) {
       const payload: StockBillUpdatePayload = {
         version: editingDetail.value.version,
-        warehouseId: form.warehouseId,
-        sourceNo: form.sourceNo.trim(),
-        manualReason: form.manualReason.trim(),
         items: buildItemPayloads(),
-        remark: form.remark.trim(),
+        ...(warehouseEditable.value ? { warehouseId: form.warehouseId } : {}),
+        ...(sourceNoEditable.value ? { sourceNo: form.sourceNo.trim() } : {}),
+        ...(manualReasonEditable.value ? { manualReason: form.manualReason.trim() } : {}),
+        ...(form.remark.trim() ? { remark: form.remark.trim() } : {}),
       };
-      await updateStockBill(billDirection(editingDetail.value.billType), editingDetail.value.stockBillId, payload);
+      await updateStockBill(billDirection(editingDetail.value.billType), editingDetail.value.workBillId, payload);
       toast.success(`${pageText.value.formTitle}已保存`);
     }
     formVisible.value = false;
@@ -879,10 +879,10 @@ function getSubmitValidationError(row: StockBillDetail) {
   if (!row.items.length) return '提交前至少需要一条产品明细';
   for (const item of row.items) {
     if (!item.productId || !item.productCode || !item.productName || !item.unitName) return '提交前产品明细必须完整';
-    if (!Number.isFinite(item.quantity) || item.quantity <= 0) return `产品 ${item.productCode} 的本次数量必须大于 0`;
+    if (!Number.isFinite(item.currentQty) || item.currentQty <= 0) return `产品 ${item.productCode} 的本次数量必须大于 0`;
     if (isQualityBillType(row.billType)) {
       if (!Number.isFinite(item.qualifiedQty) || !Number.isFinite(item.defectiveQty) || item.qualifiedQty < 0 || item.defectiveQty < 0) return `产品 ${item.productCode} 的合格数量和不合格数量不能小于 0`;
-      if (Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) return `产品 ${item.productCode} 的合格数量与不合格数量之和必须等于本次数量`;
+      if (Math.abs(item.qualifiedQty + item.defectiveQty - item.currentQty) > 0.0001) return `产品 ${item.productCode} 的合格数量与不合格数量之和必须等于本次数量`;
     }
     if (row.entryMode === 'SOURCE_GENERATED' && (item.planQty === null || item.processedQty === null || item.pendingQty === null)) return `系统生成单据的产品 ${item.productCode} 缺少计划、累计或剩余数量`;
   }
@@ -905,7 +905,7 @@ function handleConfirm(row: StockBillListItem | StockBillDetail) {
     confirmText: '确认执行',
     variant: 'warning',
     onConfirm: async () => {
-      await confirmStockBill(billDirection(row.billType), row.stockBillId, row.version);
+      await confirmStockBill(billDirection(row.billType), row.workBillId, row.version);
       toast.success(`${row.billNo} 已确认`);
       detailVisible.value = false;
       await fetchRecords();
@@ -916,14 +916,14 @@ function handleConfirm(row: StockBillListItem | StockBillDetail) {
 function getConfirmValidationError(row: StockBillDetail) {
   const currentLabel = billDirection(row.billType) === 'INBOUND' ? '本次入库数量' : '本次出库数量';
   for (const item of row.items) {
-    if (!Number.isFinite(item.quantity) || item.quantity <= 0) return `产品 ${item.productCode} 请先填写${currentLabel}`;
+    if (!Number.isFinite(item.currentQty) || item.currentQty <= 0) return `产品 ${item.productCode} 请先填写${currentLabel}`;
     if (row.entryMode === 'SOURCE_GENERATED' && item.planQty !== null && item.processedQty !== null) {
       const remainingBefore = Math.max(0, item.planQty - item.processedQty);
-      if (item.quantity > remainingBefore) return `产品 ${item.productCode} 的${currentLabel}不能超过剩余数量 ${formatQty(remainingBefore)}`;
+      if (item.currentQty > remainingBefore) return `产品 ${item.productCode} 的${currentLabel}不能超过剩余数量 ${formatQty(remainingBefore)}`;
     }
     if (isQualityBillType(row.billType)) {
       if (!Number.isFinite(item.qualifiedQty) || !Number.isFinite(item.defectiveQty) || item.qualifiedQty < 0 || item.defectiveQty < 0) return `产品 ${item.productCode} 的合格数量和不合格数量不能小于 0`;
-      if (Math.abs(item.qualifiedQty + item.defectiveQty - item.quantity) > 0.0001) return `产品 ${item.productCode} 的合格数量与不合格数量之和必须等于${currentLabel}`;
+      if (Math.abs(item.qualifiedQty + item.defectiveQty - item.currentQty) > 0.0001) return `产品 ${item.productCode} 的合格数量与不合格数量之和必须等于${currentLabel}`;
     }
   }
   return '';
@@ -944,7 +944,7 @@ function handleSubmit(row: StockBillListItem | StockBillDetail) {
     confirmText: '确认提交',
     variant: 'warning',
     onConfirm: async () => {
-      await submitStockBill(billDirection(row.billType), row.stockBillId, row.version);
+      await submitStockBill(billDirection(row.billType), row.workBillId, row.version);
       toast.success(`${row.billNo} 已提交待确认`);
       detailVisible.value = false;
       await fetchRecords();
@@ -959,7 +959,7 @@ function handleCancel(row: StockBillListItem) {
     confirmText: '确认取消',
     variant: 'destructive',
     onConfirm: async () => {
-      await cancelStockBill(billDirection(row.billType), row.stockBillId, row.version);
+      await cancelStockBill(billDirection(row.billType), row.workBillId, row.version);
       toast.success(`${row.billNo} 已取消`);
       await fetchRecords();
     },
@@ -1149,11 +1149,11 @@ onMounted(async () => {
               <TableCell :colspan="visibleColumnCount" class="h-28 text-center text-muted-foreground">{{ pageText.emptyText }}</TableCell>
             </TableRow>
             <template v-else>
-              <template v-for="row in records" :key="row.stockBillId">
-                <TableRow class="group bg-muted/25" :data-stock-bill-id="row.stockBillId">
+              <template v-for="row in records" :key="row.workBillId">
+                <TableRow class="group bg-muted/25" :data-stock-bill-id="row.workBillId">
                   <TableCell class="stock-bill-key-column sticky left-0 z-20 border-r border-border/60 bg-background group-hover:bg-muted/50" data-table-sticky-edge="start">
                     <div class="flex items-center gap-2">
-                      <Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-bill-detail-${row.stockBillId}`" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button>
+                      <Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-bill-detail-${row.workBillId}`" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button>
                       <code class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.billNo }}</code>
                     </div>
                   </TableCell>
@@ -1182,14 +1182,14 @@ onMounted(async () => {
                     </div>
                   </TableCell>
                 </TableRow>
-                <TableRow class="stock-bill-detail-host-row bg-background" :data-stock-bill-detail-host-id="row.stockBillId">
+                <TableRow class="stock-bill-detail-host-row bg-background" :data-stock-bill-detail-host-id="row.workBillId">
                   <TableCell :colspan="visibleColumnCount" class="h-0 px-4 py-0">
                     <CollapsibleRoot :open="!isRowDetailCollapsed(row)" :unmount-on-hide="false">
-                      <CollapsibleContent :id="`stock-bill-detail-${row.stockBillId}`" class="stock-bill-detail-drawer" :data-stock-bill-detail-id="row.stockBillId">
+                      <CollapsibleContent :id="`stock-bill-detail-${row.workBillId}`" class="stock-bill-detail-drawer" :data-stock-bill-detail-id="row.workBillId">
                         <div class="stock-bill-detail-drawer__inner">
-                          <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.stockBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
-                          <div v-else-if="detailLoadErrors[row.stockBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.stockBillId">{{ detailLoadErrors[row.stockBillId] }}</div>
-                          <div v-else-if="expandedItems(row).length === 0" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-empty-id="row.stockBillId">暂无商品明细</div>
+                          <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.workBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
+                          <div v-else-if="detailLoadErrors[row.workBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.workBillId">{{ detailLoadErrors[row.workBillId] }}</div>
+                          <div v-else-if="expandedItems(row).length === 0" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-empty-id="row.workBillId">暂无商品明细</div>
                           <WarehouseDetailTableFrame v-else class="stock-bill-detail-card">
                               <Table class="min-w-[880px] table-fixed">
                                 <colgroup>
@@ -1215,7 +1215,7 @@ onMounted(async () => {
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  <TableRow v-for="item in expandedItems(row)" :key="item.stockBillItemId" :data-stock-bill-expanded-item-id="item.stockBillItemId">
+                                  <TableRow v-for="item in expandedItems(row)" :key="item.workBillItemId" :data-stock-bill-expanded-item-id="item.workBillItemId">
                                     <TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
                                     <TableCell class="truncate text-center font-medium" :title="item.productName">{{ item.productName }}</TableCell>
                                     <TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell>
@@ -1331,7 +1331,7 @@ onMounted(async () => {
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty)} ${itemUnitName(item)}` : '-' }}</TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.processedQty)} ${itemUnitName(item)}` : '-' }}</TableCell>
                       <TableCell class="align-top">
-                        <div class="stock-bill-form-quantity-control"><Input v-model.number="item.quantity" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" /><span :class="formErrors[`items.${index}.quantity`] ? 'text-destructive' : 'text-muted-foreground'" :title="formErrors[`items.${index}.quantity`] || quantityHint(item)">{{ formErrors[`items.${index}.quantity`] || quantityHint(item) }}</span></div>
+                        <div class="stock-bill-form-quantity-control"><Input v-model.number="item.currentQty" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" /><span :class="formErrors[`items.${index}.quantity`] ? 'text-destructive' : 'text-muted-foreground'" :title="formErrors[`items.${index}.quantity`] || quantityHint(item)">{{ formErrors[`items.${index}.quantity`] || quantityHint(item) }}</span></div>
                       </TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : '-' }}</TableCell>
                       <TableCell class="align-top">
@@ -1388,12 +1388,12 @@ onMounted(async () => {
                     <colgroup><col class="w-[190px]" /><col class="w-[65px]" /><col class="w-[95px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[155px]" /><col class="w-[95px]" /><col class="w-[105px]" /><col class="w-[90px]" /><col class="w-[90px]" /><col class="w-[100px]" /></colgroup>
                     <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">{{ planQtyLabel(detail.billType) }}</TableHead><TableHead class="text-right">{{ pageText.processedLabel }}</TableHead><TableHead class="text-right">{{ pageText.currentQtyLabel }}</TableHead><TableHead class="text-right">确认后{{ pageText.pendingQtyLabel }}</TableHead><TableHead class="text-right">合格数量</TableHead><TableHead class="text-right">不合格数量</TableHead><TableHead class="text-right">变动前</TableHead><TableHead class="text-right">变动后</TableHead><TableHead>备注</TableHead></TableRow></TableHeader>
                     <TableBody>
-                      <TableRow v-for="item in detail.items" :key="item.stockBillItemId" :data-stock-bill-item-id="item.stockBillItemId">
+                      <TableRow v-for="item in detail.items" :key="item.workBillItemId" :data-stock-bill-item-id="item.workBillItemId">
                         <TableCell><div class="flex flex-col gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><span class="font-medium">{{ item.productName }}</span></div></TableCell>
                         <TableCell class="text-center">{{ item.unitName }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.planQty) }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.processedQty) }}</TableCell>
-                        <TableCell class="text-right font-medium tabular-nums">{{ formatQty(item.quantity) }}</TableCell>
+                        <TableCell class="text-right font-medium tabular-nums">{{ formatQty(item.currentQty) }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.pendingQty) }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ qualityQtyText(item, detail.billType, 'qualifiedQty') }}</TableCell>
                         <TableCell class="text-right tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(detail.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, detail.billType, 'defectiveQty') }}</TableCell>

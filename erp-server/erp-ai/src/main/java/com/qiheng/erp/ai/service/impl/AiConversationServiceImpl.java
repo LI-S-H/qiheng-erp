@@ -12,7 +12,6 @@ import com.qiheng.erp.ai.mapper.AiMessageMapper;
 import com.qiheng.erp.ai.service.IAiConversationService;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
-import com.qiheng.erp.common.exception.NotFoundBizException;
 import com.qiheng.erp.security.context.UserContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,7 +80,7 @@ public class AiConversationServiceImpl extends ServiceImpl<AiConversationMapper,
         conversation.setUpdateTime(LocalDateTime.now());
         if (conversationMapper.updateById(conversation) != 1) {
             // 并发删除或版本冲突时不暴露会话是否属于其他用户。
-            throw new NotFoundBizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
+            throw new BizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
         }
         return toSummary(conversation);
     }
@@ -100,21 +99,21 @@ public class AiConversationServiceImpl extends ServiceImpl<AiConversationMapper,
                 .eq(AiConversation::getId, conversationId)
                 .eq(AiConversation::getUserId, userId));
         if (deleted != 1) {
-            throw new NotFoundBizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
+            throw new BizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
         }
     }
 
     @Override
     public AiConversation getOwnedConversation(Long conversationId) {
         if (conversationId == null) {
-            throw new NotFoundBizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
+            throw new BizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
         }
         AiConversation conversation = conversationMapper.selectOne(
                 new LambdaQueryWrapper<AiConversation>()
                         .eq(AiConversation::getId, conversationId)
                         .eq(AiConversation::getUserId, currentUserId()));
         if (conversation == null) {
-            throw new NotFoundBizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
+            throw new BizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
         }
         return conversation;
     }

@@ -17,7 +17,6 @@ import com.qiheng.erp.ai.service.IAiMessageService;
 import com.qiheng.erp.common.dto.PageQuery;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
-import com.qiheng.erp.common.exception.NotFoundBizException;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.security.context.UserContext;
 import org.springframework.stereotype.Service;
@@ -92,7 +91,7 @@ public class AiMessageServiceImpl extends ServiceImpl<AiMessageMapper, AiMessage
         conversation.setLastMessageAt(now);
         conversation.setUpdateTime(now);
         if (conversationMapper.updateById(conversation) != 1) {
-            throw new NotFoundBizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
+            throw new BizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
         }
         return toVO(message);
     }

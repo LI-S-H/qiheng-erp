@@ -2,7 +2,6 @@ package com.qiheng.erp.common.handler;
 
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
-import com.qiheng.erp.common.exception.NotFoundBizException;
 import com.qiheng.erp.common.exception.ServiceUnavailableBizException;
 import com.qiheng.erp.common.result.Result;
 import jakarta.validation.ConstraintViolation;
@@ -29,13 +28,6 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Pattern DUPLICATE_KEY_PATTERN = Pattern.compile("Duplicate entry '(.*?)' for key");
-
-    @ExceptionHandler(NotFoundBizException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public Result<Void> handleNotFoundBizException(NotFoundBizException e) {
-        log.warn("资源不存在: code={}, message={}", e.getCode(), e.getMessage());
-        return Result.fail(e.getCode(), e.getMessage());
-    }
 
     @ExceptionHandler(ServiceUnavailableBizException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)

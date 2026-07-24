@@ -5,8 +5,8 @@ import com.qiheng.erp.ai.service.IAiAssistantService;
 import com.qiheng.erp.ai.service.IAiConversationService;
 import com.qiheng.erp.ai.service.IAiMessageService;
 import com.qiheng.erp.common.dto.PageQuery;
+import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
-import com.qiheng.erp.common.exception.NotFoundBizException;
 import com.qiheng.erp.common.exception.ServiceUnavailableBizException;
 import com.qiheng.erp.common.handler.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +44,7 @@ class AiAssistantControllerHttpStatusTest {
     @Test
     void historyReturns404ForMissingOrForeignConversation() throws Exception {
         when(messageService.pageHistory(anyLong(), any(PageQuery.class)))
-                .thenThrow(new NotFoundBizException(ErrorCode.AI_CONVERSATION_NOT_FOUND));
+                .thenThrow(new BizException(ErrorCode.AI_CONVERSATION_NOT_FOUND));
 
         mockMvc.perform(get("/ai/assistant/conversations/100/messages")
                         .param("pageNum", "1")

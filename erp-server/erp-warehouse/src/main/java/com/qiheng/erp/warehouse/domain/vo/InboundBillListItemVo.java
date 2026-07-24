@@ -44,13 +44,13 @@ public class InboundBillListItemVo {
     private String status;
 
     @Schema(description = "明细条数")
-    private int itemCount;
+    private Integer itemCount;
 
     @Schema(description = "数量汇总描述")
     private String quantitySummary;
 
     @Schema(description = "本次入库总数量（数值）")
-    private int totalCurrentQty;
+    private Integer totalCurrentQty;
 
     @Schema(description = "主单位名称")
     private String quantityUnitName;
@@ -78,7 +78,7 @@ public class InboundBillListItemVo {
     private String responsibleByName;
 
     @Schema(description = "乐观锁版本号")
-    private int version;
+    private Integer version;
 
     @Schema(description = "创建时间")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

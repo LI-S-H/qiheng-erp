@@ -40,10 +40,14 @@ import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
 import { searchSupplierOptions } from '@/modules/purchase/api';
 import { listPurchaseOrders } from '@/modules/purchase/api';
+import { getPurchaseOrderDetail } from '@/modules/purchase/api';
 import { searchPurchaseReturnSourceOrders } from '@/modules/purchase/returns/api';
+import { listPurchaseReturnSourceItems } from '@/modules/purchase/returns/api';
 import { searchCustomerOptions } from '@/modules/sales/api';
 import { listSalesOrders } from '@/modules/sales/api';
+import { getSalesOrderDetail } from '@/modules/sales/api';
 import { searchSalesReturnSourceOrders } from '@/modules/sales/returns/api';
+import { listSalesReturnSourceItems } from '@/modules/sales/returns/api';
 import { listWarehouses } from '../../warehouses/api';
 import type { WarehouseListItem } from '../../warehouses/types';
 import { stockBillListColumns, stockBillOptionalColumns, useStockBillTableColumns } from '../composables/use-stock-bill-table-columns';
@@ -414,14 +418,66 @@ function handleSourceOrderSelect(value: string | number) {
     form.sourceId = meta.sourceId || '';
     form.sourcePartyId = meta.sourcePartyId || '';
     sourcePartyOptions.value = [{ value: meta.sourcePartyId, label: meta.sourcePartyName }];
+    if (meta.sourceId) loadSourceOrderItems(meta.sourceId);
   }
   clearFormError('sourceNo');
   clearFormError('sourcePartyId');
 }
 
+async function loadSourceOrderItems(sourceId: string) {
+  try {
+    let items: DraftFormItem[] = [];
+    if (formBillType.value === 'PURCHASE_IN') {
+      const detail = await getPurchaseOrderDetail(sourceId);
+      mergeProducts(detail.items.map((i: any) => ({ productId: i.productId, productCode: i.productCode, productName: i.productName, unitName: i.unitName, quantityPrecision: i.quantityPrecision })) as any);
+      items = detail.items.map((i: any) => {
+        const plan = i.quantity ?? 0;
+        const processed = i.inboundQty ?? 0;
+        const pending = Math.max(plan - processed, 0);
+        return { key: `${Date.now()}-${Math.random()}`, sourceItemId: i.purchaseOrderItemId, productId: i.productId, productCode: i.productCode, productName: i.productName, unitName: i.unitName, quantityPrecision: i.quantityPrecision, planQty: plan, processedQty: processed, pendingQty: pending, currentQty: pending, qualifiedQty: pending, defectiveQty: 0, remark: '' };
+      });
+    } else if (formBillType.value === 'SALES_RETURN') {
+      const rows = await listSalesReturnSourceItems(sourceId);
+      mergeProducts(rows.map(i => ({ productId: i.productId, productCode: i.productCode, productName: i.productName, unitName: i.unitName, quantityPrecision: i.quantityPrecision } as any)));
+      items = rows.map(i => {
+        const plan = i.sourceFulfilledQty ?? 0;
+        const processed = i.occupiedQty ?? 0;
+        const pending = Math.max(i.availableReturnQty ?? 0, 0);
+        return { key: `${Date.now()}-${Math.random()}`, sourceItemId: i.sourceOrderItemId, productId: i.productId, productCode: i.productCode, productName: i.productName, unitName: i.unitName, quantityPrecision: i.quantityPrecision, planQty: plan, processedQty: processed, pendingQty: pending, currentQty: pending, qualifiedQty: pending, defectiveQty: 0, remark: '' };
+      });
+    } else if (formBillType.value === 'SALES_OUT') {
+      const detail = await getSalesOrderDetail(sourceId);
+      mergeProducts(detail.items.map(i => ({ productId: i.productId, productCode: i.productCode, productName: i.productName, unitName: i.unitName, quantityPrecision: i.quantityPrecision } as any)));
+      items = detail.items.map(i => {
+        const plan = i.quantity ?? 0;
+        const processed = i.outboundQty ?? 0;
+        const pending = Math.max(plan - processed, 0);
+        return { key: `${Date.now()}-${Math.random()}`, sourceItemId: i.salesOrderItemId, productId: i.productId, productCode: i.productCode, productName: i.productName, unitName: i.unitName, quantityPrecision: i.quantityPrecision, planQty: plan, processedQty: processed, pendingQty: pending, currentQty: pending, qualifiedQty: 0, defectiveQty: 0, remark: '' };
+      });
+    } else if (formBillType.value === 'PURCHASE_RETURN') {
+      const rows = await listPurchaseReturnSourceItems(sourceId);
+      mergeProducts(rows.map(i => ({ productId: i.productId, productCode: i.productCode, productName: i.productName, unitName: i.unitName, quantityPrecision: i.quantityPrecision } as any)));
+      items = rows.map(i => {
+        const plan = i.sourceFulfilledQty ?? 0;
+        const processed = i.occupiedQty ?? 0;
+        const pending = Math.max(i.availableReturnQty ?? 0, 0);
+        return { key: `${Date.now()}-${Math.random()}`, sourceItemId: i.sourceOrderItemId, productId: i.productId, productCode: i.productCode, productName: i.productName, unitName: i.unitName, quantityPrecision: i.quantityPrecision, planQty: plan, processedQty: processed, pendingQty: pending, currentQty: pending, qualifiedQty: 0, defectiveQty: 0, remark: '' };
+      });
+    }
+    if (items.length > 0) {
+      form.items = items;
+    } else {
+      toast.info('该来源单据暂无可处理的产品明细');
+    }
+  } catch {
+    toast.warning('加载来源单据明细失败');
+  }
+}
+
 function toggleSourceNoMode() {
   form.sourceNo = '';
   form.sourceId = '';
+  form.items = [newDraftItem()];
   if (sourceNoMode.value === 'search') {
     sourceNoMode.value = 'manual';
     form.sourcePartyId = '';
@@ -466,6 +522,7 @@ watch(() => form.billType, () => {
   form.sourceNo = '';
   form.sourceId = '';
   form.sourcePartyId = '';
+  form.items = [newDraftItem()];
   sourceNoMode.value = 'search';
   sourcePartyOptions.value = [];
   sourceOrderOptions.value = [];
@@ -945,6 +1002,7 @@ function validateForm() {
 function buildItemPayloads(): StockBillDraftItemPayload[] {
   return form.items.map(item => ({
     ...(item.workBillItemId ? { workBillItemId: item.workBillItemId } : {}),
+    ...(item.sourceItemId ? { sourceItemId: item.sourceItemId } : {}),
     productId: item.productId,
     currentQty: Number(item.currentQty),
     qualifiedQty: qualityFieldsVisible.value ? Number(item.qualifiedQty) : 0,

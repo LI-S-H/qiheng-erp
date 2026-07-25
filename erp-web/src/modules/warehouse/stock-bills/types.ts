@@ -92,6 +92,7 @@ export interface StockBillQuery {
 
 export interface StockBillDraftItemPayload {
   workBillItemId?: string;
+  sourceItemId?: string;
   productId: string;
   currentQty: number;
   qualifiedQty: number;

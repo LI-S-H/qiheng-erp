@@ -1563,12 +1563,12 @@ onMounted(async () => {
                         </div>
                         <p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p>
                       </TableCell>
-                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty)} ${itemUnitName(item)}` : '-' }}</TableCell>
-                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.processedQty)} ${itemUnitName(item)}` : '-' }}</TableCell>
+                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty)} ${itemUnitName(item)}` : (item.planQty != null ? `${formatQty(item.planQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
+                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.processedQty)} ${itemUnitName(item)}` : (item.processedQty != null ? `${formatQty(item.processedQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top">
                         <div class="stock-bill-form-quantity-control"><Input v-model.number="item.currentQty" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" /><span :class="formErrors[`items.${index}.quantity`] ? 'text-destructive' : 'text-muted-foreground'" :title="formErrors[`items.${index}.quantity`] || quantityHint(item)">{{ formErrors[`items.${index}.quantity`] || quantityHint(item) }}</span></div>
                       </TableCell>
-                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : '-' }}</TableCell>
+                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : (item.pendingQty != null ? `${formatQty(item.pendingQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top">
                         <Input v-if="qualityFieldsVisible" v-model.number="item.qualifiedQty" type="number" min="0" :step="itemQuantityStep(item)" />
                         <span v-else class="text-muted-foreground">-</span>

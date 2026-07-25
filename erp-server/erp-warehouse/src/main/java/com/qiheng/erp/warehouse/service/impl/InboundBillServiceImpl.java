@@ -557,7 +557,21 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
         }
 
-        // 5. 查询明细和库存，组装返回详情
+        return getInboundBillDetailVo(id);
+    }
+
+    /**
+     * 获取入库单详情
+     * @param id 入库单ID
+     * @return 入库单详情
+     */
+    private InboundBillDetailVo getInboundBillDetailVo(Long id) {
+        // 1. 查询入库单主表
+        InboundBill bill = this.getById(id);
+        if (bill == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
+        }
+        // 2. 查询明细和库存，组装返回详情
         List<InboundBillItem> items = inboundBillItemService.list(
                 new LambdaQueryWrapper<InboundBillItem>()
                         .eq(InboundBillItem::getInboundBillId, id)
@@ -569,6 +583,49 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         populateQuantityFields(vo, items);
         vo.setItems(convertToDetailItemVos(items, stockQtyByProductId, updatedBill.getStatus()));
         return vo;
+    }
+
+    /**
+     * 取消入库单草稿或待确认单
+     * @param inboundBillId 入库单ID
+     * @param dto 乐观锁版本号请求
+     * @return 入库单详情
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public InboundBillDetailVo cancelBill(String inboundBillId, OptimisticLockVersionDto dto) {
+        // 1. 解析并查询入库单
+        Long id;
+        try {
+            id = Long.valueOf(inboundBillId);
+        } catch (NumberFormatException e) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库单ID格式错误");
+        }
+        InboundBill bill = this.getById(id);
+        if (bill == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
+        }
+
+        // 2. 校验状态：允许 DRAFT 和 PENDING_CONFIRM
+        String status = bill.getStatus();
+        if (!InboundBillStatus.DRAFT.name().equals(status)
+                && !InboundBillStatus.PENDING_CONFIRM.name().equals(status)) {
+            throw new BizException(ErrorCode.BILL_STATUS_INVALID.getCode(), "仅草稿和待确认状态可取消");
+        }
+
+        // 3. 乐观锁校验
+        if (!bill.getVersion().equals(dto.getVersion())) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
+        }
+
+        // 4. 变更状态为已取消
+        bill.setStatus(InboundBillStatus.CANCELLED.name());
+        if (!this.updateById(bill)) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
+        }
+
+        // 5. 查询明细和库存，组装返回详情
+        return getInboundBillDetailVo(id);
     }
 
     /**

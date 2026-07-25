@@ -55,4 +55,12 @@ public interface IInboundBillService extends IService<InboundBill> {
      * @return 入库单详情
      */
     InboundBillDetailVo submitDraft(String inboundBillId, OptimisticLockVersionDto dto);
+
+    /**
+     * 取消入库单草稿或待确认单
+     * @param inboundBillId 入库单ID
+     * @param dto 乐观锁版本号请求
+     * @return 入库单详情
+     */
+    InboundBillDetailVo cancelBill(String inboundBillId, OptimisticLockVersionDto dto);
 }

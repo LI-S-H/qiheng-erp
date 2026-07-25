@@ -114,4 +114,21 @@ public class InboundBillController {
         log.info("提交入库单草稿，ID: {}, version: {}", inboundBillId, dto.getVersion());
         return Result.ok(inboundBillService.submitDraft(inboundBillId, dto));
     }
+
+    /**
+     * 取消入库单草稿或待确认单
+     * @param inboundBillId 入库单ID（字符串形式）
+     * @param dto 乐观锁版本号请求
+     * @return 入库单详情
+     */
+    @PostMapping("/{inboundBillId}/cancel")
+    @Operation(summary = "取消入库单草稿或待确认单")
+    public Result<InboundBillDetailVo> cancelBill(
+            @Parameter(description = "入库单ID，对应 inbound_bill.id", required = true)
+            @PathVariable String inboundBillId,
+            @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("取消入库单，ID: {}, version: {}", inboundBillId, dto.getVersion());
+        return Result.ok(inboundBillService.cancelBill(inboundBillId, dto));
+    }
 }

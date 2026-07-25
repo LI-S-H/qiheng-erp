@@ -326,15 +326,25 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         Map<Long, Product> productMap = products.stream()
                 .collect(Collectors.toMap(Product::getId, p -> p));
 
-        // 3. 确定来源类型和录入方式
+        // 3. 校验质量数量（采购入库和销售退货需要合格+不合格=本次数量）
         InboundType billType = dto.getBillType();
+        if (billType == InboundType.PURCHASE_IN || billType == InboundType.SALES_RETURN) {
+            for (InboundBillItemCreateDto itemDto : dto.getItems()) {
+                BigDecimal qualitySum = itemDto.getQualifiedQty().add(itemDto.getDefectiveQty());
+                if (qualitySum.compareTo(itemDto.getCurrentQty()) != 0) {
+                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "合格与不合格数量之和必须等于本次入库数量");
+                }
+            }
+        }
+
+        // 4. 确定来源类型和录入方式
         String sourceType = resolveSourceType(billType);
         String entryMode = resolveEntryMode(billType);
 
-        // 4. 生成入库单号
+        // 5. 生成入库单号
         String inboundNo = generateInboundNo();
 
-        // 5. 获取当前登录用户
+        // 6. 获取当前登录用户
         LoginUser currentUser = UserContext.getCurrentUser();
         Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
         String currentUserName = currentUser != null ? currentUser.getRealName() : null;

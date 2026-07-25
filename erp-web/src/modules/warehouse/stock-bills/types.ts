@@ -102,6 +102,7 @@ export interface StockBillDraftItemPayload {
 export interface StockBillCreatePayload {
   billType: ManualStockBillType;
   sourceNo: string;
+  sourceId?: string;
   warehouseId: string;
   sourcePartyId?: string;
   sourcePartyName?: string;

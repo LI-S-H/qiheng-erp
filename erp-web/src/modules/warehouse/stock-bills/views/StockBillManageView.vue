@@ -39,7 +39,9 @@ import { useAuthStore } from '@/modules/auth/stores/authStore';
 import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
 import { searchSupplierOptions } from '@/modules/purchase/api';
+import { listPurchaseOrders } from '@/modules/purchase/api';
 import { searchCustomerOptions } from '@/modules/sales/api';
+import { searchSalesReturnSourceOrders } from '@/modules/sales/returns/api';
 import { listWarehouses } from '../../warehouses/api';
 import type { WarehouseListItem } from '../../warehouses/types';
 import { stockBillListColumns, stockBillOptionalColumns, useStockBillTableColumns } from '../composables/use-stock-bill-table-columns';
@@ -307,15 +309,17 @@ const query = reactive<StockBillQuery>({
   pageNum: 1,
   pageSize: 10,
 });
-const form = reactive<{ billType: ManualStockBillType; sourceNo: string; warehouseId: string; sourcePartyId: string; manualReason: string; remark: string; items: DraftFormItem[] }>({
+const form = reactive<{ billType: ManualStockBillType; sourceNo: string; sourceId: string; warehouseId: string; sourcePartyId: string; manualReason: string; remark: string; items: DraftFormItem[] }>({
   billType: defaultBillType.value,
   sourceNo: '',
+  sourceId: '',
   warehouseId: '',
   sourcePartyId: '',
   manualReason: '',
   remark: '',
   items: [],
 });
+const sourceNoMode = ref<'search' | 'manual'>('search');
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const formBillType = computed<StockBillType>(() => dialogMode.value === 'edit' && editingDetail.value ? editingDetail.value.billType : form.billType);
@@ -352,6 +356,59 @@ const sourcePartySearchPlaceholder = computed(() => {
   if (formBillType.value === 'SALES_RETURN') return '输入客户编码或名称';
   return '输入仓库编码或名称';
 });
+const sourceNoSearchable = computed(() => dialogMode.value === 'create' && !isAdjustmentForm.value && (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'SALES_RETURN'));
+const sourceOrderOptions = ref<Array<{ value: string; label: string }>>([]);
+const selectedSourceOrderLabel = computed(() => sourceOrderOptions.value.find(item => item.value === form.sourceNo)?.label || form.sourceNo || '');
+
+async function fetchSourceOrderSearchOptions(keyword: string) {
+  if (formBillType.value === 'PURCHASE_IN') {
+    const page = await listPurchaseOrders({ purchaseNo: keyword.trim() || undefined, status: 'APPROVED', pageNum: 1, pageSize: 10 });
+    const options = page.records.map(item => ({
+      value: item.purchaseNo,
+      label: `${item.purchaseNo}（${item.supplierName}）`,
+      _meta: { sourceId: item.purchaseOrderId, sourcePartyId: item.supplierId, sourcePartyName: `${item.supplierCode} ${item.supplierName}` },
+    }));
+    sourceOrderOptions.value = options;
+    return options;
+  }
+  if (formBillType.value === 'SALES_RETURN') {
+    const rows = await searchSalesReturnSourceOrders(keyword);
+    const options = rows.map(item => ({
+      value: item.sourceOrderNo,
+      label: `${item.sourceOrderNo}（${item.partyName}）`,
+      _meta: { sourceId: item.sourceOrderId, sourcePartyId: item.partyId, sourcePartyName: `${item.partyCode} ${item.partyName}` },
+    }));
+    sourceOrderOptions.value = options;
+    return options;
+  }
+  return [];
+}
+
+function handleSourceOrderSelect(value: string | number) {
+  const selected = sourceOrderOptions.value.find(item => item.value === String(value));
+  form.sourceNo = String(value);
+  if (selected && (selected as any)._meta) {
+    const meta = (selected as any)._meta;
+    form.sourceId = meta.sourceId || '';
+    form.sourcePartyId = meta.sourcePartyId || '';
+    sourcePartyOptions.value = [{ value: meta.sourcePartyId, label: meta.sourcePartyName }];
+  }
+  clearFormError('sourceNo');
+  clearFormError('sourcePartyId');
+}
+
+function toggleSourceNoMode() {
+  form.sourceNo = '';
+  form.sourceId = '';
+  if (sourceNoMode.value === 'search') {
+    sourceNoMode.value = 'manual';
+    form.sourcePartyId = '';
+    sourcePartyOptions.value = [];
+  } else {
+    sourceNoMode.value = 'search';
+  }
+  clearFormError('sourceNo');
+}
 
 async function fetchSourcePartySearchOptions(keyword: string) {
   if (formBillType.value === 'PURCHASE_IN') {
@@ -384,8 +441,12 @@ async function fetchSourcePartySearchOptions(keyword: string) {
 const warehouseFieldLabel = computed(() => isInboundPage.value ? '入库仓库' : '出库仓库');
 
 watch(() => form.billType, () => {
+  form.sourceNo = '';
+  form.sourceId = '';
   form.sourcePartyId = '';
+  sourceNoMode.value = 'search';
   sourcePartyOptions.value = [];
+  sourceOrderOptions.value = [];
 });
 
 const allBillTypeOptions: Array<{ value: StockBillType; label: string }> = [
@@ -682,7 +743,9 @@ async function openDetail(row: StockBillListItem, actionMode: 'view' | 'submit' 
 }
 
 function resetForm() {
-  Object.assign(form, { billType: defaultBillType.value, sourceNo: '', warehouseId: formWarehouseOptions.value[0]?.value || '', sourcePartyId: '', manualReason: '', remark: '', items: [newDraftItem()] });
+  Object.assign(form, { billType: defaultBillType.value, sourceNo: '', sourceId: '', warehouseId: formWarehouseOptions.value[0]?.value || '', sourcePartyId: '', manualReason: '', remark: '', items: [newDraftItem()] });
+  sourceNoMode.value = 'search';
+  sourceOrderOptions.value = [];
   editingDetail.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
@@ -828,7 +891,7 @@ function validateForm() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   if (warehouseEditable.value && !form.warehouseId) formErrors.warehouseId = '请选择仓库';
   if (sourcePartyEditable.value && !form.sourcePartyId) formErrors.sourcePartyId = isAdjustmentForm.value ? '请选择来源仓库' : (formBillType.value === 'PURCHASE_IN' ? '请选择供应商' : '请选择客户');
-  if (sourceNoEditable.value && !form.sourceNo.trim()) formErrors.sourceNo = '请输入原业务单号，便于追溯补录来源';
+  if (sourceNoEditable.value && !form.sourceNo.trim()) formErrors.sourceNo = sourceNoSearchable.value && sourceNoMode.value === 'search' ? '请选择来源单据' : '请输入原业务单号，便于追溯补录来源';
   if (isManualForm.value && !form.manualReason.trim()) formErrors.manualReason = isAdjustmentForm.value ? '请填写调整原因' : '请填写补录原因';
   else if (form.manualReason.trim().length > 500) formErrors.manualReason = '原因不能超过 500 个字符';
   if (!form.items.length) formErrors.items = '至少添加一条产品明细';
@@ -876,6 +939,7 @@ async function submitForm() {
       const payload: StockBillCreatePayload = {
         billType: form.billType,
         sourceNo: form.sourceNo.trim(),
+        ...(form.sourceId ? { sourceId: form.sourceId } : {}),
         warehouseId: form.warehouseId,
         ...(sourcePartyEditable.value && form.sourcePartyId ? {
           sourcePartyId: form.sourcePartyId,
@@ -1323,7 +1387,25 @@ onMounted(async () => {
             <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
               <div class="space-y-1">
                 <Label>{{ isAdjustmentForm ? '调整单号' : '来源单号' }} <span v-if="isManualForm && !isAdjustmentForm" class="text-destructive">*</span></Label>
-                <Input v-if="sourceNoEditable" v-model="form.sourceNo" maxlength="64" placeholder="填写线下单据、送货单或退货单号" :aria-invalid="Boolean(formErrors.sourceNo)" @update:model-value="clearFormError('sourceNo')" />
+                <div v-if="sourceNoEditable && sourceNoSearchable" class="flex items-center gap-1.5">
+                  <div class="min-w-0 flex-1">
+                    <RemoteSearchSelect
+                      v-if="sourceNoMode === 'search'"
+                      :model-value="form.sourceNo"
+                      :selected-label="selectedSourceOrderLabel"
+                      :fetch-options="fetchSourceOrderSearchOptions"
+                      placeholder="搜索已有单据"
+                      search-placeholder="输入单号搜索"
+                      :invalid="Boolean(formErrors.sourceNo)"
+                      @update:model-value="handleSourceOrderSelect"
+                    />
+                    <Input v-else v-model="form.sourceNo" maxlength="64" placeholder="填写线下单据号" :aria-invalid="Boolean(formErrors.sourceNo)" @update:model-value="clearFormError('sourceNo')" />
+                  </div>
+                  <Button type="button" variant="outline" size="sm" class="shrink-0 text-xs" @click="toggleSourceNoMode">
+                    {{ sourceNoMode === 'search' ? '手动输入' : '搜索选择' }}
+                  </Button>
+                </div>
+                <Input v-else-if="sourceNoEditable" v-model="form.sourceNo" maxlength="64" placeholder="填写线下单据、送货单或退货单号" :aria-invalid="Boolean(formErrors.sourceNo)" @update:model-value="clearFormError('sourceNo')" />
                 <Input v-else :model-value="dialogMode === 'create' ? '保存后由系统生成' : form.sourceNo" readonly class="bg-muted/55 text-muted-foreground" />
                 <p v-if="formErrors.sourceNo" class="text-xs text-destructive">{{ formErrors.sourceNo }}</p>
               </div>

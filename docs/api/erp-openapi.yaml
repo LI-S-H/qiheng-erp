@@ -7339,7 +7339,8 @@ components:
       required: [billType, sourceNo, warehouseId, manualReason, items, remark]
       properties:
         billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 手工补录或库存调整类型 }
-        sourceNo: { type: string, maxLength: 64, description: 非调整类型必填原业务单号；调整类型传空字符串，由后端生成调整单号 }
+        sourceNo: { type: string, maxLength: 64, description: 来源业务单号；前端默认从已有单据下拉选择（搜索采购订单或销售退货单），选中后自动填充；也可切换为手动输入模式填写线下单据号。调整类型传空字符串，由后端生成调整单号 }
+        sourceId: { type: string, nullable: true, description: 来源单据 ID；前端从已有单据下拉选择时自动附带，对应采购订单 ID 或销售退货单 ID；手动输入模式或调整类型不传 }
         warehouseId: { type: string, description: 启用状态的仓库 ID }
         sourcePartyId: { type: string, nullable: true, description: 来源对象 ID；采购入库/采购退货出库为供应商 ID，销售出库/销售退货为客户 ID，调整入库/出库为来源仓库 ID。必填，由前端下拉选择 }
         sourcePartyName: { type: string, nullable: true, maxLength: 200, description: 来源对象名称快照；由前端在选中 sourcePartyId 后附带提交，后端直接存入主表，不跨模块查询 }

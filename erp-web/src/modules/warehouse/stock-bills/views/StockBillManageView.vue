@@ -40,7 +40,9 @@ import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
 import { searchSupplierOptions } from '@/modules/purchase/api';
 import { listPurchaseOrders } from '@/modules/purchase/api';
+import { searchPurchaseReturnSourceOrders } from '@/modules/purchase/returns/api';
 import { searchCustomerOptions } from '@/modules/sales/api';
+import { listSalesOrders } from '@/modules/sales/api';
 import { searchSalesReturnSourceOrders } from '@/modules/sales/returns/api';
 import { listWarehouses } from '../../warehouses/api';
 import type { WarehouseListItem } from '../../warehouses/types';
@@ -347,16 +349,16 @@ const sourcePartyEditable = computed(() => dialogMode.value === 'create');
 const sourcePartyOptions = ref<Array<{ value: string; label: string }>>([]);
 const selectedSourcePartyLabel = computed(() => sourcePartyOptions.value.find(item => item.value === form.sourcePartyId)?.label || '');
 const sourcePartyPlaceholder = computed(() => {
-  if (formBillType.value === 'PURCHASE_IN') return '请选择供应商';
-  if (formBillType.value === 'SALES_RETURN') return '请选择客户';
+  if (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'PURCHASE_RETURN') return '请选择供应商';
+  if (formBillType.value === 'SALES_RETURN' || formBillType.value === 'SALES_OUT') return '请选择客户';
   return '请选择来源仓库';
 });
 const sourcePartySearchPlaceholder = computed(() => {
-  if (formBillType.value === 'PURCHASE_IN') return '输入供应商编码或名称';
-  if (formBillType.value === 'SALES_RETURN') return '输入客户编码或名称';
+  if (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'PURCHASE_RETURN') return '输入供应商编码或名称';
+  if (formBillType.value === 'SALES_RETURN' || formBillType.value === 'SALES_OUT') return '输入客户编码或名称';
   return '输入仓库编码或名称';
 });
-const sourceNoSearchable = computed(() => dialogMode.value === 'create' && !isAdjustmentForm.value && (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'SALES_RETURN'));
+const sourceNoSearchable = computed(() => dialogMode.value === 'create' && !isAdjustmentForm.value);
 const sourceOrderOptions = ref<Array<{ value: string; label: string }>>([]);
 const selectedSourceOrderLabel = computed(() => sourceOrderOptions.value.find(item => item.value === form.sourceNo)?.label || form.sourceNo || '');
 
@@ -373,6 +375,26 @@ async function fetchSourceOrderSearchOptions(keyword: string) {
   }
   if (formBillType.value === 'SALES_RETURN') {
     const rows = await searchSalesReturnSourceOrders(keyword);
+    const options = rows.map(item => ({
+      value: item.sourceOrderNo,
+      label: `${item.sourceOrderNo}（${item.partyName}）`,
+      _meta: { sourceId: item.sourceOrderId, sourcePartyId: item.partyId, sourcePartyName: `${item.partyCode} ${item.partyName}` },
+    }));
+    sourceOrderOptions.value = options;
+    return options;
+  }
+  if (formBillType.value === 'SALES_OUT') {
+    const page = await listSalesOrders({ salesNo: keyword.trim() || undefined, status: 'APPROVED', pageNum: 1, pageSize: 10 });
+    const options = page.records.map(item => ({
+      value: item.salesNo,
+      label: `${item.salesNo}（${item.customerName}）`,
+      _meta: { sourceId: item.salesOrderId, sourcePartyId: item.customerId, sourcePartyName: `${item.customerCode} ${item.customerName}` },
+    }));
+    sourceOrderOptions.value = options;
+    return options;
+  }
+  if (formBillType.value === 'PURCHASE_RETURN') {
+    const rows = await searchPurchaseReturnSourceOrders(keyword);
     const options = rows.map(item => ({
       value: item.sourceOrderNo,
       label: `${item.sourceOrderNo}（${item.partyName}）`,
@@ -411,7 +433,7 @@ function toggleSourceNoMode() {
 }
 
 async function fetchSourcePartySearchOptions(keyword: string) {
-  if (formBillType.value === 'PURCHASE_IN') {
+  if (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'PURCHASE_RETURN') {
     const suppliers = await searchSupplierOptions(keyword, 10);
     const options = suppliers.map(item => ({
       value: item.supplierId,
@@ -420,7 +442,7 @@ async function fetchSourcePartySearchOptions(keyword: string) {
     sourcePartyOptions.value = options;
     return options;
   }
-  if (formBillType.value === 'SALES_RETURN') {
+  if (formBillType.value === 'SALES_RETURN' || formBillType.value === 'SALES_OUT') {
     const customers = await searchCustomerOptions(keyword, 10);
     const options = customers.map(item => ({
       value: item.customerId,
@@ -890,7 +912,7 @@ function clearFormError(key: string) {
 function validateForm() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   if (warehouseEditable.value && !form.warehouseId) formErrors.warehouseId = '请选择仓库';
-  if (sourcePartyEditable.value && !form.sourcePartyId) formErrors.sourcePartyId = isAdjustmentForm.value ? '请选择来源仓库' : (formBillType.value === 'PURCHASE_IN' ? '请选择供应商' : '请选择客户');
+  if (sourcePartyEditable.value && !form.sourcePartyId) formErrors.sourcePartyId = isAdjustmentForm.value ? '请选择来源仓库' : (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'PURCHASE_RETURN' ? '请选择供应商' : '请选择客户');
   if (sourceNoEditable.value && !form.sourceNo.trim()) formErrors.sourceNo = sourceNoSearchable.value && sourceNoMode.value === 'search' ? '请选择来源单据' : '请输入原业务单号，便于追溯补录来源';
   if (isManualForm.value && !form.manualReason.trim()) formErrors.manualReason = isAdjustmentForm.value ? '请填写调整原因' : '请填写补录原因';
   else if (form.manualReason.trim().length > 500) formErrors.manualReason = '原因不能超过 500 个字符';

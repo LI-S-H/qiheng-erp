@@ -1618,9 +1618,9 @@ onMounted(async () => {
                         <div class="flex items-start gap-1">
                           <div class="min-w-0 flex-1">
                             <RemoteSearchSelect v-if="structureEditable" v-model="item.productId" :selected-label="productLabel(item)" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" @update:model-value="handleProductChange(item, index)" />
-                            <div v-else class="stock-bill-product-snapshot" :title="productLabel(item)">
+                            <div v-else class="stock-bill-product-snapshot">
                               <code>{{ productDisplay(item).code }}</code>
-                              <span>{{ productDisplay(item).name }}</span>
+                              <OverflowTooltip :text="productLabel(item)" class="block max-w-full font-medium" />
                               <small>{{ productDisplay(item).unitName }}</small>
                             </div>
                           </div>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useExclusiveDropdown } from '@/shared/composables/use-exclusive-dropdown';
+import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 
 export interface RemoteSearchOption {
   value: string | number;
@@ -121,7 +122,7 @@ watch(keyword, () => {
           invalid ? 'border-destructive focus-visible:ring-destructive' : '',
         ]"
       >
-        <span class="truncate">{{ triggerLabel }}</span>
+        <OverflowTooltip :text="triggerLabel" class="truncate" />
         <ChevronsUpDown class="ml-2 shrink-0 opacity-50" :class="compact ? 'size-3.5' : 'size-4'" />
       </Button>
     </PopoverTrigger>

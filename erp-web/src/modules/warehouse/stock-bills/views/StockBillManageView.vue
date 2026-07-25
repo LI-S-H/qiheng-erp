@@ -38,6 +38,8 @@ import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
+import { searchSupplierOptions } from '@/modules/purchase/api';
+import { searchCustomerOptions } from '@/modules/sales/api';
 import { listWarehouses } from '../../warehouses/api';
 import type { WarehouseListItem } from '../../warehouses/types';
 import { stockBillListColumns, stockBillOptionalColumns, useStockBillTableColumns } from '../composables/use-stock-bill-table-columns';
@@ -305,10 +307,11 @@ const query = reactive<StockBillQuery>({
   pageNum: 1,
   pageSize: 10,
 });
-const form = reactive<{ billType: ManualStockBillType; sourceNo: string; warehouseId: string; manualReason: string; remark: string; items: DraftFormItem[] }>({
+const form = reactive<{ billType: ManualStockBillType; sourceNo: string; warehouseId: string; sourcePartyId: string; manualReason: string; remark: string; items: DraftFormItem[] }>({
   billType: defaultBillType.value,
   sourceNo: '',
   warehouseId: '',
+  sourcePartyId: '',
   manualReason: '',
   remark: '',
   items: [],
@@ -336,7 +339,54 @@ const sourcePartyFormDisplay = computed(() => {
   if (adjustmentTypes.has(formBillType.value)) return selectedFormWarehouseLabel.value || '请选择调整仓库';
   return editingDetail.value ? sourcePartyDisplay(editingDetail.value) : '手工补录';
 });
+const sourcePartyEditable = computed(() => dialogMode.value === 'create');
+const sourcePartyOptions = ref<Array<{ value: string; label: string }>>([]);
+const selectedSourcePartyLabel = computed(() => sourcePartyOptions.value.find(item => item.value === form.sourcePartyId)?.label || '');
+const sourcePartyPlaceholder = computed(() => {
+  if (formBillType.value === 'PURCHASE_IN') return '请选择供应商';
+  if (formBillType.value === 'SALES_RETURN') return '请选择客户';
+  return '请选择来源仓库';
+});
+const sourcePartySearchPlaceholder = computed(() => {
+  if (formBillType.value === 'PURCHASE_IN') return '输入供应商编码或名称';
+  if (formBillType.value === 'SALES_RETURN') return '输入客户编码或名称';
+  return '输入仓库编码或名称';
+});
+
+async function fetchSourcePartySearchOptions(keyword: string) {
+  if (formBillType.value === 'PURCHASE_IN') {
+    const suppliers = await searchSupplierOptions(keyword, 10);
+    const options = suppliers.map(item => ({
+      value: item.supplierId,
+      label: `${item.supplierCode} ${item.supplierName}`,
+    }));
+    sourcePartyOptions.value = options;
+    return options;
+  }
+  if (formBillType.value === 'SALES_RETURN') {
+    const customers = await searchCustomerOptions(keyword, 10);
+    const options = customers.map(item => ({
+      value: item.customerId,
+      label: `${item.customerCode} ${item.customerName}`,
+    }));
+    sourcePartyOptions.value = options;
+    return options;
+  }
+  // 调整入库/出库 → 选择来源仓库
+  const page = await listWarehouses({ status: 1, pageNum: 1, pageSize: 10, ...warehouseKeywordQuery(keyword) });
+  const options = page.records.map(item => ({
+    value: item.warehouseId,
+    label: `${item.warehouseCode} ${item.warehouseName}`,
+  }));
+  sourcePartyOptions.value = options;
+  return options;
+}
 const warehouseFieldLabel = computed(() => isInboundPage.value ? '入库仓库' : '出库仓库');
+
+watch(() => form.billType, () => {
+  form.sourcePartyId = '';
+  sourcePartyOptions.value = [];
+});
 
 const allBillTypeOptions: Array<{ value: StockBillType; label: string }> = [
   { value: 'PURCHASE_IN', label: '采购入库' },
@@ -632,7 +682,7 @@ async function openDetail(row: StockBillListItem, actionMode: 'view' | 'submit' 
 }
 
 function resetForm() {
-  Object.assign(form, { billType: defaultBillType.value, sourceNo: '', warehouseId: formWarehouseOptions.value[0]?.value || '', manualReason: '', remark: '', items: [newDraftItem()] });
+  Object.assign(form, { billType: defaultBillType.value, sourceNo: '', warehouseId: formWarehouseOptions.value[0]?.value || '', sourcePartyId: '', manualReason: '', remark: '', items: [newDraftItem()] });
   editingDetail.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
@@ -777,6 +827,7 @@ function clearFormError(key: string) {
 function validateForm() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   if (warehouseEditable.value && !form.warehouseId) formErrors.warehouseId = '请选择仓库';
+  if (sourcePartyEditable.value && !form.sourcePartyId) formErrors.sourcePartyId = isAdjustmentForm.value ? '请选择来源仓库' : (formBillType.value === 'PURCHASE_IN' ? '请选择供应商' : '请选择客户');
   if (sourceNoEditable.value && !form.sourceNo.trim()) formErrors.sourceNo = '请输入原业务单号，便于追溯补录来源';
   if (isManualForm.value && !form.manualReason.trim()) formErrors.manualReason = isAdjustmentForm.value ? '请填写调整原因' : '请填写补录原因';
   else if (form.manualReason.trim().length > 500) formErrors.manualReason = '原因不能超过 500 个字符';
@@ -826,6 +877,10 @@ async function submitForm() {
         billType: form.billType,
         sourceNo: form.sourceNo.trim(),
         warehouseId: form.warehouseId,
+        ...(sourcePartyEditable.value && form.sourcePartyId ? {
+          sourcePartyId: form.sourcePartyId,
+          sourcePartyName: selectedSourcePartyLabel.value || '',
+        } : {}),
         manualReason: form.manualReason.trim(),
         items: buildItemPayloads(),
         remark: form.remark.trim(),
@@ -1088,7 +1143,7 @@ onMounted(async () => {
                 v-for="column in stockBillOptionalColumns"
                 :key="column.key"
                 indicator-style="checkbox"
-                class="min-h-9 text-[13px]"
+                class="min-h-9 text-sm"
                 :model-value="isPendingListColumnVisible(column.key)"
                 :data-stock-bill-column-key="column.key"
                 @select.prevent
@@ -1097,7 +1152,7 @@ onMounted(async () => {
                 {{ column.key === 'party' ? pageText.partyColumnLabel : column.label }}
               </DropdownMenuCheckboxItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem class="min-h-9 gap-2 px-2 text-[13px] text-muted-foreground" data-stock-bill-column-reset @select="resetListColumns">
+              <DropdownMenuItem class="min-h-9 gap-2 px-2 text-sm text-muted-foreground" data-stock-bill-column-reset @select="resetListColumns">
                 <RotateCcw class="size-3.5" />
                 恢复默认字段
               </DropdownMenuItem>
@@ -1273,8 +1328,19 @@ onMounted(async () => {
                 <p v-if="formErrors.sourceNo" class="text-xs text-destructive">{{ formErrors.sourceNo }}</p>
               </div>
               <div class="space-y-1">
-                <Label>{{ sourcePartyLabel(formBillType) }}</Label>
-                <Input :model-value="sourcePartyFormDisplay" readonly class="bg-muted/55 text-muted-foreground" />
+                <Label>{{ sourcePartyLabel(formBillType) }} <span v-if="sourcePartyEditable" class="text-destructive">*</span></Label>
+                <RemoteSearchSelect
+                  v-if="sourcePartyEditable"
+                  :model-value="form.sourcePartyId"
+                  :selected-label="selectedSourcePartyLabel"
+                  :fetch-options="fetchSourcePartySearchOptions"
+                  :placeholder="sourcePartyPlaceholder"
+                  :search-placeholder="sourcePartySearchPlaceholder"
+                  :invalid="Boolean(formErrors.sourcePartyId)"
+                  @update:model-value="(val: string | number) => { form.sourcePartyId = String(val); clearFormError('sourcePartyId'); }"
+                />
+                <Input v-if="!sourcePartyEditable" :model-value="sourcePartyFormDisplay" readonly class="bg-muted/55 text-muted-foreground" />
+                <p v-if="formErrors.sourcePartyId" class="text-xs text-destructive">{{ formErrors.sourcePartyId }}</p>
               </div>
               <div class="space-y-1"><Label>负责人</Label><Input :model-value="editingDetail?.responsibleByName || authStore.displayName" readonly class="bg-muted/55 text-muted-foreground" /><p class="text-xs text-muted-foreground">由后端按当前登录用户写入，不允许代填</p></div>
             </div>
@@ -1565,12 +1631,19 @@ onMounted(async () => {
 .stock-bill-detail-row-scroll :deep([data-slot="table-head"]),
 .stock-bill-detail-row-scroll :deep([data-slot="table-cell"]),
 .stock-bill-dialog-table-scroll :deep([data-slot="table-head"]),
-.stock-bill-dialog-table-scroll :deep([data-slot="table-cell"]),
+.stock-bill-dialog-table-scroll :deep([data-slot="table-cell"]) {
+  height: 40px;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
 .stock-bill-form-table-scroll :deep([data-slot="table-head"]),
 .stock-bill-form-table-scroll :deep([data-slot="table-cell"]) {
   height: 40px;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: 14px;
   text-align: center !important;
   vertical-align: middle !important;
 }
@@ -1612,7 +1685,7 @@ onMounted(async () => {
 .stock-bill-form-quantity-control span {
   max-width: 72px;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1620,7 +1693,7 @@ onMounted(async () => {
 
 .stock-bill-form-table-scroll :deep([role="combobox"]) {
   min-height: 32px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .stock-bill-form-table-scroll :deep([data-slot="table-cell"] .text-left),
@@ -1655,7 +1728,7 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 

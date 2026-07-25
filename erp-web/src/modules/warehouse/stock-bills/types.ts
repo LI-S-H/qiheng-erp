@@ -103,6 +103,8 @@ export interface StockBillCreatePayload {
   billType: ManualStockBillType;
   sourceNo: string;
   warehouseId: string;
+  sourcePartyId?: string;
+  sourcePartyName?: string;
   manualReason: string;
   items: StockBillDraftItemPayload[];
   remark?: string;

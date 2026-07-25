@@ -705,17 +705,17 @@ onMounted(() => {
             </div>
 
             <div class="grid grid-cols-3 gap-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
-              <div class="space-y-1"><Label>{{ config.sourceOrderLabel }} <span class="text-destructive">*</span></Label><RemoteSearchSelect :model-value="form.sourceOrderId" :selected-label="selectedSourceLabel" :fetch-options="fetchSourceOrderOptions" :placeholder="config.sourceOrderPlaceholder" :search-placeholder="config.sourceOrderSearchPlaceholder" :invalid="Boolean(formErrors.sourceOrderId)" @update:model-value="handleSourceChange" /><p v-if="formErrors.sourceOrderId" class="form-error">{{ formErrors.sourceOrderId }}</p></div>
+              <div class="space-y-1"><Label>{{ config.sourceOrderLabel }} <span class="text-destructive">*</span></Label><RemoteSearchSelect :model-value="form.sourceOrderId" :selected-label="selectedSourceLabel" :fetch-options="fetchSourceOrderOptions" :placeholder="config.sourceOrderPlaceholder" :search-placeholder="config.sourceOrderSearchPlaceholder" :invalid="Boolean(formErrors.sourceOrderId)" @update:model-value="handleSourceChange" /><p v-if="formErrors.sourceOrderId" class="text-xs text-destructive">{{ formErrors.sourceOrderId }}</p></div>
               <div class="space-y-1"><Label>{{ config.partyLabel }}</Label><Input :model-value="selectedSource ? `${selectedSource.partyCode} ${selectedSource.partyName}` : editingDetail ? `${editingDetail.partyCode} ${editingDetail.partyName}` : ''" disabled placeholder="选择原订单后自动带出" /></div>
-              <div class="space-y-1"><Label>{{ config.warehouseLabel }} <span class="text-destructive">*</span></Label><RemoteSearchSelect v-model="form.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseOptions" placeholder="请选择仓库" search-placeholder="输入仓库编码或名称" :invalid="Boolean(formErrors.warehouseId)" /><p v-if="formErrors.warehouseId" class="form-error">{{ formErrors.warehouseId }}</p></div>
+              <div class="space-y-1"><Label>{{ config.warehouseLabel }} <span class="text-destructive">*</span></Label><RemoteSearchSelect v-model="form.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseOptions" placeholder="请选择仓库" search-placeholder="输入仓库编码或名称" :invalid="Boolean(formErrors.warehouseId)" /><p v-if="formErrors.warehouseId" class="text-xs text-destructive">{{ formErrors.warehouseId }}</p></div>
               <div class="space-y-1"><Label>{{ config.executionDateLabel }}</Label><OrderDatePicker v-model="form.expectedExecutionDate" /></div>
               <div class="space-y-1"><Label>处理方式 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.handlingType" :options="handlingOptions" /></div>
               <div class="space-y-1"><Label>退货原因 <span class="text-destructive">*</span></Label><AnchoredSelect v-model="form.reasonCode" :options="reasonOptions" /></div>
             </div>
 
             <div class="grid grid-cols-2 gap-4 max-md:grid-cols-1">
-              <div class="space-y-1"><Label>原因说明 <span v-if="form.reasonCode === 'OTHER'" class="text-destructive">*</span></Label><Textarea v-model="form.returnReason" rows="3" placeholder="说明退货事实与补充原因" :aria-invalid="Boolean(formErrors.returnReason)" /><p v-if="formErrors.returnReason" class="form-error">{{ formErrors.returnReason }}</p></div>
-              <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" rows="3" placeholder="可选，最多 500 字" :aria-invalid="Boolean(formErrors.remark)" /><p v-if="formErrors.remark" class="form-error">{{ formErrors.remark }}</p></div>
+              <div class="space-y-1"><Label>原因说明 <span v-if="form.reasonCode === 'OTHER'" class="text-destructive">*</span></Label><Textarea v-model="form.returnReason" rows="3" placeholder="说明退货事实与补充原因" :aria-invalid="Boolean(formErrors.returnReason)" /><p v-if="formErrors.returnReason" class="text-xs text-destructive">{{ formErrors.returnReason }}</p></div>
+              <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" rows="3" placeholder="可选，最多 500 字" :aria-invalid="Boolean(formErrors.remark)" /><p v-if="formErrors.remark" class="text-xs text-destructive">{{ formErrors.remark }}</p></div>
             </div>
 
             <div class="rounded-md border">
@@ -734,12 +734,12 @@ onMounted(() => {
                       <TableCell class="text-right tabular-nums">{{ formatQuantity(line.occupiedQty, line.quantityPrecision) }} {{ line.unitName }}</TableCell>
                       <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.requestedQty" type="number" min="0" :max="line.availableReturnQty" :step="quantityStep(line.quantityPrecision)" :disabled="!line.selected" class="text-right" /><span class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.requestedQty`]" class="form-error text-right">{{ formErrors[`items.${index}.requestedQty`] }}</p></TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ line.selected ? formatMoney(Number(line.requestedQty || 0) * line.unitPrice) : '-' }}</TableCell>
-                      <TableCell class="align-top"><Input v-model="line.remark" :disabled="!line.selected" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="form-error">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>
+                      <TableCell class="align-top"><Input v-model="line.remark" :disabled="!line.selected" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
               </ScrollArea>
-              <div class="flex items-center justify-between border-t px-4 py-3 text-sm"><span v-if="formErrors.items" class="form-error">{{ formErrors.items }}</span><span v-else class="text-muted-foreground">草稿不占用数量，提交后才占用</span><span>预计退回金额：<strong class="ml-2 text-base">{{ formatMoney(draftAmount) }}</strong></span></div>
+              <div class="flex items-center justify-between border-t px-4 py-3 text-sm"><span v-if="formErrors.items" class="text-xs text-destructive">{{ formErrors.items }}</span><span v-else class="text-muted-foreground">草稿不占用数量，提交后才占用</span><span>预计退回金额：<strong class="ml-2 text-sm">{{ formatMoney(draftAmount) }}</strong></span></div>
             </div>
           </div>
         </DialogScrollArea>

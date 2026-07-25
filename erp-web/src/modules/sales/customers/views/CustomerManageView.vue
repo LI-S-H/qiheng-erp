@@ -365,13 +365,13 @@ onMounted(fetchCustomers);
         <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
             <div class="space-y-1"><Label>客户编码</Label><Input v-model="form.customerCode" readonly class="bg-muted/55 text-muted-foreground" placeholder="保存后由系统生成" /><p class="text-xs text-muted-foreground">系统生成，创建后不可修改</p></div>
-            <div class="space-y-1"><Label>客户名称 <span class="text-destructive">*</span></Label><Input v-model="form.customerName" :aria-invalid="Boolean(formErrors.customerName)" /><p v-if="formErrors.customerName" class="form-error">{{ formErrors.customerName }}</p></div>
-            <div class="space-y-1"><Label>联系人</Label><Input v-model="form.contactName" /><p v-if="formErrors.contactName" class="form-error">{{ formErrors.contactName }}</p></div>
-            <div class="space-y-1"><Label>联系电话</Label><Input v-model="form.contactPhone" /><p v-if="formErrors.contactPhone" class="form-error">{{ formErrors.contactPhone }}</p></div>
-            <div class="space-y-1"><Label>信用额度</Label><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="form.creditLimit" type="number" min="0" step="0.01" class="pl-8" /></div><p v-if="formErrors.creditLimit" class="form-error">{{ formErrors.creditLimit }}</p></div>
+            <div class="space-y-1"><Label>客户名称 <span class="text-destructive">*</span></Label><Input v-model="form.customerName" :aria-invalid="Boolean(formErrors.customerName)" /><p v-if="formErrors.customerName" class="text-xs text-destructive">{{ formErrors.customerName }}</p></div>
+            <div class="space-y-1"><Label>联系人</Label><Input v-model="form.contactName" /><p v-if="formErrors.contactName" class="text-xs text-destructive">{{ formErrors.contactName }}</p></div>
+            <div class="space-y-1"><Label>联系电话</Label><Input v-model="form.contactPhone" /><p v-if="formErrors.contactPhone" class="text-xs text-destructive">{{ formErrors.contactPhone }}</p></div>
+            <div class="space-y-1"><Label>信用额度</Label><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="form.creditLimit" type="number" min="0" step="0.01" class="pl-8" /></div><p v-if="formErrors.creditLimit" class="text-xs text-destructive">{{ formErrors.creditLimit }}</p></div>
             <div class="space-y-1"><Label>状态</Label><AnchoredSelect v-model="form.status" :options="statusOptions.filter(item => item.value !== 'all')" /></div>
-            <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>地址</Label><Input v-model="form.address" /><p v-if="formErrors.address" class="form-error">{{ formErrors.address }}</p></div>
-            <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>备注</Label><Textarea v-model="form.remark" rows="3" /><p v-if="formErrors.remark" class="form-error">{{ formErrors.remark }}</p></div>
+            <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>地址</Label><Input v-model="form.address" /><p v-if="formErrors.address" class="text-xs text-destructive">{{ formErrors.address }}</p></div>
+            <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>备注</Label><Textarea v-model="form.remark" rows="3" /><p v-if="formErrors.remark" class="text-xs text-destructive">{{ formErrors.remark }}</p></div>
           </div>
         </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中' : '保存' }}</Button></DialogFooter>

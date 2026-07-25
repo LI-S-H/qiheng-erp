@@ -404,19 +404,19 @@ onMounted(fetchSuppliers);
         <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
             <div class="space-y-1"><Label>供应商编码</Label><Input v-model="form.supplierCode" readonly class="bg-muted/55 text-muted-foreground" placeholder="保存后由系统生成" /><p class="text-xs text-muted-foreground">系统生成，创建后不可修改</p></div>
-            <div class="space-y-1"><Label>供应商名称 <span class="text-destructive">*</span></Label><Input v-model="form.supplierName" :aria-invalid="Boolean(formErrors.supplierName)" /><p v-if="formErrors.supplierName" class="form-error">{{ formErrors.supplierName }}</p></div>
-            <div class="space-y-1"><Label>联系人</Label><Input v-model="form.contactName" /><p v-if="formErrors.contactName" class="form-error">{{ formErrors.contactName }}</p></div>
-            <div class="space-y-1"><Label>联系电话</Label><Input v-model="form.contactPhone" /><p v-if="formErrors.contactPhone" class="form-error">{{ formErrors.contactPhone }}</p></div>
-            <div class="space-y-1"><Label>付款条件</Label><Input v-model="form.paymentTerms" placeholder="如 月结30天" /><p v-if="formErrors.paymentTerms" class="form-error">{{ formErrors.paymentTerms }}</p></div>
+            <div class="space-y-1"><Label>供应商名称 <span class="text-destructive">*</span></Label><Input v-model="form.supplierName" :aria-invalid="Boolean(formErrors.supplierName)" /><p v-if="formErrors.supplierName" class="text-xs text-destructive">{{ formErrors.supplierName }}</p></div>
+            <div class="space-y-1"><Label>联系人</Label><Input v-model="form.contactName" /><p v-if="formErrors.contactName" class="text-xs text-destructive">{{ formErrors.contactName }}</p></div>
+            <div class="space-y-1"><Label>联系电话</Label><Input v-model="form.contactPhone" /><p v-if="formErrors.contactPhone" class="text-xs text-destructive">{{ formErrors.contactPhone }}</p></div>
+            <div class="space-y-1"><Label>付款条件</Label><Input v-model="form.paymentTerms" placeholder="如 月结30天" /><p v-if="formErrors.paymentTerms" class="text-xs text-destructive">{{ formErrors.paymentTerms }}</p></div>
             <div class="space-y-1"><Label>状态</Label><AnchoredSelect v-model="form.status" :options="statusOptions.filter(item => item.value !== 'all')" /></div>
-            <div class="space-y-1"><Label>地址</Label><Input v-model="form.address" /><p v-if="formErrors.address" class="form-error">{{ formErrors.address }}</p></div>
-            <div class="space-y-1"><Label>平均交付天数</Label><Input v-model.number="form.avgDeliveryDays" type="number" min="0" step="0.1" /><p v-if="formErrors.avgDeliveryDays" class="form-error">{{ formErrors.avgDeliveryDays }}</p></div>
+            <div class="space-y-1"><Label>地址</Label><Input v-model="form.address" /><p v-if="formErrors.address" class="text-xs text-destructive">{{ formErrors.address }}</p></div>
+            <div class="space-y-1"><Label>平均交付天数</Label><Input v-model.number="form.avgDeliveryDays" type="number" min="0" step="0.1" /><p v-if="formErrors.avgDeliveryDays" class="text-xs text-destructive">{{ formErrors.avgDeliveryDays }}</p></div>
             <div v-for="field in ['overallScore','deliveryScore','qualityScore','priceScore','serviceScore','onTimeRate','qualifiedRate']" :key="field" class="space-y-1">
               <Label>{{ ({ overallScore: '综合评分', deliveryScore: '交付评分', qualityScore: '质量评分', priceScore: '价格评分', serviceScore: '服务评分', onTimeRate: '准时率', qualifiedRate: '合格率' } as Record<string, string>)[field] }}</Label>
               <Input v-model.number="(form as any)[field]" type="number" min="0" max="100" step="0.1" />
-              <p v-if="formErrors[field]" class="form-error">{{ formErrors[field] }}</p>
+              <p v-if="formErrors[field]" class="text-xs text-destructive">{{ formErrors[field] }}</p>
             </div>
-            <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>备注</Label><Textarea v-model="form.remark" rows="3" /><p v-if="formErrors.remark" class="form-error">{{ formErrors.remark }}</p></div>
+            <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>备注</Label><Textarea v-model="form.remark" rows="3" /><p v-if="formErrors.remark" class="text-xs text-destructive">{{ formErrors.remark }}</p></div>
           </div>
         </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中' : '保存' }}</Button></DialogFooter>

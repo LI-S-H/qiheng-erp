@@ -45,7 +45,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       :class="cn(
         'bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 ring-foreground/10 grid max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] gap-4 overflow-y-auto overscroll-contain rounded-xl p-5 text-[15px] ring-1 duration-100 sm:max-w-sm fixed z-[60] w-full outline-none',
         props.placement === 'app-content'
-          ? 'top-[var(--app-shell-header-height)] right-0 bottom-0 left-[var(--app-shell-sidebar-width)] m-auto h-fit'
+          ? 'top-0 right-0 bottom-0 left-[var(--app-shell-sidebar-width)] m-auto h-fit'
           : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
         props.class,
       )"

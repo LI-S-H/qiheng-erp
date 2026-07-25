@@ -3849,7 +3849,7 @@ paths:
     post:
       tags: [WarehouseStockBill]
       summary: 新增手工入库单草稿
-      description: 创建调整入库或补录采购入库、销售退货入库草稿。保存后不改变库存，确认入库后才生成库存流水。本接口需要 `warehouse:manage` 权限。
+      description: 创建调整入库或补录采购入库、销售退货入库草稿。保存后不改变库存，确认入库后才生成库存流水。前端必须通过搜索下拉选择来源对象：采购入库选供应商、销售退货选客户、调整入库选来源仓库；`sourcePartyId` 和 `sourcePartyName` 由前端提交，后端直接存入主表快照。本接口需要 `warehouse:manage` 权限。
       operationId: inboundBillCreate
       security:
         - SaTokenAuth: []
@@ -3942,7 +3942,7 @@ paths:
     post:
       tags: [WarehouseStockBill]
       summary: 新增手工出库单草稿
-      description: 创建调整出库或补录销售出库、采购退货出库草稿。保存后不改变库存，确认出库后才生成库存流水。本接口需要 `warehouse:manage` 权限。
+      description: 创建调整出库或补录销售出库、采购退货出库草稿。保存后不改变库存，确认出库后才生成库存流水。前端必须通过搜索下拉选择来源对象：销售出库选客户、采购退货选供应商、调整出库选来源仓库；`sourcePartyId` 和 `sourcePartyName` 由前端提交，后端直接存入主表快照。本接口需要 `warehouse:manage` 权限。
       operationId: outboundBillCreate
       security:
         - SaTokenAuth: []
@@ -7341,6 +7341,8 @@ components:
         billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 手工补录或库存调整类型 }
         sourceNo: { type: string, maxLength: 64, description: 非调整类型必填原业务单号；调整类型传空字符串，由后端生成调整单号 }
         warehouseId: { type: string, description: 启用状态的仓库 ID }
+        sourcePartyId: { type: string, nullable: true, description: 来源对象 ID；采购入库/采购退货出库为供应商 ID，销售出库/销售退货为客户 ID，调整入库/出库为来源仓库 ID。必填，由前端下拉选择 }
+        sourcePartyName: { type: string, nullable: true, maxLength: 200, description: 来源对象名称快照；由前端在选中 sourcePartyId 后附带提交，后端直接存入主表，不跨模块查询 }
         manualReason: { type: string, minLength: 1, maxLength: 500, description: 补录原因或库存调整原因，必填 }
         items:
           type: array

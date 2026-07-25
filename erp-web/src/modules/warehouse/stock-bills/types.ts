@@ -117,6 +117,8 @@ export interface StockBillUpdatePayload {
   version: number;
   warehouseId?: string;
   sourceNo?: string;
+  sourcePartyId?: string;
+  sourcePartyName?: string;
   manualReason?: string;
   items: StockBillDraftItemPayload[];
   remark?: string;

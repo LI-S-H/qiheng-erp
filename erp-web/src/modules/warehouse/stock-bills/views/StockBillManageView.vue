@@ -286,6 +286,7 @@ const expandedDetailIds = ref<Set<string>>(new Set());
 const formVisible = ref(false);
 const formLoading = ref(false);
 const formSubmitting = ref(false);
+let editLoadVersion = 0;
 const actionSubmitting = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingDetail = ref<StockBillDetail | null>(null);
@@ -334,7 +335,11 @@ const isAdjustmentForm = computed(() => adjustmentTypes.has(formBillType.value))
 const isManualForm = computed(() => dialogMode.value === 'create' || editingDetail.value?.entryMode !== 'SOURCE_GENERATED');
 const editingIsDraft = computed(() => dialogMode.value === 'edit' && editingDetail.value?.status === 'DRAFT');
 const warehouseEditable = computed(() => dialogMode.value === 'create' || editingIsDraft.value);
-const sourceNoEditable = computed(() => (dialogMode.value === 'create' || editingIsDraft.value) && isManualForm.value && !isAdjustmentForm.value);
+const manualInboundSourceEditable = computed(() => editingIsDraft.value
+  && isManualForm.value
+  && (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'SALES_RETURN'));
+const adjustmentSourceWarehouseEditable = computed(() => editingIsDraft.value && isAdjustmentForm.value);
+const sourceNoEditable = computed(() => (dialogMode.value === 'create' || manualInboundSourceEditable.value) && !isAdjustmentForm.value);
 const manualReasonEditable = computed(() => (dialogMode.value === 'create' || editingIsDraft.value) && isManualForm.value);
 const structureEditable = computed(() => dialogMode.value === 'create' || (editingIsDraft.value && editingDetail.value?.entryMode !== 'SOURCE_GENERATED'));
 const summaryCards = computed(() => [
@@ -349,9 +354,19 @@ const sourcePartyFormDisplay = computed(() => {
   if (adjustmentTypes.has(formBillType.value)) return selectedFormWarehouseLabel.value || '请选择调整仓库';
   return editingDetail.value ? sourcePartyDisplay(editingDetail.value) : '手工补录';
 });
-const sourcePartyEditable = computed(() => dialogMode.value === 'create');
+const sourcePartyEditable = computed(() => dialogMode.value === 'create'
+  || manualInboundSourceEditable.value
+  || adjustmentSourceWarehouseEditable.value);
 const sourcePartyOptions = ref<Array<{ value: string; label: string }>>([]);
-const selectedSourcePartyLabel = computed(() => sourcePartyOptions.value.find(item => item.value === form.sourcePartyId)?.label || '');
+const selectedSourcePartyLabel = computed(() => {
+  const fromOptions = sourcePartyOptions.value.find(item => item.value === form.sourcePartyId);
+  if (fromOptions) return fromOptions.label;
+  // 编辑模式兜底：从详情数据取名称
+  if (editingDetail.value?.sourcePartyId === form.sourcePartyId && editingDetail.value?.sourcePartyName) {
+    return editingDetail.value.sourcePartyName;
+  }
+  return '';
+});
 const sourcePartyPlaceholder = computed(() => {
   if (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'PURCHASE_RETURN') return '请选择供应商';
   if (formBillType.value === 'SALES_RETURN' || formBillType.value === 'SALES_OUT') return '请选择客户';
@@ -362,7 +377,8 @@ const sourcePartySearchPlaceholder = computed(() => {
   if (formBillType.value === 'SALES_RETURN' || formBillType.value === 'SALES_OUT') return '输入客户编码或名称';
   return '输入仓库编码或名称';
 });
-const sourceNoSearchable = computed(() => dialogMode.value === 'create' && !isAdjustmentForm.value);
+// 可编辑的补录来源单号与新增态保持一致，支持下拉搜索选择和手工输入两种方式。
+const sourceNoSearchable = computed(() => sourceNoEditable.value && !isAdjustmentForm.value);
 const sourceOrderOptions = ref<Array<{ value: string; label: string }>>([]);
 const selectedSourceOrderLabel = computed(() => sourceOrderOptions.value.find(item => item.value === form.sourceNo)?.label || form.sourceNo || '');
 
@@ -418,6 +434,7 @@ function handleSourceOrderSelect(value: string | number) {
     form.sourceId = meta.sourceId || '';
     form.sourcePartyId = meta.sourcePartyId || '';
     sourcePartyOptions.value = [{ value: meta.sourcePartyId, label: meta.sourcePartyName }];
+    // 编辑草稿只更新来源追溯字段，不能用新来源单据的明细覆盖当前已维护的产品明细。
     if (meta.sourceId) loadSourceOrderItems(meta.sourceId);
   }
   clearFormError('sourceNo');
@@ -475,15 +492,24 @@ async function loadSourceOrderItems(sourceId: string) {
 }
 
 function toggleSourceNoMode() {
-  form.sourceNo = '';
-  form.sourceId = '';
-  form.items = [newDraftItem()];
+  // 切换搜索/手动模式
   if (sourceNoMode.value === 'search') {
     sourceNoMode.value = 'manual';
-    form.sourcePartyId = '';
-    sourcePartyOptions.value = [];
   } else {
     sourceNoMode.value = 'search';
+  }
+  // 新增模式：清空来源相关字段和明细
+  if (dialogMode.value === 'create') {
+    form.sourceNo = '';
+    form.sourceId = '';
+    form.sourcePartyId = '';
+    form.items = [newDraftItem()];
+    sourcePartyOptions.value = [];
+  }
+  // 编辑模式：只清空来源单号（用户要手动输入/重新搜索），保留来源对象和明细
+  if (dialogMode.value === 'edit') {
+    form.sourceNo = '';
+    form.sourceId = '';
   }
   clearFormError('sourceNo');
 }
@@ -519,6 +545,8 @@ async function fetchSourcePartySearchOptions(keyword: string) {
 const warehouseFieldLabel = computed(() => isInboundPage.value ? '入库仓库' : '出库仓库');
 
 watch(() => form.billType, () => {
+  // 该表单类型只允许在新建时切换；编辑回显赋值不能触发重置并清空详情明细。
+  if (dialogMode.value !== 'create') return;
   form.sourceNo = '';
   form.sourceId = '';
   form.sourcePartyId = '';
@@ -830,6 +858,7 @@ function resetForm() {
 }
 
 function openCreateDialog() {
+  editLoadVersion += 1;
   dialogMode.value = 'create';
   resetForm();
   formVisible.value = true;
@@ -837,6 +866,7 @@ function openCreateDialog() {
 
 async function openEditDialog(row: StockBillListItem) {
   if (row.status !== 'DRAFT' && row.status !== 'PENDING_CONFIRM') return;
+  const currentLoadVersion = ++editLoadVersion;
   dialogMode.value = 'edit';
   formVisible.value = true;
   formLoading.value = true;
@@ -844,42 +874,67 @@ async function openEditDialog(row: StockBillListItem) {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   try {
     const current = await getStockBillDetail(billDirection(row.billType), row.workBillId);
+    if (currentLoadVersion !== editLoadVersion || !formVisible.value || dialogMode.value !== 'edit') return;
     if (current.status !== 'DRAFT' && current.status !== 'PENDING_CONFIRM') throw new Error('只有草稿或待确认状态可以编辑');
     editingDetail.value = current;
-    mergeProducts(current.items.map(item => ({
-      productId: item.productId,
-      productCode: item.productCode,
-      productName: item.productName,
-      unitName: item.unitName,
-      quantityPrecision: item.quantityPrecision,
-    } as ProductListItem)));
+    // 填充主表字段
     form.billType = current.billType;
-    form.sourceNo = current.sourceNo;
+    form.sourceNo = current.sourceNo || '';
+    form.sourceId = (current as any).sourceId || '';
     form.warehouseId = current.warehouseId;
-    form.manualReason = current.manualReason;
-    form.remark = current.remark;
+    form.sourcePartyId = current.sourcePartyId || '';
+    form.manualReason = current.manualReason || '';
+    form.remark = current.remark || '';
+    // 根据是否有来源单据ID判断搜索/手动模式
+    const hasSourceId = !!(current as any).sourceId;
+    sourceNoMode.value = hasSourceId ? 'search' : 'manual';
+    // 预填充来源单号下拉选项，使编辑时能正确显示当前值
+    sourceOrderOptions.value = current.sourceNo
+      ? [{ value: current.sourceNo, label: current.sourceNo }]
+      : [];
+    // 预填充来源对象下拉选项
+    sourcePartyOptions.value = current.sourcePartyId
+      ? [{ value: current.sourcePartyId, label: current.sourcePartyName }]
+      : [];
+    // 直接从详情构建明细行，产品信息来自详情 API（权威数据源，不依赖缓存）
     form.items = current.items.map(item => ({
-      key: item.workBillItemId,
+      key: item.workBillItemId || `${Date.now()}-${Math.random()}`,
       workBillItemId: item.workBillItemId,
+      sourceItemId: (item as any).sourceItemId || undefined,
       productId: item.productId,
       productCode: item.productCode,
       productName: item.productName,
       unitName: item.unitName,
       quantityPrecision: item.quantityPrecision,
       planQty: item.planQty ?? undefined,
-      processedQty: item.processedQty,
-      pendingQty: item.pendingQty,
+      processedQty: item.processedQty ?? undefined,
+      pendingQty: item.pendingQty ?? undefined,
       currentQty: item.currentQty,
       qualifiedQty: item.qualifiedQty,
       defectiveQty: item.defectiveQty,
-      remark: item.remark,
+      remark: item.remark || '',
     }));
   } catch (error) {
-    formVisible.value = false;
+    if (currentLoadVersion !== editLoadVersion || !formVisible.value) return;
+    closeFormDialog();
     toast.warning(getApiErrorMessage(error) || `${pageText.value.title}加载失败`);
   } finally {
-    formLoading.value = false;
+    if (currentLoadVersion === editLoadVersion) formLoading.value = false;
   }
+}
+
+function closeFormDialog() {
+  editLoadVersion += 1;
+  formVisible.value = false;
+  formLoading.value = false;
+}
+
+function handleFormDialogOpenChange(open: boolean) {
+  if (open) {
+    formVisible.value = true;
+    return;
+  }
+  closeFormDialog();
 }
 
 function addFormItem() {
@@ -894,18 +949,19 @@ function removeFormItem(index: number) {
 function productLabel(item: DraftFormItem) {
   if (item.productCode || item.productName) return `${item.productCode || ''} ${item.productName || ''}（${item.unitName || ''}）`.trim();
   const snapshot = editingDetail.value?.items.find(detailItem => detailItem.workBillItemId === item.workBillItemId);
-  if (snapshot) return `${snapshot.productCode} ${snapshot.productName}（${snapshot.unitName}）`;
+  if (snapshot?.productCode || snapshot?.productName) return `${snapshot.productCode || ''} ${snapshot.productName || ''}（${snapshot.unitName || ''}）`.trim();
   const product = products.value.find(option => option.productId === item.productId);
-  return product ? `${product.productCode} ${product.productName}（${product.unitName}）` : item.productId;
+  if (product) return `${product.productCode} ${product.productName}（${product.unitName}）`;
+  return item.productId || '未知产品';
 }
 
 function productDisplay(item: DraftFormItem) {
-  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.workBillItemId === item.workBillItemId);
   const product = products.value.find(option => option.productId === item.productId);
+  const snapshot = editingDetail.value?.items.find(detailItem => detailItem.workBillItemId === item.workBillItemId);
   return {
-    code: item.productCode || snapshot?.productCode || product?.productCode || item.productId || '-',
-    name: item.productName || snapshot?.productName || product?.productName || '-',
-    unitName: item.unitName || snapshot?.unitName || product?.unitName || '-',
+    code: item.productCode || product?.productCode || snapshot?.productCode || item.productId || '-',
+    name: item.productName || product?.productName || snapshot?.productName || '-',
+    unitName: item.unitName || product?.unitName || snapshot?.unitName || '-',
   };
 }
 
@@ -1045,13 +1101,17 @@ async function submitForm() {
         items: buildItemPayloads(),
         ...(warehouseEditable.value ? { warehouseId: form.warehouseId } : {}),
         ...(sourceNoEditable.value ? { sourceNo: form.sourceNo.trim() } : {}),
+        ...(sourcePartyEditable.value && form.sourcePartyId ? {
+          sourcePartyId: form.sourcePartyId,
+          sourcePartyName: selectedSourcePartyLabel.value,
+        } : {}),
         ...(manualReasonEditable.value ? { manualReason: form.manualReason.trim() } : {}),
         ...(form.remark.trim() ? { remark: form.remark.trim() } : {}),
       };
       await updateStockBill(billDirection(editingDetail.value.billType), editingDetail.value.workBillId, payload);
       toast.success(`${pageText.value.formTitle}已保存`);
     }
-    formVisible.value = false;
+    closeFormDialog();
     await fetchRecords();
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || `${pageText.value.formTitle}保存失败`);
@@ -1448,7 +1508,7 @@ onMounted(async () => {
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
 
-    <Dialog v-model:open="formVisible">
+    <Dialog :open="formVisible" @update:open="handleFormDialogOpenChange">
       <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" class="flex !h-[min(820px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1120px]">
         <DialogHeader>
           <DialogTitle>{{ dialogMode === 'create' ? pageText.createButton : `编辑${pageText.formTitle}` }}</DialogTitle>
@@ -1598,7 +1658,7 @@ onMounted(async () => {
             <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" maxlength="500" rows="3" placeholder="填写调整依据、验收说明或其他备注" :aria-invalid="Boolean(formErrors.remark)" /><div class="flex justify-between text-xs"><span :class="formErrors.remark ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.remark || '选填，最多 500 个字符' }}</span><span class="text-muted-foreground">{{ form.remark.length }}/500</span></div></div>
           </div>
         </DialogScrollArea>
-        <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="formVisible = false">关闭</Button><Button :disabled="formSubmitting || formLoading" @click="submitForm">{{ formSubmitting ? '保存中...' : dialogMode === 'create' ? '保存草稿' : '保存修改' }}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="closeFormDialog">关闭</Button><Button :disabled="formSubmitting || formLoading" @click="submitForm">{{ formSubmitting ? '保存中...' : dialogMode === 'create' ? '保存草稿' : '保存修改' }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 

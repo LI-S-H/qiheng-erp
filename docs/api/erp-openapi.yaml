@@ -4080,7 +4080,7 @@ paths:
     put:
       tags: [WarehouseStockBill]
       summary: 编辑入库单草稿或待确认单
-      description: 仅编辑 `inbound_bill`。`DRAFT` 可修改仓库；`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
+      description: 仅编辑 `inbound_bill`。`DRAFT` 可修改仓库；人工补录的采购入库或销售退货入库草稿可修改来源对象和来源单号，来源单号同时支持搜索选择与手工输入；调整入库草稿可修改来源仓库但调整单号保持不变；系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
       operationId: inboundBillUpdate
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
@@ -4164,7 +4164,7 @@ paths:
     put:
       tags: [WarehouseStockBill]
       summary: 编辑出库单草稿或待确认单
-      description: 仅编辑 `outbound_bill`。`DRAFT` 可修改仓库；`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
+      description: 仅编辑 `outbound_bill`。`DRAFT` 可修改仓库；调整出库草稿可修改来源仓库但调整单号保持不变；其他出库来源对象和来源单号保持创建时的值，系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
       operationId: outboundBillUpdate
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
@@ -7374,7 +7374,9 @@ components:
       properties:
         version: { type: integer, minimum: 0, description: 当前入库单或出库单工作单版本，用于乐观锁。 }
         warehouseId: { type: string, description: 仓库 ID；仅 `DRAFT` 状态允许修改，`PENDING_CONFIRM` 必须保持原值 }
-        sourceNo: { type: string, maxLength: 64, description: 手工补录草稿可维护原业务单号；其他录入方式保持原值 }
+        sourceNo: { type: string, maxLength: 64, description: 仅人工补录的采购入库或销售退货入库 `DRAFT` 可修改原业务单号；调整单、系统生成单、出库单及 `PENDING_CONFIRM` 必须保持原值 }
+        sourcePartyId: { type: string, description: 人工补录的采购入库或销售退货入库 `DRAFT` 可修改来源对象 ID；采购入库为供应商 ID，销售退货为客户 ID。调整入库/出库 `DRAFT` 可修改来源仓库 ID；系统生成单及 `PENDING_CONFIRM` 不得提交或修改 }
+        sourcePartyName: { type: string, maxLength: 200, description: 与 `sourcePartyId` 同时提交的来源对象名称快照；人工补录采购入库/销售退货入库与调整入库/出库的 `DRAFT` 可修改 }
         manualReason: { type: string, maxLength: 500, description: 手工补录或调整草稿必填；系统生成单据保持原值 }
         items:
           type: array

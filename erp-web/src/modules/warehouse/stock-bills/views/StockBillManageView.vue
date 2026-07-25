@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { Columns3, RotateCcw } from 'lucide-vue-next';
+import { Columns3, RotateCcw, X } from 'lucide-vue-next';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
@@ -1489,13 +1489,19 @@ onMounted(async () => {
                   <TableBody>
                     <TableRow v-for="(item, index) in form.items" :key="item.key">
                       <TableCell class="align-top">
-                        <RemoteSearchSelect v-if="structureEditable" v-model="item.productId" :selected-label="productLabel(item)" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" @update:model-value="handleProductChange(item, index)" />
-                        <div v-else class="stock-bill-product-snapshot" :title="productLabel(item)">
-                          <code>{{ productDisplay(item).code }}</code>
-                          <span>{{ productDisplay(item).name }}</span>
-                          <small>{{ productDisplay(item).unitName }}</small>
+                        <div class="flex items-start gap-1">
+                          <div class="min-w-0 flex-1">
+                            <RemoteSearchSelect v-if="structureEditable" v-model="item.productId" :selected-label="productLabel(item)" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" @update:model-value="handleProductChange(item, index)" />
+                            <div v-else class="stock-bill-product-snapshot" :title="productLabel(item)">
+                              <code>{{ productDisplay(item).code }}</code>
+                              <span>{{ productDisplay(item).name }}</span>
+                              <small>{{ productDisplay(item).unitName }}</small>
+                            </div>
+                          </div>
+                          <Button v-if="structureEditable" size="icon-xs" variant="ghost" class="mt-1 shrink-0 text-muted-foreground hover:text-destructive" :disabled="form.items.length <= 1" @click="removeFormItem(index)">
+                            <X class="size-3.5" />
+                          </Button>
                         </div>
-                        <Button v-if="structureEditable" size="sm" variant="ghost" class="mt-1 h-7 px-2 text-destructive hover:text-destructive" :disabled="form.items.length <= 1" @click="removeFormItem(index)">删除产品</Button>
                         <p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p>
                       </TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty)} ${itemUnitName(item)}` : '-' }}</TableCell>

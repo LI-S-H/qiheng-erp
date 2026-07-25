@@ -938,6 +938,13 @@ function remainingAfterText(item: DraftFormItem) {
   return formatQty(Math.max(0, snapshot.planQty - snapshot.processedQty - (Number(item.currentQty) || 0)));
 }
 
+function itemPendingQty(item: DraftFormItem): number | null {
+  const plan = item.planQty;
+  const processed = item.processedQty;
+  if (plan == null || processed == null) return null;
+  return Math.max(0, plan - processed - (Number(item.currentQty) || 0));
+}
+
 function itemQuantityPrecision(item: DraftFormItem) {
   const snapshot = detailItemFor(item);
   return snapshot?.quantityPrecision ?? item.quantityPrecision ?? products.value.find(product => product.productId === item.productId)?.quantityPrecision ?? 0;
@@ -1568,7 +1575,7 @@ onMounted(async () => {
                       <TableCell class="align-top">
                         <div class="stock-bill-form-quantity-control"><Input v-model.number="item.currentQty" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" /><span :class="formErrors[`items.${index}.quantity`] ? 'text-destructive' : 'text-muted-foreground'" :title="formErrors[`items.${index}.quantity`] || quantityHint(item)">{{ formErrors[`items.${index}.quantity`] || quantityHint(item) }}</span></div>
                       </TableCell>
-                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : (item.pendingQty != null ? `${formatQty(item.pendingQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
+                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : (itemPendingQty(item) != null ? `${formatQty(itemPendingQty(item))} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top">
                         <Input v-if="qualityFieldsVisible" v-model.number="item.qualifiedQty" type="number" min="0" :step="itemQuantityStep(item)" />
                         <span v-else class="text-muted-foreground">-</span>

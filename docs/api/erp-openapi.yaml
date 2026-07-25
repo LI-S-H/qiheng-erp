@@ -7508,7 +7508,7 @@ components:
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应入库或出库工作单明细的 `quantity_precision`，产品数量精度快照 }
         planQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 来源单据计划数量；库存调整可为 null }
         processedQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 生成本单前来源明细累计已入库或已出库数量；库存调整可为 null }
-        pendingQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 确认本单后来源明细预计剩余未入库或未出库数量，由后端按 planQty - processedQty - currentQty 计算；库存调整可为 null；前端展开明细独立展示为剩余未入库或剩余未出库列，不允许用户手动提交 }
+        pendingQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 确认本单后来源明细预计剩余数量，公式：pendingQty = planQty - processedQty - currentQty。草稿和待确认阶段由后端实时计算或前端预览；确认入库时由后端写入最终值。库存调整可为 null。前端不可编辑，仅展示 }
         currentQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 入库或出库工作单的本次业务数量，对应工作单明细 `current_qty`；系统生成的待确认单初始为 0 或空业务值，由仓库人员确认前填写，确认时必须大于 0 且不能超过来源剩余数量；数据库按 100 倍整数存储；前端展开明细独立展示为入库量或出库量列 }
         qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 工作单的合格数量业务真实值；数据库按 100 倍整数存储；前端展开明细独立展示，不得与不合格数量拼接为一个质检字段 }
         defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 工作单的不合格数量业务真实值；数据库按 100 倍整数存储；前端展开明细独立展示，不得与合格数量拼接为一个质检字段 }

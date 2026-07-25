@@ -1466,10 +1466,10 @@ onMounted(async () => {
                 <Table class="min-w-[980px] table-fixed">
                   <colgroup>
                     <col class="w-[220px]" />
-                    <col class="w-[90px]" />
-                    <col class="w-[90px]" />
+                    <col class="w-[80px]" />
+                    <col class="w-[80px]" />
                     <col class="w-[160px]" />
-                    <col class="w-[110px]" />
+                    <col class="w-[140px]" />
                     <col class="w-[100px]" />
                     <col class="w-[100px]" />
                     <col class="w-[150px]" />

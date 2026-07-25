@@ -369,7 +369,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             InboundBillItem item = new InboundBillItem()
                     .setInboundBillId(bill.getId())
                     .setInboundNo(inboundNo)
-                    .setSourceItemId(null)
+                    .setSourceItemId(StrUtil.isNotBlank(itemDto.getSourceItemId()) ? Long.valueOf(itemDto.getSourceItemId()) : null)
                     .setProductId(productId)
                     .setProductCode(product.getProductCode())
                     .setProductName(product.getProductName())

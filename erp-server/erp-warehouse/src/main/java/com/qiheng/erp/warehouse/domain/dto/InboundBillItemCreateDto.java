@@ -23,6 +23,9 @@ public class InboundBillItemCreateDto {
     @NotBlank(message = "产品ID不能为空")
     private String productId;
 
+    @Schema(description = "来源单据明细ID，前端从已有单据下拉选择时自动附带")
+    private String sourceItemId;
+
     @Schema(description = "本次入库数量，最多两位小数")
     @NotNull(message = "本次入库数量不能为空")
     @DecimalMin(value = "0.01", message = "本次入库数量必须大于0")

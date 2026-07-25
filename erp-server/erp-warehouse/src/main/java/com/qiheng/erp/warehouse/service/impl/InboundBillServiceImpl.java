@@ -14,7 +14,9 @@ import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillItemCreateDto;
+import com.qiheng.erp.warehouse.domain.dto.InboundBillItemUpdateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
+import com.qiheng.erp.warehouse.domain.dto.InboundBillUpdateDto;
 import com.qiheng.erp.warehouse.domain.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.entity.InboundBillItem;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
@@ -317,12 +319,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .map(item -> Long.valueOf(item.getProductId()))
                 .distinct()
                 .toList();
-        List<Product> products = productMapper.selectByIds(productIds);
-        if (products.size() != productIds.size()) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "部分产品不存在");
-        }
-        Map<Long, Product> productMap = products.stream()
-                .collect(Collectors.toMap(Product::getId, p -> p));
+        Map<Long, Product> productMap = getLongProductMap(productIds);
 
         // 3. 校验质量数量（采购入库和销售退货需要合格+不合格=本次数量）
         InboundType billType = checkQualityQty(dto);
@@ -332,7 +329,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         String entryMode = resolveEntryMode(billType);
 
         // 5. 生成入库单号
-        String inboundNo = billNoGenerator.nextNo("RK");
+        String inboundNo = billNoGenerator.nextNo("IB");
 
         // 6. 获取当前登录用户
         LoginUser currentUser = UserContext.getCurrentUser();
@@ -365,24 +362,18 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         for (InboundBillItemCreateDto itemDto : dto.getItems()) {
             Long productId = Long.valueOf(itemDto.getProductId());
             Product product = productMap.get(productId);
-
-            InboundBillItem item = new InboundBillItem()
-                    .setInboundBillId(bill.getId())
-                    .setInboundNo(inboundNo)
-                    .setSourceItemId(StrUtil.isNotBlank(itemDto.getSourceItemId()) ? Long.valueOf(itemDto.getSourceItemId()) : null)
-                    .setProductId(productId)
-                    .setProductCode(product.getProductCode())
-                    .setProductName(product.getProductName())
-                    .setUnitName(product.getUnitName())
-                    .setQuantityPrecision(product.getQuantityPrecision())
-                    .setPlanQty(QtyUtil.toStored(itemDto.getPlanQty()))
-                    .setProcessedQty(null)
-                    .setCurrentQty(QtyUtil.toStored(itemDto.getCurrentQty()))
-                    .setPendingQty(null)
-                    .setQualifiedQty(QtyUtil.toStored(itemDto.getQualifiedQty()))
-                    .setDefectiveQty(QtyUtil.toStored(itemDto.getDefectiveQty()))
-                    .setRemark(itemDto.getRemark());
-            items.add(item);
+            // 新增明细
+            addItem(inboundNo,
+                    bill,
+                    items,
+                    productId,
+                    product,
+                    itemDto.getSourceItemId(),
+                    itemDto.getPlanQty(),
+                    itemDto.getCurrentQty(),
+                    itemDto.getQualifiedQty(),
+                    itemDto.getDefectiveQty(),
+                    itemDto.getRemark());
         }
         inboundBillItemService.saveBatch(items);
 
@@ -403,6 +394,43 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     }
 
     /**
+     * 新增入库单明细
+     */
+    private void addItem(String inboundNo, InboundBill bill, List<InboundBillItem> items, Long productId, Product product, String sourceItemId, BigDecimal planQty, BigDecimal currentQty, BigDecimal qualifiedQty, BigDecimal defectiveQty, String remark) {
+        InboundBillItem item = new InboundBillItem()
+                .setInboundBillId(bill.getId())
+                .setInboundNo(inboundNo)
+                .setSourceItemId(StrUtil.isNotBlank(sourceItemId) ? Long.valueOf(sourceItemId) : null)
+                .setProductId(productId)
+                .setProductCode(product.getProductCode())
+                .setProductName(product.getProductName())
+                .setUnitName(product.getUnitName())
+                .setQuantityPrecision(product.getQuantityPrecision())
+                .setPlanQty(QtyUtil.toStored(planQty))
+                .setProcessedQty(null)
+                .setCurrentQty(QtyUtil.toStored(currentQty))
+                .setPendingQty(null)
+                .setQualifiedQty(QtyUtil.toStored(qualifiedQty))
+                .setDefectiveQty(QtyUtil.toStored(defectiveQty))
+                .setRemark(remark);
+        items.add(item);
+    }
+
+    /**
+     * 根据产品ID列表查询产品信息
+     * @param productIds 产品ID列表
+     * @return 产品信息映射
+     */
+    private Map<Long, Product> getLongProductMap(List<Long> productIds) {
+        List<Product> products = productMapper.selectByIds(productIds);
+        if (products.size() != productIds.size()) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "部分产品不存在");
+        }
+        return products.stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+    }
+
+    /**
      * 校验质量数量（采购入库和销售退货需要合格+不合格=本次数量）
      * @param dto 入库单创建DTO
      * @return 入库单类型
@@ -418,6 +446,208 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             }
         }
         return billType;
+    }
+
+    /**
+     * 编辑入库单草稿或待确认单
+     * @param inboundBillId 入库单ID
+     * @param dto 编辑请求
+     * @return 入库单详情
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public InboundBillDetailVo updateDraft(String inboundBillId, InboundBillUpdateDto dto) {
+        // 1. 解析并查询入库单
+        Long id;
+        try {
+            id = Long.valueOf(inboundBillId);
+        } catch (NumberFormatException e) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库单ID格式错误");
+        }
+        InboundBill bill = this.getById(id);
+        if (bill == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
+        }
+
+        // 2. 校验状态
+        String status = bill.getStatus();
+        boolean isDraft = InboundBillStatus.DRAFT.name().equals(status);
+        boolean isPendingConfirm = InboundBillStatus.PENDING_CONFIRM.name().equals(status);
+        if (!isDraft && !isPendingConfirm) {
+            throw new BizException(ErrorCode.BILL_STATUS_INVALID.getCode(), "仅草稿和待确认单可编辑");
+        }
+
+        // 3. 乐观锁校验
+        if (!bill.getVersion().equals(dto.getVersion())) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
+        }
+
+        // 4. 根据状态分支处理主表字段
+        InboundType billType = InboundType.valueOf(bill.getInboundType());
+        if (isDraft) {
+            updateBillFieldsForDraft(bill, dto, billType);
+        } else {
+            updateBillFieldsForPendingConfirm(bill, dto);
+        }
+        if (!this.updateById(bill)) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
+        }
+
+        // 5. 明细全量替换：先校验再全删全插
+        List<InboundBillItem> existingItems = inboundBillItemService.list(
+                new LambdaQueryWrapper<InboundBillItem>()
+                        .eq(InboundBillItem::getInboundBillId, id)
+        );
+        if (isPendingConfirm) {
+            validatePendingConfirmStructure(existingItems, dto.getItems());
+        }
+        replaceItems(bill, existingItems, dto.getItems(), billType);
+
+        // 6. 查询当前库存并组装返回详情
+        List<InboundBillItem> savedItems = inboundBillItemService.list(
+                new LambdaQueryWrapper<InboundBillItem>()
+                        .eq(InboundBillItem::getInboundBillId, id)
+                        .orderByAsc(InboundBillItem::getId)
+        );
+        // 6.1 构建已存在明细的库存数量映射
+        Map<Long, Long> stockQtyByProductId = getItemDetails(bill, savedItems);
+        // 重新查询主表以获取更新后的乐观锁版本和时间
+        InboundBill updatedBill = this.getById(id);
+        InboundBillDetailVo vo = convertToDetailVo(updatedBill);
+        populateQuantityFields(vo, savedItems);
+        vo.setItems(convertToDetailItemVos(savedItems, stockQtyByProductId, updatedBill.getStatus()));
+        return vo;
+    }
+
+    /**
+     * DRAFT 状态更新主表字段：可修改仓库、来源信息、备注、原因
+     */
+    private void updateBillFieldsForDraft(InboundBill bill, InboundBillUpdateDto dto, InboundType billType) {
+        // 更新仓库
+        if (StrUtil.isNotBlank(dto.getWarehouseId())) {
+            Long warehouseId = Long.valueOf(dto.getWarehouseId());
+            if (!warehouseId.equals(bill.getWarehouseId())) {
+                Warehouse warehouse = warehouseService.getById(warehouseId);
+                if (warehouse == null || warehouse.getStatus() == null || warehouse.getStatus() != 1) {
+                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "仓库不存在或已禁用");
+                }
+                bill.setWarehouseId(warehouseId).setWarehouseName(warehouse.getWarehouseName());
+            }
+        }
+
+        // 更新来源信息（根据录入方式决定哪些字段可改）
+        EntryMode entryMode = EntryMode.valueOf(bill.getEntryMode());
+        if (entryMode == EntryMode.MANUAL_SUPPLEMENT) {
+            // 人工补录：可修改来源对象和来源单号
+            if (dto.getSourcePartyId() != null) {
+                bill.setSourcePartyId(StrUtil.isNotBlank(dto.getSourcePartyId())
+                        ? Long.valueOf(dto.getSourcePartyId()) : null);
+            }
+            if (dto.getSourcePartyName() != null) {
+                bill.setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null));
+            }
+            if (dto.getSourceNo() != null) {
+                bill.setSourceNo(StrUtil.blankToDefault(dto.getSourceNo(), null));
+            }
+        } else if (entryMode == EntryMode.MANUAL_ADJUSTMENT) {
+            // 人工调整：可修改来源仓库（sourcePartyId），但调整单号不变
+            if (dto.getSourcePartyId() != null) {
+                bill.setSourcePartyId(StrUtil.isNotBlank(dto.getSourcePartyId())
+                        ? Long.valueOf(dto.getSourcePartyId()) : null);
+            }
+            if (dto.getSourcePartyName() != null) {
+                bill.setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null));
+            }
+        }
+        // SOURCE_GENERATED：保持来源不变
+
+        // 更新手工原因
+        if (dto.getManualReason() != null) {
+            bill.setManualReason(dto.getManualReason());
+        }
+        // 更新备注
+        if (dto.getRemark() != null) {
+            bill.setRemark(dto.getRemark());
+        }
+    }
+
+    /**
+     * PENDING_CONFIRM 状态更新主表字段：仅允许更新备注
+     */
+    private void updateBillFieldsForPendingConfirm(InboundBill bill, InboundBillUpdateDto dto) {
+        if (dto.getRemark() != null) {
+            bill.setRemark(dto.getRemark());
+        }
+    }
+
+    /**
+     * PENDING_CONFIRM 结构校验：不允许增删行、不允许换产品
+     */
+    private void validatePendingConfirmStructure(List<InboundBillItem> existingItems,
+                                                 List<InboundBillItemUpdateDto> itemDtos) {
+        if (itemDtos.size() != existingItems.size()) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "待确认状态不允许增删明细");
+        }
+        // 收集现有产品ID集合，与请求对比
+        List<Long> existingProductIds = existingItems.stream()
+                .map(InboundBillItem::getProductId)
+                .sorted()
+                .toList();
+        List<Long> requestProductIds = itemDtos.stream()
+                .map(dto -> Long.valueOf(dto.getProductId()))
+                .sorted()
+                .toList();
+        if (!existingProductIds.equals(requestProductIds)) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "待确认状态不允许变更产品");
+        }
+    }
+
+    /**
+     * 明细全量替换：删除原有明细 + 重新插入请求中的全部明细
+     */
+    private void replaceItems(InboundBill bill,
+                              List<InboundBillItem> existingItems,
+                              List<InboundBillItemUpdateDto> itemDtos,
+                              InboundType billType) {
+        // 校验质量数量（采购入库和销售退货）
+        if (billType == InboundType.PURCHASE_IN || billType == InboundType.SALES_RETURN) {
+            for (InboundBillItemUpdateDto itemDto : itemDtos) {
+                BigDecimal qualitySum = itemDto.getQualifiedQty().add(itemDto.getDefectiveQty());
+                if (qualitySum.compareTo(itemDto.getCurrentQty()) != 0) {
+                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "合格与不合格数量之和必须等于本次入库数量");
+                }
+            }
+        }
+
+        // 批量查询产品快照
+        List<Long> productIds = itemDtos.stream()
+                .map(item -> Long.valueOf(item.getProductId()))
+                .distinct()
+                .toList();
+        Map<Long, Product> productMap = getLongProductMap(productIds);
+
+        // 全删
+        if (!existingItems.isEmpty()) {
+            List<Long> idsToDelete = existingItems.stream()
+                    .map(InboundBillItem::getId)
+                    .toList();
+            inboundBillItemService.removeByIds(idsToDelete);
+        }
+
+        // 全插
+        String inboundNo = bill.getInboundNo();
+        List<InboundBillItem> itemsToSave = new ArrayList<>();
+        for (InboundBillItemUpdateDto itemDto : itemDtos) {
+            Long productId = Long.valueOf(itemDto.getProductId());
+            Product product = productMap.get(productId);
+            addItem(inboundNo, bill, itemsToSave, productId, product,
+                    itemDto.getSourceItemId(), itemDto.getPlanQty(),
+                    itemDto.getCurrentQty(), itemDto.getQualifiedQty(),
+                    itemDto.getDefectiveQty(), itemDto.getRemark());
+        }
+        if (!itemsToSave.isEmpty()) {
+            inboundBillItemService.saveBatch(itemsToSave);
+        }
     }
 
     /**

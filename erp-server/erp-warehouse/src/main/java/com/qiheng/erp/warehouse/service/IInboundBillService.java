@@ -2,6 +2,7 @@ package com.qiheng.erp.warehouse.service;
 
 import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
+import com.qiheng.erp.warehouse.domain.dto.InboundBillUpdateDto;
 import com.qiheng.erp.warehouse.domain.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
@@ -37,4 +38,12 @@ public interface IInboundBillService extends IService<InboundBill> {
      * @return 入库单详情
      */
     InboundBillDetailVo createDraft(InboundBillCreateDto dto);
+
+    /**
+     * 编辑入库单草稿或待确认单
+     * @param inboundBillId 入库单ID
+     * @param dto 编辑请求
+     * @return 入库单详情
+     */
+    InboundBillDetailVo updateDraft(String inboundBillId, InboundBillUpdateDto dto);
 }

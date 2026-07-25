@@ -91,7 +91,6 @@ export interface StockBillQuery {
 }
 
 export interface StockBillDraftItemPayload {
-  workBillItemId?: string;
   sourceItemId?: string;
   productId: string;
   planQty?: number;

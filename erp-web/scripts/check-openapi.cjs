@@ -648,7 +648,9 @@ for (const fragment of [
   'http.put(billResourceEndpoint(direction, stockBillId), payload)',
   'getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId))',
   "sourcePartyName: isAdjustment ? warehouse.warehouseName : '手工补录'",
-  "sourcePartyName: current.entryMode === 'MANUAL_ADJUSTMENT' ? warehouse.warehouseName : current.sourcePartyName",
+  "const adjustmentSourceWarehouseEditable = current.entryMode === 'MANUAL_ADJUSTMENT' && current.status === 'DRAFT'",
+  'sourcePartyId,',
+  "const supplementSourceEditable = isSupplement",
 ]) {
   if (!stockBillApiSource.includes(fragment)) throw new Error(`入库单/出库单前端路由映射缺少：${fragment}`);
 }
@@ -695,7 +697,8 @@ for (const fragment of [
   '仅允许 `DRAFT -> PENDING_CONFIRM`',
   '仅允许 `PENDING_CONFIRM -> CONFIRMED`',
   '仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`',
-  "data: { $ref: '#/components/schemas/StockBillPage' }",
+  "data: { $ref: '#/components/schemas/InboundBillPage' }",
+  "data: { $ref: '#/components/schemas/OutboundBillPage' }",
   "data: { $ref: '#/components/schemas/StockBillDetail' }",
 ]) {
   if (!source.includes(fragment)) throw new Error(`入库单/出库单 OpenAPI 缺少：${fragment}`);
@@ -708,6 +711,11 @@ if (!stockBillViewSource.includes('新增入库单')
   || !stockBillViewSource.includes("SOURCE_GENERATED: '系统生成'")
   || !stockBillViewSource.includes("return '来源仓库'")
   || !stockBillViewSource.includes('const sourcePartyFormDisplay = computed(() =>')
+  || !stockBillViewSource.includes('const manualInboundSourceEditable = computed(() =>')
+  || !stockBillViewSource.includes('const adjustmentSourceWarehouseEditable = computed(() =>')
+  || !stockBillViewSource.includes('const sourceNoSearchable = computed(() => sourceNoEditable.value && !isAdjustmentForm.value)')
+  || !stockBillViewSource.includes('sourcePartyId: form.sourcePartyId')
+  || !stockBillViewSource.includes('sourcePartyName: selectedSourcePartyLabel.value')
   || !stockBillViewSource.includes("if (adjustmentTypes.has(formBillType.value)) return selectedFormWarehouseLabel.value || '请选择调整仓库';")
   || stockBillViewSource.includes("row.billType === 'ADJUST_IN' || row.billType === 'ADJUST_OUT') return '-'")
   || !stockBillViewSource.includes('planQtyLabel')

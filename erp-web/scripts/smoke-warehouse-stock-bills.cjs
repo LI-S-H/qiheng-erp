@@ -637,7 +637,42 @@ runSmoke({
     if (pendingEditComboboxCount !== 0) throw new Error(`待确认入库单不应暴露仓库或产品选择器，当前 ${pendingEditComboboxCount} 个`);
     await page.waitForTimeout(350);
     await page.screenshot({ path: screenshotPath('warehouse-inbound-edit.png'), fullPage: true });
-    await editInbound.getByRole('button', { name: '关闭' }).click();
+    await editInbound.getByRole('button', { name: 'Close' }).click();
+    await editInbound.waitFor({ state: 'hidden' });
+    // 模拟用户通过右上角关闭后等待请求收尾，再次编辑同一张单据。
+    await page.waitForTimeout(800);
+    await selectRowAction(page, pendingInboundRow, 'IB202606130006', '编辑入库单');
+    const reopenedInbound = page.getByRole('dialog', { name: '编辑入库单' });
+    await reopenedInbound.locator('.stock-bill-product-snapshot').first().waitFor();
+    const reopenedProducts = await reopenedInbound.locator('.stock-bill-product-snapshot').allTextContents();
+    if (reopenedProducts.length !== 2 || !reopenedProducts.some(text => text.includes('P000007')) || !reopenedProducts.some(text => text.includes('P000033'))) {
+      throw new Error(`关闭后再次编辑时产品明细丢失：${JSON.stringify(reopenedProducts)}`);
+    }
+    await reopenedInbound.getByRole('button', { name: '关闭' }).click();
+
+    await clickButton(page, '重置');
+    await page.getByPlaceholder('如 IB202606140001').fill('IB202607010002');
+    await clickButton(page, '查询');
+    const manualInboundRow = tableRow(page, 'IB202607010002');
+    await manualInboundRow.waitFor();
+    await selectRowAction(page, manualInboundRow, 'IB202607010002', '编辑入库单');
+    const manualInboundEdit = page.getByRole('dialog', { name: '编辑入库单' });
+    const sourceOrderSelect = manualInboundEdit.getByRole('combobox').nth(1);
+    if (!await sourceOrderSelect.isEnabled()) throw new Error('人工补录采购入库草稿的来源单号应支持搜索选择');
+    const sourcePartySelect = manualInboundEdit.getByRole('combobox').nth(2);
+    if (!await sourcePartySelect.isEnabled()) throw new Error('人工补录采购入库草稿的来源对象应可编辑');
+    await manualInboundEdit.getByRole('button', { name: '手动输入' }).click();
+    const manualSourceNo = manualInboundEdit.getByPlaceholder('填写线下单据号');
+    if (!await manualSourceNo.isEditable()) throw new Error('人工补录采购入库草稿的来源单号应支持手工输入');
+    await manualSourceNo.fill('MANUAL-PO-20260701-UPDATED');
+    await manualInboundEdit.getByRole('button', { name: '保存修改' }).click();
+    await page.getByText('入库单已保存', { exact: true }).last().waitFor();
+    await manualInboundEdit.waitFor({ state: 'hidden' });
+    if (!(await manualInboundRow.innerText()).includes('MANUAL-PO-20260701-UPDATED')) {
+      throw new Error('人工补录采购入库草稿保存后未回显新的来源单号');
+    }
+    await clickButton(page, '重置');
+    await pendingInboundRow.waitFor();
 
     await selectRowAction(page, pendingInboundRow, 'IB202606130006', '确认入库');
     const confirmInboundDetail = page.getByRole('dialog', { name: '入库单详情' });
@@ -663,21 +698,21 @@ runSmoke({
     }
     const draftEditComboboxCount = await editDraftInbound.getByRole('combobox').count();
     if (draftEditComboboxCount < 2) throw new Error(`草稿入库单应允许选择仓库和产品，当前选择器 ${draftEditComboboxCount} 个`);
-    await selectRemoteOption(page, editDraftInbound, 0, '华东中心仓');
-    const changedDraftValues = await editDraftInbound.locator('input').evaluateAll(inputs => inputs.map(input => input.value).join('\n'));
-    if (!changedDraftValues.includes('华东中心仓')) throw new Error('调整入库编辑时切换仓库后，来源仓库未即时更新');
+    const draftSourceWarehouseSelect = editDraftInbound.getByRole('combobox').nth(1);
+    if (!await draftSourceWarehouseSelect.isEnabled()) throw new Error('调整入库草稿的来源仓库应可选择');
+    await selectRemoteOption(page, editDraftInbound, 1, '华东中心仓');
+    if (!(await editDraftInbound.innerText()).includes('华东中心仓')) throw new Error('调整入库编辑时选择来源仓库后未即时回显');
     await editDraftInbound.getByRole('button', { name: '保存修改' }).click();
-    await page.getByText('入库单已保存', { exact: true }).waitFor();
+    await page.getByText('入库单已保存', { exact: true }).last().waitFor();
     await editDraftInbound.waitFor({ state: 'hidden' });
     if (!(await tableRow(page, 'IB202606140003').innerText()).includes('华东中心仓')) {
-      throw new Error('调整入库保存后未回写来源仓库快照');
+      throw new Error('调整入库保存后未回写所选来源仓库快照');
     }
     await clickButton(page, '新增入库单');
     const createInbound = page.getByRole('dialog', { name: '新增入库单' });
     if (!(await createInbound.innerText()).includes('来源仓库')) throw new Error('新建调整入库单缺少来源仓库字段');
     await selectRemoteOption(page, createInbound, 1, '华东中心仓');
-    const createInboundValues = await createInbound.locator('input').evaluateAll(inputs => inputs.map(input => input.value).join('\n'));
-    if (!createInboundValues.includes('华东中心仓')) throw new Error('新建调整入库单选择仓库后未显示来源仓库');
+    if (!(await createInbound.innerText()).includes('华东中心仓')) throw new Error('新建调整入库单选择来源仓库后未显示');
     await createInbound.getByRole('button', { name: '关闭' }).click();
     await page.waitForTimeout(350);
     await page.screenshot({ path: screenshotPath('warehouse-inbound-draft-edit.png'), fullPage: true });
@@ -702,6 +737,23 @@ runSmoke({
 
     await page.locator('[data-menu-path="/warehouse/outbound-bills"]').click();
     await page.getByRole('heading', { name: '出库单' }).waitFor();
+    await clickButton(page, '重置');
+    await page.getByPlaceholder('如 OB202606140002').fill('OB202607010002');
+    await clickButton(page, '查询');
+    const draftAdjustmentOutboundRow = tableRow(page, 'OB202607010002');
+    await draftAdjustmentOutboundRow.waitFor();
+    await selectRowAction(page, draftAdjustmentOutboundRow, 'OB202607010002', '编辑出库单');
+    const draftAdjustmentOutboundEdit = page.getByRole('dialog', { name: '编辑出库单' });
+    const draftOutboundSourceWarehouseSelect = draftAdjustmentOutboundEdit.getByRole('combobox').nth(1);
+    if (!await draftOutboundSourceWarehouseSelect.isEnabled()) throw new Error('调整出库草稿的来源仓库应可选择');
+    await selectRemoteOption(page, draftAdjustmentOutboundEdit, 1, '华南中心仓');
+    await draftAdjustmentOutboundEdit.getByRole('button', { name: '保存修改' }).click();
+    await page.getByText('出库单已保存', { exact: true }).last().waitFor();
+    await draftAdjustmentOutboundEdit.waitFor({ state: 'hidden' });
+    if (!(await draftAdjustmentOutboundRow.innerText()).includes('华南中心仓')) {
+      throw new Error('调整出库保存后未回写所选来源仓库快照');
+    }
+    await clickButton(page, '重置');
     await tableRow(page, 'OB202606140002').waitFor();
     await assertFixedTableLayout(page, 12);
     await assertDistinctTypeBadges(page, ['销售出库', '采购退货出库', '调整出库']);

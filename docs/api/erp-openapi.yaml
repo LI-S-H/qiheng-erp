@@ -7323,10 +7323,9 @@ components:
 
     StockBillDraftItemRequest:
       type: object
-      description: 工作单明细写入 DTO；保留历史 schema 名称仅为前端类型兼容，不表示直接写入 `stock_bill_item`。
+      description: 工作单明细写入 DTO；保留历史 schema 名称仅为前端类型兼容，不表示直接写入 `stock_bill_item`。编辑时前端提交全量明细快照，后端执行全量替换。
       required: [productId, currentQty, qualifiedQty, defectiveQty, remark]
       properties:
-        workBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
         sourceItemId: { type: string, nullable: true, description: 来源单据明细 ID；前端从已有单据下拉选择时自动附带，对应采购订单明细 ID 或销售退货明细 ID；手动输入模式不传 }
         productId: { type: string, description: 产品 ID，后端保存当前产品编码、名称和单位快照 }
         planQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 来源计划数量业务真实值（如采购100件传100）；前端从来源单据带入，后端按100倍整数持久化；手工录入不传，后端在确认时根据 sourceItemId 回填 }
@@ -7369,7 +7368,7 @@ components:
 
     StockBillUpdateRequest:
       type: object
-      description: 入库/出库工作单更新 DTO；不直接更新确认后的库存流水。
+      description: 入库/出库工作单更新 DTO；不直接更新确认后的库存流水。明细为全量替换，后端会先删除原有明细再按请求重新插入，前端需提交完整明细列表。
       required: [version, items]
       properties:
         version: { type: integer, minimum: 0, description: 当前入库单或出库单工作单版本，用于乐观锁。 }
@@ -7497,7 +7496,7 @@ components:
     StockBillItem:
       type: object
       description: 工作单明细响应；`beforeQty`、`changeQty`、`afterQty` 仅在确认后作为关联库存流水快照返回，不能提交修改。
-      required: [workBillItemId, workBillId, billNo, sourceItemId, productId, productCode, productName, unitName, quantityPrecision, planQty, processedQty, currentQty, pendingQty, qualifiedQty, defectiveQty, stockBillItemId, beforeQty, changeQty, afterQty, createTime, updateTime, remark]
+      required: [workBillItemId, workBillId, billNo, productId, productCode, productName, unitName, quantityPrecision, planQty, processedQty, currentQty, pendingQty, qualifiedQty, defectiveQty, beforeQty, changeQty, afterQty, createTime, updateTime, remark]
       properties:
         workBillItemId: { type: string, description: 工作单明细稳定 ID，对应 `inbound_bill_item` 或 `outbound_bill_item` 主键，BIGINT 按字符串传输 }
         workBillId: { type: string, description: 所属工作单稳定 ID，BIGINT 按字符串传输 }

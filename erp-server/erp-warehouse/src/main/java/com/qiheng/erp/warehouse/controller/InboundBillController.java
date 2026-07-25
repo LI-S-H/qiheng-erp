@@ -5,6 +5,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
+import com.qiheng.erp.warehouse.domain.dto.InboundBillUpdateDto;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
 import com.qiheng.erp.warehouse.service.IInboundBillService;
@@ -16,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 
@@ -76,5 +78,22 @@ public class InboundBillController {
         StpUtil.checkPermission("warehouse:manage");
         log.info("新增手工入库单草稿，参数: {}", dto);
         return Result.ok(inboundBillService.createDraft(dto));
+    }
+
+    /**
+     * 编辑入库单草稿或待确认单
+     * @param inboundBillId 入库单ID（字符串形式）
+     * @param dto 编辑请求
+     * @return 入库单详情
+     */
+    @PutMapping("/{inboundBillId}")
+    @Operation(summary = "编辑入库单草稿或待确认单")
+    public Result<InboundBillDetailVo> updateDraft(
+            @Parameter(description = "入库单ID，对应 inbound_bill.id", required = true)
+            @PathVariable String inboundBillId,
+            @Valid @RequestBody InboundBillUpdateDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("编辑入库单，ID: {}, 参数: {}", inboundBillId, dto);
+        return Result.ok(inboundBillService.updateDraft(inboundBillId, dto));
     }
 }

@@ -501,7 +501,7 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
     const sourceGenerated = current.entryMode === 'SOURCE_GENERATED';
     const structureLocked = sourceGenerated || current.status === 'PENDING_CONFIRM';
     if (structureLocked && (payload.items.length !== current.items.length
-      || payload.items.some(item => !item.workBillItemId || !current.items.some(existing => existing.workBillItemId === item.workBillItemId && existing.productId === item.productId)))) {
+      || !payload.items.every(item => current.items.some(existing => existing.productId === item.productId)))) {
       throw new Error('系统生成单或待确认单不能增删或更换产品');
     }
     const { warehouses, products } = await loadMockMasterData(payload.items.map(item => item.productId));
@@ -511,14 +511,14 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
     if (!warehouse) throw new Error('只能选择启用状态的仓库');
     const timestamp = nowText();
     const items = payload.items.map((item, index) => {
-      const existing = current.items.find(candidate => candidate.workBillItemId === item.workBillItemId);
+      const existing = current.items.find(candidate => candidate.productId === item.productId);
       const product = products.find(option => option.productId === item.productId);
       if (!product && !existing) throw new Error('产品不存在或已停用');
       const snapshot = sourceGenerated ? existing : product || existing;
       if (!snapshot) throw new Error('产品不存在');
       const currentStock = getMockWarehouseStock(warehouse.warehouseId, item.productId);
       return {
-        workBillItemId: existing?.workBillItemId || `${stockBillId}${Date.now()}${index + 1}`,
+        workBillItemId: `${stockBillId}${Date.now()}${index + 1}`,
         workBillId: stockBillId,
         billNo: current.billNo,
         sourceItemId: existing?.sourceItemId || null,

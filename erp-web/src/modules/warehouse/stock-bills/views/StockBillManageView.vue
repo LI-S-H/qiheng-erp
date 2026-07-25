@@ -79,6 +79,7 @@ import type {
 
 interface DraftFormItem extends StockBillDraftItemPayload {
   key: string;
+  workBillItemId?: string;
   productCode?: string;
   productName?: string;
   unitName?: string;
@@ -1064,7 +1065,6 @@ function validateForm() {
 
 function buildItemPayloads(): StockBillDraftItemPayload[] {
   return form.items.map(item => ({
-    ...(item.workBillItemId ? { workBillItemId: item.workBillItemId } : {}),
     ...(item.sourceItemId ? { sourceItemId: item.sourceItemId } : {}),
     productId: item.productId,
     ...(item.planQty != null ? { planQty: Number(item.planQty) } : {}),
@@ -1106,7 +1106,7 @@ async function submitForm() {
           sourcePartyName: selectedSourcePartyLabel.value,
         } : {}),
         ...(manualReasonEditable.value ? { manualReason: form.manualReason.trim() } : {}),
-        ...(form.remark.trim() ? { remark: form.remark.trim() } : {}),
+        remark: form.remark.trim(),
       };
       await updateStockBill(billDirection(editingDetail.value.billType), editingDetail.value.workBillId, payload);
       toast.success(`${pageText.value.formTitle}已保存`);
@@ -1619,8 +1619,8 @@ onMounted(async () => {
                           <div class="min-w-0 flex-1">
                             <RemoteSearchSelect v-if="structureEditable" v-model="item.productId" :selected-label="productLabel(item)" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" @update:model-value="handleProductChange(item, index)" />
                             <div v-else class="stock-bill-product-snapshot">
-                              <code>{{ productDisplay(item).code }}</code>
-                              <OverflowTooltip :text="productLabel(item)" class="block max-w-full font-medium" />
+                              <code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ productDisplay(item).code }}</code>
+                              <span class="max-w-[150px] truncate text-center font-medium" :title="productDisplay(item).name">{{ productDisplay(item).name }}</span>
                               <small>{{ productDisplay(item).unitName }}</small>
                             </div>
                           </div>
@@ -1691,7 +1691,7 @@ onMounted(async () => {
                     <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">{{ planQtyLabel(detail.billType) }}</TableHead><TableHead class="text-right">{{ pageText.processedLabel }}</TableHead><TableHead class="text-right">{{ pageText.currentQtyLabel }}</TableHead><TableHead class="text-right">确认后{{ pageText.pendingQtyLabel }}</TableHead><TableHead class="text-right">合格数量</TableHead><TableHead class="text-right">不合格数量</TableHead><TableHead class="text-right">变动前</TableHead><TableHead class="text-right">变动后</TableHead><TableHead>备注</TableHead></TableRow></TableHeader>
                     <TableBody>
                       <TableRow v-for="item in detail.items" :key="item.workBillItemId" :data-stock-bill-item-id="item.workBillItemId">
-                        <TableCell><div class="flex flex-col gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><span class="font-medium">{{ item.productName }}</span></div></TableCell>
+                        <TableCell><div class="flex flex-col items-center gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><span class="max-w-[150px] truncate text-center font-medium" :title="item.productName">{{ item.productName }}</span></div></TableCell>
                         <TableCell class="text-center">{{ item.unitName }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.planQty) }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.processedQty) }}</TableCell>

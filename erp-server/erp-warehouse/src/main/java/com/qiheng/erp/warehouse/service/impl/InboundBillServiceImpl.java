@@ -47,6 +47,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -288,6 +289,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                         .eq(InboundBillItem::getInboundBillId, id)
                         .orderByAsc(InboundBillItem::getId)
         );
+        // 汇总每个来源明细的已确认入库数量（排除当前单据）
+        Map<Long, Long> confirmedQtyBySourceItemId = aggregateConfirmedQtyBySourceItemId(items, id);
         // 查当前仓库这批产品的库存（一次SQL，避免N+1）
         Map<Long, Long> stockQtyByProductId = getItemDetails(bill, items);
 
@@ -295,7 +298,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 复用填充数量字段的逻辑（itemCount、总数量、单位、摘要）
         populateQuantityFields(vo, items);
         // 转换明细项（根据订单状态推导 before/change/after_qty）
-        vo.setItems(convertToDetailItemVos(items, stockQtyByProductId, bill.getStatus()));
+        vo.setItems(convertToDetailItemVos(items, stockQtyByProductId, bill.getStatus(), confirmedQtyBySourceItemId));
         return vo;
     }
 
@@ -375,7 +378,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                     .setProductName(product.getProductName())
                     .setUnitName(product.getUnitName())
                     .setQuantityPrecision(product.getQuantityPrecision())
-                    .setPlanQty(null)
+                    .setPlanQty(QtyUtil.toStored(itemDto.getPlanQty()))
                     .setProcessedQty(null)
                     .setCurrentQty(QtyUtil.toStored(itemDto.getCurrentQty()))
                     .setPendingQty(null)
@@ -398,7 +401,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         );
         InboundBillDetailVo vo = convertToDetailVo(bill);
         populateQuantityFields(vo, savedItems);
-        vo.setItems(convertToDetailItemVos(savedItems, stockQtyByProductId, bill.getStatus()));
+        vo.setItems(convertToDetailItemVos(savedItems, stockQtyByProductId, bill.getStatus(), Collections.emptyMap()));
         return vo;
     }
 
@@ -476,7 +479,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     private List<InboundBillDetailVo.InboundBillDetailItemVo> convertToDetailItemVos(
             List<InboundBillItem> items,
             Map<Long, Long> stockQtyByProductId,
-            String billStatus) {
+            String billStatus,
+            Map<Long, Long> confirmedQtyBySourceItemId) {
         boolean isConfirmed = InboundBillStatus.CONFIRMED.name().equals(billStatus);
         return items.stream().map(item -> {
             InboundBillDetailVo.InboundBillDetailItemVo ivo = new InboundBillDetailVo.InboundBillDetailItemVo();
@@ -492,9 +496,25 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             ivo.setQuantityPrecision(item.getQuantityPrecision());
 
             // 数量全部除以 100（数据库按 100 倍整数存储），契约为 number,null
-            ivo.setPlanQty(QtyUtil.toDecimal(item.getPlanQty()));
-            ivo.setProcessedQty(QtyUtil.toDecimal(item.getProcessedQty()));
-            ivo.setPendingQty(QtyUtil.toDecimal(item.getPendingQty()));
+            BigDecimal planQtyDecimal = QtyUtil.toDecimal(item.getPlanQty());
+            ivo.setPlanQty(planQtyDecimal);
+
+            // 有关联来源明细时，实时汇总已确认入库数量；否则读实体快照
+            BigDecimal processedQtyDecimal;
+            BigDecimal pendingQtyDecimal;
+            if (item.getSourceItemId() != null && confirmedQtyBySourceItemId != null) {
+                Long confirmedRaw = confirmedQtyBySourceItemId.getOrDefault(item.getSourceItemId(), 0L);
+                processedQtyDecimal = QtyUtil.defaultZero(QtyUtil.toDecimal(confirmedRaw));
+                BigDecimal currentForPending = QtyUtil.defaultZero(QtyUtil.toDecimal(item.getCurrentQty()));
+                pendingQtyDecimal = planQtyDecimal != null
+                        ? planQtyDecimal.subtract(processedQtyDecimal).subtract(currentForPending).max(BigDecimal.ZERO)
+                        : null;
+            } else {
+                processedQtyDecimal = QtyUtil.toDecimal(item.getProcessedQty());
+                pendingQtyDecimal = QtyUtil.toDecimal(item.getPendingQty());
+            }
+            ivo.setProcessedQty(processedQtyDecimal);
+            ivo.setPendingQty(pendingQtyDecimal);
             BigDecimal currentQty = QtyUtil.toDecimal(item.getCurrentQty());
             // current / qualified / defective / before / change / after 契约为 number（不允许null），默认0
             ivo.setCurrentQty(currentQty != null ? currentQty : BigDecimal.ZERO);
@@ -566,5 +586,50 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             case PURCHASE_IN, SALES_RETURN -> EntryMode.MANUAL_SUPPLEMENT.name();
             case ADJUST_IN -> EntryMode.MANUAL_ADJUSTMENT.name();
         };
+    }
+
+    /**
+     * 汇总每个来源明细行的已确认入库数量（排除指定入库单）
+     * @param items 当前入库单的明细列表
+     * @param excludeBillId 需要排除的入库单ID（避免重复计算自身）
+     * @return sourceItemId → 已确认入库总数量（100倍整数）
+     */
+    private Map<Long, Long> aggregateConfirmedQtyBySourceItemId(List<InboundBillItem> items, Long excludeBillId) {
+        List<Long> sourceItemIds = items.stream()
+                .map(InboundBillItem::getSourceItemId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (sourceItemIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        // 查询每个来源明细的已确认入库总量
+        List<InboundBillItem> confirmedItems = inboundBillItemService.list(
+                new LambdaQueryWrapper<InboundBillItem>()
+                        .in(InboundBillItem::getSourceItemId, sourceItemIds)
+                        .ne(excludeBillId != null, InboundBillItem::getInboundBillId, excludeBillId)
+                        .select(InboundBillItem::getSourceItemId, InboundBillItem::getCurrentQty)
+        );
+        // 关联查询这些明细所属入库单是否已确认
+        if (confirmedItems.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> billIds = confirmedItems.stream()
+                .map(InboundBillItem::getInboundBillId)
+                .distinct()
+                .toList();
+        Set<Long> confirmedBillIds = this.list(
+                new LambdaQueryWrapper<InboundBill>()
+                        .in(InboundBill::getId, billIds)
+                        .eq(InboundBill::getStatus, InboundBillStatus.CONFIRMED.name())
+                        .select(InboundBill::getId)
+        ).stream().map(InboundBill::getId).collect(Collectors.toSet());
+
+        return confirmedItems.stream()
+                .filter(item -> confirmedBillIds.contains(item.getInboundBillId()))
+                .collect(Collectors.groupingBy(
+                        InboundBillItem::getSourceItemId,
+                        Collectors.summingLong(item -> item.getCurrentQty() != null ? item.getCurrentQty() : 0L)
+                ));
     }
 }

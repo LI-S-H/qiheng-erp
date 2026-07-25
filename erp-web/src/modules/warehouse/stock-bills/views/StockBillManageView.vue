@@ -83,7 +83,7 @@ interface DraftFormItem extends StockBillDraftItemPayload {
   productName?: string;
   unitName?: string;
   quantityPrecision?: number;
-  planQty?: number | null;
+  planQty?: number;
   processedQty?: number | null;
   pendingQty?: number | null;
 }
@@ -866,7 +866,7 @@ async function openEditDialog(row: StockBillListItem) {
       productName: item.productName,
       unitName: item.unitName,
       quantityPrecision: item.quantityPrecision,
-      planQty: item.planQty,
+      planQty: item.planQty ?? undefined,
       processedQty: item.processedQty,
       pendingQty: item.pendingQty,
       currentQty: item.currentQty,
@@ -1004,6 +1004,7 @@ function buildItemPayloads(): StockBillDraftItemPayload[] {
     ...(item.workBillItemId ? { workBillItemId: item.workBillItemId } : {}),
     ...(item.sourceItemId ? { sourceItemId: item.sourceItemId } : {}),
     productId: item.productId,
+    ...(item.planQty != null ? { planQty: Number(item.planQty) } : {}),
     currentQty: Number(item.currentQty),
     qualifiedQty: qualityFieldsVisible.value ? Number(item.qualifiedQty) : 0,
     defectiveQty: qualityFieldsVisible.value ? Number(item.defectiveQty) : 0,

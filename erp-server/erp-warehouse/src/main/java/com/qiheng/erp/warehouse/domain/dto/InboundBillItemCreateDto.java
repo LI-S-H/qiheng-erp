@@ -26,6 +26,9 @@ public class InboundBillItemCreateDto {
     @Schema(description = "来源单据明细ID，前端从已有单据下拉选择时自动附带")
     private String sourceItemId;
 
+    @Schema(description = "来源计划数量，业务真实值（如100件存100），前端从来源单据带入；后端按100倍整数持久化")
+    private BigDecimal planQty;
+
     @Schema(description = "本次入库数量，最多两位小数")
     @NotNull(message = "本次入库数量不能为空")
     @DecimalMin(value = "0.01", message = "本次入库数量必须大于0")

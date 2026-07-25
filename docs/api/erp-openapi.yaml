@@ -7327,7 +7327,9 @@ components:
       required: [productId, currentQty, qualifiedQty, defectiveQty, remark]
       properties:
         workBillItemId: { type: string, nullable: true, description: 编辑草稿时传明细 ID；新增明细时不传 }
+        sourceItemId: { type: string, nullable: true, description: 来源单据明细 ID；前端从已有单据下拉选择时自动附带，对应采购订单明细 ID 或销售退货明细 ID；手动输入模式不传 }
         productId: { type: string, description: 产品 ID，后端保存当前产品编码、名称和单位快照 }
+        planQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 来源计划数量业务真实值（如采购100件传100）；前端从来源单据带入，后端按100倍整数持久化；手工录入不传，后端在确认时根据 sourceItemId 回填 }
         currentQty: { type: number, format: double, minimum: 0, exclusiveMinimum: true, multipleOf: 0.01, description: 本次出入库业务真实值，最多两位小数；后端按产品数量精度校验并按 100 倍整数持久化 }
         qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的合格数量，其他类型传 0 }
         defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 采购入库或销售退货的不合格数量，其他类型传 0 }

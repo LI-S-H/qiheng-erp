@@ -41,6 +41,10 @@
             <version>1.45.0</version>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-security</artifactId>
+        </dependency>
     </dependencies>
 
 

@@ -6,12 +6,21 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
+import com.qiheng.erp.product.domain.entity.Product;
+import com.qiheng.erp.product.mapper.ProductMapper;
+import com.qiheng.erp.security.context.UserContext;
+import com.qiheng.erp.security.domain.dto.LoginUser;
+import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
+import com.qiheng.erp.warehouse.domain.dto.InboundBillItemCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
 import com.qiheng.erp.warehouse.domain.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.entity.InboundBillItem;
+import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.domain.enums.EntryMode;
 import com.qiheng.erp.warehouse.domain.enums.InboundBillStatus;
+import com.qiheng.erp.warehouse.domain.enums.InboundType;
+import com.qiheng.erp.warehouse.domain.enums.SourceType;
 
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillListItemVo;
@@ -20,14 +29,20 @@ import com.qiheng.erp.warehouse.domain.vo.InboundBillSummaryVo;
 import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
 import com.qiheng.erp.warehouse.service.IInboundBillItemService;
 import com.qiheng.erp.warehouse.service.IInboundBillService;
+import com.qiheng.erp.warehouse.service.IWarehouseService;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +73,15 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     @Autowired
     private IWarehouseStockService warehouseStockService;
 
+    @Autowired
+    private IWarehouseService warehouseService;
+
+    @Autowired
+    private ProductMapper productMapper;
+
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
     /**
      * 分页查询入库单记录
      * @param dto 分页查询请求
@@ -68,8 +92,13 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 分页查询入库单记录
         Page<InboundBillListItemVo> page = dto.toPage();
         // 处理仓库ID
-        Long warehouseId = StrUtil.isNotBlank(dto.getWarehouseId())
-                ? Long.valueOf(dto.getWarehouseId()) : null;
+        Long warehouseId;
+        try {
+            warehouseId = StrUtil.isNotBlank(dto.getWarehouseId())
+                    ? Long.valueOf(dto.getWarehouseId()) : null;
+        } catch (NumberFormatException e) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(),"仓库ID格式错误，必须为数字字符串");
+        }
         // 构建查询条件
         MPJLambdaWrapper<InboundBill> wrapper = buildQueryWrapper(dto, warehouseId);
         // 执行查询
@@ -263,27 +292,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                         .orderByAsc(InboundBillItem::getId)
         );
         // 查当前仓库这批产品的库存（一次SQL，避免N+1）
-        List<Long> productIds = items.stream()
-                .map(InboundBillItem::getProductId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        Map<Long, Long> stockQtyByProductId;
-        if (productIds.isEmpty() || bill.getWarehouseId() == null) {
-            stockQtyByProductId = Collections.emptyMap();
-        } else {
-            List<WarehouseStock> stocks = warehouseStockService.list(
-                    new LambdaQueryWrapper<WarehouseStock>()
-                            .eq(WarehouseStock::getWarehouseId, bill.getWarehouseId())
-                            .in(WarehouseStock::getProductId, productIds)
-            );
-            // 组装成 productId -> 当前仓库库存数量（原始100倍整数），key不存在默认0
-            stockQtyByProductId = stocks.stream().collect(Collectors.toMap(
-                    WarehouseStock::getProductId,
-                    s -> s.getStockQty() != null ? s.getStockQty() : 0L,
-                    (a, b) -> a
-            ));
-        }
+        Map<Long, Long> stockQtyByProductId = getItemDetails(bill, items);
 
         InboundBillDetailVo vo = convertToDetailVo(bill);
         // 复用填充数量字段的逻辑（itemCount、总数量、单位、摘要）
@@ -291,6 +300,139 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 转换明细项（根据订单状态推导 before/change/after_qty）
         vo.setItems(convertToDetailItemVos(items, stockQtyByProductId, bill.getStatus()));
         return vo;
+    }
+
+    /**
+     * 新增手工入库单草稿
+     * @param dto 创建请求
+     * @return 入库单详情
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public InboundBillDetailVo createDraft(InboundBillCreateDto dto) {
+        // 1. 校验仓库是否存在且已启用
+        Long warehouseId = Long.valueOf(dto.getWarehouseId());
+        Warehouse warehouse = warehouseService.getById(warehouseId);
+        if (warehouse == null || warehouse.getStatus() == null || warehouse.getStatus() != 1) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "仓库不存在或已禁用");
+        }
+
+        // 2. 批量查询产品快照
+        List<Long> productIds = dto.getItems().stream()
+                .map(item -> Long.valueOf(item.getProductId()))
+                .distinct()
+                .toList();
+        List<Product> products = productMapper.selectByIds(productIds);
+        if (products.size() != productIds.size()) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "部分产品不存在");
+        }
+        Map<Long, Product> productMap = products.stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+
+        // 3. 确定来源类型和录入方式
+        InboundType billType = dto.getBillType();
+        String sourceType = resolveSourceType(billType);
+        String entryMode = resolveEntryMode(billType);
+
+        // 4. 生成入库单号
+        String inboundNo = generateInboundNo();
+
+        // 5. 获取当前登录用户
+        LoginUser currentUser = UserContext.getCurrentUser();
+        Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
+        String currentUserName = currentUser != null ? currentUser.getRealName() : null;
+
+        // 6. 组装入库单主表
+        InboundBill bill = new InboundBill()
+                .setInboundNo(inboundNo)
+                .setInboundType(billType.name())
+                .setSourceType(sourceType)
+                .setSourceId(StrUtil.isNotBlank(dto.getSourceId()) ? Long.valueOf(dto.getSourceId()) : null)
+                .setSourceNo(StrUtil.blankToDefault(dto.getSourceNo(), null))
+                .setSourcePartyId(StrUtil.isNotBlank(dto.getSourcePartyId()) ? Long.valueOf(dto.getSourcePartyId()) : null)
+                .setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null))
+                .setEntryMode(entryMode)
+                .setWarehouseId(warehouseId)
+                .setWarehouseName(warehouse.getWarehouseName())
+                .setStatus(InboundBillStatus.DRAFT.name())
+                .setCreatedById(currentUserId)
+                .setCreatedByName(currentUserName)
+                .setResponsibleById(currentUserId)
+                .setResponsibleByName(currentUserName)
+                .setManualReason(dto.getManualReason())
+                .setRemark(dto.getRemark());
+        this.save(bill);
+
+        // 7. 组装入库单明细
+        List<InboundBillItem> items = new ArrayList<>();
+        for (InboundBillItemCreateDto itemDto : dto.getItems()) {
+            Long productId = Long.valueOf(itemDto.getProductId());
+            Product product = productMap.get(productId);
+
+            InboundBillItem item = new InboundBillItem()
+                    .setInboundBillId(bill.getId())
+                    .setInboundNo(inboundNo)
+                    .setSourceItemId(null)
+                    .setProductId(productId)
+                    .setProductCode(product.getProductCode())
+                    .setProductName(product.getProductName())
+                    .setUnitName(product.getUnitName())
+                    .setQuantityPrecision(product.getQuantityPrecision())
+                    .setPlanQty(null)
+                    .setProcessedQty(null)
+                    .setCurrentQty(toQtyRaw(itemDto.getCurrentQty()))
+                    .setPendingQty(null)
+                    .setQualifiedQty(toQtyRaw(itemDto.getQualifiedQty()))
+                    .setDefectiveQty(toQtyRaw(itemDto.getDefectiveQty()))
+                    .setRemark(itemDto.getRemark());
+            items.add(item);
+        }
+        inboundBillItemService.saveBatch(items);
+
+        // 8. 查询当前库存，组装返回详情
+        Map<Long, Long> stockQtyByProductId = getItemDetails(bill, items);
+
+        // 9. 组装详情VO
+        // 重新查询明细以获取数据库生成的ID和时间
+        List<InboundBillItem> savedItems = inboundBillItemService.list(
+                new LambdaQueryWrapper<InboundBillItem>()
+                        .eq(InboundBillItem::getInboundBillId, bill.getId())
+                        .orderByAsc(InboundBillItem::getId)
+        );
+        InboundBillDetailVo vo = convertToDetailVo(bill);
+        populateQuantityFields(vo, savedItems);
+        vo.setItems(convertToDetailItemVos(savedItems, stockQtyByProductId, bill.getStatus()));
+        return vo;
+    }
+
+    /**
+     * 根据入库单ID查询入库单明细列表并生成库存数量映射表
+     * @param bill 入库单实体
+     * @param items 入库单明细列表
+     * @return 产品ID到库存数量的映射
+     */
+    private Map<Long, Long> getItemDetails(InboundBill bill, List<InboundBillItem> items) {
+        List<Long> distinctProductIds = items.stream()
+                .map(InboundBillItem::getProductId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Long> stockQtyByProductId;
+        if (distinctProductIds.isEmpty() || bill.getWarehouseId() == null) {
+            stockQtyByProductId = Collections.emptyMap();
+        } else {
+            List<WarehouseStock> stocks = warehouseStockService.list(
+                    new LambdaQueryWrapper<WarehouseStock>()
+                            .eq(WarehouseStock::getWarehouseId, bill.getWarehouseId())
+                            .in(WarehouseStock::getProductId, distinctProductIds)
+            );
+            stockQtyByProductId = stocks.stream().collect(Collectors.toMap(
+                    WarehouseStock::getProductId,
+                    s -> s.getStockQty() != null ? s.getStockQty() : 0L,
+                    (a, b) -> a
+            ));
+        }
+        return stockQtyByProductId;
     }
 
     /**
@@ -406,5 +548,56 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
      */
     private static BigDecimal defaultZero(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;
+    }
+
+    /**
+     * 业务数量转100倍整数（与divideQty反向操作）
+     * @param qty 业务真实数量
+     * @return 100倍整数，null返回null
+     */
+    private static Long toQtyRaw(BigDecimal qty) {
+        if (qty == null) {
+            return null;
+        }
+        return qty.multiply(BigDecimal.valueOf(100))
+                .setScale(0, RoundingMode.HALF_UP)
+                .longValue();
+    }
+
+    private static final DateTimeFormatter INBOUND_NO_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    /**
+     * 通过Redis自增生成入库单号，格式：IByyyyMMddNNNN
+     * @return 入库单号
+     */
+    private String generateInboundNo() {
+        String dateStr = LocalDate.now().format(INBOUND_NO_DATE_FMT);
+        String redisKey = "inbound:bill:no:" + dateStr;
+        Long seq = stringRedisTemplate.opsForValue().increment(redisKey);
+        if (seq == null) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "生成入库单号失败");
+        }
+        return "IB" + dateStr + String.format("%04d", seq);
+    }
+
+    /**
+     * 根据入库类型确定来源类型
+     */
+    private static String resolveSourceType(InboundType billType) {
+        return switch (billType) {
+            case PURCHASE_IN -> SourceType.PURCHASE_ORDER.name();
+            case SALES_RETURN -> SourceType.SALES_RETURN_ORDER.name();
+            case ADJUST_IN -> SourceType.STOCK_ADJUST.name();
+        };
+    }
+
+    /**
+     * 根据入库类型确定录入方式
+     */
+    private static String resolveEntryMode(InboundType billType) {
+        return switch (billType) {
+            case PURCHASE_IN, SALES_RETURN -> EntryMode.MANUAL_SUPPLEMENT.name();
+            case ADJUST_IN -> EntryMode.MANUAL_ADJUSTMENT.name();
+        };
     }
 }

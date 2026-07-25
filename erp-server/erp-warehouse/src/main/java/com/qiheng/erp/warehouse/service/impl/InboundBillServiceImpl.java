@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
+import com.qiheng.erp.common.util.BillNoGenerator;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.mapper.ProductMapper;
@@ -35,13 +36,10 @@ import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -77,7 +75,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     private ProductMapper productMapper;
 
     @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    private BillNoGenerator billNoGenerator;
 
     /**
      * 分页查询入库单记录
@@ -334,7 +332,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         String entryMode = resolveEntryMode(billType);
 
         // 5. 生成入库单号
-        String inboundNo = generateInboundNo();
+        String inboundNo = billNoGenerator.nextNo("RK");
 
         // 6. 获取当前登录用户
         LoginUser currentUser = UserContext.getCurrentUser();
@@ -555,23 +553,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             ivo.setRemark(item.getRemark());
             return ivo;
         }).collect(Collectors.toList());
-    }
-
-
-    private static final DateTimeFormatter INBOUND_NO_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
-
-    /**
-     * 通过Redis自增生成入库单号，格式：IByyyyMMddNNNN
-     * @return 入库单号
-     */
-    private String generateInboundNo() {
-        String dateStr = LocalDate.now().format(INBOUND_NO_DATE_FMT);
-        String redisKey = "inbound:bill:no:" + dateStr;
-        Long seq = stringRedisTemplate.opsForValue().increment(redisKey);
-        if (seq == null) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "生成入库单号失败");
-        }
-        return "IB" + dateStr + String.format("%04d", seq);
     }
 
     /**

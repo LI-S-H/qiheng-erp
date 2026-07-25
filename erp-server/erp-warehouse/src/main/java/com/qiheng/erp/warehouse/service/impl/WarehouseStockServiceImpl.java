@@ -15,11 +15,11 @@ import com.qiheng.erp.warehouse.mapper.WarehouseStockMapper;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
+import com.qiheng.erp.common.util.QtyUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -153,17 +153,10 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
      * @param records 库存记录列表
      */
     private void convertQtyValues(List<WarehouseStockVo> records) {
-        BigDecimal divisor = BigDecimal.valueOf(100);
         records.forEach(vo -> {
-            if (vo.getStockQty() != null) {
-                vo.setStockQty(vo.getStockQty().divide(divisor, 2, RoundingMode.HALF_UP));
-            }
-            if (vo.getLockedQty() != null) {
-                vo.setLockedQty(vo.getLockedQty().divide(divisor, 2, RoundingMode.HALF_UP));
-            }
-            if (vo.getSafetyStockQty() != null) {
-                vo.setSafetyStockQty(vo.getSafetyStockQty().divide(divisor, 2, RoundingMode.HALF_UP));
-            }
+            vo.setStockQty(QtyUtil.toDecimal(vo.getStockQty()));
+            vo.setLockedQty(QtyUtil.toDecimal(vo.getLockedQty()));
+            vo.setSafetyStockQty(QtyUtil.toDecimal(vo.getSafetyStockQty()));
             // 计算可用库存 = 当前库存 - 锁定库存
             if (vo.getStockQty() != null && vo.getLockedQty() != null) {
                 vo.setAvailableQty(vo.getStockQty().subtract(vo.getLockedQty()));

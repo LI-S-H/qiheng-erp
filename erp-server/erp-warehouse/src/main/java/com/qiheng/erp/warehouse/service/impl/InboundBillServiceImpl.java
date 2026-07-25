@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
+import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.security.context.UserContext;
@@ -39,7 +40,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -60,9 +60,6 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, InboundBill> implements IInboundBillService {
-
-    private static final long QTY_DIVISOR_LONG = 100L;
-    private static final BigDecimal QTY_DIVISOR = BigDecimal.valueOf(QTY_DIVISOR_LONG);
 
     @Autowired
     private InboundBillMapper inboundBillMapper;
@@ -200,7 +197,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         long sumRaw = items.stream()
                 .mapToLong(item -> item.getCurrentQty() != null ? item.getCurrentQty() : 0L)
                 .sum();
-        long total = sumRaw / QTY_DIVISOR_LONG;
+        long total = sumRaw / 100L;
         vo.setTotalCurrentQty((int) total);
 
         if (itemCount >= 2) {
@@ -218,7 +215,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             // 处理每个商品的摘要
             InboundBillItem item = items.get(i);
             long qtyRaw = item.getCurrentQty() != null ? item.getCurrentQty() : 0L;
-            long qty = qtyRaw / QTY_DIVISOR_LONG;
+            long qty = qtyRaw / 100L;
             String productName = item.getProductName() != null ? item.getProductName() : "";
             String unitName = item.getUnitName() != null ? item.getUnitName() : "";
             sb.append(productName).append(qty);
@@ -380,10 +377,10 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                     .setQuantityPrecision(product.getQuantityPrecision())
                     .setPlanQty(null)
                     .setProcessedQty(null)
-                    .setCurrentQty(toQtyRaw(itemDto.getCurrentQty()))
+                    .setCurrentQty(QtyUtil.toStored(itemDto.getCurrentQty()))
                     .setPendingQty(null)
-                    .setQualifiedQty(toQtyRaw(itemDto.getQualifiedQty()))
-                    .setDefectiveQty(toQtyRaw(itemDto.getDefectiveQty()))
+                    .setQualifiedQty(QtyUtil.toStored(itemDto.getQualifiedQty()))
+                    .setDefectiveQty(QtyUtil.toStored(itemDto.getDefectiveQty()))
                     .setRemark(itemDto.getRemark());
             items.add(item);
         }
@@ -495,19 +492,19 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             ivo.setQuantityPrecision(item.getQuantityPrecision());
 
             // 数量全部除以 100（数据库按 100 倍整数存储），契约为 number,null
-            ivo.setPlanQty(divideQty(item.getPlanQty()));
-            ivo.setProcessedQty(divideQty(item.getProcessedQty()));
-            ivo.setPendingQty(divideQty(item.getPendingQty()));
-            BigDecimal currentQty = divideQty(item.getCurrentQty());
+            ivo.setPlanQty(QtyUtil.toDecimal(item.getPlanQty()));
+            ivo.setProcessedQty(QtyUtil.toDecimal(item.getProcessedQty()));
+            ivo.setPendingQty(QtyUtil.toDecimal(item.getPendingQty()));
+            BigDecimal currentQty = QtyUtil.toDecimal(item.getCurrentQty());
             // current / qualified / defective / before / change / after 契约为 number（不允许null），默认0
             ivo.setCurrentQty(currentQty != null ? currentQty : BigDecimal.ZERO);
-            ivo.setQualifiedQty(defaultZero(divideQty(item.getQualifiedQty())));
-            ivo.setDefectiveQty(defaultZero(divideQty(item.getDefectiveQty())));
+            ivo.setQualifiedQty(QtyUtil.defaultZero(QtyUtil.toDecimal(item.getQualifiedQty())));
+            ivo.setDefectiveQty(QtyUtil.defaultZero(QtyUtil.toDecimal(item.getDefectiveQty())));
 
             // 根据状态推导前后数量（O(1)从Map取，BigDecimal计算保证精度）
             Long rawStock = stockQtyByProductId.get(item.getProductId());
-            BigDecimal stock = defaultZero(divideQty(rawStock));
-            BigDecimal cq = defaultZero(currentQty);
+            BigDecimal stock = QtyUtil.defaultZero(QtyUtil.toDecimal(rawStock));
+            BigDecimal cq = QtyUtil.defaultZero(currentQty);
             BigDecimal beforeQty;
             BigDecimal afterQty;
             if (isConfirmed) {
@@ -522,7 +519,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 afterQty = stock.add(cq);
             }
             ivo.setBeforeQty(beforeQty);
-            ivo.setChangeQty(defaultZero(currentQty));
+            ivo.setChangeQty(QtyUtil.defaultZero(currentQty));
             ivo.setAfterQty(afterQty);
 
             ivo.setStockBillItemId(item.getStockBillItemId() != null ? String.valueOf(item.getStockBillItemId()) : null);
@@ -533,36 +530,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }).collect(Collectors.toList());
     }
 
-    /**
-     * 数据库100倍整数转BigDecimal（保留2位小数），null返回null
-     */
-    private static BigDecimal divideQty(Long raw) {
-        if (raw == null) {
-            return null;
-        }
-        return BigDecimal.valueOf(raw).divide(QTY_DIVISOR, 2, RoundingMode.HALF_UP);
-    }
-
-    /**
-     * null转BigDecimal.ZERO，保证不允许null的number字段有默认值
-     */
-    private static BigDecimal defaultZero(BigDecimal v) {
-        return v != null ? v : BigDecimal.ZERO;
-    }
-
-    /**
-     * 业务数量转100倍整数（与divideQty反向操作）
-     * @param qty 业务真实数量
-     * @return 100倍整数，null返回null
-     */
-    private static Long toQtyRaw(BigDecimal qty) {
-        if (qty == null) {
-            return null;
-        }
-        return qty.multiply(BigDecimal.valueOf(100))
-                .setScale(0, RoundingMode.HALF_UP)
-                .longValue();
-    }
 
     private static final DateTimeFormatter INBOUND_NO_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 

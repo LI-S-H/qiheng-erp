@@ -9,6 +9,7 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
 import com.qiheng.erp.product.domain.entity.Product;
@@ -24,9 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -96,7 +95,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         Page<ProductVo> result = productMapper.selectJoinPage(dto.toPage(), ProductVo.class, wrapper);
         result.getRecords().forEach(vo -> {
             if (vo.getSafetyStockQty() != null) {
-                vo.setSafetyStockQty(vo.getSafetyStockQty().divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+                vo.setSafetyStockQty(QtyUtil.toDecimal(vo.getSafetyStockQty()));
             }
         });
         return PageResult.of(result.getRecords(), (int) result.getTotal(), (int) result.getCurrent(), (int) result.getSize());
@@ -139,9 +138,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     public ProductVo add(Product product) {
         product.setProductCode(generateProductCode());
         if (product.getSafetyStockQty() != null) {
-            product.setSafetyStockQty(
-                    product.getSafetyStockQty().multiply(BigDecimal.valueOf(100)).setScale(0, RoundingMode.HALF_UP)
-            );
+            product.setSafetyStockQty(BigDecimal.valueOf(QtyUtil.toStored(product.getSafetyStockQty())));
         }
         // 校验分类是否存在且状态正常
         ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
@@ -181,7 +178,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
                 .eq(Product::getId, id);
         ProductVo vo = productMapper.selectJoinOne(ProductVo.class, wrapper);
         if (vo != null && vo.getSafetyStockQty() != null) {
-            vo.setSafetyStockQty(vo.getSafetyStockQty().divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+            vo.setSafetyStockQty(QtyUtil.toDecimal(vo.getSafetyStockQty()));
         }
         return vo;
     }
@@ -281,10 +278,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         }
 
         if (product.getSafetyStockQty() != null) {
-            product.setSafetyStockQty(
-                    // 保存时将安全库存数量x100
-                    product.getSafetyStockQty().multiply(BigDecimal.valueOf(100)).setScale(0, RoundingMode.HALF_UP)
-            );
+            product.setSafetyStockQty(BigDecimal.valueOf(QtyUtil.toStored(product.getSafetyStockQty())));
         }
         productMapper.updateById(product);
         return getDetailById(product.getId());

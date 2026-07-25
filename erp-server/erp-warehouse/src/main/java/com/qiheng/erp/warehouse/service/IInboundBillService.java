@@ -1,5 +1,6 @@
 package com.qiheng.erp.warehouse.service;
 
+import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillUpdateDto;
@@ -46,4 +47,12 @@ public interface IInboundBillService extends IService<InboundBill> {
      * @return 入库单详情
      */
     InboundBillDetailVo updateDraft(String inboundBillId, InboundBillUpdateDto dto);
+
+    /**
+     * 提交入库单草稿为待确认
+     * @param inboundBillId 入库单ID
+     * @param dto 乐观锁版本号请求
+     * @return 入库单详情
+     */
+    InboundBillDetailVo submitDraft(String inboundBillId, OptimisticLockVersionDto dto);
 }

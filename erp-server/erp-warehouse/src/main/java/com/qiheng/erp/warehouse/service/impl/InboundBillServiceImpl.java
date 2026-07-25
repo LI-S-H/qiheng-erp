@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
+import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.BillNoGenerator;
@@ -516,6 +517,57 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         InboundBillDetailVo vo = convertToDetailVo(updatedBill);
         populateQuantityFields(vo, savedItems);
         vo.setItems(convertToDetailItemVos(savedItems, stockQtyByProductId, updatedBill.getStatus()));
+        return vo;
+    }
+
+    /**
+     * 提交入库单草稿为待确认
+     * @param inboundBillId 入库单ID
+     * @param dto 乐观锁版本号请求
+     * @return 入库单详情
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public InboundBillDetailVo submitDraft(String inboundBillId, OptimisticLockVersionDto dto) {
+        // 1. 解析并查询入库单
+        Long id;
+        try {
+            id = Long.valueOf(inboundBillId);
+        } catch (NumberFormatException e) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库单ID格式错误");
+        }
+        InboundBill bill = this.getById(id);
+        if (bill == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
+        }
+
+        // 2. 校验状态：仅允许 DRAFT
+        if (!InboundBillStatus.DRAFT.name().equals(bill.getStatus())) {
+            throw new BizException(ErrorCode.BILL_STATUS_INVALID.getCode(), "仅草稿状态可提交");
+        }
+
+        // 3. 乐观锁校验
+        if (!bill.getVersion().equals(dto.getVersion())) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
+        }
+
+        // 4. 变更状态为待确认
+        bill.setStatus(InboundBillStatus.PENDING_CONFIRM.name());
+        if (!this.updateById(bill)) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
+        }
+
+        // 5. 查询明细和库存，组装返回详情
+        List<InboundBillItem> items = inboundBillItemService.list(
+                new LambdaQueryWrapper<InboundBillItem>()
+                        .eq(InboundBillItem::getInboundBillId, id)
+                        .orderByAsc(InboundBillItem::getId)
+        );
+        InboundBill updatedBill = this.getById(id);
+        Map<Long, Long> stockQtyByProductId = getItemDetails(updatedBill, items);
+        InboundBillDetailVo vo = convertToDetailVo(updatedBill);
+        populateQuantityFields(vo, items);
+        vo.setItems(convertToDetailItemVos(items, stockQtyByProductId, updatedBill.getStatus()));
         return vo;
     }
 

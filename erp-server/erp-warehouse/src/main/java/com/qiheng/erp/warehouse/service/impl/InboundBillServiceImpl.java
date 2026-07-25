@@ -327,15 +327,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .collect(Collectors.toMap(Product::getId, p -> p));
 
         // 3. 校验质量数量（采购入库和销售退货需要合格+不合格=本次数量）
-        InboundType billType = dto.getBillType();
-        if (billType == InboundType.PURCHASE_IN || billType == InboundType.SALES_RETURN) {
-            for (InboundBillItemCreateDto itemDto : dto.getItems()) {
-                BigDecimal qualitySum = itemDto.getQualifiedQty().add(itemDto.getDefectiveQty());
-                if (qualitySum.compareTo(itemDto.getCurrentQty()) != 0) {
-                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "合格与不合格数量之和必须等于本次入库数量");
-                }
-            }
-        }
+        InboundType billType = checkQualityQty(dto);
 
         // 4. 确定来源类型和录入方式
         String sourceType = resolveSourceType(billType);
@@ -413,6 +405,24 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     }
 
     /**
+     * 校验质量数量（采购入库和销售退货需要合格+不合格=本次数量）
+     * @param dto 入库单创建DTO
+     * @return 入库单类型
+     */
+    private InboundType checkQualityQty(InboundBillCreateDto dto) {
+        InboundType billType = dto.getBillType();
+        if (billType == InboundType.PURCHASE_IN || billType == InboundType.SALES_RETURN) {
+            for (InboundBillItemCreateDto itemDto : dto.getItems()) {
+                BigDecimal qualitySum = itemDto.getQualifiedQty().add(itemDto.getDefectiveQty());
+                if (qualitySum.compareTo(itemDto.getCurrentQty()) != 0) {
+                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "合格与不合格数量之和必须等于本次入库数量");
+                }
+            }
+        }
+        return billType;
+    }
+
+    /**
      * 根据入库单ID查询入库单明细列表并生成库存数量映射表
      * @param bill 入库单实体
      * @param items 入库单明细列表
@@ -448,6 +458,13 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
      * @return 详情VO
      */
     private InboundBillDetailVo convertToDetailVo(InboundBill bill) {
+        // createTime/updateTime 由数据库生成，插入后内存对象无此值，需复查
+        if (bill.getCreateTime() == null || bill.getUpdateTime() == null) {
+            InboundBill fresh = this.getById(bill.getId());
+            if (fresh != null) {
+                bill = fresh;
+            }
+        }
         InboundBillDetailVo vo = new InboundBillDetailVo();
         vo.setWorkBillId(String.valueOf(bill.getId()));
         vo.setBillNo(bill.getInboundNo());
@@ -455,24 +472,24 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         vo.setSourceId(bill.getSourceId() != null ? String.valueOf(bill.getSourceId()) : null);
         vo.setSourceNo(bill.getSourceNo());
         vo.setSourcePartyId(bill.getSourcePartyId() != null ? String.valueOf(bill.getSourcePartyId()) : null);
-        vo.setSourcePartyName(bill.getSourcePartyName());
+        vo.setSourcePartyName(bill.getSourcePartyName() != null ? bill.getSourcePartyName() : "");
         vo.setEntryMode(bill.getEntryMode());
         vo.setWarehouseId(bill.getWarehouseId() != null ? String.valueOf(bill.getWarehouseId()) : null);
         vo.setWarehouseName(bill.getWarehouseName());
         vo.setStatus(bill.getStatus());
         vo.setConfirmedById(bill.getConfirmedById() != null ? String.valueOf(bill.getConfirmedById()) : null);
-        vo.setConfirmedByName(bill.getConfirmedByName());
+        vo.setConfirmedByName(bill.getConfirmedByName() != null ? bill.getConfirmedByName() : "");
         vo.setConfirmedAt(bill.getConfirmedAt());
         vo.setCreatedById(bill.getCreatedById() != null ? String.valueOf(bill.getCreatedById()) : null);
-        vo.setCreatedByName(bill.getCreatedByName());
+        vo.setCreatedByName(bill.getCreatedByName() != null ? bill.getCreatedByName() : "");
         vo.setResponsibleById(bill.getResponsibleById() != null ? String.valueOf(bill.getResponsibleById()) : null);
-        vo.setResponsibleByName(bill.getResponsibleByName());
-        vo.setVersion(bill.getVersion());
+        vo.setResponsibleByName(bill.getResponsibleByName() != null ? bill.getResponsibleByName() : "");
+        vo.setVersion(bill.getVersion() != null ? bill.getVersion() : 0);
         vo.setCreateTime(bill.getCreateTime());
         vo.setUpdateTime(bill.getUpdateTime());
         vo.setBillType(bill.getInboundType());
-        vo.setManualReason(bill.getManualReason());
-        vo.setRemark(bill.getRemark());
+        vo.setManualReason(bill.getManualReason() != null ? bill.getManualReason() : "");
+        vo.setRemark(bill.getRemark() != null ? bill.getRemark() : "");
         return vo;
     }
 
@@ -560,7 +577,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     /**
      * 根据入库类型确定来源类型
      */
-    private static String resolveSourceType(InboundType billType) {
+    private String resolveSourceType(InboundType billType) {
         return switch (billType) {
             case PURCHASE_IN -> SourceType.PURCHASE_ORDER.name();
             case SALES_RETURN -> SourceType.SALES_RETURN_ORDER.name();
@@ -571,7 +588,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     /**
      * 根据入库类型确定录入方式
      */
-    private static String resolveEntryMode(InboundType billType) {
+    private String resolveEntryMode(InboundType billType) {
         return switch (billType) {
             case PURCHASE_IN, SALES_RETURN -> EntryMode.MANUAL_SUPPLEMENT.name();
             case ADJUST_IN -> EntryMode.MANUAL_ADJUSTMENT.name();

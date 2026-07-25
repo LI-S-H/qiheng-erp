@@ -57,6 +57,9 @@ erp-web/test-results/
 .DS_Store
 Thumbs.db
 
+# Claude Code
+.claude/
+
 # Obsidian 笔记库
 .obsidian/
 **/.obsidian/

@@ -15,17 +15,20 @@ import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillItemCreateDto;
-import com.qiheng.erp.warehouse.domain.dto.InboundBillItemUpdateDto;
+import com.qiheng.erp.warehouse.domain.dto.StockBillUpdateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
-import com.qiheng.erp.warehouse.domain.dto.InboundBillUpdateDto;
+import com.qiheng.erp.warehouse.domain.dto.StockBillItemUpdateDto;
 import com.qiheng.erp.warehouse.domain.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.entity.InboundBillItem;
+import com.qiheng.erp.warehouse.domain.entity.StockBill;
+import com.qiheng.erp.warehouse.domain.entity.StockBillItem;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.domain.enums.EntryMode;
-import com.qiheng.erp.warehouse.domain.enums.InboundBillStatus;
+import com.qiheng.erp.warehouse.domain.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.enums.InboundType;
 import com.qiheng.erp.warehouse.domain.enums.SourceType;
+import com.qiheng.erp.warehouse.domain.enums.StockBillType;
 
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillListItemVo;
@@ -34,6 +37,8 @@ import com.qiheng.erp.warehouse.domain.vo.InboundBillSummaryVo;
 import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
 import com.qiheng.erp.warehouse.service.IInboundBillItemService;
 import com.qiheng.erp.warehouse.service.IInboundBillService;
+import com.qiheng.erp.warehouse.service.IStockBillItemService;
+import com.qiheng.erp.warehouse.service.IStockBillService;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -43,6 +48,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -70,6 +76,12 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     @Autowired
     private IWarehouseStockService warehouseStockService;
+
+    @Autowired
+    private IStockBillService stockBillService;
+
+    @Autowired
+    private IStockBillItemService stockBillItemService;
 
     @Autowired
     private IWarehouseService warehouseService;
@@ -249,11 +261,11 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             }
             // 按状态统计
             String status = vo.getStatus();
-            if (InboundBillStatus.PENDING_CONFIRM.name().equals(status)) {
+            if (StockBillStatus.PENDING_CONFIRM.name().equals(status)) {
                 pendingCount++;
-            } else if (InboundBillStatus.CONFIRMED.name().equals(status)) {
+            } else if (StockBillStatus.CONFIRMED.name().equals(status)) {
                 confirmedCount++;
-            } else if (InboundBillStatus.CANCELLED.name().equals(status)) {
+            } else if (StockBillStatus.CANCELLED.name().equals(status)) {
                 cancelledCount++;
             }
         }
@@ -349,7 +361,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setEntryMode(entryMode)
                 .setWarehouseId(warehouseId)
                 .setWarehouseName(warehouse.getWarehouseName())
-                .setStatus(InboundBillStatus.DRAFT.name())
+                .setStatus(StockBillStatus.DRAFT.name())
                 .setCreatedById(currentUserId)
                 .setCreatedByName(currentUserName)
                 .setResponsibleById(currentUserId)
@@ -407,7 +419,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setProductName(product.getProductName())
                 .setUnitName(product.getUnitName())
                 .setQuantityPrecision(product.getQuantityPrecision())
-                .setPlanQty(QtyUtil.toStored(planQty))
+                .setPlanQty(planQty != null && planQty.compareTo(BigDecimal.ZERO) > 0 ? QtyUtil.toStored(planQty) : null)
                 .setProcessedQty(null)
                 .setCurrentQty(QtyUtil.toStored(currentQty))
                 .setPendingQty(null)
@@ -457,7 +469,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public InboundBillDetailVo updateDraft(String inboundBillId, InboundBillUpdateDto dto) {
+    public InboundBillDetailVo updateDraft(String inboundBillId, StockBillItemUpdateDto dto) {
         // 1. 解析并查询入库单
         Long id;
         try {
@@ -472,8 +484,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
         // 2. 校验状态
         String status = bill.getStatus();
-        boolean isDraft = InboundBillStatus.DRAFT.name().equals(status);
-        boolean isPendingConfirm = InboundBillStatus.PENDING_CONFIRM.name().equals(status);
+        boolean isDraft = StockBillStatus.DRAFT.name().equals(status);
+        boolean isPendingConfirm = StockBillStatus.PENDING_CONFIRM.name().equals(status);
         if (!isDraft && !isPendingConfirm) {
             throw new BizException(ErrorCode.BILL_STATUS_INVALID.getCode(), "仅草稿和待确认单可编辑");
         }
@@ -486,7 +498,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 4. 根据状态分支处理主表字段
         InboundType billType = InboundType.valueOf(bill.getInboundType());
         if (isDraft) {
-            updateBillFieldsForDraft(bill, dto, billType);
+            updateBillFieldsForDraft(bill, dto);
         } else {
             updateBillFieldsForPendingConfirm(bill, dto);
         }
@@ -542,7 +554,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
 
         // 2. 校验状态：仅允许 DRAFT
-        if (!InboundBillStatus.DRAFT.name().equals(bill.getStatus())) {
+        if (!StockBillStatus.DRAFT.name().equals(bill.getStatus())) {
             throw new BizException(ErrorCode.BILL_STATUS_INVALID.getCode(), "仅草稿状态可提交");
         }
 
@@ -552,7 +564,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
 
         // 4. 变更状态为待确认
-        bill.setStatus(InboundBillStatus.PENDING_CONFIRM.name());
+        bill.setStatus(StockBillStatus.PENDING_CONFIRM.name());
         if (!this.updateById(bill)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
         }
@@ -608,8 +620,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
         // 2. 校验状态：允许 DRAFT 和 PENDING_CONFIRM
         String status = bill.getStatus();
-        if (!InboundBillStatus.DRAFT.name().equals(status)
-                && !InboundBillStatus.PENDING_CONFIRM.name().equals(status)) {
+        if (!StockBillStatus.DRAFT.name().equals(status)
+                && !StockBillStatus.PENDING_CONFIRM.name().equals(status)) {
             throw new BizException(ErrorCode.BILL_STATUS_INVALID.getCode(), "仅草稿和待确认状态可取消");
         }
 
@@ -619,7 +631,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
 
         // 4. 变更状态为已取消
-        bill.setStatus(InboundBillStatus.CANCELLED.name());
+        bill.setStatus(StockBillStatus.CANCELLED.name());
         if (!this.updateById(bill)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
         }
@@ -629,9 +641,167 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     }
 
     /**
+     * 确认入库单：生成库存流水并增加库存
+     * @param inboundBillId 入库单ID
+     * @param dto 乐观锁版本号请求
+     * @return 入库单详情
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public InboundBillDetailVo confirmBill(String inboundBillId, OptimisticLockVersionDto dto) {
+        // 1. 解析并查询入库单
+        Long id;
+        try {
+            id = Long.valueOf(inboundBillId);
+        } catch (NumberFormatException e) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库单ID格式错误");
+        }
+        InboundBill bill = this.getById(id);
+        if (bill == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
+        }
+
+        // 2. 校验状态：仅允许 PENDING_CONFIRM
+        if (!StockBillStatus.PENDING_CONFIRM.name().equals(bill.getStatus())) {
+            throw new BizException(ErrorCode.BILL_STATUS_INVALID.getCode(), "仅待确认状态可确认入库");
+        }
+
+        // 3. 乐观锁校验
+        if (!bill.getVersion().equals(dto.getVersion())) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
+        }
+
+        // 4. 查询入库单明细
+        List<InboundBillItem> items = inboundBillItemService.list(
+                new LambdaQueryWrapper<InboundBillItem>()
+                        .eq(InboundBillItem::getInboundBillId, id)
+                        .orderByAsc(InboundBillItem::getId)
+        );
+        if (items.isEmpty()) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库单明细为空，无法确认");
+        }
+
+        // 5. 获取当前登录用户
+        LoginUser currentUser = UserContext.getCurrentUser();
+        Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
+        String currentUserName = currentUser != null ? currentUser.getRealName() : null;
+        LocalDateTime now = LocalDateTime.now();
+
+        // 6. 生成库存流水主表
+        String stockBillNo = billNoGenerator.nextNo("SL");
+        StockBill stockBill = new StockBill()
+                .setBillNo(stockBillNo)
+                .setBillType(bill.getInboundType())
+                .setWorkBillId(String.valueOf(bill.getId()))
+                .setBusinessSourceId(bill.getSourceId())
+                .setBusinessSourceNo(bill.getSourceNo())
+                .setEntryMode(bill.getEntryMode())
+                .setWarehouseId(bill.getWarehouseId())
+                .setWarehouseName(bill.getWarehouseName())
+                .setConfirmedById(currentUserId)
+                .setConfirmedByName(currentUserName)
+                .setConfirmedAt(now)
+                .setRemark(bill.getRemark());
+        stockBillService.save(stockBill);
+
+        // 7. 查询仓库信息（用于新建库存记录时填充 warehouseCode）
+        Warehouse warehouse = warehouseService.getById(bill.getWarehouseId());
+        String warehouseCode = (warehouse != null) ? warehouse.getWarehouseCode() : null;
+
+        // 8. 处理每条明细：生成库存流水明细 + 更新库存 + 回写入库单明细
+        List<StockBillItem> stockBillItems = new ArrayList<>();
+        for (InboundBillItem item : items) {
+            Long currentQty = item.getCurrentQty() != null ? item.getCurrentQty() : 0L;
+
+            // 查询当前库存
+            WarehouseStock stock = warehouseStockService.getOne(
+                    new LambdaQueryWrapper<WarehouseStock>()
+                            .eq(WarehouseStock::getWarehouseId, bill.getWarehouseId())
+                            .eq(WarehouseStock::getProductId, item.getProductId())
+            );
+            Long beforeQty = (stock != null && stock.getStockQty() != null) ? stock.getStockQty() : 0L;
+            Long afterQty = beforeQty + currentQty;
+
+            // 生成库存流水分录
+            StockBillItem stockBillItem = new StockBillItem()
+                    .setBillId(stockBill.getId())
+                    .setBusinessSourceItemId(item.getSourceItemId())
+                    .setWorkBillItemId(item.getId())
+                    .setProductId(item.getProductId())
+                    .setProductCode(item.getProductCode())
+                    .setProductName(item.getProductName())
+                    .setUnitName(item.getUnitName())
+                    .setQuantityPrecision(item.getQuantityPrecision())
+                    .setBeforeQty(beforeQty)
+                    .setChangeQty(currentQty)
+                    .setAfterQty(afterQty)
+                    .setQualifiedQty(item.getQualifiedQty())
+                    .setDefectiveQty(item.getDefectiveQty())
+                    .setRemark(item.getRemark());
+            stockBillItems.add(stockBillItem);
+
+            // 更新库存余额
+            if (stock == null) {
+                WarehouseStock newStock = new WarehouseStock()
+                        .setWarehouseId(bill.getWarehouseId())
+                        .setWarehouseCode(warehouseCode)
+                        .setWarehouseName(bill.getWarehouseName())
+                        .setProductId(item.getProductId())
+                        .setProductCode(item.getProductCode())
+                        .setProductName(item.getProductName())
+                        .setUnitName(item.getUnitName())
+                        .setStockQty(currentQty)
+                        .setLockedQty(0L);
+                try {
+                    warehouseStockService.save(newStock);
+                } catch (Exception e) {
+                    throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "库存数据已被其他人修改，请刷新后重试");
+                }
+            } else {
+                stock.setStockQty(afterQty);
+                if (!warehouseStockService.updateById(stock)) {
+                    throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "库存数据已被其他人修改，请刷新后重试");
+                }
+            }
+        }
+        // 保存库存流水明细
+        stockBillItemService.saveBatch(stockBillItems);
+
+        // 9. 回写入库单明细：关联库存流水分录ID、计算剩余数量
+        for (int i = 0; i < items.size(); i++) {
+            InboundBillItem item = items.get(i);
+            StockBillItem sbItem = stockBillItems.get(i);
+            item.setStockBillItemId(sbItem.getId());
+            // 计算剩余未入库数量，同时防御性校验不超过来源剩余
+            if (item.getPlanQty() != null && item.getProcessedQty() != null) {
+                long currentQty = item.getCurrentQty() != null ? item.getCurrentQty() : 0L;
+                long remaining = item.getPlanQty() - item.getProcessedQty();
+                if (currentQty > remaining) {
+                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                            "产品 " + item.getProductName() + " 本次入库数量不能超过剩余数量 " + QtyUtil.toDecimal(remaining));
+                }
+                item.setPendingQty(Math.max(0L, remaining - currentQty));
+            }
+        }
+        inboundBillItemService.updateBatchById(items);
+
+        // 10. 更新入库单主表状态为已确认
+        bill.setStatus(StockBillStatus.CONFIRMED.name());
+        bill.setConfirmedById(currentUserId);
+        bill.setConfirmedByName(currentUserName);
+        bill.setConfirmedAt(now);
+        if (!this.updateById(bill)) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
+        }
+
+        // 11. 返回详情
+        return getInboundBillDetailVo(id);
+    }
+
+    /**
      * DRAFT 状态更新主表字段：可修改仓库、来源信息、备注、原因
      */
-    private void updateBillFieldsForDraft(InboundBill bill, InboundBillUpdateDto dto, InboundType billType) {
+    private void updateBillFieldsForDraft(InboundBill bill, StockBillItemUpdateDto dto) {
         // 更新仓库
         if (StrUtil.isNotBlank(dto.getWarehouseId())) {
             Long warehouseId = Long.valueOf(dto.getWarehouseId());
@@ -683,7 +853,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     /**
      * PENDING_CONFIRM 状态更新主表字段：仅允许更新备注
      */
-    private void updateBillFieldsForPendingConfirm(InboundBill bill, InboundBillUpdateDto dto) {
+    private void updateBillFieldsForPendingConfirm(InboundBill bill, StockBillItemUpdateDto dto) {
         if (dto.getRemark() != null) {
             bill.setRemark(dto.getRemark());
         }
@@ -693,7 +863,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
      * PENDING_CONFIRM 结构校验：不允许增删行、不允许换产品
      */
     private void validatePendingConfirmStructure(List<InboundBillItem> existingItems,
-                                                 List<InboundBillItemUpdateDto> itemDtos) {
+                                                 List<StockBillUpdateDto> itemDtos) {
         if (itemDtos.size() != existingItems.size()) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "待确认状态不允许增删明细");
         }
@@ -716,11 +886,11 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
      */
     private void replaceItems(InboundBill bill,
                               List<InboundBillItem> existingItems,
-                              List<InboundBillItemUpdateDto> itemDtos,
+                              List<StockBillUpdateDto> itemDtos,
                               InboundType billType) {
         // 校验质量数量（采购入库和销售退货）
         if (billType == InboundType.PURCHASE_IN || billType == InboundType.SALES_RETURN) {
-            for (InboundBillItemUpdateDto itemDto : itemDtos) {
+            for (StockBillUpdateDto itemDto : itemDtos) {
                 BigDecimal qualitySum = itemDto.getQualifiedQty().add(itemDto.getDefectiveQty());
                 if (qualitySum.compareTo(itemDto.getCurrentQty()) != 0) {
                     throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "合格与不合格数量之和必须等于本次入库数量");
@@ -746,7 +916,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 全插
         String inboundNo = bill.getInboundNo();
         List<InboundBillItem> itemsToSave = new ArrayList<>();
-        for (InboundBillItemUpdateDto itemDto : itemDtos) {
+        for (StockBillUpdateDto itemDto : itemDtos) {
             Long productId = Long.valueOf(itemDto.getProductId());
             Product product = productMap.get(productId);
             addItem(inboundNo, bill, itemsToSave, productId, product,
@@ -841,7 +1011,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             List<InboundBillItem> items,
             Map<Long, Long> stockQtyByProductId,
             String billStatus) {
-        boolean isConfirmed = InboundBillStatus.CONFIRMED.name().equals(billStatus);
+        boolean isConfirmed = StockBillStatus.CONFIRMED.name().equals(billStatus);
         return items.stream().map(item -> {
             InboundBillDetailVo.InboundBillDetailItemVo ivo = new InboundBillDetailVo.InboundBillDetailItemVo();
             // 基本字段

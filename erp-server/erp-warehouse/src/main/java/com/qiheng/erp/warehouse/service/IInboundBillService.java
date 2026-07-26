@@ -3,7 +3,7 @@ package com.qiheng.erp.warehouse.service;
 import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
-import com.qiheng.erp.warehouse.domain.dto.InboundBillUpdateDto;
+import com.qiheng.erp.warehouse.domain.dto.StockBillItemUpdateDto;
 import com.qiheng.erp.warehouse.domain.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
@@ -46,7 +46,7 @@ public interface IInboundBillService extends IService<InboundBill> {
      * @param dto 编辑请求
      * @return 入库单详情
      */
-    InboundBillDetailVo updateDraft(String inboundBillId, InboundBillUpdateDto dto);
+    InboundBillDetailVo updateDraft(String inboundBillId, StockBillItemUpdateDto dto);
 
     /**
      * 提交入库单草稿为待确认
@@ -63,4 +63,12 @@ public interface IInboundBillService extends IService<InboundBill> {
      * @return 入库单详情
      */
     InboundBillDetailVo cancelBill(String inboundBillId, OptimisticLockVersionDto dto);
+
+    /**
+     * 确认入库单：生成库存流水并增加库存
+     * @param inboundBillId 入库单ID
+     * @param dto 乐观锁版本号请求
+     * @return 入库单详情
+     */
+    InboundBillDetailVo confirmBill(String inboundBillId, OptimisticLockVersionDto dto);
 }

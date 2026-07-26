@@ -4,7 +4,7 @@ package com.qiheng.erp.warehouse.domain.enums;
  * 入库单状态。
  * 对应 inbound_bill.status。
  */
-public enum InboundBillStatus {
+public enum StockBillStatus {
 
     /**
      * 草稿。

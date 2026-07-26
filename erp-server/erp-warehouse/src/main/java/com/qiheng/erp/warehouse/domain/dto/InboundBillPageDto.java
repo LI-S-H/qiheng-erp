@@ -2,7 +2,7 @@ package com.qiheng.erp.warehouse.domain.dto;
 
 import com.qiheng.erp.common.dto.PageQuery;
 import com.qiheng.erp.warehouse.domain.enums.EntryMode;
-import com.qiheng.erp.warehouse.domain.enums.InboundBillStatus;
+import com.qiheng.erp.warehouse.domain.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.enums.InboundType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -53,5 +53,5 @@ public class InboundBillPageDto extends PageQuery {
                     "CANCELLED"
             }
     )
-    private InboundBillStatus status;
+    private StockBillStatus status;
 }

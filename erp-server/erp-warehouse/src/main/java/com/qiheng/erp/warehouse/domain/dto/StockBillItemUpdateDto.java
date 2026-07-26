@@ -18,7 +18,7 @@ import java.util.List;
  */
 @Data
 @Schema(description = "编辑入库单草稿或待确认单请求")
-public class InboundBillUpdateDto {
+public class StockBillItemUpdateDto {
 
     @Schema(description = "乐观锁版本号")
     @NotNull(message = "版本号不能为空")
@@ -47,7 +47,7 @@ public class InboundBillUpdateDto {
     @Schema(description = "明细列表，至少1条")
     @NotEmpty(message = "明细列表不能为空")
     @Valid
-    private List<InboundBillItemUpdateDto> items;
+    private List<StockBillUpdateDto> items;
 
     @Schema(description = "备注")
     @Size(max = 500, message = "备注最多500个字符")

@@ -17,7 +17,7 @@ import java.math.BigDecimal;
  */
 @Data
 @Schema(description = "入库单明细更新请求，前端提交全量明细快照，后端全量替换")
-public class InboundBillItemUpdateDto {
+public class StockBillUpdateDto {
 
     @Schema(description = "来源单据明细ID")
     private String sourceItemId;

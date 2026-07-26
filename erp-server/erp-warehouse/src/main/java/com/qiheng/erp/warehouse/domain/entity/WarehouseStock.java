@@ -3,6 +3,7 @@ package com.qiheng.erp.warehouse.domain.entity;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.Version;
 
 import java.io.Serial;
 import java.time.LocalDateTime;
@@ -79,6 +80,7 @@ public class WarehouseStock implements Serializable {
     @TableField("update_time")
     private LocalDateTime updateTime;
 
+    @Version
     @Schema(description = "乐观锁版本号")
     @TableField("version")
     private Integer version;

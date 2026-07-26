@@ -6,7 +6,7 @@ import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
-import com.qiheng.erp.warehouse.domain.dto.InboundBillUpdateDto;
+import com.qiheng.erp.warehouse.domain.dto.StockBillItemUpdateDto;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
 import com.qiheng.erp.warehouse.service.IInboundBillService;
@@ -92,7 +92,7 @@ public class InboundBillController {
     public Result<InboundBillDetailVo> updateDraft(
             @Parameter(description = "入库单ID，对应 inbound_bill.id", required = true)
             @PathVariable String inboundBillId,
-            @Valid @RequestBody InboundBillUpdateDto dto) {
+            @Valid @RequestBody StockBillItemUpdateDto dto) {
         StpUtil.checkPermission("warehouse:manage");
         log.info("编辑入库单，ID: {}, 参数: {}", inboundBillId, dto);
         return Result.ok(inboundBillService.updateDraft(inboundBillId, dto));
@@ -113,6 +113,23 @@ public class InboundBillController {
         StpUtil.checkPermission("warehouse:manage");
         log.info("提交入库单草稿，ID: {}, version: {}", inboundBillId, dto.getVersion());
         return Result.ok(inboundBillService.submitDraft(inboundBillId, dto));
+    }
+
+    /**
+     * 确认入库单：生成库存流水并增加库存
+     * @param inboundBillId 入库单ID（字符串形式）
+     * @param dto 乐观锁版本号请求
+     * @return 入库单详情
+     */
+    @PostMapping("/{inboundBillId}/confirm")
+    @Operation(summary = "确认入库单")
+    public Result<InboundBillDetailVo> confirmBill(
+            @Parameter(description = "入库单ID，对应 inbound_bill.id", required = true)
+            @PathVariable String inboundBillId,
+            @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("确认入库单，ID: {}, version: {}", inboundBillId, dto.getVersion());
+        return Result.ok(inboundBillService.confirmBill(inboundBillId, dto));
     }
 
     /**

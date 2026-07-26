@@ -1457,17 +1457,19 @@ onMounted(async () => {
                           <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.workBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
                           <div v-else-if="detailLoadErrors[row.workBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.workBillId">{{ detailLoadErrors[row.workBillId] }}</div>
                           <div v-else-if="expandedItems(row).length === 0" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-empty-id="row.workBillId">暂无商品明细</div>
-                          <WarehouseDetailTableFrame v-else class="stock-bill-detail-card">
-                              <Table class="min-w-[880px] table-fixed">
+                          <WarehouseDetailTableFrame v-else max-width="1024px" class="stock-bill-detail-card">
+                              <Table class="!w-[1020px] min-w-[1020px] table-fixed">
                                 <colgroup>
-                                  <col class="w-[104px]" />
-                                  <col class="w-[160px]" />
-                                  <col class="w-[56px]" />
-                                  <col class="w-[104px]" />
                                   <col class="w-[96px]" />
-                                  <col class="w-[104px]" />
-                                  <col class="w-[116px]" />
-                                  <col class="w-[140px]" />
+                                  <col class="w-[200px]" />
+                                  <col class="w-[56px]" />
+                                  <col class="w-[92px]" />
+                                  <col class="w-[92px]" />
+                                  <col class="w-[92px]" />
+                                  <col class="w-[112px]" />
+                                  <col class="w-[80px]" />
+                                  <col class="w-[80px]" />
+                                  <col class="w-[120px]" />
                                 </colgroup>
                                 <TableHeader>
                                   <TableRow>
@@ -1478,6 +1480,8 @@ onMounted(async () => {
                                     <TableHead class="text-center">合格数量</TableHead>
                                     <TableHead class="text-center">不合格数量</TableHead>
                                     <TableHead class="text-center">{{ pageText.pendingQtyLabel }}</TableHead>
+                                    <TableHead class="text-center">变动前</TableHead>
+                                    <TableHead class="text-center">变动后</TableHead>
                                     <TableHead class="text-center">备注</TableHead>
                                   </TableRow>
                                 </TableHeader>
@@ -1490,6 +1494,8 @@ onMounted(async () => {
                                     <TableCell class="text-center tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
                                     <TableCell class="text-center tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(row.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
                                     <TableCell class="text-center tabular-nums">{{ remainingQtyText(item) }}</TableCell>
+                                    <TableCell class="text-center tabular-nums">{{ formatQty(item.beforeQty) }}</TableCell>
+                                    <TableCell class="text-center font-medium tabular-nums">{{ formatQty(item.afterQty) }}</TableCell>
                                     <TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell>
                                   </TableRow>
                                 </TableBody>
@@ -1589,16 +1595,16 @@ onMounted(async () => {
               </div>
               <p v-if="formErrors.items" class="mb-2 text-xs text-destructive">{{ formErrors.items }}</p>
               <div class="stock-bill-form-table-scroll rounded-md border">
-                <Table class="min-w-[980px] table-fixed">
+                <Table class="min-w-[916px] table-fixed">
                   <colgroup>
                     <col class="w-[220px]" />
                     <col class="w-[80px]" />
                     <col class="w-[80px]" />
-                    <col class="w-[160px]" />
+                    <col class="w-[100px]" />
+                    <col class="w-[120px]" />
+                    <col class="w-[88px]" />
+                    <col class="w-[88px]" />
                     <col class="w-[140px]" />
-                    <col class="w-[100px]" />
-                    <col class="w-[100px]" />
-                    <col class="w-[150px]" />
                   </colgroup>
                   <TableHeader>
                     <TableRow>
@@ -1633,7 +1639,13 @@ onMounted(async () => {
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty)} ${itemUnitName(item)}` : (item.planQty != null ? `${formatQty(item.planQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.processedQty)} ${itemUnitName(item)}` : (item.processedQty != null ? `${formatQty(item.processedQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top">
-                        <div class="stock-bill-form-quantity-control"><Input v-model.number="item.currentQty" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" /><span :class="formErrors[`items.${index}.quantity`] ? 'text-destructive' : 'text-muted-foreground'" :title="formErrors[`items.${index}.quantity`] || quantityHint(item)">{{ formErrors[`items.${index}.quantity`] || quantityHint(item) }}</span></div>
+                        <Tooltip>
+                          <TooltipTrigger as-child>
+                            <Input v-model.number="item.currentQty" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" />
+                          </TooltipTrigger>
+                          <TooltipContent>{{ quantityHint(item) }}</TooltipContent>
+                        </Tooltip>
+                        <p v-if="formErrors[`items.${index}.quantity`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.quantity`] }}</p>
                       </TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : (itemPendingQty(item) != null ? `${formatQty(itemPendingQty(item))} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top">
@@ -1746,6 +1758,7 @@ onMounted(async () => {
 
 .stock-bill-table-scroll {
   border-bottom: 1px solid var(--border);
+  container-type: inline-size;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1786,7 +1799,11 @@ onMounted(async () => {
 }
 
 .stock-bill-detail-card {
-  width: min(100%, 900px);
+  position: sticky;
+  left: 16px;
+  z-index: 10;
+  /* 表格内容宽度为 1020px，额外 4px 仅供左右边框，避免右侧出现空白条。 */
+  width: min(1024px, calc(100cqi - 32px));
   border-left: 3px solid var(--primary);
   background: color-mix(in srgb, var(--muted) 36%, white);
 }
@@ -1803,6 +1820,7 @@ onMounted(async () => {
 
 .stock-bill-detail-host-row :deep([data-slot='table-cell']) {
   height: 0;
+  background-color: var(--background);
 }
 
 .stock-bill-detail-drawer[data-state="open"] {

@@ -31,7 +31,8 @@ withDefaults(defineProps<{
 .warehouse-detail-table-scroll :deep([data-slot="table-container"]) {
   max-height: var(--warehouse-detail-table-max-height);
   overflow: auto;
-  padding-bottom: 10px;
+  /* 明细未溢出时不预留滚动条槽，避免右侧出现无内容的白边。 */
+  scrollbar-gutter: auto;
 }
 
 .warehouse-detail-table-scroll :deep([data-slot="table-head"]),
@@ -40,6 +41,12 @@ withDefaults(defineProps<{
   padding: 6px 10px;
   font-size: 12px;
   vertical-align: middle;
+}
+
+/* 表格布局不会把 td 的最小高度稳定计入行轨道，使用上下内边距让正文行与表头等高。 */
+.warehouse-detail-table-scroll :deep([data-slot="table-cell"]) {
+  min-height: 0;
+  padding-block: 12px;
 }
 
 .warehouse-detail-table-scroll :deep([data-slot="table-head"]) {

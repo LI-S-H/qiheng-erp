@@ -317,6 +317,28 @@ async function assertDetailToggleMotion(page, row, item, collapseScreenshotPath)
   if (openState.state !== 'open' || openState.height < 40 || openState.hidden || openState.visibility === 'hidden') {
     throw new Error(`展开动画结束态异常：${JSON.stringify(openState)}`);
   }
+  const detailFrameLayout = await drawer.locator('.warehouse-detail-table-frame').evaluate((frame) => {
+    const viewport = frame.querySelector('[data-slot="table-container"]');
+    const table = viewport?.querySelector('table');
+    const dataCell = table?.querySelector('tbody [data-slot="table-cell"]');
+    return {
+      trailingGap: Math.round((viewport?.clientWidth || 0) - (table?.getBoundingClientRect().width || 0)),
+      paddingBottom: viewport ? getComputedStyle(viewport).paddingBottom : null,
+      dataRowHeight: Math.round(table?.querySelector('tbody tr')?.getBoundingClientRect().height || 0),
+      headerRowHeight: Math.round(table?.querySelector('thead tr')?.getBoundingClientRect().height || 0),
+      dataCell: dataCell ? {
+        height: getComputedStyle(dataCell).height,
+        paddingTop: getComputedStyle(dataCell).paddingTop,
+        paddingBottom: getComputedStyle(dataCell).paddingBottom,
+      } : null,
+    };
+  });
+  if (detailFrameLayout.trailingGap > 1 || detailFrameLayout.paddingBottom !== '0px'
+    || Math.abs(detailFrameLayout.dataRowHeight - detailFrameLayout.headerRowHeight) > 1
+    || detailFrameLayout.dataCell?.paddingTop !== '12px'
+    || detailFrameLayout.dataCell?.paddingBottom !== '12px') {
+    throw new Error(`出入库单展开明细存在多余留白：${JSON.stringify(detailFrameLayout)}`);
+  }
   const adjacentTopAfterExpand = await adjacentRow.evaluate(element => element.getBoundingClientRect().top);
   if (adjacentTopAfterExpand <= adjacentTopBeforeExpand + 20) throw new Error('展开明细未正常推开相邻业务行');
   await page.waitForTimeout(170);
@@ -326,6 +348,37 @@ async function assertDetailToggleMotion(page, row, item, collapseScreenshotPath)
   }
 
   const tableViewport = page.locator('.stock-bill-table-scroll [data-slot="table-container"]').first();
+  const detailCardPinnedBaseline = await tableViewport.evaluate((element) => {
+    element.scrollLeft = 0;
+    const card = element.querySelector('.stock-bill-detail-card');
+    return {
+      cardLeft: card?.getBoundingClientRect().left ?? null,
+      maxScrollLeft: element.scrollWidth - element.clientWidth,
+    };
+  });
+  const detailCardScrollSamples = [];
+  for (const ratio of [0.25, 0.5, 0.75, 1]) {
+    const sample = await tableViewport.evaluate((element, nextRatio) => new Promise(resolve => {
+      element.scrollLeft = (element.scrollWidth - element.clientWidth) * nextRatio;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const card = element.querySelector('.stock-bill-detail-card');
+        resolve({
+          cardLeft: card?.getBoundingClientRect().left ?? null,
+          cardWidth: card?.getBoundingClientRect().width ?? 0,
+          viewportWidth: element.getBoundingClientRect().width,
+          maxScrollLeft: element.scrollWidth - element.clientWidth,
+        });
+      }));
+    }), ratio);
+    detailCardScrollSamples.push(sample);
+  }
+  if (detailCardPinnedBaseline.cardLeft === null || detailCardPinnedBaseline.maxScrollLeft <= 2
+    || detailCardScrollSamples.some(sample => sample.cardLeft === null
+      || Math.abs(sample.cardLeft - detailCardPinnedBaseline.cardLeft) > 1
+      || sample.cardWidth > sample.viewportWidth - 31
+      || Math.abs(sample.maxScrollLeft - detailCardPinnedBaseline.maxScrollLeft) > 1)) {
+    throw new Error(`出入库单展开明细未固定在主表滚动区域：${JSON.stringify({ detailCardPinnedBaseline, detailCardScrollSamples })}`);
+  }
   await tableViewport.evaluate((element) => {
     element.scrollLeft = Math.min(420, Math.max(0, element.scrollWidth - element.clientWidth));
     element.dispatchEvent(new Event('scroll'));
@@ -538,8 +591,8 @@ async function assertExpandedDetailTable(page, direction) {
     if (!state.headerText.includes(expected)) throw new Error(`展开明细表头缺少字段：${expected}`);
   }
   if (state.headerText.includes('质检')) throw new Error('展开明细不应再使用“质检”汇总列');
-  if (state.cardWidth > 1040 || state.tableWidth > 1040) {
-    throw new Error(`展开明细表格过宽，字段间距会被拉开：${JSON.stringify(state)}`);
+  if (state.cardWidth > 1040 || state.tableWidth > 1020) {
+    throw new Error(`展开明细表格未保持适中列宽：${JSON.stringify(state)}`);
   }
   if (state.alignments.length < 16 || state.alignments.some(alignment => alignment !== 'center')) {
     throw new Error(`展开明细表头和数据单元格必须全部居中：${JSON.stringify(state)}`);
@@ -661,7 +714,8 @@ runSmoke({
     if (!await sourceOrderSelect.isEnabled()) throw new Error('人工补录采购入库草稿的来源单号应支持搜索选择');
     const sourcePartySelect = manualInboundEdit.getByRole('combobox').nth(2);
     if (!await sourcePartySelect.isEnabled()) throw new Error('人工补录采购入库草稿的来源对象应可编辑');
-    await manualInboundEdit.getByRole('button', { name: '手动输入' }).click();
+    const manualInputToggle = manualInboundEdit.getByRole('button', { name: '手动输入' });
+    if (await manualInputToggle.count()) await manualInputToggle.click();
     const manualSourceNo = manualInboundEdit.getByPlaceholder('填写线下单据号');
     if (!await manualSourceNo.isEditable()) throw new Error('人工补录采购入库草稿的来源单号应支持手工输入');
     await manualSourceNo.fill('MANUAL-PO-20260701-UPDATED');

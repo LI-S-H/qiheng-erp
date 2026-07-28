@@ -6,9 +6,15 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 
+/**
+ * 出库单分页汇总信息。
+ *
+ * @author Li
+ * @since 2026-07-26
+ */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-@Schema(description = "入库单分页汇总信息")
-public class InboundBillSummaryVo extends StockBillSummaryBaseVo {
+@Schema(description = "出库单分页汇总信息")
+public class OutboundBillSummaryVo extends StockBillSummaryBaseVo {
 }

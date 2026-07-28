@@ -10,11 +10,17 @@ import lombok.ToString;
 
 import java.util.List;
 
+/**
+ * 出库单详情。
+ *
+ * @author Li
+ * @since 2026-07-26
+ */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @JsonInclude(JsonInclude.Include.ALWAYS)
-@Schema(description = "入库单详情")
-public class InboundBillDetailVo extends InboundBillListItemVo implements StockBillDetailVoMapping.BillTarget {
+@Schema(description = "出库单详情")
+public class OutboundBillDetailVo extends OutboundBillListItemVo implements StockBillDetailVoMapping.BillTarget {
 
     @Schema(description = "手工补录或库存调整原因")
     private String manualReason;
@@ -22,14 +28,14 @@ public class InboundBillDetailVo extends InboundBillListItemVo implements StockB
     @Schema(description = "备注")
     private String remark;
 
-    @Schema(description = "入库单明细列表")
-    private List<InboundBillDetailItemVo> items;
+    @Schema(description = "出库单明细列表")
+    private List<OutboundBillDetailItemVo> items;
 
     @Data
     @EqualsAndHashCode(callSuper = true)
     @ToString(callSuper = true)
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    @Schema(description = "入库单明细项")
-    public static class InboundBillDetailItemVo extends StockBillDetailItemBaseVo {
+    @Schema(description = "出库单明细项")
+    public static class OutboundBillDetailItemVo extends StockBillDetailItemBaseVo {
     }
 }

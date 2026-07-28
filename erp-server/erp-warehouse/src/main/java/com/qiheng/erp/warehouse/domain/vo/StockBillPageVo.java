@@ -1,5 +1,6 @@
 package com.qiheng.erp.warehouse.domain.vo;
 
+import com.qiheng.erp.warehouse.domain.vo.common.PageRespVo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;

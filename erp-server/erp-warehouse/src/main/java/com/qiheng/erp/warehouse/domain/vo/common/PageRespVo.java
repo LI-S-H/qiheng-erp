@@ -1,4 +1,4 @@
-package com.qiheng.erp.warehouse.domain.vo;
+package com.qiheng.erp.warehouse.domain.vo.common;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;

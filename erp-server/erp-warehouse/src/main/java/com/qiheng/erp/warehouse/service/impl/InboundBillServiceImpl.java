@@ -28,8 +28,6 @@ import com.qiheng.erp.warehouse.domain.enums.EntryMode;
 import com.qiheng.erp.warehouse.domain.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.enums.InboundType;
 import com.qiheng.erp.warehouse.domain.enums.SourceType;
-import com.qiheng.erp.warehouse.domain.enums.StockBillType;
-
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillListItemVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
@@ -41,19 +39,18 @@ import com.qiheng.erp.warehouse.service.IStockBillItemService;
 import com.qiheng.erp.warehouse.service.IStockBillService;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
+import com.qiheng.erp.warehouse.service.StockBillServiceHelper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -76,6 +73,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     @Autowired
     private IWarehouseStockService warehouseStockService;
+
+    @Autowired
+    private StockBillServiceHelper stockBillServiceHelper;
 
     @Autowired
     private IStockBillService stockBillService;
@@ -133,12 +133,12 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 // 提取入库单详情
                 List<InboundBillItem> items = itemsByBillId.getOrDefault(id, Collections.emptyList());
                 // 填充数量字段
-                populateQuantityFields(vo, items);
+                stockBillServiceHelper.populateQuantityFields("本次入库", items, vo);
             }
         }
         
         // 基于当前分页记录计算汇总信息
-        InboundBillSummaryVo summary = computeSummary(records);
+        InboundBillSummaryVo summary = stockBillServiceHelper.buildSummary(records, InboundBillSummaryVo::new);
 
         InboundBillPageVo pageVo = new InboundBillPageVo();
         pageVo.setRecords(records);
@@ -192,92 +192,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     }
 
     /**
-     * 填充入库单数量字段    
-     * @param vo 入库单列表项VO
-     * @param items 入库单明细列表VO
-     */
-    private void populateQuantityFields(InboundBillListItemVo vo, List<InboundBillItem> items) {
-        if (items == null || items.isEmpty()) {
-            vo.setItemCount(0);
-            vo.setTotalCurrentQty(0);
-            vo.setQuantityUnitName("");
-            vo.setQuantitySummary("0");
-            return;
-        }
-        int itemCount = items.size();
-        vo.setItemCount(itemCount);
-        // 计算总数量
-        long sumRaw = items.stream()
-                .mapToLong(item -> item.getCurrentQty() != null ? item.getCurrentQty() : 0L)
-                .sum();
-        long total = sumRaw / 100L;
-        vo.setTotalCurrentQty((int) total);
-
-        if (itemCount >= 2) {
-            // 两个及以上商品，单位字段显示"n个商品"
-            vo.setQuantityUnitName(itemCount + "个商品");
-        } else {
-            // 1个商品，显示明细单位
-            String unitName = items.getFirst().getUnitName();
-            vo.setQuantityUnitName(unitName != null ? unitName : "");
-        }
-
-        // 构建数量摘要："本次入库 : 商品名称+数量, 商品名称+数量"
-        StringBuilder sb = new StringBuilder("本次入库 : ");
-        for (int i = 0; i < itemCount; i++) {
-            // 处理每个商品的摘要
-            InboundBillItem item = items.get(i);
-            long qtyRaw = item.getCurrentQty() != null ? item.getCurrentQty() : 0L;
-            long qty = qtyRaw / 100L;
-            String productName = item.getProductName() != null ? item.getProductName() : "";
-            String unitName = item.getUnitName() != null ? item.getUnitName() : "";
-            sb.append(productName).append(qty);
-            if (StrUtil.isNotBlank(unitName)) {
-                sb.append(unitName);
-            }
-            if (i < itemCount - 1) {
-                sb.append(" , ");
-            }
-        }
-        vo.setQuantitySummary(sb.toString());
-    }
-    
-    /**
-     * 基于当前分页记录计算入库单汇总
-     * @param records 当前分页的入库单记录
-     * @return 入库单汇总信息
-     */
-    private InboundBillSummaryVo computeSummary(List<InboundBillListItemVo> records) {
-        InboundBillSummaryVo summary = new InboundBillSummaryVo();
-        int sourceGeneratedCount = 0;
-        int pendingCount = 0;
-        int confirmedCount = 0;
-        int cancelledCount = 0;
-
-        for (InboundBillListItemVo vo : records) {
-            // 统计系统自动录单数
-            if (EntryMode.SOURCE_GENERATED.name().equals(vo.getEntryMode())) {
-                sourceGeneratedCount++;
-            }
-            // 按状态统计
-            String status = vo.getStatus();
-            if (StockBillStatus.PENDING_CONFIRM.name().equals(status)) {
-                pendingCount++;
-            } else if (StockBillStatus.CONFIRMED.name().equals(status)) {
-                confirmedCount++;
-            } else if (StockBillStatus.CANCELLED.name().equals(status)) {
-                cancelledCount++;
-            }
-        }
-
-        summary.setSourceGeneratedCount(sourceGeneratedCount);
-        summary.setPendingCount(pendingCount);
-        summary.setConfirmedCount(confirmedCount);
-        summary.setCancelledCount(cancelledCount);
-        return summary;
-    }
-
-    /**
      * 根据ID查询入库单详情
      * @param inboundBillId 入库单ID（字符串形式）
      * @return 入库单详情
@@ -301,14 +215,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                         .eq(InboundBillItem::getInboundBillId, id)
                         .orderByAsc(InboundBillItem::getId)
         );
-        // 查当前仓库这批产品的库存（一次SQL，避免N+1）
-        Map<Long, Long> stockQtyByProductId = getItemDetails(bill, items);
-
         InboundBillDetailVo vo = convertToDetailVo(bill);
-        // 复用填充数量字段的逻辑（itemCount、总数量、单位、摘要）
-        populateQuantityFields(vo, items);
-        // 转换明细项（根据订单状态推导 before/change/after_qty）
-        vo.setItems(convertToDetailItemVos(items, stockQtyByProductId, bill.getStatus()));
+        stockBillServiceHelper.populateQuantityFields("本次入库", items, vo);
+        vo.setItems(convertToDetailItemVos(items));
         return vo;
     }
 
@@ -391,7 +300,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         inboundBillItemService.saveBatch(items);
 
         // 8. 查询当前库存，组装返回详情
-        Map<Long, Long> stockQtyByProductId = getItemDetails(bill, items);
 
         // 9. 组装详情VO
         // 重新查询明细以获取数据库生成的ID和时间
@@ -401,8 +309,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                         .orderByAsc(InboundBillItem::getId)
         );
         InboundBillDetailVo vo = convertToDetailVo(bill);
-        populateQuantityFields(vo, savedItems);
-        vo.setItems(convertToDetailItemVos(savedItems, stockQtyByProductId, bill.getStatus()));
+        stockBillServiceHelper.populateQuantityFields("本次入库", savedItems, vo);
+        vo.setItems(convertToDetailItemVos(savedItems));
         return vo;
     }
 
@@ -431,8 +339,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     /**
      * 根据产品ID列表查询产品信息
-     * @param productIds 产品ID列表
-     * @return 产品信息映射
      */
     private Map<Long, Product> getLongProductMap(List<Long> productIds) {
         List<Product> products = productMapper.selectByIds(productIds);
@@ -445,8 +351,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     /**
      * 校验质量数量（采购入库和销售退货需要合格+不合格=本次数量）
-     * @param dto 入库单创建DTO
-     * @return 入库单类型
      */
     private InboundType checkQualityQty(InboundBillCreateDto dto) {
         InboundType billType = dto.getBillType();
@@ -523,12 +427,11 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                         .orderByAsc(InboundBillItem::getId)
         );
         // 6.1 构建已存在明细的库存数量映射
-        Map<Long, Long> stockQtyByProductId = getItemDetails(bill, savedItems);
         // 重新查询主表以获取更新后的乐观锁版本和时间
         InboundBill updatedBill = this.getById(id);
         InboundBillDetailVo vo = convertToDetailVo(updatedBill);
-        populateQuantityFields(vo, savedItems);
-        vo.setItems(convertToDetailItemVos(savedItems, stockQtyByProductId, updatedBill.getStatus()));
+        stockBillServiceHelper.populateQuantityFields("本次入库", savedItems, vo);
+        vo.setItems(convertToDetailItemVos(savedItems));
         return vo;
     }
 
@@ -574,8 +477,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     /**
      * 获取入库单详情
-     * @param id 入库单ID
-     * @return 入库单详情
      */
     private InboundBillDetailVo getInboundBillDetailVo(Long id) {
         // 1. 查询入库单主表
@@ -590,10 +491,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                         .orderByAsc(InboundBillItem::getId)
         );
         InboundBill updatedBill = this.getById(id);
-        Map<Long, Long> stockQtyByProductId = getItemDetails(updatedBill, items);
         InboundBillDetailVo vo = convertToDetailVo(updatedBill);
-        populateQuantityFields(vo, items);
-        vo.setItems(convertToDetailItemVos(items, stockQtyByProductId, updatedBill.getStatus()));
+        stockBillServiceHelper.populateQuantityFields("本次入库", items, vo);
+        vo.setItems(convertToDetailItemVos(items));
         return vo;
     }
 
@@ -929,40 +829,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
     }
 
-    /**
-     * 根据入库单ID查询入库单明细列表并生成库存数量映射表
-     * @param bill 入库单实体
-     * @param items 入库单明细列表
-     * @return 产品ID到库存数量的映射
-     */
-    private Map<Long, Long> getItemDetails(InboundBill bill, List<InboundBillItem> items) {
-        List<Long> distinctProductIds = items.stream()
-                .map(InboundBillItem::getProductId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        Map<Long, Long> stockQtyByProductId;
-        if (distinctProductIds.isEmpty() || bill.getWarehouseId() == null) {
-            stockQtyByProductId = Collections.emptyMap();
-        } else {
-            List<WarehouseStock> stocks = warehouseStockService.list(
-                    new LambdaQueryWrapper<WarehouseStock>()
-                            .eq(WarehouseStock::getWarehouseId, bill.getWarehouseId())
-                            .in(WarehouseStock::getProductId, distinctProductIds)
-            );
-            stockQtyByProductId = stocks.stream().collect(Collectors.toMap(
-                    WarehouseStock::getProductId,
-                    s -> s.getStockQty() != null ? s.getStockQty() : 0L,
-                    (a, b) -> a
-            ));
-        }
-        return stockQtyByProductId;
-    }
 
     /**
      * 入库单主表转详情VO
-     * @param bill 入库单实体
-     * @return 详情VO
      */
     private InboundBillDetailVo convertToDetailVo(InboundBill bill) {
         // createTime/updateTime 由数据库生成，插入后内存对象无此值，需复查
@@ -972,96 +841,14 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 bill = fresh;
             }
         }
-        InboundBillDetailVo vo = new InboundBillDetailVo();
-        vo.setWorkBillId(String.valueOf(bill.getId()));
-        vo.setBillNo(bill.getInboundNo());
-        vo.setSourceType(bill.getSourceType());
-        vo.setSourceId(bill.getSourceId() != null ? String.valueOf(bill.getSourceId()) : null);
-        vo.setSourceNo(bill.getSourceNo());
-        vo.setSourcePartyId(bill.getSourcePartyId() != null ? String.valueOf(bill.getSourcePartyId()) : null);
-        vo.setSourcePartyName(bill.getSourcePartyName() != null ? bill.getSourcePartyName() : "");
-        vo.setEntryMode(bill.getEntryMode());
-        vo.setWarehouseId(bill.getWarehouseId() != null ? String.valueOf(bill.getWarehouseId()) : null);
-        vo.setWarehouseName(bill.getWarehouseName());
-        vo.setStatus(bill.getStatus());
-        vo.setConfirmedById(bill.getConfirmedById() != null ? String.valueOf(bill.getConfirmedById()) : null);
-        vo.setConfirmedByName(bill.getConfirmedByName() != null ? bill.getConfirmedByName() : "");
-        vo.setConfirmedAt(bill.getConfirmedAt());
-        vo.setCreatedById(bill.getCreatedById() != null ? String.valueOf(bill.getCreatedById()) : null);
-        vo.setCreatedByName(bill.getCreatedByName() != null ? bill.getCreatedByName() : "");
-        vo.setResponsibleById(bill.getResponsibleById() != null ? String.valueOf(bill.getResponsibleById()) : null);
-        vo.setResponsibleByName(bill.getResponsibleByName() != null ? bill.getResponsibleByName() : "");
-        vo.setVersion(bill.getVersion() != null ? bill.getVersion() : 0);
-        vo.setCreateTime(bill.getCreateTime());
-        vo.setUpdateTime(bill.getUpdateTime());
-        vo.setBillType(bill.getInboundType());
-        vo.setManualReason(bill.getManualReason() != null ? bill.getManualReason() : "");
-        vo.setRemark(bill.getRemark() != null ? bill.getRemark() : "");
-        return vo;
+        return stockBillServiceHelper.convertToDetailVo(bill, InboundBillDetailVo::new);
     }
 
     /**
-     * 入库单明细转详情明细VO（按状态推导 before/change/after_qty）
-     * @param items 入库单明细实体列表
-     * @param stockQtyByProductId 当前仓库按productId映射的库存数量（原始100倍整数）
-     * @param billStatus 入库单状态（DRAFT / PENDING_CONFIRM / CONFIRMED / CANCELLED）
-     * @return 详情明细VO列表
+     * 入库单明细转详情明细VO
      */
-    private List<InboundBillDetailVo.InboundBillDetailItemVo> convertToDetailItemVos(
-            List<InboundBillItem> items,
-            Map<Long, Long> stockQtyByProductId,
-            String billStatus) {
-        boolean isConfirmed = StockBillStatus.CONFIRMED.name().equals(billStatus);
-        return items.stream().map(item -> {
-            InboundBillDetailVo.InboundBillDetailItemVo ivo = new InboundBillDetailVo.InboundBillDetailItemVo();
-            // 基本字段
-            ivo.setWorkBillItemId(String.valueOf(item.getId()));
-            ivo.setWorkBillId(String.valueOf(item.getInboundBillId()));
-            ivo.setBillNo(item.getInboundNo());
-            ivo.setSourceItemId(item.getSourceItemId() != null ? String.valueOf(item.getSourceItemId()) : null);
-            ivo.setProductId(String.valueOf(item.getProductId()));
-            ivo.setProductCode(item.getProductCode());
-            ivo.setProductName(item.getProductName());
-            ivo.setUnitName(item.getUnitName());
-            ivo.setQuantityPrecision(item.getQuantityPrecision());
-
-            // 数量全部除以 100（数据库按 100 倍整数存储），契约为 number,null
-            ivo.setPlanQty(QtyUtil.toDecimal(item.getPlanQty()));
-            ivo.setProcessedQty(QtyUtil.toDecimal(item.getProcessedQty()));
-            ivo.setPendingQty(QtyUtil.toDecimal(item.getPendingQty()));
-            BigDecimal currentQty = QtyUtil.toDecimal(item.getCurrentQty());
-            // current / qualified / defective / before / change / after 契约为 number（不允许null），默认0
-            ivo.setCurrentQty(currentQty != null ? currentQty : BigDecimal.ZERO);
-            ivo.setQualifiedQty(QtyUtil.defaultZero(QtyUtil.toDecimal(item.getQualifiedQty())));
-            ivo.setDefectiveQty(QtyUtil.defaultZero(QtyUtil.toDecimal(item.getDefectiveQty())));
-
-            // 根据状态推导前后数量（O(1)从Map取，BigDecimal计算保证精度）
-            Long rawStock = stockQtyByProductId.get(item.getProductId());
-            BigDecimal stock = QtyUtil.defaultZero(QtyUtil.toDecimal(rawStock));
-            BigDecimal cq = QtyUtil.defaultZero(currentQty);
-            BigDecimal beforeQty;
-            BigDecimal afterQty;
-            if (isConfirmed) {
-                afterQty = stock;
-                beforeQty = stock.subtract(cq);
-                // 避免负数
-                if (beforeQty.compareTo(BigDecimal.ZERO) < 0) {
-                    beforeQty = BigDecimal.ZERO;
-                }
-            } else {
-                beforeQty = stock;
-                afterQty = stock.add(cq);
-            }
-            ivo.setBeforeQty(beforeQty);
-            ivo.setChangeQty(QtyUtil.defaultZero(currentQty));
-            ivo.setAfterQty(afterQty);
-
-            ivo.setStockBillItemId(item.getStockBillItemId() != null ? String.valueOf(item.getStockBillItemId()) : null);
-            ivo.setCreateTime(item.getCreateTime());
-            ivo.setUpdateTime(item.getUpdateTime());
-            ivo.setRemark(item.getRemark());
-            return ivo;
-        }).collect(Collectors.toList());
+    private List<InboundBillDetailVo.InboundBillDetailItemVo> convertToDetailItemVos(List<InboundBillItem> items) {
+        return stockBillServiceHelper.convertToDetailItemVos(items, InboundBillDetailVo.InboundBillDetailItemVo::new);
     }
 
     /**

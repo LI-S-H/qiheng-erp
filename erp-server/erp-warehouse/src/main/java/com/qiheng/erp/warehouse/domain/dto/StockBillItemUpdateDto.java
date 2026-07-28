@@ -49,7 +49,7 @@ public class StockBillItemUpdateDto {
     @Valid
     private List<StockBillUpdateDto> items;
 
-    @Schema(description = "备注")
+    @Schema(description = "备注，选填")
     @Size(max = 500, message = "备注最多500个字符")
     private String remark;
 }

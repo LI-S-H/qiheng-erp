@@ -7,6 +7,14 @@ export type StockBillStatus = 'DRAFT' | 'PENDING_CONFIRM' | 'CONFIRMED' | 'CANCE
 export type StockBillEntryMode = 'SOURCE_GENERATED' | 'MANUAL_SUPPLEMENT' | 'MANUAL_ADJUSTMENT';
 export type ManualStockBillType = StockBillType;
 
+/**
+ * 只有涉及收货检验或退货检验的单据才记录质检数量。
+ * 其余单据仍需提交两个数量字段，但值必须为 0，避免沿用表单中的旧值。
+ */
+export function requiresStockBillQualityCheck(billType: StockBillType) {
+  return billType === 'PURCHASE_IN' || billType === 'SALES_RETURN' || billType === 'PURCHASE_RETURN';
+}
+
 export interface StockBillListItem {
   workBillId: string;
   billNo: string;
@@ -102,8 +110,8 @@ export interface StockBillCreatePayload {
   sourceNo: string;
   sourceId?: string;
   warehouseId: string;
-  sourcePartyId?: string;
-  sourcePartyName?: string;
+  sourcePartyId: string;
+  sourcePartyName: string;
   manualReason: string;
   items: StockBillDraftItemPayload[];
   remark?: string;

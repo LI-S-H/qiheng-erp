@@ -61,6 +61,7 @@ import {
   submitStockBill,
   updateStockBill,
 } from '../api';
+import { requiresStockBillQualityCheck } from '../types';
 import type {
   ManualStockBillType,
   StockBillCreatePayload,
@@ -331,7 +332,7 @@ const sourceNoMode = ref<'search' | 'manual'>('search');
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const formBillType = computed<StockBillType>(() => dialogMode.value === 'edit' && editingDetail.value ? editingDetail.value.billType : form.billType);
-const qualityFieldsVisible = computed(() => formBillType.value === 'PURCHASE_IN' || formBillType.value === 'SALES_RETURN');
+const qualityFieldsVisible = computed(() => requiresStockBillQualityCheck(formBillType.value));
 const isAdjustmentForm = computed(() => adjustmentTypes.has(formBillType.value));
 const isManualForm = computed(() => dialogMode.value === 'create' || editingDetail.value?.entryMode !== 'SOURCE_GENERATED');
 const editingIsDraft = computed(() => dialogMode.value === 'edit' && editingDetail.value?.status === 'DRAFT');
@@ -661,7 +662,7 @@ function remainingQtyText(item: StockBillItem) {
 }
 
 function isQualityBillType(billType: StockBillType) {
-  return billType === 'PURCHASE_IN' || billType === 'SALES_RETURN';
+  return requiresStockBillQualityCheck(billType);
 }
 
 function qualityQtyText(item: StockBillItem, billType: StockBillType, field: 'qualifiedQty' | 'defectiveQty') {
@@ -1034,6 +1035,7 @@ function validateForm() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   if (warehouseEditable.value && !form.warehouseId) formErrors.warehouseId = '请选择仓库';
   if (sourcePartyEditable.value && !form.sourcePartyId) formErrors.sourcePartyId = isAdjustmentForm.value ? '请选择来源仓库' : (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'PURCHASE_RETURN' ? '请选择供应商' : '请选择客户');
+  else if (sourcePartyEditable.value && !selectedSourcePartyLabel.value) formErrors.sourcePartyId = '来源对象名称缺失，请重新选择来源对象';
   if (sourceNoEditable.value && !form.sourceNo.trim()) formErrors.sourceNo = sourceNoSearchable.value && sourceNoMode.value === 'search' ? '请选择来源单据' : '请输入原业务单号，便于追溯补录来源';
   if (isManualForm.value && !form.manualReason.trim()) formErrors.manualReason = isAdjustmentForm.value ? '请填写调整原因' : '请填写补录原因';
   else if (form.manualReason.trim().length > 500) formErrors.manualReason = '原因不能超过 500 个字符';
@@ -1071,7 +1073,7 @@ function buildItemPayloads(): StockBillDraftItemPayload[] {
     currentQty: Number(item.currentQty),
     qualifiedQty: qualityFieldsVisible.value ? Number(item.qualifiedQty) : 0,
     defectiveQty: qualityFieldsVisible.value ? Number(item.defectiveQty) : 0,
-    remark: item.remark?.trim() ?? '',
+    ...(item.remark?.trim() ? { remark: item.remark.trim() } : {}),
   }));
 }
 
@@ -1085,13 +1087,11 @@ async function submitForm() {
         sourceNo: form.sourceNo.trim(),
         ...(form.sourceId ? { sourceId: form.sourceId } : {}),
         warehouseId: form.warehouseId,
-        ...(sourcePartyEditable.value && form.sourcePartyId ? {
-          sourcePartyId: form.sourcePartyId,
-          sourcePartyName: selectedSourcePartyLabel.value || '',
-        } : {}),
+        sourcePartyId: form.sourcePartyId,
+        sourcePartyName: selectedSourcePartyLabel.value,
         manualReason: form.manualReason.trim(),
         items: buildItemPayloads(),
-        remark: form.remark.trim(),
+        ...(form.remark.trim() ? { remark: form.remark.trim() } : {}),
       };
       await createStockBill(pageDirection.value, payload);
       toast.success(`${pageText.value.formTitle}草稿已创建`);
@@ -1106,9 +1106,9 @@ async function submitForm() {
           sourcePartyName: selectedSourcePartyLabel.value,
         } : {}),
         ...(manualReasonEditable.value ? { manualReason: form.manualReason.trim() } : {}),
-        remark: form.remark.trim(),
+        ...(form.remark.trim() ? { remark: form.remark.trim() } : {}),
       };
-      await updateStockBill(billDirection(editingDetail.value.billType), editingDetail.value.workBillId, payload);
+      await updateStockBill(billDirection(editingDetail.value.billType), editingDetail.value.workBillId, payload, editingDetail.value.billType);
       toast.success(`${pageText.value.formTitle}已保存`);
     }
     closeFormDialog();

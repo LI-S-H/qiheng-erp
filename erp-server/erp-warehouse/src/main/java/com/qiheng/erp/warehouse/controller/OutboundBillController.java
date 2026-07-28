@@ -3,6 +3,7 @@ package com.qiheng.erp.warehouse.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.Result;
+import com.qiheng.erp.warehouse.domain.dto.OutboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.OutboundBillPageDto;
 import com.qiheng.erp.warehouse.domain.vo.OutboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.OutboundBillPageVo;
@@ -14,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 
 import org.springframework.web.bind.annotation.RestController;
@@ -60,5 +63,18 @@ public class OutboundBillController {
         StpUtil.checkPermission("warehouse:query");
         log.info("根据ID查询出库单详情，参数: {}", outboundBillId);
         return Result.ok(outboundBillService.getDetailById(outboundBillId));
+    }
+
+    /**
+     * 新增手工出库单草稿
+     * @param dto 创建请求
+     * @return 出库单详情
+     */
+    @PostMapping
+    @Operation(summary = "新增手工出库单草稿")
+    public Result<OutboundBillDetailVo> createDraft(@Valid @RequestBody OutboundBillCreateDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("新增手工出库单草稿，参数: {}", dto);
+        return Result.ok(outboundBillService.createDraft(dto));
     }
 }

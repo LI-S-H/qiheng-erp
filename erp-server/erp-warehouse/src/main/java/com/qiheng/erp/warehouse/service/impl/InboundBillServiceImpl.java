@@ -10,7 +10,6 @@ import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.BillNoGenerator;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.entity.Product;
-import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
@@ -27,7 +26,6 @@ import com.qiheng.erp.warehouse.domain.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.domain.enums.EntryMode;
 import com.qiheng.erp.warehouse.domain.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.enums.InboundType;
-import com.qiheng.erp.warehouse.domain.enums.SourceType;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillListItemVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
@@ -40,6 +38,7 @@ import com.qiheng.erp.warehouse.service.IStockBillService;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.qiheng.erp.warehouse.service.StockBillServiceHelper;
+import com.qiheng.erp.warehouse.service.support.StockBillDraftSupport;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,6 +77,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     private StockBillServiceHelper stockBillServiceHelper;
 
     @Autowired
+    private StockBillDraftSupport stockBillDraftSupport;
+
+    @Autowired
     private IStockBillService stockBillService;
 
     @Autowired
@@ -85,9 +87,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     @Autowired
     private IWarehouseService warehouseService;
-
-    @Autowired
-    private ProductMapper productMapper;
 
     @Autowired
     private BillNoGenerator billNoGenerator;
@@ -229,45 +228,34 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     @Override
     @Transactional(rollbackFor = Exception.class)
     public InboundBillDetailVo createDraft(InboundBillCreateDto dto) {
-        // 1. 校验仓库是否存在且已启用
-        Long warehouseId = Long.valueOf(dto.getWarehouseId());
-        Warehouse warehouse = warehouseService.getById(warehouseId);
-        if (warehouse == null || warehouse.getStatus() == null || warehouse.getStatus() != 1) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "仓库不存在或已禁用");
-        }
+        // 1. 校验参数
+        InboundType billType = dto.getBillType();
+        // 2. 建草稿上下文
+        StockBillDraftSupport.DraftContext draftContext = stockBillDraftSupport.prepare(
+                dto.getWarehouseId(), dto.getItems(), billType);
+        // 3. 提取上下文信息
+        Long warehouseId = draftContext.warehouse().getId();
+        Warehouse warehouse = draftContext.warehouse();
+        Map<Long, Product> productMap = draftContext.productMap();
 
-        // 2. 批量查询产品快照
-        List<Long> productIds = dto.getItems().stream()
-                .map(item -> Long.valueOf(item.getProductId()))
-                .distinct()
-                .toList();
-        Map<Long, Product> productMap = getLongProductMap(productIds);
+        // 4. 生成入库单号
+        String inboundNo = billNoGenerator.nextNo(billType.billNoPrefix());
 
-        // 3. 校验质量数量（采购入库和销售退货需要合格+不合格=本次数量）
-        InboundType billType = checkQualityQty(dto);
-
-        // 4. 确定来源类型和录入方式
-        String sourceType = resolveSourceType(billType);
-        String entryMode = resolveEntryMode(billType);
-
-        // 5. 生成入库单号
-        String inboundNo = billNoGenerator.nextNo("IB");
-
-        // 6. 获取当前登录用户
+        // 5. 获取当前登录用户
         LoginUser currentUser = UserContext.getCurrentUser();
         Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
         String currentUserName = currentUser != null ? currentUser.getRealName() : null;
 
-        // 6. 组装入库单主表
+        // 5. 组装入库单主表
         InboundBill bill = new InboundBill()
                 .setInboundNo(inboundNo)
                 .setInboundType(billType.name())
-                .setSourceType(sourceType)
-                .setSourceId(StrUtil.isNotBlank(dto.getSourceId()) ? Long.valueOf(dto.getSourceId()) : null)
+                .setSourceType(billType.sourceType().name())
+                .setSourceId(stockBillDraftSupport.toNullableLong(dto.getSourceId()))
                 .setSourceNo(StrUtil.blankToDefault(dto.getSourceNo(), null))
-                .setSourcePartyId(StrUtil.isNotBlank(dto.getSourcePartyId()) ? Long.valueOf(dto.getSourcePartyId()) : null)
+                .setSourcePartyId(stockBillDraftSupport.toNullableLong(dto.getSourcePartyId()))
                 .setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null))
-                .setEntryMode(entryMode)
+                .setEntryMode(billType.entryMode().name())
                 .setWarehouseId(warehouseId)
                 .setWarehouseName(warehouse.getWarehouseName())
                 .setStatus(StockBillStatus.DRAFT.name())
@@ -279,7 +267,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setRemark(dto.getRemark());
         this.save(bill);
 
-        // 7. 组装入库单明细
+        // 6. 组装入库单明细
         List<InboundBillItem> items = new ArrayList<>();
         for (InboundBillItemCreateDto itemDto : dto.getItems()) {
             Long productId = Long.valueOf(itemDto.getProductId());
@@ -299,9 +287,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
         inboundBillItemService.saveBatch(items);
 
-        // 8. 查询当前库存，组装返回详情
+        // 7. 查询当前库存，组装返回详情
 
-        // 9. 组装详情VO
+        // 8. 组装详情VO
         // 重新查询明细以获取数据库生成的ID和时间
         List<InboundBillItem> savedItems = inboundBillItemService.list(
                 new LambdaQueryWrapper<InboundBillItem>()
@@ -321,7 +309,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         InboundBillItem item = new InboundBillItem()
                 .setInboundBillId(bill.getId())
                 .setInboundNo(inboundNo)
-                .setSourceItemId(StrUtil.isNotBlank(sourceItemId) ? Long.valueOf(sourceItemId) : null)
+                .setSourceItemId(stockBillDraftSupport.toNullableLong(sourceItemId))
                 .setProductId(productId)
                 .setProductCode(product.getProductCode())
                 .setProductName(product.getProductName())
@@ -335,34 +323,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setDefectiveQty(QtyUtil.toStored(defectiveQty))
                 .setRemark(remark);
         items.add(item);
-    }
-
-    /**
-     * 根据产品ID列表查询产品信息
-     */
-    private Map<Long, Product> getLongProductMap(List<Long> productIds) {
-        List<Product> products = productMapper.selectByIds(productIds);
-        if (products.size() != productIds.size()) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "部分产品不存在");
-        }
-        return products.stream()
-                .collect(Collectors.toMap(Product::getId, p -> p));
-    }
-
-    /**
-     * 校验质量数量（采购入库和销售退货需要合格+不合格=本次数量）
-     */
-    private InboundType checkQualityQty(InboundBillCreateDto dto) {
-        InboundType billType = dto.getBillType();
-        if (billType == InboundType.PURCHASE_IN || billType == InboundType.SALES_RETURN) {
-            for (InboundBillItemCreateDto itemDto : dto.getItems()) {
-                BigDecimal qualitySum = itemDto.getQualifiedQty().add(itemDto.getDefectiveQty());
-                if (qualitySum.compareTo(itemDto.getCurrentQty()) != 0) {
-                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "合格与不合格数量之和必须等于本次入库数量");
-                }
-            }
-        }
-        return billType;
     }
 
     /**
@@ -788,22 +748,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                               List<InboundBillItem> existingItems,
                               List<StockBillUpdateDto> itemDtos,
                               InboundType billType) {
-        // 校验质量数量（采购入库和销售退货）
-        if (billType == InboundType.PURCHASE_IN || billType == InboundType.SALES_RETURN) {
-            for (StockBillUpdateDto itemDto : itemDtos) {
-                BigDecimal qualitySum = itemDto.getQualifiedQty().add(itemDto.getDefectiveQty());
-                if (qualitySum.compareTo(itemDto.getCurrentQty()) != 0) {
-                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "合格与不合格数量之和必须等于本次入库数量");
-                }
-            }
-        }
-
-        // 批量查询产品快照
-        List<Long> productIds = itemDtos.stream()
-                .map(item -> Long.valueOf(item.getProductId()))
-                .distinct()
-                .toList();
-        Map<Long, Product> productMap = getLongProductMap(productIds);
+        stockBillDraftSupport.validateQualityQuantities(itemDtos, billType);
+        Map<Long, Product> productMap = stockBillDraftSupport.loadProductMap(itemDtos);
 
         // 全删
         if (!existingItems.isEmpty()) {
@@ -851,24 +797,4 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         return stockBillServiceHelper.convertToDetailItemVos(items, InboundBillDetailVo.InboundBillDetailItemVo::new);
     }
 
-    /**
-     * 根据入库类型确定来源类型
-     */
-    private String resolveSourceType(InboundType billType) {
-        return switch (billType) {
-            case PURCHASE_IN -> SourceType.PURCHASE_ORDER.name();
-            case SALES_RETURN -> SourceType.SALES_RETURN_ORDER.name();
-            case ADJUST_IN -> SourceType.STOCK_ADJUST.name();
-        };
-    }
-
-    /**
-     * 根据入库类型确定录入方式
-     */
-    private String resolveEntryMode(InboundType billType) {
-        return switch (billType) {
-            case PURCHASE_IN, SALES_RETURN -> EntryMode.MANUAL_SUPPLEMENT.name();
-            case ADJUST_IN -> EntryMode.MANUAL_ADJUSTMENT.name();
-        };
-    }
 }

@@ -11,14 +11,14 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 /**
- * 入库单明细创建请求
+ * 出库单明细创建请求
  *
  * @author Li
- * @since 2026-07-25
+ * @since 2026-07-28
  */
 @Data
-@Schema(description = "入库单明细创建请求")
-public class InboundBillItemCreateDto implements StockBillDraftItem {
+@Schema(description = "出库单明细创建请求")
+public class OutboundBillItemCreateDto implements StockBillDraftItem {
 
     @Schema(description = "产品ID")
     @NotBlank(message = "产品ID不能为空")
@@ -30,17 +30,17 @@ public class InboundBillItemCreateDto implements StockBillDraftItem {
     @Schema(description = "来源计划数量，业务真实值（如100件存100），前端从来源单据带入；后端按100倍整数持久化")
     private BigDecimal planQty;
 
-    @Schema(description = "本次入库数量，最多两位小数")
-    @NotNull(message = "本次入库数量不能为空")
-    @DecimalMin(value = "0.01", message = "本次入库数量必须大于0")
+    @Schema(description = "本次出库数量，最多两位小数")
+    @NotNull(message = "本次出库数量不能为空")
+    @DecimalMin(value = "0.01", message = "本次出库数量必须大于0")
     private BigDecimal currentQty;
 
-    @Schema(description = "合格数量，其他类型传0")
+    @Schema(description = "合格数量，采购退货出库使用，其他类型传0")
     @NotNull(message = "合格数量不能为空")
     @DecimalMin(value = "0", message = "合格数量不能为负")
     private BigDecimal qualifiedQty;
 
-    @Schema(description = "不合格数量，其他类型传0")
+    @Schema(description = "不合格数量，采购退货出库使用，其他类型传0")
     @NotNull(message = "不合格数量不能为空")
     @DecimalMin(value = "0", message = "不合格数量不能为负")
     private BigDecimal defectiveQty;

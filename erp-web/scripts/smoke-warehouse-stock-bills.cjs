@@ -141,6 +141,21 @@ async function assertStockBillColumnPreferences(page) {
   await inboundRow.getByRole('button', { name: '展开明细' }).click();
   const inboundHostColspan = await inboundRow.locator('xpath=following-sibling::tr[1]/td[1]').getAttribute('colspan');
   if (inboundHostColspan !== '10') throw new Error(`隐藏列后展开明细 colspan 未同步，当前为 ${inboundHostColspan}`);
+  const inboundDetailLayout = await inboundRow.locator('xpath=following-sibling::tr[1]')
+    .locator('.stock-bill-detail-card')
+    .evaluate(card => {
+      const viewport = card.querySelector('[data-slot="table-container"]');
+      const table = viewport?.querySelector('table');
+      const tableWidth = table?.getBoundingClientRect().width ?? 0;
+      return {
+        cardWidth: Math.round(card.getBoundingClientRect().width),
+        tableWidth: Math.round(tableWidth),
+        trailingGap: Math.round((viewport?.clientWidth ?? 0) - tableWidth),
+      };
+    });
+  if (inboundDetailLayout.cardWidth > 864 || inboundDetailLayout.tableWidth !== 860 || inboundDetailLayout.trailingGap > 1) {
+    throw new Error(`隐藏列后明细表右侧出现空白区域：${JSON.stringify(inboundDetailLayout)}`);
+  }
   await page.screenshot({ path: path.resolve(__dirname, '..', 'docs', 'qa-screenshots', '2026-07-14-143053-stock-bill-column-visibility', 'inbound-custom-columns.png'), fullPage: true });
   await inboundRow.getByRole('button', { name: '收起明细' }).click();
   await page.waitForTimeout(280);

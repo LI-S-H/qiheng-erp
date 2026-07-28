@@ -1457,8 +1457,8 @@ onMounted(async () => {
                           <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.workBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
                           <div v-else-if="detailLoadErrors[row.workBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.workBillId">{{ detailLoadErrors[row.workBillId] }}</div>
                           <div v-else-if="expandedItems(row).length === 0" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-empty-id="row.workBillId">暂无商品明细</div>
-                          <WarehouseDetailTableFrame v-else max-width="1024px" class="stock-bill-detail-card">
-                              <Table class="!w-[1020px] min-w-[1020px] table-fixed">
+                          <WarehouseDetailTableFrame v-else max-width="864px" class="stock-bill-detail-card">
+                              <Table class="!w-[860px] min-w-[860px] table-fixed">
                                 <colgroup>
                                   <col class="w-[96px]" />
                                   <col class="w-[200px]" />
@@ -1467,8 +1467,6 @@ onMounted(async () => {
                                   <col class="w-[92px]" />
                                   <col class="w-[92px]" />
                                   <col class="w-[112px]" />
-                                  <col class="w-[80px]" />
-                                  <col class="w-[80px]" />
                                   <col class="w-[120px]" />
                                 </colgroup>
                                 <TableHeader>
@@ -1480,8 +1478,6 @@ onMounted(async () => {
                                     <TableHead class="text-center">合格数量</TableHead>
                                     <TableHead class="text-center">不合格数量</TableHead>
                                     <TableHead class="text-center">{{ pageText.pendingQtyLabel }}</TableHead>
-                                    <TableHead class="text-center">变动前</TableHead>
-                                    <TableHead class="text-center">变动后</TableHead>
                                     <TableHead class="text-center">备注</TableHead>
                                   </TableRow>
                                 </TableHeader>
@@ -1494,8 +1490,6 @@ onMounted(async () => {
                                     <TableCell class="text-center tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
                                     <TableCell class="text-center tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(row.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
                                     <TableCell class="text-center tabular-nums">{{ remainingQtyText(item) }}</TableCell>
-                                    <TableCell class="text-center tabular-nums">{{ formatQty(item.beforeQty) }}</TableCell>
-                                    <TableCell class="text-center font-medium tabular-nums">{{ formatQty(item.afterQty) }}</TableCell>
                                     <TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell>
                                   </TableRow>
                                 </TableBody>
@@ -1698,9 +1692,9 @@ onMounted(async () => {
               <div class="mb-2 flex items-center justify-between"><h3 class="text-sm font-semibold">产品明细</h3><span class="text-xs text-muted-foreground">共 {{ detail.items.length }} 条</span></div>
               <div class="detail-table-floating">
                 <div class="stock-bill-dialog-table-scroll w-full">
-                  <Table class="min-w-[1210px] table-fixed">
-                    <colgroup><col class="w-[190px]" /><col class="w-[65px]" /><col class="w-[95px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[155px]" /><col class="w-[95px]" /><col class="w-[105px]" /><col class="w-[90px]" /><col class="w-[90px]" /><col class="w-[100px]" /></colgroup>
-                    <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">{{ planQtyLabel(detail.billType) }}</TableHead><TableHead class="text-right">{{ pageText.processedLabel }}</TableHead><TableHead class="text-right">{{ pageText.currentQtyLabel }}</TableHead><TableHead class="text-right">确认后{{ pageText.pendingQtyLabel }}</TableHead><TableHead class="text-right">合格数量</TableHead><TableHead class="text-right">不合格数量</TableHead><TableHead class="text-right">变动前</TableHead><TableHead class="text-right">变动后</TableHead><TableHead>备注</TableHead></TableRow></TableHeader>
+                  <Table class="min-w-[1030px] table-fixed">
+                    <colgroup><col class="w-[190px]" /><col class="w-[65px]" /><col class="w-[95px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[155px]" /><col class="w-[95px]" /><col class="w-[105px]" /><col class="w-[100px]" /></colgroup>
+                    <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">{{ planQtyLabel(detail.billType) }}</TableHead><TableHead class="text-right">{{ pageText.processedLabel }}</TableHead><TableHead class="text-right">{{ pageText.currentQtyLabel }}</TableHead><TableHead class="text-right">确认后{{ pageText.pendingQtyLabel }}</TableHead><TableHead class="text-right">合格数量</TableHead><TableHead class="text-right">不合格数量</TableHead><TableHead>备注</TableHead></TableRow></TableHeader>
                     <TableBody>
                       <TableRow v-for="item in detail.items" :key="item.workBillItemId" :data-stock-bill-item-id="item.workBillItemId">
                         <TableCell><div class="flex flex-col items-center gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><span class="max-w-[150px] truncate text-center font-medium" :title="item.productName">{{ item.productName }}</span></div></TableCell>
@@ -1711,8 +1705,6 @@ onMounted(async () => {
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.pendingQty) }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ qualityQtyText(item, detail.billType, 'qualifiedQty') }}</TableCell>
                         <TableCell class="text-right tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(detail.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, detail.billType, 'defectiveQty') }}</TableCell>
-                        <TableCell class="text-right tabular-nums">{{ formatQty(item.beforeQty) }}</TableCell>
-                        <TableCell class="text-right font-medium tabular-nums">{{ formatQty(item.afterQty) }}</TableCell>
                         <TableCell><OverflowTooltip :text="item.remark" fallback="-" class="block text-xs text-muted-foreground" /></TableCell>
                       </TableRow>
                     </TableBody>
@@ -1802,8 +1794,8 @@ onMounted(async () => {
   position: sticky;
   left: 16px;
   z-index: 10;
-  /* 表格内容宽度为 1020px，额外 4px 仅供左右边框，避免右侧出现空白条。 */
-  width: min(1024px, calc(100cqi - 32px));
+  /* 表格内容为 860px，外框仅预留 4px 边框，避免调整字段后右侧留下空白块。 */
+  width: min(864px, calc(100cqi - 32px));
   border-left: 3px solid var(--primary);
   background: color-mix(in srgb, var(--muted) 36%, white);
 }

@@ -53,9 +53,6 @@ export interface StockBillItem {
   currentQty: number;
   qualifiedQty: number;
   defectiveQty: number;
-  beforeQty: number;
-  changeQty: number;
-  afterQty: number;
   createTime: string;
   updateTime: string;
   remark: string;

@@ -122,7 +122,7 @@ interface MockBillSeed {
 
 const billSeed: MockBillSeed[] = [
   { billId: '1932000000000000001', billNo: 'IB202607010001', billType: 'ADJUST_IN', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202607010001', sourcePartyName: '华北中心仓', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', status: 'CONFIRMED', createTime: '2026-07-01 08:45:00', updateTime: '2026-07-01 09:12:00', confirmedAt: '2026-07-01 09:12:00', manualReason: '月末盘点发现库存盘盈', remark: '盘盈16盒每日坚果混合装', items: [{ itemId: '1932100000000000001', productId: '1920000000000000007', productCode: 'P000007', productName: '每日坚果混合装', unitName: '盒', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 16, createTime: '2026-07-01 08:45:00', updateTime: '2026-07-16 18:18:51', remark: '库存盘盈调整' }] },
-  { billId: '1932000000000000002', billNo: 'IB202607010002', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'MANUAL-PO-20260701', sourcePartyId: '1910000000000000001', sourcePartyName: '华东食品供应商', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'DRAFT', entryMode: 'MANUAL_SUPPLEMENT', createTime: '2026-07-01 09:00:00', manualReason: '线下采购入库补录', items: [{ itemId: '1932100000000000002', productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 6, remark: '线下采购补录' }] },
+  { billId: '1932000000000000002', billNo: 'IB202607010002', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: '', sourcePartyId: '1910000000000000001', sourcePartyName: '华东食品供应商', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'DRAFT', entryMode: 'MANUAL_SUPPLEMENT', createTime: '2026-07-01 09:00:00', manualReason: '线下采购入库补录', items: [{ itemId: '1932100000000000002', productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 6, remark: '线下采购补录' }] },
   { billId: '1933000000000000001', billNo: 'OB202607010001', billType: 'ADJUST_OUT', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202607010002', sourcePartyName: '华东中心仓', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CONFIRMED', createTime: '2026-07-01 09:30:00', updateTime: '2026-07-01 10:05:00', confirmedAt: '2026-07-01 10:05:00', manualReason: '月末盘点发现库存盘亏', remark: '盘亏10盒速溶黑咖啡', items: [{ itemId: '1933100000000000001', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 10, createTime: '2026-07-01 09:30:00', updateTime: '2026-07-16 18:18:51', remark: '库存盘亏调整' }] },
   { billId: '1933000000000000002', billNo: 'OB202607010002', billType: 'ADJUST_OUT', sourceType: 'STOCK_ADJUST', sourceNo: 'ADJ202607010003', sourcePartyId: '1930000000000000001', sourcePartyName: '华东中心仓', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'DRAFT', entryMode: 'MANUAL_ADJUSTMENT', createTime: '2026-07-01 10:15:00', manualReason: '盘点差异待复核', remark: '草稿调整出库', items: [{ itemId: '1933100000000000002', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', quantityPrecision: 0, planQty: null, processedQty: null, pendingQty: null, currentQty: 2, remark: '待复核差异' }] },
   { billId: '1950000000000000001', billNo: 'IB202606140001', billType: 'PURCHASE_IN', sourceType: 'PURCHASE_ORDER', sourceNo: 'PO202606001', sourcePartyName: '华东饮品供应链', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', status: 'CONFIRMED', createTime: '2026-06-14 09:12:00', items: [{ itemId: '1960000000000001001', productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 0, planQty: 48, processedQty: 0, pendingQty: 18, currentQty: 30, defectiveQty: 1 }, { itemId: '1960000000000001002', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', unitName: '盒', quantityPrecision: 0, planQty: 20, processedQty: 0, pendingQty: 8, currentQty: 12 }] },
@@ -425,7 +425,9 @@ export async function createStockBill(direction: StockBillDirection, payload: St
     const sourceNo = isAdjustment ? '' : payload.sourceNo.trim();
     const sourceId = isAdjustment ? '' : payload.sourceId?.trim() ?? '';
     const manualReason = payload.manualReason.trim();
-    if (!isAdjustment && (!sourceNo || !sourceId)) throw new Error('手工补录采购、销售或退货凭证时必须选择来源单据');
+    if (!isAdjustment && Boolean(sourceNo) !== Boolean(sourceId)) {
+      throw new Error('来源单据ID和来源单号必须同时存在或同时留空');
+    }
     if (sourceNo.length > 64) throw new Error('原业务单号不能超过 64 个字符');
     if (!payload.sourcePartyId.trim() || !payload.sourcePartyName.trim()) throw new Error('来源对象ID和名称不能为空');
     if (!manualReason) throw new Error(isAdjustment ? '请填写调整原因' : '请填写补录原因');
@@ -555,11 +557,14 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
       } satisfies StockBillItem;
     });
     const isSupplement = current.entryMode === 'MANUAL_SUPPLEMENT';
-    const supplementSourceEditable = isSupplement
-      && current.status === 'DRAFT'
-      && (current.billType === 'PURCHASE_IN' || current.billType === 'SALES_RETURN');
+    const supplementSourceEditable = isSupplement && current.status === 'DRAFT';
     const adjustmentSourceWarehouseEditable = current.entryMode === 'MANUAL_ADJUSTMENT' && current.status === 'DRAFT';
-    const sourceNo = supplementSourceEditable ? (payload.sourceNo ?? '').trim() : current.sourceNo;
+    const sourceId = supplementSourceEditable && payload.sourceId !== undefined
+      ? (payload.sourceId.trim() || null)
+      : current.sourceId;
+    const sourceNo = supplementSourceEditable && payload.sourceNo !== undefined
+      ? payload.sourceNo.trim()
+      : current.sourceNo;
     const sourcePartyId = supplementSourceEditable || adjustmentSourceWarehouseEditable
       ? (payload.sourcePartyId ?? current.sourcePartyId)
       : current.sourcePartyId;
@@ -570,8 +575,11 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
     const sourcePartyName = sourceWarehouse?.warehouseName ?? (supplementSourceEditable
       ? (payload.sourcePartyName ?? current.sourcePartyName)
       : current.sourcePartyName);
-    const manualReason = sourceGenerated ? current.manualReason : (payload.manualReason ?? '').trim();
-    if (isSupplement && !sourceNo) throw new Error('手工补录凭证必须填写原业务单号');
+    const manualReason = sourceGenerated ? current.manualReason
+      : (payload.manualReason === undefined ? current.manualReason : payload.manualReason.trim());
+    if (supplementSourceEditable && Boolean(sourceId) !== Boolean(sourceNo)) {
+      throw new Error('来源单据ID和来源单号必须同时存在或同时留空');
+    }
     if (sourceNo.length > 64) throw new Error('原业务单号不能超过 64 个字符');
     if (!sourceGenerated && !manualReason) throw new Error(current.entryMode === 'MANUAL_ADJUSTMENT' ? '请填写调整原因' : '请填写补录原因');
     if (manualReason.length > 500) throw new Error('补录或调整原因不能超过 500 个字符');
@@ -581,6 +589,7 @@ export async function updateStockBill(direction: StockBillDirection, stockBillId
       warehouseName: warehouse.warehouseName,
       sourcePartyId,
       sourcePartyName,
+      sourceId,
       sourceNo,
       manualReason,
       items,

@@ -729,17 +729,14 @@ runSmoke({
     if (!await sourceOrderSelect.isEnabled()) throw new Error('人工补录采购入库草稿的来源单号应支持搜索选择');
     const sourcePartySelect = manualInboundEdit.getByRole('combobox').nth(2);
     if (!await sourcePartySelect.isEnabled()) throw new Error('人工补录采购入库草稿的来源对象应可编辑');
-    const manualInputToggle = manualInboundEdit.getByRole('button', { name: '手动输入' });
-    if (await manualInputToggle.count()) await manualInputToggle.click();
-    const manualSourceNo = manualInboundEdit.getByPlaceholder('填写线下单据号');
-    if (!await manualSourceNo.isEditable()) throw new Error('人工补录采购入库草稿的来源单号应支持手工输入');
-    await manualSourceNo.fill('MANUAL-PO-20260701-UPDATED');
-    await manualInboundEdit.getByRole('button', { name: '保存修改' }).click();
-    await page.getByText('入库单已保存', { exact: true }).last().waitFor();
-    await manualInboundEdit.waitFor({ state: 'hidden' });
-    if (!(await manualInboundRow.innerText()).includes('MANUAL-PO-20260701-UPDATED')) {
-      throw new Error('人工补录采购入库草稿保存后未回显新的来源单号');
+    if (await manualInboundEdit.getByRole('button', { name: '手动输入' }).count()) {
+      throw new Error('人工补录来源单仅允许选择，不应再提供手动输入入口');
     }
+    if (await manualInboundEdit.getByPlaceholder('填写线下单据号').count()) {
+      throw new Error('人工补录来源单不应再展示可编辑的来源单号输入框');
+    }
+    await manualInboundEdit.getByRole('button', { name: '关闭' }).click();
+    await manualInboundEdit.waitFor({ state: 'hidden' });
     await clickButton(page, '重置');
     await pendingInboundRow.waitFor();
 

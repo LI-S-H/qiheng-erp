@@ -215,7 +215,11 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         Map<Long, Product> productMap = draftContext.productMap();
 
         // 4. 生成出库单号
-        String outboundNo = billNoGenerator.nextNo(billType.billNoPrefix());
+        String outboundNo = billNoGenerator.nextNo(billType.billNoPrefix(),
+                () -> findMaxBillNoSequence(billType.billNoPrefix()));
+        String sourceNo = billType == OutboundType.ADJUST_OUT
+                ? "ADJ" + outboundNo.substring(billType.billNoPrefix().length())
+                : StrUtil.blankToDefault(dto.getSourceNo(), null);
 
         // 5. 获取当前登录用户
         LoginUser currentUser = UserContext.getCurrentUser();
@@ -228,7 +232,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 .setOutboundType(billType.name())
                 .setSourceType(billType.sourceType().name())
                 .setSourceId(stockBillDraftSupport.toNullableLong(dto.getSourceId()))
-                .setSourceNo(StrUtil.blankToDefault(dto.getSourceNo(), null))
+                .setSourceNo(sourceNo)
                 .setSourcePartyId(stockBillDraftSupport.toNullableLong(dto.getSourcePartyId()))
                 .setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null))
                 .setEntryMode(billType.entryMode().name())
@@ -248,7 +252,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         for (OutboundBillItemCreateDto itemDto : dto.getItems()) {
             Long productId = stockBillDraftSupport.parseRequiredId(itemDto.getProductId(), "产品ID");
             Product product = productMap.get(productId);
-            addItem(outboundNo,
+            addItem(bill.getOutboundNo(),
                     bill,
                     items,
                     productId,
@@ -343,7 +347,8 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 new LambdaQueryWrapper<OutboundBillItem>()
                         .eq(OutboundBillItem::getOutboundBillId, id)
         );
-        if (editStage == StockBillEditingSupport.EditStage.PENDING_CONFIRM) {
+        if (editStage == StockBillEditingSupport.EditStage.PENDING_CONFIRM
+                || EntryMode.SOURCE_GENERATED.name().equals(bill.getEntryMode())) {
             stockBillEditingSupport.validatePendingConfirmStructure(
                     existingItems.stream()
                             .map(item -> new StockBillEditingSupport.PendingConfirmItemSnapshot(
@@ -378,6 +383,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         // 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(
                 bill.getStatus(), bill.getVersion(), dto.getVersion(), "仅草稿状态可提交", StockBillStatus.DRAFT);
+        stockBillEditingSupport.validateBeforeSubmit(bill);
         // 更新状态为待确认
         bill.setStatus(StockBillStatus.PENDING_CONFIRM.name());
         if (!this.updateById(bill)) {
@@ -453,6 +459,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         if (items.isEmpty()) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "出库单明细为空，无法确认");
         }
+        validateSourceRemainingQuantities(bill, items);
         // 获取当前用户信息与当前时间戳
         LoginUser currentUser = UserContext.getCurrentUser();
         Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
@@ -460,7 +467,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         LocalDateTime now = LocalDateTime.now();
         // 生成库存流水
         StockBill stockBill = new StockBill()
-                .setBillNo(billNoGenerator.nextNo("SL"))
+                .setBillNo(billNoGenerator.nextNo("SL", () -> findMaxBillNoSequence("SL")))
                 .setBillType(bill.getOutboundType())
                 .setWorkBillId(String.valueOf(bill.getId()))
                 .setBusinessSourceId(bill.getSourceId())
@@ -481,8 +488,6 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
             if (currentQty == null || currentQty <= 0) {
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "出库数量必须大于0");
             }
-            // 校验出库数量是否超过剩余数量
-            validatePlannedQuantity(item, currentQty);
             // 校验可用库存是否足够
             WarehouseStock stock = warehouseStockService.getOne(
                     new LambdaQueryWrapper<WarehouseStock>()
@@ -536,7 +541,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "出库单明细未生成对应库存流水");
             }
             item.setStockBillItemId(stockBillItem.getId());
-            if (item.getPlanQty() != null && item.getProcessedQty() != null) {
+            if (hasSourceQuantitySnapshot(bill, item)) {
                 long remaining = item.getPlanQty() - item.getProcessedQty();
                 item.setPendingQty(Math.max(0L, remaining - item.getCurrentQty()));
             }
@@ -547,10 +552,11 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         // TODO 接入来源业务模块后，在此按 sourceItemId 回写来源单明细的已出库数量和处理状态：
         //      采购退货出库回写采购退货单明细，销售出库回写销售订单明细；库存调整出库没有来源单，无需回写。
         //      销售出库还需同步扣减销售订单明细的锁定数量；回写必须与库存、出库单确认处于同一事务，
-        //      并校验来源明细的剩余数量和乐观锁版本。
+        //      回写前须校验 sourceItemId 确实属于 bill.sourceId，并校验来源明细的剩余数量和乐观锁版本。
         //      采购退货审核通过时，来源模块必须在生成 SOURCE_GENERATED 待确认出库单的同一事务内，
         //      按 approvedQty - processedQty 汇总预占 warehouse_stock.locked_qty；不得按本单 currentQty 预占，
         //      部分确认后生成下一张工作单也不得重复预占。APPROVED 且未处理的取消必须同步释放该剩余锁定量。
+        //      还需处理部分确认状态，以及取消、编辑、重新生成工作单时的来源数量和锁定库存回滚，避免并发超额出库。
 
         // 更新出库单状态为已确认
         bill.setStatus(StockBillStatus.CONFIRMED.name());
@@ -564,17 +570,34 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
     }
 
     /**
-     * 校验出库数量是否超过剩余数量
+     * 只有已关联来源单和来源明细的工作单才校验来源剩余量；调整单和线下补录没有来源计划量。
      */
-    private void validatePlannedQuantity(OutboundBillItem item, long currentQty) {
-        if (item.getPlanQty() == null || item.getProcessedQty() == null) {
-            return;
+    private void validateSourceRemainingQuantities(OutboundBill bill, List<OutboundBillItem> items) {
+        for (OutboundBillItem item : items) {
+            if (!hasSourceQuantitySnapshot(bill, item)) {
+                continue;
+            }
+            long remaining = item.getPlanQty() - item.getProcessedQty();
+            if (item.getCurrentQty() > remaining) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        "商品 " + item.getProductName() + " 本次出库数量不能超过剩余数量 " + QtyUtil.toDecimal(remaining));
+            }
         }
-        long remaining = item.getPlanQty() - item.getProcessedQty();
-        if (currentQty > remaining) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
-                    "商品 " + item.getProductName() + " 本次出库数量不能超过剩余数量 " + QtyUtil.toDecimal(remaining));
-        }
+    }
+
+    private boolean hasSourceQuantitySnapshot(OutboundBill bill, OutboundBillItem item) {
+        return bill.getSourceId() != null && item.getSourceItemId() != null
+                && item.getPlanQty() != null && item.getProcessedQty() != null;
+    }
+
+    /**
+     * 出库工作单和库存流水分别位于不同业务表，Redis 序列首次初始化时按对应表查询当天最大单号。
+     */
+    private long findMaxBillNoSequence(String prefix) {
+        List<Object> billNos = "SL".equals(prefix)
+                ? stockBillService.listObjs(new LambdaQueryWrapper<StockBill>().select(StockBill::getBillNo))
+                : this.listObjs(new LambdaQueryWrapper<OutboundBill>().select(OutboundBill::getOutboundNo));
+        return billNoGenerator.findMaxExistingSequence(prefix, billNos);
     }
 
     /**

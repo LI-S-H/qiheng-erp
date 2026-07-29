@@ -4070,7 +4070,7 @@ paths:
     get:
       tags: [WarehouseStockBill]
       summary: 获取入库单详情
-      description: 仅查询 `inbound_bill` 及其明细。新建的非调整人工补录单必须关联系统来源；人工调整、历史迁移数据及未关联来源的历史明细，其 `sourceId`、`sourcePartyId` 和明细 `sourceItemId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
+      description: 仅查询 `inbound_bill` 及其明细。人工补录可不关联系统来源；未关联时 `sourceId`、`sourceNo` 和明细 `sourceItemId` 为空，来源对象仍保留线下业务快照。关联来源时 ID 与单号成对存在，前端优先展示 `sourceNo`、`sourcePartyName` 快照。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
       operationId: inboundBillDetail
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
@@ -4082,7 +4082,7 @@ paths:
     put:
       tags: [WarehouseStockBill]
       summary: 编辑入库单草稿或待确认单
-      description: 仅编辑 `inbound_bill`。`DRAFT` 可修改仓库；人工补录的采购入库或销售退货入库草稿可修改来源对象和来源单号，来源单号仅支持搜索选择；调整入库草稿可修改来源仓库但调整单号保持不变；系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
+      description: 仅编辑 `inbound_bill`。`DRAFT` 可修改仓库；人工补录草稿可修改来源对象和来源关联，来源单仅支持搜索选择，可显式清除关联；调整入库草稿可修改来源仓库但调整单号保持不变；系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
       operationId: inboundBillUpdate
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
@@ -4154,7 +4154,7 @@ paths:
     get:
       tags: [WarehouseStockBill]
       summary: 获取出库单详情
-      description: 仅查询 `outbound_bill` 及其明细。新建的非调整人工补录单必须关联系统来源；人工调整、历史迁移数据及未关联来源的历史明细，其 `sourceId`、`sourcePartyId` 和明细 `sourceItemId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
+      description: 仅查询 `outbound_bill` 及其明细。人工补录可不关联系统来源；未关联时 `sourceId`、`sourceNo` 和明细 `sourceItemId` 为空，来源对象仍保留线下业务快照。关联来源时 ID 与单号成对存在，前端优先展示 `sourceNo`、`sourcePartyName` 快照。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
       operationId: outboundBillDetail
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
@@ -4166,7 +4166,7 @@ paths:
     put:
       tags: [WarehouseStockBill]
       summary: 编辑出库单草稿或待确认单
-      description: 仅编辑 `outbound_bill`。`DRAFT` 可修改仓库；调整出库草稿可修改来源仓库但调整单号保持不变；系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；仅调整出库编辑数量、产品或草稿仓库时，后端会在同一事务内调整本单预占的 `lockedQty`；需要 `warehouse:manage` 权限。
+      description: 仅编辑 `outbound_bill`。`DRAFT` 可修改仓库；人工补录草稿可修改来源对象和来源关联，来源单仅支持搜索选择，可显式清除关联；调整出库草稿可修改来源仓库但调整单号保持不变；系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；仅调整出库编辑数量、产品或草稿仓库时，后端会在同一事务内调整本单预占的 `lockedQty`；需要 `warehouse:manage` 权限。
       operationId: outboundBillUpdate
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
@@ -4318,7 +4318,7 @@ paths:
     patch:
       tags: [Warehouse]
       summary: 批量修改仓库状态
-      description: 停用后仓库不能再用于新建采购、销售、退货或库存调整业务，但历史单据和现有库存余额继续保留并可查询。本接口需要 `warehouse:manage` 权限。
+      description: 停用后仓库不能再用于新建采购、销售、退货或库存调整业务；任一仓库存在可用或锁定库存余额，或存在草稿、待确认入库/出库单时整批返回 409，历史已确认数据继续保留并可查询。本接口需要 `warehouse:manage` 权限。
       operationId: warehouseBatchStatus
       security:
         - SaTokenAuth: []
@@ -4341,7 +4341,7 @@ paths:
     post:
       tags: [Warehouse]
       summary: 批量删除仓库
-      description: 批量逻辑删除仓库；任一仓库存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时整批返回 409，避免破坏库存与业务追溯链路。本接口需要 `warehouse:manage` 权限。
+      description: 批量逻辑删除仓库；任一仓库存在任意 `warehouse_stock` 记录（包括数量为 0）、入库单、出库单或库存流水时整批返回 409，避免破坏库存与业务追溯链路。本接口需要 `warehouse:manage` 权限。
       operationId: warehouseBatchDelete
       security:
         - SaTokenAuth: []
@@ -4417,7 +4417,7 @@ paths:
     delete:
       tags: [Warehouse]
       summary: 删除仓库
-      description: 逻辑删除仓库；存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时返回 409。本接口需要 `warehouse:manage` 权限。
+      description: 逻辑删除仓库；存在任意 `warehouse_stock` 记录（包括数量为 0）、入库单、出库单或库存流水时返回 409。本接口需要 `warehouse:manage` 权限。
       operationId: warehouseDelete
       security:
         - SaTokenAuth: []
@@ -4443,7 +4443,7 @@ paths:
     patch:
       tags: [Warehouse]
       summary: 修改仓库状态
-      description: 停用后仓库不能用于新业务单据和库存调整，历史单据与库存余额不受影响。本接口需要 `warehouse:manage` 权限。
+      description: 停用后仓库不能用于新业务单据和库存调整；存在可用或锁定库存余额，或存在草稿、待确认入库/出库单时返回 409，历史已确认数据不受影响。本接口需要 `warehouse:manage` 权限。
       operationId: warehouseStatus
       security:
         - SaTokenAuth: []
@@ -7339,11 +7339,11 @@ components:
     StockBillCreateRequest:
       type: object
       description: 入库/出库工作单创建 DTO；实际落库到 `inbound_bill` 或 `outbound_bill` 及其明细表。采购入库、销售退货入库、采购退货出库记录质检数量；销售出库和调整入/出库的明细必须提交 qualifiedQty=0、defectiveQty=0。
-      required: [billType, sourceNo, warehouseId, sourcePartyId, sourcePartyName, manualReason, items]
+      required: [billType, warehouseId, sourcePartyId, sourcePartyName, manualReason, items]
       properties:
         billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 手工补录或库存调整类型 }
-        sourceNo: { type: string, maxLength: 64, description: 来源业务单号；非调整类型必须从已有单据搜索选择，且与非空 sourceId 同时提交，不支持手动输入。调整类型传空字符串，由后端生成调整单号 }
-        sourceId: { type: string, nullable: true, description: 来源单据 ID；非调整类型必须从已有单据选择并与非空 sourceNo 同时提交，调整类型不传 }
+        sourceNo: { type: string, maxLength: 64, description: 来源业务单号；人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交，不支持手动输入。调整类型由后端生成调整单号 }
+        sourceId: { type: string, nullable: true, description: 来源单据 ID；人工补录可不传，传入时必须与非空 sourceNo 成对提交；调整类型不传 }
         warehouseId: { type: string, description: 启用状态的仓库 ID }
         sourcePartyId: { type: string, minLength: 1, description: 来源对象 ID；采购入库/采购退货出库为供应商 ID，销售出库/销售退货为客户 ID，调整入库/出库为来源仓库 ID。必填，由前端下拉选择 }
         sourcePartyName: { type: string, minLength: 1, maxLength: 200, description: 来源对象名称快照；必填，由前端在选中 sourcePartyId 后附带提交，后端直接存入主表，不跨模块查询 }
@@ -7375,9 +7375,10 @@ components:
       properties:
         version: { type: integer, minimum: 0, description: 当前入库单或出库单工作单版本，用于乐观锁。 }
         warehouseId: { type: string, description: 仓库 ID；仅 `DRAFT` 状态允许修改，`PENDING_CONFIRM` 必须保持原值 }
-        sourceNo: { type: string, maxLength: 64, description: 仅人工补录的采购入库或销售退货入库 `DRAFT` 可修改原业务单号；调整单、系统生成单、出库单及 `PENDING_CONFIRM` 必须保持原值 }
-        sourcePartyId: { type: string, description: 人工补录的采购入库或销售退货入库 `DRAFT` 可修改来源对象 ID；采购入库为供应商 ID，销售退货为客户 ID。调整入库/出库 `DRAFT` 可修改来源仓库 ID；系统生成单及 `PENDING_CONFIRM` 不得提交或修改 }
-        sourcePartyName: { type: string, maxLength: 200, description: 与 `sourcePartyId` 同时提交的来源对象名称快照；人工补录采购入库/销售退货入库与调整入库/出库的 `DRAFT` 可修改 }
+        sourceId: { type: string, nullable: true, description: 仅人工补录的非调整 `DRAFT` 可修改来源单据 ID；与 sourceNo 成对提交，两个字段均为空字符串表示清除来源关联，两个字段均省略表示保持原值 }
+        sourceNo: { type: string, maxLength: 64, description: 仅人工补录的非调整 `DRAFT` 可修改原业务单号；必须从已有单据搜索选择并与 sourceId 成对提交，两个字段均为空字符串表示清除来源关联。调整单、系统生成单和 `PENDING_CONFIRM` 必须保持原值 }
+        sourcePartyId: { type: string, description: 人工补录的非调整 `DRAFT` 可修改来源对象 ID；采购类为供应商 ID，销售类为客户 ID。调整入库/出库 `DRAFT` 可修改来源仓库 ID；系统生成单及 `PENDING_CONFIRM` 不得提交或修改 }
+        sourcePartyName: { type: string, maxLength: 200, description: 与 sourcePartyId 同时提交的来源对象名称快照；人工补录非调整单与调整入库/出库的 `DRAFT` 可修改 }
         manualReason: { type: string, maxLength: 500, description: 手工补录或调整草稿必填；系统生成单据保持原值 }
         items:
           type: array
@@ -7459,8 +7460,8 @@ components:
         workBillId: { type: string, description: 工作单稳定 ID，对应入库单或出库单主表主键，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 入库单号或出库单号 }
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 原业务来源类型 }
-        sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输；新建非调整人工补录单必有值，人工调整或历史未关联数据时为 null }
-        sourceNo: { type: string, maxLength: 64, description: 原业务来源单号快照；新建非调整人工补录单必有值，调整单由后端生成调整单号，历史未关联数据时可能为空字符串 }
+        sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输；人工补录可未关联来源，此时为 null }
+        sourceNo: { type: string, maxLength: 64, description: 原业务来源单号快照；人工补录可为空字符串，调整单由后端生成调整单号 }
         sourcePartyId: { type: string, nullable: true, description: 来源对象 ID，BIGINT 按字符串传输；采购入库为供应商 ID，销售退货为客户 ID，库存调整为受影响仓库 ID；人工调整或历史未关联数据时为 null }
         sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；采购相关单据表示供应商，销售相关单据表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示发生调整的来源仓库名称快照，前端统一显示在“来源对象”列，调整单详情和编辑态标注为“来源仓库”；历史未关联数据时为空字符串 }
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 前端显示为系统生成、人工补录和人工调整 }

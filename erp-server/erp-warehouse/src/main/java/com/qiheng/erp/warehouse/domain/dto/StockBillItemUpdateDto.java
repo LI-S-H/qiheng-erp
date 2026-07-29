@@ -28,6 +28,10 @@ public class StockBillItemUpdateDto {
     @Schema(description = "仓库ID，仅DRAFT状态允许修改")
     private String warehouseId;
 
+    @Schema(description = "来源单据ID；仅人工补录草稿重新选择来源单据时提交，空字符串表示清除来源关联")
+    @Size(max = 64, message = "来源单据ID最大64个字符")
+    private String sourceId;
+
     @Schema(description = "来源单号，仅人工补录DRAFT可修改")
     @Size(max = 64, message = "来源单号最多64个字符")
     private String sourceNo;

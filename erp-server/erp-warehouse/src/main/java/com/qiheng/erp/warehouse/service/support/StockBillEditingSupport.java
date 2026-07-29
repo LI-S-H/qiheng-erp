@@ -87,11 +87,9 @@ public class StockBillEditingSupport {
         // 人工补录单允许修正来源对象和来源单号；系统生成单的来源始终由来源业务维护。
         EntryMode entryMode = EntryMode.valueOf(bill.getEntryMode());
         if (entryMode == EntryMode.MANUAL_SUPPLEMENT) {
-            // 修改来源对象和来源单号
+            // 线下补录可以没有来源单；重新选择来源时，来源 ID 与来源单号必须成对更新或同时清空。
             updateSourceParty(bill, dto);
-            if (dto.getSourceNo() != null) {
-                bill.setSourceNo(StrUtil.blankToDefault(dto.getSourceNo(), null));
-            }
+            updateSourceReference(bill, dto);
         }
         // 人工调整可修改来源仓库，但不能修改调整单号
         else if (entryMode == EntryMode.MANUAL_ADJUSTMENT) {
@@ -119,6 +117,22 @@ public class StockBillEditingSupport {
         if (dto.getRemark() != null) {
             bill.setRemark(dto.getRemark());
         }
+    }
+
+    /**
+     * 提交前以数据库当前单头为准复核人工单必填项和来源关联，防止历史数据或绕过前端的请求进入待确认状态。
+     */
+    public <T extends StockBillEditMapping.EditableBill<T>> void validateBeforeSubmit(T bill) {
+        EntryMode entryMode = EntryMode.valueOf(bill.getEntryMode());
+        boolean hasSourceId = bill.getSourceId() != null;
+        boolean hasSourceNo = StrUtil.isNotBlank(bill.getSourceNo());
+        if (entryMode == EntryMode.MANUAL_SUPPLEMENT && hasSourceId != hasSourceNo) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "来源单据ID和来源单号必须同时填写或同时留空");
+        }
+        if (entryMode == EntryMode.MANUAL_ADJUSTMENT && hasSourceId) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "库存调整单不能关联来源单据ID");
+        }
+        validateRequiredManualFields(bill, entryMode);
     }
 
     /**
@@ -172,6 +186,23 @@ public class StockBillEditingSupport {
         if (dto.getSourcePartyName() != null) {
             bill.setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null));
         }
+    }
+
+    /**
+     * 更新人工补录单的来源单据关联。DTO 中未传字段表示不修改，空字符串表示显式清除关联。
+     */
+    private <T extends StockBillEditMapping.EditableBill<T>> void updateSourceReference(
+            T bill, StockBillItemUpdateDto dto) {
+        if (dto.getSourceId() == null && dto.getSourceNo() == null) {
+            return;
+        }
+        boolean hasSourceId = StrUtil.isNotBlank(dto.getSourceId());
+        boolean hasSourceNo = StrUtil.isNotBlank(dto.getSourceNo());
+        if (hasSourceId != hasSourceNo) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "来源单据ID和来源单号必须同时填写或同时留空");
+        }
+        bill.setSourceId(hasSourceId ? parseNullableId(dto.getSourceId(), "来源单据ID") : null);
+        bill.setSourceNo(hasSourceNo ? dto.getSourceNo().trim() : null);
     }
 
     /**

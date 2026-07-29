@@ -120,6 +120,7 @@ export interface StockBillCreatePayload {
 export interface StockBillUpdatePayload {
   version: number;
   warehouseId?: string;
+  sourceId?: string;
   sourceNo?: string;
   sourcePartyId?: string;
   sourcePartyName?: string;

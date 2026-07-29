@@ -168,6 +168,8 @@
 | update_time | datetime | 更新时间 |
 | remark | varchar(500) | 备注 |
 
+补录单没有关联来源时，`source_item_id`、`plan_qty`、`processed_qty` 和 `pending_qty` 均为 `NULL`，不得以 `0` 代替；只有同时具备来源主表和来源明细关联的工作单，才可把这些字段作为来源数量快照校验。
+
 ## 表：stock_bill（库存流水凭证主表）
 
 | 字段                   | 类型           | 说明                                                                                  |

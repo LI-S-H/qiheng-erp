@@ -25,11 +25,11 @@ public class InboundBillCreateDto {
     @NotNull(message = "入库单类型不能为空")
     private InboundType billType;
 
-    @Schema(description = "原业务单号；非调整类型必须与来源单据ID同时传入，调整类型传空字符串")
+    @Schema(description = "原业务单号；线下补录可以不关联来源单据，选择来源单据时必须与来源单据ID同时传入")
     @Size(max = 64, message = "来源单号最多64个字符")
     private String sourceNo;
 
-    @Schema(description = "来源单据ID；非调整类型必须从已有单据选择并与来源单号同时传入，调整类型不传")
+    @Schema(description = "来源单据ID；线下补录可以不传，选择已有来源单据时必须与来源单号同时传入")
     private String sourceId;
 
     @Schema(description = "仓库ID")
@@ -61,18 +61,20 @@ public class InboundBillCreateDto {
     private String remark;
 
     /**
-     * 非调整类型必须选择来源单据，避免直接调用接口时绕过前端的来源单选择限制。
+     * 来源单据仅支持完整关联或完全不关联两种状态：线下补录可以没有上游单据，
+     * 但一旦选择来源单据，来源 ID 与来源单号必须同时存在，避免主表追溯信息失配。
      */
-    @AssertTrue(message = "非调整类型时必须选择来源单据")
+    @AssertTrue(message = "来源单据ID和来源单号必须同时填写或同时留空")
     @Schema(hidden = true)
-    public boolean isSourceReferenceRequired() {
+    public boolean isSourceReferencePairValid() {
         if (billType == null) {
             return true;
         }
         if (billType == InboundType.ADJUST_IN) {
-            return true;
+            return (sourceId == null || sourceId.isBlank()) && (sourceNo == null || sourceNo.isBlank());
         }
-        return sourceId != null && !sourceId.isBlank()
-                && sourceNo != null && !sourceNo.isBlank();
+        boolean hasSourceId = sourceId != null && !sourceId.isBlank();
+        boolean hasSourceNo = sourceNo != null && !sourceNo.isBlank();
+        return hasSourceId == hasSourceNo;
     }
 }

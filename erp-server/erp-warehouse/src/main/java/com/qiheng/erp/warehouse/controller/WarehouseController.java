@@ -171,9 +171,8 @@ public class WarehouseController {
         int version;
         try {
             version = Integer.parseInt(versionObj.toString());
-            if (version != 0 && version != 1) {
-                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
-                        "版本号只能是0或1");
+            if (version < 0) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "版本号不能为负数");
             }
         } catch (NumberFormatException e) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),

@@ -25,6 +25,7 @@ import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.domain.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.enums.InboundType;
+import com.qiheng.erp.warehouse.domain.enums.EntryMode;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillListItemVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
@@ -222,7 +223,11 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         Map<Long, Product> productMap = draftContext.productMap();
 
         // 4. 生成入库单号
-        String inboundNo = billNoGenerator.nextNo(billType.billNoPrefix());
+        String inboundNo = billNoGenerator.nextNo(billType.billNoPrefix(),
+                () -> findMaxBillNoSequence(billType.billNoPrefix()));
+        String sourceNo = billType == InboundType.ADJUST_IN
+                ? "ADJ" + inboundNo.substring(billType.billNoPrefix().length())
+                : StrUtil.blankToDefault(dto.getSourceNo(), null);
 
         // 5. 获取当前登录用户
         LoginUser currentUser = UserContext.getCurrentUser();
@@ -235,7 +240,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setInboundType(billType.name())
                 .setSourceType(billType.sourceType().name())
                 .setSourceId(stockBillDraftSupport.toNullableLong(dto.getSourceId()))
-                .setSourceNo(StrUtil.blankToDefault(dto.getSourceNo(), null))
+                .setSourceNo(sourceNo)
                 .setSourcePartyId(stockBillDraftSupport.toNullableLong(dto.getSourcePartyId()))
                 .setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null))
                 .setEntryMode(billType.entryMode().name())
@@ -256,7 +261,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             Long productId = stockBillDraftSupport.parseRequiredId(itemDto.getProductId(), "产品ID");
             Product product = productMap.get(productId);
             // 新增明细
-            addItem(inboundNo,
+            addItem(bill.getInboundNo(),
                     bill,
                     items,
                     productId,
@@ -344,7 +349,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 new LambdaQueryWrapper<InboundBillItem>()
                         .eq(InboundBillItem::getInboundBillId, id)
         );
-        if (editStage == StockBillEditingSupport.EditStage.PENDING_CONFIRM) {
+        if (editStage == StockBillEditingSupport.EditStage.PENDING_CONFIRM
+                || EntryMode.SOURCE_GENERATED.name().equals(bill.getEntryMode())) {
             stockBillEditingSupport.validatePendingConfirmStructure(
                     existingItems.stream()
                             .map(item -> new StockBillEditingSupport.PendingConfirmItemSnapshot(
@@ -376,6 +382,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 2. 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(
                 bill.getStatus(), bill.getVersion(), dto.getVersion(), "仅草稿状态可提交", StockBillStatus.DRAFT);
+        stockBillEditingSupport.validateBeforeSubmit(bill);
 
         // 4. 变更状态为待确认
         bill.setStatus(StockBillStatus.PENDING_CONFIRM.name());
@@ -466,6 +473,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         if (items.isEmpty()) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库单明细为空，无法确认");
         }
+        validateSourceRemainingQuantities(bill, items);
 
         // 5. 获取当前登录用户
         LoginUser currentUser = UserContext.getCurrentUser();
@@ -474,7 +482,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         LocalDateTime now = LocalDateTime.now();
 
         // 6. 生成库存流水主表
-        String stockBillNo = billNoGenerator.nextNo("SL");
+        String stockBillNo = billNoGenerator.nextNo("SL", () -> findMaxBillNoSequence("SL"));
         StockBill stockBill = new StockBill()
                 .setBillNo(stockBillNo)
                 .setBillType(bill.getInboundType())
@@ -562,22 +570,17 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "入库单明细未生成对应库存流水");
             }
             item.setStockBillItemId(sbItem.getId());
-            // 计算剩余未入库数量，同时防御性校验不超过来源剩余
-            if (item.getPlanQty() != null && item.getProcessedQty() != null) {
-                long currentQty = item.getCurrentQty() != null ? item.getCurrentQty() : 0L;
+            if (hasSourceQuantitySnapshot(bill, item)) {
                 long remaining = item.getPlanQty() - item.getProcessedQty();
-                if (currentQty > remaining) {
-                    throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
-                            "产品 " + item.getProductName() + " 本次入库数量不能超过剩余数量 " + QtyUtil.toDecimal(remaining));
-                }
-                item.setPendingQty(Math.max(0L, remaining - currentQty));
+                item.setPendingQty(Math.max(0L, remaining - item.getCurrentQty()));
             }
         }
         inboundBillItemService.updateBatchById(items);
 
         // TODO 接入来源业务模块后，在此按 sourceItemId 回写来源单明细的已入库数量和处理状态：
         //      采购入库回写采购订单明细，销售退货入库回写销售退货单明细；库存调整入库没有来源单，无需回写。
-        //      回写必须与库存、入库单确认处于同一事务，并校验来源明细的剩余数量和乐观锁版本。
+        //      回写前须校验 sourceItemId 确实属于 bill.sourceId，并在同一事务内校验剩余数量、乐观锁版本及
+        //      部分确认后的来源单状态；取消、编辑、重新生成工作单时也要保持来源数量和工作单数量一致。
 
         // 10. 更新入库单主表状态为已确认
         bill.setStatus(StockBillStatus.CONFIRMED.name());
@@ -590,6 +593,38 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
         // 11. 返回详情
         return getInboundBillDetailVo(id);
+    }
+
+    /**
+     * 只有已关联来源单和来源明细的工作单才校验来源剩余量；调整单和线下补录没有来源计划量。
+     */
+    private void validateSourceRemainingQuantities(InboundBill bill, List<InboundBillItem> items) {
+        for (InboundBillItem item : items) {
+            if (!hasSourceQuantitySnapshot(bill, item)) {
+                continue;
+            }
+            long currentQty = item.getCurrentQty() != null ? item.getCurrentQty() : 0L;
+            long remaining = item.getPlanQty() - item.getProcessedQty();
+            if (currentQty > remaining) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        "产品 " + item.getProductName() + " 本次入库数量不能超过剩余数量 " + QtyUtil.toDecimal(remaining));
+            }
+        }
+    }
+
+    private boolean hasSourceQuantitySnapshot(InboundBill bill, InboundBillItem item) {
+        return bill.getSourceId() != null && item.getSourceItemId() != null
+                && item.getPlanQty() != null && item.getProcessedQty() != null;
+    }
+
+    /**
+     * 入库工作单和库存流水分别位于不同业务表，Redis 序列首次初始化时按对应表查询当天最大单号。
+     */
+    private long findMaxBillNoSequence(String prefix) {
+        List<Object> billNos = "SL".equals(prefix)
+                ? stockBillService.listObjs(new LambdaQueryWrapper<StockBill>().select(StockBill::getBillNo))
+                : this.listObjs(new LambdaQueryWrapper<InboundBill>().select(InboundBill::getInboundNo));
+        return billNoGenerator.findMaxExistingSequence(prefix, billNos);
     }
 
     /**

@@ -336,11 +336,11 @@ const isAdjustmentForm = computed(() => adjustmentTypes.has(formBillType.value))
 const isManualForm = computed(() => dialogMode.value === 'create' || editingDetail.value?.entryMode !== 'SOURCE_GENERATED');
 const editingIsDraft = computed(() => dialogMode.value === 'edit' && editingDetail.value?.status === 'DRAFT');
 const warehouseEditable = computed(() => dialogMode.value === 'create' || editingIsDraft.value);
-const manualInboundSourceEditable = computed(() => editingIsDraft.value
+const manualSupplementSourceEditable = computed(() => editingIsDraft.value
   && isManualForm.value
-  && (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'SALES_RETURN'));
+  && !isAdjustmentForm.value);
 const adjustmentSourceWarehouseEditable = computed(() => editingIsDraft.value && isAdjustmentForm.value);
-const sourceNoEditable = computed(() => (dialogMode.value === 'create' || manualInboundSourceEditable.value) && !isAdjustmentForm.value);
+const sourceNoEditable = computed(() => (dialogMode.value === 'create' || manualSupplementSourceEditable.value) && !isAdjustmentForm.value);
 const manualReasonEditable = computed(() => (dialogMode.value === 'create' || editingIsDraft.value) && isManualForm.value);
 const structureEditable = computed(() => dialogMode.value === 'create' || (editingIsDraft.value && editingDetail.value?.entryMode !== 'SOURCE_GENERATED'));
 const summaryCards = computed(() => [
@@ -356,7 +356,7 @@ const sourcePartyFormDisplay = computed(() => {
   return editingDetail.value ? sourcePartyDisplay(editingDetail.value) : '手工补录';
 });
 const sourcePartyEditable = computed(() => dialogMode.value === 'create'
-  || manualInboundSourceEditable.value
+  || manualSupplementSourceEditable.value
   || adjustmentSourceWarehouseEditable.value);
 const sourcePartyOptions = ref<Array<{ value: string; label: string }>>([]);
 const selectedSourcePartyLabel = computed(() => {
@@ -428,6 +428,11 @@ async function fetchSourceOrderSearchOptions(keyword: string) {
 function handleSourceOrderSelect(value: string | number) {
   const selected = sourceOrderOptions.value.find(item => item.value === String(value));
   form.sourceNo = String(value);
+  if (!selected) {
+    form.sourceId = '';
+    clearFormError('sourceNo');
+    return;
+  }
   if (selected && (selected as any)._meta) {
     const meta = (selected as any)._meta;
     form.sourceId = meta.sourceId || '';
@@ -1005,8 +1010,9 @@ function validateForm() {
   if (warehouseEditable.value && !form.warehouseId) formErrors.warehouseId = '请选择仓库';
   if (sourcePartyEditable.value && !form.sourcePartyId) formErrors.sourcePartyId = isAdjustmentForm.value ? '请选择来源仓库' : (formBillType.value === 'PURCHASE_IN' || formBillType.value === 'PURCHASE_RETURN' ? '请选择供应商' : '请选择客户');
   else if (sourcePartyEditable.value && !selectedSourcePartyLabel.value) formErrors.sourcePartyId = '来源对象名称缺失，请重新选择来源对象';
-  if (sourceNoEditable.value && !form.sourceNo.trim()) formErrors.sourceNo = '请选择来源单据';
-  else if (dialogMode.value === 'create' && sourceNoEditable.value && !form.sourceId) formErrors.sourceNo = '请选择有效的来源单据';
+  if (sourceNoEditable.value && Boolean(form.sourceNo.trim()) !== Boolean(form.sourceId)) {
+    formErrors.sourceNo = '来源单据ID和来源单号必须同时存在或同时留空';
+  }
   if (isManualForm.value && !form.manualReason.trim()) formErrors.manualReason = isAdjustmentForm.value ? '请填写调整原因' : '请填写补录原因';
   else if (form.manualReason.trim().length > 500) formErrors.manualReason = '原因不能超过 500 个字符';
   if (!form.items.length) formErrors.items = '至少添加一条产品明细';
@@ -1066,17 +1072,24 @@ async function submitForm() {
       await createStockBill(pageDirection.value, payload);
       toast.success(`${pageText.value.formTitle}草稿已创建`);
     } else if (editingDetail.value) {
+      const original = editingDetail.value;
+      const sourceReferenceChanged = sourceNoEditable.value
+        && (form.sourceId !== (original.sourceId || '') || form.sourceNo.trim() !== original.sourceNo);
+      const sourcePartyChanged = sourcePartyEditable.value
+        && (form.sourcePartyId !== (original.sourcePartyId || '')
+          || selectedSourcePartyLabel.value !== original.sourcePartyName);
       const payload: StockBillUpdatePayload = {
-        version: editingDetail.value.version,
+        version: original.version,
         items: buildItemPayloads(),
-        ...(warehouseEditable.value ? { warehouseId: form.warehouseId } : {}),
-        ...(sourceNoEditable.value ? { sourceNo: form.sourceNo.trim() } : {}),
-        ...(sourcePartyEditable.value && form.sourcePartyId ? {
+        ...(warehouseEditable.value && form.warehouseId !== original.warehouseId ? { warehouseId: form.warehouseId } : {}),
+        ...(sourceReferenceChanged ? { sourceId: form.sourceId, sourceNo: form.sourceNo.trim() } : {}),
+        ...(sourcePartyChanged && form.sourcePartyId ? {
           sourcePartyId: form.sourcePartyId,
           sourcePartyName: selectedSourcePartyLabel.value,
         } : {}),
-        ...(manualReasonEditable.value ? { manualReason: form.manualReason.trim() } : {}),
-        ...(form.remark.trim() ? { remark: form.remark.trim() } : {}),
+        ...(manualReasonEditable.value && form.manualReason.trim() !== original.manualReason.trim()
+          ? { manualReason: form.manualReason.trim() } : {}),
+        ...(form.remark.trim() !== original.remark.trim() ? { remark: form.remark.trim() } : {}),
       };
       await updateStockBill(billDirection(editingDetail.value.billType), editingDetail.value.workBillId, payload, editingDetail.value.billType);
       toast.success(`${pageText.value.formTitle}已保存`);
@@ -1111,7 +1124,7 @@ function openSubmitDetail(row: StockBillListItem) {
 
 function getSubmitValidationError(row: StockBillDetail) {
   if (!row.warehouseId || !row.warehouseName) return '提交前必须选择仓库';
-  if (row.entryMode === 'MANUAL_SUPPLEMENT' && !row.sourceNo.trim()) return '手工补录提交前必须填写原业务单号';
+  if (row.entryMode === 'MANUAL_SUPPLEMENT' && Boolean(row.sourceId) !== Boolean(row.sourceNo.trim())) return '来源单据ID和来源单号必须同时存在或同时留空';
   if (row.entryMode !== 'SOURCE_GENERATED' && !row.manualReason.trim()) return row.entryMode === 'MANUAL_ADJUSTMENT' ? '提交前必须填写调整原因' : '提交前必须填写补录原因';
   if (!row.items.length) return '提交前至少需要一条产品明细';
   for (const item of row.items) {
@@ -1504,7 +1517,7 @@ onMounted(async () => {
 
             <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
               <div class="space-y-1">
-                <Label>{{ isAdjustmentForm ? '调整单号' : '来源单号' }} <span v-if="isManualForm && !isAdjustmentForm" class="text-destructive">*</span></Label>
+                <Label>{{ isAdjustmentForm ? '调整单号' : '来源单号' }}</Label>
                 <RemoteSearchSelect
                   v-if="sourceNoEditable"
                   :model-value="form.sourceNo"

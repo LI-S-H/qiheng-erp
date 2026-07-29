@@ -27,6 +27,10 @@ public final class StockBillEditMapping {
 
         T setWarehouseName(String warehouseName);
 
+        Long getSourceId();
+
+        T setSourceId(Long sourceId);
+
         Long getSourcePartyId();
 
         String getSourcePartyName();
@@ -34,6 +38,8 @@ public final class StockBillEditMapping {
         T setSourcePartyId(Long sourcePartyId);
 
         T setSourcePartyName(String sourcePartyName);
+
+        String getSourceNo();
 
         T setSourceNo(String sourceNo);
 

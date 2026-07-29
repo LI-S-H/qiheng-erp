@@ -12,9 +12,18 @@ import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
 import com.qiheng.erp.warehouse.domain.dto.WarehouseStatusDto;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
+import com.qiheng.erp.warehouse.domain.entity.WarehouseStock;
+import com.qiheng.erp.warehouse.domain.entity.InboundBill;
+import com.qiheng.erp.warehouse.domain.entity.OutboundBill;
+import com.qiheng.erp.warehouse.domain.entity.StockBill;
+import com.qiheng.erp.warehouse.domain.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
+import com.qiheng.erp.warehouse.service.IInboundBillService;
+import com.qiheng.erp.warehouse.service.IOutboundBillService;
+import com.qiheng.erp.warehouse.service.IStockBillService;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
+import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -42,6 +51,18 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+
+    @Autowired
+    private IWarehouseStockService warehouseStockService;
+
+    @Autowired
+    private IInboundBillService inboundBillService;
+
+    @Autowired
+    private IOutboundBillService outboundBillService;
+
+    @Autowired
+    private IStockBillService stockBillService;
 
     /**
      * 分页查询仓库
@@ -112,19 +133,20 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
      * @return 失败的仓库信息：key=仓库ID，value=失败原因；空 map 表示全部成功
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, String> updateBatchStatus(WarehouseBatchStatusDto dto) {
         Map<String, String> failures = new LinkedHashMap<>();
         // 批量更新仓库状态，使用乐观锁实现
         for (String warehouseId : dto.getWarehouseIds()) {
-            // TODO: 如果是禁用操作（status == 0），补充前置校验：
-            //   1. 库存模块：检查该仓库下是否存在库存（quantity > 0），有库存则禁止禁用
-            //   2. 出入库单模块：检查是否存在该仓库的未完结出入库单据
             Integer expectedVersion = dto.getVersionByWarehouseId().get(warehouseId);
             if (expectedVersion == null) {
                 failures.put(warehouseId, "未找到版本号");
                 continue;
             }
             Long id = Long.parseLong(warehouseId);
+            if (Integer.valueOf(0).equals(dto.getStatus())) {
+                ensureCanDisable(id);
+            }
             Warehouse warehouse = new Warehouse();
             warehouse.setId(id);
             warehouse.setStatus(dto.getStatus());
@@ -144,10 +166,11 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
      * @param dto 状态更新参数
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateStatus(Long warehouseId, WarehouseStatusDto dto) {
-        // TODO: 如果是禁用操作（status == 0），补充前置校验：
-        //   1. 库存模块：检查该仓库下是否存在库存（quantity > 0），有库存则禁止禁用
-        //   2. 出入库单模块：检查是否存在该仓库的未完结出入库单据
+        if (Integer.valueOf(0).equals(dto.getStatus())) {
+            ensureCanDisable(warehouseId);
+        }
         Warehouse warehouse = new Warehouse();
         warehouse.setId(warehouseId);
         warehouse.setStatus(dto.getStatus());
@@ -166,6 +189,7 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
      * @return 失败的仓库信息：key=仓库ID，value=失败原因；空 map 表示全部成功
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, String> batchDelete(WarehouseBatchDeleteDto dto) {
         Map<String, String> failures = new LinkedHashMap<>();
         for (String warehouseIdStr : dto.getWarehouseIds()) {
@@ -175,10 +199,7 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
                 failures.put(warehouseIdStr, "未找到版本号");
                 continue;
             }
-            // TODO: 以下模块完成后，补充数据关联校验，有引用则禁止删除：
-            //   1. 库存模块：检查仓库下是否存在库存（quantity > 0）
-            //   2. 出入库单模块：检查是否存在该仓库的出入库单据，有则禁止删除（需要溯源）
-            //   3. 库存流水模块：检查是否存在该仓库的库存流水记录，有则禁止删除（需要溯源）
+            ensureCanDelete(warehouseId);
             int rows = warehouseMapper.deleteByIdWithVersion(warehouseId, expectedVersion);
             if (rows == 0) {
                 failures.put(warehouseIdStr, "仓库不存在或数据已发生变化，请刷新后重试");
@@ -227,6 +248,49 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
         vo.setCreateTime(w.getCreateTime());
         vo.setUpdateTime(w.getUpdateTime());
         return vo;
+    }
+
+    /**
+     * 仓库停用会阻止后续建单，因此必须先确保没有仍在流转的业务单，也没有可用或已锁定库存。
+     */
+    private void ensureCanDisable(Long warehouseId) {
+        boolean hasStockBalance = warehouseStockService.exists(new LambdaQueryWrapper<WarehouseStock>()
+                .eq(WarehouseStock::getWarehouseId, warehouseId)
+                .and(wrapper -> wrapper.gt(WarehouseStock::getStockQty, 0)
+                        .or().gt(WarehouseStock::getLockedQty, 0)));
+        if (hasStockBalance) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库存在可用或锁定库存，不能停用");
+        }
+        if (hasUnfinishedBills(warehouseId)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库存在草稿或待确认出入库单，不能停用");
+        }
+    }
+
+    /**
+     * 删除仓库会破坏库存追溯链路；零库存记录、历史工作单和库存流水同样属于不可删除的业务事实。
+     */
+    private void ensureCanDelete(Long warehouseId) {
+        if (warehouseStockService.exists(new LambdaQueryWrapper<WarehouseStock>()
+                .eq(WarehouseStock::getWarehouseId, warehouseId))) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库存在库存记录，不能删除");
+        }
+        if (inboundBillService.exists(new LambdaQueryWrapper<InboundBill>()
+                .eq(InboundBill::getWarehouseId, warehouseId))
+                || outboundBillService.exists(new LambdaQueryWrapper<OutboundBill>()
+                .eq(OutboundBill::getWarehouseId, warehouseId))
+                || stockBillService.exists(new LambdaQueryWrapper<StockBill>()
+                .eq(StockBill::getWarehouseId, warehouseId))) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库存在历史单据或库存流水，不能删除");
+        }
+    }
+
+    private boolean hasUnfinishedBills(Long warehouseId) {
+        return inboundBillService.exists(new LambdaQueryWrapper<InboundBill>()
+                .eq(InboundBill::getWarehouseId, warehouseId)
+                .in(InboundBill::getStatus, StockBillStatus.DRAFT.name(), StockBillStatus.PENDING_CONFIRM.name()))
+                || outboundBillService.exists(new LambdaQueryWrapper<OutboundBill>()
+                .eq(OutboundBill::getWarehouseId, warehouseId)
+                .in(OutboundBill::getStatus, StockBillStatus.DRAFT.name(), StockBillStatus.PENDING_CONFIRM.name()));
     }
 
 

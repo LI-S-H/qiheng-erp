@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.function.LongSupplier;
+import java.util.Collection;
 
 /**
  * 业务单号生成器。
@@ -35,13 +37,41 @@ public class BillNoGenerator {
      * @return 单号，如 RK2026072500001
      */
     public String nextNo(String prefix) {
+        return nextNo(prefix, () -> 0L);
+    }
+
+    /**
+     * 生成业务单号。Redis 序列丢失时由调用方按对应业务表提供当天最大序号，
+     * 避免公共组件依赖具体业务表，也避免 Redis 重启后从 00001 重新编号。
+     */
+    public String nextNo(String prefix, LongSupplier maxExistingSequenceSupplier) {
         String month = LocalDate.now().format(MONTH_FMT);
         String day = LocalDate.now().format(DAY_FMT);
         String key = KEY_PREFIX + prefix + ":" + month;
+        if (!Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
+            stringRedisTemplate.opsForValue().setIfAbsent(
+                    key, String.valueOf(Math.max(0L, maxExistingSequenceSupplier.getAsLong())));
+        }
         Long seq = stringRedisTemplate.opsForValue().increment(key);
         if (seq == null) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "生成单号失败");
         }
         return prefix + day + String.format("%05d", seq);
+    }
+
+    /**
+     * 从同一业务表当天已有单号中提取最大序号，供 Redis 首次初始化时使用。
+     */
+    public long findMaxExistingSequence(String prefix, Collection<Object> billNos) {
+        String dayPrefix = prefix + LocalDate.now().format(DAY_FMT);
+        return billNos.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::valueOf)
+                .filter(billNo -> billNo.startsWith(dayPrefix) && billNo.length() >= dayPrefix.length() + 5)
+                .map(billNo -> billNo.substring(billNo.length() - 5))
+                .filter(sequence -> sequence.chars().allMatch(Character::isDigit))
+                .mapToLong(Long::parseLong)
+                .max()
+                .orElse(0L);
     }
 }

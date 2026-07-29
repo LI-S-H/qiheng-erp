@@ -689,7 +689,7 @@ for (const fragment of [
   'name: entryMode',
   '对应 `inbound_bill.entry_mode`',
   '对应 `outbound_bill.entry_mode`',
-  '非调整类型必须从已有单据选择并与非空 sourceNo 同时提交',
+  '人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交',
   'responsibleById',
   'sourcePartyName',
   'quantitySummary',
@@ -718,7 +718,7 @@ if (!stockBillViewSource.includes('新增入库单')
   || !stockBillViewSource.includes("SOURCE_GENERATED: '系统生成'")
   || !stockBillViewSource.includes("return '来源仓库'")
   || !stockBillViewSource.includes('const sourcePartyFormDisplay = computed(() =>')
-  || !stockBillViewSource.includes('const manualInboundSourceEditable = computed(() =>')
+  || !stockBillViewSource.includes('const manualSupplementSourceEditable = computed(() =>')
   || !stockBillViewSource.includes('const adjustmentSourceWarehouseEditable = computed(() =>')
   || !stockBillViewSource.includes('placeholder="请选择来源单据"')
   || !stockBillViewSource.includes('sourceId: form.sourceId')
@@ -785,13 +785,13 @@ if (listViewSources.some(viewSource => !hasResetLoading(viewSource))) {
 for (const fragment of [
   '仓库编码创建后不可修改',
   '同步 `warehouse_stock.warehouse_name`',
-  '存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时禁止删除',
+  '存在任意 `warehouse_stock` 记录（包括数量为 0）、入库单、出库单或库存流水时返回 409',
 ]) {
   if (!source.includes(fragment) && !warehouseSchema.includes(fragment)) {
     throw new Error(`仓库管理缺少后端业务边界：${fragment}`);
   }
 }
-if (!source.includes('存在 `warehouse_stock` 库存余额或入库单、出库单、库存流水时返回 409')) {
+if (!source.includes('存在任意 `warehouse_stock` 记录（包括数量为 0）、入库单、出库单或库存流水时返回 409')) {
   throw new Error('仓库删除接口缺少 409 Conflict 引用保护契约');
 }
 if (!warehouseSql.includes('UNIQUE KEY uk_warehouse_code (warehouse_code)')) {

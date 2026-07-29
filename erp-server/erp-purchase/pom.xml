@@ -31,5 +31,25 @@
             <groupId>com.qiheng</groupId>
             <artifactId>erp-system</artifactId>
         </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Knife / OpenAPI3，Controller 里用 @Tag、@Operation 等 -->
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Sa-Token 核心，Controller 里用 StpUtil.checkPermission(...) -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-core</artifactId>
+            <version>1.45.0</version>
+        </dependency>
     </dependencies>
 </project>

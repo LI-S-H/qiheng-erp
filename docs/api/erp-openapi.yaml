@@ -2028,7 +2028,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PurchaseSupplierFormRequest' }
+            schema: { $ref: '#/components/schemas/PurchaseSupplierCreateRequest' }
       responses:
         "200":
           description: 创建成功
@@ -2107,7 +2107,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PurchaseSupplierFormRequest' }
+            schema: { $ref: '#/components/schemas/PurchaseSupplierUpdateRequest' }
       responses:
         "200":
           description: 编辑成功
@@ -6680,7 +6680,7 @@ components:
         qualityScore: { type: number, format: double, minimum: 0, maximum: 100, description: 质量评分展示值；数据库按 100 倍整数存储 }
         priceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 价格评分展示值；数据库按 100 倍整数存储 }
         serviceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 服务评分展示值；数据库按 100 倍整数存储 }
-        avgDeliveryDays: { type: integer, minimum: 0, description: 对应 `supplier.avg_delivery_days` }
+        avgDeliveryDays: { type: number, format: double, minimum: 0, description: 对应 `supplier.avg_delivery_days`，平均交付天数，保留 2 位小数 }
         onTimeRate: { type: number, format: double, minimum: 0, maximum: 100, description: 准时率展示值；数据库 `supplier.on_time_rate` 按 100 倍整数存储 }
         qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100, description: 合格率展示值；数据库 `supplier.qualified_rate` 按 100 倍整数存储 }
         status: { type: integer, enum: [0, 1], description: 对应 `supplier.status`，1 启用，0 停用 }
@@ -6689,7 +6689,7 @@ components:
         createTime: { type: string, description: 对应 `supplier.create_time` }
         updateTime: { type: string, description: 对应 `supplier.update_time` }
 
-    PurchaseSupplierFormRequest:
+    PurchaseSupplierCreateRequest:
       type: object
       required: [supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, remark]
       properties:
@@ -6703,11 +6703,31 @@ components:
         qualityScore: { type: number, format: double, minimum: 0, maximum: 100 }
         priceScore: { type: number, format: double, minimum: 0, maximum: 100 }
         serviceScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        avgDeliveryDays: { type: integer, minimum: 0 }
+        avgDeliveryDays: { type: number, format: double, minimum: 0 }
         onTimeRate: { type: number, format: double, minimum: 0, maximum: 100 }
         qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100 }
         status: { type: integer, enum: [0, 1] }
-        version: { type: integer, minimum: 0, description: Required when editing an existing supplier; omit on create. }
+        remark: { type: string, maxLength: 500 }
+
+    PurchaseSupplierUpdateRequest:
+      type: object
+      required: [version, supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, remark]
+      properties:
+        version: { type: integer, minimum: 0, description: 当前供应商版本号，用于乐观锁校验 }
+        supplierName: { type: string, minLength: 1, maxLength: 200 }
+        contactName: { type: string, maxLength: 100 }
+        contactPhone: { type: string, maxLength: 32 }
+        address: { type: string, maxLength: 255 }
+        paymentTerms: { type: string, maxLength: 100 }
+        overallScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        qualityScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        priceScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        serviceScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        avgDeliveryDays: { type: number, format: double, minimum: 0 }
+        onTimeRate: { type: number, format: double, minimum: 0, maximum: 100 }
+        qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100 }
+        status: { type: integer, enum: [0, 1] }
         remark: { type: string, maxLength: 500 }
 
     PurchaseSupplierStatusRequest:

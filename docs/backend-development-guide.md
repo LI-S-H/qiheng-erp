@@ -85,14 +85,13 @@ public class SystemUserController {
 - 承载所有业务逻辑和事务控制。
 - 格式校验由 `@Valid` 完成，**业务校验**（重复、关联、状态）用 `if + throw BizException`。
 - 跨模块调用必须注入对方模块的 Service，不能注入对方模块的 Mapper。
-- Service 方法必须加 `@Transactional`，只读方法加 `@Transactional(readOnly = true)`。
+- Service 写入方法必须加 `@Transactional`，查询方法不加（MyBatis-Plus 无脏检查优化，`readOnly` 无实际收益）。
 
 ```java
 @Service
 public class SystemUserServiceImpl implements SystemUserService {
 
     @Override
-    @Transactional(readOnly = true)
     public PageResult<SystemUserDTO> page(SystemUserQuery query) {
         // 查询 + 转换
     }
@@ -263,14 +262,11 @@ public class SysUser {
 - Controller 不加 `@Transactional`。
 - 跨模块调用（如采购入库 → 仓储库存更新）必须在同一个 Service 方法内完成，保证事务一致性。
 
-### 7.2 只读事务
-
-- 查询方法必须加 `@Transactional(readOnly = true)`，数据库可以进行优化。
-
-### 7.3 事务传播
+### 7.2 事务传播
 
 - 默认使用 `REQUIRED`，不需要显式指定。
 - 禁止使用 `REQUIRES_NEW` 除非有明确的事务隔离需求。
+- 查询方法不加 `@Transactional(readOnly = true)`，MyBatis-Plus 无脏检查优化，加了没实际收益且徒增心智负担。
 
 ## 8. 安全规范
 

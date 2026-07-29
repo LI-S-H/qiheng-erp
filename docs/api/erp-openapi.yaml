@@ -2858,7 +2858,7 @@ paths:
       summary: 审核通过采购退回单
       description: |
         仅允许 `SUBMITTED -> APPROVED`。审核人逐明细提交审核数量，不提交数据库不存在的普通审核意见；后端锁定来源明细并重新校验占用，按审核数量释放未通过部分。
-        审核通过后在同一事务内生成 `outbound_type=PURCHASE_RETURN`、`source_type=PURCHASE_RETURN_ORDER`、`entry_mode=SOURCE_GENERATED` 的待确认出库单，不直接扣减库存。本接口需要 `purchase:manage` 权限并保证幂等。
+        审核通过后必须在同一事务内按每条明细 `approvedQty - processedQty` 汇总校验可用库存、增加 `warehouse_stock.locked_qty`，并生成 `outbound_type=PURCHASE_RETURN`、`source_type=PURCHASE_RETURN_ORDER`、`entry_mode=SOURCE_GENERATED` 的待确认出库单；不直接扣减 `stockQty`，但锁定失败时审核和工作单创建均须回滚。部分确认后生成下一张工作单只复用剩余锁定量，不得重复预占。本接口需要 `purchase:manage` 权限并保证幂等。
       operationId: purchaseReturnApprove
       security:
         - SaTokenAuth: []
@@ -2910,7 +2910,7 @@ paths:
     post:
       tags: [PurchaseReturn]
       summary: 取消采购退回单
-      description: 仅允许 `DRAFT`、`SUBMITTED` 或尚未产生处理数量的 `APPROVED` 进入 `CANCELLED`；取消原因写入 `status_reason`，已生成未确认出库单必须同步取消。部分执行后不得取消。本接口需要 `purchase:manage` 权限。
+      description: 仅允许 `DRAFT`、`SUBMITTED` 或尚未产生处理数量的 `APPROVED` 进入 `CANCELLED`；取消原因写入 `status_reason`。取消 `APPROVED` 单据时，后端必须在同一事务内取消未确认出库工作单，并按每条明细 `approvedQty - processedQty` 释放 `warehouse_stock.locked_qty`；不得改调仓储通用取消接口。部分执行后不得取消。本接口需要 `purchase:manage` 权限。
       operationId: purchaseReturnCancel
       security:
         - SaTokenAuth: []
@@ -3790,7 +3790,7 @@ paths:
         入库单承接采购入库、销售退货入库和调整入库；采购订单审核后生成 `PENDING_CONFIRM` 入库单，但不直接改变库存。
         系统生成的待确认入库单初始本次入库量为 0 或空业务值，由仓库人员在确认前按实物到货数量填写；确认后剩余未入库由后端按采购数量、累计已入库和本次入库量计算。
         入库列表的“来源对象”列按单据类型显示供应商、客户或调整单的来源仓库；库存调整不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库、本次入库量和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
-        人工补录或人工调整允许未关联系统来源，`sourceId`、`sourcePartyId` 可能为 null；前端应优先展示 `sourceNo`、`sourcePartyName` 快照，为空时标识为“线下补录”或“未关联来源”，不得仅依据来源 ID 判断单据是否为线下补录。
+        新建的人工补录单必须关联已选择的系统来源，非调整类型的 `sourceId` 与 `sourceNo` 均非空；人工调整和历史迁移数据的 `sourceId`、`sourcePartyId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照，并将缺少来源关联的历史记录标识为“未关联来源”。
         本接口需要 `warehouse:query` 权限。
       operationId: inboundBillPage
       security:
@@ -3884,7 +3884,7 @@ paths:
         出库单承接销售出库、采购退货出库和调整出库；销售订单审核后生成 `PENDING_CONFIRM` 出库单，但不直接扣减库存。
         系统生成的待确认出库单初始本次出库量为 0 或空业务值，由仓库人员在确认前按实物发货数量填写；确认后剩余未出库由后端按销售数量、累计已出库和本次出库量计算。
         出库列表的“来源对象”列按单据类型显示客户、供应商或调整单的来源仓库；库存调整不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库、本次出库量和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
-        人工补录或人工调整允许未关联系统来源，`sourceId`、`sourcePartyId` 可能为 null；前端应优先展示 `sourceNo`、`sourcePartyName` 快照，为空时标识为“线下补录”或“未关联来源”，不得仅依据来源 ID 判断单据是否为线下补录。
+        新建的人工补录单必须关联已选择的系统来源，非调整类型的 `sourceId` 与 `sourceNo` 均非空；人工调整和历史迁移数据的 `sourceId`、`sourcePartyId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照，并将缺少来源关联的历史记录标识为“未关联来源”。
         本接口需要 `warehouse:query` 权限。
       operationId: outboundBillPage
       security:
@@ -3944,7 +3944,7 @@ paths:
     post:
       tags: [WarehouseStockBill]
       summary: 新增手工出库单草稿
-      description: 创建调整出库或补录销售出库、采购退货出库草稿。保存后不改变库存，确认出库后才生成库存流水。前端必须通过搜索下拉选择来源对象：销售出库选客户、采购退货选供应商、调整出库选来源仓库；`sourcePartyId` 和 `sourcePartyName` 由前端提交，后端直接存入主表快照。本接口需要 `warehouse:manage` 权限。
+      description: 创建调整出库或补录销售出库、采购退货出库草稿。保存后不改变实际库存 `stockQty`，确认出库后才生成库存流水；仅手工调整出库按本次出库数量校验可用库存并预占 `lockedQty`，销售出库和采购退货出库消费来源单审核时已占用的锁定库存。非调整类型必须通过搜索下拉选择来源单据，选中后自动带入来源对象和明细；不支持手动录入来源单号。调整出库选择来源仓库；`sourcePartyId` 和 `sourcePartyName` 由前端提交，后端直接存入主表快照。本接口需要 `warehouse:manage` 权限。
       operationId: outboundBillCreate
       security:
         - SaTokenAuth: []
@@ -4070,7 +4070,7 @@ paths:
     get:
       tags: [WarehouseStockBill]
       summary: 获取入库单详情
-      description: 仅查询 `inbound_bill` 及其明细。人工补录或人工调整允许未关联系统来源，`sourceId`、`sourcePartyId` 和明细 `sourceItemId` 可能为 null；前端应优先展示 `sourceNo`、`sourcePartyName` 快照，为空时标识为“线下补录”或“未关联来源”。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
+      description: 仅查询 `inbound_bill` 及其明细。新建的非调整人工补录单必须关联系统来源；人工调整、历史迁移数据及未关联来源的历史明细，其 `sourceId`、`sourcePartyId` 和明细 `sourceItemId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
       operationId: inboundBillDetail
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
@@ -4082,7 +4082,7 @@ paths:
     put:
       tags: [WarehouseStockBill]
       summary: 编辑入库单草稿或待确认单
-      description: 仅编辑 `inbound_bill`。`DRAFT` 可修改仓库；人工补录的采购入库或销售退货入库草稿可修改来源对象和来源单号，来源单号同时支持搜索选择与手工输入；调整入库草稿可修改来源仓库但调整单号保持不变；系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
+      description: 仅编辑 `inbound_bill`。`DRAFT` 可修改仓库；人工补录的采购入库或销售退货入库草稿可修改来源对象和来源单号，来源单号仅支持搜索选择；调整入库草稿可修改来源仓库但调整单号保持不变；系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
       operationId: inboundBillUpdate
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
@@ -4154,7 +4154,7 @@ paths:
     get:
       tags: [WarehouseStockBill]
       summary: 获取出库单详情
-      description: 仅查询 `outbound_bill` 及其明细。人工补录或人工调整允许未关联系统来源，`sourceId`、`sourcePartyId` 和明细 `sourceItemId` 可能为 null；前端应优先展示 `sourceNo`、`sourcePartyName` 快照，为空时标识为“线下补录”或“未关联来源”。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
+      description: 仅查询 `outbound_bill` 及其明细。新建的非调整人工补录单必须关联系统来源；人工调整、历史迁移数据及未关联来源的历史明细，其 `sourceId`、`sourcePartyId` 和明细 `sourceItemId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照。已确认库存流水请使用只读的 `/warehouse/stock-bills` 查询接口；需要 `warehouse:query` 权限。
       operationId: outboundBillDetail
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
@@ -4166,7 +4166,7 @@ paths:
     put:
       tags: [WarehouseStockBill]
       summary: 编辑出库单草稿或待确认单
-      description: 仅编辑 `outbound_bill`。`DRAFT` 可修改仓库；调整出库草稿可修改来源仓库但调整单号保持不变；其他出库来源对象和来源单号保持创建时的值，系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；需要 `warehouse:manage` 权限。
+      description: 仅编辑 `outbound_bill`。`DRAFT` 可修改仓库；调整出库草稿可修改来源仓库但调整单号保持不变；系统生成单据必须保持来源不变。`PENDING_CONFIRM` 锁定仓库、来源和产品结构，仅允许调整数量、质量数量和备注；仅调整出库编辑数量、产品或草稿仓库时，后端会在同一事务内调整本单预占的 `lockedQty`；需要 `warehouse:manage` 权限。
       operationId: outboundBillUpdate
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
@@ -4204,7 +4204,7 @@ paths:
     post:
       tags: [WarehouseStockBill]
       summary: 确认出库单
-      description: 仅允许 `PENDING_CONFIRM -> CONFIRMED`。后端在同一事务内校验出库单与库存、生成库存流水并扣减库存；`pendingQty` 为只读结果，前端不得提交；需要 `warehouse:manage` 权限并保证幂等。
+      description: 仅允许 `PENDING_CONFIRM -> CONFIRMED`。后端在同一事务内校验出库单与库存、生成库存流水并扣减库存；销售出库、采购退货出库和调整出库均同时扣减对应的 `lockedQty`。系统生成采购退货单必须已由来源审核流程预占，锁定量不足时确认失败且不生成库存事实；`pendingQty` 为只读结果，前端不得提交；需要 `warehouse:manage` 权限并保证幂等。
       operationId: outboundBillConfirm
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
@@ -4221,7 +4221,7 @@ paths:
     post:
       tags: [WarehouseStockBill]
       summary: 取消出库单草稿或待确认单
-      description: 仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`，不改变库存；需要 `warehouse:manage` 权限并保证幂等。
+      description: 仅允许手工 `DRAFT/PENDING_CONFIRM -> CANCELLED`，不改变实际库存；仅手工调整出库会释放本单已预占的 `lockedQty`。`SOURCE_GENERATED` 的采购退货单不得调用本接口，必须由采购退货业务在同一事务内取消来源单、取消工作单并释放剩余锁定量。需要 `warehouse:manage` 权限并保证幂等。
       operationId: outboundBillCancel
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/OutboundBillId' }]
@@ -7328,7 +7328,7 @@ components:
       description: 工作单明细写入 DTO；保留历史 schema 名称仅为前端类型兼容，不表示直接写入 `stock_bill_item`。编辑时前端提交全量明细快照，后端执行全量替换。
       required: [productId, currentQty, qualifiedQty, defectiveQty]
       properties:
-        sourceItemId: { type: string, nullable: true, description: 来源单据明细 ID；前端从已有单据下拉选择时自动附带，对应采购订单明细 ID 或销售退货明细 ID；手动输入模式不传 }
+        sourceItemId: { type: string, nullable: true, description: 来源单据明细 ID；非调整单前端从已有单据下拉选择后自动附带，对应来源单据明细 ID；调整类型不传 }
         productId: { type: string, description: 产品 ID，后端保存当前产品编码、名称和单位快照 }
         planQty: { type: number, format: double, nullable: true, minimum: 0, multipleOf: 0.01, description: 来源计划数量业务真实值（如采购100件传100）；前端从来源单据带入，后端按100倍整数持久化；无来源计划时传 null 或不传，后端统一存 null；0 视为无来源计划 }
         currentQty: { type: number, format: double, minimum: 0, exclusiveMinimum: true, multipleOf: 0.01, description: 本次出入库业务真实值，最多两位小数；后端按产品数量精度校验并按 100 倍整数持久化 }
@@ -7342,8 +7342,8 @@ components:
       required: [billType, sourceNo, warehouseId, sourcePartyId, sourcePartyName, manualReason, items]
       properties:
         billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 手工补录或库存调整类型 }
-        sourceNo: { type: string, maxLength: 64, description: 来源业务单号；前端默认从已有单据下拉选择（搜索采购订单或销售退货单），选中后自动填充；也可切换为手动输入模式填写线下单据号。调整类型传空字符串，由后端生成调整单号 }
-        sourceId: { type: string, nullable: true, description: 来源单据 ID；前端从已有单据下拉选择时自动附带，对应采购订单 ID 或销售退货单 ID；手动输入模式或调整类型不传 }
+        sourceNo: { type: string, maxLength: 64, description: 来源业务单号；非调整类型必须从已有单据搜索选择，且与非空 sourceId 同时提交，不支持手动输入。调整类型传空字符串，由后端生成调整单号 }
+        sourceId: { type: string, nullable: true, description: 来源单据 ID；非调整类型必须从已有单据选择并与非空 sourceNo 同时提交，调整类型不传 }
         warehouseId: { type: string, description: 启用状态的仓库 ID }
         sourcePartyId: { type: string, minLength: 1, description: 来源对象 ID；采购入库/采购退货出库为供应商 ID，销售出库/销售退货为客户 ID，调整入库/出库为来源仓库 ID。必填，由前端下拉选择 }
         sourcePartyName: { type: string, minLength: 1, maxLength: 200, description: 来源对象名称快照；必填，由前端在选中 sourcePartyId 后附带提交，后端直接存入主表，不跨模块查询 }
@@ -7459,10 +7459,10 @@ components:
         workBillId: { type: string, description: 工作单稳定 ID，对应入库单或出库单主表主键，BIGINT 按字符串传输 }
         billNo: { type: string, maxLength: 64, description: 入库单号或出库单号 }
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 原业务来源类型 }
-        sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输；人工补录、人工调整或未关联系统来源时为 null }
-        sourceNo: { type: string, maxLength: 64, description: 原业务来源单号快照；人工补录可录入线下单号，未填写时为空字符串 }
-        sourcePartyId: { type: string, nullable: true, description: 来源对象 ID，BIGINT 按字符串传输；采购入库为供应商 ID，销售退货为客户 ID，库存调整为受影响仓库 ID；线下补录未关联主数据时为 null }
-        sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；采购相关单据表示供应商，销售相关单据表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示发生调整的来源仓库名称快照，前端统一显示在“来源对象”列，调整单详情和编辑态标注为“来源仓库”；线下补录未填写时为空字符串 }
+        sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输；新建非调整人工补录单必有值，人工调整或历史未关联数据时为 null }
+        sourceNo: { type: string, maxLength: 64, description: 原业务来源单号快照；新建非调整人工补录单必有值，调整单由后端生成调整单号，历史未关联数据时可能为空字符串 }
+        sourcePartyId: { type: string, nullable: true, description: 来源对象 ID，BIGINT 按字符串传输；采购入库为供应商 ID，销售退货为客户 ID，库存调整为受影响仓库 ID；人工调整或历史未关联数据时为 null }
+        sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；采购相关单据表示供应商，销售相关单据表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示发生调整的来源仓库名称快照，前端统一显示在“来源对象”列，调整单详情和编辑态标注为“来源仓库”；历史未关联数据时为空字符串 }
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 前端显示为系统生成、人工补录和人工调整 }
         warehouseId: { type: string, description: 仓库 ID，BIGINT 按字符串传输 }
         warehouseName: { type: string, maxLength: 100, description: 仓库名称快照 }

@@ -49,14 +49,32 @@ public class StockBillDraftSupport {
      * 保持原有建单语义：空白来源 ID 不关联，非空值按 Long 类型解析。
      */
     public Long toNullableLong(String value) {
-        return StrUtil.isBlank(value) ? null : Long.valueOf(value);
+        return parseNullableId(value, "ID");
+    }
+
+    /**
+     * 将前端字符串 ID 转换为 Long，并将非法输入统一返回为参数错误。
+     */
+    public Long parseRequiredId(String value, String fieldName) {
+        if (StrUtil.isBlank(value)) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), fieldName + "不能为空");
+        }
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException e) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), fieldName + "格式错误");
+        }
+    }
+
+    public Long parseNullableId(String value, String fieldName) {
+        return StrUtil.isBlank(value) ? null : parseRequiredId(value, fieldName);
     }
 
     /**
      * 校验仓库是否存在且未禁用
      */
     private Warehouse requireEnabledWarehouse(String warehouseId) {
-        Warehouse warehouse = warehouseService.getById(Long.valueOf(warehouseId));
+        Warehouse warehouse = warehouseService.getById(parseRequiredId(warehouseId, "仓库ID"));
         if (warehouse == null || warehouse.getStatus() == null || warehouse.getStatus() != 1) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "仓库不存在或已禁用");
         }
@@ -68,7 +86,7 @@ public class StockBillDraftSupport {
      */
     public Map<Long, Product> loadProductMap(Collection<? extends StockBillDraftItem> items) {
         List<Long> productIds = items.stream()
-                .map(item -> Long.valueOf(item.getProductId()))
+                .map(item -> parseRequiredId(item.getProductId(), "产品ID"))
                 .distinct()
                 .toList();
         List<Product> products = productMapper.selectByIds(productIds);

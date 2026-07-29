@@ -3,6 +3,7 @@ package com.qiheng.erp.warehouse.domain.entity;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.Version;
 
 import java.io.Serial;
 import java.time.LocalDateTime;
@@ -10,6 +11,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import java.io.Serializable;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.qiheng.erp.warehouse.domain.support.StockBillEditMapping;
 import com.qiheng.erp.warehouse.domain.support.StockBillDetailVoMapping;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -28,7 +30,8 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 @TableName("outbound_bill")
 @Schema(description = "出库单主表")
-public class OutboundBill implements Serializable, StockBillDetailVoMapping.BillSource {
+public class OutboundBill implements Serializable, StockBillDetailVoMapping.BillSource,
+        StockBillEditMapping.EditableBill<OutboundBill> {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -125,6 +128,7 @@ public class OutboundBill implements Serializable, StockBillDetailVoMapping.Bill
     @TableField("remark")
     private String remark;
 
+    @Version
     @Schema(description = "乐观锁版本号")
     @TableField("version")
     private Integer version;

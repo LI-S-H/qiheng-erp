@@ -252,9 +252,11 @@ unit_name = VALUES(unit_name), quantity_precision = VALUES(quantity_precision), 
 qualified_qty = VALUES(qualified_qty), defective_qty = VALUES(defective_qty), before_qty = VALUES(before_qty),
 change_qty = VALUES(change_qty), after_qty = VALUES(after_qty), create_time = VALUES(create_time), remark = VALUES(remark);
 
--- 上述四笔已确认退货流水相对 003 脚本的 86 箱基线净减少 2 箱，最终为 84 箱。
+-- 上述四笔已确认退货流水相对 003 脚本的 86 箱基线净减少 2 箱，最终为 84 箱；
+-- PR202607003 和 PR202607004 尚有各 2 箱待处理采购退货，合计锁定 4 箱实物库存。
 UPDATE warehouse_stock
 SET stock_qty = 8400,
+    locked_qty = 400,
     update_time = '2026-07-15 17:30:00',
     version = 4
 WHERE id = 1940000000000000001

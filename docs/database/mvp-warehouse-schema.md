@@ -56,7 +56,7 @@
 | product_name | varchar(200) | 产品名称，冗余 |
 | unit_name | varchar(32) | 单位名称，冗余 |
 | stock_qty | bigint | 当前库存数量，按 100 倍整数存储 |
-| locked_qty | bigint | 锁定库存数量，按 100 倍整数存储，销售单占用时使用 |
+| locked_qty | bigint | 锁定库存数量，按 100 倍整数存储；销售单、采购退货单审核时预占，调整出库创建时预占，出库确认时扣减 |
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |
 
@@ -235,9 +235,9 @@
 - 提交或确认入库单/出库单前，前端必须强制展示完整详情和全部产品明细，并从详情页发起二次确认；列表操作不得直接执行提交或确认。
 - `CONFIRMED` 后不允许任何修改或取消；发现错误时必须通过反向入库/出库或库存调整纠正，保留完整流水链路。
 - 确认入库单时，后端必须在同一事务内锁定入库单、库存余额和来源采购明细，生成 `stock_bill` / `stock_bill_item`，固化 `entry_mode`、`business_source_id/no` 和审计快照；来源业务类型由 `bill_type` 推导，更新 `warehouse_stock.stock_qty`，并累加 `purchase_order_item.inbound_qty`。
-- 确认出库单时，后端必须在同一事务内锁定出库单、库存余额和来源销售明细，生成 `stock_bill` / `stock_bill_item`，固化 `entry_mode`、`business_source_id/no` 和审计快照；来源业务类型由 `bill_type` 推导，扣减 `warehouse_stock.stock_qty`，并同步扣减销售锁定库存。
-- 销售单占用库存时只更新 `warehouse_stock.locked_qty`；确认出库后再扣减 `stock_qty` 和 `locked_qty`。
-- 手工补录使用 `entry_mode=MANUAL_SUPPLEMENT`，必须填写原业务单号和补录原因，`source_id` 可为空。
+- 确认出库单时，后端必须在同一事务内锁定出库单、库存余额和来源销售明细，生成 `stock_bill` / `stock_bill_item`，固化 `entry_mode`、`business_source_id/no` 和审计快照；来源业务类型由 `bill_type` 推导。销售出库、采购退货出库和调整出库确认时均同步扣减 `warehouse_stock.stock_qty`、`locked_qty`；锁定量不足必须整体回滚，不能改用可用库存绕过预占。
+- 销售订单审核占用库存时只更新 `warehouse_stock.locked_qty`；采购退货审核通过时，必须与生成来源工作单在同一事务内按 `approved_qty - processed_qty` 汇总校验可用库存并增加 `locked_qty`。仅调整出库创建时按明细 `current_qty` 校验可用库存并增加 `locked_qty`，编辑草稿或待确认单时调整本单锁定量，取消时释放本单锁定量；销售出库和采购退货出库消费来源单审核时已占用的锁定库存。系统生成采购退货单只能由来源业务取消，并与来源状态一起释放未处理的锁定量。
+- 新增手工补录使用 `entry_mode=MANUAL_SUPPLEMENT` 时，前端必须搜索选择已有来源单据并提交 `source_id`、原业务单号和补录原因；调整单据不关联来源单。
 - 库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`，只允许 `ADJUST_IN` 或 `ADJUST_OUT`，调整原因必填，`source_party_id/name` 保存受影响仓库 ID 和名称快照；库存调整是单仓库余额增减，不自动生成反向入库单或出库单，跨仓移动应由后续库存调拨单承载。
 - 所有手工补录和库存调整的 `responsible_by_id/name` 必须由后端根据当前登录用户写入，前端只读展示且不得提交或代填。
 - 产品数量必须符合 `product.quantity_precision`；离散单位精度为 0 时，本次数量、合格数量和不合格数量均只能为整数。

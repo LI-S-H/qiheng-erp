@@ -2,9 +2,11 @@ package com.qiheng.erp.warehouse.controller;
 
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.warehouse.domain.dto.OutboundBillCreateDto;
 import com.qiheng.erp.warehouse.domain.dto.OutboundBillPageDto;
+import com.qiheng.erp.warehouse.domain.dto.StockBillItemUpdateDto;
 import com.qiheng.erp.warehouse.domain.vo.OutboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.vo.OutboundBillPageVo;
 import com.qiheng.erp.warehouse.service.IOutboundBillService;
@@ -16,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 
@@ -76,5 +79,76 @@ public class OutboundBillController {
         StpUtil.checkPermission("warehouse:manage");
         log.info("新增手工出库单草稿，参数: {}", dto);
         return Result.ok(outboundBillService.createDraft(dto));
+    }
+
+    /**
+     * 编辑出库单草稿或待确认单
+     * @param outboundBillId 出库单ID（字符串形式）
+     * @param dto 编辑请求
+     * @return 出库单详情
+     */
+    @PutMapping("/{outboundBillId}")
+    @Operation(summary = "编辑出库单草稿或待确认单")
+    public Result<OutboundBillDetailVo> updateDraft(
+            @Parameter(description = "出库单ID，对应 outbound_bill.id", required = true)
+            @PathVariable String outboundBillId,
+            @Valid @RequestBody StockBillItemUpdateDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("编辑出库单，ID: {}, 参数: {}", outboundBillId, dto);
+        return Result.ok(outboundBillService.updateDraft(outboundBillId, dto));
+    }
+
+    /**
+     * 提交出库单草稿为待确认单。
+     *
+     * @param outboundBillId 出库单 ID
+     * @param dto 乐观锁版本号请求
+     * @return 出库单详情
+     */
+    @PostMapping("/{outboundBillId}/submit")
+    @Operation(summary = "提交出库单草稿为待确认")
+    public Result<OutboundBillDetailVo> submitDraft(
+            @Parameter(description = "出库单ID，对应 outbound_bill.id", required = true)
+            @PathVariable String outboundBillId,
+            @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("提交出库单草稿，ID: {}, version: {}", outboundBillId, dto.getVersion());
+        return Result.ok(outboundBillService.submitDraft(outboundBillId, dto));
+    }
+
+    /**
+     * 取消出库单草稿或待确认单。
+     *
+     * @param outboundBillId 出库单 ID
+     * @param dto 乐观锁版本号请求
+     * @return 出库单详情
+     */
+    @PostMapping("/{outboundBillId}/cancel")
+    @Operation(summary = "取消出库单草稿或待确认单")
+    public Result<OutboundBillDetailVo> cancelBill(
+            @Parameter(description = "出库单ID，对应 outbound_bill.id", required = true)
+            @PathVariable String outboundBillId,
+            @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("取消出库单，ID: {}, version: {}", outboundBillId, dto.getVersion());
+        return Result.ok(outboundBillService.cancelBill(outboundBillId, dto));
+    }
+
+    /**
+     * 确认出库单并扣减库存。
+     *
+     * @param outboundBillId 出库单 ID
+     * @param dto 乐观锁版本号请求
+     * @return 出库单详情
+     */
+    @PostMapping("/{outboundBillId}/confirm")
+    @Operation(summary = "确认出库单")
+    public Result<OutboundBillDetailVo> confirmBill(
+            @Parameter(description = "出库单ID，对应 outbound_bill.id", required = true)
+            @PathVariable String outboundBillId,
+            @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("warehouse:manage");
+        log.info("确认出库单，ID: {}, version: {}", outboundBillId, dto.getVersion());
+        return Result.ok(outboundBillService.confirmBill(outboundBillId, dto));
     }
 }

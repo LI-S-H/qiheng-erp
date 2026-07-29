@@ -11,13 +11,13 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 编辑入库单草稿或待确认单请求
+ * 编辑出入库单草稿或待确认单请求
  *
  * @author Li
  * @since 2026-07-25
  */
 @Data
-@Schema(description = "编辑入库单草稿或待确认单请求")
+@Schema(description = "编辑出入库单草稿或待确认单请求")
 public class StockBillItemUpdateDto {
 
     @Schema(description = "乐观锁版本号")

@@ -11,13 +11,13 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 /**
- * 入库单明细更新请求
+ * 出入库单明细更新请求
  *
  * @author Li
  * @since 2026-07-25
  */
 @Data
-@Schema(description = "入库单明细更新请求，前端提交全量明细快照，后端全量替换")
+@Schema(description = "出入库单明细更新请求，前端提交全量明细快照，后端全量替换")
 public class StockBillUpdateDto implements StockBillDraftItem {
 
     @Schema(description = "来源单据明细ID")

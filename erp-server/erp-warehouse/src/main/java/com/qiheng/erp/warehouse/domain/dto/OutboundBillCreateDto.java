@@ -25,11 +25,11 @@ public class OutboundBillCreateDto {
     @NotNull(message = "出库单类型不能为空")
     private OutboundType billType;
 
-    @Schema(description = "原业务单号，非调整类型必填；调整类型传空字符串")
+    @Schema(description = "原业务单号；非调整类型必须与来源单据ID同时传入，调整类型传空字符串")
     @Size(max = 64, message = "来源单号最多64个字符")
     private String sourceNo;
 
-    @Schema(description = "来源单据ID，前端从已有单据下拉选择时附带；手动输入模式或调整类型不传")
+    @Schema(description = "来源单据ID；非调整类型必须从已有单据选择并与来源单号同时传入，调整类型不传")
     private String sourceId;
 
     @Schema(description = "仓库ID")
@@ -61,17 +61,18 @@ public class OutboundBillCreateDto {
     private String remark;
 
     /**
-     * 非调整类型时来源单号不能为空
+     * 非调整类型必须选择来源单据，避免直接调用接口时绕过前端的来源单选择限制。
      */
-    @AssertTrue(message = "非调整类型时原业务单号不能为空")
+    @AssertTrue(message = "非调整类型时必须选择来源单据")
     @Schema(hidden = true)
-    public boolean isSourceNoRequired() {
+    public boolean isSourceReferenceRequired() {
         if (billType == null) {
             return true;
         }
         if (billType == OutboundType.ADJUST_OUT) {
             return true;
         }
-        return sourceNo != null && !sourceNo.isBlank();
+        return sourceId != null && !sourceId.isBlank()
+                && sourceNo != null && !sourceNo.isBlank();
     }
 }

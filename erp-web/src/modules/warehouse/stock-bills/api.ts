@@ -423,8 +423,9 @@ export async function createStockBill(direction: StockBillDirection, payload: St
     if (!warehouse) throw new Error('只能选择启用状态的仓库');
     const isAdjustment = adjustmentTypes.has(payload.billType);
     const sourceNo = isAdjustment ? '' : payload.sourceNo.trim();
+    const sourceId = isAdjustment ? '' : payload.sourceId?.trim() ?? '';
     const manualReason = payload.manualReason.trim();
-    if (!isAdjustment && !sourceNo) throw new Error('手工补录采购、销售或退货凭证时必须填写原业务单号');
+    if (!isAdjustment && (!sourceNo || !sourceId)) throw new Error('手工补录采购、销售或退货凭证时必须选择来源单据');
     if (sourceNo.length > 64) throw new Error('原业务单号不能超过 64 个字符');
     if (!payload.sourcePartyId.trim() || !payload.sourcePartyName.trim()) throw new Error('来源对象ID和名称不能为空');
     if (!manualReason) throw new Error(isAdjustment ? '请填写调整原因' : '请填写补录原因');
@@ -464,7 +465,7 @@ export async function createStockBill(direction: StockBillDirection, payload: St
       billNo: identity.billNo,
       billType: payload.billType,
       sourceType: sourceTypeByBillType[payload.billType],
-      sourceId: null,
+      sourceId: sourceId || null,
       sourceNo: isAdjustment ? identity.sourceNo : sourceNo,
       sourcePartyId: payload.sourcePartyId,
       sourcePartyName: payload.sourcePartyName.trim(),

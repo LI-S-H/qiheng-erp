@@ -2,7 +2,7 @@
 
 ## 设计目标
 
-退货模块使用一套统一的 `return_order` / `return_order_item` 表，同时承接销售退货和采购退货。退货单负责表达退货申请、审核和执行进度；实际库存变化继续统一通过仓库模块的入库单、出库单和库存流水完成，不允许退货模块直接修改 `warehouse_stock`。
+退货模块使用一套统一的 `return_order` / `return_order_item` 表，同时承接销售退货和采购退货。退货单负责表达退货申请、审核和执行进度；实际库存变化继续统一通过仓库模块的入库单、出库单和库存流水完成。采购退货审核流程可以调用仓储库存预占能力，但不得自行直接更新 `warehouse_stock`。
 
 前端分别在销售模块和采购模块提供退货页面，但共用同一套数据模型：
 
@@ -245,7 +245,7 @@ stateDiagram-v2
 |---|---|---|---|---|
 | `DRAFT` | 保存、提交、删除、取消 | 原订单、仓库、日期、处理方式、原因、备注、明细 | 提交时校验必填字段、可退数量和来源有效性 | `DRAFT`、`SUBMITTED`、`CANCELLED` |
 | `SUBMITTED` | 审核通过、审核退回、取消 | 审核人仅可填写各明细审核数量和审核意见 | 重新锁定来源明细并校验可退数量 | `APPROVED`、`DRAFT`、`CANCELLED` |
-| `APPROVED` | 查看、取消 | 业务字段不可编辑 | 取消仅允许所有明细 `processed_qty = 0`，且同步取消未确认工作单 | `APPROVED`、`CANCELLED` |
+| `APPROVED` | 查看、取消 | 业务字段不可编辑 | 取消仅允许所有明细 `processed_qty = 0`，且在同一事务内取消未确认工作单；采购退货还须释放实物库存预占 | `APPROVED`、`CANCELLED` |
 | `PARTIAL_EXECUTED` | 查看 | 不可编辑 | 必须继续执行剩余审核数量 | `PARTIAL_EXECUTED`、`COMPLETED` |
 | `COMPLETED` | 查看 | 不可编辑 | 终态，不可撤回 | `COMPLETED` |
 | `CANCELLED` | 查看 | 不可编辑 | 终态，不可恢复 | `CANCELLED` |
@@ -310,7 +310,9 @@ stock_bill.business_source_no = return_order.return_no
 stock_bill_item.business_source_item_id = return_order_item.id
 ```
 
-采购退货确认前必须重新校验对应仓库的可用库存，不能因为退货单已经审核就绕过库存校验。
+采购退货审核通过时，来源服务必须通过仓储库存预占能力，在生成 `SOURCE_GENERATED` 待确认出库单的同一事务内，按各明细 `approved_qty - processed_qty` 汇总校验可用库存并增加 `warehouse_stock.locked_qty`。这项实物预占与 `return_order_item` 的可退额度占用是两套不同的约束：前者防止库存被其他出库消耗，后者防止同一采购明细重复退货。
+
+采购退货确认时必须同时校验 `stock_qty` 和对应的 `locked_qty`，并同步扣减二者；部分确认只消耗本次数量，剩余锁定量继续保留给后续工作单。生成下一张工作单不得再次增加锁定量。`APPROVED` 且所有明细未处理时取消，必须在同一事务内取消待确认工作单并释放全部 `approved_qty - processed_qty`；系统生成工作单不得走仓储通用取消接口。
 
 ### 工作单生成与幂等规则
 
@@ -318,6 +320,7 @@ stock_bill_item.business_source_item_id = return_order_item.id
 - 生成工作单时锁定 `return_order`，在同一事务内检查现有未确认工作单，防止重复生成。
 - 工作单只包含 `approved_qty > processed_qty` 的明细。
 - 工作单 `plan_qty` 对应审核数量，`processed_qty` 对应生成本单前的退货累计处理数量，`current_qty` 由仓库填写，`pending_qty` 由后端计算。
+- 对采购退货，首次审核通过生成工作单时才按 `approved_qty - processed_qty` 完成实物库存预占；后续因部分执行生成工作单时只带入剩余计划数量，不得重复预占。
 - 仓库确认必须保证幂等；同一工作单重复确认不得重复增加 `return_order_item.processed_qty`。
 - 所有明细 `processed_qty = approved_qty` 后，退货单自动进入 `COMPLETED`。
 
@@ -368,7 +371,7 @@ flowchart LR
 - 检查现有仓库确认逻辑是否把销售退货不合格数量计入了 `warehouse_stock.stock_qty`，并按本设计统一口径。
 - 检查 `SALES_RETURN_ORDER`、`PURCHASE_RETURN_ORDER` 在 Java 枚举、OpenAPI、Mock 和前端映射中的值完全一致。
 - 检查仓库工作单确认事务能够调用退货来源回写逻辑，并避免仓库模块与退货模块形成循环依赖。
-- 退货 DDL 与幂等种子已落在 `docs/database/sql/008_mvp_return.sql`；`APPROVED` 种子同步包含待确认仓库工作单，`PARTIAL_EXECUTED`、`COMPLETED` 种子同步包含已确认工作单、库存流水及最终库存余额，确保 `processed_qty` 可按退货单和退货明细追溯。接口、页面和后端实现仍以本文档为退货字段、状态、数量和来源关联的权威契约。
+- 退货 DDL 与幂等种子已落在 `docs/database/sql/008_mvp_return.sql`；采购退货 `APPROVED` 和 `PARTIAL_EXECUTED` 种子同步反映未处理数量对应的实物锁定，`APPROVED` 种子同步包含待确认仓库工作单，`PARTIAL_EXECUTED`、`COMPLETED` 种子同步包含已确认工作单、库存流水及最终库存余额，确保 `processed_qty` 可按退货单和退货明细追溯。接口、页面和后端实现仍以本文档为退货字段、状态、数量和来源关联的权威契约。
 
 ## 测试场景
 
@@ -381,5 +384,5 @@ flowchart LR
 - 仓库部分确认后，销售退货页面显示“退货入库中”，采购退货页面显示“退货出库中”，不能取消或放弃剩余数量。
 - 所有审核数量处理完后自动进入“已完成”。
 - 销售退货合格与不合格数量之和等于本次处理数量，不合格品不进入可用库存。
-- 采购退货确认时库存不足返回冲突，不生成库存流水、不回写处理数量。
+- 采购退货审核通过时可用库存不足返回冲突，审核状态、工作单和实物锁定量必须整体回滚；确认时锁定库存不足同样不得生成库存流水或回写处理数量。
 - 库存流水能够通过 `business_source_id` 和 `business_source_item_id` 追溯到退货单及明细。

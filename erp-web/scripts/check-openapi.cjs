@@ -180,7 +180,13 @@ for (const fragment of [
 ]) {
   if (!source.includes(fragment)) throw new Error(`采购退回 OpenAPI 缺少关键契约：${fragment}`);
 }
-for (const fragment of ['`return_order`', '`return_order_item`', '草稿不占用数量', '采购退货确认前必须重新校验对应仓库的可用库存']) {
+for (const fragment of [
+  '`return_order`',
+  '`return_order_item`',
+  '草稿不占用数量',
+  '采购退货审核通过时，来源服务必须通过仓储库存预占能力',
+  '采购退货确认时必须同时校验 `stock_qty` 和对应的 `locked_qty`',
+]) {
   if (!returnSchema.includes(fragment)) throw new Error(`退货数据库设计缺少权威规则：${fragment}`);
 }
 const purchaseReturnCreateStart = source.indexOf('    PurchaseReturnOrderCreateRequest:');
@@ -683,7 +689,7 @@ for (const fragment of [
   'name: entryMode',
   '对应 `inbound_bill.entry_mode`',
   '对应 `outbound_bill.entry_mode`',
-  'required: [billType, sourceNo, warehouseId, sourcePartyId, sourcePartyName, manualReason, items]',
+  '非调整类型必须从已有单据选择并与非空 sourceNo 同时提交',
   'responsibleById',
   'sourcePartyName',
   'quantitySummary',
@@ -714,7 +720,9 @@ if (!stockBillViewSource.includes('新增入库单')
   || !stockBillViewSource.includes('const sourcePartyFormDisplay = computed(() =>')
   || !stockBillViewSource.includes('const manualInboundSourceEditable = computed(() =>')
   || !stockBillViewSource.includes('const adjustmentSourceWarehouseEditable = computed(() =>')
-  || !stockBillViewSource.includes('const sourceNoSearchable = computed(() => sourceNoEditable.value && !isAdjustmentForm.value)')
+  || !stockBillViewSource.includes('placeholder="请选择来源单据"')
+  || !stockBillViewSource.includes('sourceId: form.sourceId')
+  || stockBillViewSource.includes('toggleSourceNoMode')
   || !stockBillViewSource.includes('sourcePartyId: form.sourcePartyId')
   || !stockBillViewSource.includes('sourcePartyName: selectedSourcePartyLabel.value')
   || !stockBillViewSource.includes("if (adjustmentTypes.has(formBillType.value)) return selectedFormWarehouseLabel.value || '请选择调整仓库';")

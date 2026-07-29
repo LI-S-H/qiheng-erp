@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import java.io.Serializable;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.qiheng.erp.warehouse.domain.support.StockBillEditMapping;
 import com.qiheng.erp.warehouse.domain.support.StockBillDetailVoMapping;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -29,7 +30,8 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 @TableName("inbound_bill")
 @Schema(name="InboundBill对象", description="入库单主表")
-public class InboundBill implements Serializable, StockBillDetailVoMapping.BillSource {
+public class InboundBill implements Serializable, StockBillDetailVoMapping.BillSource,
+        StockBillEditMapping.EditableBill<InboundBill> {
 
     @Serial
     private static final long serialVersionUID = 1L;

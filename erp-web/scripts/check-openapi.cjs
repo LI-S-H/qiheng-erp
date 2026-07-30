@@ -804,8 +804,8 @@ if (!exclusiveDropdownSource.includes("erp:dropdown-open")
 }
 for (const fragment of [
   '启用时后端必须校验产品所属分类仍为启用状态',
-  '已被库存、采购或销售业务数据引用时返回 409',
-  '任一产品已被库存、采购或销售业务数据引用时整批返回 409',
+  '仍存在未删除的供货关系，或已被库存、采购或销售业务数据引用时返回 409',
+  '任一产品仍存在未删除的供货关系，或已被库存、采购或销售业务数据引用时整批返回 409',
 ]) {
   if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少产品档案业务约束：${fragment}`);
 }

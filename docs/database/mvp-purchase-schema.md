@@ -58,15 +58,10 @@
 | --------------------- | ------------- | --------------------- |
 | id                    | bigint PK     | 供应商供货产品ID             |
 | supplier_id           | bigint        | 供应商ID                 |
-| supplier_code         | varchar(64)   | 供应商编码，冗余              |
-| supplier_name         | varchar(200)  | 供应商名称，冗余              |
 | product_id            | bigint        | 产品ID                  |
-| product_code          | varchar(64)   | 产品编码，冗余               |
-| product_name          | varchar(200)  | 产品名称，冗余               |
-| unit_name             | varchar(32)   | 单位名称，冗余               |
 | supplier_product_code | varchar(100)  | 供应商侧产品编码              |
-| latest_purchase_price | decimal(18,2) | 最近采购单价                |
-| min_order_qty         | decimal(18,4) | 最小起订量                 |
+| latest_purchase_price | int，可为空   | 最近采购单价，放大 100 倍保存，3520 表示 35.20；尚未采购时为空 |
+| min_order_qty         | int           | 最小起订量，放大 100 倍保存，1000 表示 10.00      |
 | lead_time_days        | int           | 预计交期天数                |
 | delivery_score        | int           | 该产品维度交付评分，放大 100 倍保存  |
 | quality_score         | int           | 该产品维度质量评分，放大 100 倍保存  |
@@ -79,7 +74,7 @@
 | deleted               | tinyint       | 逻辑删除                  |
 | remark                | varchar(500)  | 备注                    |
 
-关系说明：建议唯一约束 `(supplier_id, product_id)`。采购建议或采购下单时，可以按 `product_id` 找到可供货供应商，再综合 `ai_score`、价格、交期、质量等字段选择供应商。
+关系说明：建议唯一约束 `(supplier_id, product_id)`。该表只保存供应商-产品关系及其价格、交期、评分等关系属性；供应商编码/名称、产品编码/名称/单位通过 `supplier_id`、`product_id` 关联主数据实时查询。采购建议或采购下单时，可以按 `product_id` 找到可供货供应商，再综合 `ai_score`、价格、交期、质量等字段选择供应商。
 
 ## 表：purchase_order（采购订单主表）
 

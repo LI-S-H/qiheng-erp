@@ -2,4 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.qiheng.erp.product.mapper.ProductMapper">
 
+    <select id="countActiveSupplierProductReferences" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM supplier_product
+        WHERE deleted = 0
+          AND product_id IN
+          <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+              #{productId}
+          </foreach>
+    </select>
 </mapper>

@@ -2181,7 +2181,7 @@ paths:
       tags: [PurchaseSupplierProduct]
       summary: 分页查询供货产品
       description: |
-        查询未删除的 `supplier_product` 数据。供应商使用 `supplierId` 精确匹配，产品编码和产品名称分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
+        查询未删除的 `supplier_product` 数据。供应商使用 `supplierId` 精确匹配；产品编码和名称通过关联 `product` 主数据分别使用包含匹配；状态使用精确匹配，多个有效条件按 AND 组合。
         不接收含义不明确的 `keyword` 参数。评分字段接口按 0-100 业务值返回，数据库按放大 100 倍整数保存。
         采购订单明细产品选择按已选 `supplierId`、`productCode` / `productName` 与 `status=1` 请求第一页候选，默认 `pageSize=10`；前端不得预加载全量启用供货关系后再本地过滤。
         本接口需要 `supplier:query` 权限。
@@ -2196,11 +2196,11 @@ paths:
         - name: productCode
           in: query
           schema: { type: string, maxLength: 64 }
-          description: 产品编码，对应 `supplier_product.product_code`，使用包含匹配
+          description: 产品编码，对应关联 `product.product_code`，使用包含匹配
         - name: productName
           in: query
           schema: { type: string, maxLength: 200 }
-          description: 产品名称，对应 `supplier_product.product_name`，使用包含匹配
+          description: 产品名称，对应关联 `product.product_name`，使用包含匹配
         - name: status
           in: query
           schema: { type: integer, enum: [0, 1] }
@@ -2306,7 +2306,7 @@ paths:
     put:
       tags: [PurchaseSupplierProduct]
       summary: 编辑供货产品
-      description: 编辑时后端重新校验供应商和产品是否存在；如更换供应商或产品，必须重新保存对应快照并校验 `(supplier_id, product_id)` 唯一性。本接口 MVP 阶段复用 `purchase:create` 权限。
+      description: 编辑时后端重新校验供应商和产品是否存在；如更换供应商或产品，必须校验 `(supplier_id, product_id)` 唯一性。供应商与产品的编码、名称和单位在查询时实时关联主数据。本接口 MVP 阶段复用 `purchase:create` 权限。
       operationId: purchaseSupplierProductUpdate
       security:
         - SaTokenAuth: []
@@ -4574,7 +4574,7 @@ paths:
     post:
       tags: [Product]
       summary: 批量删除产品档案
-      description: 批量逻辑删除产品；任一产品已被库存、采购或销售业务数据引用时整批返回 409。本接口需要 `product:manage` 权限。
+      description: 批量逻辑删除产品；任一产品仍存在未删除的供货关系，或已被库存、采购或销售业务数据引用时整批返回 409。本接口需要 `product:manage` 权限。
       operationId: productBatchDelete
       security:
         - SaTokenAuth: []
@@ -4651,7 +4651,7 @@ paths:
     delete:
       tags: [Product]
       summary: 删除产品档案
-      description: 逻辑删除产品；已被库存、采购或销售业务数据引用时返回 409，避免破坏历史业务链路。本接口需要 `product:manage` 权限。
+      description: 逻辑删除产品；仍存在未删除的供货关系，或已被库存、采购或销售业务数据引用时返回 409，避免破坏主数据关联和历史业务链路。本接口需要 `product:manage` 权限。
       operationId: productDelete
       security:
         - SaTokenAuth: []
@@ -6779,26 +6779,26 @@ components:
 
     PurchaseSupplierProduct:
       type: object
-      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, quantityPrecision, supplierProductCode, latestPurchasePrice, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, lastPurchaseAt, status, version, remark, createTime, updateTime]
+      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, quantityPrecision, supplierProductCode, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, status, version, remark, createTime, updateTime]
       properties:
         supplierProductId: { type: string, description: 对应 `supplier_product.id`，BIGINT 按字符串传输 }
         supplierId: { type: string, description: 对应 `supplier_product.supplier_id`，BIGINT 按字符串传输 }
-        supplierCode: { type: string, maxLength: 64, description: 对应 `supplier_product.supplier_code` 供应商快照 }
-        supplierName: { type: string, maxLength: 200, description: 对应 `supplier_product.supplier_name` 供应商快照 }
+        supplierCode: { type: string, maxLength: 64, description: 关联 `supplier.supplier_code` 返回的当前供应商编码，只读 }
+        supplierName: { type: string, maxLength: 200, description: 关联 `supplier.supplier_name` 返回的当前供应商名称，只读 }
         productId: { type: string, description: 对应 `supplier_product.product_id`，BIGINT 按字符串传输 }
-        productCode: { type: string, maxLength: 64, description: 对应 `supplier_product.product_code` 产品快照 }
-        productName: { type: string, maxLength: 200, description: 对应 `supplier_product.product_name` 产品快照 }
-        unitName: { type: string, maxLength: 32, description: 对应 `supplier_product.unit_name` 产品单位快照 }
+        productCode: { type: string, maxLength: 64, description: 关联 `product.product_code` 返回的当前产品编码，只读 }
+        productName: { type: string, maxLength: 200, description: 关联 `product.product_name` 返回的当前产品名称，只读 }
+        unitName: { type: string, maxLength: 32, description: 关联 `product.unit_name` 返回的当前产品单位，只读 }
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 关联产品当前允许的小数位；采购数量和最小起订量的输入步进必须据此确定，0 表示步进 1，1 表示 0.1，2 表示 0.01 }
         supplierProductCode: { type: string, maxLength: 100, description: 对应 `supplier_product.supplier_product_code` }
-        latestPurchasePrice: { type: number, format: double, minimum: 0, description: 对应 `supplier_product.latest_purchase_price` }
-        minOrderQty: { type: number, format: double, minimum: 0, description: 对应 `supplier_product.min_order_qty` }
+        latestPurchasePrice: { type: number, format: double, nullable: true, minimum: 0, description: 最近采购单价展示值；数据库按 100 倍整数存储，未采购过时为 null，响应中不保证返回该字段 }
+        minOrderQty: { type: number, format: double, minimum: 0, description: 最小起订量展示值；数据库按 100 倍整数存储 }
         leadTimeDays: { type: integer, minimum: 0, description: 对应 `supplier_product.lead_time_days` }
         deliveryScore: { type: number, format: double, minimum: 0, maximum: 100, description: 交付评分展示值；数据库按 100 倍整数存储 }
         qualityScore: { type: number, format: double, minimum: 0, maximum: 100, description: 质量评分展示值；数据库按 100 倍整数存储 }
         priceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 价格评分展示值；数据库按 100 倍整数存储 }
         aiScore: { type: number, format: double, minimum: 0, maximum: 100, description: 推荐分展示值；数据库 `supplier_product.ai_score` 按 100 倍整数存储 }
-        lastPurchaseAt: { type: string, nullable: true, description: 对应 `supplier_product.last_purchase_at` }
+        lastPurchaseAt: { type: string, format: date-time, nullable: true, description: 最近采购时间；未采购过时为 null，响应中不保证返回该字段，对应 `supplier_product.last_purchase_at` }
         status: { type: integer, enum: [0, 1], description: 对应 `supplier_product.status`，1 启用，0 停用 }
         version: { type: integer, minimum: 0, description: Current `supplier_product.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `supplier_product.remark` }
@@ -6807,13 +6807,13 @@ components:
 
     PurchaseSupplierProductFormRequest:
       type: object
-      required: [supplierId, productId, supplierProductCode, latestPurchasePrice, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, status, remark]
+      required: [supplierId, productId, supplierProductCode, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, status, remark]
       properties:
-        supplierId: { type: string, description: 启用供应商 ID；后端保存供应商编码和名称快照 }
-        productId: { type: string, description: 启用产品 ID；后端保存产品编码、名称和单位快照 }
+        supplierId: { type: string, description: 启用供应商 ID；供货关系仅保存该关联 ID，展示字段查询时关联供应商主数据 }
+        productId: { type: string, description: 启用产品 ID；供货关系仅保存该关联 ID，展示字段查询时关联产品主数据 }
         supplierProductCode: { type: string, maxLength: 100 }
-        latestPurchasePrice: { type: number, format: double, minimum: 0 }
-        minOrderQty: { type: number, format: double, minimum: 0 }
+        latestPurchasePrice: { type: number, format: double, nullable: true, minimum: 0, description: 最近采购单价业务值，后端 ×100 存储；新增时可为 null 或 0，表示尚未采购过 }
+        minOrderQty: { type: number, format: double, minimum: 0, description: 最小起订量业务值，后端 ×100 存储 }
         leadTimeDays: { type: integer, minimum: 0 }
         deliveryScore: { type: number, format: double, minimum: 0, maximum: 100 }
         qualityScore: { type: number, format: double, minimum: 0, maximum: 100 }

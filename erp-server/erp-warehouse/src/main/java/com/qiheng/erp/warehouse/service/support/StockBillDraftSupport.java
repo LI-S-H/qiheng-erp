@@ -8,7 +8,7 @@ import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.support.StockBillDraftItem;
 import com.qiheng.erp.warehouse.domain.support.StockBillTypePolicy;
-import com.qiheng.erp.warehouse.service.IWarehouseService;
+import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
 public class StockBillDraftSupport {
 
     @Autowired
-    private IWarehouseService warehouseService;
+    private WarehouseMapper warehouseMapper;
 
     @Autowired
     private ProductMapper productMapper;
@@ -74,7 +74,7 @@ public class StockBillDraftSupport {
      * 校验仓库是否存在且未禁用
      */
     private Warehouse requireEnabledWarehouse(String warehouseId) {
-        Warehouse warehouse = warehouseService.getById(parseRequiredId(warehouseId, "仓库ID"));
+        Warehouse warehouse = warehouseMapper.selectById(parseRequiredId(warehouseId, "仓库ID"));
         if (warehouse == null || warehouse.getStatus() == null || warehouse.getStatus() != 1) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "仓库不存在或已禁用");
         }

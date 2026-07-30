@@ -31,11 +31,11 @@ import com.qiheng.erp.warehouse.domain.vo.InboundBillListItemVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
 import com.qiheng.erp.warehouse.domain.vo.InboundBillSummaryVo;
 import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
+import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
 import com.qiheng.erp.warehouse.service.IInboundBillItemService;
 import com.qiheng.erp.warehouse.service.IInboundBillService;
 import com.qiheng.erp.warehouse.service.IStockBillItemService;
 import com.qiheng.erp.warehouse.service.IStockBillService;
-import com.qiheng.erp.warehouse.service.IWarehouseService;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.qiheng.erp.warehouse.service.StockBillServiceHelper;
 import com.qiheng.erp.warehouse.service.support.StockBillDraftSupport;
@@ -90,7 +90,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     private IStockBillItemService stockBillItemService;
 
     @Autowired
-    private IWarehouseService warehouseService;
+    private WarehouseMapper warehouseMapper;
 
     @Autowired
     private BillNoGenerator billNoGenerator;
@@ -274,8 +274,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                     itemDto.getRemark());
         }
         inboundBillItemService.saveBatch(items);
-
-        // 7. 查询当前库存，组装返回详情
 
         // 8. 组装详情VO
         // 重新查询明细以获取数据库生成的ID和时间
@@ -499,7 +497,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         stockBillService.save(stockBill);
 
         // 7. 查询仓库信息（用于新建库存记录时填充 warehouseCode）
-        Warehouse warehouse = warehouseService.getById(bill.getWarehouseId());
+        Warehouse warehouse = warehouseMapper.selectById(bill.getWarehouseId());
         String warehouseCode = (warehouse != null) ? warehouse.getWarehouseCode() : null;
 
         // 8. 处理每条明细：生成库存流水明细 + 更新库存 + 回写入库单明细

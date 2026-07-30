@@ -225,7 +225,7 @@ async function fetchPurchaseProductSearchOptions(keyword: string) {
   const options = page.records.map(item => ({
     value: item.productId,
     label: `${item.productCode} ${item.productName}`,
-    referencePurchasePrice: item.latestPurchasePrice,
+    referencePurchasePrice: item.latestPurchasePrice ?? 0,
     quantityPrecision: item.quantityPrecision,
     unitName: item.unitName,
   }));
@@ -440,7 +440,9 @@ function clearLineProduct(line: DraftItem) {
 function applySupplierProduct(line: DraftItem, supplierProduct: SupplierProductListItem) {
   line.productId = supplierProduct.productId;
   line.supplierProductId = supplierProduct.supplierProductId;
-  line.unitPrice = supplierProduct.latestPurchasePrice;
+  line.unitPrice = supplierProduct.latestPurchasePrice
+    ?? productOptions.value.find(item => item.value === supplierProduct.productId)?.referencePurchasePrice
+    ?? 0;
   line.selectedSupplierScore = supplierProduct.aiScore;
   line.unitName = supplierProduct.unitName;
 }

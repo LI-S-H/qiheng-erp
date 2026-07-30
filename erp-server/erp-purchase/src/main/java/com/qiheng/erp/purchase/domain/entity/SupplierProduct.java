@@ -1,7 +1,6 @@
 package com.qiheng.erp.purchase.domain.entity;
 
 import java.io.Serial;
-import java.math.BigDecimal;
 
 import com.baomidou.mybatisplus.annotation.*;
 
@@ -38,41 +37,21 @@ public class SupplierProduct implements Serializable {
     @TableField("supplier_id")
     private Long supplierId;
 
-    @Schema(description = "供应商编码冗余")
-    @TableField("supplier_code")
-    private String supplierCode;
-
-    @Schema(description = "供应商名称冗余")
-    @TableField("supplier_name")
-    private String supplierName;
-
     @Schema(description = "产品ID")
     @TableField("product_id")
     private Long productId;
-
-    @Schema(description = "产品编码冗余")
-    @TableField("product_code")
-    private String productCode;
-
-    @Schema(description = "产品名称冗余")
-    @TableField("product_name")
-    private String productName;
-
-    @Schema(description = "单位名称冗余")
-    @TableField("unit_name")
-    private String unitName;
 
     @Schema(description = "供应商侧产品编码")
     @TableField("supplier_product_code")
     private String supplierProductCode;
 
-    @Schema(description = "最近采购单价")
+    @Schema(description = "最近采购单价，放大100倍保存")
     @TableField("latest_purchase_price")
-    private BigDecimal latestPurchasePrice;
+    private Integer latestPurchasePrice;
 
-    @Schema(description = "最小起订量")
+    @Schema(description = "最小起订量，放大100倍保存")
     @TableField("min_order_qty")
-    private BigDecimal minOrderQty;
+    private Integer minOrderQty;
 
     @Schema(description = "预计交期天数")
     @TableField("lead_time_days")
@@ -112,6 +91,7 @@ public class SupplierProduct implements Serializable {
 
     @Schema(description = "逻辑删除：0正常，1删除")
     @TableField("deleted")
+    @TableLogic
     private Integer deleted;
 
     @Schema(description = "备注")

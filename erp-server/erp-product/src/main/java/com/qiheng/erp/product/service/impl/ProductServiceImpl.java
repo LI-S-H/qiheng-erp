@@ -234,6 +234,10 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         if (count > 0) {
             throw new BizException(ErrorCode.STATUS_INVALID);
         }
+        Long supplierProductCount = productMapper.countActiveSupplierProductReferences(ids);
+        if (supplierProductCount > 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "产品存在供货关系，无法删除");
+        }
         //TODO 检查是否存在库存记录
         productMapper.deleteByIds(ids);
     }

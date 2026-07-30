@@ -104,6 +104,7 @@ public class Supplier implements Serializable {
 
     @Schema(description = "逻辑删除：0正常，1删除")
     @TableField("deleted")
+    @TableLogic
     private Integer deleted;
 
     @Schema(description = "备注")

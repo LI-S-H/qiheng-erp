@@ -2,7 +2,6 @@ package com.qiheng.erp.purchase.service.impl;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
@@ -140,7 +139,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     }
 
     /**
-     * 编辑供应商（乐观锁，供应商名称变更时同步供货产品快照）
+     * 编辑供应商（乐观锁）
      * @param supplierId 供应商ID
      * @param dto 编辑供应商请求DTO
      * @return 供应商VO
@@ -148,9 +147,8 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public SupplierVo update(Long supplierId, SupplierUpdateDto dto) {
-        // 查询原记录，用于对比名称是否变更
-        Supplier old = supplierMapper.selectById(supplierId);
-        if (old == null) {
+        // 查询原记录，确认供应商仍存在
+        if (supplierMapper.selectById(supplierId) == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND);
         }
         Supplier entity = new Supplier();
@@ -176,12 +174,6 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
                     "供应商不存在或数据已发生变化，请刷新后重试");
-        }
-        // 供应商名称变更时，同步供货产品中的冗余供应商名称
-        if (!dto.getSupplierName().equals(old.getSupplierName())) {
-            supplierProductMapper.update(null, new LambdaUpdateWrapper<SupplierProduct>()
-                    .eq(SupplierProduct::getSupplierId, supplierId)
-                    .set(SupplierProduct::getSupplierName, dto.getSupplierName()));
         }
         return toVo(supplierMapper.selectById(supplierId));
     }

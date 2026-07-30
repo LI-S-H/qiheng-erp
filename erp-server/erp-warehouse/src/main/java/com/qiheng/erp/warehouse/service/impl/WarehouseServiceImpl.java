@@ -24,6 +24,7 @@ import com.qiheng.erp.warehouse.service.IOutboundBillService;
 import com.qiheng.erp.warehouse.service.IStockBillService;
 import com.qiheng.erp.warehouse.service.IWarehouseService;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -228,10 +229,13 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
                     "仓库不存在或数据已发生变化，请刷新后重试");
         }
-        // TODO: 仓库信息更新成功后，补充级联更新：
-        //   1. 库存模块：同步更新库存表中该仓库的 warehouse_name 字段
-        //   （采购/销售/流水等其他业务模块不级联更新，通过快照机制留存历史信息）
-        return getDetailById(warehouse.getId());
+        Warehouse updatedWarehouse = warehouseMapper.selectById(warehouse.getId());
+        // 库存余额中的仓库名称属于当前态冗余字段，需与仓库主数据保持一致；
+        // 已生成的业务单据和库存流水保留创建时快照，避免改名后篡改历史语义。
+        warehouseStockService.update(new LambdaUpdateWrapper<WarehouseStock>()
+                .eq(WarehouseStock::getWarehouseId, warehouse.getId())
+                .set(WarehouseStock::getWarehouseName, updatedWarehouse.getWarehouseName()));
+        return getWarehouseVo(updatedWarehouse);
     }
 
     private WarehouseVo getWarehouseVo(Warehouse w) {

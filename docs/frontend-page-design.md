@@ -853,7 +853,7 @@ POST /warehouse/outbound-bills/{outboundBillId}/cancel
 
 ### 18.2 页面与数据边界
 
-- 供应商管理主表字段来自 `supplier`；供货产品主表字段来自 `supplier_product`，同时展示供应商和产品快照；采购订单主表字段来自 `purchase_order`，采购明细来自 `purchase_order_item`。
+- 供应商管理主表字段来自 `supplier`；供货产品关系字段来自 `supplier_product`，供应商和产品展示字段通过关联主数据实时查询；采购订单主表字段来自 `purchase_order`，采购明细来自 `purchase_order_item`。
 - 查询区使用全站 `filter-grid` 紧凑布局，采购模块统一使用与产品、系统权限模块接近的筛选控件宽度；供应商编码、供应商名称、产品名称、采购单号等独立参数按接口字段提交，不提供跨字段 `keyword`。
 - 详情弹窗优先使用 shadcn-vue 的 `Dialog`、`DialogScrollArea`、`Badge`、`Table` 和全局详情字段样式，不手写临时大块布局。字段按数据库表拆分显示，不把多个业务字段拼成一个混合列。
 - 供应商详情和供货产品详情要用分组字段块展示基础信息、联系信息、评分、创建/更新时间和备注；长备注只在字段块内自动换行或摘要展示，避免撑破弹窗。

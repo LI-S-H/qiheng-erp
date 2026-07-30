@@ -2,4 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.qiheng.erp.purchase.mapper.SupplierProductMapper">
 
+    <!-- 逻辑删除供货产品（带乐观锁 version 校验） -->
+    <update id="deleteByIdWithVersion">
+        UPDATE supplier_product
+        SET deleted = 1
+        WHERE id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
 </mapper>

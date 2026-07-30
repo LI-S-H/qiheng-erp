@@ -36,15 +36,10 @@ CREATE TABLE IF NOT EXISTS supplier (
 CREATE TABLE IF NOT EXISTS supplier_product (
     id BIGINT NOT NULL COMMENT '供应商供货产品ID',
     supplier_id BIGINT NOT NULL COMMENT '供应商ID',
-    supplier_code VARCHAR(64) NOT NULL COMMENT '供应商编码冗余',
-    supplier_name VARCHAR(200) NOT NULL COMMENT '供应商名称冗余',
     product_id BIGINT NOT NULL COMMENT '产品ID',
-    product_code VARCHAR(64) NOT NULL COMMENT '产品编码冗余',
-    product_name VARCHAR(200) NOT NULL COMMENT '产品名称冗余',
-    unit_name VARCHAR(32) NOT NULL DEFAULT '件' COMMENT '单位名称冗余',
     supplier_product_code VARCHAR(100) NOT NULL DEFAULT '' COMMENT '供应商侧产品编码',
-    latest_purchase_price DECIMAL(18,2) NOT NULL DEFAULT 0.00 COMMENT '最近采购单价',
-    min_order_qty DECIMAL(18,4) NOT NULL DEFAULT 0.0000 COMMENT '最小起订量',
+    latest_purchase_price INT NULL DEFAULT NULL COMMENT '最近采购单价，放大100倍保存，3520表示35.20；尚未采购时为空',
+    min_order_qty INT NOT NULL DEFAULT 0 COMMENT '最小起订量，放大100倍保存，1000表示10.00',
     lead_time_days INT NOT NULL DEFAULT 0 COMMENT '预计交期天数',
     delivery_score INT NOT NULL DEFAULT 0 COMMENT '该产品维度交付评分，放大100倍保存，10000表示100.00',
     quality_score INT NOT NULL DEFAULT 0 COMMENT '该产品维度质量评分，放大100倍保存，10000表示100.00',
@@ -142,29 +137,27 @@ on_time_rate = VALUES(on_time_rate), qualified_rate = VALUES(qualified_rate), st
 create_time = VALUES(create_time), update_time = VALUES(update_time), deleted = VALUES(deleted), remark = VALUES(remark), version = VALUES(version);
 
 INSERT INTO supplier_product (
-    id, supplier_id, supplier_code, supplier_name, product_id, product_code, product_name, unit_name,
+    id, supplier_id, product_id,
     supplier_product_code, latest_purchase_price, min_order_qty, lead_time_days,
     delivery_score, quality_score, price_score, ai_score, last_purchase_at, status,
     create_time, update_time, deleted, remark, version
 ) VALUES
-(2011000000000000001, 2010000000000000001, 'S001', '华东饮品供应链', 1920000000000000001, 'P000001', '经典原味苏打水', '箱', 'HD-SD330', 35.20, 10, 3, 9420, 9610, 8840, 9230, '2026-06-13 10:20:00', 1, '2026-06-03 10:00:00', '2026-06-12 16:10:00', 0, '采购建议优先候选', 0),
-(2011000000000000002, 2010000000000000002, 'S002', '晨岛咖啡贸易', 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 'CD-CF50', 40.50, 8, 5, 8970, 9340, 8420, 8890, '2026-06-10 11:20:00', 1, '2026-06-04 10:00:00', '2026-06-13 16:10:00', 0, '采购建议优先候选', 0),
-(2011000000000000003, 2010000000000000003, 'S003', '谷仓食品批发', 1920000000000000007, 'P000007', '每日坚果混合装', '盒', 'GC-NUT30', 68.00, 6, 4, 9240, 9520, 8760, 9180, '2026-06-11 14:10:00', 1, '2026-06-05 10:00:00', '2026-06-14 16:10:00', 0, '采购建议优先候选', 0),
-(2011000000000000004, 2010000000000000003, 'S003', '谷仓食品批发', 1920000000000000008, 'P000008', '海盐苏打饼干', '箱', 'GC-CK06', 58.00, 5, 4, 9240, 9520, 8760, 9140, '2026-06-09 09:40:00', 1, '2026-06-06 10:00:00', '2026-06-15 16:10:00', 0, '', 0),
-(2011000000000000005, 2010000000000000004, 'S004', '文仪办公渠道', 1920000000000000021, 'P000021', '中性签字笔', '盒', 'WY-PEN12', 12.50, 20, 6, 8540, 9050, 8810, 8720, NULL, 1, '2026-06-07 10:00:00', '2026-06-12 16:10:00', 0, '', 0),
-(2011000000000000006, 2010000000000000005, 'S005', '森纸纸业集团', 1920000000000000026, 'P000026', 'A4复印纸', '箱', 'SZ-A4-70G', 92.00, 12, 3, 9580, 9720, 9160, 9480, '2026-06-12 13:50:00', 1, '2026-06-08 10:00:00', '2026-06-13 16:10:00', 0, '', 0),
-(2011000000000000007, 2010000000000000006, 'S006', '拓联数码配件', 1920000000000000043, 'P000043', 'USB-C扩展坞', '个', 'TL-HUB8', 126.00, 2, 8, 7820, 8240, 8460, 8130, NULL, 0, '2026-06-09 10:00:00', '2026-06-14 16:10:00', 0, '', 0),
-(2011000000000000008, 2010000000000000001, 'S001', '华东饮品供应链', 1920000000000000002, 'P000002', '速溶黑咖啡', '盒', 'HD-CF50-HIS', 40.50, 8, 5, 9420, 9610, 8840, 9140, '2026-06-14 09:12:00', 0, '2026-06-01 10:00:00', '2026-06-14 09:12:00', 0, '历史采购来源映射，仅用于已发生单据追溯', 0),
-(2011000000000000009, 2010000000000000003, 'S003', '谷仓食品批发', 1920000000000000033, 'P000033', '浓缩洗衣液', '瓶', 'GC-LD2K-HIS', 28.00, 6, 4, 9240, 9520, 8760, 9010, '2026-06-13 15:28:00', 0, '2026-06-01 10:00:00', '2026-06-13 15:28:00', 0, '历史采购来源映射，仅用于已发生单据追溯', 0),
-(2011000000000000010, 2010000000000000004, 'S004', '文仪办公渠道', 1920000000000000038, 'P000038', '无痕粘钩', '卡', 'WY-HOOK6-HIS', 7.80, 20, 6, 8540, 9050, 8810, 8680, '2026-06-12 17:36:00', 0, '2026-06-01 10:00:00', '2026-06-12 17:36:00', 0, '历史采购来源映射，仅用于已发生单据追溯', 0),
-(2011000000000000101, 2010000000000000005, 'S005', '森纸纸业集团', 1920000000000000022, 'P000022', '彩色便利贴', '本', 'SZ-NOTE-HIS', 6.80, 7, 3, 9580, 9720, 9160, 9480, '2026-06-12 14:45:00', 0, '2026-06-01 10:00:00', '2026-06-12 14:45:00', 0, '历史采购退回来源映射，仅用于已发生单据追溯', 0)
-ON DUPLICATE KEY UPDATE supplier_id = VALUES(supplier_id), supplier_code = VALUES(supplier_code), supplier_name = VALUES(supplier_name),
-product_id = VALUES(product_id), product_code = VALUES(product_code), product_name = VALUES(product_name), unit_name = VALUES(unit_name),
+(2011000000000000001, 2010000000000000001, 1920000000000000001, 'HD-SD330', 3520, 1000, 3, 9420, 9610, 8840, 9230, '2026-06-13 10:20:00', 1, '2026-06-03 10:00:00', '2026-06-12 16:10:00', 0, '采购建议优先候选', 0),
+(2011000000000000002, 2010000000000000002, 1920000000000000002, 'CD-CF50', 4050, 800, 5, 8970, 9340, 8420, 8890, '2026-06-10 11:20:00', 1, '2026-06-04 10:00:00', '2026-06-13 16:10:00', 0, '采购建议优先候选', 0),
+(2011000000000000003, 2010000000000000003, 1920000000000000007, 'GC-NUT30', 6800, 600, 4, 9240, 9520, 8760, 9180, '2026-06-11 14:10:00', 1, '2026-06-05 10:00:00', '2026-06-14 16:10:00', 0, '采购建议优先候选', 0),
+(2011000000000000004, 2010000000000000003, 1920000000000000008, 'GC-CK06', 5800, 500, 4, 9240, 9520, 8760, 9140, '2026-06-09 09:40:00', 1, '2026-06-06 10:00:00', '2026-06-15 16:10:00', 0, '', 0),
+(2011000000000000005, 2010000000000000004, 1920000000000000021, 'WY-PEN12', 1250, 2000, 6, 8540, 9050, 8810, 8720, NULL, 1, '2026-06-07 10:00:00', '2026-06-12 16:10:00', 0, '', 0),
+(2011000000000000006, 2010000000000000005, 1920000000000000026, 'SZ-A4-70G', 9200, 1200, 3, 9580, 9720, 9160, 9480, '2026-06-12 13:50:00', 1, '2026-06-08 10:00:00', '2026-06-13 16:10:00', 0, '', 0),
+(2011000000000000007, 2010000000000000006, 1920000000000000043, 'TL-HUB8', 12600, 200, 8, 7820, 8240, 8460, 8130, NULL, 0, '2026-06-09 10:00:00', '2026-06-14 16:10:00', 0, '', 0),
+(2011000000000000008, 2010000000000000001, 1920000000000000002, 'HD-CF50-HIS', 4050, 800, 5, 9420, 9610, 8840, 9140, '2026-06-14 09:12:00', 0, '2026-06-01 10:00:00', '2026-06-14 09:12:00', 0, '历史采购来源映射，仅用于已发生单据追溯', 0),
+(2011000000000000009, 2010000000000000003, 1920000000000000033, 'GC-LD2K-HIS', 2800, 600, 4, 9240, 9520, 8760, 9010, '2026-06-13 15:28:00', 0, '2026-06-01 10:00:00', '2026-06-13 15:28:00', 0, '历史采购来源映射，仅用于已发生单据追溯', 0),
+(2011000000000000010, 2010000000000000004, 1920000000000000038, 'WY-HOOK6-HIS', 780, 2000, 6, 8540, 9050, 8810, 8680, '2026-06-12 17:36:00', 0, '2026-06-01 10:00:00', '2026-06-12 17:36:00', 0, '历史采购来源映射，仅用于已发生单据追溯', 0),
+(2011000000000000101, 2010000000000000005, 1920000000000000022, 'SZ-NOTE-HIS', 680, 700, 3, 9580, 9720, 9160, 9480, '2026-06-12 14:45:00', 0, '2026-06-01 10:00:00', '2026-06-12 14:45:00', 0, '历史采购退回来源映射，仅用于已发生单据追溯', 0)
+ON DUPLICATE KEY UPDATE supplier_id = VALUES(supplier_id), product_id = VALUES(product_id),
 supplier_product_code = VALUES(supplier_product_code), latest_purchase_price = VALUES(latest_purchase_price), min_order_qty = VALUES(min_order_qty), lead_time_days = VALUES(lead_time_days),
 delivery_score = VALUES(delivery_score), quality_score = VALUES(quality_score), price_score = VALUES(price_score), ai_score = VALUES(ai_score),
 last_purchase_at = VALUES(last_purchase_at), status = VALUES(status), create_time = VALUES(create_time), update_time = VALUES(update_time),
 deleted = VALUES(deleted), remark = VALUES(remark), version = VALUES(version);
-
 INSERT INTO purchase_order (
     id, purchase_no, supplier_id, supplier_code, supplier_name, warehouse_id, warehouse_name,
     status, total_amount, expected_arrival_date, created_by_id, created_by_name,

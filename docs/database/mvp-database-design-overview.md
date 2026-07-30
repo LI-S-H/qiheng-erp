@@ -205,7 +205,7 @@ ERP 数据量大，列表页和查询页很多。如果每次展示订单、库�
 | 冗余字段 | 出现位置 | 目的 |
 |---|---|---|
 | `product_code`、`product_name` | 采购明细、销售明细、库存余额、入库明细、出库明细、库存流水明细 | 历史单据保留产品快照，列表查询少联表 |
-| `supplier_code`、`supplier_name` | 采购订单、供应商供货产品 | 采购列表直接展示供应商 |
+| `supplier_code`、`supplier_name` | 采购订单 | 历史采购单据直接展示下单时供应商 |
 | `customer_code`、`customer_name` | 销售订单 | 销售列表直接展示客户 |
 | `warehouse_name` | 库存、采购订单、销售订单、入库单、出库单、库存流水 | 常用展示字段，避免频繁联仓库表 |
 | `purchase_no`、`sales_no`、`bill_no` | 明细表 | 方便按单号查询和排查问题 |
@@ -763,7 +763,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     supplier["supplier 供应商表<br/>id 主键<br/>supplier_code 供应商编码<br/>supplier_name 供应商名称<br/>contact_name / contact_phone 联系方式<br/>address 地址<br/>payment_terms 付款条件<br/>overall_score 综合评分<br/>delivery_score 交付评分<br/>quality_score 质量评分<br/>price_score 价格评分<br/>service_score 服务评分<br/>avg_delivery_days 平均交付天数<br/>on_time_rate 准时率<br/>qualified_rate 合格率<br/>status / deleted 状态字段<br/>remark 备注"]
-    supplierProduct["supplier_product 供应商供货产品表<br/>id 主键<br/>supplier_id 供应商ID<br/>supplier_code / supplier_name 供应商快照<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>supplier_product_code 供应商侧产品编码<br/>latest_purchase_price 最近采购价<br/>min_order_qty 最小起订量<br/>lead_time_days 预计交期<br/>delivery_score / quality_score / price_score 分项评分<br/>ai_score 推荐分<br/>last_purchase_at 最近采购时间<br/>status / deleted 状态字段"]
+    supplierProduct["supplier_product 供应商供货产品表<br/>id 主键<br/>supplier_id 供应商ID<br/>product_id 产品ID<br/>supplier_product_code 供应商侧产品编码<br/>latest_purchase_price 最近采购价<br/>min_order_qty 最小起订量<br/>lead_time_days 预计交期<br/>delivery_score / quality_score / price_score 分项评分<br/>ai_score 推荐分<br/>last_purchase_at 最近采购时间<br/>status / deleted 状态字段"]
     purchaseOrder["purchase_order 采购订单主表<br/>id 主键<br/>purchase_no 采购单号<br/>supplier_id 供应商ID<br/>supplier_code / supplier_name 供应商快照<br/>warehouse_id 入库仓库ID<br/>warehouse_name 仓库名称快照<br/>status 订单状态<br/>total_amount 订单总金额<br/>expected_arrival_date 预计到货日期<br/>created_by / submitted_at / approved_by / approved_at 流程字段<br/>create_time / update_time / deleted 审计字段"]
     purchaseItem["purchase_order_item 采购订单明细表<br/>id 主键<br/>purchase_order_id 采购订单ID<br/>purchase_no 采购单号快照<br/>supplier_product_id 供货产品ID，可空<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 采购数量<br/>inbound_qty 已入库数量<br/>unit_price 采购单价<br/>total_amount 明细金额<br/>selected_supplier_score 下单时推荐分快照"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]

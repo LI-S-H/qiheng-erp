@@ -10,7 +10,7 @@ import com.qiheng.erp.warehouse.domain.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.enums.EntryMode;
 import com.qiheng.erp.warehouse.domain.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.support.StockBillEditMapping;
-import com.qiheng.erp.warehouse.service.IWarehouseService;
+import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -30,7 +30,7 @@ import java.math.BigDecimal;
 public class StockBillEditingSupport {
 
     @Autowired
-    private IWarehouseService warehouseService;
+    private WarehouseMapper warehouseMapper;
 
     /**
      * 校验单据是否允许编辑，并校验客户端提交的乐观锁版本。
@@ -168,7 +168,7 @@ public class StockBillEditingSupport {
         if (warehouseId.equals(bill.getWarehouseId())) {
             return;
         }
-        Warehouse warehouse = warehouseService.getById(warehouseId);
+        Warehouse warehouse = warehouseMapper.selectById(warehouseId);
         if (warehouse == null || warehouse.getStatus() == null || warehouse.getStatus() != 1) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "仓库不存在或已禁用");
         }

@@ -81,7 +81,7 @@ export interface SupplierProductListItem {
   unitName: string;
   quantityPrecision: number;
   supplierProductCode: string;
-  latestPurchasePrice: number;
+  latestPurchasePrice: number | null;
   minOrderQty: number;
   leadTimeDays: number;
   deliveryScore: number;
@@ -109,7 +109,7 @@ export interface SupplierProductFormPayload {
   supplierId: string;
   productId: string;
   supplierProductCode: string;
-  latestPurchasePrice: number;
+  latestPurchasePrice: number | null;
   minOrderQty: number;
   leadTimeDays: number;
   deliveryScore: number;

@@ -1,11 +1,11 @@
 package com.qiheng.erp.warehouse.service.impl;
 
-import com.qiheng.erp.warehouse.domain.entity.StockBill;
-import com.qiheng.erp.warehouse.domain.entity.StockBillItem;
-import com.qiheng.erp.warehouse.domain.enums.EntryMode;
-import com.qiheng.erp.warehouse.domain.enums.SourceType;
-import com.qiheng.erp.warehouse.domain.enums.StockBillType;
-import com.qiheng.erp.warehouse.domain.vo.StockBillDetailsVo;
+import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBill;
+import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBillItem;
+import com.qiheng.erp.warehouse.domain.common.enums.EntryMode;
+import com.qiheng.erp.warehouse.domain.common.enums.SourceType;
+import com.qiheng.erp.warehouse.domain.stockbill.enums.StockBillType;
+import com.qiheng.erp.warehouse.domain.stockbill.vo.StockBillDetailsVo;
 import com.qiheng.erp.warehouse.mapper.StockBillItemMapper;
 import com.qiheng.erp.warehouse.mapper.StockBillMapper;
 import com.qiheng.erp.warehouse.service.IStockBillItemService;

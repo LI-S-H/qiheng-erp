@@ -1,6 +1,6 @@
 package com.qiheng.erp.warehouse.mapper;
 
-import com.qiheng.erp.warehouse.domain.entity.StockBill;
+import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBill;
 import com.github.yulichang.base.MPJBaseMapper;
 
 /**

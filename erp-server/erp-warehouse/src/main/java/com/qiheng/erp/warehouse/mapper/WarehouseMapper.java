@@ -1,6 +1,6 @@
 package com.qiheng.erp.warehouse.mapper;
 
-import com.qiheng.erp.warehouse.domain.entity.Warehouse;
+import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 import org.apache.ibatis.annotations.Param;

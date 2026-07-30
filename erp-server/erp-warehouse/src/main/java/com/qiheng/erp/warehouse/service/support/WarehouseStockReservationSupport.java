@@ -3,7 +3,7 @@ package com.qiheng.erp.warehouse.service.support;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
-import com.qiheng.erp.warehouse.domain.entity.WarehouseStock;
+import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;

@@ -1,6 +1,6 @@
 package com.qiheng.erp.warehouse.mapper;
 
-import com.qiheng.erp.warehouse.domain.entity.InboundBillItem;
+import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBillItem;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**

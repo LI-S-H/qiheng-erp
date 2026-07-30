@@ -3,8 +3,8 @@ package com.qiheng.erp.warehouse.service;
 import cn.hutool.core.util.StrUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.warehouse.domain.support.StockBillDetailVoMapping;
-import com.qiheng.erp.warehouse.domain.enums.EntryMode;
-import com.qiheng.erp.warehouse.domain.enums.StockBillStatus;
+import com.qiheng.erp.warehouse.domain.common.enums.EntryMode;
+import com.qiheng.erp.warehouse.domain.stockbill.enums.StockBillStatus;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;

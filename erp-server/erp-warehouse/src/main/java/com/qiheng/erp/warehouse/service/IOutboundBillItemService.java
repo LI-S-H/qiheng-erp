@@ -1,6 +1,6 @@
 package com.qiheng.erp.warehouse.service;
 
-import com.qiheng.erp.warehouse.domain.entity.OutboundBillItem;
+import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBillItem;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**

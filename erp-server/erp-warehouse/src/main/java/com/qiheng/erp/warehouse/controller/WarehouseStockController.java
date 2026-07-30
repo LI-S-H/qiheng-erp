@@ -3,8 +3,8 @@ package com.qiheng.erp.warehouse.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.Result;
-import com.qiheng.erp.warehouse.domain.dto.WarehouseStockPageDto;
-import com.qiheng.erp.warehouse.domain.vo.WarehouseStockPageVo;
+import com.qiheng.erp.warehouse.domain.warehousestock.dto.WarehouseStockPageDto;
+import com.qiheng.erp.warehouse.domain.warehousestock.vo.WarehouseStockPageVo;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;

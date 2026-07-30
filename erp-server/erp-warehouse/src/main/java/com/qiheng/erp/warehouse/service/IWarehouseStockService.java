@@ -1,9 +1,9 @@
 package com.qiheng.erp.warehouse.service;
 
-import com.qiheng.erp.warehouse.domain.dto.WarehouseStockPageDto;
-import com.qiheng.erp.warehouse.domain.entity.WarehouseStock;
+import com.qiheng.erp.warehouse.domain.warehousestock.dto.WarehouseStockPageDto;
+import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.qiheng.erp.warehouse.domain.vo.WarehouseStockPageVo;
+import com.qiheng.erp.warehouse.domain.warehousestock.vo.WarehouseStockPageVo;
 
 /**
  * <p>

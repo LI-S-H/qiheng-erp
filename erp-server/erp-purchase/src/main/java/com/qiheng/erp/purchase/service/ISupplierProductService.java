@@ -1,12 +1,12 @@
 package com.qiheng.erp.purchase.service;
 
 import com.qiheng.erp.common.result.PageResult;
-import com.qiheng.erp.purchase.domain.dto.SupplierProductBatchDeleteDto;
-import com.qiheng.erp.purchase.domain.dto.SupplierProductBatchStatusDto;
-import com.qiheng.erp.purchase.domain.dto.SupplierProductCreateDto;
-import com.qiheng.erp.purchase.domain.dto.SupplierProductPageDto;
-import com.qiheng.erp.purchase.domain.entity.SupplierProduct;
-import com.qiheng.erp.purchase.domain.vo.SupplierProductVo;
+import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductBatchDeleteDto;
+import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductBatchStatusDto;
+import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductCreateDto;
+import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductPageDto;
+import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
+import com.qiheng.erp.purchase.domain.supplierproduct.vo.SupplierProductVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.util.Map;

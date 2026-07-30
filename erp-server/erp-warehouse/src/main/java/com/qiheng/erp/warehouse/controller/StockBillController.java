@@ -3,9 +3,9 @@ package com.qiheng.erp.warehouse.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.Result;
-import com.qiheng.erp.warehouse.domain.dto.StockBillPageDto;
-import com.qiheng.erp.warehouse.domain.vo.StockBillDetailsVo;
-import com.qiheng.erp.warehouse.domain.vo.StockBillPageVo;
+import com.qiheng.erp.warehouse.domain.stockbill.dto.StockBillPageDto;
+import com.qiheng.erp.warehouse.domain.stockbill.vo.StockBillDetailsVo;
+import com.qiheng.erp.warehouse.domain.stockbill.vo.StockBillPageVo;
 import com.qiheng.erp.warehouse.service.IStockBillItemService;
 import com.qiheng.erp.warehouse.service.IStockBillService;
 import io.swagger.v3.oas.annotations.Operation;

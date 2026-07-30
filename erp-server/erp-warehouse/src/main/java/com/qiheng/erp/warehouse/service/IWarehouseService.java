@@ -1,11 +1,12 @@
 package com.qiheng.erp.warehouse.service;
 
 import com.qiheng.erp.common.result.PageResult;
-import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchDeleteDto;
-import com.qiheng.erp.warehouse.domain.dto.WarehouseBatchStatusDto;
-import com.qiheng.erp.warehouse.domain.dto.WarehousePageDto;
-import com.qiheng.erp.warehouse.domain.entity.Warehouse;
-import com.qiheng.erp.warehouse.domain.vo.WarehouseVo;
+import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseBatchDeleteDto;
+import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseBatchStatusDto;
+import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehousePageDto;
+import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseStatusDto;
+import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
+import com.qiheng.erp.warehouse.domain.warehouse.vo.WarehouseVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.util.Map;
@@ -53,7 +54,7 @@ public interface IWarehouseService extends IService<Warehouse> {
      * @param warehouseId 仓库ID
      * @param dto 状态更新参数
      */
-    void updateStatus(Long warehouseId, com.qiheng.erp.warehouse.domain.dto.WarehouseStatusDto dto);
+    void updateStatus(Long warehouseId, WarehouseStatusDto dto);
 
     /**
      * 批量删除仓库（逻辑删除）

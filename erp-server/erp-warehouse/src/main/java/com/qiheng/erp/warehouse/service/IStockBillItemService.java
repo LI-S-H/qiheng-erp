@@ -1,7 +1,7 @@
 package com.qiheng.erp.warehouse.service;
 
-import com.qiheng.erp.warehouse.domain.entity.StockBillItem;
-import com.qiheng.erp.warehouse.domain.vo.StockBillDetailsVo;
+import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBillItem;
+import com.qiheng.erp.warehouse.domain.stockbill.vo.StockBillDetailsVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**

@@ -1,12 +1,12 @@
 package com.qiheng.erp.warehouse.service;
 
 import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
-import com.qiheng.erp.warehouse.domain.dto.InboundBillCreateDto;
-import com.qiheng.erp.warehouse.domain.dto.InboundBillPageDto;
-import com.qiheng.erp.warehouse.domain.dto.StockBillItemUpdateDto;
-import com.qiheng.erp.warehouse.domain.entity.InboundBill;
-import com.qiheng.erp.warehouse.domain.vo.InboundBillDetailVo;
-import com.qiheng.erp.warehouse.domain.vo.InboundBillPageVo;
+import com.qiheng.erp.warehouse.domain.inbound.dto.InboundBillCreateDto;
+import com.qiheng.erp.warehouse.domain.inbound.dto.InboundBillPageDto;
+import com.qiheng.erp.warehouse.domain.stockbill.dto.StockBillItemUpdateDto;
+import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
+import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillDetailVo;
+import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillPageVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**

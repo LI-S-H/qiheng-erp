@@ -1,6 +1,6 @@
 package com.qiheng.erp.purchase.mapper;
 
-import com.qiheng.erp.purchase.domain.entity.Supplier;
+import com.qiheng.erp.purchase.domain.supplier.entity.Supplier;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Param;
 

@@ -1,0 +1,20 @@
+package com.qiheng.erp.warehouse.domain.outbound.vo;
+
+import com.qiheng.erp.warehouse.domain.stockbill.vo.StockBillSummaryBaseVo;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+
+/**
+ * 出库单分页汇总信息。
+ *
+ * @author Li
+ * @since 2026-07-26
+ */
+@Data
+@EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
+@Schema(description = "出库单分页汇总信息")
+public class OutboundBillSummaryVo extends StockBillSummaryBaseVo {
+}

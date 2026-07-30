@@ -5,7 +5,7 @@ import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.mapper.ProductMapper;
-import com.qiheng.erp.warehouse.domain.entity.Warehouse;
+import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.support.StockBillDraftItem;
 import com.qiheng.erp.warehouse.domain.support.StockBillTypePolicy;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;

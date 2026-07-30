@@ -1,7 +1,7 @@
 package com.qiheng.erp.purchase.mapper;
 
 import com.github.yulichang.base.MPJBaseMapper;
-import com.qiheng.erp.purchase.domain.entity.SupplierProduct;
+import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Param;
 

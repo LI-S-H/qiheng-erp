@@ -9,6 +9,7 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.PasswordUtil;
 import com.qiheng.erp.system.domain.dto.SysUserPageDto;
 import com.qiheng.erp.system.domain.dto.SysUserStatusUpdateDto;
@@ -225,15 +226,16 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
      */
     @Override
     public void updateStatus(SysUserStatusUpdateDto dto) {
+        List<Long> userIds = IdUtil.parseRequiredLongIds(dto.getUserIds(), "用户ID");
         //构建更新条件
         LambdaUpdateWrapper<SysUser> wrapper = new LambdaUpdateWrapper<SysUser>()
                 .set(SysUser::getStatus, dto.getStatus())
-                .in(SysUser::getId, dto.getUserIds());
+                .in(SysUser::getId, userIds);
         //执行更新
         sysUserMapper.update(wrapper);
         //停用用户时，强制踢下线
         if (dto.getStatus() == 0) {
-            sessionManager.kickOffline(dto.getUserIds().stream().map(Long::valueOf).toList());
+            sessionManager.kickOffline(userIds);
         }
     }
 
@@ -262,14 +264,15 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
      */
     @Override
     public void updatePasswordByIds(UserPasswordUpdateDto dto) {
+        List<Long> userIds = IdUtil.parseRequiredLongIds(dto.getUserIds(), "用户ID");
         //构建更新条件
         LambdaUpdateWrapper<SysUser> wrapper = new LambdaUpdateWrapper<SysUser>()
                 .set(SysUser::getPasswordHash, passwordUtil.encode(dto.getPassword()))
-                .in(SysUser::getId, dto.getUserIds());
+                .in(SysUser::getId, userIds);
         //执行更新
         sysUserMapper.update(wrapper);
         //重置密码后，强制踢下线，用户需用新密码重新登录
-        sessionManager.kickOffline(dto.getUserIds().stream().map(Long::valueOf).toList());
+        sessionManager.kickOffline(userIds);
     }
 
     /**
@@ -335,17 +338,18 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         if (user == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND.getCode(), "用户不存在");
         }
-        List<Long> roleIdLongs = roleIds.stream().map(Long::valueOf).toList();
+        List<Long> roleIdLongs = IdUtil.parseRequiredLongIds(roleIds, "角色ID");
         // 查询传入的角色
         List<SysRole> roles = sysRoleMapper.selectByIds(roleIdLongs);
         // 判断是否包含超级管理员角色（permissionCodes包含"*"的角色）
         boolean hasSuperAdmin = roles.stream()
                 .anyMatch(role -> role.getPermissionCodes() != null && role.getPermissionCodes().contains("*"));
+        List<Long> finalRoleIdLongs = roleIdLongs;
         if (hasSuperAdmin) {
             // 只保留超级管理员角色
-            roleIds = roles.stream()
+            finalRoleIdLongs = roles.stream()
                     .filter(role -> role.getPermissionCodes() != null && role.getPermissionCodes().contains("*"))
-                    .map(role -> role.getId().toString())
+                    .map(SysRole::getId)
                     .toList();
             // 设置 isAdmin = true
             sysUserMapper.updateById(new SysUser().setId(userId).setIsAdmin(true));
@@ -354,7 +358,6 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             sysUserMapper.updateById(new SysUser().setId(userId).setIsAdmin(false));
         }
         // 校验角色状态
-        List<Long> finalRoleIdLongs = roleIds.stream().map(Long::valueOf).toList();
         Long disabledCount = sysRoleMapper.selectCount(new LambdaQueryWrapper<SysRole>()
                 .in(SysRole::getId, finalRoleIdLongs)
                 .eq(SysRole::getStatus, 0));
@@ -364,8 +367,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         // 删除用户角色关系
         sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, userId));
         // 批量新增
-        List<SysUserRole> userRoles = roleIds.stream().map(roleId ->
-                new SysUserRole().setUserId(userId).setRoleId(Long.parseLong(roleId))
+        List<SysUserRole> userRoles = finalRoleIdLongs.stream().map(roleId ->
+                new SysUserRole().setUserId(userId).setRoleId(roleId)
         ).toList();
         sysUserRoleService.saveBatch(userRoles);
         // 刷新用户Session
@@ -379,6 +382,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Transactional(rollbackFor = Exception.class)
     @Override
     public void deleteBatch(List<String> ids) {
+        List<Long> userIds = IdUtil.parseRequiredLongIds(ids, "用户ID");
         //加分布式锁
         List<RLock> locks = new ArrayList<>();
         for (String id : ids) {
@@ -397,11 +401,11 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             locks.add(lock);
         }
         //删除用户角色关系
-        sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getUserId, ids));
+        sysUserRoleService.remove(new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getUserId, userIds));
         //删除用户
-        removeByIds(ids);
+        removeByIds(userIds);
         //踢下线用户Session
-        sessionManager.kickOffline(ids.stream().map(Long::valueOf).toList());
+        sessionManager.kickOffline(userIds);
         //注册事务同步，确保在事务提交后释放锁
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override

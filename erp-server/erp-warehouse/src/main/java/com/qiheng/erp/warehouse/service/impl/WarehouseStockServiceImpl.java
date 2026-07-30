@@ -16,6 +16,7 @@ import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import com.qiheng.erp.common.util.QtyUtil;
+import com.qiheng.erp.common.util.IdUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -49,8 +50,7 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
         Page<WarehouseStockVo> page = dto.toPage();
 
         // warehouseId 在 DTO 中为 String（前端防精度丢失），转为 Long 用于查询
-        Long warehouseId = StrUtil.isNotBlank(dto.getWarehouseId())
-                ? Long.valueOf(dto.getWarehouseId()) : null;
+        Long warehouseId = IdUtil.parseOptionalLongId(dto.getWarehouseId(), "仓库ID");
 
         // 构建查询条件
         MPJLambdaWrapper<WarehouseStock> wrapper = new MPJLambdaWrapper<WarehouseStock>()

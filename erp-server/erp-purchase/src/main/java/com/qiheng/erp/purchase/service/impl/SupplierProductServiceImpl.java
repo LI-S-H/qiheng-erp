@@ -7,6 +7,7 @@ import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.mapper.ProductMapper;
@@ -56,8 +57,9 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
      */
     @Override
     public PageResult<SupplierProductVo> page(SupplierProductPageDto dto) {
+        Long supplierId = IdUtil.parseOptionalLongId(dto.getSupplierId(), "供应商ID");
         MPJLambdaWrapper<SupplierProduct> wrapper = buildBaseWrapper()
-                .eq(StrUtil.isNotBlank(dto.getSupplierId()), SupplierProduct::getSupplierId, dto.getSupplierId())
+                .eq(supplierId != null, SupplierProduct::getSupplierId, supplierId)
                 .like(StrUtil.isNotBlank(dto.getProductCode()), Product::getProductCode, dto.getProductCode())
                 .like(StrUtil.isNotBlank(dto.getProductName()), Product::getProductName, dto.getProductName())
                 .eq(dto.getStatus() != null, SupplierProduct::getStatus, dto.getStatus())
@@ -79,8 +81,8 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
      */
     @Override
     public SupplierProductVo create(SupplierProductCreateDto dto) {
-        Long supplierId = Long.parseLong(dto.getSupplierId());
-        Long productId = Long.parseLong(dto.getProductId());
+        Long supplierId = IdUtil.parseRequiredLongId(dto.getSupplierId(), "供应商ID");
+        Long productId = IdUtil.parseRequiredLongId(dto.getProductId(), "产品ID");
         // 检查唯一约束（供应商+产品）
         Long existCount = supplierProductMapper.selectCount(
                 new LambdaQueryWrapper<SupplierProduct>()
@@ -114,8 +116,8 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         if (existing == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "供货产品不存在");
         }
-        Long supplierId = Long.parseLong(dto.getSupplierId());
-        Long productId = Long.parseLong(dto.getProductId());
+        Long supplierId = IdUtil.parseRequiredLongId(dto.getSupplierId(), "供应商ID");
+        Long productId = IdUtil.parseRequiredLongId(dto.getProductId(), "产品ID");
         // 如果更换了供应商或产品，校验唯一性
         if (!supplierId.equals(existing.getSupplierId()) || !productId.equals(existing.getProductId())) {
             Long existCount = supplierProductMapper.selectCount(
@@ -145,8 +147,8 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
      * @return 供货关系实体
      */
     private SupplierProduct buildEntityFromDto(SupplierProductCreateDto dto) {
-        Long supplierId = Long.parseLong(dto.getSupplierId());
-        Long productId = Long.parseLong(dto.getProductId());
+        Long supplierId = IdUtil.parseRequiredLongId(dto.getSupplierId(), "供应商ID");
+        Long productId = IdUtil.parseRequiredLongId(dto.getProductId(), "产品ID");
         if (supplierMapper.selectById(supplierId) == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "供应商不存在");
         }
@@ -242,16 +244,18 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
     public Map<String, String> batchUpdateStatus(SupplierProductBatchStatusDto dto) {
         Map<String, String> failures = new LinkedHashMap<>();
         List<String> ids = dto.getSupplierProductIds();
+        List<Long> supplierProductIds = IdUtil.parseRequiredLongIds(ids, "供货关系ID");
         Map<String, Integer> versionMap = dto.getVersionBySupplierProductId();
         Integer targetStatus = dto.getStatus();
         // 遍历供货产品ID列表，更新状态
-        for (String id : ids) {
+        for (int index = 0; index < ids.size(); index++) {
+            String id = ids.get(index);
             Integer expectedVersion = versionMap.get(id);
             if (expectedVersion == null) {
                 failures.put(id, "未找到版本号");
                 continue;
             }
-            Long supplierProductId = Long.parseLong(id);
+            Long supplierProductId = supplierProductIds.get(index);
             SupplierProduct entity = new SupplierProduct();
             entity.setId(supplierProductId);
             entity.setStatus(targetStatus);
@@ -274,8 +278,11 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
     @Transactional(rollbackFor = Exception.class)
     public Map<String, String> batchDelete(SupplierProductBatchDeleteDto dto) {
         Map<String, String> failures = new LinkedHashMap<>();
-        for (String idStr : dto.getSupplierProductIds()) {
-            Long supplierProductId = Long.parseLong(idStr);
+        List<String> ids = dto.getSupplierProductIds();
+        List<Long> supplierProductIds = IdUtil.parseRequiredLongIds(ids, "供货关系ID");
+        for (int index = 0; index < ids.size(); index++) {
+            String idStr = ids.get(index);
+            Long supplierProductId = supplierProductIds.get(index);
             Integer expectedVersion = dto.getVersionBySupplierProductId().get(idStr);
             if (expectedVersion == null) {
                 failures.put(idStr, "未找到版本号");

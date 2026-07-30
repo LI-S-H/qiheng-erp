@@ -8,6 +8,7 @@ import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.BillNoGenerator;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.security.context.UserContext;
@@ -107,14 +108,8 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
     @Override
     public OutboundBillPageVo page(OutboundBillPageDto dto) {
         Page<OutboundBillListItemVo> page = dto.toPage();
-        Long warehouseId;
-        // 构建查询条件包装器
-        try {
-            warehouseId = StrUtil.isNotBlank(dto.getWarehouseId())
-                    ? Long.valueOf(dto.getWarehouseId()) : null;
-        } catch (NumberFormatException e) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "仓库ID格式错误，必须为数字字符串");
-        }
+        // 构建查询条件包装器；非空非法仓库 ID 不允许被当作未筛选条件。
+        Long warehouseId = IdUtil.parseOptionalLongId(dto.getWarehouseId(), "仓库ID");
         MPJLambdaWrapper<OutboundBill> wrapper = buildQueryWrapper(dto, warehouseId);
         Page<OutboundBillListItemVo> result = outboundBillMapper.selectJoinPage(page, OutboundBillListItemVo.class, wrapper);
         List<OutboundBillListItemVo> records = result.getRecords();

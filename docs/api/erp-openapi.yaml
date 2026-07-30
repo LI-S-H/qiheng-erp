@@ -6864,7 +6864,7 @@ components:
         pageSize: { type: integer, minimum: 1 }
     PurchaseOrder:
       type: object
-      required: [purchaseOrderId, purchaseNo, supplierId, supplierCode, supplierName, warehouseId, warehouseName, status, totalAmount, expectedArrivalDate, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, version, remark]
+      required: [purchaseOrderId, purchaseNo, supplierId, supplierCode, supplierName, warehouseId, warehouseName, status, totalAmount, createdByName, createTime, updateTime, version, remark]
       properties:
         purchaseOrderId: { type: string, description: 对应 `purchase_order.id`，BIGINT 按字符串传输 }
         purchaseNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `purchase_order.purchase_no`，由后端生成、全局唯一 }

@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.QtyUtil;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.warehouse.domain.stockbill.dto.StockBillItemUpdateDto;
 import com.qiheng.erp.warehouse.domain.stockbill.dto.StockBillUpdateDto;
 import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
@@ -68,11 +69,7 @@ public class StockBillEditingSupport {
      * 解析工作单 ID，并将非数字输入转换为参数错误，避免泄露底层转换异常。
      */
     public Long parseBillId(String billId, String billName) {
-        try {
-            return Long.valueOf(billId);
-        } catch (NumberFormatException e) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), billName + "ID格式错误");
-        }
+        return IdUtil.parseRequiredLongId(billId, billName + "ID");
     }
 
     /**
@@ -259,21 +256,14 @@ public class StockBillEditingSupport {
      * 解析必填ID字符串为Long类型。
      */
     private Long parseRequiredId(String value, String fieldName) {
-        if (StrUtil.isBlank(value)) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), fieldName + "不能为空");
-        }
-        try {
-            return Long.valueOf(value);
-        } catch (NumberFormatException e) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), fieldName + "格式错误");
-        }
+        return IdUtil.parseRequiredLongId(value, fieldName);
     }
 
     /**
      * 解析可空ID字符串为Long类型。
      */
     private Long parseNullableId(String value, String fieldName) {
-        return StrUtil.isBlank(value) ? null : parseRequiredId(value, fieldName);
+        return IdUtil.parseOptionalLongId(value, fieldName);
     }
 
     /**

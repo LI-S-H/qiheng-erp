@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierBatchDeleteDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierBatchStatusDto;
@@ -184,12 +185,14 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
      */
     @Override
     public void batchUpdateStatus(SupplierBatchStatusDto dto) {
+        List<Long> supplierIds = IdUtil.parseRequiredLongIds(dto.getSupplierIds(), "供应商ID");
         // 一次批量查询所有实体
-        List<Supplier> entities = supplierMapper.selectByIds(dto.getSupplierIds());
+        List<Supplier> entities = supplierMapper.selectByIds(supplierIds);
         Map<Long, Supplier> entityMap = entities.stream()
                 .collect(Collectors.toMap(Supplier::getId, e -> e));
-        for (String supplierId : dto.getSupplierIds()) {
-            Supplier entity = entityMap.get(Long.parseLong(supplierId));
+        for (int index = 0; index < dto.getSupplierIds().size(); index++) {
+            String supplierId = dto.getSupplierIds().get(index);
+            Supplier entity = entityMap.get(supplierIds.get(index));
             if (entity == null) {
                 throw new BizException(ErrorCode.DATA_NOT_FOUND);
             }
@@ -213,9 +216,11 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map<String, String> batchDelete(SupplierBatchDeleteDto dto) {
+        List<Long> supplierIds = IdUtil.parseRequiredLongIds(dto.getSupplierIds(), "供应商ID");
         Map<String, String> failures = new LinkedHashMap<>();
-        for (String supplierIdStr : dto.getSupplierIds()) {
-            Long supplierId = Long.parseLong(supplierIdStr);
+        for (int index = 0; index < dto.getSupplierIds().size(); index++) {
+            String supplierIdStr = dto.getSupplierIds().get(index);
+            Long supplierId = supplierIds.get(index);
             Integer expectedVersion = dto.getVersionBySupplierId().get(supplierIdStr);
             if (expectedVersion == null) {
                 failures.put(supplierIdStr, "未找到版本号");

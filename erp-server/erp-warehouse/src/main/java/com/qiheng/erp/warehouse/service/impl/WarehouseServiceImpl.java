@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseBatchDeleteDto;
 import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseBatchStatusDto;
 import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehousePageDto;
@@ -136,15 +137,17 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map<String, String> updateBatchStatus(WarehouseBatchStatusDto dto) {
+        List<Long> warehouseIds = IdUtil.parseRequiredLongIds(dto.getWarehouseIds(), "仓库ID");
         Map<String, String> failures = new LinkedHashMap<>();
         // 批量更新仓库状态，使用乐观锁实现
-        for (String warehouseId : dto.getWarehouseIds()) {
+        for (int index = 0; index < dto.getWarehouseIds().size(); index++) {
+            String warehouseId = dto.getWarehouseIds().get(index);
             Integer expectedVersion = dto.getVersionByWarehouseId().get(warehouseId);
             if (expectedVersion == null) {
                 failures.put(warehouseId, "未找到版本号");
                 continue;
             }
-            Long id = Long.parseLong(warehouseId);
+            Long id = warehouseIds.get(index);
             if (Integer.valueOf(0).equals(dto.getStatus())) {
                 ensureCanDisable(id);
             }
@@ -192,9 +195,11 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map<String, String> batchDelete(WarehouseBatchDeleteDto dto) {
+        List<Long> warehouseIds = IdUtil.parseRequiredLongIds(dto.getWarehouseIds(), "仓库ID");
         Map<String, String> failures = new LinkedHashMap<>();
-        for (String warehouseIdStr : dto.getWarehouseIds()) {
-            Long warehouseId = Long.parseLong(warehouseIdStr);
+        for (int index = 0; index < dto.getWarehouseIds().size(); index++) {
+            String warehouseIdStr = dto.getWarehouseIds().get(index);
+            Long warehouseId = warehouseIds.get(index);
             Integer expectedVersion = dto.getVersionByWarehouseId().get(warehouseIdStr);
             if (expectedVersion == null) {
                 failures.put(warehouseIdStr, "未找到版本号");

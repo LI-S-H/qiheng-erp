@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.RedisUtil;
 import com.qiheng.erp.system.domain.vo.RoleOptionVo;
 import com.qiheng.erp.system.manager.SessionManager;
@@ -125,7 +126,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     @DistributedLock(key = "'sys:role:lock:global'")
     @Transactional(rollbackFor = Exception.class)
     public void batchUpdateStatus(List<String> roleIds, Integer status) {
-        List<Long> ids = roleIds.stream().map(Long::valueOf).toList();
+        List<Long> ids = IdUtil.parseRequiredLongIds(roleIds, "角色ID");
         LambdaUpdateWrapper<SysRole> wrapper = new LambdaUpdateWrapper<SysRole>()
                 .set(SysRole::getStatus, status)
                 .in(SysRole::getId, ids);
@@ -176,7 +177,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     @DistributedLock(key = "'sys:role:lock:global'")
     @Transactional(rollbackFor = Exception.class)
     public void deleteByIds(List<String> list) {
-        List<Long> ids = list.stream().map(Long::valueOf).toList();
+        List<Long> ids = IdUtil.parseRequiredLongIds(list, "角色ID");
         //先查出受影响的用户ID，删除后需要刷新这些用户的Session
         List<Long> userIds = sysUserRoleMapper.selectList(
                 new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getRoleId, ids))

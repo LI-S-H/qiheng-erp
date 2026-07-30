@@ -8,6 +8,7 @@ import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.BillNoGenerator;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.security.context.UserContext;
@@ -104,14 +105,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     public InboundBillPageVo page(InboundBillPageDto dto) {
         // 分页查询入库单记录
         Page<InboundBillListItemVo> page = dto.toPage();
-        // 处理仓库ID
-        Long warehouseId;
-        try {
-            warehouseId = StrUtil.isNotBlank(dto.getWarehouseId())
-                    ? Long.valueOf(dto.getWarehouseId()) : null;
-        } catch (NumberFormatException e) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(),"仓库ID格式错误，必须为数字字符串");
-        }
+        // 处理可选仓库 ID；非空非法值必须明确返回参数错误。
+        Long warehouseId = IdUtil.parseOptionalLongId(dto.getWarehouseId(), "仓库ID");
         // 构建查询条件
         MPJLambdaWrapper<InboundBill> wrapper = buildQueryWrapper(dto, warehouseId);
         // 执行查询

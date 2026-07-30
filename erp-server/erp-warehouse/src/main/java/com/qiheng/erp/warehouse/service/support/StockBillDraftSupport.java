@@ -3,6 +3,7 @@ package com.qiheng.erp.warehouse.service.support;
 import cn.hutool.core.util.StrUtil;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
@@ -56,18 +57,11 @@ public class StockBillDraftSupport {
      * 将前端字符串 ID 转换为 Long，并将非法输入统一返回为参数错误。
      */
     public Long parseRequiredId(String value, String fieldName) {
-        if (StrUtil.isBlank(value)) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), fieldName + "不能为空");
-        }
-        try {
-            return Long.valueOf(value);
-        } catch (NumberFormatException e) {
-            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), fieldName + "格式错误");
-        }
+        return IdUtil.parseRequiredLongId(value, fieldName);
     }
 
     public Long parseNullableId(String value, String fieldName) {
-        return StrUtil.isBlank(value) ? null : parseRequiredId(value, fieldName);
+        return IdUtil.parseOptionalLongId(value, fieldName);
     }
 
     /**

@@ -120,5 +120,12 @@
             <version>2.2.38</version>
             <scope>compile</scope>
         </dependency>
+
+        <!-- 公共参数工具的回归测试依赖 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

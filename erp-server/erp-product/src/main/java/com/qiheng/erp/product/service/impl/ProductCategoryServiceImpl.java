@@ -7,6 +7,7 @@ import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.domain.entity.ProductCategory;
 import com.qiheng.erp.product.domain.vo.ProductCategoryVo;
@@ -92,7 +93,7 @@ public class ProductCategoryServiceImpl extends ServiceImpl<ProductCategoryMappe
     @Transactional(rollbackFor = Exception.class)
     @DistributedLock(key = "'product:category:global'")
     public void updateBatchStatus(List<String> categoryIds, Integer status) {
-        List<Long> ids = categoryIds.stream().map(Long::valueOf).toList();
+        List<Long> ids = IdUtil.parseRequiredLongIds(categoryIds, "产品分类ID");
         if (status == 0) {
             disableCategories(ids);
         } else {

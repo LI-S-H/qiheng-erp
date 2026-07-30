@@ -7,6 +7,7 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.RedisUtil;
 import com.qiheng.erp.system.domain.dto.SysPermissionPageDto;
 import com.qiheng.erp.system.domain.entity.SysPermission;
@@ -239,14 +240,15 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
     @DistributedLock(key = "'sys:permission:lock:global'")
     @Transactional(rollbackFor = Exception.class)
     public void updatePermissionStatus(String permissionId, Integer statusValue) {
-        SysPermission permission = sysPermissionMapper.selectById(permissionId);
+        Long permissionIdValue = IdUtil.parseRequiredLongId(permissionId, "权限码ID");
+        SysPermission permission = sysPermissionMapper.selectById(permissionIdValue);
         if (permission == null) {
             throw new BizException(ErrorCode.PERMISSION_NOT_FOUND);
         }
         if (permission.getStatus().equals(statusValue)) {
             return;
         }
-        sysPermissionMapper.updateById(new SysPermission().setId(Long.valueOf(permissionId)).setStatus(statusValue));
+        sysPermissionMapper.updateById(new SysPermission().setId(permissionIdValue).setStatus(statusValue));
         if (statusValue == 0) {
             // 停用权限码，删除角色权限码,并刷新受影响用户会话
             deleteRolePermission(List.of(permission));

@@ -3,6 +3,7 @@ package com.qiheng.erp.warehouse.service.impl;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.warehouse.domain.stockbill.dto.StockBillPageDto;
 import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBill;
 import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBillItem;
@@ -46,8 +47,7 @@ public class StockBillServiceImpl extends ServiceImpl<StockBillMapper, StockBill
         Page<StockBillListItemVo> page = dto.toPage();
 
         // warehouseId 在 DTO 中为 String（前端防精度丢失），转为 Long 用于查询
-        Long warehouseId = StrUtil.isNotBlank(dto.getWarehouseId())
-                ? Long.valueOf(dto.getWarehouseId()) : null;
+        Long warehouseId = IdUtil.parseOptionalLongId(dto.getWarehouseId(), "仓库ID");
 
         // 根据 sourceType 派生 billType 列表
         List<StockBillType> derivedBillTypes = deriveBillTypes(dto.getSourceType());

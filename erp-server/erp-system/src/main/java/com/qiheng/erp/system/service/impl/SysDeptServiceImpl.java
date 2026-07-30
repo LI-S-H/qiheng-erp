@@ -7,6 +7,7 @@ import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.util.RedisUtil;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.system.domain.dto.SysDeptDto;
 import com.qiheng.erp.system.domain.entity.SysDept;
 import com.qiheng.erp.system.domain.entity.SysUser;
@@ -229,7 +230,7 @@ public class SysDeptServiceImpl extends ServiceImpl<SysDeptMapper, SysDept> impl
         }
 
         // 计算目标状态
-        Long newParentId = Long.valueOf(request.getParentId());
+        Long newParentId = IdUtil.parseRequiredLongId(request.getParentId(), "上级部门ID");
         Integer newStatus = request.getStatus();
         boolean parentChanged = !newParentId.equals(dept.getParentId());
         boolean statusChanged = !newStatus.equals(dept.getStatus());

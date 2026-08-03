@@ -24,6 +24,8 @@ export interface SupplierListItem {
   remark: string;
   createTime: string;
   updateTime: string;
+  updatedById?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface SupplierQuery {
@@ -94,10 +96,13 @@ export interface SupplierProductListItem {
   remark: string;
   createTime: string;
   updateTime: string;
+  updatedById?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface SupplierProductQuery {
   supplierId?: string | 'all';
+  supplierName?: string;
   productCode?: string;
   productName?: string;
   status?: PurchaseStatus | '' | 'all';
@@ -148,6 +153,23 @@ export interface PurchaseOrderItem {
   remark: string;
 }
 
+export type PurchaseOrderTimelineEvent = 'CREATED' | 'SUBMITTED' | 'APPROVED' | 'INBOUND_CREATED' | 'INBOUND_CONFIRMED';
+
+export interface PurchaseOrderFulfillmentSummary {
+  calculationMode: 'AMOUNT_WEIGHTED';
+  totalAmount: number;
+  inboundAmount: number;
+  completionRate: number;
+}
+
+export interface PurchaseOrderTimelineItem {
+  event: PurchaseOrderTimelineEvent;
+  occurredAt: string;
+  operatorName: string;
+  inboundBillId: string | null;
+  inboundBillNo: string | null;
+}
+
 export interface PurchaseOrderListItem {
   purchaseOrderId: string;
   purchaseNo: string;
@@ -162,6 +184,8 @@ export interface PurchaseOrderListItem {
   createdById: string | null;
   createdByName: string;
   submittedAt: string | null;
+  submittedById: string | null;
+  submittedByName: string;
   approvedById: string | null;
   approvedByName: string;
   approvedAt: string | null;
@@ -173,6 +197,8 @@ export interface PurchaseOrderListItem {
 
 export interface PurchaseOrderDetail extends PurchaseOrderListItem {
   items: PurchaseOrderItem[];
+  fulfillmentSummary: PurchaseOrderFulfillmentSummary;
+  timeline: PurchaseOrderTimelineItem[];
 }
 
 export interface PurchaseOrderSummary {
@@ -195,7 +221,7 @@ export interface PurchaseOrderQuery {
 
 export interface PurchaseOrderDraftItemPayload {
   purchaseOrderItemId?: string | null;
-  supplierProductId?: string | null;
+  supplierProductId: string;
   productId: string;
   quantity: number;
   unitPrice: number;

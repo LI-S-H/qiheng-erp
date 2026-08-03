@@ -138,6 +138,10 @@ runSmoke({
     await tableRow(page, 'HD-SD330').getByRole('button', { name: '详情' }).click();
     await page.getByRole('dialog', { name: '供货产品详情' }).getByText('最近采购价').waitFor();
     await page.getByRole('dialog', { name: '供货产品详情' }).getByRole('button', { name: '关闭' }).click();
+    await tableRow(page, 'WY-PEN12').getByText('未采购', { exact: true }).waitFor();
+    await tableRow(page, 'WY-PEN12').getByRole('button', { name: '详情' }).click();
+    await page.getByRole('dialog', { name: '供货产品详情' }).getByText('未采购', { exact: true }).waitFor();
+    await page.getByRole('dialog', { name: '供货产品详情' }).getByRole('button', { name: '关闭' }).click();
 
     await page.locator('[data-menu-path="/purchase/orders"]').click();
     await page.getByRole('heading', { name: '采购订单' }).waitFor();
@@ -200,8 +204,17 @@ runSmoke({
     await submitPreviewDialog.getByRole('button', { name: '提交采购单' }).click();
     const submitDialog = page.getByRole('alertdialog', { name: '提交采购单' });
     await submitDialog.getByText('提交后进入待审核状态').waitFor();
-    await submitDialog.getByRole('button', { name: '取消' }).click();
+    await submitDialog.getByRole('button', { name: '提交', exact: true }).click();
+    await submitDialog.waitFor({ state: 'hidden' });
     await submitPreviewDialog.getByRole('button', { name: '关闭' }).click();
+    await tableRow(page, 'PO202607003').getByRole('button', { name: '详情' }).click();
+    const submittedDetailDialog = page.getByRole('dialog', { name: '采购单详情' });
+    await submittedDetailDialog.getByText('提交采购订单审核', { exact: true }).waitFor();
+    const submittedTimelineText = await submittedDetailDialog.locator('.purchase-detail-timeline').innerText();
+    if (!submittedTimelineText.includes('系统管理员')) {
+      throw new Error(`采购订单提交人没有回显到 Mock 流程记录：${submittedTimelineText}`);
+    }
+    await submittedDetailDialog.getByRole('button', { name: '关闭' }).click();
 
     const submittedOrderRow = tableRow(page, 'PO202607004');
     const submittedBadgeText = await submittedOrderRow.locator('[data-slot="badge"]').innerText();
@@ -225,10 +238,25 @@ runSmoke({
     if (await detailDialog.locator('[data-overflow-tooltip]').count() === 0) {
       throw new Error('采购明细备注未接入统一的溢出内容提示');
     }
+    await detailDialog.getByText('累计入库', { exact: true }).waitFor();
+    await detailDialog.getByText('流程记录', { exact: true }).waitFor();
+    if ((await detailDialog.locator('.purchase-order-line-scroll tbody').innerText()).includes('完成 ')) {
+      throw new Error('采购详情不应在已入库数量下重复展示明细完成率');
+    }
+    const completionRateTrigger = detailDialog.locator('.purchase-execution-summary__track');
+    if (await completionRateTrigger.getAttribute('aria-label') !== '查看按金额核算的完成率') {
+      throw new Error('采购详情的金额完成率缺少可访问的计算说明入口');
+    }
+    if ((await detailDialog.locator('.purchase-detail-timeline li').count()) < 3) {
+      throw new Error('采购详情缺少由采购单与入库单聚合的流程记录');
+    }
+    for (const text of ['操作人', '操作时间']) {
+      await detailDialog.getByText(text, { exact: true }).first().waitFor();
+    }
     await detailDialog.getByRole('button', { name: '关闭' }).click();
     const readonlyStatusExpectations = {
       PO202607001: ['待入库', '等待入库'],
-      PO202607002: ['部分入库', '入库处理中'],
+      PO202607002: ['部分入库', '部分入库'],
       PO202607006: ['已入库', '流程完成'],
       PO202607007: ['已取消', '流程终止'],
     };

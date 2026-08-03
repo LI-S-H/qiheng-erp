@@ -57,17 +57,19 @@ let mockSuppliers: Array<SupplierListItem & { referenced: boolean }> = supplierS
   remark: index < 3 ? '常用供应商，可用于采购建议候选' : '',
   createTime: `2026-06-${String(2 + index).padStart(2, '0')} 09:10:00`,
   updateTime: `2026-06-${String(12 + (index % 4)).padStart(2, '0')} 15:30:00`,
+  updatedById: '1900000000000000002',
+  updatedByName: '采购主管',
   referenced: item[15],
 }));
 
-type SupplierProductSeed = [string, string, string, number, number, number, number, number, number, number, string | null, 0 | 1, boolean];
+type SupplierProductSeed = [string, string, string, number | null, number, number, number, number, number, number, string | null, 0 | 1, boolean];
 
 const supplierProductSeed: SupplierProductSeed[] = [
   ['S001', 'P000001', 'HD-SD330', 35.2, 10, 3, 94.2, 96.1, 88.4, 92.3, '2026-06-13 10:20:00', 1, true],
   ['S002', 'P000002', 'CD-CF50', 40.5, 8, 5, 89.7, 93.4, 84.2, 88.9, '2026-06-10 11:20:00', 1, true],
   ['S003', 'P000007', 'GC-NUT30', 68, 6, 4, 92.4, 95.2, 87.6, 91.8, '2026-06-11 14:10:00', 1, true],
   ['S003', 'P000008', 'GC-CK06', 58, 5, 4, 92.4, 95.2, 87.6, 91.4, '2026-06-09 09:40:00', 1, true],
-  ['S004', 'P000021', 'WY-PEN12', 12.5, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
+  ['S004', 'P000021', 'WY-PEN12', null, 20, 6, 85.4, 90.5, 88.1, 87.2, null, 1, false],
   ['S005', 'P000026', 'SZ-A4-70G', 92, 12, 3, 95.8, 97.2, 91.6, 94.8, '2026-06-12 13:50:00', 1, true],
   ['S006', 'P000043', 'TL-HUB8', 126, 2, 8, 78.2, 82.4, 84.6, 81.3, null, 0, false],
   ['S001', 'P000002', 'HD-CF50-HIS', 40.5, 8, 5, 94.2, 96.1, 88.4, 91.4, '2026-06-14 09:12:00', 0, true],
@@ -102,6 +104,8 @@ let mockSupplierProducts: Array<SupplierProductListItem & { referenced: boolean 
     remark: index < 3 ? '采购建议优先候选' : '',
     createTime: `2026-06-${String(3 + index).padStart(2, '0')} 10:00:00`,
     updateTime: `2026-06-${String(12 + (index % 4)).padStart(2, '0')} 16:10:00`,
+    updatedById: '1900000000000000002',
+    updatedByName: '采购主管',
     referenced: item[12],
   };
 });
@@ -207,6 +211,24 @@ function buildOrderSeed(
   };
   const auditTime = historicalTimes[purchaseNo];
   const timestamp = auditTime?.createTime || '2026-07-12 10:30:00';
+  const submittedAt = submitted ? (auditTime?.submittedAt || timestamp) : null;
+  const approvedAt = status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE'
+    ? (auditTime?.approvedAt || '2026-07-13 09:20:00')
+    : null;
+  const totalAmount = items.reduce((sum, item) => sum + item.totalAmount, 0);
+  const inboundBillId = `3010000000000000${purchaseNo.slice(-3)}`;
+  const inboundBillNo = `IB${purchaseNo.slice(2)}`;
+  const timeline: PurchaseOrderDetail['timeline'] = [
+    { event: 'CREATED', occurredAt: timestamp, operatorName: createdByName, inboundBillId: null, inboundBillNo: null },
+  ];
+  if (submittedAt) timeline.push({ event: 'SUBMITTED', occurredAt: submittedAt, operatorName: createdByName, inboundBillId: null, inboundBillNo: null });
+  if (approvedAt) {
+    timeline.push({ event: 'APPROVED', occurredAt: approvedAt, operatorName: '采购主管', inboundBillId: null, inboundBillNo: null });
+    timeline.push({ event: 'INBOUND_CREATED', occurredAt: approvedAt, operatorName: '系统', inboundBillId, inboundBillNo });
+  }
+  if (status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE') {
+    timeline.push({ event: 'INBOUND_CONFIRMED', occurredAt: auditTime?.updateTime || approvedAt!, operatorName: '仓库管理员', inboundBillId, inboundBillNo });
+  }
   return {
     purchaseOrderId,
     purchaseNo,
@@ -216,19 +238,23 @@ function buildOrderSeed(
     warehouseId: warehouse.warehouseId,
     warehouseName: warehouse.warehouseName,
     status,
-    totalAmount: items.reduce((sum, item) => sum + item.totalAmount, 0),
+    totalAmount,
     expectedArrivalDate,
     createdById: createdByName === '系统管理员' ? '1900000000000000001' : '1900000000000000002',
     createdByName,
-    submittedAt: submitted ? (auditTime?.submittedAt || timestamp) : null,
+    submittedAt,
+    submittedById: submitted ? (createdByName === '系统管理员' ? '1900000000000000001' : '1900000000000000002') : null,
+    submittedByName: submitted ? createdByName : '',
     approvedById: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '1900000000000000002' : null,
     approvedByName: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? '采购主管' : '',
-    approvedAt: status === 'APPROVED' || status === 'PARTIAL_INBOUND' || status === 'INBOUND_DONE' ? (auditTime?.approvedAt || '2026-07-13 09:20:00') : null,
+    approvedAt,
     createTime: timestamp,
     updateTime: auditTime?.updateTime || timestamp,
     version: 0,
     remark: auditTime?.remark || '',
     items,
+    fulfillmentSummary: buildFulfillmentSummary(items),
+    timeline,
   };
 }
 
@@ -256,6 +282,8 @@ function normalizeSupplier(item: SupplierListItem): SupplierListItem {
     qualifiedRate: normalizeFiniteNumber(item.qualifiedRate, 'qualifiedRate'),
     status: normalizeBinaryStatus(item.status),
     version: normalizeFiniteNumber(item.version, 'version'),
+    updatedById: normalizeNullableStringId(item.updatedById, 'updatedById'),
+    updatedByName: item.updatedByName || null,
     remark: String(item.remark),
   };
 }
@@ -267,7 +295,7 @@ function normalizeSupplierProduct(item: SupplierProductListItem): SupplierProduc
     supplierId: normalizeStringId(item.supplierId, 'supplierId'),
     productId: normalizeStringId(item.productId, 'productId'),
     quantityPrecision: normalizeFiniteNumber(item.quantityPrecision, 'quantityPrecision'),
-    latestPurchasePrice: normalizeFiniteNumber(item.latestPurchasePrice, 'latestPurchasePrice'),
+    latestPurchasePrice: normalizeNullableFiniteNumber(item.latestPurchasePrice, 'latestPurchasePrice'),
     minOrderQty: normalizeFiniteNumber(item.minOrderQty, 'minOrderQty'),
     leadTimeDays: normalizeFiniteNumber(item.leadTimeDays, 'leadTimeDays'),
     deliveryScore: normalizeFiniteNumber(item.deliveryScore, 'deliveryScore'),
@@ -277,7 +305,14 @@ function normalizeSupplierProduct(item: SupplierProductListItem): SupplierProduc
     lastPurchaseAt: item.lastPurchaseAt || null,
     status: normalizeBinaryStatus(item.status),
     version: normalizeFiniteNumber(item.version, 'version'),
+    updatedById: normalizeNullableStringId(item.updatedById, 'updatedById'),
+    updatedByName: item.updatedByName || null,
   };
+}
+
+function normalizeNullableFiniteNumber(value: unknown, fieldName: string): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  return normalizeFiniteNumber(value, fieldName);
 }
 
 function normalizeOrderItem(item: PurchaseOrderItem): PurchaseOrderItem {
@@ -295,6 +330,20 @@ function normalizeOrderItem(item: PurchaseOrderItem): PurchaseOrderItem {
   };
 }
 
+function buildFulfillmentSummary(items: PurchaseOrderItem[]) {
+  const totalAmount = items.reduce((sum, item) => sum + item.totalAmount, 0);
+  const inboundAmount = items.reduce(
+    (sum, item) => sum + Math.min(item.quantity, item.inboundQty) * item.unitPrice,
+    0,
+  );
+  return {
+    calculationMode: 'AMOUNT_WEIGHTED' as const,
+    totalAmount,
+    inboundAmount: Number(inboundAmount.toFixed(2)),
+    completionRate: totalAmount === 0 ? 0 : Math.round((inboundAmount / totalAmount) * 100),
+  };
+}
+
 function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
   return {
     ...item,
@@ -303,13 +352,28 @@ function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
     warehouseId: normalizeStringId(item.warehouseId, 'warehouseId'),
     totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
+    submittedById: normalizeNullableStringId(item.submittedById, 'submittedById'),
+    submittedByName: String(item.submittedByName || ''),
     approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
     version: normalizeFiniteNumber(item.version, 'version'),
   };
 }
 
 function normalizeOrderDetail(item: PurchaseOrderDetail): PurchaseOrderDetail {
-  return { ...normalizeOrder(item), items: item.items.map(normalizeOrderItem) };
+  return {
+    ...normalizeOrder(item),
+    items: item.items.map(normalizeOrderItem),
+    fulfillmentSummary: {
+      ...item.fulfillmentSummary,
+      totalAmount: normalizeFiniteNumber(item.fulfillmentSummary.totalAmount, 'fulfillmentSummary.totalAmount'),
+      inboundAmount: normalizeFiniteNumber(item.fulfillmentSummary.inboundAmount, 'fulfillmentSummary.inboundAmount'),
+      completionRate: normalizeFiniteNumber(item.fulfillmentSummary.completionRate, 'fulfillmentSummary.completionRate'),
+    },
+    timeline: item.timeline.map(timelineItem => ({
+      ...timelineItem,
+      inboundBillId: normalizeNullableStringId(timelineItem.inboundBillId, 'timeline.inboundBillId'),
+    })),
+  };
 }
 
 function normalizePage<T>(page: PageResult<T>, mapper: (item: T) => T): PageResult<T> {
@@ -412,6 +476,8 @@ export function createSupplier(payload: SupplierFormPayload) {
       version: 0,
       createTime: timestamp,
       updateTime: timestamp,
+      updatedById: '1900000000000000001',
+      updatedByName: '系统管理员',
       referenced: false,
     };
     mockSuppliers = [...mockSuppliers, created];
@@ -425,7 +491,7 @@ export async function updateSupplier(supplierId: string, payload: SupplierFormPa
     mockSuppliers = mockSuppliers.map(item => {
       if (item.supplierId !== supplierId) return item;
       assertOptimisticVersion(item.version, payload.version);
-      return { ...item, ...payload, version: item.version + 1, updateTime: nowText() };
+      return { ...item, ...payload, version: item.version + 1, updateTime: nowText(), updatedById: '1900000000000000001', updatedByName: '系统管理员' };
     });
     const supplier = mockSuppliers.find(item => item.supplierId === supplierId);
     return supplier ? normalizeSupplier(supplier) : null;
@@ -440,7 +506,7 @@ export async function updateSupplierStatus(supplierId: string, status: 0 | 1, ve
     mockSuppliers = mockSuppliers.map(item => {
       if (item.supplierId !== supplierId) return item;
       assertOptimisticVersion(item.version, version);
-      return { ...item, status, version: item.version + 1, updateTime: timestamp };
+      return { ...item, status, version: item.version + 1, updateTime: timestamp, updatedById: '1900000000000000001', updatedByName: '系统管理员' };
     });
     if (status === 0) mockSupplierProducts = mockSupplierProducts.map(item => item.supplierId === supplierId ? { ...item, status: 0, version: item.version + 1, updateTime: timestamp } : item);
     return null;
@@ -467,7 +533,7 @@ export function batchUpdateSupplierStatus(payload: SupplierBatchStatusPayload) {
       const item = mockSuppliers.find(candidate => candidate.supplierId === supplierId);
       if (item) assertOptimisticVersion(item.version, payload.versionBySupplierId[supplierId]);
     });
-    mockSuppliers = mockSuppliers.map(item => payload.supplierIds.includes(item.supplierId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: timestamp } : item);
+    mockSuppliers = mockSuppliers.map(item => payload.supplierIds.includes(item.supplierId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: timestamp, updatedById: '1900000000000000001', updatedByName: '系统管理员' } : item);
     return Promise.resolve(null);
   }
   return http.patch('/purchase/suppliers/batch/status', payload).then(response => response.data.data as null);
@@ -520,6 +586,8 @@ export function createSupplierProduct(payload: SupplierProductFormPayload) {
       lastPurchaseAt: null,
       createTime: timestamp,
       updateTime: timestamp,
+      updatedById: '1900000000000000001',
+      updatedByName: '系统管理员',
       referenced: false,
       ...payload,
       version: 0,
@@ -546,6 +614,8 @@ export async function updateSupplierProduct(supplierProductId: string, payload: 
       unitName: product.unitName,
       version: item.version + 1,
       updateTime: nowText(),
+      updatedById: '1900000000000000001',
+      updatedByName: '系统管理员',
     } : item);
     const result = mockSupplierProducts.find(item => item.supplierProductId === supplierProductId);
     return result ? normalizeSupplierProduct(result) : null;
@@ -572,7 +642,7 @@ export function batchUpdateSupplierProductStatus(payload: SupplierProductBatchSt
       const item = mockSupplierProducts.find(candidate => candidate.supplierProductId === supplierProductId);
       if (item) assertOptimisticVersion(item.version, payload.versionBySupplierProductId[supplierProductId]);
     });
-    mockSupplierProducts = mockSupplierProducts.map(item => payload.supplierProductIds.includes(item.supplierProductId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: timestamp } : item);
+    mockSupplierProducts = mockSupplierProducts.map(item => payload.supplierProductIds.includes(item.supplierProductId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: timestamp, updatedById: '1900000000000000001', updatedByName: '系统管理员' } : item);
     return Promise.resolve(null);
   }
   return http.patch('/purchase/supplier-products/batch/status', payload).then(response => response.data.data as null);
@@ -660,6 +730,8 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
       createdById: '1900000000000000001',
       createdByName: '系统管理员',
       submittedAt: null,
+      submittedById: null,
+      submittedByName: '',
       approvedById: null,
       approvedByName: '',
       approvedAt: null,
@@ -668,6 +740,8 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
       version: 0,
       remark: payload.remark.trim(),
       items,
+      fulfillmentSummary: buildFulfillmentSummary(items),
+      timeline: [{ event: 'CREATED', occurredAt: timestamp, operatorName: '系统管理员', inboundBillId: null, inboundBillNo: null }],
     });
     mockOrders = [created, ...mockOrders];
     return Promise.resolve(created);
@@ -720,6 +794,7 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
       updateTime: timestamp,
       remark: payload.remark.trim(),
       items,
+      fulfillmentSummary: buildFulfillmentSummary(items),
     });
     mockOrders = mockOrders.map(item => (item.purchaseOrderId === purchaseOrderId ? updated : item));
     return Promise.resolve(updated);
@@ -738,15 +813,28 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'subm
       if (action === 'approve' && item.status !== 'SUBMITTED') throw new Error('仅已提交采购单可以审核');
       if (action === 'cancel' && item.status !== 'DRAFT' && item.status !== 'SUBMITTED') throw new Error('仅草稿或已提交采购单可以取消');
       if ((action === 'submit' || action === 'approve') && !item.expectedArrivalDate) throw new Error('提交或审核采购订单前必须维护预计到货日期');
+      const timeline = [...item.timeline];
+      if (action === 'submit') {
+        timeline.push({ event: 'SUBMITTED', occurredAt: timestamp, operatorName: '系统管理员', inboundBillId: null, inboundBillNo: null });
+      }
+      if (action === 'approve') {
+        const inboundBillId = `3010000000000000${item.purchaseNo.slice(-3)}`;
+        const inboundBillNo = `IB${item.purchaseNo.slice(2)}`;
+        timeline.push({ event: 'APPROVED', occurredAt: timestamp, operatorName: '采购主管', inboundBillId: null, inboundBillNo: null });
+        timeline.push({ event: 'INBOUND_CREATED', occurredAt: timestamp, operatorName: '系统', inboundBillId, inboundBillNo });
+      }
       return {
         ...item,
         status: action === 'submit' ? 'SUBMITTED' : action === 'approve' ? 'APPROVED' : 'CANCELLED',
         submittedAt: action === 'submit' ? timestamp : item.submittedAt,
+        submittedById: action === 'submit' ? '1900000000000000001' : item.submittedById,
+        submittedByName: action === 'submit' ? '系统管理员' : item.submittedByName,
         approvedById: action === 'approve' ? '1900000000000000001' : item.approvedById,
         approvedByName: action === 'approve' ? '采购主管' : item.approvedByName,
         approvedAt: action === 'approve' ? timestamp : item.approvedAt,
         version: item.version + 1,
         updateTime: timestamp,
+        timeline,
       };
     });
     return Promise.resolve(null);

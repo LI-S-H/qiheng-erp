@@ -21,6 +21,9 @@ public class SupplierProductPageDto extends PageQuery {
     @Schema(description = "供应商ID（精确匹配）")
     private String supplierId;
 
+    @Schema(description = "供应商名称（模糊查询）")
+    private String supplierName;
+
     @Schema(description = "产品编码（模糊查询）")
     private String productCode;
 

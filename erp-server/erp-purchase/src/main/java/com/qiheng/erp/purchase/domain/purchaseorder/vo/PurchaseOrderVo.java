@@ -67,6 +67,13 @@ public class PurchaseOrderVo {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime submittedAt;
 
+    @Schema(description = "提交人ID")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long submittedById;
+
+    @Schema(description = "提交人姓名")
+    private String submittedByName;
+
     @Schema(description = "审核人ID")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long approvedById;

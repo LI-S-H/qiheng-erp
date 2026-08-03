@@ -19,6 +19,20 @@ const screenshotPath = filename => path.join(screenshotDirectory, filename);
 
 fs.mkdirSync(screenshotDirectory, { recursive: true });
 
+async function assertDialogCenteredInAppContent(dialog) {
+  const position = await dialog.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const sidebarWidth = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-shell-sidebar-width')) || 0;
+    return {
+      actualCenter: rect.left + rect.width / 2,
+      expectedCenter: sidebarWidth + (window.innerWidth - sidebarWidth) / 2,
+    };
+  });
+  if (Math.abs(position.actualCenter - position.expectedCenter) > 2) {
+    throw new Error(`销售订单详情未在业务内容区居中：${JSON.stringify(position)}`);
+  }
+}
+
 async function selectRowAction(page, row, salesNo, actionLabel) {
   const trigger = row.getByRole('button', { name: `更多 ${salesNo} 操作` });
   await trigger.focus();
@@ -52,6 +66,7 @@ runSmoke({
     await customerDialog.getByRole('button', { name: '取消', exact: true }).click();
     await tableRow(page, 'C001').getByRole('button', { name: '详情' }).click();
     await page.getByRole('dialog', { name: '客户详情' }).getByText('客户编码').waitFor();
+    await page.getByRole('dialog', { name: '客户详情' }).getByText('最后维护人').waitFor();
     await page.getByRole('dialog', { name: '客户详情' }).getByRole('button', { name: '关闭' }).click();
 
     await page.locator('[data-menu-path="/sales/orders"]').click();
@@ -141,7 +156,10 @@ runSmoke({
     await tableRow(page, 'SO202607001').getByRole('button', { name: '详情' }).click();
     const detailDialog = page.getByRole('dialog', { name: '销售单详情' });
     await detailDialog.getByText('销售单号').waitFor();
+    await assertDialogCenteredInAppContent(detailDialog);
     await detailDialog.getByText('每日坚果混合装', { exact: true }).waitFor();
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: screenshotPath('sales-orders-detail-app-content-center.png'), fullPage: true });
     if (await detailDialog.locator('[data-overflow-tooltip]').count() === 0) {
       throw new Error('销售明细备注未接入统一的溢出内容提示');
     }

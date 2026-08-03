@@ -28,6 +28,8 @@
 | status        | tinyint       | 状态：1 启用，0 禁用       |
 | create_time   | datetime      | 创建时间               |
 | update_time   | datetime      | 更新时间               |
+| updated_by_id | bigint        | 最后维护人ID，历史数据可为空       |
+| updated_by_name | varchar(100) | 最后维护人姓名，历史数据可为空     |
 | deleted       | tinyint       | 逻辑删除               |
 | remark        | varchar(500)  | 备注                 |
 
@@ -51,6 +53,8 @@
 | created_by_id          | bigint        | 创建人ID                                                                            |
 | created_by_name        | varchar(100)  | 创建人姓名                                                                            |
 | submitted_at           | datetime      | 提交时间                                                                             |
+| submitted_by_id        | bigint        | 提交人ID，历史数据可为空                                                                    |
+| submitted_by_name      | varchar(100)  | 提交人姓名，历史数据可为空                                                                    |
 | approved_by_id         | bigint        | 审核人ID                                                                            |
 | approved_by_name       | varchar(100)  | 审核人姓名                                                                            |
 | approved_at            | datetime      | 审核时间                                                                             |
@@ -60,6 +64,8 @@
 | remark                 | varchar(500)  | 备注                                                                               |
 
 关系说明：销售订单审核后，可生成仓库模块 `outbound_bill`，其中 `source_type = SALES_ORDER`，`source_id = sales_order.id`，`source_no = sales_order.sales_no`，并快照客户、出库仓库、销售数量和累计已出库数量。待确认出库单的本次出库数量初始为 0 或空业务值，由仓库人员按实物发货填写；剩余未出库数量由后端按 `销售数量 - 累计已出库数量 - 本次出库数量` 计算，不允许前端或用户手动维护。
+
+> 当前销售 Java 后端尚未生成。本次已固化字段、前端展示和接口契约；后续实现时，提交操作必须写入 `submitted_by_id/submitted_by_name`，客户创建、编辑、启停必须写入 `updated_by_id/updated_by_name`。
 
 ## 表：sales_order_item（销售订单明细表）
 
@@ -105,6 +111,7 @@
 - 仓库人员按实物发货填写并确认本次出库数量后，生成 `stock_bill` 库存流水，扣减 `warehouse_stock.stock_qty` 和 `warehouse_stock.locked_qty`，并回写 `sales_order_item.outbound_qty`。
 - 确认销售出库时，后端必须校验本次出库数量大于 0 且不超过来源明细剩余未出库数量；确认后的剩余未出库数量由后端计算，不作为前端提交字段。
 - 当明细 `outbound_qty < quantity` 时订单为 `PARTIAL_OUTBOUND`，全部出库后为 `OUTBOUND_DONE`。
+- 销售后端实现出库确认回写时，应由仓储模块在 `outbound_bill` 真实“出库确认”后调用销售来源端口；销售端在同一事务内累计 `sales_order_item.outbound_qty`、更新订单状态，并且仅当不存在待确认出库单且仍有剩余数量时生成下一张只含剩余数量的 `PENDING_CONFIRM` 出库单。编辑待确认单不生成新单，已确认单不得编辑。
 - 取消未出库订单时，需要释放已锁定库存。
 - 销售退货后续使用 `SALES_RETURN` 入库流水；如需退货申请、退款、质检等复杂流程，再补销售退货单表。
 

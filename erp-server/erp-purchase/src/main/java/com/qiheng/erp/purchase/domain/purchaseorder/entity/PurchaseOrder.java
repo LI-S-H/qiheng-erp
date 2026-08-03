@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.Version;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -65,9 +67,9 @@ public class PurchaseOrder implements Serializable {
     @TableField("status")
     private String status;
 
-    @Schema(description = "订单总金额")
+    @Schema(description = "订单总金额，放大100倍保存")
     @TableField("total_amount")
-    private BigDecimal totalAmount;
+    private Integer totalAmount;
 
     @Schema(description = "预计到货日期")
     @TableField("expected_arrival_date")
@@ -84,6 +86,14 @@ public class PurchaseOrder implements Serializable {
     @Schema(description = "提交时间")
     @TableField("submitted_at")
     private LocalDateTime submittedAt;
+
+    @Schema(description = "提交人ID")
+    @TableField("submitted_by_id")
+    private Long submittedById;
+
+    @Schema(description = "提交人姓名")
+    @TableField("submitted_by_name")
+    private String submittedByName;
 
     @Schema(description = "审核人ID")
     @TableField("approved_by_id")

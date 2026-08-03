@@ -47,6 +47,8 @@
 | status | tinyint | 状态：1 启用，0 禁用 |
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |
+| updated_by_id | bigint，可为空 | 最后维护人ID；创建、编辑、启停时更新 |
+| updated_by_name | varchar(100) | 最后维护人姓名；历史数据为空时前端显示“未记录” |
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
@@ -71,6 +73,8 @@
 | status                | tinyint       | 状态：1 启用，0 禁用          |
 | create_time           | datetime      | 创建时间                  |
 | update_time           | datetime      | 更新时间                  |
+| updated_by_id         | bigint，可为空 | 最后维护人ID；创建、编辑、启停时更新 |
+| updated_by_name       | varchar(100)  | 最后维护人姓名；历史数据为空时前端显示“未记录” |
 | deleted               | tinyint       | 逻辑删除                  |
 | remark                | varchar(500)  | 备注                    |
 
@@ -88,11 +92,13 @@
 | warehouse_id          | bigint        | 目标入库仓库ID                                                                       |
 | warehouse_name        | varchar(100)  | 目标入库仓库名称，冗余                                                                    |
 | status                | varchar(32)   | 状态：`DRAFT`、`SUBMITTED`、`APPROVED`、`PARTIAL_INBOUND`、`INBOUND_DONE`、`CANCELLED` |
-| total_amount          | decimal(18,2) | 订单总金额                                                                          |
+| total_amount          | int           | 订单总金额，放大 100 倍保存，84480 表示 844.80                                          |
 | expected_arrival_date | date          | 预计到货日期；草稿阶段可为空，提交和审核前必须校验非空                                                    |
 | created_by_id         | bigint        | 创建人ID                                                                          |
 | created_by_name       | varchar(100)  | 创建人姓名                                                                          |
 | submitted_at          | datetime      | 提交时间                                                                           |
+| submitted_by_id       | bigint，可为空 | 提交人ID；仅提交动作写入，历史数据不猜测回填 |
+| submitted_by_name     | varchar(100)  | 提交人姓名；详情流程记录的提交操作人 |
 | approved_by_id        | bigint        | 审核人ID                                                                          |
 | approved_by_name      | varchar(100)  | 审核人姓名                                                                          |
 | approved_at           | datetime      | 审核时间                                                                           |
@@ -101,7 +107,7 @@
 | deleted               | tinyint       | 逻辑删除                                                                           |
 | remark                | varchar(500)  | 备注                                                                             |
 
-关系说明：采购订单审核后，可生成仓库模块 `inbound_bill`，其中 `source_type = PURCHASE_ORDER`，`source_id = purchase_order.id`，`source_no = purchase_order.purchase_no`，并快照供应商、入库仓库、采购数量和累计已入库数量。待确认入库单的本次入库数量初始为 0 或空业务值，由仓库人员按实物到货填写；剩余未入库数量由后端按 `采购数量 - 累计已入库数量 - 本次入库数量` 计算，不允许前端或用户手动维护。
+关系说明：采购订单审核后，可生成仓库模块 `inbound_bill`，其中 `source_type = PURCHASE_ORDER`，`source_id = purchase_order.id`，`source_no = purchase_order.purchase_no`，并快照供应商、入库仓库、采购数量和累计已入库数量。待确认入库单的本次入库数量初始为 0 或空业务值，由仓库人员按实物到货填写；入库确认与采购明细累计数量、采购状态在同一事务内回写。若仍有剩余数量，系统仅在此次入库确认成功后生成一张只含剩余数量的新待确认入库单；编辑阶段不生成新单，已确认入库单不再修改。
 
 ## 表：purchase_order_item（采购订单明细表）
 
@@ -115,10 +121,10 @@
 | product_code            | varchar(64)   | 产品编码，冗余                |
 | product_name            | varchar(200)  | 产品名称，冗余                |
 | unit_name               | varchar(32)   | 单位名称，冗余                |
-| quantity                | decimal(18,4) | 采购数量                   |
-| inbound_qty             | decimal(18,4) | 已入库数量                  |
-| unit_price              | decimal(18,2) | 采购单价                   |
-| total_amount            | decimal(18,2) | 明细金额                   |
+| quantity                | int           | 采购数量，放大 100 倍保存，2400 表示 24.00  |
+| inbound_qty             | int           | 已入库数量，放大 100 倍保存，900 表示 9.00   |
+| unit_price              | int           | 采购单价，放大 100 倍保存，3520 表示 35.20  |
+| total_amount            | int           | 明细金额，放大 100 倍保存，168960 表示 1689.60 |
 | selected_supplier_score | int           | 下单时供应商推荐分快照，放大 100 倍保存 |
 | create_time             | datetime      | 创建时间                   |
 | update_time             | datetime      | 更新时间                   |

@@ -63,8 +63,8 @@ CREATE TABLE IF NOT EXISTS inbound_bill (
     confirmed_at DATETIME DEFAULT NULL COMMENT '确认时间',
     created_by_id BIGINT DEFAULT NULL COMMENT '创建人ID',
     created_by_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '创建人姓名',
-    responsible_by_id BIGINT NOT NULL COMMENT '业务负责人ID',
-    responsible_by_name VARCHAR(100) NOT NULL COMMENT '业务负责人姓名快照',
+    responsible_by_id BIGINT DEFAULT NULL COMMENT '业务负责人ID，确认时填入审核人',
+    responsible_by_name VARCHAR(100) DEFAULT NULL COMMENT '业务负责人姓名快照，确认时填入审核人',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     manual_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '手工补录或库存调整原因',
@@ -125,8 +125,8 @@ CREATE TABLE IF NOT EXISTS outbound_bill (
     confirmed_at DATETIME DEFAULT NULL COMMENT '确认时间',
     created_by_id BIGINT DEFAULT NULL COMMENT '创建人ID',
     created_by_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '创建人姓名',
-    responsible_by_id BIGINT NOT NULL COMMENT '业务负责人ID',
-    responsible_by_name VARCHAR(100) NOT NULL COMMENT '业务负责人姓名快照',
+    responsible_by_id BIGINT DEFAULT NULL COMMENT '业务负责人ID，确认时填入审核人',
+    responsible_by_name VARCHAR(100) DEFAULT NULL COMMENT '业务负责人姓名快照，确认时填入审核人',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     manual_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '手工补录或库存调整原因',
@@ -495,3 +495,13 @@ qualified_qty = VALUES(qualified_qty), defective_qty = VALUES(defective_qty), be
 change_qty = VALUES(change_qty), after_qty = VALUES(after_qty), create_time = VALUES(create_time), remark = VALUES(remark);
 
 COMMIT;
+
+-- ============================================================
+-- 存量数据迁移：出入库单负责人字段改为可空
+-- ============================================================
+ALTER TABLE inbound_bill
+  MODIFY COLUMN responsible_by_id BIGINT DEFAULT NULL COMMENT '业务负责人ID，确认时填入审核人',
+  MODIFY COLUMN responsible_by_name VARCHAR(100) DEFAULT NULL COMMENT '业务负责人姓名快照，确认时填入审核人';
+ALTER TABLE outbound_bill
+  MODIFY COLUMN responsible_by_id BIGINT DEFAULT NULL COMMENT '业务负责人ID，确认时填入审核人',
+  MODIFY COLUMN responsible_by_name VARCHAR(100) DEFAULT NULL COMMENT '业务负责人姓名快照，确认时填入审核人';

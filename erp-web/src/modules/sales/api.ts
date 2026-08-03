@@ -54,6 +54,8 @@ let mockCustomers: Array<CustomerListItem & { referenced: boolean }> = customerS
   remark: index < 3 ? '重点销售客户，订单创建时需关注信用额度' : '',
   createTime: `2026-06-${String(4 + index).padStart(2, '0')} 09:20:00`,
   updateTime: `2026-06-${String(14 + (index % 4)).padStart(2, '0')} 15:20:00`,
+  updatedById: '1900000000000000003',
+  updatedByName: '销售主管',
   referenced: item[7],
 }));
 
@@ -195,6 +197,8 @@ function buildOrderSeed(
     createdById: createdByName === '系统管理员' ? '1900000000000000001' : '1900000000000000003',
     createdByName,
     submittedAt: submitted ? (auditTime?.submittedAt || timestamp) : null,
+    submittedById: submitted ? (createdByName === '系统管理员' ? '1900000000000000001' : '1900000000000000003') : null,
+    submittedByName: submitted ? createdByName : null,
     approvedById: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? '1900000000000000003' : null,
     approvedByName: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? '销售主管' : '',
     approvedAt: status === 'APPROVED' || status === 'PARTIAL_OUTBOUND' || status === 'OUTBOUND_DONE' ? (auditTime?.approvedAt || '2026-07-13 09:30:00') : null,
@@ -219,6 +223,8 @@ function normalizeCustomer(item: CustomerListItem): CustomerListItem {
     status: normalizeBinaryStatus(item.status),
     version: normalizeFiniteNumber(item.version, 'version'),
     remark: String(item.remark),
+    updatedById: normalizeNullableStringId(item.updatedById, 'updatedById'),
+    updatedByName: item.updatedByName || null,
   };
 }
 
@@ -247,6 +253,8 @@ function normalizeOrder(item: SalesOrderListItem): SalesOrderListItem {
     lockedAt: item.lockedAt || null,
     expectedDeliveryDate: item.expectedDeliveryDate || null,
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
+    submittedById: normalizeNullableStringId(item.submittedById, 'submittedById'),
+    submittedByName: item.submittedByName || null,
     approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
     version: normalizeFiniteNumber(item.version, 'version'),
   };
@@ -337,6 +345,8 @@ export function createCustomer(payload: CustomerFormPayload) {
       version: 0,
       createTime: timestamp,
       updateTime: timestamp,
+      updatedById: '1900000000000000001',
+      updatedByName: '系统管理员',
       referenced: false,
     };
     mockCustomers = [...mockCustomers, created];
@@ -350,7 +360,7 @@ export async function updateCustomer(customerId: string, payload: CustomerFormPa
     mockCustomers = mockCustomers.map(item => {
       if (item.customerId !== customerId) return item;
       assertOptimisticVersion(item.version, payload.version);
-      return { ...item, ...payload, version: item.version + 1, updateTime: nowText() };
+      return { ...item, ...payload, version: item.version + 1, updateTime: nowText(), updatedById: '1900000000000000001', updatedByName: '系统管理员' };
     });
     const customer = mockCustomers.find(item => item.customerId === customerId);
     return customer ? normalizeCustomer(customer) : null;
@@ -364,7 +374,7 @@ export async function updateCustomerStatus(customerId: string, status: 0 | 1, ve
     mockCustomers = mockCustomers.map(item => {
       if (item.customerId !== customerId) return item;
       assertOptimisticVersion(item.version, version);
-      return { ...item, status, version: item.version + 1, updateTime: nowText() };
+      return { ...item, status, version: item.version + 1, updateTime: nowText(), updatedById: '1900000000000000001', updatedByName: '系统管理员' };
     });
     return null;
   }
@@ -389,7 +399,7 @@ export function batchUpdateCustomerStatus(payload: CustomerBatchStatusPayload) {
       const item = mockCustomers.find(candidate => candidate.customerId === customerId);
       if (item) assertOptimisticVersion(item.version, payload.versionByCustomerId[customerId]);
     });
-    mockCustomers = mockCustomers.map(item => payload.customerIds.includes(item.customerId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: nowText() } : item);
+    mockCustomers = mockCustomers.map(item => payload.customerIds.includes(item.customerId) ? { ...item, status: payload.status, version: item.version + 1, updateTime: nowText(), updatedById: '1900000000000000001', updatedByName: '系统管理员' } : item);
     return Promise.resolve(null);
   }
   return http.patch('/sales/customers/batch/status', payload).then(response => response.data.data as null);
@@ -479,6 +489,8 @@ export function createSalesOrder(payload: SalesOrderFormPayload) {
       createdById: '1900000000000000001',
       createdByName: '系统管理员',
       submittedAt: null,
+      submittedById: null,
+      submittedByName: null,
       approvedById: null,
       approvedByName: '',
       approvedAt: null,
@@ -540,6 +552,8 @@ export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 
         ...item,
         status: action === 'submit' ? 'SUBMITTED' : action === 'approve' ? 'APPROVED' : 'CANCELLED',
         submittedAt: action === 'submit' ? timestamp : item.submittedAt,
+        submittedById: action === 'submit' ? '1900000000000000003' : item.submittedById,
+        submittedByName: action === 'submit' ? '销售主管' : item.submittedByName,
         lockedAt: action === 'cancel' ? null : item.lockedAt || timestamp,
         approvedById: action === 'approve' ? '1900000000000000001' : item.approvedById,
         approvedByName: action === 'approve' ? '销售主管' : item.approvedByName,

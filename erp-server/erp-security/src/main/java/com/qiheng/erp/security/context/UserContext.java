@@ -24,6 +24,18 @@ public class UserContext {
     }
 
     /**
+     * 获取当前登录用户，未登录直接抛异常
+     * 用于需要当前用户的业务场景，避免 null 导致数据脏
+     */
+    public static LoginUser requireCurrentUser() {
+        LoginUser user = getCurrentUser();
+        if (user == null) {
+            throw new cn.dev33.satoken.exception.NotLoginException("未登录或登录已过期", null, "not-login");
+        }
+        return user;
+    }
+
+    /**
      * 将登录用户信息存入 Session
      */
     public static void setCurrentUser(LoginUser loginUser) {

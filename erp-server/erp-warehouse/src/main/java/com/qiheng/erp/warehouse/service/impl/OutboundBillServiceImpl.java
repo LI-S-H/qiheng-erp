@@ -217,9 +217,9 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 : StrUtil.blankToDefault(dto.getSourceNo(), null);
 
         // 5. 获取当前登录用户
-        LoginUser currentUser = UserContext.getCurrentUser();
-        Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
-        String currentUserName = currentUser != null ? currentUser.getRealName() : null;
+        LoginUser currentUser = UserContext.requireCurrentUser();
+        Long currentUserId = currentUser.getUserId();
+        String currentUserName = currentUser.getRealName();
 
         // 6. 组装出库单主表
         OutboundBill bill = new OutboundBill()
@@ -456,9 +456,9 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         }
         validateSourceRemainingQuantities(bill, items);
         // 获取当前用户信息与当前时间戳
-        LoginUser currentUser = UserContext.getCurrentUser();
-        Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
-        String currentUserName = currentUser != null ? currentUser.getRealName() : null;
+        LoginUser currentUser = UserContext.requireCurrentUser();
+        Long currentUserId = currentUser.getUserId();
+        String currentUserName = currentUser.getRealName();
         LocalDateTime now = LocalDateTime.now();
         // 生成库存流水
         StockBill stockBill = new StockBill()
@@ -558,6 +558,9 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         bill.setConfirmedById(currentUserId);
         bill.setConfirmedByName(currentUserName);
         bill.setConfirmedAt(now);
+        // 确认时填入负责人（审核人即负责人）
+        bill.setResponsibleById(currentUserId);
+        bill.setResponsibleByName(currentUserName);
         if (!this.updateById(bill)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
         }

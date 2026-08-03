@@ -19,6 +19,8 @@ import com.qiheng.erp.purchase.domain.supplier.vo.SupplierVo;
 import com.qiheng.erp.purchase.mapper.SupplierMapper;
 import com.qiheng.erp.purchase.mapper.SupplierProductMapper;
 import com.qiheng.erp.purchase.service.ISupplierService;
+import com.qiheng.erp.security.context.UserContext;
+import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -98,6 +100,8 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         vo.setRemark(entity.getRemark());
         vo.setCreateTime(entity.getCreateTime());
         vo.setUpdateTime(entity.getUpdateTime());
+        vo.setUpdatedById(entity.getUpdatedById());
+        vo.setUpdatedByName(entity.getUpdatedByName());
         return vo;
     }
 
@@ -118,6 +122,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
      */
     @Override
     public SupplierVo create(SupplierCreateDto dto) {
+        LoginUser currentUser = UserContext.requireCurrentUser();
         Supplier entity = new Supplier();
         entity.setSupplierCode(generateSupplierCode());
         entity.setSupplierName(dto.getSupplierName());
@@ -135,6 +140,8 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         entity.setQualifiedRate(scoreToStored(dto.getQualifiedRate()));
         entity.setStatus(dto.getStatus());
         entity.setRemark(dto.getRemark());
+        entity.setUpdatedById(currentUser.getUserId());
+        entity.setUpdatedByName(currentUser.getRealName());
         supplierMapper.insert(entity);
         return toVo(supplierMapper.selectById(entity.getId()));
     }
@@ -153,6 +160,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
             throw new BizException(ErrorCode.DATA_NOT_FOUND);
         }
         Supplier entity = new Supplier();
+        LoginUser currentUser = UserContext.requireCurrentUser();
         entity.setId(supplierId);
         entity.setSupplierCode(null);
         entity.setSupplierName(dto.getSupplierName());
@@ -171,6 +179,8 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         entity.setStatus(dto.getStatus());
         entity.setRemark(dto.getRemark());
         entity.setVersion(dto.getVersion());
+        entity.setUpdatedById(currentUser.getUserId());
+        entity.setUpdatedByName(currentUser.getRealName());
         int rows = supplierMapper.updateById(entity);
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
@@ -185,6 +195,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
      */
     @Override
     public void batchUpdateStatus(SupplierBatchStatusDto dto) {
+        LoginUser currentUser = UserContext.requireCurrentUser();
         List<Long> supplierIds = IdUtil.parseRequiredLongIds(dto.getSupplierIds(), "供应商ID");
         // 一次批量查询所有实体
         List<Supplier> entities = supplierMapper.selectByIds(supplierIds);
@@ -204,6 +215,8 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
                 throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商数据已被他人修改，请刷新后重试");
             }
             entity.setStatus(dto.getStatus());
+            entity.setUpdatedById(currentUser.getUserId());
+            entity.setUpdatedByName(currentUser.getRealName());
             supplierMapper.updateById(entity);
         }
     }

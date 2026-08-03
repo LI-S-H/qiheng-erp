@@ -83,4 +83,11 @@ public class SupplierVo {
     @Schema(description = "更新时间")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updateTime;
+
+    @Schema(description = "最后维护人ID")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long updatedById;
+
+    @Schema(description = "最后维护人姓名")
+    private String updatedByName;
 }

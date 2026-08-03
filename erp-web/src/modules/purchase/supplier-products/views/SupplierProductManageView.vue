@@ -3,6 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import BusinessDetailFacts from '@/components/common/BusinessDetailFacts.vue';
+import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
+import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
@@ -505,15 +508,23 @@ onMounted(() => {
       <DialogContent class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-4xl">
         <DialogHeader><DialogTitle>供货产品详情</DialogTitle><DialogDescription>核对供应商供货关系、采购价格、交期和评分。</DialogDescription></DialogHeader>
         <DialogScrollArea>
-          <div v-if="detailRow" class="space-y-4 p-1">
-            <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-md:grid-cols-1">
-              <div class="purchase-detail-field"><span>供应商</span><code>{{ detailRow.supplierCode }}</code><strong>{{ detailRow.supplierName }}</strong></div>
-              <div class="purchase-detail-field"><span>产品</span><code>{{ detailRow.productCode }}</code><strong>{{ detailRow.productName }}</strong><small>单位：{{ detailRow.unitName }}</small></div>
-              <div class="purchase-detail-field"><span>状态</span><Badge variant="outline" :class="detailRow.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'">{{ detailRow.status === 1 ? '启用' : '停用' }}</Badge></div>
-              <div class="purchase-detail-field"><span>供应商侧编码</span><strong>{{ detailRow.supplierProductCode || '未维护' }}</strong></div>
-              <div class="purchase-detail-field"><span>最近采购价</span><strong>{{ formatMoney(detailRow.latestPurchasePrice) }}</strong></div>
-              <div class="purchase-detail-field"><span>起订量</span><strong>{{ detailRow.minOrderQty }} {{ detailRow.unitName }}</strong></div>
-            </div>
+          <div v-if="detailRow" class="space-y-6 p-1">
+            <BusinessDetailHero
+              eyebrow="供应关系"
+              :title="detailRow.productCode"
+              :subtitle="`${detailRow.productName} · ${detailRow.supplierCode} · ${detailRow.supplierName}`"
+              :status-label="detailRow.status === 1 ? '启用' : '停用'"
+              :status-class="detailRow.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'"
+            >
+              <template #metrics>
+                <div class="business-detail-hero__metric"><span>最近采购价</span><strong>{{ formatMoney(detailRow.latestPurchasePrice) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>预计交期</span><strong>{{ detailRow.leadTimeDays }} 天</strong></div>
+                <div class="business-detail-hero__metric"><span>推荐分</span><strong>{{ formatScore(detailRow.aiScore) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>起订量</span><strong>{{ detailRow.minOrderQty }} {{ detailRow.unitName }}</strong></div>
+              </template>
+            </BusinessDetailHero>
+            <BusinessDetailSection title="供货与采购条件" description="供应商、产品与采购标识。"><BusinessDetailFacts :columns="3"><div class="business-detail-fact"><dt>供应商</dt><dd><code>{{ detailRow.supplierCode }}</code><strong>{{ detailRow.supplierName }}</strong></dd></div><div class="business-detail-fact"><dt>产品</dt><dd><code>{{ detailRow.productCode }}</code><strong>{{ detailRow.productName }}</strong><small>单位：{{ detailRow.unitName }}</small></dd></div><div class="business-detail-fact"><dt>供应商侧编码</dt><dd><strong>{{ detailRow.supplierProductCode || '未维护' }}</strong></dd></div></BusinessDetailFacts></BusinessDetailSection>
+            <BusinessDetailSection title="推荐与履约表现" description="展示供货推荐状态与历史履约评分。">
             <div class="purchase-score-grid">
               <div><span>预计交期</span><strong>{{ detailRow.leadTimeDays }} 天</strong></div>
               <div><span>推荐分</span><strong>{{ formatScore(detailRow.aiScore) }}</strong></div>
@@ -521,11 +532,8 @@ onMounted(() => {
               <div><span>质量评分</span><strong>{{ formatScore(detailRow.qualityScore) }}</strong></div>
               <div><span>价格评分</span><strong>{{ formatScore(detailRow.priceScore) }}</strong></div>
             </div>
-            <div class="purchase-detail-grid grid grid-cols-2 gap-4 max-md:grid-cols-1">
-              <div class="purchase-detail-field"><span>最近采购时间</span><strong>{{ detailRow.lastPurchaseAt || '暂无' }}</strong></div>
-              <div class="purchase-detail-field"><span>更新时间</span><strong>{{ detailRow.updateTime }}</strong></div>
-              <div class="purchase-detail-field purchase-detail-field--wide"><span>备注</span><strong>{{ detailRow.remark || '未维护' }}</strong></div>
-            </div>
+            </BusinessDetailSection>
+            <BusinessDetailSection title="采购记录与备注" description="最近采购记录与维护说明。"><BusinessDetailFacts :columns="3"><div class="business-detail-fact"><dt>最近采购时间</dt><dd><strong>{{ detailRow.lastPurchaseAt || '暂无' }}</strong></dd></div><div class="business-detail-fact"><dt>最后维护人</dt><dd><strong>{{ detailRow.updatedByName || '未记录' }}</strong></dd></div><div class="business-detail-fact"><dt>更新时间</dt><dd><strong>{{ detailRow.updateTime }}</strong></dd></div><div class="business-detail-fact"><dt>备注</dt><dd><strong>{{ detailRow.remark || '未维护' }}</strong></dd></div></BusinessDetailFacts></BusinessDetailSection>
           </div>
         </DialogScrollArea>
         <DialogFooter><Button variant="outline" @click="detailVisible = false">关闭</Button></DialogFooter>

@@ -20,6 +20,7 @@ import com.qiheng.erp.warehouse.domain.inbound.dto.InboundBillPageDto;
 import com.qiheng.erp.warehouse.domain.stockbill.dto.StockBillItemUpdateDto;
 import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBillItem;
+import com.qiheng.erp.warehouse.domain.inbound.port.InboundSourceWritebackPort;
 import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBill;
 import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBillItem;
 import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
@@ -95,6 +96,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     @Autowired
     private BillNoGenerator billNoGenerator;
+
+    @Autowired(required = false)
+    private List<InboundSourceWritebackPort> inboundSourceWritebackPorts = Collections.emptyList();
 
     /**
      * 分页查询入库单记录
@@ -225,9 +229,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 : StrUtil.blankToDefault(dto.getSourceNo(), null);
 
         // 5. 获取当前登录用户
-        LoginUser currentUser = UserContext.getCurrentUser();
-        Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
-        String currentUserName = currentUser != null ? currentUser.getRealName() : null;
+        LoginUser currentUser = UserContext.requireCurrentUser();
+        Long currentUserId = currentUser.getUserId();
+        String currentUserName = currentUser.getRealName();
 
         // 5. 组装入库单主表
         InboundBill bill = new InboundBill()
@@ -469,9 +473,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         validateSourceRemainingQuantities(bill, items);
 
         // 5. 获取当前登录用户
-        LoginUser currentUser = UserContext.getCurrentUser();
-        Long currentUserId = currentUser != null ? currentUser.getUserId() : null;
-        String currentUserName = currentUser != null ? currentUser.getRealName() : null;
+        LoginUser currentUser = UserContext.requireCurrentUser();
+        Long currentUserId = currentUser.getUserId();
+        String currentUserName = currentUser.getRealName();
         LocalDateTime now = LocalDateTime.now();
 
         // 6. 生成库存流水主表
@@ -570,22 +574,33 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
         inboundBillItemService.updateBatchById(items);
 
-        // TODO 接入来源业务模块后，在此按 sourceItemId 回写来源单明细的已入库数量和处理状态：
-        //      采购入库回写采购订单明细，销售退货入库回写销售退货单明细；库存调整入库没有来源单，无需回写。
-        //      回写前须校验 sourceItemId 确实属于 bill.sourceId，并在同一事务内校验剩余数量、乐观锁版本及
-        //      部分确认后的来源单状态；取消、编辑、重新生成工作单时也要保持来源数量和工作单数量一致。
-
         // 10. 更新入库单主表状态为已确认
         bill.setStatus(StockBillStatus.CONFIRMED.name());
         bill.setConfirmedById(currentUserId);
         bill.setConfirmedByName(currentUserName);
         bill.setConfirmedAt(now);
+        // 确认时填入负责人（审核人即负责人）
+        bill.setResponsibleById(currentUserId);
+        bill.setResponsibleByName(currentUserName);
         if (!this.updateById(bill)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
         }
 
+        // 采购等来源模块在同一事务内回写累计数量和来源状态；未接入的来源类型暂不阻塞仓储确认。
+        dispatchSourceWriteback(bill, items);
+
         // 11. 返回详情
         return getInboundBillDetailVo(id);
+    }
+
+    private void dispatchSourceWriteback(InboundBill bill, List<InboundBillItem> items) {
+        if (bill.getSourceType() == null || bill.getSourceId() == null) {
+            return;
+        }
+        inboundSourceWritebackPorts.stream()
+                .filter(port -> port.supports(bill.getSourceType()))
+                .findFirst()
+                .ifPresent(port -> port.onInboundConfirmed(bill, items));
     }
 
     /**

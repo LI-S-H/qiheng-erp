@@ -6,6 +6,13 @@ import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import BusinessDetailFacts from '@/components/common/BusinessDetailFacts.vue';
+import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
+import BusinessDetailProgress from '@/components/common/BusinessDetailProgress.vue';
+import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
+import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
+import BusinessDetailTimeline from '@/components/common/BusinessDetailTimeline.vue';
+import type { BusinessDetailTimelineItem } from '@/components/common/BusinessDetailTimeline.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
@@ -580,6 +587,26 @@ const statusMap: Record<StockBillStatus, { label: string; className: string }> =
   CONFIRMED: { label: '已确认', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   CANCELLED: { label: '已取消', className: 'border-slate-200 bg-slate-50 text-slate-600' },
 };
+
+function stockBillProgressSteps(row: StockBillDetail): BusinessDetailProgressStep[] {
+  if (row.status === 'CANCELLED') {
+    return [{ label: '草稿', state: 'done', hint: row.createTime }, { label: '已取消', state: 'cancelled', hint: row.updateTime }];
+  }
+  const activeStatus = row.status as Exclude<StockBillStatus, 'CANCELLED'>;
+  const currentIndex: Record<Exclude<StockBillStatus, 'CANCELLED'>, number> = { DRAFT: 0, PENDING_CONFIRM: 1, CONFIRMED: 2 };
+  const labels = ['草稿', '待确认', '已确认'];
+  const hints = [row.createTime, row.status === 'PENDING_CONFIRM' ? '等待仓储确认' : '等待提交', row.confirmedAt || '等待确认'];
+  return labels.map((label, index) => ({ label, hint: hints[index], state: index < currentIndex[activeStatus] ? 'done' : index === currentIndex[activeStatus] ? 'current' : 'pending' }));
+}
+
+function stockBillTimelineItems(row: StockBillDetail): BusinessDetailTimelineItem[] {
+  const items: BusinessDetailTimelineItem[] = [
+    { id: 'created', action: `创建${billTypeMap[row.billType].label}`, type: '单据创建', operatorName: row.createdByName || '系统', occurredAt: row.createTime, referenceLabel: '来源单据', referenceNo: row.sourceNo },
+  ];
+  if (row.status === 'PENDING_CONFIRM' || row.status === 'CONFIRMED') items.push({ id: 'submitted', action: `提交${billTypeMap[row.billType].label}确认`, type: '仓库流转', tone: 'warehouse', operatorName: row.responsibleByName || '系统', occurredAt: row.updateTime });
+  if (row.confirmedAt) items.push({ id: 'confirmed', action: `确认${billTypeMap[row.billType].label}`, type: '仓库完成', tone: 'warehouse', operatorName: row.confirmedByName || '系统', occurredAt: row.confirmedAt });
+  return items;
+}
 const sourceTypeMap = {
   PURCHASE_ORDER: '采购订单',
   SALES_ORDER: '销售订单',
@@ -1648,20 +1675,22 @@ onMounted(async () => {
         <div v-if="detailLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
         <DialogScrollArea v-else-if="detail">
           <div class="space-y-5 py-1">
-            <div class="detail-field-grid grid grid-cols-3 gap-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
-              <div class="detail-field"><span>{{ pageText.billNoLabel }}</span><code>{{ detail.billNo }}</code></div>
-              <div class="detail-field"><span>类型</span><Badge variant="outline" :class="billTypeMap[detail.billType].className">{{ billTypeMap[detail.billType].label }}</Badge></div>
-              <div class="detail-field"><span>状态</span><Badge variant="outline" :class="statusMap[detail.status].className">{{ statusMap[detail.status].label }}</Badge></div>
-              <div class="detail-field"><span>仓库</span><strong>{{ detail.warehouseName }}</strong></div>
-              <div class="detail-field"><span>录入方式</span><strong>{{ entryModeMap[detail.entryMode] }}</strong></div>
-              <div class="detail-field"><span>来源类型</span><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></div>
-              <div class="detail-field"><span>来源单号</span><code>{{ detail.sourceNo || '-' }}</code></div>
-              <div class="detail-field"><span>{{ sourcePartyLabel(detail.billType) }}</span><strong>{{ sourcePartyDisplay(detail) }}</strong></div>
-              <div class="detail-field"><span>负责人</span><strong>{{ detail.responsibleByName }}</strong></div>
-              <div class="detail-field"><span>创建人 / 时间</span><strong>{{ detail.createdByName || '系统' }}</strong><small>{{ detail.createTime }}</small></div>
-              <div class="detail-field"><span>确认人 / 时间</span><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></div>
-              <div class="detail-field"><span>本次数量</span><strong>{{ detail.quantitySummary }}</strong><small>来源订单整体进度可在采购单或销售单查看</small></div>
-            </div>
+            <BusinessDetailHero
+              eyebrow="仓储作业单"
+              :title="detail.billNo"
+              :subtitle="`${billTypeMap[detail.billType].label} · ${detail.warehouseName} · ${sourcePartyDisplay(detail)}`"
+              :status-label="statusMap[detail.status].label"
+              :status-class="statusMap[detail.status].className"
+            >
+              <template #metrics>
+                <div class="business-detail-hero__metric"><span>作业类型</span><strong>{{ billTypeMap[detail.billType].label }}</strong></div>
+                <div class="business-detail-hero__metric"><span>商品明细</span><strong>{{ detail.items.length }} 项</strong></div>
+                <div class="business-detail-hero__metric"><span>本次数量</span><strong>{{ detail.quantitySummary }}</strong></div>
+                <div class="business-detail-hero__metric"><span>当前任务</span><strong>{{ statusMap[detail.status].label }}</strong></div>
+              </template>
+            </BusinessDetailHero>
+            <BusinessDetailSection title="业务进度" description="状态由仓储作业和确认流程生成，不能在详情中直接修改。"><BusinessDetailProgress :steps="stockBillProgressSteps(detail)" /></BusinessDetailSection>
+            <BusinessDetailSection title="业务信息" description="仓库、来源单据、往来对象与本次作业范围。"><BusinessDetailFacts class="detail-field-grid"><div class="business-detail-fact"><dt>仓库</dt><dd><strong>{{ detail.warehouseName }}</strong></dd></div><div class="business-detail-fact"><dt>录入方式</dt><dd><strong>{{ entryModeMap[detail.entryMode] }}</strong></dd></div><div class="business-detail-fact"><dt>来源类型</dt><dd><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></dd></div><div class="business-detail-fact"><dt>来源单号</dt><dd><code>{{ detail.sourceNo || '-' }}</code></dd></div><div class="business-detail-fact"><dt>{{ sourcePartyLabel(detail.billType) }}</dt><dd><strong>{{ sourcePartyDisplay(detail) }}</strong></dd></div><div class="business-detail-fact"><dt>负责人</dt><dd><strong>{{ detail.responsibleByName }}</strong></dd></div><div class="business-detail-fact"><dt>本次数量</dt><dd><strong>{{ detail.quantitySummary }}</strong></dd></div><div class="business-detail-fact"><dt>确认状态</dt><dd><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></dd></div></BusinessDetailFacts></BusinessDetailSection>
             <div>
               <div class="mb-2 flex items-center justify-between"><h3 class="text-sm font-semibold">产品明细</h3><span class="text-xs text-muted-foreground">共 {{ detail.items.length }} 条</span></div>
               <div class="detail-table-floating">
@@ -1686,8 +1715,7 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
-            <div v-if="detail.entryMode !== 'SOURCE_GENERATED'" class="rounded-lg border border-amber-200 bg-amber-50/60 p-3"><span class="text-xs text-amber-700">{{ detail.entryMode === 'MANUAL_SUPPLEMENT' ? '补录原因' : '调整原因' }}</span><p class="mt-1 text-sm">{{ detail.manualReason }}</p></div>
-            <div class="rounded-lg border bg-muted/25 p-3"><span class="text-xs text-muted-foreground">备注</span><p class="mt-1 text-sm">{{ detail.remark || '无' }}</p></div>
+            <BusinessDetailSection title="流程记录" description="聚合仓储作业单审计字段和确认状态，不额外新增操作日志。"><BusinessDetailTimeline :items="stockBillTimelineItems(detail)" :aria-label="`${pageText.formTitle}流程记录`" /><p v-if="detail.entryMode !== 'SOURCE_GENERATED' && detail.manualReason" class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800"><span class="mr-2 font-semibold">{{ detail.entryMode === 'MANUAL_SUPPLEMENT' ? '补录原因' : '调整原因' }}</span>{{ detail.manualReason }}</p><p v-if="detail.remark" class="mt-2 rounded-md bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"><span class="mr-2 font-semibold text-foreground">备注</span>{{ detail.remark }}</p></BusinessDetailSection>
           </div>
         </DialogScrollArea>
         <DialogFooter v-if="detail && (detail.status === 'DRAFT' || detail.status === 'PENDING_CONFIRM')" class="items-center justify-between gap-3">

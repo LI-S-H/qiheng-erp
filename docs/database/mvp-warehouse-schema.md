@@ -83,8 +83,8 @@
 | confirmed_at          | datetime     | 确认时间                                                       |
 | created_by_id         | bigint       | 创建人ID                                                      |
 | created_by_name       | varchar(100) | 创建人姓名                                                      |
-| responsible_by_id     | bigint       | 业务负责人ID                                                    |
-| responsible_by_name   | varchar(100) | 业务负责人姓名快照                                                  |
+| responsible_by_id     | bigint       | 业务负责人ID，确认时填入审核人，可空                            |
+| responsible_by_name   | varchar(100) | 业务负责人姓名快照，确认时填入审核人，可空                          |
 | create_time           | datetime     | 创建时间                                                       |
 | update_time           | datetime     | 更新时间                                                       |
 | manual_reason         | varchar(500) | 手工补录或调整原因                                                  |
@@ -137,8 +137,8 @@
 | confirmed_at | datetime | 确认时间 |
 | created_by_id | bigint | 创建人ID |
 | created_by_name | varchar(100) | 创建人姓名 |
-| responsible_by_id | bigint | 业务负责人ID |
-| responsible_by_name | varchar(100) | 业务负责人姓名快照 |
+| responsible_by_id | bigint | 业务负责人ID，确认时填入审核人，可空 |
+| responsible_by_name | varchar(100) | 业务负责人姓名快照，确认时填入审核人，可空 |
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |
 | manual_reason | varchar(500) | 手工补录或调整原因 |

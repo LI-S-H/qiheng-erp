@@ -3,6 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import BusinessDetailFacts from '@/components/common/BusinessDetailFacts.vue';
+import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
+import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
@@ -382,17 +385,23 @@ onMounted(fetchCustomers);
       <DialogContent class="flex h-[min(620px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-4xl">
         <DialogHeader><DialogTitle>客户详情</DialogTitle><DialogDescription>核对客户主数据、信用额度和销售订单引用状态。</DialogDescription></DialogHeader>
         <DialogScrollArea>
-          <div v-if="detailRow" class="space-y-4 p-1">
-            <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-md:grid-cols-1">
-              <div class="purchase-detail-field"><span>客户编码</span><code>{{ detailRow.customerCode }}</code></div>
-              <div class="purchase-detail-field"><span>客户名称</span><strong>{{ detailRow.customerName }}</strong></div>
-              <div class="purchase-detail-field"><span>状态</span><Badge variant="outline" :class="detailRow.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'">{{ detailRow.status === 1 ? '启用' : '停用' }}</Badge></div>
-              <div class="purchase-detail-field"><span>联系人</span><strong>{{ detailRow.contactName || '未维护' }}</strong><small>{{ detailRow.contactPhone || '无电话' }}</small></div>
-              <div class="purchase-detail-field"><span>信用额度</span><strong>{{ formatMoney(detailRow.creditLimit) }}</strong></div>
-              <div class="purchase-detail-field"><span>更新时间</span><strong>{{ detailRow.updateTime }}</strong></div>
-              <div class="purchase-detail-field purchase-detail-field--wide"><span>地址</span><strong>{{ detailRow.address || '未维护' }}</strong></div>
-              <div class="purchase-detail-field purchase-detail-field--wide"><span>备注</span><strong>{{ detailRow.remark || '未维护' }}</strong></div>
-            </div>
+          <div v-if="detailRow" class="space-y-6 p-1">
+            <BusinessDetailHero
+              eyebrow="客户档案"
+              :title="detailRow.customerCode"
+              :subtitle="detailRow.customerName"
+              :status-label="detailRow.status === 1 ? '启用' : '停用'"
+              :status-class="detailRow.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'"
+            >
+              <template #metrics>
+                <div class="business-detail-hero__metric"><span>信用额度</span><strong>{{ formatMoney(detailRow.creditLimit) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>档案状态</span><strong>{{ detailRow.status === 1 ? '可下单' : '已停用' }}</strong></div>
+                <div class="business-detail-hero__metric"><span>最后更新</span><strong>{{ detailRow.updateTime }}</strong></div>
+                <div class="business-detail-hero__metric"><span>联系人</span><strong>{{ detailRow.contactName || '未维护' }}</strong></div>
+              </template>
+            </BusinessDetailHero>
+            <BusinessDetailSection title="档案与结算" description="客户联系资料、信用额度与维护状态。"><BusinessDetailFacts><div class="business-detail-fact"><dt>客户编码</dt><dd><code>{{ detailRow.customerCode }}</code></dd></div><div class="business-detail-fact"><dt>联系人</dt><dd><strong>{{ detailRow.contactName || '未维护' }}</strong><small>{{ detailRow.contactPhone || '无电话' }}</small></dd></div><div class="business-detail-fact"><dt>信用额度</dt><dd><strong>{{ formatMoney(detailRow.creditLimit) }}</strong></dd></div><div class="business-detail-fact"><dt>最后维护人</dt><dd><strong>{{ detailRow.updatedByName || '未记录' }}</strong><small>{{ detailRow.updateTime }}</small></dd></div></BusinessDetailFacts></BusinessDetailSection>
+            <BusinessDetailSection title="联系与备注" description="联系地址与内部维护说明。"><BusinessDetailFacts :columns="2"><div class="business-detail-fact"><dt>地址</dt><dd><strong>{{ detailRow.address || '未维护' }}</strong></dd></div><div class="business-detail-fact"><dt>备注</dt><dd><strong>{{ detailRow.remark || '未维护' }}</strong></dd></div></BusinessDetailFacts></BusinessDetailSection>
           </div>
         </DialogScrollArea>
         <DialogFooter><Button variant="outline" @click="detailVisible = false">关闭</Button></DialogFooter>

@@ -16,6 +16,9 @@ export interface CustomerListItem {
   remark: string;
   createTime: string;
   updateTime: string;
+  /** 最近一次创建、编辑或启停操作的维护人快照；历史数据可为空。 */
+  updatedById: string | null;
+  updatedByName: string | null;
 }
 
 export interface CustomerQuery {
@@ -86,6 +89,9 @@ export interface SalesOrderListItem {
   createdById: string | null;
   createdByName: string;
   submittedAt: string | null;
+  /** 提交操作人快照；销售后端实现前由 Mock 契约提供。 */
+  submittedById: string | null;
+  submittedByName: string | null;
   approvedById: string | null;
   approvedByName: string;
   approvedAt: string | null;

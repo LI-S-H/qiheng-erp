@@ -89,6 +89,14 @@ public class SupplierProduct implements Serializable {
     @TableField("update_time")
     private LocalDateTime updateTime;
 
+    @Schema(description = "最后维护人ID")
+    @TableField("updated_by_id")
+    private Long updatedById;
+
+    @Schema(description = "最后维护人姓名")
+    @TableField("updated_by_name")
+    private String updatedByName;
+
     @Schema(description = "逻辑删除：0正常，1删除")
     @TableField("deleted")
     @TableLogic

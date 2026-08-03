@@ -21,6 +21,8 @@ import com.qiheng.erp.purchase.domain.supplierproduct.vo.SupplierProductVo;
 import com.qiheng.erp.purchase.mapper.SupplierMapper;
 import com.qiheng.erp.purchase.mapper.SupplierProductMapper;
 import com.qiheng.erp.purchase.service.ISupplierProductService;
+import com.qiheng.erp.security.context.UserContext;
+import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -60,6 +62,7 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         Long supplierId = IdUtil.parseOptionalLongId(dto.getSupplierId(), "供应商ID");
         MPJLambdaWrapper<SupplierProduct> wrapper = buildBaseWrapper()
                 .eq(supplierId != null, SupplierProduct::getSupplierId, supplierId)
+                .like(StrUtil.isNotBlank(dto.getSupplierName()), Supplier::getSupplierName, dto.getSupplierName())
                 .like(StrUtil.isNotBlank(dto.getProductCode()), Product::getProductCode, dto.getProductCode())
                 .like(StrUtil.isNotBlank(dto.getProductName()), Product::getProductName, dto.getProductName())
                 .eq(dto.getStatus() != null, SupplierProduct::getStatus, dto.getStatus())
@@ -94,6 +97,9 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         }
         // 校验关联的供应商、产品存在后，保存供货关系自身字段
         SupplierProduct entity = buildEntityFromDto(dto);
+        LoginUser currentUser = UserContext.requireCurrentUser();
+        entity.setUpdatedById(currentUser.getUserId());
+        entity.setUpdatedByName(currentUser.getRealName());
         supplierProductMapper.insert(entity);
         return toVo(entity.getId());
     }
@@ -132,8 +138,11 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         }
         // 构建更新实体；供应商和产品展示字段由查询时关联主数据取得
         SupplierProduct entity = buildEntityFromDto(dto);
+        LoginUser currentUser = UserContext.requireCurrentUser();
         entity.setId(supplierProductId);
         entity.setVersion(dto.getVersion());
+        entity.setUpdatedById(currentUser.getUserId());
+        entity.setUpdatedByName(currentUser.getRealName());
         int rows = supplierProductMapper.updateById(entity);
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被修改，请刷新后重试");
@@ -217,6 +226,8 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
                 .select(SupplierProduct::getRemark)
                 .select(SupplierProduct::getCreateTime)
                 .select(SupplierProduct::getUpdateTime)
+                .select(SupplierProduct::getUpdatedById)
+                .select(SupplierProduct::getUpdatedByName)
                 .leftJoin(Supplier.class, Supplier::getId, SupplierProduct::getSupplierId)
                 .leftJoin(Product.class, Product::getId, SupplierProduct::getProductId);
     }
@@ -242,6 +253,7 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map<String, String> batchUpdateStatus(SupplierProductBatchStatusDto dto) {
+        LoginUser currentUser = UserContext.requireCurrentUser();
         Map<String, String> failures = new LinkedHashMap<>();
         List<String> ids = dto.getSupplierProductIds();
         List<Long> supplierProductIds = IdUtil.parseRequiredLongIds(ids, "供货关系ID");
@@ -260,6 +272,8 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
             entity.setId(supplierProductId);
             entity.setStatus(targetStatus);
             entity.setVersion(expectedVersion);
+            entity.setUpdatedById(currentUser.getUserId());
+            entity.setUpdatedByName(currentUser.getRealName());
             int rows = supplierProductMapper.updateById(entity);
             if (rows == 0) {
                 failures.put(id, "供货产品不存在或数据已发生变化，请刷新后重试");

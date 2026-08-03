@@ -2181,7 +2181,7 @@ paths:
       tags: [PurchaseSupplierProduct]
       summary: 分页查询供货产品
       description: |
-        查询未删除的 `supplier_product` 数据。供应商使用 `supplierId` 精确匹配；产品编码和名称通过关联 `product` 主数据分别使用包含匹配；状态使用精确匹配，多个有效条件按 AND 组合。
+        查询未删除的 `supplier_product` 数据。供应商 ID 使用 `supplierId` 精确匹配，供应商名称使用 `supplierName` 包含匹配；产品编码和名称通过关联 `product` 主数据分别使用包含匹配；状态使用精确匹配，多个有效条件按 AND 组合。
         不接收含义不明确的 `keyword` 参数。评分字段接口按 0-100 业务值返回，数据库按放大 100 倍整数保存。
         采购订单明细产品选择按已选 `supplierId`、`productCode` / `productName` 与 `status=1` 请求第一页候选，默认 `pageSize=10`；前端不得预加载全量启用供货关系后再本地过滤。
         本接口需要 `supplier:query` 权限。
@@ -2193,6 +2193,10 @@ paths:
           in: query
           schema: { type: string }
           description: 供应商 ID，对应 `supplier_product.supplier_id`，使用精确匹配
+        - name: supplierName
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: 供应商名称，对应 `supplier_product.supplier_name` 冗余快照，使用包含匹配；采购订单供应商选择按此参数请求第一页候选并提取 distinct 供应商
         - name: productCode
           in: query
           schema: { type: string, maxLength: 64 }
@@ -2445,7 +2449,10 @@ paths:
     get:
       tags: [PurchaseOrder]
       summary: 获取采购订单详情
-      description: 返回 `purchase_order` 主表信息及按 `purchase_order_item.purchase_order_id` 查询的全部明细。本接口需要 `purchase:query` 权限。
+      description: |
+        返回 `purchase_order` 主表、按 `purchase_order_item.purchase_order_id` 查询的全部明细，以及只读的履约摘要和流程记录。本接口需要 `purchase:query` 权限。
+        `fulfillmentSummary` 必须由服务端按每条明细 `min(inbound_qty, quantity) * unit_price` 汇总为累计入库金额，再除以订单总金额得到 `completionRate`；不得跨不同单位直接相加数量。单条商品的数量完成率由前端使用本明细 `inboundQty / quantity` 展示。
+        `timeline` 不新增操作日志表：创建、提交、审核节点来自 `purchase_order` 审计字段；入库单生成与确认节点来自关联 `inbound_bill`（`source_type=PURCHASE_ORDER` 且 `source_id=purchase_order.id`）的创建和确认字段，按发生时间升序返回。
       operationId: purchaseOrderDetail
       security:
         - SaTokenAuth: []
@@ -6688,6 +6695,8 @@ components:
         remark: { type: string, maxLength: 500, description: 对应 `supplier.remark` }
         createTime: { type: string, description: 对应 `supplier.create_time` }
         updateTime: { type: string, description: 对应 `supplier.update_time` }
+        updatedById: { type: string, nullable: true, readOnly: true, description: 对应 `supplier.updated_by_id`，BIGINT 按字符串传输；最后一次创建、编辑或启停操作的人 }
+        updatedByName: { type: string, nullable: true, maxLength: 100, readOnly: true, description: 对应 `supplier.updated_by_name`；历史数据未记录时可为空 }
 
     PurchaseSupplierCreateRequest:
       type: object
@@ -6804,6 +6813,8 @@ components:
         remark: { type: string, maxLength: 500, description: 对应 `supplier_product.remark` }
         createTime: { type: string, description: 对应 `supplier_product.create_time` }
         updateTime: { type: string, description: 对应 `supplier_product.update_time` }
+        updatedById: { type: string, nullable: true, readOnly: true, description: 对应 `supplier_product.updated_by_id`，BIGINT 按字符串传输；最后一次创建、编辑或启停操作的人 }
+        updatedByName: { type: string, nullable: true, maxLength: 100, readOnly: true, description: 对应 `supplier_product.updated_by_name`；历史数据未记录时可为空 }
 
     PurchaseSupplierProductFormRequest:
       type: object
@@ -6874,11 +6885,13 @@ components:
         warehouseId: { type: string, description: 对应 `purchase_order.warehouse_id`，BIGINT 按字符串传输 }
         warehouseName: { type: string, maxLength: 100, description: 对应 `purchase_order.warehouse_name` 仓库快照 }
         status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_INBOUND, INBOUND_DONE, CANCELLED], description: 对应 `purchase_order.status` }
-        totalAmount: { type: number, format: double, minimum: 0, description: 对应 `purchase_order.total_amount` }
+        totalAmount: { type: number, format: double, minimum: 0, description: 订单总金额展示值；数据库 `purchase_order.total_amount` 按 100 倍整数存储 }
         expectedArrivalDate: { type: string, nullable: true, description: 对应 `purchase_order.expected_arrival_date`；草稿可为空，提交和审核前必须非空 }
         createdById: { type: string, nullable: true, description: 对应 `purchase_order.created_by_id`，BIGINT 按字符串传输 }
         createdByName: { type: string, maxLength: 100, description: 对应 `purchase_order.created_by_name` }
         submittedAt: { type: string, nullable: true, description: 对应 `purchase_order.submitted_at` }
+        submittedById: { type: string, nullable: true, description: 对应 `purchase_order.submitted_by_id`，BIGINT 按字符串传输；仅提交动作写入 }
+        submittedByName: { type: string, maxLength: 100, description: 对应 `purchase_order.submitted_by_name`；详情流程记录的提交操作人 }
         approvedById: { type: string, nullable: true, description: 对应 `purchase_order.approved_by_id`，BIGINT 按字符串传输 }
         approvedByName: { type: string, maxLength: 100, description: 对应 `purchase_order.approved_by_name` }
         approvedAt: { type: string, nullable: true, description: 对应 `purchase_order.approved_at` }
@@ -6890,11 +6903,37 @@ components:
       allOf:
         - $ref: '#/components/schemas/PurchaseOrder'
         - type: object
-          required: [items]
+          required: [items, fulfillmentSummary, timeline]
           properties:
             items:
               type: array
               items: { $ref: '#/components/schemas/PurchaseOrderItem' }
+            fulfillmentSummary: { $ref: '#/components/schemas/PurchaseOrderFulfillmentSummary' }
+            timeline:
+              type: array
+              minItems: 1
+              items: { $ref: '#/components/schemas/PurchaseOrderTimelineItem' }
+
+    PurchaseOrderFulfillmentSummary:
+      type: object
+      description: 采购订单履约金额摘要；由服务端聚合，前端只读展示。
+      required: [calculationMode, totalAmount, inboundAmount, completionRate]
+      properties:
+        calculationMode: { type: string, enum: [AMOUNT_WEIGHTED], description: 固定为按金额加权，避免不同单位的采购数量直接相加 }
+        totalAmount: { type: number, format: double, minimum: 0, description: 订单总金额展示值，对应 `purchase_order.total_amount` }
+        inboundAmount: { type: number, format: double, minimum: 0, description: "累计入库金额展示值，服务端按各采购明细 min(inbound_qty, quantity) * unit_price 汇总" }
+        completionRate: { type: number, format: double, minimum: 0, maximum: 100, description: "inboundAmount / totalAmount * 100；totalAmount 为 0 时返回 0" }
+
+    PurchaseOrderTimelineItem:
+      type: object
+      description: 采购订单详情流程记录；只聚合已有采购单和关联入库单事实，不单独落操作日志。
+      required: [event, occurredAt, operatorName, inboundBillId, inboundBillNo]
+      properties:
+        event: { type: string, enum: [CREATED, SUBMITTED, APPROVED, INBOUND_CREATED, INBOUND_CONFIRMED], description: 流程事件编码，前端按固定字典展示名称 }
+        occurredAt: { type: string, description: 事件发生时间；分别来自采购单创建/提交/审核时间或入库单创建/确认时间 }
+        operatorName: { type: string, maxLength: 100, description: 操作人名称快照；系统自动生成入库单时返回“系统” }
+        inboundBillId: { type: string, nullable: true, description: 关联入库单 ID；仅入库单生成和确认事件非空，BIGINT 按字符串传输 }
+        inboundBillNo: { type: string, nullable: true, maxLength: 64, description: 关联入库单号；仅入库单生成和确认事件非空 }
 
     PurchaseOrderItem:
       type: object
@@ -6903,7 +6942,7 @@ components:
         purchaseOrderItemId: { type: string, description: 对应 `purchase_order_item.id`，BIGINT 按字符串传输 }
         purchaseOrderId: { type: string, description: 对应 `purchase_order_item.purchase_order_id`，BIGINT 按字符串传输 }
         purchaseNo: { type: string, maxLength: 64, description: 对应 `purchase_order_item.purchase_no` }
-        supplierProductId: { type: string, nullable: true, description: 对应 `purchase_order_item.supplier_product_id`，BIGINT 按字符串传输，可为空 }
+        supplierProductId: { type: string, description: 对应 `purchase_order_item.supplier_product_id`，BIGINT 按字符串传输；采购订单明细必须关联启用的供货关系 }
         productId: { type: string, description: 对应 `purchase_order_item.product_id`，BIGINT 按字符串传输 }
         productCode: { type: string, maxLength: 64, description: 对应 `purchase_order_item.product_code` 产品快照 }
         productName: { type: string, maxLength: 200, description: 对应 `purchase_order_item.product_name` 产品快照 }
@@ -6911,8 +6950,8 @@ components:
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 下单时固化的产品数量精度快照；只读，前端不得提交修改 }
         quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true, description: 对应 `purchase_order_item.quantity`；小数位不得超过该明细的 `quantityPrecision`，0 时仅允许整数 }
         inboundQty: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.inbound_qty` }
-        unitPrice: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.unit_price` }
-        totalAmount: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.total_amount` }
+        unitPrice: { type: number, format: double, minimum: 0, description: 采购单价展示值；数据库 `purchase_order_item.unit_price` 按 100 倍整数存储 }
+        totalAmount: { type: number, format: double, minimum: 0, description: 明细金额展示值；数据库 `purchase_order_item.total_amount` 按 100 倍整数存储 }
         selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100, description: 下单时推荐分展示值；数据库 `purchase_order_item.selected_supplier_score` 按 100 倍整数存储 }
         remark: { type: string, maxLength: 500, description: 对应 `purchase_order_item.remark` }
 
@@ -6945,13 +6984,13 @@ components:
 
     PurchaseOrderDraftItemRequest:
       type: object
-      required: [productId, quantity, unitPrice, selectedSupplierScore, remark]
+      required: [supplierProductId, productId, quantity, unitPrice, selectedSupplierScore, remark]
       properties:
         purchaseOrderItemId: { type: string, nullable: true, description: 编辑草稿时传已有明细 ID，对应 `purchase_order_item.id`；新增明细或创建订单时不传 }
-        supplierProductId: { type: string, nullable: true, description: 选中的供货关系 ID，对应 `supplier_product.id`；前端应按单头供应商和产品双向过滤后传入，若为空或与 `supplierId`、`productId` 不匹配，后端必须拒绝或按启用供货关系重新校验 }
-        productId: { type: string, description: 启用产品 ID；后端保存产品编码、名称和单位快照 }
+        supplierProductId: { type: string, description: 选中的供货关系 ID，对应 `supplier_product.id`；前端应按单头供应商和产品双向过滤后传入，后端校验该供货关系存在且属于 `supplierId` 与 `productId` }
+        productId: { type: string, description: 启用产品 ID；后端保存产品编码、名称、单位和参考采购价快照 }
         quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true }
-        unitPrice: { type: number, format: double, minimum: 0 }
+        unitPrice: { type: number, format: double, minimum: 0, description: 采购单价业务值，后端 ×100 存储 }
         selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100 }
         remark: { type: string, maxLength: 500 }
 
@@ -6968,7 +7007,7 @@ components:
 
     ReturnOrder:
       type: object
-      required: [returnOrderId, returnNo, returnType, sourceOrderId, sourceOrderNo, partyId, partyCode, partyName, warehouseId, warehouseName, expectedExecutionDate, handlingType, reasonCode, returnReason, totalAmount, status, statusReason, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, remark, version]
+      required: [returnOrderId, returnNo, returnType, sourceOrderId, sourceOrderNo, partyId, partyCode, partyName, warehouseId, warehouseName, handlingType, reasonCode, returnReason, totalAmount, status, statusReason, createdByName, approvedByName, createTime, updateTime, remark, version]
       properties:
         returnOrderId: { type: string, readOnly: true, description: 对应 `return_order.id`，BIGINT 按字符串传输 }
         returnNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `return_order.return_no`，由后端生成、唯一 }
@@ -6984,7 +7023,7 @@ components:
         handlingType: { type: string, enum: [REFUND, EXCHANGE, OTHER], description: 对应 `return_order.handling_type` }
         reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER], description: 对应 `return_order.reason_code` }
         returnReason: { type: string, maxLength: 500, description: 对应 `return_order.return_reason`；原因选择 OTHER 时必填 }
-        totalAmount: { type: number, format: double, minimum: 0, readOnly: true, description: 对应 `return_order.total_amount`，由后端按状态汇总明细；取消单保留取消前按申请数量计算的金额快照，仅用于历史追溯 }
+        totalAmount: { type: number, format: double, minimum: 0, readOnly: true, description: 退货总金额展示值；数据库 `return_order.total_amount` 按 100 倍整数存储；取消单保留取消前按申请数量计算的金额快照，仅用于历史追溯 }
         status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_EXECUTED, COMPLETED, CANCELLED], readOnly: true, description: 对应 `return_order.status` }
         statusReason: { type: string, maxLength: 500, readOnly: true, description: 对应 `return_order.status_reason`，仅记录最近一次审核退回或取消原因 }
         createdById: { type: string, nullable: true, readOnly: true, description: 对应 `return_order.created_by_id`，BIGINT 按字符串传输 }
@@ -7020,13 +7059,13 @@ components:
         productName: { type: string, maxLength: 200, readOnly: true, description: 对应 `return_order_item.product_name` 产品快照 }
         unitName: { type: string, maxLength: 32, readOnly: true, description: 对应 `return_order_item.unit_name` 单位快照 }
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, readOnly: true, description: 对应 `return_order_item.quantity_precision` 数量精度快照 }
-        sourceFulfilledQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, readOnly: true, description: 对应 `return_order_item.source_fulfilled_qty`；采购退回取原采购明细累计已入库数量，销售退货取原销售明细累计已出库数量 }
+        sourceFulfilledQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, readOnly: true, description: 原订单累计履约数量展示值；数据库按 100 倍整数存储；采购退回取原采购明细累计已入库数量，销售退货取原销售明细累计已出库数量 }
         availableReturnQty: { type: number, format: double, minimum: 0, readOnly: true, description: 服务端查询派生的当前剩余可退数量，不落 `return_order_item`；提交和审核时仍需重新聚合 }
-        requestedQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, description: 对应 `return_order_item.requested_qty` }
-        approvedQty: { type: number, format: double, minimum: 0, readOnly: true, description: 对应 `return_order_item.approved_qty`，仅审核接口可提交 }
-        processedQty: { type: number, format: double, minimum: 0, readOnly: true, description: 对应 `return_order_item.processed_qty`，由仓库确认回写 }
-        unitPrice: { type: number, format: double, minimum: 0, readOnly: true, description: 对应 `return_order_item.unit_price` 原订单单价快照 }
-        totalAmount: { type: number, format: double, minimum: 0, readOnly: true, description: 对应 `return_order_item.total_amount`，由后端计算 }
+        requestedQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, description: 申请退货数量展示值；数据库 `return_order_item.requested_qty` 按 100 倍整数存储 }
+        approvedQty: { type: number, format: double, minimum: 0, readOnly: true, description: 审核通过数量展示值；数据库按 100 倍整数存储，仅审核接口可提交 }
+        processedQty: { type: number, format: double, minimum: 0, readOnly: true, description: 仓库累计确认的实际处理总量展示值；数据库按 100 倍整数存储，由仓库确认回写 }
+        unitPrice: { type: number, format: double, minimum: 0, readOnly: true, description: 原订单单价快照展示值；数据库按 100 倍整数存储 }
+        totalAmount: { type: number, format: double, minimum: 0, readOnly: true, description: 明细金额展示值；数据库按 100 倍整数存储，由后端计算 }
         createTime: { type: string, readOnly: true, description: 对应 `return_order_item.create_time` }
         updateTime: { type: string, readOnly: true, description: 对应 `return_order_item.update_time` }
         remark: { type: string, maxLength: 500, description: 对应 `return_order_item.remark` }
@@ -7179,6 +7218,8 @@ components:
         remark: { type: string, maxLength: 500, description: 对应 `customer.remark` }
         createTime: { type: string, description: 对应 `customer.create_time` }
         updateTime: { type: string, description: 对应 `customer.update_time` }
+        updatedById: { type: string, nullable: true, readOnly: true, description: 对应 `customer.updated_by_id`；销售后端待实现，BIGINT 按字符串传输 }
+        updatedByName: { type: string, nullable: true, readOnly: true, description: 对应 `customer.updated_by_name`；销售后端待实现 }
 
     SalesCustomerFormRequest:
       type: object
@@ -7257,6 +7298,8 @@ components:
         createdById: { type: string, nullable: true, description: 对应 `sales_order.created_by_id`，BIGINT 按字符串传输 }
         createdByName: { type: string, maxLength: 100, description: 对应 `sales_order.created_by_name` }
         submittedAt: { type: string, nullable: true, description: 对应 `sales_order.submitted_at` }
+        submittedById: { type: string, nullable: true, readOnly: true, description: 对应 `sales_order.submitted_by_id`；销售后端待实现，BIGINT 按字符串传输 }
+        submittedByName: { type: string, nullable: true, readOnly: true, description: 对应 `sales_order.submitted_by_name`；销售后端待实现 }
         approvedById: { type: string, nullable: true, description: 对应 `sales_order.approved_by_id`，BIGINT 按字符串传输 }
         approvedByName: { type: string, maxLength: 100, description: 对应 `sales_order.approved_by_name` }
         approvedAt: { type: string, nullable: true, description: 对应 `sales_order.approved_at` }

@@ -3,6 +3,13 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import BusinessDetailFacts from '@/components/common/BusinessDetailFacts.vue';
+import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
+import BusinessDetailProgress from '@/components/common/BusinessDetailProgress.vue';
+import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
+import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
+import BusinessDetailTimeline from '@/components/common/BusinessDetailTimeline.vue';
+import type { BusinessDetailTimelineItem } from '@/components/common/BusinessDetailTimeline.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
@@ -535,6 +542,48 @@ function statusHint(status: SalesOrderStatus) {
   return map[status];
 }
 
+function salesProgressSteps(row: SalesOrderDetail): BusinessDetailProgressStep[] {
+  if (row.status === 'CANCELLED') {
+    return [
+      { label: '草稿', state: 'done', hint: row.createTime },
+      { label: '已取消', state: 'cancelled', hint: '订单流程已终止' },
+    ];
+  }
+
+  const activeStatus = row.status as Exclude<SalesOrderStatus, 'CANCELLED'>;
+  const currentIndex: Record<Exclude<SalesOrderStatus, 'CANCELLED'>, number> = {
+    DRAFT: 0,
+    SUBMITTED: 1,
+    APPROVED: 2,
+    PARTIAL_OUTBOUND: 3,
+    OUTBOUND_DONE: 4,
+  };
+  const labels = ['草稿', '待审核', '待出库', '出库处理中', '已出库'];
+  const hints = [
+    row.createTime,
+    row.submittedAt || '等待提交',
+    row.approvedAt || '等待审核',
+    row.status === 'PARTIAL_OUTBOUND' ? '仍有明细待出库' : '等待出库',
+    row.status === 'OUTBOUND_DONE' ? row.updateTime : '等待完成',
+  ];
+
+  return labels.map((label, index) => ({
+    label,
+    hint: hints[index],
+    state: index < currentIndex[activeStatus] ? 'done' : index === currentIndex[activeStatus] ? 'current' : 'pending',
+  }));
+}
+
+function salesTimelineItems(row: SalesOrderDetail): BusinessDetailTimelineItem[] {
+  const items: BusinessDetailTimelineItem[] = [
+    { id: 'created', action: '创建销售订单', type: '单据创建', operatorName: row.createdByName || '系统', occurredAt: row.createTime },
+  ];
+    if (row.submittedAt) items.push({ id: 'submitted', action: '提交销售订单审核', type: '审核流转', tone: 'review', operatorName: row.submittedByName || '系统', occurredAt: row.submittedAt });
+  if (row.approvedAt) items.push({ id: 'approved', action: '审核通过销售订单', type: '审核完成', tone: 'review', operatorName: row.approvedByName || '系统', occurredAt: row.approvedAt });
+  if (row.status === 'PARTIAL_OUTBOUND' || row.status === 'OUTBOUND_DONE') items.push({ id: 'outbound', action: row.status === 'OUTBOUND_DONE' ? '完成销售出库' : '生成并处理出库任务', type: '仓库出库', tone: 'warehouse', operatorName: '系统', occurredAt: row.updateTime });
+  return items;
+}
+
 function formatQty(value: number) {
   return Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 3 });
 }
@@ -665,39 +714,45 @@ onMounted(() => {
     </Dialog>
 
     <Dialog v-model:open="detailDialogOpen">
-      <DialogContent class="flex h-[min(760px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-5xl">
+      <DialogContent placement="app-content" class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl">
         <DialogHeader><DialogTitle>销售单详情</DialogTitle><DialogDescription>核对销售单头、明细数量、库存锁定和出库流转状态。</DialogDescription></DialogHeader>
         <DialogScrollArea>
-          <div v-if="detailRow" class="space-y-4 p-1">
-            <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
-              <div class="purchase-detail-field"><span>销售单号</span><code>{{ detailRow.salesNo }}</code></div>
-              <div class="purchase-detail-field"><span>客户</span><strong>{{ detailRow.customerName }}</strong><small>{{ detailRow.customerCode }}</small></div>
-              <div class="purchase-detail-field"><span>出库仓库</span><strong>{{ detailRow.warehouseName }}</strong></div>
-              <div class="purchase-detail-field"><span>状态</span><Badge variant="outline" :class="statusMeta(detailRow.status).className">{{ statusMeta(detailRow.status).label }}</Badge></div>
-              <div class="purchase-detail-field"><span>订单金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
-              <div class="purchase-detail-field"><span>预计发货</span><strong>{{ detailRow.expectedDeliveryDate || '未设置' }}</strong></div>
-              <div class="purchase-detail-field"><span>库存锁定数量</span><strong>{{ lockedInventoryText(detailRow) }}</strong><small v-if="detailRow.lockedAt">锁定时间：{{ detailRow.lockedAt }}</small></div>
-              <div class="purchase-detail-field"><span>提交时间</span><strong>{{ detailRow.submittedAt || '未提交' }}</strong></div>
-              <div class="purchase-detail-field"><span>审核信息</span><strong>{{ detailRow.approvedByName || '未审核' }}</strong><small>{{ detailRow.approvedAt || '-' }}</small></div>
-              <div class="purchase-detail-field purchase-detail-field--wide"><span>备注</span><strong>{{ detailRow.remark || '未维护' }}</strong></div>
-            </div>
-            <ScrollArea class="w-full purchase-order-line-scroll detail-table-floating">
-              <Table class="min-w-[940px] table-fixed">
-                <colgroup><col class="w-[240px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[160px]" /></colgroup>
-                <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">销售数量</TableHead><TableHead class="text-center">已锁定</TableHead><TableHead class="text-center">已出库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  <TableRow v-for="item in detailRow.items" :key="item.salesOrderItemId">
+          <div v-if="detailRow" class="space-y-6 p-1">
+            <BusinessDetailHero
+              eyebrow="销售订单"
+              :title="detailRow.salesNo"
+              :subtitle="`${detailRow.customerCode} · ${detailRow.customerName} · ${detailRow.warehouseName}`"
+              :status-label="statusMeta(detailRow.status).label"
+              :status-class="statusMeta(detailRow.status).className"
+            >
+              <template #metrics>
+                <div class="business-detail-hero__metric"><span>订单金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>商品明细</span><strong>{{ detailRow.items.length }} 项</strong></div>
+                <div class="business-detail-hero__metric"><span>预计发货</span><strong>{{ detailRow.expectedDeliveryDate || '未设置' }}</strong></div>
+                <div class="business-detail-hero__metric"><span>库存锁定</span><strong>{{ lockedInventoryText(detailRow) }}</strong></div>
+              </template>
+            </BusinessDetailHero>
+
+            <BusinessDetailSection title="业务进度" description="状态由销售、审核与仓储出库流程生成，不能在详情中直接修改。"><BusinessDetailProgress :steps="salesProgressSteps(detailRow)" /></BusinessDetailSection>
+
+            <BusinessDetailSection title="业务信息" description="客户、出库仓库与发货安排。"><BusinessDetailFacts><div class="business-detail-fact"><dt>销售单号</dt><dd><code>{{ detailRow.salesNo }}</code></dd></div><div class="business-detail-fact"><dt>客户</dt><dd><strong>{{ detailRow.customerName }}</strong><small>{{ detailRow.customerCode }}</small></dd></div><div class="business-detail-fact"><dt>出库仓库</dt><dd><strong>{{ detailRow.warehouseName }}</strong></dd></div><div class="business-detail-fact"><dt>预计发货</dt><dd><strong>{{ detailRow.expectedDeliveryDate || '未设置' }}</strong></dd></div></BusinessDetailFacts></BusinessDetailSection>
+
+            <section class="space-y-3"><div class="flex items-end justify-between gap-3"><div><h3 class="text-sm font-semibold text-foreground">商品明细</h3><p class="mt-1 text-xs text-muted-foreground">优先核对销售、锁定、出库与剩余待出库数量。</p></div><span class="shrink-0 text-xs text-muted-foreground">共 {{ detailRow.items.length }} 项</span></div>
+              <ScrollArea class="w-full purchase-order-line-scroll detail-table-floating" aria-label="销售订单商品明细">
+                <Table class="min-w-[1020px] table-fixed">
+                  <colgroup><col class="w-[240px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[160px]" /></colgroup>
+                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">销售数量</TableHead><TableHead class="text-center">已锁定</TableHead><TableHead class="text-center">已出库</TableHead><TableHead class="text-center">待出库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
+                  <TableBody><TableRow v-for="item in detailRow.items" :key="item.salesOrderItemId">
                     <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell>
-                    <TableCell class="text-center tabular-nums">{{ item.quantity }} {{ item.unitName }}</TableCell>
-                    <TableCell class="text-center tabular-nums">{{ item.lockedQty }} {{ item.unitName }}</TableCell>
-                    <TableCell class="text-center tabular-nums">{{ item.outboundQty }} {{ item.unitName }}</TableCell>
-                    <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell>
-                    <TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell>
-                    <TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </ScrollArea>
+                    <TableCell class="text-center tabular-nums">{{ item.quantity }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ item.lockedQty }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ item.outboundQty }} {{ item.unitName }}</TableCell>
+                    <TableCell class="text-center font-medium tabular-nums" :class="Number(item.quantity) > Number(item.outboundQty) ? 'text-amber-700' : 'text-emerald-700'">{{ Math.max(0, Number(item.quantity) - Number(item.outboundQty)) }} {{ item.unitName }}</TableCell>
+                    <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell><TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell><TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell>
+                  </TableRow></TableBody>
+                </Table>
+              </ScrollArea>
+            </section>
+
+            <BusinessDetailSection title="流程记录" description="聚合销售订单审计字段和仓储流转状态，不额外新增操作日志。"><BusinessDetailTimeline :items="salesTimelineItems(detailRow)" aria-label="销售订单流程记录" /><p v-if="detailRow.remark" class="mt-3 rounded-md bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"><span class="mr-2 font-semibold text-foreground">备注</span>{{ detailRow.remark }}</p></BusinessDetailSection>
           </div>
         </DialogScrollArea>
         <DialogFooter class="items-center justify-between gap-3">

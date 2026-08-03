@@ -662,7 +662,6 @@ onBeforeUnmount(() => {
                 <DialogDescription class="mt-2 leading-6">{{ detailDescription }}</DialogDescription>
               </div>
             </DialogHeader>
-
             <div v-if="activeDetail === 'todos'" class="dashboard-detail-scroll dashboard-detail-list">
               <div v-for="todo in detailTodos" :key="todo.todoId" class="dashboard-detail-todo" :class="{ 'dashboard-detail-todo--system': isTrackedTodo(todo) }">
                 <span class="dashboard-todo__icon">
@@ -1112,13 +1111,13 @@ circle.dashboard-trend--margin {
 .dashboard-todo {
   display: flex;
   width: 100%;
-  min-height: 54px;
+  min-height: 60px;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) - 2px);
   background: color-mix(in srgb, var(--muted) 28%, transparent);
-  padding: 8px 10px;
+  padding: 9px 12px;
   cursor: pointer;
   transition:
     border-color 160ms ease,
@@ -1127,10 +1126,13 @@ circle.dashboard-trend--margin {
 }
 
 .dashboard-todos-list {
-  justify-content: center;
+  justify-content: space-between;
+  gap: 10px;
   padding-top: 0;
   padding-bottom: 12px;
 }
+
+.dashboard-todos-list > * + * { margin-top: 0; }
 
 .dashboard-todo:hover {
   border-color: color-mix(in srgb, var(--primary) 22%, var(--border));

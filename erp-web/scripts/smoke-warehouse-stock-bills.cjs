@@ -561,10 +561,10 @@ async function assertStockBillTableUsable(page, billNo) {
 }
 
 async function assertDetailFieldGrid(dialog) {
-  const columns = await dialog.locator('.detail-field-grid').evaluate(element =>
+  const columns = await dialog.locator('.business-detail-facts').evaluate(element =>
     getComputedStyle(element).gridTemplateColumns.split(' ').length,
   );
-  if (columns !== 3) throw new Error(`详情字段桌面布局应为 3 列，当前为 ${columns} 列`);
+  if (columns !== 4) throw new Error(`详情字段桌面布局应与采购订单模板一致，为 4 列，当前为 ${columns} 列`);
 }
 
 async function assertDistinctTypeBadges(page, labels) {

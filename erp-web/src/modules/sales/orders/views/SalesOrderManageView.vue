@@ -3,9 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
 import BusinessDetailFacts from '@/components/common/BusinessDetailFacts.vue';
 import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
-import BusinessDetailProgress from '@/components/common/BusinessDetailProgress.vue';
 import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
 import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
 import BusinessDetailTimeline from '@/components/common/BusinessDetailTimeline.vue';
@@ -574,6 +574,27 @@ function salesProgressSteps(row: SalesOrderDetail): BusinessDetailProgressStep[]
   }));
 }
 
+function salesOutboundSummary(row: SalesOrderDetail) {
+  const totalItems = row.items.length;
+  const outboundItems = row.items.filter(item => Number(item.outboundQty || 0) > 0).length;
+  const completedItems = row.items.filter(item => Number(item.quantity || 0) > 0 && Number(item.outboundQty || 0) >= Number(item.quantity || 0)).length;
+  const pendingItems = totalItems - completedItems;
+  const completedAmount = row.items.reduce((sum, item) => {
+    const plannedQty = Math.max(0, Number(item.quantity || 0));
+    const outboundQty = Math.max(0, Number(item.outboundQty || 0));
+    return sum + Math.min(plannedQty, outboundQty) * Math.max(0, Number(item.unitPrice || 0));
+  }, 0);
+  const targetAmount = Math.max(0, Number(row.totalAmount || 0));
+
+  return {
+    outboundItems,
+    completedItems,
+    pendingItems,
+    completedAmount,
+    completionRate: targetAmount > 0 ? completedAmount / targetAmount * 100 : 0,
+  };
+}
+
 function salesTimelineItems(row: SalesOrderDetail): BusinessDetailTimelineItem[] {
   const items: BusinessDetailTimelineItem[] = [
     { id: 'created', action: '创建销售订单', type: '单据创建', operatorName: row.createdByName || '系统', occurredAt: row.createTime },
@@ -733,7 +754,19 @@ onMounted(() => {
               </template>
             </BusinessDetailHero>
 
-            <BusinessDetailSection title="业务进度" description="状态由销售、审核与仓储出库流程生成，不能在详情中直接修改。"><BusinessDetailProgress :steps="salesProgressSteps(detailRow)" /></BusinessDetailSection>
+            <BusinessExecutionProgress
+              :steps="salesProgressSteps(detailRow)"
+              description="状态由销售、审核与仓储出库流程生成，不能在详情中直接修改。"
+              amount-label="累计出库"
+              :completed-amount="salesOutboundSummary(detailRow).completedAmount"
+              :completion-rate="salesOutboundSummary(detailRow).completionRate"
+              completion-rate-hint="完成率按累计出库金额 ÷ 订单总金额计算。"
+              :metrics="[
+                { label: '已出库明细', value: salesOutboundSummary(detailRow).outboundItems },
+                { label: '待出库明细', value: salesOutboundSummary(detailRow).pendingItems, pending: salesOutboundSummary(detailRow).pendingItems > 0 },
+                { label: '已完成明细', value: salesOutboundSummary(detailRow).completedItems },
+              ]"
+            />
 
             <BusinessDetailSection title="业务信息" description="客户、出库仓库与发货安排。"><BusinessDetailFacts><div class="business-detail-fact"><dt>销售单号</dt><dd><code>{{ detailRow.salesNo }}</code></dd></div><div class="business-detail-fact"><dt>客户</dt><dd><strong>{{ detailRow.customerName }}</strong><small>{{ detailRow.customerCode }}</small></dd></div><div class="business-detail-fact"><dt>出库仓库</dt><dd><strong>{{ detailRow.warehouseName }}</strong></dd></div><div class="business-detail-fact"><dt>预计发货</dt><dd><strong>{{ detailRow.expectedDeliveryDate || '未设置' }}</strong></dd></div></BusinessDetailFacts></BusinessDetailSection>
 

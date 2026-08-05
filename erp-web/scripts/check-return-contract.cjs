@@ -35,67 +35,104 @@ function seedBlock(tableName) {
   return returnSql.slice(start, end);
 }
 
-const modules = [
-  {
-    name: '采购退回',
-    segment: 'purchase',
-    partyQuery: 'supplierId',
-    createSchema: 'PurchaseReturnOrderCreateRequest',
-    returnType: 'PURCHASE_RETURN',
-    apiSource: readProjectFile('erp-web', 'src', 'modules', 'purchase', 'returns', 'api.ts'),
-  },
-  {
-    name: '销售退货',
-    segment: 'sales',
-    partyQuery: 'customerId',
-    createSchema: 'SalesReturnOrderCreateRequest',
-    returnType: 'SALES_RETURN',
-    apiSource: readProjectFile('erp-web', 'src', 'modules', 'sales', 'returns', 'api.ts'),
-  },
-];
-
-function operationManifest(module) {
-  const base = `/${module.segment}/returns`;
-  return [
-    { method: 'get', path: base, source: `getResult<ReturnOrderPage>('${base}', params)` },
-    { method: 'post', path: base, schema: module.createSchema, source: `postResult<ReturnOrderDetail, ReturnOrderCreateRequest>('${base}', request)` },
-    { method: 'get', path: `${base}/source-orders`, source: `getResult<ReturnableSourceOrderPage>('${base}/source-orders'` },
-    { method: 'get', path: `${base}/source-orders/{sourceOrderId}/items`, source: `\`${base}/source-orders/\${sourceOrderId}/items\`` },
-    { method: 'get', path: `${base}/{returnOrderId}`, source: `getResult<ReturnOrderDetail>(\`${base}/\${returnOrderId}\`)` },
-    { method: 'put', path: `${base}/{returnOrderId}`, schema: 'ReturnOrderUpdateRequest', source: `http.put<Result<ReturnOrderDetail>>(\`${base}/\${returnOrderId}\`, payload)` },
-    { method: 'delete', path: `${base}/{returnOrderId}`, schema: 'OptimisticLockVersionRequest', source: `http.delete(\`${base}/\${returnOrderId}\`, { data: { version } })` },
-    { method: 'post', path: `${base}/{returnOrderId}/submit`, schema: 'OptimisticLockVersionRequest', source: `\`${base}/\${returnOrderId}/submit\`` },
-    { method: 'post', path: `${base}/{returnOrderId}/approve`, schema: 'ReturnOrderApproveRequest', source: `\`${base}/\${returnOrderId}/approve\`` },
-    { method: 'post', path: `${base}/{returnOrderId}/reject`, schema: 'ReturnOrderReasonActionRequest', source: `\`${base}/\${returnOrderId}/reject\`` },
-    { method: 'post', path: `${base}/{returnOrderId}/cancel`, schema: 'ReturnOrderReasonActionRequest', source: `\`${base}/\${returnOrderId}/cancel\`` },
-  ];
-}
-
 async function checkApiContracts() {
   const api = await SwaggerParser.parse(openapiPath);
-  for (const module of modules) {
-    for (const expected of operationManifest(module)) {
-      const operation = api.paths[expected.path]?.[expected.method];
-      assert(operation, `${module.name} OpenAPI 缺少 ${expected.method.toUpperCase()} ${expected.path}`);
-      assert(module.apiSource.includes(expected.source), `${module.name}前端未按约定调用 ${expected.method.toUpperCase()} ${expected.path}`);
-      if (expected.schema) {
-        const schemaRef = operation.requestBody?.content?.['application/json']?.schema?.$ref;
-        assert(schemaRef === `#/components/schemas/${expected.schema}`, `${module.name} ${expected.path} 请求体应引用 ${expected.schema}，实际为 ${schemaRef || '空'}`);
-      } else {
-        assert(!operation.requestBody, `${module.name} ${expected.path} 不应声明请求体`);
-      }
-    }
+  const canonicalOperations = [
+    ['get', '/returns'], ['post', '/returns'], ['get', '/returns/source-orders'],
+    ['get', '/returns/source-orders/{sourceOrderId}/items'], ['get', '/returns/{returnOrderId}'],
+    ['put', '/returns/{returnOrderId}'], ['delete', '/returns/{returnOrderId}'],
+    ['post', '/returns/{returnOrderId}/submit'], ['post', '/returns/{returnOrderId}/approve'],
+    ['post', '/returns/{returnOrderId}/reject'], ['post', '/returns/{returnOrderId}/cancel'],
+  ];
+  for (const [method, path] of canonicalOperations) {
+    assert(api.paths[path]?.[method], `统一退货 OpenAPI 缺少 ${method.toUpperCase()} ${path}`);
+  }
+  for (const legacyPath of ['/purchase/returns', '/sales/returns']) {
+    assert(!api.paths[legacyPath], `OpenAPI 不得保留重复退货路径：${legacyPath}`);
+  }
+  for (const action of ['submit', 'approve', 'reject', 'cancel']) {
+    const operation = api.paths[`/returns/{returnOrderId}/${action}`].post;
+    assert(operation.security?.some(item => 'SaTokenAuth' in item), `统一退货 ${action} 动作缺少鉴权声明`);
+    assert(operation.parameters?.some(parameter => parameter.in === 'path' && parameter.name === 'returnOrderId'),
+      `统一退货 ${action} 动作缺少 returnOrderId 路径参数`);
+  }
+  assert(JSON.stringify(api.paths['/returns'].get.parameters.map(parameter => parameter.name))
+    === JSON.stringify(['returnType', 'returnNo', 'sourceOrderNo', 'partyId', 'warehouseId', 'status', 'pageNum', 'pageSize']),
+  '统一退货列表查询参数与前端不一致');
+  assert(JSON.stringify(api.paths['/returns/source-orders'].get.parameters.map(parameter => parameter.name))
+    === JSON.stringify(['returnType', 'sourceOrderNo', 'pageSize']),
+  '统一退货来源订单查询参数与前端不一致');
+  // 统一退货入口曾因路径迁移只保留了响应描述。这里明确约束每个操作的请求和返回契约，避免校验只确认“路径存在”。
+  const operation = (method, path) => api.paths[path][method];
+  const requestSchemaRef = (target) => target.requestBody?.content?.['application/json']?.schema?.$ref;
+  const successSchema = (target) => target.responses?.['200']?.content?.['application/json']?.schema;
+  const resultDataRef = (target) => successSchema(target)?.allOf?.[1]?.properties?.data?.$ref;
+  const resultArrayItemRef = (target) => successSchema(target)?.allOf?.[1]?.properties?.data?.items?.$ref;
+  const successEmpty = (target) => successSchema(target)?.$ref === '#/components/schemas/EmptyResult';
+  const ensureSecurity = (target, label) => assert(target.security?.some(item => 'SaTokenAuth' in item), `${label} 缺少 SaTokenAuth 鉴权声明`);
+  const ensureErrors = (target, label, expected) => {
+    for (const status of expected) assert(target.responses?.[status], `${label} 缺少 ${status} 错误响应`);
+  };
 
-    const listPath = `/${module.segment}/returns`;
-    const listQueryNames = api.paths[listPath].get.parameters.map(parameter => parameter.name);
-    const expectedQueries = ['returnNo', 'sourceOrderNo', module.partyQuery, 'warehouseId', 'status', 'pageNum', 'pageSize'];
-    assert(JSON.stringify(listQueryNames) === JSON.stringify(expectedQueries), `${module.name}列表查询参数与前端不一致：${listQueryNames.join(',')}`);
-    const sourceQueryNames = api.paths[`${listPath}/source-orders`].get.parameters.map(parameter => parameter.name);
-    assert(JSON.stringify(sourceQueryNames) === JSON.stringify(['sourceOrderNo', 'pageNum', 'pageSize']), `${module.name}来源订单查询参数不一致`);
-    assert(module.apiSource.includes(`${module.partyQuery}: query.partyId && query.partyId !== 'all' ? query.partyId : undefined`), `${module.name}前端未把往来单位筛选映射为 ${module.partyQuery}`);
-    assert(module.apiSource.includes(`returnType: '${module.returnType}'`), `${module.name}创建请求未固定 returnType=${module.returnType}`);
+  const returnList = operation('get', '/returns');
+  assert(resultDataRef(returnList) === '#/components/schemas/ReturnOrderPage', 'GET /returns 成功返回未声明 ReturnOrderPage');
+  ensureSecurity(returnList, 'GET /returns');
+  ensureErrors(returnList, 'GET /returns', ['400', '401', '403']);
+
+  const returnCreate = operation('post', '/returns');
+  assert(requestSchemaRef(returnCreate) === '#/components/schemas/ReturnOrderCreateRequest', 'POST /returns 请求体错误');
+  assert(resultDataRef(returnCreate) === '#/components/schemas/ReturnOrderDetail', 'POST /returns 成功返回未声明 ReturnOrderDetail');
+  ensureSecurity(returnCreate, 'POST /returns');
+  ensureErrors(returnCreate, 'POST /returns', ['400', '401', '403', '409']);
+
+  const sourceOrderSearch = operation('get', '/returns/source-orders');
+  assert(resultArrayItemRef(sourceOrderSearch) === '#/components/schemas/ReturnableSourceOrder', '来源订单搜索成功返回未声明 ReturnableSourceOrder 数组');
+  ensureSecurity(sourceOrderSearch, 'GET /returns/source-orders');
+  ensureErrors(sourceOrderSearch, 'GET /returns/source-orders', ['400', '401', '403']);
+
+  const sourceItemList = operation('get', '/returns/source-orders/{sourceOrderId}/items');
+  assert(resultArrayItemRef(sourceItemList) === '#/components/schemas/ReturnableSourceOrderItem', '来源明细查询成功返回未声明 ReturnableSourceOrderItem 数组');
+  ensureSecurity(sourceItemList, 'GET /returns/source-orders/{sourceOrderId}/items');
+  ensureErrors(sourceItemList, 'GET /returns/source-orders/{sourceOrderId}/items', ['400', '401', '403', '404']);
+
+  const returnDetail = operation('get', '/returns/{returnOrderId}');
+  assert(resultDataRef(returnDetail) === '#/components/schemas/ReturnOrderDetail', 'GET /returns/{returnOrderId} 成功返回未声明 ReturnOrderDetail');
+  ensureSecurity(returnDetail, 'GET /returns/{returnOrderId}');
+  ensureErrors(returnDetail, 'GET /returns/{returnOrderId}', ['401', '403', '404']);
+
+  const returnUpdate = operation('put', '/returns/{returnOrderId}');
+  assert(requestSchemaRef(returnUpdate) === '#/components/schemas/ReturnOrderUpdateRequest', 'PUT /returns/{returnOrderId} 请求体错误');
+  assert(resultDataRef(returnUpdate) === '#/components/schemas/ReturnOrderDetail', 'PUT /returns/{returnOrderId} 成功返回未声明 ReturnOrderDetail');
+  ensureSecurity(returnUpdate, 'PUT /returns/{returnOrderId}');
+  ensureErrors(returnUpdate, 'PUT /returns/{returnOrderId}', ['400', '401', '403', '404', '409']);
+
+  const returnDelete = operation('delete', '/returns/{returnOrderId}');
+  assert(requestSchemaRef(returnDelete) === '#/components/schemas/OptimisticLockVersionRequest', 'DELETE /returns/{returnOrderId} 请求体错误');
+  assert(successEmpty(returnDelete), 'DELETE /returns/{returnOrderId} 成功返回未声明 EmptyResult');
+  ensureSecurity(returnDelete, 'DELETE /returns/{returnOrderId}');
+  ensureErrors(returnDelete, 'DELETE /returns/{returnOrderId}', ['400', '401', '403', '404', '409']);
+
+  for (const [action, requestSchema] of [
+    ['submit', 'OptimisticLockVersionRequest'],
+    ['approve', 'ReturnOrderApproveRequest'],
+    ['reject', 'ReturnOrderReasonActionRequest'],
+    ['cancel', 'ReturnOrderReasonActionRequest'],
+  ]) {
+    const target = operation('post', `/returns/{returnOrderId}/${action}`);
+    assert(requestSchemaRef(target) === `#/components/schemas/${requestSchema}`, `${action} 操作请求体错误`);
+    assert(successEmpty(target), `${action} 操作成功返回未声明 EmptyResult`);
+    ensureSecurity(target, `${action} 操作`);
+    ensureErrors(target, `${action} 操作`, ['400', '401', '403', '404', '409']);
   }
 
+  for (const [name, source, returnType] of [
+    ['采购退货', readProjectFile('erp-web', 'src', 'modules', 'purchase', 'returns', 'api.ts'), 'PURCHASE_RETURN'],
+    ['销售退货', readProjectFile('erp-web', 'src', 'modules', 'sales', 'returns', 'api.ts'), 'SALES_RETURN'],
+  ]) {
+    assert(source.includes("const RETURN_API = '/returns'"), `${name}前端未使用统一 /returns 入口`);
+    assert(source.includes(`returnType: '${returnType}'`), `${name}前端未传入 returnType=${returnType}`);
+    assert(!source.includes(`/${returnType === 'PURCHASE_RETURN' ? 'purchase' : 'sales'}/returns`), `${name}前端仍调用旧退货路径`);
+  }
   for (const selector of [
     {
       name: '采购退回供应商选择器',
@@ -142,7 +179,7 @@ function checkDdlAndSeeds() {
     'party_code VARCHAR(64) NOT NULL', 'party_name VARCHAR(200) NOT NULL', 'warehouse_id BIGINT NOT NULL',
     'warehouse_name VARCHAR(100) NOT NULL', 'expected_execution_date DATE DEFAULT NULL',
     "handling_type VARCHAR(32) NOT NULL DEFAULT 'REFUND'", "reason_code VARCHAR(32) NOT NULL DEFAULT 'OTHER'",
-    "return_reason VARCHAR(500) NOT NULL DEFAULT ''", 'total_amount DECIMAL(18,2) NOT NULL DEFAULT 0.00',
+    "return_reason VARCHAR(500) NOT NULL DEFAULT ''", 'total_amount INT NOT NULL DEFAULT 0',
     "status VARCHAR(32) NOT NULL DEFAULT 'DRAFT'", "status_reason VARCHAR(500) NOT NULL DEFAULT ''",
     'created_by_id BIGINT DEFAULT NULL', "created_by_name VARCHAR(100) NOT NULL DEFAULT ''",
     'submitted_at DATETIME DEFAULT NULL', 'approved_by_id BIGINT DEFAULT NULL',
@@ -159,9 +196,9 @@ function checkDdlAndSeeds() {
     'id BIGINT NOT NULL', 'return_order_id BIGINT NOT NULL', 'source_order_item_id BIGINT NOT NULL',
     'product_id BIGINT NOT NULL', 'product_code VARCHAR(64) NOT NULL', 'product_name VARCHAR(200) NOT NULL',
     "unit_name VARCHAR(32) NOT NULL DEFAULT '件'", 'quantity_precision TINYINT NOT NULL DEFAULT 0',
-    'source_fulfilled_qty DECIMAL(18,2) NOT NULL DEFAULT 0.00', 'requested_qty DECIMAL(18,2) NOT NULL DEFAULT 0.00',
-    'approved_qty DECIMAL(18,2) NOT NULL DEFAULT 0.00', 'processed_qty DECIMAL(18,2) NOT NULL DEFAULT 0.00',
-    'unit_price DECIMAL(18,2) NOT NULL DEFAULT 0.00', 'total_amount DECIMAL(18,2) NOT NULL DEFAULT 0.00',
+    'source_fulfilled_qty INT NOT NULL DEFAULT 0', 'requested_qty INT NOT NULL DEFAULT 0',
+    'approved_qty INT NOT NULL DEFAULT 0', 'processed_qty INT NOT NULL DEFAULT 0',
+    'unit_price INT NOT NULL DEFAULT 0', 'total_amount INT NOT NULL DEFAULT 0',
     'create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
     'update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
     "remark VARCHAR(500) NOT NULL DEFAULT ''", 'UNIQUE KEY uk_return_order_item_source (return_order_id, source_order_item_id)',

@@ -52,7 +52,6 @@ export interface ReturnOrderItem {
   unitName: string;
   quantityPrecision: number;
   sourceFulfilledQty: number;
-  availableReturnQty: number;
   requestedQty: number;
   approvedQty: number;
   processedQty: number;
@@ -191,6 +190,9 @@ export interface ReturnOrderPageConfig {
   approvedHint: string;
   partialHint: string;
   approvalResultDescription: string;
+  /** 销售来源能力尚未部署时保留查询页，但禁止创建与状态流转。 */
+  backendEnabled?: boolean;
+  backendUnavailableMessage?: string;
   permissions: {
     query: string;
     create: string;

@@ -3,8 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
 import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
-import BusinessDetailProgress from '@/components/common/BusinessDetailProgress.vue';
 import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
@@ -25,7 +25,6 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import {
   createPurchaseOrder,
@@ -845,27 +844,19 @@ onMounted(() => {
               </template>
             </BusinessDetailHero>
 
-            <section class="rounded-lg border border-border bg-card px-4 py-4">
-              <div class="mb-4 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">业务进度</h3><p class="mt-1 text-xs text-muted-foreground">状态由系统业务流转生成，不能在详情中直接修改。</p></div></div>
-              <BusinessDetailProgress :steps="purchaseProgressSteps(detailRow)" />
-              <div class="purchase-execution-summary">
-                <div class="purchase-execution-summary__heading">
-                  <div><span>累计入库</span><strong>{{ formatMoney(detailRow.fulfillmentSummary.inboundAmount) }}</strong></div>
-                  <b class="purchase-execution-summary__rate" aria-label="按金额核算的完成率">{{ purchaseInboundSummary(detailRow).completionRate }}%</b>
-                </div>
-                <Tooltip :delay-duration="0" :skip-delay-duration="0">
-                  <TooltipTrigger as-child>
-                    <button type="button" class="purchase-execution-summary__track" aria-label="查看按金额核算的完成率"><i :style="{ width: `${purchaseInboundSummary(detailRow).completionRate}%` }" /></button>
-                  </TooltipTrigger>
-                  <TooltipContent class="max-w-[280px] !animate-none">完成率按累计入库金额 ÷ 订单总金额计算。</TooltipContent>
-                </Tooltip>
-                <dl>
-                  <div><dt>已入库明细</dt><dd>{{ purchaseInboundSummary(detailRow).inboundItems }} 项</dd></div>
-                  <div><dt>待入库明细</dt><dd :class="{ 'is-pending': purchaseInboundSummary(detailRow).pendingItems > 0 }">{{ purchaseInboundSummary(detailRow).pendingItems }} 项</dd></div>
-                  <div><dt>已完成明细</dt><dd>{{ purchaseInboundSummary(detailRow).completedItems }} 项</dd></div>
-                </dl>
-              </div>
-            </section>
+            <BusinessExecutionProgress
+              :steps="purchaseProgressSteps(detailRow)"
+              description="状态由系统业务流转生成，不能在详情中直接修改。"
+              amount-label="累计入库"
+              :completed-amount="detailRow.fulfillmentSummary.inboundAmount"
+              :completion-rate="purchaseInboundSummary(detailRow).completionRate"
+              completion-rate-hint="完成率按累计入库金额 ÷ 订单总金额计算。"
+              :metrics="[
+                { label: '已入库明细', value: purchaseInboundSummary(detailRow).inboundItems },
+                { label: '待入库明细', value: purchaseInboundSummary(detailRow).pendingItems, pending: purchaseInboundSummary(detailRow).pendingItems > 0 },
+                { label: '已完成明细', value: purchaseInboundSummary(detailRow).completedItems },
+              ]"
+            />
 
             <section>
               <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">业务信息</h3><p class="mt-1 text-xs text-muted-foreground">供应商、仓库及到货安排。</p></div></div>
@@ -956,20 +947,6 @@ onMounted(() => {
 .purchase-detail-facts dd strong { font-weight: 600; }
 .purchase-detail-facts dd small { margin-top: 2px; color: var(--muted-foreground); font-size: 12px; }
 
-.purchase-execution-summary { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
-.purchase-execution-summary__heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
-.purchase-execution-summary__heading span, .purchase-execution-summary dl dt { display: block; color: var(--muted-foreground); font-size: 12px; }
-.purchase-execution-summary__heading strong { display: block; margin-top: 3px; font-size: 14px; font-weight: 650; }
-.purchase-execution-summary__rate { color: var(--primary); font-size: 18px; font-weight: 700; line-height: 1; }
-.purchase-execution-summary__track { display: block; width: 100%; height: 6px; margin-top: 10px; padding: 0; overflow: hidden; border: 0; border-radius: 999px; background: var(--muted); cursor: help; }
-.purchase-execution-summary__track i { display: block; height: 100%; border-radius: inherit; background: var(--primary); pointer-events: none; transition: width .2s ease; }
-.purchase-execution-summary__track:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); outline-offset: 3px; }
-.purchase-execution-summary dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 14px 0 0; }
-.purchase-execution-summary dl > div { min-width: 0; padding: 0 14px; }
-.purchase-execution-summary dl > div:first-child { padding-left: 0; }
-.purchase-execution-summary dl > div + div { border-left: 1px solid var(--border); }
-.purchase-execution-summary dl dd { margin: 4px 0 0; color: var(--foreground); font-size: 14px; font-weight: 650; }
-.purchase-execution-summary dl dd.is-pending { color: #b45309; }
 
 .purchase-detail-timeline { position: relative; margin: 0; padding: 3px 0; list-style: none; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); }
 .purchase-detail-timeline li { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; padding: 11px 14px; }
@@ -1002,9 +979,6 @@ onMounted(() => {
   .purchase-detail-facts { grid-template-columns: 1fr; }
   .purchase-detail-facts > div + div { border-top: 1px solid var(--border); border-left: 0; }
   .purchase-detail-facts > div:nth-child(3) { border-left: 0; }
-  .purchase-execution-summary dl { grid-template-columns: 1fr; gap: 10px; }
-  .purchase-execution-summary dl > div, .purchase-execution-summary dl > div:first-child { padding: 0; }
-  .purchase-execution-summary dl > div + div { padding-top: 10px; border-top: 1px solid var(--border); border-left: 0; }
   .purchase-detail-timeline__time { margin-left: 0; }
 }
 </style>

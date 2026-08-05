@@ -19,10 +19,10 @@ import type {
   ReturnReasonCode,
   ReturnableSourceOrder,
   ReturnableSourceOrderItem,
-  ReturnableSourceOrderPage,
 } from '@/modules/returns/types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
+const RETURN_API = '/returns';
 const returnStatuses: ReturnOrderStatus[] = ['DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL_EXECUTED', 'COMPLETED', 'CANCELLED'];
 const handlingTypes: ReturnHandlingType[] = ['REFUND', 'EXCHANGE', 'OTHER'];
 const reasonCodes: ReturnReasonCode[] = ['QUALITY_ISSUE', 'DAMAGED', 'WRONG_ITEM', 'QUANTITY_ERROR', 'SPEC_MISMATCH', 'NO_LONGER_NEEDED', 'OTHER'];
@@ -74,7 +74,6 @@ function normalizeReturnItem(item: ReturnOrderItem): ReturnOrderItem {
     unitName: String(item.unitName),
     quantityPrecision,
     sourceFulfilledQty: normalizeQuantity(item.sourceFulfilledQty, quantityPrecision, 'sourceFulfilledQty'),
-    availableReturnQty: normalizeQuantity(item.availableReturnQty, quantityPrecision, 'availableReturnQty'),
     requestedQty: normalizeQuantity(item.requestedQty, quantityPrecision, 'requestedQty'),
     approvedQty: normalizeQuantity(item.approvedQty, quantityPrecision, 'approvedQty'),
     processedQty: normalizeQuantity(item.processedQty, quantityPrecision, 'processedQty'),
@@ -175,7 +174,6 @@ function amountQuantity(status: ReturnOrderStatus, item: Pick<ReturnOrderItem, '
 
 function refreshMockAmounts(order: ReturnOrderDetail) {
   order.items.forEach(item => {
-    item.availableReturnQty = Math.max(0, item.sourceFulfilledQty - occupiedQuantity(item.sourceOrderItemId, order.returnOrderId));
     item.totalAmount = Number((amountQuantity(order.status, item) * item.unitPrice).toFixed(2));
   });
   order.totalAmount = Number(order.items.reduce((sum, item) => sum + item.totalAmount, 0).toFixed(2));
@@ -213,7 +211,6 @@ function buildSeed(
     unitName: item.unitName,
     quantityPrecision: normalizeQuantityPrecision(item.quantityPrecision),
     sourceFulfilledQty: item.outboundQty,
-    availableReturnQty: item.outboundQty,
     requestedQty,
     approvedQty,
     processedQty,
@@ -319,7 +316,6 @@ async function buildMockItems(returnOrderId: string, source: SalesOrderDetail, p
       unitName: sourceItem.unitName,
       quantityPrecision: sourceItem.quantityPrecision,
       sourceFulfilledQty: sourceItem.sourceFulfilledQty,
-      availableReturnQty: sourceItem.availableReturnQty,
       requestedQty,
       approvedQty: 0,
       processedQty: 0,
@@ -334,9 +330,10 @@ async function buildMockItems(returnOrderId: string, source: SalesOrderDetail, p
 
 function cleanListParams(query: ReturnOrderQuery) {
   return {
+    returnType: 'SALES_RETURN',
     returnNo: query.returnNo?.trim() || undefined,
     sourceOrderNo: query.sourceOrderNo?.trim() || undefined,
-    customerId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined,
+    partyId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined,
     warehouseId: query.warehouseId && query.warehouseId !== 'all' ? query.warehouseId : undefined,
     status: query.status && query.status !== 'all' ? query.status : undefined,
     pageNum: query.pageNum,
@@ -347,7 +344,7 @@ function cleanListParams(query: ReturnOrderQuery) {
 export async function listSalesReturns(query: ReturnOrderQuery): Promise<ReturnOrderPage> {
   const params = cleanListParams(query);
   if (!useMockApi) {
-    const page = await getResult<ReturnOrderPage>('/sales/returns', params);
+    const page = await getResult<ReturnOrderPage>(RETURN_API, params);
     return { ...page, records: page.records.map(normalizeReturn) };
   }
   const rows = await ensureMockReturns();
@@ -355,7 +352,7 @@ export async function listSalesReturns(query: ReturnOrderQuery): Promise<ReturnO
   const filtered = rows.filter(row => {
     if (params.returnNo && !row.returnNo.includes(params.returnNo)) return false;
     if (params.sourceOrderNo && !row.sourceOrderNo.includes(params.sourceOrderNo)) return false;
-    if (params.customerId && row.partyId !== params.customerId) return false;
+    if (params.partyId && row.partyId !== params.partyId) return false;
     if (params.warehouseId && row.warehouseId !== params.warehouseId) return false;
     return !params.status || row.status === params.status;
   });
@@ -370,7 +367,7 @@ export async function listSalesReturns(query: ReturnOrderQuery): Promise<ReturnO
 
 export async function getSalesReturnDetail(returnOrderId: string): Promise<ReturnOrderDetail> {
   normalizeStringId(returnOrderId, 'returnOrderId');
-  if (!useMockApi) return normalizeReturnDetail(await getResult<ReturnOrderDetail>(`/sales/returns/${returnOrderId}`));
+  if (!useMockApi) return normalizeReturnDetail(await getResult<ReturnOrderDetail>(`${RETURN_API}/${returnOrderId}`));
   const rows = await ensureMockReturns();
   const row = rows.find(item => item.returnOrderId === returnOrderId);
   if (!row) throw new Error('销售退货单不存在');
@@ -380,7 +377,7 @@ export async function getSalesReturnDetail(returnOrderId: string): Promise<Retur
 
 export async function createSalesReturn(payload: ReturnOrderFormPayload): Promise<ReturnOrderDetail> {
   const request: ReturnOrderCreateRequest = { ...payload, returnType: 'SALES_RETURN' };
-  if (!useMockApi) return normalizeReturnDetail(await postResult<ReturnOrderDetail, ReturnOrderCreateRequest>('/sales/returns', request));
+  if (!useMockApi) return normalizeReturnDetail(await postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request));
   const rows = await ensureMockReturns();
   const source = await sourceDetail(payload.sourceOrderId);
   const returnOrderId = `2040000000000000${String(nextReturnSequence).padStart(3, '0')}`;
@@ -425,7 +422,7 @@ export async function createSalesReturn(payload: ReturnOrderFormPayload): Promis
 
 export async function updateSalesReturn(returnOrderId: string, payload: ReturnOrderUpdateRequest): Promise<ReturnOrderDetail> {
   if (!useMockApi) {
-    const response = await http.put<Result<ReturnOrderDetail>>(`/sales/returns/${returnOrderId}`, payload);
+    const response = await http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload);
     return normalizeReturnDetail(response.data.data);
   }
   const rows = await ensureMockReturns();
@@ -454,7 +451,7 @@ export async function updateSalesReturn(returnOrderId: string, payload: ReturnOr
 
 export async function deleteSalesReturn(returnOrderId: string, version: number) {
   if (!useMockApi) {
-    await http.delete(`/sales/returns/${returnOrderId}`, { data: { version } });
+    await http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } });
     return;
   }
   const rows = await ensureMockReturns();
@@ -474,7 +471,7 @@ async function mockStatusRow(returnOrderId: string, version: number, allowed: Re
 
 export async function submitSalesReturn(returnOrderId: string, version: number) {
   if (!useMockApi) {
-    await postResult<void>(`/sales/returns/${returnOrderId}/submit`, { version });
+    await postResult<void>(`${RETURN_API}/${returnOrderId}/submit`, { version });
     return;
   }
   const row = await mockStatusRow(returnOrderId, version, ['DRAFT']);
@@ -492,7 +489,7 @@ export async function submitSalesReturn(returnOrderId: string, version: number) 
 
 export async function approveSalesReturn(returnOrderId: string, payload: ReturnOrderApprovePayload) {
   if (!useMockApi) {
-    await postResult<void>(`/sales/returns/${returnOrderId}/approve`, payload);
+    await postResult<void>(`${RETURN_API}/${returnOrderId}/approve`, payload);
     return;
   }
   const row = await mockStatusRow(returnOrderId, payload.version, ['SUBMITTED']);
@@ -517,7 +514,7 @@ export async function approveSalesReturn(returnOrderId: string, payload: ReturnO
 
 export async function rejectSalesReturn(returnOrderId: string, payload: ReturnOrderReasonActionPayload) {
   if (!useMockApi) {
-    await postResult<void>(`/sales/returns/${returnOrderId}/reject`, payload);
+    await postResult<void>(`${RETURN_API}/${returnOrderId}/reject`, payload);
     return;
   }
   const row = await mockStatusRow(returnOrderId, payload.version, ['SUBMITTED']);
@@ -531,7 +528,7 @@ export async function rejectSalesReturn(returnOrderId: string, payload: ReturnOr
 
 export async function cancelSalesReturn(returnOrderId: string, payload: ReturnOrderReasonActionPayload) {
   if (!useMockApi) {
-    await postResult<void>(`/sales/returns/${returnOrderId}/cancel`, payload);
+    await postResult<void>(`${RETURN_API}/${returnOrderId}/cancel`, payload);
     return;
   }
   const row = await mockStatusRow(returnOrderId, payload.version, ['DRAFT', 'SUBMITTED', 'APPROVED']);
@@ -546,12 +543,12 @@ export async function cancelSalesReturn(returnOrderId: string, payload: ReturnOr
 export async function searchSalesReturnSourceOrders(keyword = ''): Promise<ReturnableSourceOrder[]> {
   const sourceOrderNo = keyword.trim();
   if (!useMockApi) {
-    const page = await getResult<ReturnableSourceOrderPage>('/sales/returns/source-orders', {
+    const rows = await getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`, {
+      returnType: 'SALES_RETURN',
       sourceOrderNo: sourceOrderNo || undefined,
-      pageNum: 1,
       pageSize: 10,
     });
-    return page.records.map(normalizeSourceOrder);
+    return rows.map(normalizeSourceOrder);
   }
   const details = await getEligibleSalesDetails();
   const rows = await Promise.all(details
@@ -575,7 +572,7 @@ export async function searchSalesReturnSourceOrders(keyword = ''): Promise<Retur
 
 export async function listSalesReturnSourceItems(sourceOrderId: string): Promise<ReturnableSourceOrderItem[]> {
   if (useMockApi) return mockSourceItems(sourceOrderId);
-  const items = await getResult<ReturnableSourceOrderItem[]>(`/sales/returns/source-orders/${sourceOrderId}/items`);
+  const items = await getResult<ReturnableSourceOrderItem[]>(`${RETURN_API}/source-orders/${sourceOrderId}/items`, { returnType: 'SALES_RETURN' });
   return items.map(normalizeSourceItem);
 }
 

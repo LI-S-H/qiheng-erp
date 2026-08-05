@@ -118,22 +118,14 @@ const requiredPaths = [
   '/warehouse/outbound-bills/{outboundBillId}/submit:',
   '/warehouse/outbound-bills/{outboundBillId}/confirm:',
   '/warehouse/outbound-bills/{outboundBillId}/cancel:',
-  '/purchase/returns:',
-  '/purchase/returns/source-orders:',
-  '/purchase/returns/source-orders/{sourceOrderId}/items:',
-  '/purchase/returns/{returnOrderId}:',
-  '/purchase/returns/{returnOrderId}/submit:',
-  '/purchase/returns/{returnOrderId}/approve:',
-  '/purchase/returns/{returnOrderId}/reject:',
-  '/purchase/returns/{returnOrderId}/cancel:',
-  '/sales/returns:',
-  '/sales/returns/source-orders:',
-  '/sales/returns/source-orders/{sourceOrderId}/items:',
-  '/sales/returns/{returnOrderId}:',
-  '/sales/returns/{returnOrderId}/submit:',
-  '/sales/returns/{returnOrderId}/approve:',
-  '/sales/returns/{returnOrderId}/reject:',
-  '/sales/returns/{returnOrderId}/cancel:',
+  '/returns:',
+  '/returns/source-orders:',
+  '/returns/source-orders/{sourceOrderId}/items:',
+  '/returns/{returnOrderId}:',
+  '/returns/{returnOrderId}/submit:',
+  '/returns/{returnOrderId}/approve:',
+  '/returns/{returnOrderId}/reject:',
+  '/returns/{returnOrderId}/cancel:',
 ];
 
 for (const requiredPath of requiredPaths) {
@@ -153,20 +145,23 @@ if (!source.includes('product_category` 未删除数据的扁平数组') || !sou
 if (/\n\s*- name: keyword\s*$/m.test(source)) {
   throw new Error('OpenAPI 列表查询不得使用未声明匹配边界的 keyword 参数');
 }
-const purchaseReturnListStart = source.indexOf('  /purchase/returns:');
-const purchaseReturnSourcesStart = source.indexOf('  /purchase/returns/source-orders:', purchaseReturnListStart);
-const purchaseReturnListContract = source.slice(purchaseReturnListStart, purchaseReturnSourcesStart);
-if (purchaseReturnListStart < 0 || purchaseReturnSourcesStart < 0
-  || !purchaseReturnListContract.includes('\n    get:') || !purchaseReturnListContract.includes('\n    post:')) {
-  throw new Error('采购退回列表必须同时提供 GET 查询和 POST 创建接口');
+const returnListStart = source.indexOf('  /returns:');
+const returnSourceOrdersStart = source.indexOf('  /returns/source-orders:', returnListStart);
+const returnListContract = source.slice(returnListStart, returnSourceOrdersStart);
+if (returnListStart < 0 || returnSourceOrdersStart < 0
+  || !returnListContract.includes('\n    get:') || !returnListContract.includes('\n    post:')) {
+  throw new Error('统一退货列表必须同时提供 GET 查询和 POST 创建接口');
 }
-for (const parameterName of ['returnNo', 'sourceOrderNo', 'supplierId', 'warehouseId', 'status', 'pageNum', 'pageSize']) {
-  if (!purchaseReturnListContract.includes(`- name: ${parameterName}`)) {
-    throw new Error(`采购退回列表缺少独立查询参数：${parameterName}`);
+for (const parameterName of ['returnType', 'returnNo', 'sourceOrderNo', 'partyId', 'warehouseId', 'status', 'pageNum', 'pageSize']) {
+  if (!returnListContract.includes(`- name: ${parameterName}`)) {
+    throw new Error(`统一退货列表缺少独立查询参数：${parameterName}`);
   }
 }
-if (purchaseReturnListContract.includes('- name: keyword')) {
-  throw new Error('采购退回列表不得使用含义不明的 keyword 参数');
+if (returnListContract.includes('- name: keyword')) {
+  throw new Error('统一退货列表不得使用含义不明的 keyword 参数');
+}
+for (const legacyPath of ['/purchase/returns', '/sales/returns']) {
+  if (source.includes(`  ${legacyPath}:`)) throw new Error(`OpenAPI 不得保留重复退货路径：${legacyPath}`);
 }
 for (const fragment of [
   'availableReturnQty',
@@ -222,14 +217,14 @@ for (const [schemaName, schemaText] of [
     }
   }
 }
-const purchaseReturnDetailPathStart = source.indexOf('  /purchase/returns/{returnOrderId}:');
-const purchaseReturnSubmitPathStart = source.indexOf('  /purchase/returns/{returnOrderId}/submit:', purchaseReturnDetailPathStart);
+const purchaseReturnDetailPathStart = source.indexOf('  /returns/{returnOrderId}:');
+const purchaseReturnSubmitPathStart = source.indexOf('  /returns/{returnOrderId}/submit:', purchaseReturnDetailPathStart);
 const purchaseReturnDetailPath = source.slice(purchaseReturnDetailPathStart, purchaseReturnSubmitPathStart);
 for (const method of ['get:', 'put:', 'delete:']) {
   if (!purchaseReturnDetailPath.includes(`    ${method}`)) throw new Error(`采购退回详情资源缺少 ${method}`);
 }
 for (const action of ['submit', 'approve', 'reject', 'cancel']) {
-  const actionStart = source.indexOf(`  /purchase/returns/{returnOrderId}/${action}:`);
+  const actionStart = source.indexOf(`  /returns/{returnOrderId}/${action}:`);
   const nextPath = source.indexOf('\n  /', actionStart + 4);
   const actionContract = source.slice(actionStart, nextPath < 0 ? source.length : nextPath);
   if (actionStart < 0 || !actionContract.includes('\n    post:') || !actionContract.includes('requestBody:')) {
@@ -237,18 +232,19 @@ for (const action of ['submit', 'approve', 'reject', 'cancel']) {
   }
 }
 for (const fragment of [
-  "getResult<ReturnOrderPage>('/purchase/returns', params)",
-  "postResult<ReturnOrderDetail, ReturnOrderCreateRequest>('/purchase/returns', request)",
-  'http.put<Result<ReturnOrderDetail>>(`/purchase/returns/${returnOrderId}`, payload)',
-  'http.delete(`/purchase/returns/${returnOrderId}`, { data: { version } })',
-  '`/purchase/returns/${returnOrderId}/submit`',
-  '`/purchase/returns/${returnOrderId}/approve`',
-  '`/purchase/returns/${returnOrderId}/reject`',
-  '`/purchase/returns/${returnOrderId}/cancel`',
-  "getResult<ReturnableSourceOrderPage>('/purchase/returns/source-orders'",
-  '`/purchase/returns/source-orders/${sourceOrderId}/items`',
+  "const RETURN_API = '/returns'",
+  'getResult<ReturnOrderPage>(RETURN_API, params)',
+  'postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request)',
+  'http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload)',
+  'http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })',
+  '`${RETURN_API}/${returnOrderId}/submit`',
+  '`${RETURN_API}/${returnOrderId}/approve`',
+  '`${RETURN_API}/${returnOrderId}/reject`',
+  '`${RETURN_API}/${returnOrderId}/cancel`',
+  'getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`',
+  '`${RETURN_API}/source-orders/${sourceOrderId}/items`',
   "returnType: 'PURCHASE_RETURN'",
-  "supplierId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined",
+  "partyId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined",
 ]) {
   if (!purchaseReturnApiSource.includes(fragment)) throw new Error(`采购退回前端适配层缺少接口契约：${fragment}`);
 }
@@ -293,19 +289,6 @@ if (!purchaseReturnApiSource.includes('function nextMockReturnItemId()')
   || purchaseReturnApiSource.includes('`${returnOrderId}1${String(index + 1)')) {
   throw new Error('采购退回 Mock 明细必须使用独立 19 位 ID，不得在 19 位主键后继续拼接');
 }
-const salesReturnListStart = source.indexOf('  /sales/returns:');
-const salesReturnSourcesStart = source.indexOf('  /sales/returns/source-orders:', salesReturnListStart);
-const salesReturnListContract = source.slice(salesReturnListStart, salesReturnSourcesStart);
-if (salesReturnListStart < 0 || salesReturnSourcesStart < 0
-  || !salesReturnListContract.includes('\n    get:') || !salesReturnListContract.includes('\n    post:')) {
-  throw new Error('销售退货列表必须同时提供 GET 查询和 POST 创建接口');
-}
-for (const parameterName of ['returnNo', 'sourceOrderNo', 'customerId', 'warehouseId', 'status', 'pageNum', 'pageSize']) {
-  if (!salesReturnListContract.includes(`- name: ${parameterName}`)) {
-    throw new Error(`销售退货列表缺少独立查询参数：${parameterName}`);
-  }
-}
-if (salesReturnListContract.includes('- name: keyword')) throw new Error('销售退货列表不得使用含义不明的 keyword 参数');
 for (const fragment of [
   'sales_order_item.outbound_qty',
   'returnType: { type: string, enum: [SALES_RETURN]',
@@ -333,14 +316,14 @@ for (const readOnlyField of [
     throw new Error(`销售退货创建请求不得提交只读字段：${readOnlyField}`);
   }
 }
-const salesReturnDetailPathStart = source.indexOf('  /sales/returns/{returnOrderId}:');
-const salesReturnSubmitPathStart = source.indexOf('  /sales/returns/{returnOrderId}/submit:', salesReturnDetailPathStart);
+const salesReturnDetailPathStart = source.indexOf('  /returns/{returnOrderId}:');
+const salesReturnSubmitPathStart = source.indexOf('  /returns/{returnOrderId}/submit:', salesReturnDetailPathStart);
 const salesReturnDetailPath = source.slice(salesReturnDetailPathStart, salesReturnSubmitPathStart);
 for (const method of ['get:', 'put:', 'delete:']) {
   if (!salesReturnDetailPath.includes(`    ${method}`)) throw new Error(`销售退货详情资源缺少 ${method}`);
 }
 for (const action of ['submit', 'approve', 'reject', 'cancel']) {
-  const actionStart = source.indexOf(`  /sales/returns/{returnOrderId}/${action}:`);
+  const actionStart = source.indexOf(`  /returns/{returnOrderId}/${action}:`);
   const nextPath = source.indexOf('\n  /', actionStart + 4);
   const actionContract = source.slice(actionStart, nextPath < 0 ? source.length : nextPath);
   if (actionStart < 0 || !actionContract.includes('\n    post:') || !actionContract.includes('requestBody:')) {
@@ -348,18 +331,19 @@ for (const action of ['submit', 'approve', 'reject', 'cancel']) {
   }
 }
 for (const fragment of [
-  "getResult<ReturnOrderPage>('/sales/returns', params)",
-  "postResult<ReturnOrderDetail, ReturnOrderCreateRequest>('/sales/returns', request)",
-  'http.put<Result<ReturnOrderDetail>>(`/sales/returns/${returnOrderId}`, payload)',
-  'http.delete(`/sales/returns/${returnOrderId}`, { data: { version } })',
-  '`/sales/returns/${returnOrderId}/submit`',
-  '`/sales/returns/${returnOrderId}/approve`',
-  '`/sales/returns/${returnOrderId}/reject`',
-  '`/sales/returns/${returnOrderId}/cancel`',
-  "getResult<ReturnableSourceOrderPage>('/sales/returns/source-orders'",
-  '`/sales/returns/source-orders/${sourceOrderId}/items`',
+  "const RETURN_API = '/returns'",
+  'getResult<ReturnOrderPage>(RETURN_API, params)',
+  'postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request)',
+  'http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload)',
+  'http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })',
+  '`${RETURN_API}/${returnOrderId}/submit`',
+  '`${RETURN_API}/${returnOrderId}/approve`',
+  '`${RETURN_API}/${returnOrderId}/reject`',
+  '`${RETURN_API}/${returnOrderId}/cancel`',
+  'getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`',
+  '`${RETURN_API}/source-orders/${sourceOrderId}/items`',
   "returnType: 'SALES_RETURN'",
-  "customerId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined",
+  "partyId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined",
   'item.outboundQty',
 ]) {
   if (!salesReturnApiSource.includes(fragment)) throw new Error(`销售退货前端适配层缺少接口契约：${fragment}`);

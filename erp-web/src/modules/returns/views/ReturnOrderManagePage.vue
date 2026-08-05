@@ -3,6 +3,12 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
+import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
+import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
+import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
+import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
+import BusinessDetailTimeline from '@/components/common/BusinessDetailTimeline.vue';
+import type { BusinessDetailTimelineItem } from '@/components/common/BusinessDetailTimeline.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
@@ -63,6 +69,11 @@ const props = defineProps<{ config: ReturnOrderPageConfig }>();
 const authStore = useAuthStore();
 const businessLabel = computed(() => props.config.title);
 const returnTypeLabel = computed(() => props.config.returnType === 'PURCHASE_RETURN' ? '采购退回' : '销售退货');
+const processedQuantityLabel = computed(() => props.config.returnType === 'PURCHASE_RETURN' ? '已退货出库' : '已退货入库');
+const pendingQuantityLabel = computed(() => props.config.returnType === 'PURCHASE_RETURN' ? '待退货出库' : '待退货入库');
+const executionSummaryCopy = computed(() => props.config.returnType === 'PURCHASE_RETURN'
+  ? { amountLabel: '累计退货出库', processedLabel: '已退货出库明细', pendingLabel: '待退货出库明细', hint: '完成率按累计退货出库金额 ÷ 审核通过退货金额计算。' }
+  : { amountLabel: '累计退货入库', processedLabel: '已退货入库明细', pendingLabel: '待退货入库明细', hint: '完成率按累计退货入库金额 ÷ 审核通过退货金额计算。' });
 
 const statusLabels = computed<Record<ReturnOrderStatus, string>>(() => ({
   DRAFT: '草稿',
@@ -158,9 +169,9 @@ const promptState = reactive({
   mode: 'reject' as 'reject' | 'cancel',
 });
 
-const canQuery = computed(() => authStore.hasPermission(props.config.permissions.query));
-const canCreate = computed(() => authStore.hasPermission(props.config.permissions.create));
-const canManage = computed(() => authStore.hasPermission(props.config.permissions.manage));
+const canQuery = computed(() => props.config.backendEnabled !== false && authStore.hasPermission(props.config.permissions.query));
+const canCreate = computed(() => props.config.backendEnabled !== false && authStore.hasPermission(props.config.permissions.create));
+const canManage = computed(() => props.config.backendEnabled !== false && authStore.hasPermission(props.config.permissions.manage));
 const queryBusy = computed(() => loading.value || queryPending.value);
 const selectedSource = computed(() => sourceOrderCache.get(form.sourceOrderId));
 const selectedSourceLabel = computed(() => sourceOrderOptions.value.find(option => option.value === form.sourceOrderId)?.label
@@ -289,8 +300,9 @@ async function loadSourceLines(sourceOrderId: string, existing?: ReturnOrderDeta
       unitName: saved.unitName,
       quantityPrecision: saved.quantityPrecision,
       sourceFulfilledQty: saved.sourceFulfilledQty,
-      occupiedQty: Math.max(0, saved.sourceFulfilledQty - saved.availableReturnQty),
-      availableReturnQty: Math.max(saved.availableReturnQty, saved.requestedQty),
+      // 来源接口不再返回该草稿中已失效的明细时，保留原申请数量供用户修订；剩余可退数量仍以来源接口为准。
+      occupiedQty: 0,
+      availableReturnQty: saved.requestedQty,
       unitPrice: saved.unitPrice,
       selected: true,
       requestedQty: saved.requestedQty,
@@ -346,7 +358,7 @@ async function openEditDialog(row: ReturnOrderListItem) {
       warehouseId: detail.warehouseId,
       warehouseName: detail.warehouseName,
       fulfilledItemCount: detail.items.length,
-      totalAvailableReturnQty: detail.items.reduce((sum, item) => sum + item.availableReturnQty, 0),
+      totalAvailableReturnQty: detail.items.reduce((sum, item) => sum + item.requestedQty, 0),
     });
     mergeOptions(sourceOrderOptions, [{ value: detail.sourceOrderId, label: `${detail.sourceOrderNo} · ${detail.partyName}` }]);
     mergeOptions(warehouseOptions, [{ value: detail.warehouseId, label: detail.warehouseName }], { value: 'all', label: '全部仓库' });
@@ -595,6 +607,69 @@ function statusHint(status: ReturnOrderStatus) {
   return hints[status];
 }
 
+function returnProgressSteps(row: ReturnOrderDetail): BusinessDetailProgressStep[] {
+  if (row.status === 'CANCELLED') {
+    return [
+      { label: '草稿', state: 'done', hint: row.createTime },
+      { label: '已取消', state: 'cancelled', hint: row.statusReason || '退回流程已终止' },
+    ];
+  }
+
+  const activeStatus = row.status as Exclude<ReturnOrderStatus, 'CANCELLED'>;
+  const currentIndex: Record<Exclude<ReturnOrderStatus, 'CANCELLED'>, number> = {
+    DRAFT: 0,
+    SUBMITTED: 1,
+    APPROVED: 2,
+    PARTIAL_EXECUTED: 3,
+    COMPLETED: 4,
+  };
+  const labels = ['草稿', '待审核', props.config.approvedStatusLabel, props.config.partialStatusLabel, '已完成'];
+  const hints = [
+    row.createTime,
+    row.submittedAt || '等待提交',
+    row.approvedAt || '等待审核',
+    row.status === 'PARTIAL_EXECUTED' ? props.config.partialHint : props.config.approvedHint,
+    row.status === 'COMPLETED' ? row.approvedAt || '已完成' : '等待完成',
+  ];
+
+  return labels.map((label, index) => ({
+    label,
+    hint: hints[index],
+    state: index < currentIndex[activeStatus] ? 'done' : index === currentIndex[activeStatus] ? 'current' : 'pending',
+  }));
+}
+
+function returnExecutionSummary(row: ReturnOrderDetail) {
+  const totalItems = row.items.length;
+  const processedItems = row.items.filter(item => Number(item.processedQty || 0) > 0).length;
+  const completedItems = row.items.filter(item => Number(item.approvedQty || 0) > 0 && Number(item.processedQty || 0) >= Number(item.approvedQty || 0)).length;
+  const pendingItems = totalItems - completedItems;
+  const targetAmount = row.items.reduce((sum, item) => sum + Math.max(0, Number(item.approvedQty || 0)) * Math.max(0, Number(item.unitPrice || 0)), 0);
+  const completedAmount = row.items.reduce((sum, item) => {
+    const approvedQty = Math.max(0, Number(item.approvedQty || 0));
+    const processedQty = Math.max(0, Number(item.processedQty || 0));
+    return sum + Math.min(approvedQty, processedQty) * Math.max(0, Number(item.unitPrice || 0));
+  }, 0);
+
+  return {
+    processedItems,
+    completedItems,
+    pendingItems,
+    completedAmount,
+    completionRate: targetAmount > 0 ? completedAmount / targetAmount * 100 : 0,
+  };
+}
+
+function returnTimelineItems(row: ReturnOrderDetail): BusinessDetailTimelineItem[] {
+  const items: BusinessDetailTimelineItem[] = [
+    { id: 'created', action: `创建${props.config.detailTitle.replace('详情', '')}`, type: '单据创建', operatorName: row.createdByName || '系统', occurredAt: row.createTime },
+  ];
+  if (row.submittedAt) items.push({ id: 'submitted', action: '提交退回单审核', type: '审核流转', tone: 'review', operatorName: row.createdByName || '系统', occurredAt: row.submittedAt });
+  if (row.approvedAt) items.push({ id: 'approved', action: '审核通过退回单', type: '审核完成', tone: 'review', operatorName: row.approvedByName || '系统', occurredAt: row.approvedAt });
+  if (row.status === 'PARTIAL_EXECUTED' || row.status === 'COMPLETED') items.push({ id: 'executed', action: row.status === 'COMPLETED' ? '完成退回执行' : '处理退回执行任务', type: '仓储执行', tone: 'warehouse', operatorName: '系统', occurredAt: row.updateTime });
+  return items;
+}
+
 function detailActionDescription() {
   if (detailActionMode.value === 'submit') return '请先核对退回单头和全部明细，再提交进入待审核。';
   if (detailActionMode.value === 'approve') return props.config.approvalResultDescription;
@@ -636,6 +711,7 @@ function reasonLabel(value: ReturnReasonCode) {
 }
 
 onMounted(() => {
+  if (props.config.backendEnabled === false) return;
   if (!canQuery.value) {
     toast.error(`缺少 ${props.config.permissions.query} 权限`);
     return;
@@ -650,6 +726,7 @@ onMounted(() => {
       <div>
         <h1 class="page-title">{{ config.title }}</h1>
         <p class="page-description">{{ config.description }}</p>
+        <p v-if="config.backendEnabled === false" class="mt-2 text-sm text-amber-700">{{ config.backendUnavailableMessage }}</p>
       </div>
     </div>
 
@@ -751,30 +828,58 @@ onMounted(() => {
       <DialogContent placement="app-content" :inert="confirmState.open || promptState.open" class="flex h-[min(770px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl" data-return-detail-dialog>
         <DialogHeader><DialogTitle>{{ config.detailTitle }}</DialogTitle><DialogDescription>{{ detailActionDescription() }}</DialogDescription></DialogHeader>
         <DialogScrollArea>
-          <div v-if="detailRow" class="space-y-4 p-1">
-            <div class="purchase-detail-grid grid grid-cols-3 gap-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
-              <div class="purchase-detail-field"><span>退回单号</span><code>{{ detailRow.returnNo }}</code></div>
-              <div class="purchase-detail-field"><span>{{ config.sourceOrderLabel }}</span><code>{{ detailRow.sourceOrderNo }}</code></div>
-              <div class="purchase-detail-field"><span>{{ config.partyLabel }}</span><strong>{{ detailRow.partyName }}</strong><small>{{ detailRow.partyCode }}</small></div>
-              <div class="purchase-detail-field"><span>状态</span><Badge variant="outline" :class="statusClassNames[detailRow.status]">{{ statusLabels[detailRow.status] }}</Badge></div>
-              <div class="purchase-detail-field"><span>{{ config.warehouseLabel }}</span><strong>{{ detailRow.warehouseName }}</strong></div>
-              <div class="purchase-detail-field"><span>{{ config.executionDateLabel }}</span><strong>{{ detailRow.expectedExecutionDate || '未设置' }}</strong></div>
-              <div class="purchase-detail-field"><span>处理方式 / 原因</span><strong>{{ handlingLabel(detailRow.handlingType) }}</strong><small>{{ reasonLabel(detailRow.reasonCode) }}</small></div>
-              <div class="purchase-detail-field"><span>退回金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
-              <div class="purchase-detail-field"><span>创建人 / 时间</span><strong>{{ detailRow.createdByName || '系统' }}</strong><small>{{ detailRow.createTime }}</small></div>
-              <div class="purchase-detail-field"><span>提交时间</span><strong>{{ detailRow.submittedAt || '未提交' }}</strong></div>
-              <div class="purchase-detail-field"><span>审核信息</span><strong>{{ detailRow.approvedByName || '未审核' }}</strong><small>{{ detailRow.approvedAt || '-' }}</small></div>
-              <div class="purchase-detail-field"><span>状态原因</span><OverflowTooltip :text="detailRow.statusReason" fallback="无" /></div>
-            </div>
-            <div class="grid grid-cols-2 gap-4 max-md:grid-cols-1"><div class="purchase-detail-field"><span>原因说明</span><OverflowTooltip :text="detailRow.returnReason" fallback="未维护" /></div><div class="purchase-detail-field"><span>备注</span><OverflowTooltip :text="detailRow.remark" fallback="未维护" /></div></div>
+          <div v-if="detailRow" class="space-y-6 p-1">
+            <BusinessDetailHero
+              :eyebrow="returnTypeLabel"
+              :title="detailRow.returnNo"
+              :subtitle="`${detailRow.partyCode} · ${detailRow.partyName} · ${detailRow.warehouseName}`"
+              :status-label="statusLabels[detailRow.status]"
+              :status-class="statusClassNames[detailRow.status]"
+            >
+              <template #metrics>
+                <div class="business-detail-hero__metric"><span>退回金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>商品明细</span><strong>{{ detailRow.items.length }} 项</strong></div>
+                <div class="business-detail-hero__metric"><span>{{ config.executionDateLabel }}</span><strong>{{ detailRow.expectedExecutionDate || '未设置' }}</strong></div>
+                <div class="business-detail-hero__metric"><span>当前任务</span><strong>{{ statusHint(detailRow.status) }}</strong></div>
+              </template>
+            </BusinessDetailHero>
 
-            <ScrollArea class="detail-table-floating w-full">
-              <Table class="min-w-[1040px] table-fixed" data-return-detail-items>
-                <colgroup><col class="w-[235px]" /><col class="w-[105px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[135px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[180px]" /></colgroup>
-                <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">已履约</TableHead><TableHead class="text-right">申请数量</TableHead><TableHead class="text-right">审核数量</TableHead><TableHead class="text-right">已处理 / 剩余</TableHead><TableHead class="text-right">单价</TableHead><TableHead class="text-right">金额</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
-                <TableBody><TableRow v-for="item in detailRow.items" :key="item.returnOrderItemId"><TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1 font-medium">{{ item.productName }}</div></TableCell><TableCell class="text-right tabular-nums">{{ formatQuantity(item.sourceFulfilledQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-right tabular-nums">{{ formatQuantity(item.requestedQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-right"><div v-if="detailActionMode === 'approve'" class="flex items-center gap-2"><Input v-model.number="approvalQuantities[item.returnOrderItemId]" type="number" min="0" :max="item.requestedQty" :step="quantityStep(item.quantityPrecision)" class="text-right" /><span class="text-xs text-muted-foreground">{{ item.unitName }}</span></div><span v-else>{{ formatQuantity(item.approvedQty, item.quantityPrecision) }} {{ item.unitName }}</span></TableCell><TableCell class="text-right tabular-nums"><div>{{ formatQuantity(item.processedQty, item.quantityPrecision) }} {{ item.unitName }}</div><small class="text-muted-foreground">剩 {{ formatQuantity(Math.max(0, item.approvedQty - item.processedQty), item.quantityPrecision) }}</small></TableCell><TableCell class="text-right tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell><TableCell class="text-right font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell><TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell></TableRow></TableBody>
-              </Table>
-            </ScrollArea>
+            <BusinessExecutionProgress
+              :steps="returnProgressSteps(detailRow)"
+              description="状态由退回、审核和仓储执行流程生成，不能在详情中直接修改。"
+              :amount-label="executionSummaryCopy.amountLabel"
+              :completed-amount="returnExecutionSummary(detailRow).completedAmount"
+              :completion-rate="returnExecutionSummary(detailRow).completionRate"
+              :completion-rate-hint="executionSummaryCopy.hint"
+              :metrics="[
+                { label: executionSummaryCopy.processedLabel, value: returnExecutionSummary(detailRow).processedItems },
+                { label: executionSummaryCopy.pendingLabel, value: returnExecutionSummary(detailRow).pendingItems, pending: returnExecutionSummary(detailRow).pendingItems > 0 },
+                { label: '已完成明细', value: returnExecutionSummary(detailRow).completedItems },
+              ]"
+            />
+
+            <section>
+              <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">业务信息</h3><p class="mt-1 text-xs text-muted-foreground">来源单据、往来对象、仓库及退回依据。</p></div></div>
+              <dl class="return-detail-facts">
+                <div><dt>{{ config.sourceOrderLabel }}</dt><dd><code>{{ detailRow.sourceOrderNo }}</code></dd></div>
+                <div><dt>{{ config.partyLabel }}</dt><dd><strong>{{ detailRow.partyName }}</strong><small>{{ detailRow.partyCode }}</small></dd></div>
+                <div><dt>{{ config.warehouseLabel }}</dt><dd><strong>{{ detailRow.warehouseName }}</strong></dd></div>
+                <div><dt>处理方式 / 原因</dt><dd><strong>{{ handlingLabel(detailRow.handlingType) }}</strong><small>{{ reasonLabel(detailRow.reasonCode) }}</small></dd></div>
+              </dl>
+            </section>
+
+            <section>
+              <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">商品明细</h3><p class="mt-1 text-xs text-muted-foreground">核对原单履约、申请与审核数量，以及仓储实际处理进度。</p></div><span class="text-xs text-muted-foreground">共 {{ detailRow.items.length }} 项</span></div>
+              <ScrollArea class="purchase-order-line-scroll detail-table-floating w-full" aria-label="退回单商品明细">
+                <Table class="return-detail-items min-w-[1180px] table-fixed" data-return-detail-items>
+                  <colgroup><col class="w-[240px]" /><col class="w-[105px]" /><col class="w-[115px]" /><col class="w-[115px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[160px]" /></colgroup>
+                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">{{ config.fulfilledQuantityLabel }}</TableHead><TableHead class="text-center">申请退回</TableHead><TableHead class="text-center">审核退回</TableHead><TableHead class="text-center">{{ processedQuantityLabel }}</TableHead><TableHead class="text-center">{{ pendingQuantityLabel }}</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
+                  <TableBody><TableRow v-for="item in detailRow.items" :key="item.returnOrderItemId"><TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell><TableCell class="text-center tabular-nums">{{ formatQuantity(item.sourceFulfilledQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatQuantity(item.requestedQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center"><div v-if="detailActionMode === 'approve'" class="flex items-center gap-2"><Input v-model.number="approvalQuantities[item.returnOrderItemId]" type="number" min="0" :max="item.requestedQty" :step="quantityStep(item.quantityPrecision)" class="text-right" /><span class="text-xs text-muted-foreground">{{ item.unitName }}</span></div><span v-else class="tabular-nums">{{ formatQuantity(item.approvedQty, item.quantityPrecision) }} {{ item.unitName }}</span></TableCell><TableCell class="text-center tabular-nums">{{ formatQuantity(item.processedQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center font-medium tabular-nums" :class="item.approvedQty > item.processedQty ? 'text-amber-700' : 'text-emerald-700'">{{ formatQuantity(Math.max(0, item.approvedQty - item.processedQty), item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell><TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell><TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell></TableRow></TableBody>
+                </Table>
+              </ScrollArea>
+            </section>
+
+            <BusinessDetailSection title="流程记录" description="聚合退回单审计字段和仓储执行状态，不额外新增操作日志。"><BusinessDetailTimeline :items="returnTimelineItems(detailRow)" :aria-label="`${config.detailTitle}流程记录`" /><div class="mt-3 grid grid-cols-1 gap-2 text-xs text-muted-foreground"><p v-if="detailRow.statusReason" class="rounded-md bg-muted px-3 py-2"><span class="mr-2 font-semibold text-foreground">状态原因</span>{{ detailRow.statusReason }}</p><p v-if="detailRow.returnReason" class="rounded-md bg-muted px-3 py-2"><span class="mr-2 font-semibold text-foreground">原因说明</span>{{ detailRow.returnReason }}</p><p v-if="detailRow.remark" class="rounded-md bg-muted px-3 py-2"><span class="mr-2 font-semibold text-foreground">备注</span>{{ detailRow.remark }}</p></div></BusinessDetailSection>
           </div>
         </DialogScrollArea>
         <DialogFooter class="items-center justify-between gap-3"><span v-if="detailRow && detailActionMode !== 'view'" class="mr-auto text-xs text-muted-foreground">操作前将再次校验权限、状态、乐观锁和剩余可退数量</span><Button variant="outline" :disabled="actionSubmitting" @click="detailDialogOpen = false">关闭</Button><Button v-if="detailRow && detailActionMode !== 'view'" :variant="detailActionMode === 'delete' || detailActionMode === 'cancel' ? 'destructive' : 'default'" :disabled="actionSubmitting" @click="runDetailAction">{{ actionSubmitting ? '处理中' : detailActionButtonLabel() }}</Button></DialogFooter>
@@ -785,3 +890,35 @@ onMounted(() => {
     <PromptDialog :open="promptState.open" :title="promptState.title" :description="promptState.description" :input-placeholder="promptState.mode === 'reject' ? '请输入审核退回原因' : '请输入取消原因'" :input-pattern="/^\s*\S[\s\S]{0,499}$/" input-error-message="原因必填且不能超过 500 字" :confirm-text="promptState.confirmText" :loading="actionSubmitting" @update:open="promptState.open = $event" @confirm="runReasonAction" />
   </section>
 </template>
+
+<style scoped>
+/* 与采购订单详情保持相同的四栏事实卡片：使用分隔线而非通用网格间隙。 */
+.return-detail-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--muted) 38%, var(--card));
+}
+
+.return-detail-facts > div { min-width: 0; padding: 12px 14px; }
+.return-detail-facts > div + div { border-left: 1px solid var(--border); }
+.return-detail-facts dt { color: var(--muted-foreground); font-size: 12px; line-height: 1.3; }
+.return-detail-facts dd { min-width: 0; margin: 5px 0 0; color: var(--foreground); font-size: 14px; line-height: 1.35; }
+.return-detail-facts dd code, .return-detail-facts dd strong, .return-detail-facts dd small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.return-detail-facts dd strong { font-weight: 600; }
+.return-detail-facts dd small { margin-top: 2px; color: var(--muted-foreground); font-size: 12px; }
+
+@media (max-width: 960px) {
+  .return-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .return-detail-facts > div:nth-child(3) { border-top: 1px solid var(--border); border-left: 0; }
+  .return-detail-facts > div:nth-child(4) { border-top: 1px solid var(--border); }
+}
+
+@media (max-width: 640px) {
+  .return-detail-facts { grid-template-columns: 1fr; }
+  .return-detail-facts > div + div { border-top: 1px solid var(--border); border-left: 0; }
+}
+</style>

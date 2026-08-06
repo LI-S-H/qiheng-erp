@@ -144,6 +144,12 @@ async function assertSharedFormControls(page, {
   if (verifyRemoteOptions) {
     const remoteCombobox = comboboxes.first();
     await remoteCombobox.click();
+    const remoteContent = page.locator('[data-remote-search-select-content]').last();
+    const searchHint = remoteContent.locator('[data-remote-search-hint]');
+    await searchHint.waitFor();
+    await searchHint.hover();
+    const tooltip = page.getByText('支持按仓库编码或名称单独搜索', { exact: true });
+    await tooltip.waitFor();
     const remoteOption = page.locator('[data-remote-search-select-content] [data-select-option]').first();
     await remoteOption.waitFor();
     if (await page.locator('[data-remote-search-select-content] .lucide-check').count() !== 0) {

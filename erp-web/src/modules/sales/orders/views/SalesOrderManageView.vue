@@ -32,6 +32,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import {
   createSalesOrder,
+  getEnabledSalesProductTotal,
   getSalesOrderDetail,
   listEnabledSalesProductOptions,
   listEnabledSalesWarehouseOptions,
@@ -152,6 +153,9 @@ const confirmState = reactive({
 
 const queryBusy = computed(() => loading.value || queryPending.value);
 const totalAmount = computed(() => draftItems.value.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0));
+const selectableProductTotal = ref<number | null>(null);
+const selectedProductCount = computed(() => new Set(draftItems.value.map(item => item.productId).filter(Boolean)).size);
+const canAddLine = computed(() => selectableProductTotal.value === null || selectedProductCount.value < selectableProductTotal.value);
 const selectedCustomerLabel = computed(() => customerOptions.value.find(item => item.value === form.customerId)?.label || (editingOrder.value?.customerId === form.customerId ? `${editingOrder.value.customerCode} ${editingOrder.value.customerName}` : ''));
 const selectedWarehouseLabel = computed(() => warehouseOptions.value.find(item => item.value === form.warehouseId)?.label || (editingOrder.value?.warehouseId === form.warehouseId ? editingOrder.value.warehouseName : ''));
 const queryCustomerLabel = computed(() => query.customerId === 'all' ? '全部客户' : customerOptions.value.find(item => item.value === query.customerId)?.label || '');
@@ -204,11 +208,16 @@ async function fetchWarehouseSearchOptions(keyword: string) {
   return options;
 }
 
-async function fetchProductSearchOptions(keyword: string) {
+async function fetchProductSearchOptions(keyword: string, currentRowId?: string) {
   const products = await listEnabledSalesProductOptions(keyword, 10);
+  const selectedProductIds = new Set(draftItems.value
+    .filter(item => item.rowId !== currentRowId)
+    .map(item => item.productId)
+    .filter(Boolean));
   const options = products.map(item => ({
     value: item.value,
     label: item.label,
+    disabled: selectedProductIds.has(item.value),
     referenceSalePrice: item.product.referenceSalePrice,
     quantityPrecision: item.product.quantityPrecision,
     unitName: item.product.unitName,
@@ -305,6 +314,7 @@ function newDraftItem(): DraftItem {
 function resetForm() {
   Object.assign(form, { customerId: '', warehouseId: '', expectedDeliveryDate: '', remark: '', items: [] });
   draftItems.value = [newDraftItem()];
+  selectableProductTotal.value = null;
   editingOrder.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
@@ -312,6 +322,7 @@ function resetForm() {
 function openCreateDialog() {
   dialogMode.value = 'create';
   resetForm();
+  void refreshSelectableProductTotal();
   createDialogOpen.value = true;
 }
 
@@ -353,11 +364,22 @@ async function openEditDialog(row: SalesOrderListItem) {
       unitName: item.unitName,
     }))
     : [newDraftItem()];
+  void refreshSelectableProductTotal();
   createDialogOpen.value = true;
 }
 
 function addLine() {
+  if (!canAddLine.value) return;
   draftItems.value = [...draftItems.value, newDraftItem()];
+}
+
+async function refreshSelectableProductTotal() {
+  try {
+    selectableProductTotal.value = await getEnabledSalesProductTotal();
+  } catch {
+    // 总数加载失败时保持原有可添加行为，最终仍由选择器和提交校验兜底。
+    selectableProductTotal.value = null;
+  }
 }
 
 function removeLine(rowId: string) {
@@ -366,7 +388,14 @@ function removeLine(rowId: string) {
 }
 
 function selectProduct(line: DraftItem, productId: string | number) {
-  line.productId = String(productId);
+  const selectedProductId = String(productId);
+  if (draftItems.value.some(item => item.rowId !== line.rowId && item.productId === selectedProductId)) {
+    formErrors[`items.${draftItems.value.findIndex(item => item.rowId === line.rowId)}.productId`] = '同一产品不能重复添加';
+    toast.warning('同一产品不能重复添加');
+    return;
+  }
+  line.productId = selectedProductId;
+  delete formErrors[`items.${draftItems.value.findIndex(item => item.rowId === line.rowId)}.productId`];
   const product = productOptions.value.find(item => item.value === line.productId);
   line.unitPrice = product?.referenceSalePrice || 0;
   line.unitName = product?.unitName || '';
@@ -396,6 +425,7 @@ function validateForm() {
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   draftItems.value.forEach((item, index) => {
     if (!item.productId) formErrors[`items.${index}.productId`] = '请选择产品';
+    else if (draftItems.value.some(other => other.rowId !== item.rowId && other.productId === item.productId)) formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
     if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0) formErrors[`items.${index}.quantity`] = '销售数量必须大于 0';
     if (item.productId && !quantityPrecisionValid(Number(item.quantity), item.productId)) formErrors[`items.${index}.quantity`] = `数量最多保留 ${getProductPrecision(item.productId)} 位小数`;
     if (!Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0) formErrors[`items.${index}.unitPrice`] = '销售单价不能小于 0';
@@ -692,7 +722,7 @@ onMounted(() => {
     </div>
 
     <Dialog v-model:open="createDialogOpen">
-      <DialogContent class="order-form-dialog flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-5xl">
+      <DialogContent placement="app-content" class="order-form-dialog flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl" data-sales-form-dialog>
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增销售单草稿' : '编辑销售单' }}</DialogTitle><DialogDescription>销售单保存为草稿后可提交审核，提交时校验并锁定可用库存，审核后生成待确认出库单。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div class="space-y-4 p-1">
@@ -709,16 +739,16 @@ onMounted(() => {
             <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" rows="2" /><p v-if="formErrors.remark" class="text-xs text-destructive">{{ formErrors.remark }}</p></div>
 
             <div class="rounded-md border border-border">
-              <div class="flex min-h-11 items-center justify-between border-b border-border px-3"><strong class="text-sm">销售明细</strong><Button size="sm" variant="outline" type="button" @click="addLine">添加产品</Button></div>
-              <ScrollArea class="w-full purchase-order-line-scroll">
-                <Table class="order-line-table min-w-[830px] table-fixed">
-                  <colgroup><col class="w-[230px]" /><col class="w-[115px]" /><col class="w-[120px]" /><col class="w-[115px]" /><col class="w-[170px]" /><col class="w-[80px]" /></colgroup>
+              <div class="flex min-h-11 items-center justify-between gap-3 border-b border-border px-3"><div><strong class="text-sm">销售明细</strong><span class="ml-2 text-xs text-muted-foreground">选择产品后填写数量和销售价，草稿阶段可继续调整</span></div><div class="flex shrink-0 items-center gap-3"><span class="text-xs text-muted-foreground">已选 {{ selectedProductCount }} 项</span><Button size="sm" variant="outline" type="button" :disabled="!canAddLine" @click="addLine">添加产品</Button></div></div>
+              <ScrollArea class="w-full">
+                <Table class="order-line-table min-w-[860px] table-fixed" data-sales-form-items>
+                  <colgroup><col class="w-[250px]" /><col class="w-[115px]" /><col class="w-[120px]" /><col class="w-[115px]" /><col class="w-[180px]" /><col class="w-[80px]" /></colgroup>
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">销售价</TableHead><TableHead class="text-right">小计</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-for="(line, index) in draftItems" :key="line.rowId">
-                      <TableCell class="align-top"><RemoteSearchSelect :model-value="line.productId" :selected-label="selectedProductLabel(line.productId)" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
-                      <TableCell class="purchase-line-quantity-cell"><div class="purchase-line-quantity-control" :class="{ 'purchase-line-quantity-control--single': !line.unitName }"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line.productId)" class="purchase-line-quantity-input" /><span v-if="line.unitName" class="purchase-line-quantity-unit">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error text-center">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
-                      <TableCell class="align-top"><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="pl-8 text-center" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
+                      <TableCell class="align-top"><RemoteSearchSelect :model-value="line.productId" :selected-label="selectedProductLabel(line.productId)" :fetch-options="keyword => fetchProductSearchOptions(keyword, line.rowId)" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
+                      <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line.productId)" class="min-w-0 text-right" /><span v-if="line.unitName" class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error text-center">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
+                      <TableCell class="align-top"><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="price-input pl-8 text-center" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0)) }}</TableCell>
                       <TableCell class="align-top"><Input v-model="line.remark" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>
                       <TableCell class="align-top text-center"><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="draftItems.length === 1" @click="removeLine(line.rowId)">删除</Button></TableCell>
@@ -726,7 +756,7 @@ onMounted(() => {
                   </TableBody>
                 </Table>
               </ScrollArea>
-              <div class="flex justify-end border-t border-border px-4 py-3 text-sm">草稿金额：<strong class="ml-2 text-sm">{{ formatMoney(totalAmount) }}</strong></div>
+              <div class="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm"><span class="text-muted-foreground">已添加 {{ draftItems.length }} 条，提交时后端将重新校验库存与数量精度</span><span class="shrink-0">草稿金额：<strong class="ml-2 text-sm">{{ formatMoney(totalAmount) }}</strong></span></div>
             </div>
           </div>
         </DialogScrollArea>
@@ -801,10 +831,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.order-form-dialog :deep(input),
-.order-form-dialog :deep(textarea),
-.order-form-dialog :deep([role="combobox"]),
-.order-form-dialog :deep([data-anchored-select-trigger]) { font-size: .875rem; }
-.order-line-table :deep(th), .order-line-table :deep(td) { font-size: .875rem; }
-.order-line-table :deep(input::placeholder) { font-size: .875rem; }
+.price-input { appearance: textfield; }
+.price-input::-webkit-inner-spin-button,
+.price-input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 </style>

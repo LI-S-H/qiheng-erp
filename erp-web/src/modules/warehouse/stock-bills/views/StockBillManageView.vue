@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { Columns3, RotateCcw, X } from 'lucide-vue-next';
+import { Columns3, RotateCcw } from 'lucide-vue-next';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
@@ -304,6 +304,7 @@ const products = ref<ProductListItem[]>([]);
 const warehouseOptions = ref<Array<{ value: string; label: string }>>([{ value: 'all', label: '全部仓库' }]);
 const formWarehouseOptions = ref<Array<{ value: string; label: string }>>([]);
 const productOptions = ref<Array<{ value: string; label: string }>>([]);
+const selectableProductTotal = ref<number | null>(null);
 const formErrors = reactive<Record<string, string>>({});
 const confirmState = reactive({
   open: false,
@@ -350,6 +351,9 @@ const adjustmentSourceWarehouseEditable = computed(() => editingIsDraft.value &&
 const sourceNoEditable = computed(() => (dialogMode.value === 'create' || manualSupplementSourceEditable.value) && !isAdjustmentForm.value);
 const manualReasonEditable = computed(() => (dialogMode.value === 'create' || editingIsDraft.value) && isManualForm.value);
 const structureEditable = computed(() => dialogMode.value === 'create' || (editingIsDraft.value && editingDetail.value?.entryMode !== 'SOURCE_GENERATED'));
+const selectedFormProductCount = computed(() => new Set(form.items.map(item => item.productId).filter(Boolean)).size);
+const canAddFormItem = computed(() => structureEditable.value
+  && (selectableProductTotal.value === null || selectedFormProductCount.value < selectableProductTotal.value));
 const summaryCards = computed(() => [
   { key: 'pending', label: pageText.value.pendingLabel, value: summary.pendingCount, tone: 'warning' as const },
   { key: 'confirmed', label: pageText.value.confirmedLabel, value: summary.confirmedCount, tone: 'positive' as const },
@@ -772,7 +776,7 @@ async function fetchFormWarehouseSearchOptions(keyword: string) {
   return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
 }
 
-async function fetchProductSearchOptions(keyword: string) {
+async function fetchProductSearchOptions(keyword: string, currentItemKey?: string) {
   const page = await listProducts({
     status: 1,
     pageNum: 1,
@@ -780,7 +784,15 @@ async function fetchProductSearchOptions(keyword: string) {
     ...productKeywordQuery(keyword),
   });
   mergeProducts(page.records);
-  return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}（${item.unitName}）` }));
+  const selectedProductIds = new Set(form.items
+    .filter(item => item.key !== currentItemKey)
+    .map(item => item.productId)
+    .filter(Boolean));
+  return page.records.map(item => ({
+    value: item.productId,
+    label: `${item.productCode} ${item.productName}（${item.unitName}）`,
+    disabled: selectedProductIds.has(item.productId),
+  }));
 }
 
 async function loadFormOptions() {
@@ -858,6 +870,7 @@ async function openDetail(row: StockBillListItem, actionMode: 'view' | 'submit' 
 
 function resetForm() {
   Object.assign(form, { billType: defaultBillType.value, sourceNo: '', sourceId: '', warehouseId: formWarehouseOptions.value[0]?.value || '', sourcePartyId: '', manualReason: '', remark: '', items: [newDraftItem()] });
+  selectableProductTotal.value = null;
   sourceOrderOptions.value = [];
   editingDetail.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
@@ -867,6 +880,7 @@ function openCreateDialog() {
   editLoadVersion += 1;
   dialogMode.value = 'create';
   resetForm();
+  void refreshSelectableProductTotal();
   formVisible.value = true;
 }
 
@@ -917,6 +931,7 @@ async function openEditDialog(row: StockBillListItem) {
       defectiveQty: item.defectiveQty,
       remark: item.remark || '',
     }));
+    void refreshSelectableProductTotal();
   } catch (error) {
     if (currentLoadVersion !== editLoadVersion || !formVisible.value) return;
     closeFormDialog();
@@ -941,7 +956,18 @@ function handleFormDialogOpenChange(open: boolean) {
 }
 
 function addFormItem() {
+  if (!canAddFormItem.value) return;
   form.items.push(newDraftItem());
+}
+
+async function refreshSelectableProductTotal() {
+  try {
+    const page = await listProducts({ status: 1, pageNum: 1, pageSize: 1 });
+    selectableProductTotal.value = page.total;
+  } catch {
+    // 总数加载失败时保持原有可添加行为，最终仍由选择器和提交校验兜底。
+    selectableProductTotal.value = null;
+  }
 }
 
 function removeFormItem(index: number) {
@@ -955,7 +981,7 @@ function productLabel(item: DraftFormItem) {
   if (snapshot?.productCode || snapshot?.productName) return `${snapshot.productCode || ''} ${snapshot.productName || ''}（${snapshot.unitName || ''}）`.trim();
   const product = products.value.find(option => option.productId === item.productId);
   if (product) return `${product.productCode} ${product.productName}（${product.unitName}）`;
-  return item.productId || '未知产品';
+  return item.productId || '请选择产品';
 }
 
 function productDisplay(item: DraftFormItem) {
@@ -972,7 +998,14 @@ function detailItemFor(item: DraftFormItem) {
   return editingDetail.value?.items.find(detailItem => detailItem.workBillItemId === item.workBillItemId) || null;
 }
 
-function handleProductChange(item: DraftFormItem, index: number) {
+function handleProductChange(item: DraftFormItem, index: number, productId: string | number) {
+  const selectedProductId = String(productId);
+  if (form.items.some(candidate => candidate.key !== item.key && candidate.productId === selectedProductId)) {
+    formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
+    toast.warning('同一产品不能重复添加');
+    return;
+  }
+  item.productId = selectedProductId;
   clearFormError(`items.${index}.productId`);
   const product = products.value.find(option => option.productId === item.productId);
   item.productCode = product?.productCode;
@@ -1519,7 +1552,7 @@ onMounted(async () => {
     </div>
 
     <Dialog :open="formVisible" @update:open="handleFormDialogOpenChange">
-      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" class="flex !h-[min(820px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1120px]">
+      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" class="flex !h-[min(820px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1240px]" data-stock-bill-form-dialog>
         <DialogHeader>
           <DialogTitle>{{ dialogMode === 'create' ? pageText.createButton : `编辑${pageText.formTitle}` }}</DialogTitle>
           <DialogDescription>{{ dialogMode === 'create' ? '手工补录或库存调整先保存为草稿；草稿提交后进入待确认，确认入库/出库时才更新库存。' : '草稿可继续保存或提交确认；待确认状态只允许调整本次数量、合格数量、不合格数量和备注。' }}</DialogDescription>
@@ -1583,23 +1616,24 @@ onMounted(async () => {
               <p v-if="formErrors.manualReason" class="text-xs text-destructive">{{ formErrors.manualReason }}</p>
             </div>
 
-            <div>
-              <div class="mb-2 flex items-center justify-between gap-3">
-                <div><h3 class="text-sm font-semibold">产品明细 <span class="text-destructive">*</span></h3><p class="mt-1 text-xs text-muted-foreground">确认后才会更新库存；计划、累计和剩余数量由来源单据自动带入，手工新增草稿不填写这些字段。</p></div>
-                <Button v-if="structureEditable" size="sm" variant="outline" @click="addFormItem">添加产品</Button>
+            <div class="rounded-md border border-border">
+              <div class="flex min-h-11 items-center justify-between gap-3 border-b border-border px-3">
+                <div><strong class="text-sm">产品明细 <span class="text-destructive">*</span></strong><span class="ml-2 text-xs text-muted-foreground">确认后才会更新库存；系统生成单据的计划、累计和剩余数量由系统带入</span></div>
+                <div class="flex shrink-0 items-center gap-3"><span class="text-xs text-muted-foreground">已维护 {{ selectedFormProductCount }} 项</span><Button v-if="structureEditable" size="sm" variant="outline" :disabled="!canAddFormItem" @click="addFormItem">添加产品</Button></div>
               </div>
-              <p v-if="formErrors.items" class="mb-2 text-xs text-destructive">{{ formErrors.items }}</p>
-              <div class="stock-bill-form-table-scroll rounded-md border">
+              <p v-if="formErrors.items" class="border-b border-border px-3 py-2 text-xs text-destructive">{{ formErrors.items }}</p>
+              <div class="stock-bill-form-table-scroll">
                 <Table class="min-w-[916px] table-fixed">
                   <colgroup>
-                    <col class="w-[220px]" />
+                    <col class="w-[240px]" />
                     <col class="w-[80px]" />
                     <col class="w-[80px]" />
-                    <col class="w-[100px]" />
+                    <col class="w-[130px]" />
                     <col class="w-[120px]" />
                     <col class="w-[88px]" />
                     <col class="w-[88px]" />
                     <col class="w-[140px]" />
+                    <col class="w-[72px]" />
                   </colgroup>
                   <TableHeader>
                     <TableRow>
@@ -1611,35 +1645,34 @@ onMounted(async () => {
                       <TableHead>合格数量</TableHead>
                       <TableHead>不合格数量</TableHead>
                       <TableHead>明细备注</TableHead>
+                      <TableHead class="text-center">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     <TableRow v-for="(item, index) in form.items" :key="item.key">
                       <TableCell class="align-top">
-                        <div class="flex items-start gap-1">
-                          <div class="min-w-0 flex-1">
-                            <RemoteSearchSelect v-if="structureEditable" v-model="item.productId" :selected-label="productLabel(item)" :fetch-options="fetchProductSearchOptions" placeholder="请选择产品" search-placeholder="输入产品编码或名称" @update:model-value="handleProductChange(item, index)" />
-                            <div v-else class="stock-bill-product-snapshot">
-                              <code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ productDisplay(item).code }}</code>
-                              <span class="max-w-[150px] truncate text-center font-medium" :title="productDisplay(item).name">{{ productDisplay(item).name }}</span>
-                              <small>{{ productDisplay(item).unitName }}</small>
-                            </div>
+                        <div class="min-w-0">
+                          <RemoteSearchSelect v-if="structureEditable" :model-value="item.productId" :selected-label="productLabel(item)" :fetch-options="keyword => fetchProductSearchOptions(keyword, item.key)" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => handleProductChange(item, index, value)" />
+                          <div v-else-if="item.productId" class="stock-bill-product-snapshot">
+                            <code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ productDisplay(item).code }}</code>
+                            <span class="max-w-[190px] truncate text-center font-medium" :title="productDisplay(item).name">{{ productDisplay(item).name }}</span>
+                            <small>{{ productDisplay(item).unitName }}</small>
                           </div>
-                          <Button v-if="structureEditable" size="icon-xs" variant="ghost" class="mt-1 shrink-0 text-muted-foreground hover:text-destructive" :disabled="form.items.length <= 1" @click="removeFormItem(index)">
-                            <X class="size-3.5" />
-                          </Button>
                         </div>
                         <p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p>
                       </TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty)} ${itemUnitName(item)}` : (item.planQty != null ? `${formatQty(item.planQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.processedQty)} ${itemUnitName(item)}` : (item.processedQty != null ? `${formatQty(item.processedQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top">
-                        <Tooltip>
-                          <TooltipTrigger as-child>
-                            <Input v-model.number="item.currentQty" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" />
-                          </TooltipTrigger>
-                          <TooltipContent>{{ quantityHint(item) }}</TooltipContent>
-                        </Tooltip>
+                        <div class="stock-bill-form-quantity-control">
+                          <Tooltip>
+                            <TooltipTrigger as-child>
+                              <Input v-model.number="item.currentQty" type="number" :min="itemQuantityStep(item)" :step="itemQuantityStep(item)" :aria-invalid="Boolean(formErrors[`items.${index}.quantity`])" @update:model-value="handleQuantityChange(item, index)" />
+                            </TooltipTrigger>
+                            <TooltipContent>{{ quantityHint(item) }}</TooltipContent>
+                          </Tooltip>
+                          <span v-if="itemUnitName(item)" :title="itemUnitName(item)">{{ itemUnitName(item) }}</span>
+                        </div>
                         <p v-if="formErrors[`items.${index}.quantity`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.quantity`] }}</p>
                       </TableCell>
                       <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : (itemPendingQty(item) != null ? `${formatQty(itemPendingQty(item))} ${itemUnitName(item)}` : '-') }}</TableCell>
@@ -1656,10 +1689,12 @@ onMounted(async () => {
                         <Input v-model="item.remark" maxlength="500" placeholder="可填写差异原因" />
                         <p v-if="formErrors[`items.${index}.remark`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p>
                       </TableCell>
+                      <TableCell class="align-top text-center"><Button v-if="structureEditable" variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="form.items.length <= 1" @click="removeFormItem(index)">删除</Button><span v-else class="text-muted-foreground">-</span></TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
               </div>
+              <div class="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm"><span class="text-muted-foreground">{{ structureEditable ? '草稿阶段可继续增删产品；保存、提交和确认时均由后端重新校验。' : '系统生成单据的产品结构已锁定，仅可按当前业务规则调整数量。' }}</span><span class="shrink-0">共 {{ form.items.length }} 条</span></div>
             </div>
 
             <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" maxlength="500" rows="3" placeholder="填写调整依据、验收说明或其他备注" :aria-invalid="Boolean(formErrors.remark)" /><div class="flex justify-between text-xs"><span :class="formErrors.remark ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.remark || '选填，最多 500 个字符' }}</span><span class="text-muted-foreground">{{ form.remark.length }}/500</span></div></div>
@@ -1880,7 +1915,7 @@ onMounted(async () => {
 .stock-bill-detail-row-scroll :deep([data-slot="table-cell"]),
 .stock-bill-dialog-table-scroll :deep([data-slot="table-head"]),
 .stock-bill-dialog-table-scroll :deep([data-slot="table-cell"]) {
-  height: 40px;
+  height: 44px;
   padding: 6px 8px;
   font-size: 12px;
   text-align: center !important;
@@ -1889,8 +1924,8 @@ onMounted(async () => {
 
 .stock-bill-form-table-scroll :deep([data-slot="table-head"]),
 .stock-bill-form-table-scroll :deep([data-slot="table-cell"]) {
-  height: 40px;
-  padding: 6px 8px;
+  height: 48px;
+  padding: 8px 12px;
   font-size: 14px;
   text-align: center !important;
   vertical-align: middle !important;
@@ -1915,7 +1950,8 @@ onMounted(async () => {
 }
 
 .stock-bill-form-table-scroll :deep(input) {
-  height: 32px;
+  height: 36px;
+  font-size: 14px;
   text-align: center;
 }
 
@@ -1933,14 +1969,14 @@ onMounted(async () => {
 .stock-bill-form-quantity-control span {
   max-width: 72px;
   overflow: hidden;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .stock-bill-form-table-scroll :deep([role="combobox"]) {
-  min-height: 32px;
+  min-height: 36px;
   font-size: 14px;
 }
 

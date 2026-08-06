@@ -578,6 +578,12 @@ export async function listEnabledSalesProductOptions(keyword = '', pageSize = 10
   return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}`, product: item }));
 }
 
+/** 仅读取启用产品总数，用于销售单明细的可添加行上限判断。 */
+export async function getEnabledSalesProductTotal() {
+  const page = await listProducts({ pageNum: 1, pageSize: 1, status: 1 });
+  return page.total;
+}
+
 export async function listEnabledSalesWarehouseOptions(keyword = '', pageSize = 10) {
   const page = await listWarehouses({
     pageNum: 1,

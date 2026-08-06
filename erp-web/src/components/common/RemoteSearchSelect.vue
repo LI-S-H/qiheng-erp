@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
-import { ChevronsUpDown, Loader2, Search } from 'lucide-vue-next';
+import { CircleHelp, ChevronsUpDown, Loader2, Search } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useExclusiveDropdown } from '@/shared/composables/use-exclusive-dropdown';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<{
   selectedLabel?: string;
   placeholder?: string;
   searchPlaceholder?: string;
+  searchHint?: string;
   emptyText?: string;
   disabled?: boolean;
   invalid?: boolean;
@@ -57,6 +59,15 @@ let requestSequence = 0;
 const { setOpen } = useExclusiveDropdown(open);
 
 const normalizedValue = computed(() => props.modelValue === undefined || props.modelValue === null ? '' : String(props.modelValue));
+const resolvedSearchHint = computed(() => {
+  if (props.searchHint?.trim()) return props.searchHint.trim();
+
+  const target = props.searchPlaceholder.trim()
+    .replace(/^输入/, '')
+    .replace(/搜索$/, '');
+  if (!target || target === '关键字') return '';
+  return target.includes('编码或名称') ? `支持按${target}单独搜索` : `支持按${target}搜索`;
+});
 const triggerLabel = computed(() => {
   if (props.selectedLabel) return props.selectedLabel;
   if (selectedOption.value) return selectedOption.value.label;
@@ -135,7 +146,21 @@ watch(keyword, () => {
       <div class="border-b" :class="compact ? 'p-1.5' : 'p-2'">
         <div class="relative">
           <Search class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" :class="compact ? 'size-3.5' : 'size-4'" />
-          <Input v-model="keyword" :class="compact ? 'h-7 pl-7 text-xs' : 'h-8 pl-8'" :placeholder="searchPlaceholder" />
+          <Input v-model="keyword" :class="compact ? 'h-7 pl-7 pr-7 text-xs' : 'h-8 pl-8 pr-8'" :placeholder="searchPlaceholder" />
+          <Tooltip v-if="resolvedSearchHint" :delay-duration="0" :skip-delay-duration="0">
+            <TooltipTrigger as-child>
+              <button
+                type="button"
+                data-remote-search-hint
+                class="absolute right-1.5 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                :class="compact ? 'size-5' : 'size-6'"
+                aria-label="查看搜索说明"
+              >
+                <CircleHelp :class="compact ? 'size-3.5' : 'size-4'" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent class="max-w-[260px] !animate-none">{{ resolvedSearchHint }}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
       <div class="max-h-64 overflow-auto p-1">

@@ -869,6 +869,13 @@ export async function listEnabledProductOptions(keyword = '', pageSize = 10) {
   return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}`, product: item }));
 }
 
+/** 仅读取启用供货产品总数，用于采购单明细的可添加行上限判断。 */
+export async function getEnabledSupplierProductTotal(supplierId: string) {
+  if (!supplierId) return 0;
+  const page = await listSupplierProducts({ pageNum: 1, pageSize: 1, status: 1, supplierId });
+  return page.total;
+}
+
 export async function listEnabledWarehouseOptions(keyword = '', pageSize = 10) {
   const page = await listWarehouses({
     pageNum: 1,

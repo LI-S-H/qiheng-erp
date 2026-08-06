@@ -23,6 +23,13 @@ async function selectRemoteOption(page, dialog, comboboxIndex, optionPattern) {
   await content.locator('[data-select-option]').filter({ hasText: optionPattern }).first().click();
 }
 
+async function selectReturnProduct(page, dialog, optionPattern) {
+  await dialog.locator('[data-return-form-items] [role="combobox"]').first().click();
+  const content = page.locator('[data-remote-search-select-content]').last();
+  await content.locator('input').fill('');
+  await content.locator('[data-select-option]:not([disabled])').filter({ hasText: optionPattern }).first().click();
+}
+
 async function selectRowAction(page, returnNo, actionLabel) {
   const row = tableRow(page, returnNo);
   await row.getByRole('button', { name: `更多 ${returnNo} 操作` }).click();
@@ -93,13 +100,16 @@ runSmoke({
     await assertRequiredLabels(createDialog, ['原采购单', '退货出库仓库']);
     await createDialog.getByRole('button', { name: '保存草稿', exact: true }).click();
     const validationText = await createDialog.innerText();
-    if (!validationText.includes('请选择原采购单') || !validationText.includes('请选择退货出库仓库') || !validationText.includes('请至少选择一条可退明细')) {
+    if (!validationText.includes('请选择原采购单') || !validationText.includes('请选择退货出库仓库') || !validationText.includes('请至少添加一条退货明细')) {
       throw new Error('采购退回新增缺少来源、仓库或明细必填校验');
     }
     await selectRemoteOption(page, createDialog, 0, 'PO');
-    const itemRow = createDialog.getByRole('checkbox').first().locator('xpath=ancestor::tr');
+    await selectReturnProduct(page, createDialog, 'P');
+    const itemRow = createDialog.locator('[data-return-form-items] tbody tr').last();
     await itemRow.waitFor();
-    await itemRow.getByRole('checkbox').click();
+    const formTableViewport = createDialog.locator('[data-return-form-items]').locator('..');
+    const formTableOverflow = await formTableViewport.evaluate(element => element.scrollWidth - element.clientWidth);
+    if (formTableOverflow > 2) throw new Error(`桌面端采购退回明细不应出现无意义横向滚动：${formTableOverflow}`);
     const quantityInput = itemRow.locator('input[type="number"]');
     await quantityInput.fill('999999');
     await createDialog.getByRole('button', { name: '保存草稿', exact: true }).click();

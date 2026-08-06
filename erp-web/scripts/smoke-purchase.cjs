@@ -243,7 +243,7 @@ runSmoke({
     if ((await detailDialog.locator('.purchase-order-line-scroll tbody').innerText()).includes('完成 ')) {
       throw new Error('采购详情不应在已入库数量下重复展示明细完成率');
     }
-    const completionRateTrigger = detailDialog.locator('.purchase-execution-summary__track');
+    const completionRateTrigger = detailDialog.locator('.business-execution-summary__track');
     if (await completionRateTrigger.getAttribute('aria-label') !== '查看按金额核算的完成率') {
       throw new Error('采购详情的金额完成率缺少可访问的计算说明入口');
     }

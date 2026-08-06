@@ -23,7 +23,6 @@ import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,7 +47,7 @@ import type {
 } from '../types';
 
 interface DraftLine extends ReturnableSourceOrderItem {
-  selected: boolean;
+  rowId: string;
   requestedQty: number;
   remark: string;
 }
@@ -125,6 +124,7 @@ const detailDialogOpen = ref(false);
 const detailRow = ref<ReturnOrderDetail | null>(null);
 const detailActionMode = ref<DetailActionMode>('view');
 const draftLines = ref<DraftLine[]>([]);
+const sourceItems = ref<ReturnableSourceOrderItem[]>([]);
 const approvalQuantities = reactive<Record<string, number>>({});
 const partyOptions = ref<ReturnSelectOption[]>([{ value: 'all', label: props.config.partyAllLabel }]);
 const warehouseOptions = ref<ReturnSelectOption[]>([{ value: 'all', label: '全部仓库' }]);
@@ -132,6 +132,7 @@ const sourceOrderOptions = ref<ReturnSelectOption[]>([]);
 const sourceOrderCache = new Map<string, ReturnableSourceOrder>();
 const formErrors = reactive<Record<string, string>>({});
 let requestSequence = 0;
+let draftLineSequence = 1;
 
 const query = reactive<ReturnOrderQuery>({
   returnNo: '',
@@ -180,8 +181,13 @@ const selectedWarehouseLabel = computed(() => warehouseOptions.value.find(option
   || (editingDetail.value?.warehouseId === form.warehouseId ? editingDetail.value.warehouseName : ''));
 const queryPartyLabel = computed(() => query.partyId === 'all' ? props.config.partyAllLabel : partyOptions.value.find(option => option.value === query.partyId)?.label || '');
 const queryWarehouseLabel = computed(() => query.warehouseId === 'all' ? '全部仓库' : warehouseOptions.value.find(option => option.value === query.warehouseId)?.label || '');
-const selectedLines = computed(() => draftLines.value.filter(line => line.selected));
+const selectedLines = computed(() => draftLines.value.filter(line => Boolean(line.sourceOrderItemId)));
 const draftAmount = computed(() => selectedLines.value.reduce((sum, line) => sum + Number(line.requestedQty || 0) * line.unitPrice, 0));
+const selectableProductCount = computed(() => new Set(sourceItems.value.map(item => item.productId)).size);
+const selectedProductCount = computed(() => new Set(selectedLines.value.map(line => line.productId)).size);
+const canAddLine = computed(() => Boolean(form.sourceOrderId)
+  && selectableProductCount.value > 0
+  && selectedProductCount.value < selectableProductCount.value);
 const summaryItems = computed(() => [
   { key: 'draft', label: '本页草稿', value: rows.value.filter(row => row.status === 'DRAFT').length },
   { key: 'submitted', label: '本页待审核', value: rows.value.filter(row => row.status === 'SUBMITTED').length },
@@ -273,26 +279,53 @@ function resetForm() {
   form.returnReason = '';
   form.remark = '';
   draftLines.value = [];
+  sourceItems.value = [];
   editingDetail.value = null;
   clearFormErrors();
 }
 
+function newDraftLine(): DraftLine {
+  return {
+    rowId: `return-line-${draftLineSequence++}`,
+    sourceOrderItemId: '',
+    productId: '',
+    productCode: '',
+    productName: '',
+    unitName: '',
+    quantityPrecision: 0,
+    sourceFulfilledQty: 0,
+    occupiedQty: 0,
+    availableReturnQty: 0,
+    unitPrice: 0,
+    requestedQty: 0,
+    remark: '',
+  };
+}
+
+function createDraftLine(sourceItem: ReturnableSourceOrderItem, saved?: ReturnOrderDetail['items'][number]): DraftLine {
+  return {
+    ...sourceItem,
+    rowId: `return-line-${draftLineSequence++}`,
+    // 编辑草稿时，来源接口的可退数量未计入当前草稿，允许保留用户之前填写的申请数量。
+    availableReturnQty: saved ? Math.max(sourceItem.availableReturnQty, saved.requestedQty) : sourceItem.availableReturnQty,
+    requestedQty: saved?.requestedQty ?? Math.min(1, sourceItem.availableReturnQty),
+    remark: saved?.remark || '',
+  };
+}
+
 async function loadSourceLines(sourceOrderId: string, existing?: ReturnOrderDetail) {
-  const sourceItems = await props.config.service.listSourceItems(sourceOrderId);
+  const items = await props.config.service.listSourceItems(sourceOrderId);
   const existingBySourceId = new Map(existing?.items.map(item => [item.sourceOrderItemId, item]) || []);
-  const lines = sourceItems.map(item => {
+  const availableItems = items.map(item => {
     const saved = existingBySourceId.get(item.sourceOrderItemId);
     return {
       ...item,
-      selected: Boolean(saved),
-      requestedQty: saved?.requestedQty || 0,
-      remark: saved?.remark || '',
       availableReturnQty: saved ? Math.max(item.availableReturnQty, saved.requestedQty) : item.availableReturnQty,
     };
   });
   existing?.items.forEach(saved => {
-    if (lines.some(line => line.sourceOrderItemId === saved.sourceOrderItemId)) return;
-    lines.push({
+    if (availableItems.some(item => item.sourceOrderItemId === saved.sourceOrderItemId)) return;
+    availableItems.push({
       sourceOrderItemId: saved.sourceOrderItemId,
       productId: saved.productId,
       productCode: saved.productCode,
@@ -304,12 +337,26 @@ async function loadSourceLines(sourceOrderId: string, existing?: ReturnOrderDeta
       occupiedQty: 0,
       availableReturnQty: saved.requestedQty,
       unitPrice: saved.unitPrice,
-      selected: true,
-      requestedQty: saved.requestedQty,
-      remark: saved.remark,
     });
   });
-  draftLines.value = lines;
+  sourceItems.value = availableItems;
+  draftLines.value = existing
+    ? existing.items.map(saved => createDraftLine(
+      availableItems.find(item => item.sourceOrderItemId === saved.sourceOrderItemId) || {
+        sourceOrderItemId: saved.sourceOrderItemId,
+        productId: saved.productId,
+        productCode: saved.productCode,
+        productName: saved.productName,
+        unitName: saved.unitName,
+        quantityPrecision: saved.quantityPrecision,
+        sourceFulfilledQty: saved.sourceFulfilledQty,
+        occupiedQty: 0,
+        availableReturnQty: saved.requestedQty,
+        unitPrice: saved.unitPrice,
+      },
+      saved,
+    ))
+    : (availableItems.length > 0 ? [newDraftLine()] : []);
 }
 
 async function handleSourceChange(value: string | number) {
@@ -317,6 +364,7 @@ async function handleSourceChange(value: string | number) {
   form.sourceOrderId = sourceOrderId;
   delete formErrors.sourceOrderId;
   draftLines.value = [];
+  sourceItems.value = [];
   const source = sourceOrderCache.get(sourceOrderId);
   if (source) {
     mergeOptions(partyOptions, [{ value: source.partyId, label: `${source.partyCode} ${source.partyName}` }], { value: 'all', label: props.config.partyAllLabel });
@@ -330,6 +378,54 @@ async function handleSourceChange(value: string | number) {
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '可退明细加载失败');
   }
+}
+
+function selectedProductLabel(line: DraftLine) {
+  return line.productId ? `${line.productCode} ${line.productName}` : '';
+}
+
+async function fetchReturnProductOptions(keyword: string, currentRowId?: string): Promise<ReturnSelectOption[]> {
+  const normalizedKeyword = keyword.trim().toLocaleLowerCase();
+  const selectedProductIds = new Set(draftLines.value
+    .filter(line => line.rowId !== currentRowId)
+    .map(line => line.productId)
+    .filter(Boolean));
+  return sourceItems.value
+    .filter(item => !normalizedKeyword
+      || item.productCode.toLocaleLowerCase().includes(normalizedKeyword)
+      || item.productName.toLocaleLowerCase().includes(normalizedKeyword))
+    .map(item => ({
+      value: item.sourceOrderItemId,
+      label: `${item.productCode} ${item.productName}`,
+      disabled: selectedProductIds.has(item.productId),
+    }));
+}
+
+function selectReturnProduct(line: DraftLine, value: string | number) {
+  const sourceItemId = String(value);
+  const sourceItem = sourceItems.value.find(item => item.sourceOrderItemId === sourceItemId);
+  const index = draftLines.value.findIndex(item => item.rowId === line.rowId);
+  if (!sourceItem) return;
+  if (draftLines.value.some(item => item.rowId !== line.rowId && item.productId === sourceItem.productId)) {
+    formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
+    toast.warning('同一产品不能重复添加');
+    return;
+  }
+  const rowId = line.rowId;
+  Object.assign(line, createDraftLine(sourceItem));
+  line.rowId = rowId;
+  delete formErrors[`items.${index}.productId`];
+  delete formErrors[`items.${index}.requestedQty`];
+}
+
+function addLine() {
+  if (!canAddLine.value) return;
+  draftLines.value = [...draftLines.value, newDraftLine()];
+}
+
+function removeLine(rowId: string) {
+  if (draftLines.value.length === 1) return;
+  draftLines.value = draftLines.value.filter(line => line.rowId !== rowId);
 }
 
 function openCreateDialog() {
@@ -386,9 +482,17 @@ function validateForm() {
   if (form.reasonCode === 'OTHER' && !form.returnReason.trim()) formErrors.returnReason = '选择其他原因时必须填写具体原因';
   if (form.returnReason.trim().length > 500) formErrors.returnReason = '原因说明不能超过 500 字';
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 字';
-  if (selectedLines.value.length === 0) formErrors.items = '请至少选择一条可退明细';
+  if (selectedLines.value.length === 0) formErrors.items = '请至少添加一条退货明细';
+  const selectedProductIds = new Set<string>();
   draftLines.value.forEach((line, index) => {
-    if (!line.selected) return;
+    if (!line.sourceOrderItemId) {
+      formErrors[`items.${index}.productId`] = '请选择产品';
+      return;
+    }
+    if (selectedProductIds.has(line.productId)) {
+      formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
+    }
+    selectedProductIds.add(line.productId);
     const quantity = Number(line.requestedQty);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       formErrors[`items.${index}.requestedQty`] = '申请数量必须大于 0';
@@ -414,7 +518,7 @@ function buildFormPayload(): ReturnOrderFormPayload {
     reasonCode: form.reasonCode,
     returnReason: form.returnReason.trim(),
     remark: form.remark.trim(),
-    items: selectedLines.value.map(line => ({
+    items: draftLines.value.map(line => ({
       sourceOrderItemId: line.sourceOrderItemId,
       requestedQty: Number(line.requestedQty),
       remark: line.remark.trim(),
@@ -771,7 +875,7 @@ onMounted(() => {
     </div>
 
     <Dialog v-model:open="formDialogOpen">
-      <DialogContent placement="app-content" class="flex h-[min(790px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl" data-return-form-dialog>
+      <DialogContent placement="app-content" class="flex h-[min(790px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[74rem]" data-return-form-dialog>
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? config.createTitle : config.editTitle }}</DialogTitle><DialogDescription>只选择已有实际履约数量的原订单明细；快照、金额、状态和审计字段由后端维护。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div class="space-y-4 p-1">
@@ -796,22 +900,24 @@ onMounted(() => {
             </div>
 
             <div class="rounded-md border">
-              <div class="flex min-h-11 items-center justify-between border-b px-3"><div><strong class="text-sm">可退明细</strong><span class="ml-2 text-xs text-muted-foreground">剩余可退数量由服务端聚合，提交和审核时再次校验</span></div><span class="text-xs text-muted-foreground">已选 {{ selectedLines.length }} 项</span></div>
+              <div class="flex min-h-11 items-center justify-between gap-3 border-b px-3"><div><strong class="text-sm">退货明细</strong><span class="ml-2 text-xs text-muted-foreground">选择原单已履约产品后填写退货数量，提交和审核时由服务端再次校验</span></div><div class="flex shrink-0 items-center gap-3"><span class="text-xs text-muted-foreground">已添加 {{ selectedProductCount }} / {{ selectableProductCount }} 项</span><Button size="sm" variant="outline" type="button" :disabled="!canAddLine" @click="addLine">添加产品</Button></div></div>
               <ScrollArea class="w-full">
-                <Table class="min-w-[980px] table-fixed" data-return-form-items>
-                  <colgroup><col class="w-[55px]" /><col class="w-[245px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[150px]" /><col class="w-[120px]" /><col class="w-[190px]" /></colgroup>
-                  <TableHeader><TableRow><TableHead class="text-center">选择</TableHead><TableHead>产品</TableHead><TableHead class="text-right">{{ config.fulfilledQuantityLabel }}</TableHead><TableHead class="text-right">已占用</TableHead><TableHead class="text-right">申请数量</TableHead><TableHead class="text-right">预计金额</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
+                <Table class="order-line-table min-w-[1080px] table-fixed" data-return-form-items>
+                  <colgroup><col class="w-[220px]" /><col class="w-[95px]" /><col class="w-[95px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[105px]" /><col class="w-[130px]" /><col class="w-[60px]" /></colgroup>
+                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">{{ config.fulfilledQuantityLabel }}</TableHead><TableHead class="text-right">已占用</TableHead><TableHead class="text-right">剩余可退</TableHead><TableHead class="text-right">申请数量</TableHead><TableHead class="text-right">原单价</TableHead><TableHead class="text-right">预计金额</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    <TableRow v-if="!form.sourceOrderId"><TableCell colspan="7" class="h-24 text-center text-muted-foreground">请先选择{{ config.sourceOrderLabel }}</TableCell></TableRow>
-                    <TableRow v-else-if="draftLines.length === 0"><TableCell colspan="7" class="h-24 text-center text-muted-foreground">该订单暂无剩余可退明细</TableCell></TableRow>
-                    <TableRow v-for="(line, index) in draftLines" v-else :key="line.sourceOrderItemId" :data-source-item-id="line.sourceOrderItemId">
-                      <TableCell class="text-center"><Checkbox :model-value="line.selected" :aria-label="`选择 ${line.productName}`" @update:model-value="line.selected = Boolean($event)" /></TableCell>
-                      <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ line.productCode }}</code><div class="mt-1 font-medium">{{ line.productName }}</div><small class="text-muted-foreground">剩余可退 {{ formatQuantity(line.availableReturnQty, line.quantityPrecision) }} {{ line.unitName }}</small></TableCell>
-                      <TableCell class="text-right tabular-nums">{{ formatQuantity(line.sourceFulfilledQty, line.quantityPrecision) }} {{ line.unitName }}</TableCell>
-                      <TableCell class="text-right tabular-nums">{{ formatQuantity(line.occupiedQty, line.quantityPrecision) }} {{ line.unitName }}</TableCell>
-                      <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.requestedQty" type="number" min="0" :max="line.availableReturnQty" :step="quantityStep(line.quantityPrecision)" :disabled="!line.selected" class="text-right" /><span class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.requestedQty`]" class="form-error text-right">{{ formErrors[`items.${index}.requestedQty`] }}</p></TableCell>
-                      <TableCell class="text-right font-medium tabular-nums">{{ line.selected ? formatMoney(Number(line.requestedQty || 0) * line.unitPrice) : '-' }}</TableCell>
-                      <TableCell class="align-top"><Input v-model="line.remark" :disabled="!line.selected" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>
+                    <TableRow v-if="!form.sourceOrderId"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">请先选择{{ config.sourceOrderLabel }}</TableCell></TableRow>
+                    <TableRow v-else-if="draftLines.length === 0"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">该订单暂无剩余可退明细</TableCell></TableRow>
+                    <TableRow v-for="(line, index) in draftLines" v-else :key="line.rowId" :data-source-item-id="line.sourceOrderItemId">
+                      <TableCell class="align-top"><RemoteSearchSelect :model-value="line.sourceOrderItemId" :selected-label="selectedProductLabel(line)" :fetch-options="keyword => fetchReturnProductOptions(keyword, line.rowId)" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectReturnProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
+                      <TableCell class="text-right tabular-nums">{{ line.sourceOrderItemId ? `${formatQuantity(line.sourceFulfilledQty, line.quantityPrecision)} ${line.unitName}` : '-' }}</TableCell>
+                      <TableCell class="text-right tabular-nums">{{ line.sourceOrderItemId ? `${formatQuantity(line.occupiedQty, line.quantityPrecision)} ${line.unitName}` : '-' }}</TableCell>
+                      <TableCell class="text-right tabular-nums">{{ line.sourceOrderItemId ? `${formatQuantity(line.availableReturnQty, line.quantityPrecision)} ${line.unitName}` : '-' }}</TableCell>
+                      <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.requestedQty" type="number" min="0" :max="line.availableReturnQty" :step="quantityStep(line.quantityPrecision)" :disabled="!line.sourceOrderItemId" class="min-w-0 text-right" /><span v-if="line.unitName" class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.requestedQty`]" class="form-error text-right">{{ formErrors[`items.${index}.requestedQty`] }}</p></TableCell>
+                      <TableCell class="text-right font-medium tabular-nums">{{ line.sourceOrderItemId ? formatMoney(line.unitPrice) : '-' }}</TableCell>
+                      <TableCell class="text-right font-medium tabular-nums">{{ line.sourceOrderItemId ? formatMoney(Number(line.requestedQty || 0) * line.unitPrice) : '-' }}</TableCell>
+                      <TableCell class="align-top"><Input v-model="line.remark" :disabled="!line.sourceOrderItemId" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>
+                      <TableCell class="align-top text-center"><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="draftLines.length === 1" @click="removeLine(line.rowId)">删除</Button></TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>

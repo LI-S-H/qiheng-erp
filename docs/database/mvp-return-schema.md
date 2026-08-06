@@ -1,5 +1,15 @@
 # MVP 销售退货与采购退货库表设计
 
+## 模块归属与依赖
+
+退货业务代码归属独立的 `erp-return` 模块，数据库仍只使用本文件定义的统一
+`return_order` 与 `return_order_item` 两张表，不新增采购退货表或销售退货表。
+
+- `erp-return`：退货主数据、来源契约、可退数量派生、状态回写，以及仓储回写适配器；该模块不得依赖采购或销售模块。
+- `erp-purchase`：实现采购来源提供者；不再拥有退货实体、Mapper、Controller 或 Service。
+- `erp-sales`：后续实现销售来源提供者；未部署前销售退货接口必须明确失败，不得写入半成品单据。
+- `erp-warehouse`：只通过入库/出库回写端口通知来源业务；采购退货出库确认与退货进度回写在同一事务内完成。
+
 ## 设计目标
 
 退货模块使用一套统一的 `return_order` / `return_order_item` 表，同时承接销售退货和采购退货。退货单负责表达退货申请、审核和执行进度；实际库存变化继续统一通过仓库模块的入库单、出库单和库存流水完成。采购退货审核流程可以调用仓储库存预占能力，但不得自行直接更新 `warehouse_stock`。
@@ -86,7 +96,7 @@
 | `handling_type`           | `varchar(32)`   |    否 | `REFUND`            | `REFUND`、`EXCHANGE`、`OTHER`              |
 | `reason_code`             | `varchar(32)`   |    否 | `OTHER`             | 退货原因编码                                   |
 | `return_reason`           | `varchar(500)`  |    否 | `''`                | 退货原因补充说明                                 |
-| `total_amount`            | `decimal(18,2)` |    否 | `0.00`              | 当前有效退货总金额，由后端汇总明细                        |
+| `total_amount`            | `int`           |    否 | `0`                 | 当前有效退货总金额，放大100倍保存，17600表示176.00            |
 | `status`                  | `varchar(32)`   |    否 | `DRAFT`             | 退货单状态                                    |
 | `status_reason`           | `varchar(500)`  |    否 | `''`                | 最近一次审核退回或取消原因                            |
 | `created_by_id`           | `bigint`        |    是 | `NULL`              | 创建人ID，来自当前登录用户                           |
@@ -121,12 +131,12 @@
 | `product_name` | `varchar(200)` | 否 | — | 产品名称快照 |
 | `unit_name` | `varchar(32)` | 否 | `'件'` | 单位名称快照 |
 | `quantity_precision` | `tinyint` | 否 | `0` | 数量小数位快照，范围 0～2 |
-| `source_fulfilled_qty` | `decimal(18,2)` | 否 | `0.00` | 创建退货明细时原订单累计已出库或已入库数量快照 |
-| `requested_qty` | `decimal(18,2)` | 否 | `0.00` | 申请退货数量 |
-| `approved_qty` | `decimal(18,2)` | 否 | `0.00` | 审核通过数量 |
-| `processed_qty` | `decimal(18,2)` | 否 | `0.00` | 仓库累计确认的实际处理总量 |
-| `unit_price` | `decimal(18,2)` | 否 | `0.00` | 原订单单价快照 |
-| `total_amount` | `decimal(18,2)` | 否 | `0.00` | 当前有效明细金额，由后端计算 |
+| `source_fulfilled_qty` | `int` | 否 | `0` | 创建退货明细时原订单累计已出库或已入库数量快照，放大100倍保存 |
+| `requested_qty` | `int` | 否 | `0` | 申请退货数量，放大100倍保存，500表示5.00 |
+| `approved_qty` | `int` | 否 | `0` | 审核通过数量，放大100倍保存 |
+| `processed_qty` | `int` | 否 | `0` | 仓库累计确认的实际处理总量，放大100倍保存 |
+| `unit_price` | `int` | 否 | `0` | 原订单单价快照，放大100倍保存，3520表示35.20 |
+| `total_amount` | `int` | 否 | `0` | 当前有效明细金额，放大100倍保存，17600表示176.00 |
 | `create_time` | `datetime` | 否 | `CURRENT_TIMESTAMP` | 创建时间 |
 | `update_time` | `datetime` | 否 | 自动更新 | 更新时间 |
 | `remark` | `varchar(500)` | 否 | `''` | 明细备注 |
@@ -150,7 +160,7 @@
 
 ## 数量精度约定
 
-退货数量使用 `decimal(18,2)`，与仓库模块按 100 倍整数保存、产品数量精度限制为 0～2 位的规则保持一致。销售和采购订单明细目前使用 `decimal(18,4)`，因此实施建表前必须检查现有 `outbound_qty` 和 `inbound_qty` 是否存在三、四位有效小数。
+退货数量和金额统一使用 `int` 按 100 倍整数保存，与仓库模块、采购模块保持一致，产品数量精度限制为 0～2 位。接口按业务小数返回，后端负责 ×100/÷100 转换。
 
 如果现有数据全部符合最多两位小数，则保持本设计；如果存在有效三、四位小数，必须先完成数据清理或重新评估退货数量精度，不能直接截断。
 

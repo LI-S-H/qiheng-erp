@@ -43,9 +43,9 @@ import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBillItem;
 import com.qiheng.erp.warehouse.domain.inbound.enums.InboundType;
 import com.qiheng.erp.warehouse.domain.stockbill.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
+import com.qiheng.erp.warehouse.mapper.InboundBillItemMapper;
+import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
-import com.qiheng.erp.warehouse.service.IInboundBillItemService;
-import com.qiheng.erp.warehouse.service.IInboundBillService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -93,10 +93,10 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     private SupplierProductMapper supplierProductMapper;
 
     @Autowired
-    private IInboundBillService inboundBillService;
+    private InboundBillMapper inboundBillMapper;
 
     @Autowired
-    private IInboundBillItemService inboundBillItemService;
+    private InboundBillItemMapper inboundBillItemMapper;
 
     @Autowired
     private BillNoGenerator billNoGenerator;
@@ -626,10 +626,11 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
      * @param order 采购订单实体
      */
     private void generatePurchaseInboundBill(PurchaseOrder order) {
-        boolean hasPendingBill = inboundBillService.exists(new LambdaQueryWrapper<InboundBill>()
+        Long hasPendingBillCount = inboundBillMapper.selectCount(new LambdaQueryWrapper<InboundBill>()
                 .eq(InboundBill::getSourceType, SourceType.PURCHASE_ORDER.name())
                 .eq(InboundBill::getSourceId, order.getId())
                 .eq(InboundBill::getStatus, StockBillStatus.PENDING_CONFIRM.name()));
+        boolean hasPendingBill = hasPendingBillCount != null && hasPendingBillCount > 0;
         if (hasPendingBill) {
             return;
         }
@@ -678,7 +679,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 .setResponsibleById(currentUserId)
                 .setResponsibleByName(currentUserName)
                 .setRemark(order.getRemark());
-        inboundBillService.save(bill);
+        inboundBillMapper.insert(bill);
         // 构建入库单明细
         List<InboundBillItem> billItems = new ArrayList<>();
         for (PurchaseOrderItem item : items) {
@@ -686,7 +687,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             Integer precision = product != null ? product.getQuantityPrecision() : 0;
             Long planQty = item.getQuantity() != null ? item.getQuantity().longValue() : 0L;
             Long processedQty = item.getInboundQty() != null ? item.getInboundQty().longValue() : 0L;
-            Long pendingQty = Math.max(0L, planQty - processedQty);
+            long pendingQty = Math.max(0L, planQty - processedQty);
             if (pendingQty == 0L) {
                 continue;
             }
@@ -707,7 +708,10 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                     .setDefectiveQty(0L);
             billItems.add(billItem);
         }
-        inboundBillItemService.saveBatch(billItems);
+        // 等效于 IService#saveBatch：单条循环入库（MyBatis-Plus saveBatch 默认实现也是循环 insert）
+        for (InboundBillItem billItem : billItems) {
+            inboundBillItemMapper.insert(billItem);
+        }
     }
 
     private PurchaseOrderFulfillmentSummaryVo buildFulfillmentSummary(PurchaseOrder order,
@@ -737,7 +741,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         addTimelineItem(timeline, "CREATED", order.getCreatedByName(), order.getCreateTime(), null, null);
         addTimelineItem(timeline, "SUBMITTED", order.getSubmittedByName(), order.getSubmittedAt(), null, null);
         addTimelineItem(timeline, "APPROVED", order.getApprovedByName(), order.getApprovedAt(), null, null);
-        List<InboundBill> inboundBills = inboundBillService.list(new LambdaQueryWrapper<InboundBill>()
+        List<InboundBill> inboundBills = inboundBillMapper.selectList(new LambdaQueryWrapper<InboundBill>()
                 .eq(InboundBill::getSourceType, SourceType.PURCHASE_ORDER.name())
                 .eq(InboundBill::getSourceId, order.getId())
                 .orderByAsc(InboundBill::getCreateTime));
@@ -771,7 +775,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
      * @return 当天最大序号，无记录返回0
      */
     private long findMaxInboundBillSequence() {
-        List<Object> billNos = inboundBillService.listObjs(
+        List<Object> billNos = inboundBillMapper.selectObjs(
                 new LambdaQueryWrapper<InboundBill>().select(InboundBill::getInboundNo));
         return billNoGenerator.findMaxExistingSequence(InboundType.PURCHASE_IN.billNoPrefix(), billNos);
     }

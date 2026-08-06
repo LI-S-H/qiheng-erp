@@ -26,6 +26,7 @@
         <module>erp-warehouse</module>
         <module>erp-purchase</module>
         <module>erp-sales</module>
+        <module>erp-return</module>
         <module>erp-ai</module>
         <module>erp-job</module>
         <module>erp-admin</module>
@@ -111,6 +112,11 @@
             <dependency>
                 <groupId>com.qiheng</groupId>
                 <artifactId>erp-sales</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.qiheng</groupId>
+                <artifactId>erp-return</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

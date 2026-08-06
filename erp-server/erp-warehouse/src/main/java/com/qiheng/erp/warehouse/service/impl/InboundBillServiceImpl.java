@@ -593,14 +593,21 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         return getInboundBillDetailVo(id);
     }
 
+    /**
+     * 需要回写的来源单必须且只能有一个适配器，避免确认成功但业务状态遗漏。
+     */
     private void dispatchSourceWriteback(InboundBill bill, List<InboundBillItem> items) {
         if (bill.getSourceType() == null || bill.getSourceId() == null) {
             return;
         }
-        inboundSourceWritebackPorts.stream()
+        List<InboundSourceWritebackPort> matches = inboundSourceWritebackPorts.stream()
                 .filter(port -> port.supports(bill.getSourceType()))
-                .findFirst()
-                .ifPresent(port -> port.onInboundConfirmed(bill, items));
+                .toList();
+        if (matches.size() != 1) {
+            String reason = matches.isEmpty() ? "未配置" : "配置重复";
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "入库来源单回写适配器" + reason);
+        }
+        matches.getFirst().onInboundConfirmed(bill, items);
     }
 
     /**

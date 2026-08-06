@@ -20,6 +20,7 @@ import com.qiheng.erp.warehouse.domain.stockbill.dto.StockBillItemUpdateDto;
 import com.qiheng.erp.warehouse.domain.stockbill.dto.StockBillUpdateDto;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBill;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBillItem;
+import com.qiheng.erp.warehouse.domain.outbound.port.OutboundSourceWritebackPort;
 import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBill;
 import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBillItem;
 import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
@@ -99,6 +100,9 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
 
     @Autowired
     private BillNoGenerator billNoGenerator;
+
+    @Autowired(required = false)
+    private List<OutboundSourceWritebackPort> outboundSourceWritebackPorts = Collections.emptyList();
 
     /**
      * 分页查询出库单记录
@@ -558,6 +562,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         bill.setConfirmedById(currentUserId);
         bill.setConfirmedByName(currentUserName);
         bill.setConfirmedAt(now);
+        dispatchSourceWriteback(bill, items);
         // 确认时填入负责人（审核人即负责人）
         bill.setResponsibleById(currentUserId);
         bill.setResponsibleByName(currentUserName);
@@ -568,8 +573,22 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
     }
 
     /**
-     * 只有已关联来源单和来源明细的工作单才校验来源剩余量；调整单和线下补录没有来源计划量。
-     */
+     * 需要回写的来源单必须且只能有一个适配器，避免确认成功但业务状态遗漏。
+     * 只有已关联来源单和来源明细的工作单才校验来源剩余量；调整单和线下补录没有来源计划量
+     **/
+    private void dispatchSourceWriteback(OutboundBill bill, List<OutboundBillItem> items) {
+        if (!SourceType.PURCHASE_RETURN_ORDER.name().equals(bill.getSourceType())) {
+            return;
+        }
+        List<OutboundSourceWritebackPort> matches = outboundSourceWritebackPorts.stream()
+                .filter(port -> port.supports(bill.getSourceType())).toList();
+        if (matches.size() != 1) {
+            String reason = matches.isEmpty() ? "未配置" : "配置重复";
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "采购退货出库回写适配器" + reason);
+        }
+        matches.getFirst().onOutboundConfirmed(bill, items);
+    }
+
     private void validateSourceRemainingQuantities(OutboundBill bill, List<OutboundBillItem> items) {
         for (OutboundBillItem item : items) {
             if (!hasSourceQuantitySnapshot(bill, item)) {

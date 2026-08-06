@@ -19,11 +19,17 @@ public class PurchaseInboundWritebackPort implements InboundSourceWritebackPort 
 
     private final IPurchaseOrderService purchaseOrderService;
 
+    /**
+     * 支持的入库来源类型。
+     */
     @Override
     public boolean supports(String sourceType) {
         return SourceType.PURCHASE_ORDER.name().equals(sourceType);
     }
 
+    /**
+     * 入库单已确认后回写来源单。
+     */
     @Override
     public void onInboundConfirmed(InboundBill bill, List<InboundBillItem> items) {
         purchaseOrderService.handleInboundConfirmation(bill, items);

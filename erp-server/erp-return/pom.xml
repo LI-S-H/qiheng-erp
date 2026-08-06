@@ -1,55 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>com.qiheng</groupId>
         <artifactId>erp-server</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
-
-    <artifactId>erp-purchase</artifactId>
-    <name>erp-purchase</name>
-
+    <artifactId>erp-return</artifactId>
+    <name>erp-return</name>
     <dependencies>
-        <dependency>
-            <groupId>com.qiheng</groupId>
+        <dependency><groupId>com.qiheng</groupId>
             <artifactId>erp-common</artifactId>
         </dependency>
         <dependency>
             <groupId>com.qiheng</groupId>
-            <artifactId>erp-product</artifactId>
+            <artifactId>erp-security</artifactId>
         </dependency>
         <dependency>
             <groupId>com.qiheng</groupId>
             <artifactId>erp-warehouse</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.qiheng</groupId>
-            <artifactId>erp-system</artifactId>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.qiheng</groupId>
-            <artifactId>erp-return</artifactId>
-        </dependency>
-
-        <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
         </dependency>
-
-        <!-- Knife / OpenAPI3，Controller 里用 @Tag、@Operation 等 -->
-        <dependency>
-            <groupId>com.github.xiaoymin</groupId>
-            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
-        </dependency>
-
-        <!-- Sa-Token 核心，Controller 里用 StpUtil.checkPermission(...) -->
         <dependency>
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-core</artifactId>

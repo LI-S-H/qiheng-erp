@@ -4,7 +4,7 @@ info:
   version: 0.8.0
   description: |
     本文档用于启衡 ERP 前后端接口约定，可直接导入 Apifox 使用。
-    当前版本包含登录模块、工作台、系统权限模块、产品模块、仓库库存模块、采购模块、采购退回模块、销售模块和销售退货模块。
+    当前版本包含登录模块、工作台、系统权限模块、产品模块、仓库库存模块、采购模块、销售模块和统一退货模块。
     MVP 阶段认证使用 Sa-Token 原始 token。登录接口返回 `token` 和 `tokenName`，前端后续请求必须使用返回的 `tokenName` 作为请求头名称、`token` 作为请求头值；当前默认配置为 `satoken`。
 servers:
   - url: http://localhost:8080/api
@@ -40,14 +40,12 @@ tags:
     description: 采购管理 - 供货产品管理
   - name: PurchaseOrder
     description: 采购管理 - 采购订单管理
-  - name: PurchaseReturn
-    description: 采购管理 - 采购退回申请、审核与仓库执行跟踪
   - name: SalesCustomer
     description: 销售管理 - 客户管理
   - name: SalesOrder
     description: 销售管理 - 销售订单管理
-  - name: SalesReturn
-    description: 销售管理 - 销售退货申请、审核与仓库执行跟踪
+  - name: Return
+    description: 统一退货管理 - 通过 returnType 区分采购退货和销售退货，统一处理申请、审核与仓库执行跟踪
 paths:
   /dashboard/notifications:
     get:
@@ -2592,39 +2590,34 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /purchase/returns:
+  /returns:
     get:
-      tags: [PurchaseReturn]
-      summary: 分页查询采购退回单
-      description: |
-        查询未删除且 `return_order.return_type=PURCHASE_RETURN` 的退回单。退回单号和原采购单号分别使用包含匹配，供应商、退货仓库和状态使用精确匹配，多个有效条件按 AND 组合；不接收含义不明的 `keyword`。
-        列表只返回退回单头，详情和状态动作前必须通过详情接口读取全部明细。本接口需要 `purchase:query` 权限，后端必须完成数据范围裁剪。
-      operationId: purchaseReturnPage
+      tags: [Return]
+      summary: 分页查询统一退货单
+      description: 通过必填的 `returnType` 区分采购退货与销售退货；所有筛选条件按 AND 组合。采购前端固定传 `PURCHASE_RETURN`，销售前端固定传 `SALES_RETURN`，页面不允许用户自行切换类型。采购查询需要 `purchase:query`，销售查询需要 `sales:query`。销售来源能力未部署时返回明确业务错误，不返回半成品数据。
+      operationId: returnOrderPage
       security:
         - SaTokenAuth: []
       parameters:
+        - name: returnType
+          in: query
+          required: true
+          schema: { type: string, enum: [PURCHASE_RETURN, SALES_RETURN] }
         - name: returnNo
           in: query
           schema: { type: string, maxLength: 64 }
-          description: 采购退回单号，对应 `return_order.return_no`，使用包含匹配
         - name: sourceOrderNo
           in: query
           schema: { type: string, maxLength: 64 }
-          description: 原采购单号快照，对应 `return_order.source_order_no`，使用包含匹配
-        - name: supplierId
+        - name: partyId
           in: query
           schema: { type: string }
-          description: 供应商 ID，对应 `return_order.party_id`，BIGINT 按字符串传输并使用精确匹配
         - name: warehouseId
           in: query
           schema: { type: string }
-          description: 退货出库仓库 ID，对应 `return_order.warehouse_id`，BIGINT 按字符串传输并使用精确匹配
         - name: status
           in: query
-          schema:
-            type: string
-            enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_EXECUTED, COMPLETED, CANCELLED]
-          description: 采购退回状态，对应 `return_order.status`，使用精确匹配
+          schema: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_EXECUTED, COMPLETED, CANCELLED] }
         - name: pageNum
           in: query
           required: true
@@ -2644,22 +2637,23 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/ReturnOrderPage' }
+        "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
     post:
-      tags: [PurchaseReturn]
-      summary: 新增采购退回草稿
+      tags: [Return]
+      summary: 创建统一退货单草稿
       description: |
-        前端 API adapter 固定提交 `returnType=PURCHASE_RETURN`，页面不提供退回类型编辑控件。退回单号、原采购单号、供应商和产品快照、仓库名称、金额、状态与审计字段全部由后端查询或计算，前端不得提交。
-        后端必须校验原采购单和明细已有实际入库数量、仓库有效、来源明细不重复及申请数量精度；草稿不占用剩余可退数量。本接口需要 `purchase:create` 权限。
-      operationId: purchaseReturnCreate
+        前端适配器固定提交业务方向；单号、来源单号、往来对象和商品快照、金额、状态及审计字段均由后端生成或查询，前端不得提交。
+        `PURCHASE_RETURN` 仅可引用已有实际入库数量的采购订单，创建需要 `purchase:create`；`SALES_RETURN` 仅可引用已有实际出库数量的销售订单，创建需要 `sales:create`。草稿不占用剩余可退数量。后端须根据 `returnType` 校验来源明细、仓库、数量精度和明细唯一性。
+      operationId: returnOrderCreate
       security:
         - SaTokenAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PurchaseReturnOrderCreateRequest' }
+            schema: { $ref: '#/components/schemas/ReturnOrderCreateRequest' }
       responses:
         "200":
           description: 创建成功
@@ -2676,29 +2670,26 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /purchase/returns/source-orders:
+  /returns/source-orders:
     get:
-      tags: [PurchaseReturn]
-      summary: 分页查询可退采购来源单
-      description: |
-        返回至少存在一条 `availableReturnQty > 0` 明细的采购订单。`availableReturnQty` 必须由服务端以 `purchase_order_item.inbound_qty` 减去其他有效采购退回单占用数量后计算，前端不得用普通采购订单详情自行聚合。
-        原采购单号使用包含匹配；本接口需要 `purchase:create` 或 `purchase:manage` 权限。
-      operationId: purchaseReturnSourceOrderPage
+      tags: [Return]
+      summary: 搜索可退货来源订单
+      description: 返回至少存在一条 `availableReturnQty > 0` 明细的来源订单。可退数量由服务端按来源实际履约数量减去同类型有效退货单占用数量聚合，前端不得自行跨单计算。
+      operationId: returnSourceOrderSearch
       security:
         - SaTokenAuth: []
       parameters:
+        - name: returnType
+          in: query
+          required: true
+          schema: { type: string, enum: [PURCHASE_RETURN, SALES_RETURN] }
         - name: sourceOrderNo
           in: query
           schema: { type: string, maxLength: 64 }
-          description: 原采购单号，使用包含匹配
-        - name: pageNum
-          in: query
-          required: true
-          schema: { type: integer, minimum: 1, default: 1 }
         - name: pageSize
           in: query
           required: true
-          schema: { type: integer, minimum: 1, maximum: 20, default: 10 }
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
       responses:
         "200":
           description: 查询成功
@@ -2709,18 +2700,19 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/ReturnableSourceOrderPage' }
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReturnableSourceOrder' }
+        "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
 
-  /purchase/returns/source-orders/{sourceOrderId}/items:
+  /returns/source-orders/{sourceOrderId}/items:
     get:
-      tags: [PurchaseReturn]
-      summary: 查询原采购单可退明细
-      description: |
-        返回原采购单中已有实际入库且仍有剩余可退数量的明细。`occupiedQty` 和 `availableReturnQty` 是服务端查询派生字段，不落 `return_order_item`；提交或审核时后端仍须锁定来源明细并重新聚合。
-        本接口需要 `purchase:create` 或 `purchase:manage` 权限。
-      operationId: purchaseReturnSourceOrderItems
+      tags: [Return]
+      summary: 查询来源订单可退明细
+      description: 返回指定来源单中实际履约且仍有剩余可退数量的明细。`occupiedQty` 与 `availableReturnQty` 为服务端派生字段；提交、审核时后端仍须锁定来源明细并重新校验。
+      operationId: returnSourceItemList
       security:
         - SaTokenAuth: []
       parameters:
@@ -2728,7 +2720,10 @@ paths:
           in: path
           required: true
           schema: { type: string }
-          description: 原采购订单 ID，对应 `purchase_order.id`，BIGINT 按字符串传输
+        - name: returnType
+          in: query
+          required: true
+          schema: { type: string, enum: [PURCHASE_RETURN, SALES_RETURN] }
       responses:
         "200":
           description: 查询成功
@@ -2742,16 +2737,16 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/ReturnableSourceOrderItem' }
+        "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
 
-  /purchase/returns/{returnOrderId}:
+  /returns/{returnOrderId}:
     get:
-      tags: [PurchaseReturn]
-      summary: 获取采购退回详情
-      description: 返回 `return_order` 采购退回单头及全部 `return_order_item` 明细。本接口需要 `purchase:query` 权限。
-      operationId: purchaseReturnDetail
+      tags: [Return]
+      summary: 获取统一退货单详情
+      operationId: returnOrderDetail
       security:
         - SaTokenAuth: []
       parameters:
@@ -2759,10 +2754,9 @@ paths:
           in: path
           required: true
           schema: { type: string }
-          description: 退回单 ID，对应 `return_order.id`，BIGINT 按字符串传输
       responses:
         "200":
-          description: 获取成功
+          description: 查询成功
           content:
             application/json:
               schema:
@@ -2775,19 +2769,12 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
     put:
-      tags: [PurchaseReturn]
-      summary: 编辑采购退回草稿
-      description: |
-        仅 `DRAFT` 可编辑。退回类型创建后不可修改，更新请求不接收 `returnType`；退回单号、来源与供应商快照、产品快照、金额、状态、审计和处理数量不得提交。
-        后端必须重新校验 `purchase:manage` 权限、乐观锁、来源订单、仓库、明细重复、数量精度和当前剩余可退数量。
-      operationId: purchaseReturnUpdate
+      tags: [Return]
+      summary: 编辑统一退货单草稿
+      description: 仅 `DRAFT` 可编辑，创建后的 `returnType` 不可修改。采购退货管理需要 `purchase:manage`，销售退货管理需要 `sales:manage`；后端同时校验乐观锁、来源订单、仓库、数量精度和当前剩余可退数量。
+      operationId: returnOrderUpdate
       security:
         - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -2810,63 +2797,67 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
     delete:
-      tags: [PurchaseReturn]
-      summary: 删除采购退回草稿
-      description: 仅 `DRAFT` 可逻辑删除主表，并在同一事务内物理删除对应明细。本接口需要 `purchase:manage` 权限。
-      operationId: purchaseReturnDelete
+      tags: [Return]
+      summary: 删除统一退货单草稿
+      description: 仅 `DRAFT` 可逻辑删除主单，并在同一事务内删除对应明细；后端根据退货方向校验对应管理权限和乐观锁。
+      operationId: returnOrderDelete
       security:
         - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
       responses:
-        "200": { description: 删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
-  /purchase/returns/{returnOrderId}/submit:
-    post:
-      tags: [PurchaseReturn]
-      summary: 提交采购退回单
-      description: 仅允许 `DRAFT -> SUBMITTED`。提交前必须展示完整详情并二次确认；后端锁定原采购明细，按申请数量重新聚合占用，校验预计退货日期和剩余可退数量。本接口需要 `purchase:manage` 权限并保证幂等。
-      operationId: purchaseReturnSubmit
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
-      responses:
-        "200": { description: 提交成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /purchase/returns/{returnOrderId}/approve:
+  /returns/{returnOrderId}/submit:
     post:
-      tags: [PurchaseReturn]
-      summary: 审核通过采购退回单
+      tags: [Return]
+      summary: 提交统一退货单
+      description: 仅允许 `DRAFT -> SUBMITTED`。后端按退货方向校验管理权限、预计执行日期和剩余可退数量，并保证重复请求幂等。
+      operationId: returnOrderSubmit
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: returnOrderId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
+      responses:
+        "200":
+          description: 提交成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /returns/{returnOrderId}/approve:
+    post:
+      tags: [Return]
+      summary: 审核统一退货单
       description: |
-        仅允许 `SUBMITTED -> APPROVED`。审核人逐明细提交审核数量，不提交数据库不存在的普通审核意见；后端锁定来源明细并重新校验占用，按审核数量释放未通过部分。
-        审核通过后必须在同一事务内按每条明细 `approvedQty - processedQty` 汇总校验可用库存、增加 `warehouse_stock.locked_qty`，并生成 `outbound_type=PURCHASE_RETURN`、`source_type=PURCHASE_RETURN_ORDER`、`entry_mode=SOURCE_GENERATED` 的待确认出库单；不直接扣减 `stockQty`，但锁定失败时审核和工作单创建均须回滚。部分确认后生成下一张工作单只复用剩余锁定量，不得重复预占。本接口需要 `purchase:manage` 权限并保证幂等。
-      operationId: purchaseReturnApprove
+        仅允许 `SUBMITTED -> APPROVED`。审核人逐明细提交审核数量；后端锁定来源明细并重新校验占用与可退数量。
+        审核采购退货时生成 `outbound_type=PURCHASE_RETURN`、`source_type=PURCHASE_RETURN_ORDER`、`entry_mode=SOURCE_GENERATED` 的待确认出库单；审核销售退货时生成 `inbound_type=SALES_RETURN`、`source_type=SALES_RETURN_ORDER`、`entry_mode=SOURCE_GENERATED` 的待确认入库单。审核不直接改变库存，实际库存变化由仓储确认完成。
+      operationId: returnOrderApprove
       security:
         - SaTokenAuth: []
       parameters:
@@ -2880,19 +2871,23 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ReturnOrderApproveRequest' }
       responses:
-        "200": { description: 审核成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
+        "200":
+          description: 审核成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /purchase/returns/{returnOrderId}/reject:
+  /returns/{returnOrderId}/reject:
     post:
-      tags: [PurchaseReturn]
-      summary: 审核退回采购退回单
-      description: 仅允许 `SUBMITTED -> DRAFT`，退回原因写入 `return_order.status_reason` 并释放申请数量占用。本接口需要 `purchase:manage` 权限。
-      operationId: purchaseReturnReject
+      tags: [Return]
+      summary: 审核退回统一退货单
+      description: 仅允许 `SUBMITTED -> DRAFT`；退回原因写入 `return_order.status_reason`，并释放申请数量占用。
+      operationId: returnOrderReject
       security:
         - SaTokenAuth: []
       parameters:
@@ -2906,19 +2901,23 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ReturnOrderReasonActionRequest' }
       responses:
-        "200": { description: 退回成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
+        "200":
+          description: 审核退回成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /purchase/returns/{returnOrderId}/cancel:
+  /returns/{returnOrderId}/cancel:
     post:
-      tags: [PurchaseReturn]
-      summary: 取消采购退回单
-      description: 仅允许 `DRAFT`、`SUBMITTED` 或尚未产生处理数量的 `APPROVED` 进入 `CANCELLED`；取消原因写入 `status_reason`。取消 `APPROVED` 单据时，后端必须在同一事务内取消未确认出库工作单，并按每条明细 `approvedQty - processedQty` 释放 `warehouse_stock.locked_qty`；不得改调仓储通用取消接口。部分执行后不得取消。本接口需要 `purchase:manage` 权限。
-      operationId: purchaseReturnCancel
+      tags: [Return]
+      summary: 取消统一退货单
+      description: 仅允许 `DRAFT`、`SUBMITTED` 或尚未产生处理数量的 `APPROVED` 进入 `CANCELLED`；部分执行后不得取消。已生成但未确认的仓储工作单须在同一事务内取消。
+      operationId: returnOrderCancel
       security:
         - SaTokenAuth: []
       parameters:
@@ -2932,7 +2931,11 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ReturnOrderReasonActionRequest' }
       responses:
-        "200": { description: 取消成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
+        "200":
+          description: 取消成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -3372,353 +3375,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResult' }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
-  /sales/returns:
-    get:
-      tags: [SalesReturn]
-      summary: 分页查询销售退货单
-      description: |
-        查询未删除且 `return_order.return_type=SALES_RETURN` 的退货单。退货单号和原销售单号分别使用包含匹配，客户、退货仓库和状态使用精确匹配，多个有效条件按 AND 组合；不接收含义不明的 `keyword`。
-        列表只返回退货单头，详情和状态动作前必须通过详情接口读取全部明细。本接口需要 `sales:query` 权限，后端必须完成数据范围裁剪。
-      operationId: salesReturnPage
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnNo
-          in: query
-          schema: { type: string, maxLength: 64 }
-          description: 销售退货单号，对应 `return_order.return_no`，使用包含匹配
-        - name: sourceOrderNo
-          in: query
-          schema: { type: string, maxLength: 64 }
-          description: 原销售单号，对应 `return_order.source_order_no`，使用包含匹配
-        - name: customerId
-          in: query
-          schema: { type: string }
-          description: 客户 ID，对应 `return_order.party_id`，使用精确匹配
-        - name: warehouseId
-          in: query
-          schema: { type: string }
-          description: 退货入库仓库 ID，对应 `return_order.warehouse_id`，使用精确匹配
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_EXECUTED, COMPLETED, CANCELLED]
-          description: 销售退货状态，对应 `return_order.status`，使用精确匹配
-        - name: pageNum
-          in: query
-          required: true
-          schema: { type: integer, minimum: 1, default: 1 }
-        - name: pageSize
-          in: query
-          required: true
-          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
-      responses:
-        "200":
-          description: 查询成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/ReturnOrderPage' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-    post:
-      tags: [SalesReturn]
-      summary: 新增销售退货草稿
-      description: |
-        前端 API adapter 固定提交 `returnType=SALES_RETURN`，页面不提供退货类型编辑控件。退货单号、原销售单号、客户和产品快照、仓库名称、金额、状态与审计字段全部由后端查询或计算，前端不得提交。
-        后端必须校验原销售单和明细已有实际出库数量、仓库有效、来源明细不重复及申请数量精度；草稿不占用剩余可退数量。本接口需要 `sales:create` 权限。
-      operationId: salesReturnCreate
-      security:
-        - SaTokenAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SalesReturnOrderCreateRequest' }
-      responses:
-        "200":
-          description: 创建成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/ReturnOrderDetail' }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
-  /sales/returns/source-orders:
-    get:
-      tags: [SalesReturn]
-      summary: 分页查询可退销售来源单
-      description: |
-        返回至少存在一条 `availableReturnQty > 0` 明细的销售订单。`availableReturnQty` 必须由服务端以 `sales_order_item.outbound_qty` 减去其他有效销售退货单占用数量后计算，前端不得用普通销售订单详情自行聚合。
-        原销售单号使用包含匹配；本接口需要 `sales:create` 或 `sales:manage` 权限。
-      operationId: salesReturnSourceOrderPage
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: sourceOrderNo
-          in: query
-          schema: { type: string, maxLength: 64 }
-          description: 原销售单号，使用包含匹配
-        - name: pageNum
-          in: query
-          required: true
-          schema: { type: integer, minimum: 1, default: 1 }
-        - name: pageSize
-          in: query
-          required: true
-          schema: { type: integer, minimum: 1, maximum: 20, default: 10 }
-      responses:
-        "200":
-          description: 查询成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/ReturnableSourceOrderPage' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-
-  /sales/returns/source-orders/{sourceOrderId}/items:
-    get:
-      tags: [SalesReturn]
-      summary: 查询原销售单可退明细
-      description: |
-        返回原销售单中已有实际出库且仍有剩余可退数量的明细。`occupiedQty` 和 `availableReturnQty` 是服务端查询派生字段，不落 `return_order_item`；提交或审核时后端仍须锁定来源明细并重新聚合。
-        本接口需要 `sales:create` 或 `sales:manage` 权限。
-      operationId: salesReturnSourceOrderItems
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: sourceOrderId
-          in: path
-          required: true
-          schema: { type: string }
-          description: 原销售订单 ID，对应 `sales_order.id`，BIGINT 按字符串传输
-      responses:
-        "200":
-          description: 查询成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items: { $ref: '#/components/schemas/ReturnableSourceOrderItem' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-
-  /sales/returns/{returnOrderId}:
-    get:
-      tags: [SalesReturn]
-      summary: 获取销售退货详情
-      description: 返回 `return_order` 销售退货单头及全部 `return_order_item` 明细。本接口需要 `sales:query` 权限。
-      operationId: salesReturnDetail
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-          description: 退货单 ID，对应 `return_order.id`，BIGINT 按字符串传输
-      responses:
-        "200":
-          description: 获取成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/ReturnOrderDetail' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-    put:
-      tags: [SalesReturn]
-      summary: 编辑销售退货草稿
-      description: |
-        仅 `DRAFT` 可编辑。退货类型创建后不可修改，更新请求不接收 `returnType`；退货单号、来源与客户快照、产品快照、金额、状态、审计和处理数量不得提交。
-        后端必须重新校验 `sales:manage` 权限、乐观锁、来源订单、仓库、明细重复、数量精度和当前剩余可退数量。
-      operationId: salesReturnUpdate
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReturnOrderUpdateRequest' }
-      responses:
-        "200":
-          description: 更新成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/ReturnOrderDetail' }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-    delete:
-      tags: [SalesReturn]
-      summary: 删除销售退货草稿
-      description: 仅 `DRAFT` 可逻辑删除主表，并在同一事务内物理删除对应明细。本接口需要 `sales:manage` 权限。
-      operationId: salesReturnDelete
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
-      responses:
-        "200": { description: 删除成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
-  /sales/returns/{returnOrderId}/submit:
-    post:
-      tags: [SalesReturn]
-      summary: 提交销售退货单
-      description: 仅允许 `DRAFT -> SUBMITTED`。提交前必须展示完整详情并二次确认；后端锁定原销售明细，按申请数量重新聚合占用，校验预计退货日期和剩余可退数量。本接口需要 `sales:manage` 权限并保证幂等。
-      operationId: salesReturnSubmit
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' }
-      responses:
-        "200": { description: 提交成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
-  /sales/returns/{returnOrderId}/approve:
-    post:
-      tags: [SalesReturn]
-      summary: 审核通过销售退货单
-      description: |
-        仅允许 `SUBMITTED -> APPROVED`。审核人逐明细提交审核数量，不提交数据库不存在的普通审核意见；后端锁定来源明细并重新校验占用，按审核数量释放未通过部分。
-        审核通过后在同一事务内生成 `inbound_type=SALES_RETURN`、`source_type=SALES_RETURN_ORDER`、`entry_mode=SOURCE_GENERATED` 的待确认入库单，不直接增加库存。本接口需要 `sales:manage` 权限并保证幂等。
-      operationId: salesReturnApprove
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReturnOrderApproveRequest' }
-      responses:
-        "200": { description: 审核成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
-  /sales/returns/{returnOrderId}/reject:
-    post:
-      tags: [SalesReturn]
-      summary: 审核退回销售退货单
-      description: 仅允许 `SUBMITTED -> DRAFT`，退回原因写入 `return_order.status_reason` 并释放申请数量占用。本接口需要 `sales:manage` 权限。
-      operationId: salesReturnReject
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReturnOrderReasonActionRequest' }
-      responses:
-        "200": { description: 退回成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
-  /sales/returns/{returnOrderId}/cancel:
-    post:
-      tags: [SalesReturn]
-      summary: 取消销售退货单
-      description: 仅允许 `DRAFT`、`SUBMITTED` 或尚未产生处理数量的 `APPROVED` 进入 `CANCELLED`；取消原因写入 `status_reason`，已生成未确认入库单必须同步取消。部分执行后不得取消。本接口需要 `sales:manage` 权限。
-      operationId: salesReturnCancel
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReturnOrderReasonActionRequest' }
-      responses:
-        "200": { description: 取消成功, content: { application/json: { schema: { $ref: '#/components/schemas/EmptyResult' } } } }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -7049,7 +6705,7 @@ components:
 
     ReturnOrderItem:
       type: object
-      required: [returnOrderItemId, returnOrderId, sourceOrderItemId, productId, productCode, productName, unitName, quantityPrecision, sourceFulfilledQty, availableReturnQty, requestedQty, approvedQty, processedQty, unitPrice, totalAmount, createTime, updateTime, remark]
+      required: [returnOrderItemId, returnOrderId, sourceOrderItemId, productId, productCode, productName, unitName, quantityPrecision, sourceFulfilledQty, requestedQty, approvedQty, processedQty, unitPrice, totalAmount, createTime, updateTime, remark]
       properties:
         returnOrderItemId: { type: string, readOnly: true, description: 对应 `return_order_item.id`，BIGINT 按字符串传输 }
         returnOrderId: { type: string, readOnly: true, description: 对应 `return_order_item.return_order_id`，BIGINT 按字符串传输 }
@@ -7060,7 +6716,6 @@ components:
         unitName: { type: string, maxLength: 32, readOnly: true, description: 对应 `return_order_item.unit_name` 单位快照 }
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, readOnly: true, description: 对应 `return_order_item.quantity_precision` 数量精度快照 }
         sourceFulfilledQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, readOnly: true, description: 原订单累计履约数量展示值；数据库按 100 倍整数存储；采购退回取原采购明细累计已入库数量，销售退货取原销售明细累计已出库数量 }
-        availableReturnQty: { type: number, format: double, minimum: 0, readOnly: true, description: 服务端查询派生的当前剩余可退数量，不落 `return_order_item`；提交和审核时仍需重新聚合 }
         requestedQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, description: 申请退货数量展示值；数据库 `return_order_item.requested_qty` 按 100 倍整数存储 }
         approvedQty: { type: number, format: double, minimum: 0, readOnly: true, description: 审核通过数量展示值；数据库按 100 倍整数存储，仅审核接口可提交 }
         processedQty: { type: number, format: double, minimum: 0, readOnly: true, description: 仓库累计确认的实际处理总量展示值；数据库按 100 倍整数存储，由仓库确认回写 }
@@ -7110,11 +6765,21 @@ components:
         availableReturnQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, description: "sourceFulfilledQty - occupiedQty，服务端查询派生，前端不得自行跨单计算" }
         unitPrice: { type: number, format: double, minimum: 0, description: 原采购或销售订单明细单价快照 }
 
+    ReturnOrderCreateRequest:
+      oneOf:
+        - $ref: '#/components/schemas/PurchaseReturnOrderCreateRequest'
+        - $ref: '#/components/schemas/SalesReturnOrderCreateRequest'
+      discriminator:
+        propertyName: returnType
+        mapping:
+          PURCHASE_RETURN: '#/components/schemas/PurchaseReturnOrderCreateRequest'
+          SALES_RETURN: '#/components/schemas/SalesReturnOrderCreateRequest'
+
     PurchaseReturnOrderCreateRequest:
       type: object
       required: [returnType, sourceOrderId, warehouseId, expectedExecutionDate, handlingType, reasonCode, returnReason, remark, items]
       properties:
-        returnType: { type: string, enum: [PURCHASE_RETURN], description: 由采购退回 API adapter 固定注入，页面不可编辑；后端必须校验与路径业务类型一致 }
+        returnType: { type: string, enum: [PURCHASE_RETURN], description: 由采购退货前端适配器固定注入，页面不可编辑；后端据此选择采购来源校验与出库工作单生成规则 }
         sourceOrderId: { type: string, description: 原采购订单 ID，BIGINT 按字符串传输 }
         warehouseId: { type: string, description: 退货出库仓库 ID，BIGINT 按字符串传输 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空 }
@@ -7131,7 +6796,7 @@ components:
       type: object
       required: [returnType, sourceOrderId, warehouseId, expectedExecutionDate, handlingType, reasonCode, returnReason, remark, items]
       properties:
-        returnType: { type: string, enum: [SALES_RETURN], description: 由销售退货 API adapter 固定注入，页面不可编辑；后端必须校验与路径业务类型一致 }
+        returnType: { type: string, enum: [SALES_RETURN], description: 由销售退货前端适配器固定注入，页面不可编辑；后端据此选择销售来源校验与入库工作单生成规则 }
         sourceOrderId: { type: string, description: 原销售订单 ID，BIGINT 按字符串传输 }
         warehouseId: { type: string, description: 退货入库仓库 ID，BIGINT 按字符串传输 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空 }

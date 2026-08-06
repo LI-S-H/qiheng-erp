@@ -40,6 +40,10 @@
             <groupId>com.qiheng</groupId>
             <artifactId>erp-sales</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-return</artifactId>
+        </dependency>
 
         <!-- AI 模块 -->
         <dependency>

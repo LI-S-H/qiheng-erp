@@ -6,6 +6,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 <template>
   <TooltipProvider :delay-duration="300">
     <RouterView />
-    <Toaster position="top-center" :duration="3000" />
+    <Toaster position="top-center" :duration="3000" rich-colors />
   </TooltipProvider>
 </template>

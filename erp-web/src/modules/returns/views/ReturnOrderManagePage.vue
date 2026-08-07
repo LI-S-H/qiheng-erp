@@ -509,6 +509,28 @@ function validateForm() {
   return Object.keys(formErrors).length === 0;
 }
 
+/** 数量输入框失焦时即时校验并弹 toast 提示 */
+function validateRequestedQtyOnBlur(line: DraftLine, index: number) {
+  if (!line.sourceOrderItemId) return;
+  const quantity = Number(line.requestedQty);
+  const key = `items.${index}.requestedQty`;
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    formErrors[key] = '申请数量必须大于 0';
+    toast.warning(`${line.productName || '该产品'}：申请数量必须大于 0`);
+  } else if (quantity > line.availableReturnQty) {
+    formErrors[key] = `不能超过剩余可退 ${formatQuantity(line.availableReturnQty, line.quantityPrecision)}`;
+    toast.warning(`${line.productName || '该产品'}：不能超过剩余可退 ${formatQuantity(line.availableReturnQty, line.quantityPrecision)}`);
+  } else {
+    const factor = 10 ** line.quantityPrecision;
+    if (Math.abs(quantity * factor - Math.round(quantity * factor)) > 1e-8) {
+      formErrors[key] = `最多 ${line.quantityPrecision} 位小数`;
+      toast.warning(`${line.productName || '该产品'}：数量最多 ${line.quantityPrecision} 位小数`);
+    } else {
+      delete formErrors[key];
+    }
+  }
+}
+
 function buildFormPayload(): ReturnOrderFormPayload {
   return {
     sourceOrderId: form.sourceOrderId,
@@ -527,7 +549,10 @@ function buildFormPayload(): ReturnOrderFormPayload {
 }
 
 async function submitForm() {
-  if (formSubmitting.value || !validateForm()) return;
+  if (formSubmitting.value || !validateForm()) {
+    toast.warning('请先修正明细中的数量错误');
+    return;
+  }
   if (dialogMode.value === 'create' && !canCreate.value) return;
   if (dialogMode.value === 'edit' && !canManage.value) return;
   formSubmitting.value = true;
@@ -904,7 +929,7 @@ onMounted(() => {
               <ScrollArea class="w-full">
                 <Table class="order-line-table min-w-[1080px] table-fixed" data-return-form-items>
                   <colgroup><col class="w-[220px]" /><col class="w-[95px]" /><col class="w-[95px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[105px]" /><col class="w-[130px]" /><col class="w-[60px]" /></colgroup>
-                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">{{ config.fulfilledQuantityLabel }}</TableHead><TableHead class="text-right">已占用</TableHead><TableHead class="text-right">剩余可退</TableHead><TableHead class="text-right">申请数量</TableHead><TableHead class="text-right">原单价</TableHead><TableHead class="text-right">预计金额</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">{{ config.fulfilledQuantityLabel }}</TableHead><TableHead class="text-right">其他退货已占</TableHead><TableHead class="text-right">剩余可退</TableHead><TableHead class="text-right">申请数量</TableHead><TableHead class="text-right">原单价</TableHead><TableHead class="text-right">预计金额</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-if="!form.sourceOrderId"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">请先选择{{ config.sourceOrderLabel }}</TableCell></TableRow>
                     <TableRow v-else-if="draftLines.length === 0"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">该订单暂无剩余可退明细</TableCell></TableRow>
@@ -913,7 +938,7 @@ onMounted(() => {
                       <TableCell class="text-right tabular-nums">{{ line.sourceOrderItemId ? `${formatQuantity(line.sourceFulfilledQty, line.quantityPrecision)} ${line.unitName}` : '-' }}</TableCell>
                       <TableCell class="text-right tabular-nums">{{ line.sourceOrderItemId ? `${formatQuantity(line.occupiedQty, line.quantityPrecision)} ${line.unitName}` : '-' }}</TableCell>
                       <TableCell class="text-right tabular-nums">{{ line.sourceOrderItemId ? `${formatQuantity(line.availableReturnQty, line.quantityPrecision)} ${line.unitName}` : '-' }}</TableCell>
-                      <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.requestedQty" type="number" min="0" :max="line.availableReturnQty" :step="quantityStep(line.quantityPrecision)" :disabled="!line.sourceOrderItemId" class="min-w-0 text-right" /><span v-if="line.unitName" class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.requestedQty`]" class="form-error text-right">{{ formErrors[`items.${index}.requestedQty`] }}</p></TableCell>
+                      <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.requestedQty" type="number" min="0" :max="line.availableReturnQty" :step="quantityStep(line.quantityPrecision)" :disabled="!line.sourceOrderItemId" :class="['min-w-0 text-right', { 'border-destructive focus-visible:border-destructive': formErrors[`items.${index}.requestedQty`] }]" @blur="validateRequestedQtyOnBlur(line, index)" /><span v-if="line.unitName" class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div></TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ line.sourceOrderItemId ? formatMoney(line.unitPrice) : '-' }}</TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ line.sourceOrderItemId ? formatMoney(Number(line.requestedQty || 0) * line.unitPrice) : '-' }}</TableCell>
                       <TableCell class="align-top"><Input v-model="line.remark" :disabled="!line.sourceOrderItemId" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>

@@ -5,6 +5,7 @@ import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.returnorder.domain.port.ReturnType;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderPageDto;
+import com.qiheng.erp.returnorder.domain.dto.ReturnOrderUpdateDto;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderItemVo;
@@ -37,6 +38,9 @@ public interface IReturnOrderService extends IService<ReturnOrder> {
 
     /** 创建退货单草稿，返回包含明细的详情。 */
     ReturnOrderDetailVo createDraft(ReturnOrderCreateDto dto);
+
+    /** 编辑退货单草稿（DRAFT/SUBMITTED 可编辑），全量替换明细。 */
+    ReturnOrderDetailVo update(Long returnOrderId, ReturnOrderUpdateDto dto);
 
     /** 采购退货出库确认后，回写退货单明细已处理数量和退货单状态。 */
     void handleOutboundConfirmation(OutboundBill bill, List<OutboundBillItem> items);

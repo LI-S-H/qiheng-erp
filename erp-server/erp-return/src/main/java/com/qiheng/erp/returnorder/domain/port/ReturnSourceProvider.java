@@ -1,6 +1,7 @@
 package com.qiheng.erp.returnorder.domain.port;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 由采购或销售模块实现的来源数据提供者。
@@ -24,6 +25,11 @@ public interface ReturnSourceProvider {
     /** 根据主键读取单个来源订单，并在不存在时抛出业务异常。 */
     ReturnSourceOrder getSourceOrder(Long sourceOrderId);
 
-    /** 返回来源订单中已实际履约、可参与退货计算的明细快照。 */
-    List<ReturnSourceItem> listSourceItems(Long sourceOrderId);
+    /**
+     * 批量返回来源订单中已实际履约、可参与退货计算的明细快照。
+     *
+     * @param sourceOrderIds 来源订单ID列表
+     * @return sourceOrderId → 该订单下的来源明细列表
+     */
+    Map<Long, List<ReturnSourceItem>> listSourceItems(List<Long> sourceOrderIds);
 }

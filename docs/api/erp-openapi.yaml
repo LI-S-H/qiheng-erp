@@ -2771,7 +2771,7 @@ paths:
     put:
       tags: [Return]
       summary: 编辑统一退货单草稿
-      description: 仅 `DRAFT` 可编辑，创建后的 `returnType` 不可修改。采购退货管理需要 `purchase:manage`，销售退货管理需要 `sales:manage`；后端同时校验乐观锁、来源订单、仓库、数量精度和当前剩余可退数量。
+      description: '`DRAFT` 和 `SUBMITTED` 可编辑，审核（`APPROVED`）后不可编辑；创建后的 `returnType` 不可修改。本接口需要 `return:create` 或 `return:manage` 权限；后端同时校验乐观锁、来源订单、仓库、数量精度、预计执行日期和当前剩余可退数量。'
       operationId: returnOrderUpdate
       security:
         - SaTokenAuth: []
@@ -6782,7 +6782,7 @@ components:
         returnType: { type: string, enum: [PURCHASE_RETURN], description: 由采购退货前端适配器固定注入，页面不可编辑；后端据此选择采购来源校验与出库工作单生成规则 }
         sourceOrderId: { type: string, description: 原采购订单 ID，BIGINT 按字符串传输 }
         warehouseId: { type: string, description: 退货出库仓库 ID，BIGINT 按字符串传输 }
-        expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空 }
+        expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
         handlingType: { type: string, enum: [REFUND, EXCHANGE, OTHER] }
         reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER] }
         returnReason: { type: string, maxLength: 500, description: 原因选择 OTHER 时必须非空 }
@@ -6799,7 +6799,7 @@ components:
         returnType: { type: string, enum: [SALES_RETURN], description: 由销售退货前端适配器固定注入，页面不可编辑；后端据此选择销售来源校验与入库工作单生成规则 }
         sourceOrderId: { type: string, description: 原销售订单 ID，BIGINT 按字符串传输 }
         warehouseId: { type: string, description: 退货入库仓库 ID，BIGINT 按字符串传输 }
-        expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空 }
+        expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
         handlingType: { type: string, enum: [REFUND, EXCHANGE, OTHER] }
         reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER] }
         returnReason: { type: string, maxLength: 500, description: 原因选择 OTHER 时必须非空 }
@@ -6816,7 +6816,7 @@ components:
         version: { type: integer, minimum: 0, description: 当前 `return_order.version` }
         sourceOrderId: { type: string, description: 原订单 ID，BIGINT 按字符串传输 }
         warehouseId: { type: string, description: 退货执行仓库 ID，BIGINT 按字符串传输 }
-        expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空 }
+        expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
         handlingType: { type: string, enum: [REFUND, EXCHANGE, OTHER] }
         reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER] }
         returnReason: { type: string, maxLength: 500, description: 原因选择 OTHER 时必须非空 }

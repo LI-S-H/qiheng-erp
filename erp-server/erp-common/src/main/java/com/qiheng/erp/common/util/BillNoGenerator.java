@@ -48,7 +48,7 @@ public class BillNoGenerator {
         String month = LocalDate.now().format(MONTH_FMT);
         String day = LocalDate.now().format(DAY_FMT);
         String key = KEY_PREFIX + prefix + ":" + month;
-        if (!Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
+        if (!stringRedisTemplate.hasKey(key)) {
             stringRedisTemplate.opsForValue().setIfAbsent(
                     key, String.valueOf(Math.max(0L, maxExistingSequenceSupplier.getAsLong())));
         }

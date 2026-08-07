@@ -84,34 +84,37 @@ public class PurchaseReturnSourceProvider implements ReturnSourceProvider {
     }
 
     /**
-     * 返回已实际入库的采购订单明细。
+     * 批量返回已实际入库的采购订单明细。
      *
      * <p>是否仍可退由退货模块统一扣除其他有效退货单的占用数量，本 Provider 只提供采购事实数据。</p>
      */
     @Override
-    public List<ReturnSourceItem> listSourceItems(Long sourceOrderId) {
-        getSourceOrder(sourceOrderId);
-        // 查询采购订单中已实际入库的明细
+    public Map<Long, List<ReturnSourceItem>> listSourceItems(List<Long> sourceOrderIds) {
+        // 1. 校验参数是否为空
+        if (sourceOrderIds == null || sourceOrderIds.isEmpty()) return Map.of();
+        // 2. 批量查询采购订单明细(已入库数量大于0)
         List<PurchaseOrderItem> items = purchaseOrderItemMapper.selectList(new LambdaQueryWrapper<PurchaseOrderItem>()
-                .eq(PurchaseOrderItem::getPurchaseOrderId, sourceOrderId)
+                .in(PurchaseOrderItem::getPurchaseOrderId, sourceOrderIds)
                 .gt(PurchaseOrderItem::getInboundQty, 0)
                 .orderByAsc(PurchaseOrderItem::getId));
-        if (items.isEmpty()) {
-            return List.of();
-        }
-        // 批量查询产品信息
-        List<Long> productIds = items.stream().map(PurchaseOrderItem::getProductId).toList();
-        // 构建产品信息映射
+        if (items.isEmpty()) return Map.of();
+        // 3. 批量查询产品信息
+        List<Long> productIds = items.stream().map(PurchaseOrderItem::getProductId).distinct().toList();
         Map<Long, Product> productMap = productMapper.selectByIds(productIds).stream()
                 .collect(Collectors.toMap(Product::getId, p -> p));
+        // 4. 转换为退货来源明细Map(采购订单ID -> 退货来源明细列表)
         return items.stream()
                 .map(item -> {
                     Product product = productMap.get(item.getProductId());
+                    // 4. 兜底处理：产品缺失时，使用默认的数量小数位
                     int qtyPrecision = product != null && product.getQuantityPrecision() != null
                             ? product.getQuantityPrecision()
                             : DEFAULT_QUANTITY_PRECISION;
-                    return new ReturnSourceItem(item.getId(), item.getProductId(), item.getProductCode(),
-                            item.getProductName(), item.getUnitName(), qtyPrecision, item.getInboundQty(), item.getUnitPrice());
-                }).toList();
+                    return Map.entry(item.getPurchaseOrderId(),
+                            new ReturnSourceItem(item.getId(), item.getProductId(), item.getProductCode(),
+                                    item.getProductName(), item.getUnitName(), qtyPrecision, item.getInboundQty(), item.getUnitPrice()));
+                })
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
     }
 }

@@ -8,6 +8,7 @@ import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderPageDto;
+import com.qiheng.erp.returnorder.domain.dto.ReturnOrderUpdateDto;
 import com.qiheng.erp.returnorder.domain.port.ReturnType;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderItemVo;
@@ -22,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -129,6 +131,25 @@ public class ReturnOrderController {
         checkCreatePermission(dto.getReturnType());
         log.info("创建统一退货单草稿，参数: {}", dto);
         return Result.ok(returnOrderService.createDraft(dto));
+    }
+
+    /**
+     * 编辑统一退货单草稿（DRAFT/SUBMITTED 可编辑）。
+     *
+     * @param returnOrderId 退货单ID
+     * @param dto 编辑请求
+     * @return 包含明细的退货单详情
+     */
+    @PutMapping("/{returnOrderId}")
+    @Operation(summary = "编辑统一退货单草稿")
+    public Result<ReturnOrderDetailVo> update(
+            @Parameter(description = "退货单ID", required = true)
+            @PathVariable String returnOrderId,
+            @Valid @RequestBody ReturnOrderUpdateDto dto) {
+        StpUtil.checkPermissionOr("return:create", "return:manage");
+        Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
+        log.info("编辑统一退货单草稿，ID: {}, 参数: {}", id, dto);
+        return Result.ok(returnOrderService.update(id, dto));
     }
 
     /** 查询退货单统一使用 return:query 权限，不区分采购/销售方向。 */

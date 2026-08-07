@@ -42,6 +42,9 @@ public interface IReturnOrderService extends IService<ReturnOrder> {
     /** 编辑退货单草稿（DRAFT/SUBMITTED 可编辑），全量替换明细。 */
     ReturnOrderDetailVo update(Long returnOrderId, ReturnOrderUpdateDto dto);
 
+    /** 删除退货单草稿（仅 DRAFT 可删除），同一事务内删除明细。 */
+    void delete(Long returnOrderId, Integer version);
+
     /** 采购退货出库确认后，回写退货单明细已处理数量和退货单状态。 */
     void handleOutboundConfirmation(OutboundBill bill, List<OutboundBillItem> items);
 }

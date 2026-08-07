@@ -1,6 +1,7 @@
 package com.qiheng.erp.returnorder.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
@@ -20,6 +21,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -150,6 +152,26 @@ public class ReturnOrderController {
         Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
         log.info("编辑统一退货单草稿，ID: {}, 参数: {}", id, dto);
         return Result.ok(returnOrderService.update(id, dto));
+    }
+
+    /**
+     * 删除统一退货单草稿（仅 DRAFT 可删除）。
+     *
+     * @param returnOrderId 退货单ID
+     * @param dto 乐观锁版本号请求
+     * @return 空结果
+     */
+    @DeleteMapping("/{returnOrderId}")
+    @Operation(summary = "删除统一退货单草稿")
+    public Result<Void> delete(
+            @Parameter(description = "退货单ID", required = true)
+            @PathVariable String returnOrderId,
+            @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("return:manage");
+        Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
+        log.info("删除统一退货单草稿，ID: {}, 版本: {}", id, dto.getVersion());
+        returnOrderService.delete(id, dto.getVersion());
+        return Result.ok();
     }
 
     /** 查询退货单统一使用 return:query 权限，不区分采购/销售方向。 */

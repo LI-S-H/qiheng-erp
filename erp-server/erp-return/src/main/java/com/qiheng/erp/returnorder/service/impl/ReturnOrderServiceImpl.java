@@ -284,6 +284,28 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         return getDetail(returnOrderId);
     }
 
+    /**
+     * 删除退货单草稿（仅 DRAFT 可删除），同一事务内删除明细。
+     * @param returnOrderId 退货单ID
+     * @param version 乐观锁版本号
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void delete(Long returnOrderId, Integer version) {
+        // 1. 校验退货单是否存在、状态是否为草稿、乐观锁版本是否正确
+        ReturnOrder existing = loadAndCheckStatus(returnOrderId, version, ReturnStatus.DRAFT);
+        // 2. 逻辑删除退货单主表（带乐观锁版本条件，防止并发覆盖）
+        int rows = returnOrderMapper.delete(new LambdaQueryWrapper<ReturnOrder>()
+                .eq(ReturnOrder::getId, returnOrderId)
+                .eq(ReturnOrder::getVersion, existing.getVersion()));
+        if (rows == 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
+        }
+        // 3. 物理删除退货单明细（明细表无逻辑删除字段，与编辑接口保持一致）
+        returnOrderItemMapper.delete(new LambdaQueryWrapper<ReturnOrderItem>()
+                .eq(ReturnOrderItem::getReturnOrderId, returnOrderId));
+    }
+
     /** 校验申请数量的小数位不超过产品精度。 */
     private void validateQuantityPrecision(BigDecimal qty, int precision) {
         if (qty == null) return;

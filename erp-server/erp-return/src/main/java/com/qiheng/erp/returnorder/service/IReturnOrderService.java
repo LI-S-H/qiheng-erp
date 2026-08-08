@@ -3,6 +3,7 @@ package com.qiheng.erp.returnorder.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.domain.dto.ReturnOrderApproveRequest;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderPageDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderUpdateDto;
@@ -47,6 +48,9 @@ public interface IReturnOrderService extends IService<ReturnOrder> {
 
     /** 提交退货单草稿（DRAFT -> SUBMITTED），重复请求幂等。 */
     void submit(Long returnOrderId, Integer version);
+
+    /** 审核退货单（SUBMITTED -> APPROVED），逐明细审核数量并生成仓库工作单。 */
+    void approve(Long returnOrderId, ReturnOrderApproveRequest dto);
 
     /** 采购退货出库确认后，回写退货单明细已处理数量和退货单状态。 */
     void handleOutboundConfirmation(OutboundBill bill, List<OutboundBillItem> items);

@@ -12,6 +12,8 @@ import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.util.BillNoGenerator;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
+import com.qiheng.erp.returnorder.domain.dto.ReturnOrderApproveItem;
+import com.qiheng.erp.returnorder.domain.dto.ReturnOrderApproveRequest;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderItemCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderUpdateDto;
@@ -33,10 +35,22 @@ import com.qiheng.erp.returnorder.service.IReturnOrderItemService;
 import com.qiheng.erp.returnorder.service.IReturnOrderService;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
+import com.qiheng.erp.warehouse.domain.common.enums.EntryMode;
+import com.qiheng.erp.warehouse.domain.common.enums.SourceType;
+import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
+import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBillItem;
+import com.qiheng.erp.warehouse.domain.inbound.enums.InboundType;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBill;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBillItem;
+import com.qiheng.erp.warehouse.domain.outbound.enums.OutboundType;
+import com.qiheng.erp.warehouse.domain.stockbill.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
+import com.qiheng.erp.warehouse.mapper.InboundBillItemMapper;
+import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
+import com.qiheng.erp.warehouse.mapper.OutboundBillItemMapper;
+import com.qiheng.erp.warehouse.mapper.OutboundBillMapper;
 import com.qiheng.erp.warehouse.mapper.WarehouseStockMapper;
+import com.qiheng.erp.warehouse.service.support.WarehouseStockReservationSupport;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -81,6 +95,16 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     private BillNoGenerator billNoGenerator;
     @Autowired
     private RedissonClient redissonClient;
+    @Autowired
+    private OutboundBillMapper outboundBillMapper;
+    @Autowired
+    private OutboundBillItemMapper outboundBillItemMapper;
+    @Autowired
+    private InboundBillMapper inboundBillMapper;
+    @Autowired
+    private InboundBillItemMapper inboundBillItemMapper;
+    @Autowired
+    private WarehouseStockReservationSupport warehouseStockReservationSupport;
 
     /**
      * 分页查询退货单主信息。
@@ -341,27 +365,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             return;
         }
         // 3. 按来源订单加分布式锁，串行化同一来源的退货提交，防止并发超额退货
-        RLock lock = redissonClient.getLock("return:source:" + existing.getSourceOrderId());
-        boolean acquired;
-        try {
-            acquired = lock.tryLock(5, 30, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作被中断");
-        }
-        if (!acquired) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "该来源订单正在被其他退货操作处理，请稍后再试");
-        }
-        // 4. 注册事务同步：事务提交/回滚后释放锁，确保锁覆盖整个事务
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (lock.isHeldByCurrentThread()) {
-                    lock.unlock();
-                }
-            }
-        });
-        // 5. 加锁后重新查询退货单，基于最新数据做幂等和状态判断（锁外查询可能已过时）
+        acquireSourceLock(existing.getSourceOrderId());
+        // 4. 加锁后重新查询退货单，基于最新数据做幂等和状态判断（锁外查询可能已过时）
         existing = returnOrderMapper.selectById(returnOrderId);
         if (existing == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货单不存在");
@@ -398,7 +403,227 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     }
 
     /**
-     * 提交时重新校验明细的可退数量。
+     * 审核退货单（SUBMITTED -> APPROVED）。
+     * <p>逐明细提交审核数量，按来源订单加分布式锁防并发超额；
+     * 审核通过后生成仓库工作单（采购退货出库单 + 实物库存预占，销售退货入库单）。</p>
+     * @param returnOrderId 退货单ID
+     * @param dto 审核请求
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void approve(Long returnOrderId, ReturnOrderApproveRequest dto) {
+        // 1. 锁前快速校验（不抢锁，快速失败）：权限 + 状态 + 乐观锁
+        ReturnOrder existing = loadAndCheckStatus(returnOrderId, dto.getVersion(), ReturnStatus.SUBMITTED);
+        checkManagePermission(existing.getReturnType());
+        // 2. 按来源订单加分布式锁，串行化同一来源的退货审核，防止并发超额
+        acquireSourceLock(existing.getSourceOrderId());
+        // 3. 锁内重新查询退货单，基于最新数据做状态和乐观锁判断（锁外查询可能已过时）
+        existing = loadAndCheckStatus(returnOrderId, dto.getVersion(), ReturnStatus.SUBMITTED);
+        ReturnType returnType = parseType(existing.getReturnType());
+        // 4. 查询退货单明细，逐条校验审核数量
+        List<ReturnOrderItem> items = returnOrderItemMapper.selectList(new LambdaQueryWrapper<ReturnOrderItem>()
+                .eq(ReturnOrderItem::getReturnOrderId, returnOrderId));
+        // 4.1 校验审核数量是否在申请数量范围内
+        Map<Long, ReturnOrderItem> itemMap = items.stream()
+                .collect(Collectors.toMap(ReturnOrderItem::getId, item -> item));
+        Map<Long, Integer> approvedQtyMap = new HashMap<>();
+        int positiveCount = 0;
+        // 4.2 校验审核数量是否在申请数量范围内
+        for (ReturnOrderApproveItem approveItem : dto.getItems()) {
+            Long itemId = IdUtil.parseRequiredLongId(approveItem.getReturnOrderItemId(), "退货明细ID");
+            ReturnOrderItem item = itemMap.get(itemId);
+            if (item == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货明细不存在: " + itemId);
+            }
+            int requested = item.getRequestedQty() == null ? 0 : item.getRequestedQty();
+            int approvedStored = QtyUtil.toStored(approveItem.getApprovedQty()).intValue();
+            if (approvedStored < 0 || approvedStored > requested) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        item.getProductName() + " 的审核数量必须在 0～申请数量之间");
+            }
+            // 4.3 校验审核数量是否符合数量精度
+            int precision = item.getQuantityPrecision() == null ? 0 : item.getQuantityPrecision();
+            validateQuantityPrecision(approveItem.getApprovedQty(), precision);
+            approvedQtyMap.put(itemId, approvedStored);
+            if (approvedStored > 0) positiveCount++;
+        }
+        // 4.4 校验是否有审核数量大于 0 的明细
+        if (positiveCount == 0) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "至少一条明细的审核数量必须大于 0；全部不通过请使用取消");
+        }
+        // 5. 重新校验剩余可退数量（锁内数据最新，防止并发超额退货）
+        revalidateAvailable(returnType, returnOrderId, existing.getSourceOrderId());
+        // 6. 更新退货单明细审核数量
+        for (ReturnOrderItem item : items) {
+            Integer approved = approvedQtyMap.get(item.getId());
+            if (approved == null) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "缺少退货明细的审核数量: " + item.getId());
+            }
+            item.setApprovedQty(approved);
+        }
+        if (!returnOrderItemService.updateBatchById(items)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "退货明细更新失败，请刷新后重试");
+        }
+        // 7. 更新退货单主表：状态 APPROVED + 审核人 + 审核时间，带乐观锁
+        LoginUser loginUser = UserContext.requireCurrentUser();
+        ReturnOrder update = new ReturnOrder();
+        update.setId(returnOrderId);
+        update.setStatus(ReturnStatus.APPROVED.name());
+        update.setApprovedById(loginUser.getUserId());
+        update.setApprovedByName(loginUser.getRealName());
+        update.setApprovedAt(LocalDateTime.now());
+        update.setVersion(dto.getVersion());
+        int rows = returnOrderMapper.updateById(update);
+        if (rows == 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
+        }
+        // 8. 生成仓库工作单（采购退货出库单 + 实物库存预占，销售退货入库单）
+        List<ReturnOrderItem> approvedItems = items.stream()
+                .filter(item -> approvedQtyMap.getOrDefault(item.getId(), 0) > 0)
+                .toList();
+        if (returnType == ReturnType.PURCHASE_RETURN) {
+            generatePurchaseReturnOutbound(existing, approvedItems, approvedQtyMap, true);
+        } else {
+            generateSalesReturnInbound(existing, approvedItems, approvedQtyMap);
+        }
+    }
+
+    /**
+     * 生成采购退货出库单（PENDING_CONFIRM）并预占实物库存。
+     * @param order 退货单
+     * @param approvedItems 审核数量大于 0 的明细
+     * @param approvedQtyMap 明细ID -> 审核数量（×100 整数）
+     */
+    private void generatePurchaseReturnOutbound(ReturnOrder order, List<ReturnOrderItem> approvedItems,
+                                                Map<Long, Integer> approvedQtyMap, boolean needLockStock) {
+        // 1. 工作单幂等：同一退货单已存在未确认出库单则跳过生成
+        Long activeCount = outboundBillMapper.selectCount(new LambdaQueryWrapper<OutboundBill>()
+                .eq(OutboundBill::getSourceId, order.getId())
+                .eq(OutboundBill::getSourceType, SourceType.PURCHASE_RETURN_ORDER.name())
+                .in(OutboundBill::getStatus, StockBillStatus.DRAFT.name(), StockBillStatus.PENDING_CONFIRM.name()));
+        if (activeCount > 0) {
+            log.warn("退货单[{}]已存在未确认出库单，跳过生成", order.getReturnNo());
+            return;
+        }
+        LoginUser loginUser = UserContext.requireCurrentUser();
+        // 2. 构造出库单主表
+        String outboundNo = billNoGenerator.nextNo(OutboundType.PURCHASE_RETURN.billNoPrefix());
+        OutboundBill bill = new OutboundBill()
+                .setOutboundNo(outboundNo)
+                .setOutboundType(OutboundType.PURCHASE_RETURN.name())
+                .setSourceType(SourceType.PURCHASE_RETURN_ORDER.name())
+                .setSourceId(order.getId())
+                .setSourceNo(order.getReturnNo())
+                .setSourcePartyId(order.getPartyId())
+                .setSourcePartyName(order.getPartyName())
+                .setEntryMode(EntryMode.SOURCE_GENERATED.name())
+                .setWarehouseId(order.getWarehouseId())
+                .setWarehouseName(order.getWarehouseName())
+                .setStatus(StockBillStatus.PENDING_CONFIRM.name())
+                .setCreatedById(loginUser.getUserId())
+                .setCreatedByName(loginUser.getRealName())
+                .setResponsibleById(loginUser.getUserId())
+                .setResponsibleByName(loginUser.getRealName())
+                .setRemark(order.getRemark());
+        outboundBillMapper.insert(bill);
+        // 3. 构造出库单明细 + 汇总实物库存预占数量
+        Map<Long, Long> lockedDeltas = new HashMap<>();
+        for (ReturnOrderItem item : approvedItems) {
+            // 通过的退货数量
+            long approved = approvedQtyMap.get(item.getId());
+            // 累计已经完成的退货数量
+            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty().longValue();
+            // 待处理退货数量
+            long pending = approved - processed;
+            if (pending <= 0L) continue;
+            OutboundBillItem billItem = new OutboundBillItem()
+                    .setOutboundBillId(bill.getId())
+                    .setOutboundNo(outboundNo)
+                    .setSourceItemId(item.getId())
+                    .setProductId(item.getProductId())
+                    .setProductCode(item.getProductCode())
+                    .setProductName(item.getProductName())
+                    .setUnitName(item.getUnitName())
+                    .setQuantityPrecision(item.getQuantityPrecision())
+                    .setPlanQty(approved)
+                    .setProcessedQty(processed)
+                    .setCurrentQty(0L)
+                    .setPendingQty(pending)
+                    .setQualifiedQty(0L)
+                    .setDefectiveQty(0L);
+            outboundBillItemMapper.insert(billItem);
+            if (needLockStock) {
+                lockedDeltas.merge(item.getProductId(), pending, Long::sum);
+            }
+        }
+        // 4. 实物库存预占（仅首次审核时预占，部分确认后再生成不重复预占）
+        if (needLockStock && !lockedDeltas.isEmpty()) {
+            warehouseStockReservationSupport.applyLockedQtyChanges(order.getWarehouseId(), lockedDeltas, false, true);
+        }
+    }
+
+    /**
+     * 生成销售退货入库单（PENDING_CONFIRM），不预占库存。
+     * @param order 退货单
+     * @param approvedItems 审核数量大于 0 的明细
+     * @param approvedQtyMap 明细ID -> 审核数量（×100 整数）
+     */
+    private void generateSalesReturnInbound(ReturnOrder order, List<ReturnOrderItem> approvedItems,
+                                            Map<Long, Integer> approvedQtyMap) {
+        // 1. 工作单幂等：同一退货单已存在未确认入库单则跳过生成
+        Long activeCount = inboundBillMapper.selectCount(new LambdaQueryWrapper<InboundBill>()
+                .eq(InboundBill::getSourceId, order.getId())
+                .eq(InboundBill::getSourceType, SourceType.SALES_RETURN_ORDER.name())
+                .in(InboundBill::getStatus, StockBillStatus.DRAFT.name(), StockBillStatus.PENDING_CONFIRM.name()));
+        if (activeCount > 0) {
+            log.warn("退货单[{}]已存在未确认入库单，跳过生成", order.getReturnNo());
+            return;
+        }
+        LoginUser loginUser = UserContext.requireCurrentUser();
+        // 2. 构造入库单主表
+        String inboundNo = billNoGenerator.nextNo(InboundType.SALES_RETURN.billNoPrefix());
+        InboundBill bill = new InboundBill()
+                .setInboundNo(inboundNo)
+                .setInboundType(InboundType.SALES_RETURN.name())
+                .setSourceType(SourceType.SALES_RETURN_ORDER.name())
+                .setSourceId(order.getId())
+                .setSourceNo(order.getReturnNo())
+                .setSourcePartyId(order.getPartyId())
+                .setSourcePartyName(order.getPartyName())
+                .setEntryMode(EntryMode.SOURCE_GENERATED.name())
+                .setWarehouseId(order.getWarehouseId())
+                .setWarehouseName(order.getWarehouseName())
+                .setStatus(StockBillStatus.PENDING_CONFIRM.name())
+                .setCreatedById(loginUser.getUserId())
+                .setCreatedByName(loginUser.getRealName())
+                .setResponsibleById(loginUser.getUserId())
+                .setResponsibleByName(loginUser.getRealName())
+                .setRemark(order.getRemark());
+        inboundBillMapper.insert(bill);
+        // 3. 构造入库单明细（销售退货是入库操作，不预占库存）
+        for (ReturnOrderItem item : approvedItems) {
+            long approved = approvedQtyMap.get(item.getId());
+            InboundBillItem billItem = new InboundBillItem()
+                    .setInboundBillId(bill.getId())
+                    .setInboundNo(inboundNo)
+                    .setSourceItemId(item.getId())
+                    .setProductId(item.getProductId())
+                    .setProductCode(item.getProductCode())
+                    .setProductName(item.getProductName())
+                    .setUnitName(item.getUnitName())
+                    .setQuantityPrecision(item.getQuantityPrecision())
+                    .setPlanQty(approved)
+                    .setProcessedQty(0L)
+                    .setCurrentQty(0L)
+                    .setPendingQty(approved)
+                    .setQualifiedQty(0L)
+                    .setDefectiveQty(0L);
+            inboundBillItemMapper.insert(billItem);
+        }
+    }
+
+    /**
+     * 提交/审核时重新校验明细的可退数量。
      * <p>草稿创建后，其他退货单可能占用来源可退量，提交时必须重新聚合校验，
      * 避免并发超额退货。</p>
      * @param returnType 退货类型
@@ -579,6 +804,24 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 6. 批量更新退货单明细
         if (!returnOrderItemService.updateBatchById(returnItems.values())) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "退货明细更新失败，请刷新后重试");
+        }
+        // 7. 部分出库后，为剩余数量生成下一张待确认出库单（不重复预占库存，剩余锁定量已在确认时保留）
+        if (!completed) {
+            List<ReturnOrderItem> remainingItems = returnItems.values().stream()
+                    .filter(item -> {
+                        int approved = item.getApprovedQty() == null ? 0 : item.getApprovedQty();
+                        int processed = item.getProcessedQty() == null ? 0 : item.getProcessedQty();
+                        return approved - processed > 0;
+                    })
+                    .toList();
+            if (!remainingItems.isEmpty()) {
+                // 为剩余数量生成下一张待确认出库单，串行化同一来源的退货审核，防止并发超额
+                Map<Long, Integer> remainingQtyMap = remainingItems.stream()
+                        .collect(Collectors.toMap(
+                                ReturnOrderItem::getId,
+                                item -> item.getApprovedQty() == null ? 0 : item.getApprovedQty()));
+                generatePurchaseReturnOutbound(order, remainingItems, remainingQtyMap, false);
+            }
         }
     }
 
@@ -873,5 +1116,28 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             items.add(item);
         }
         return new BuiltItems(items, totalAmount);
+    }
+
+    /** 按来源订单加分布式锁，事务提交/回滚后自动释放。 */
+    private void acquireSourceLock(Long sourceOrderId) {
+        RLock lock = redissonClient.getLock("return:source:" + sourceOrderId);
+        boolean acquired;
+        try {
+            acquired = lock.tryLock(5, 30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作被中断");
+        }
+        if (!acquired) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "该来源订单正在被其他退货操作处理，请稍后再试");
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
+            }
+        });
     }
 }

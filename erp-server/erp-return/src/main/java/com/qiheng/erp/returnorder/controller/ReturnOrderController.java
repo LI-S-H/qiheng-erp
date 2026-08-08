@@ -7,6 +7,7 @@ import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.common.util.IdUtil;
+import com.qiheng.erp.returnorder.domain.dto.ReturnOrderApproveRequest;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderPageDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderUpdateDto;
@@ -188,6 +189,25 @@ public class ReturnOrderController {
         Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
         log.info("提交统一退货单，ID: {}, 版本: {}", id, dto.getVersion());
         returnOrderService.submit(id, dto.getVersion());
+        return Result.ok();
+    }
+
+    /**
+     * 审核统一退货单（SUBMITTED -> APPROVED）。
+     *
+     * @param returnOrderId 退货单ID
+     * @param dto 审核请求
+     * @return 空结果
+     */
+    @PostMapping("/{returnOrderId}/approve")
+    @Operation(summary = "审核统一退货单")
+    public Result<Void> approve(
+            @Parameter(description = "退货单ID", required = true)
+            @PathVariable String returnOrderId,
+            @Valid @RequestBody ReturnOrderApproveRequest dto) {
+        Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
+        log.info("审核统一退货单，ID: {}, 版本: {}", id, dto.getVersion());
+        returnOrderService.approve(id, dto);
         return Result.ok();
     }
 

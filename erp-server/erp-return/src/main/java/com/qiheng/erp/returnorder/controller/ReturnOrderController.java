@@ -174,6 +174,26 @@ public class ReturnOrderController {
         return Result.ok();
     }
 
+    /**
+     * 提交统一退货单（DRAFT -> SUBMITTED）。
+     *
+     * @param returnOrderId 退货单ID
+     * @param dto 乐观锁版本号请求
+     * @return 空结果
+     */
+    @PostMapping("/{returnOrderId}/submit")
+    @Operation(summary = "提交统一退货单")
+    public Result<Void> submit(
+            @Parameter(description = "退货单ID", required = true)
+            @PathVariable String returnOrderId,
+            @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("return:manage");
+        Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
+        log.info("提交统一退货单，ID: {}, 版本: {}", id, dto.getVersion());
+        returnOrderService.submit(id, dto.getVersion());
+        return Result.ok();
+    }
+
     /** 查询退货单统一使用 return:query 权限，不区分采购/销售方向。 */
     private void checkQueryPermission(ReturnType type) {
         if (type == null) {

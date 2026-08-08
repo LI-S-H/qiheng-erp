@@ -37,10 +37,15 @@ import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBillItem;
 import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.mapper.WarehouseStockMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -49,6 +54,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -72,6 +78,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     private WarehouseStockMapper warehouseStockMapper;
     @Autowired
     private BillNoGenerator billNoGenerator;
+    @Autowired
+    private RedissonClient redissonClient;
 
     /**
      * 分页查询退货单主信息。
@@ -304,6 +312,120 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 3. 物理删除退货单明细（明细表无逻辑删除字段，与编辑接口保持一致）
         returnOrderItemMapper.delete(new LambdaQueryWrapper<ReturnOrderItem>()
                 .eq(ReturnOrderItem::getReturnOrderId, returnOrderId));
+    }
+
+    /**
+     * 提交退货单草稿（DRAFT -> SUBMITTED）。
+     * <p>按来源订单加分布式锁串行化同一来源的退货提交，防止并发超额退货；
+     * 重复请求（SUBMITTED 状态）幂等返回成功。</p>
+     * @param returnOrderId 退货单ID
+     * @param version 乐观锁版本号
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void submit(Long returnOrderId, Integer version) {
+        // 1. 查询退货单，获取来源订单ID用于加锁
+        ReturnOrder existing = returnOrderMapper.selectById(returnOrderId);
+        if (existing == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货单不存在");
+        }
+        // 2. 快速幂等：已提交状态直接返回，避免重复请求抢锁
+        if (ReturnStatus.SUBMITTED.name().equals(existing.getStatus())) {
+            return;
+        }
+        // 3. 按来源订单加分布式锁，串行化同一来源的退货提交，防止并发超额退货
+        RLock lock = redissonClient.getLock("return:source:" + existing.getSourceOrderId());
+        boolean acquired;
+        try {
+            acquired = lock.tryLock(5, 30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作被中断");
+        }
+        if (!acquired) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "该来源订单正在被其他退货操作处理，请稍后再试");
+        }
+        // 4. 注册事务同步：事务提交/回滚后释放锁，确保锁覆盖整个事务
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
+            }
+        });
+        // 5. 加锁后重新查询退货单，基于最新数据做幂等和状态判断（锁外查询可能已过时）
+        existing = returnOrderMapper.selectById(returnOrderId);
+        if (existing == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货单不存在");
+        }
+        if (ReturnStatus.SUBMITTED.name().equals(existing.getStatus())) {
+            return;
+        }
+        // 6. 校验状态：仅草稿状态可提交
+        if (!ReturnStatus.DRAFT.name().equals(existing.getStatus())) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "仅草稿状态可提交");
+        }
+        // 7. 校验乐观锁版本号
+        if (version != null && !existing.getVersion().equals(version)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
+        }
+        // 8. 校验预计执行日期：必填且不早于当天
+        if (existing.getExpectedExecutionDate() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计执行日期不能为空");
+        }
+        validateExpectedExecutionDate(existing.getExpectedExecutionDate());
+        // 9. 重新校验剩余可退数量（锁内数据最新，防止并发超额退货）
+        ReturnType returnType = parseType(existing.getReturnType());
+        revalidateAvailable(returnType, returnOrderId, existing.getSourceOrderId());
+        // 10. 更新退货单状态为已提交，带乐观锁
+        ReturnOrder update = new ReturnOrder();
+        update.setId(returnOrderId);
+        update.setStatus(ReturnStatus.SUBMITTED.name());
+        update.setSubmittedAt(LocalDateTime.now());
+        update.setVersion(version);
+        int rows = returnOrderMapper.updateById(update);
+        if (rows == 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
+        }
+    }
+
+    /**
+     * 提交时重新校验明细的可退数量。
+     * <p>草稿创建后，其他退货单可能占用来源可退量，提交时必须重新聚合校验，
+     * 避免并发超额退货。</p>
+     * @param returnType 退货类型
+     * @param returnOrderId 退货单ID
+     * @param sourceOrderId 来源订单ID
+     */
+    private void revalidateAvailable(ReturnType returnType, Long returnOrderId, Long sourceOrderId) {
+        // 1. 获取来源上下文（来源订单快照 + 来源明细映射 + 库存可用映射）
+        SourceContext ctx = resolveSourceContext(returnType, sourceOrderId);
+        // 2. 计算占用数量（排除自身，当前为草稿本就不占用，传 returnOrderId 语义明确）
+        Map<Long, Integer> occupied = buildOccupiedMap(returnType, sourceOrderId, returnOrderId);
+        // 3. 查询退货单明细
+        List<ReturnOrderItem> items = returnOrderItemMapper.selectList(new LambdaQueryWrapper<ReturnOrderItem>()
+                .eq(ReturnOrderItem::getReturnOrderId, returnOrderId));
+        // 4. 逐条校验申请数量是否超过剩余可退数量
+        for (ReturnOrderItem item : items) {
+            ReturnSourceItem source = ctx.sourceItemMap.get(item.getSourceOrderItemId());
+            if (source == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "来源明细不存在: " + item.getSourceOrderItemId());
+            }
+            int fulfilled = source.fulfilledQty() == null ? 0 : source.fulfilledQty();
+            int used = occupied.getOrDefault(item.getSourceOrderItemId(), 0);
+            int sourceAvailable = Math.max(0, fulfilled - used);
+            long stockAvail = ctx.stockAvailableMap.getOrDefault(item.getProductId(), 0L);
+            int available = calculateAvailable(returnType, sourceAvailable, stockAvail);
+            int requested = item.getRequestedQty() == null ? 0 : item.getRequestedQty();
+            if (requested > available) {
+                String detail = returnType == ReturnType.PURCHASE_RETURN
+                        ? String.format("来源可退 %s，仓库可用库存 %s", toDecimal(sourceAvailable), toDecimal((int) Math.max(0L, stockAvail)))
+                        : String.format("来源可退 %s", toDecimal(sourceAvailable));
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        "申请退回数量 " + toDecimal(requested) + " 超过剩余可退数量 " + toDecimal(available) + "（" + detail + "）");
+            }
+        }
     }
 
     /** 校验申请数量的小数位不超过产品精度。 */

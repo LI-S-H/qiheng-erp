@@ -1,5 +1,6 @@
 package com.qiheng.erp.purchase.service.impl;
 
+import lombok.extern.slf4j.Slf4j;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -68,6 +69,7 @@ import java.util.stream.Collectors;
  * @author Li
  * @since 2026-07-31
  */
+@Slf4j
 @Service
 public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, PurchaseOrder> implements IPurchaseOrderService {
 
@@ -626,12 +628,12 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
      * @param order 采购订单实体
      */
     private void generatePurchaseInboundBill(PurchaseOrder order) {
-        Long hasPendingBillCount = inboundBillMapper.selectCount(new LambdaQueryWrapper<InboundBill>()
+        Long activeCount = inboundBillMapper.selectCount(new LambdaQueryWrapper<InboundBill>()
                 .eq(InboundBill::getSourceType, SourceType.PURCHASE_ORDER.name())
                 .eq(InboundBill::getSourceId, order.getId())
-                .eq(InboundBill::getStatus, StockBillStatus.PENDING_CONFIRM.name()));
-        boolean hasPendingBill = hasPendingBillCount != null && hasPendingBillCount > 0;
-        if (hasPendingBill) {
+                .in(InboundBill::getStatus, StockBillStatus.DRAFT.name(), StockBillStatus.PENDING_CONFIRM.name()));
+        if (activeCount != null && activeCount > 0) {
+            log.warn("采购订单[{}]已存在未确认入库单，跳过生成", order.getPurchaseNo());
             return;
         }
         // 查询采购明细

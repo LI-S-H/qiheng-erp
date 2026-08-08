@@ -26,8 +26,7 @@ public class WarehouseStockReservationSupport {
     }
 
     /**
-     * 按产品汇总应用锁定库存变更。正数预占、负数释放，且固定先释放再预占，
-     * 使编辑单据时已释放的数量可以立即复用。
+     * 按产品汇总应用锁定库存变更。正数预占、负数释放，且固定先释放再预占，使编辑单据时已释放的数量可以立即复用。
      */
     @Transactional(rollbackFor = Exception.class)
     public void applyLockedQtyChanges(Long warehouseId, Map<Long, Long> deltasByProduct,

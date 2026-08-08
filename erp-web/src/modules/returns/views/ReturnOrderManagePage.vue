@@ -62,7 +62,7 @@ interface FormModel {
   remark: string;
 }
 
-type DetailActionMode = 'view' | 'submit' | 'approve' | 'reject' | 'cancel' | 'delete';
+type DetailActionMode = 'view' | 'submit' | 'approve' | 'cancel' | 'delete';
 
 const props = defineProps<{ config: ReturnOrderPageConfig }>();
 const authStore = useAuthStore();
@@ -167,7 +167,6 @@ const promptState = reactive({
   title: '',
   description: '',
   confirmText: '',
-  mode: 'reject' as 'reject' | 'cancel',
 });
 
 const canQuery = computed(() => props.config.backendEnabled !== false && authStore.hasPermission(props.config.permissions.query));
@@ -587,7 +586,6 @@ function getRowActions(row: ReturnOrderListItem): RowActionOption[] {
   ];
   if (row.status === 'SUBMITTED') return [
     { key: 'approve', label: `审核${businessLabel.value}` },
-    { key: 'reject', label: '审核退回' },
     { key: 'cancel', label: `取消${businessLabel.value}`, separated: true },
   ];
   if (row.status === 'APPROVED') return [{ key: 'cancel', label: `取消${businessLabel.value}`, variant: 'destructive' }];
@@ -616,7 +614,7 @@ async function openDetail(row: ReturnOrderListItem, mode: DetailActionMode = 'vi
 
 async function handleRowAction(row: ReturnOrderListItem, action: string) {
   if (action === 'edit') return openEditDialog(row);
-  if (['submit', 'approve', 'reject', 'cancel', 'delete'].includes(action)) {
+  if (['submit', 'approve', 'cancel', 'delete'].includes(action)) {
     await openDetail(row, action as DetailActionMode);
   }
 }
@@ -663,7 +661,7 @@ function validateApproval(detail: ReturnOrderDetail) {
     if (value > 0) positiveCount += 1;
   }
   if (positiveCount === 0) {
-    toast.error('至少一条明细的审核数量必须大于 0；全部不通过请使用审核退回');
+    toast.error('至少一条明细的审核数量必须大于 0；全部不通过请使用取消');
     return false;
   }
   return true;
@@ -695,13 +693,10 @@ function runDetailAction() {
       () => props.config.service.deleteReturn(detail.returnOrderId, detail.version),
       `${businessLabel.value}草稿已删除`,
     ), 'destructive');
-  } else if (detailActionMode.value === 'reject' || detailActionMode.value === 'cancel') {
-    promptState.mode = detailActionMode.value;
-    promptState.title = detailActionMode.value === 'reject' ? `审核退回${businessLabel.value}` : `取消${businessLabel.value}`;
-    promptState.description = detailActionMode.value === 'reject'
-      ? '退回后单据恢复为草稿并释放申请数量占用，请填写退回原因。'
-      : '取消后单据进入终态且不可恢复，请填写取消原因。';
-    promptState.confirmText = detailActionMode.value === 'reject' ? '确认退回' : '确认取消';
+  } else if (detailActionMode.value === 'cancel') {
+    promptState.title = `取消${businessLabel.value}`;
+    promptState.description = '取消后单据进入终态且不可恢复，请填写取消原因。';
+    promptState.confirmText = '确认取消';
     promptState.open = true;
   }
 }
@@ -717,10 +712,8 @@ function runReasonAction(reason: string) {
   if (!detail || !reason.trim() || !canManage.value) return;
   const payload = { version: detail.version, reason: reason.trim() };
   void executeAction(
-    () => promptState.mode === 'reject'
-      ? props.config.service.rejectReturn(detail.returnOrderId, payload)
-      : props.config.service.cancelReturn(detail.returnOrderId, payload),
-    promptState.mode === 'reject' ? `${businessLabel.value}已退回草稿` : `${businessLabel.value}已取消`,
+    () => props.config.service.cancelReturn(detail.returnOrderId, payload),
+    `${businessLabel.value}已取消`,
   );
 }
 
@@ -740,7 +733,7 @@ function returnProgressSteps(row: ReturnOrderDetail): BusinessDetailProgressStep
   if (row.status === 'CANCELLED') {
     return [
       { label: '草稿', state: 'done', hint: row.createTime },
-      { label: '已取消', state: 'cancelled', hint: row.statusReason || '退回流程已终止' },
+      { label: '已取消', state: 'cancelled', hint: row.statusReason || '流程已终止' },
     ];
   }
 
@@ -802,7 +795,6 @@ function returnTimelineItems(row: ReturnOrderDetail): BusinessDetailTimelineItem
 function detailActionDescription() {
   if (detailActionMode.value === 'submit') return '请先核对退回单头和全部明细，再提交进入待审核。';
   if (detailActionMode.value === 'approve') return props.config.approvalResultDescription;
-  if (detailActionMode.value === 'reject') return '请核对退回依据；审核退回后单据恢复为草稿。';
   if (detailActionMode.value === 'cancel') return '请核对单据尚未产生不可撤销的仓储事实。';
   if (detailActionMode.value === 'delete') return '请核对草稿内容；删除后明细不能恢复。';
   return '查看来源订单、退回原因、数量、金额和仓库执行进度。';
@@ -812,7 +804,6 @@ function detailActionButtonLabel() {
   const labels: Record<Exclude<DetailActionMode, 'view'>, string> = {
     submit: `提交${businessLabel.value}`,
     approve: `审核${businessLabel.value}`,
-    reject: '审核退回',
     cancel: `取消${businessLabel.value}`,
     delete: '删除草稿',
   };
@@ -1018,7 +1009,7 @@ onMounted(() => {
     </Dialog>
 
     <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
-    <PromptDialog :open="promptState.open" :title="promptState.title" :description="promptState.description" :input-placeholder="promptState.mode === 'reject' ? '请输入审核退回原因' : '请输入取消原因'" :input-pattern="/^\s*\S[\s\S]{0,499}$/" input-error-message="原因必填且不能超过 500 字" :confirm-text="promptState.confirmText" :loading="actionSubmitting" @update:open="promptState.open = $event" @confirm="runReasonAction" />
+    <PromptDialog :open="promptState.open" :title="promptState.title" :description="promptState.description" :input-placeholder="'请输入取消原因'" :input-pattern="/^\s*\S[\s\S]{0,499}$/" input-error-message="原因必填且不能超过 500 字" :confirm-text="promptState.confirmText" :loading="actionSubmitting" @update:open="promptState.open = $event" @confirm="runReasonAction" />
   </section>
 </template>
 

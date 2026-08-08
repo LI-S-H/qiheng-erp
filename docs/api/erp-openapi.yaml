@@ -2882,36 +2882,6 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
-  /returns/{returnOrderId}/reject:
-    post:
-      tags: [Return]
-      summary: 审核退回统一退货单
-      description: 仅允许 `SUBMITTED -> DRAFT`；退回原因写入 `return_order.status_reason`，并释放申请数量占用。
-      operationId: returnOrderReject
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: returnOrderId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReturnOrderReasonActionRequest' }
-      responses:
-        "200":
-          description: 审核退回成功
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/EmptyResult' }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "409": { $ref: '#/components/responses/Conflict' }
-
   /returns/{returnOrderId}/cancel:
     post:
       tags: [Return]
@@ -6681,7 +6651,7 @@ components:
         returnReason: { type: string, maxLength: 500, description: 对应 `return_order.return_reason`；原因选择 OTHER 时必填 }
         totalAmount: { type: number, format: double, minimum: 0, readOnly: true, description: 退货总金额展示值；数据库 `return_order.total_amount` 按 100 倍整数存储；取消单保留取消前按申请数量计算的金额快照，仅用于历史追溯 }
         status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_EXECUTED, COMPLETED, CANCELLED], readOnly: true, description: 对应 `return_order.status` }
-        statusReason: { type: string, maxLength: 500, readOnly: true, description: 对应 `return_order.status_reason`，仅记录最近一次审核退回或取消原因 }
+        statusReason: { type: string, maxLength: 500, readOnly: true, description: 对应 `return_order.status_reason`，仅记录最近一次取消原因 }
         createdById: { type: string, nullable: true, readOnly: true, description: 对应 `return_order.created_by_id`，BIGINT 按字符串传输 }
         createdByName: { type: string, maxLength: 100, readOnly: true, description: 对应 `return_order.created_by_name` }
         submittedAt: { type: string, nullable: true, readOnly: true, description: 对应 `return_order.submitted_at` }
@@ -6854,7 +6824,7 @@ components:
       required: [version, reason]
       properties:
         version: { type: integer, minimum: 0, description: 当前 `return_order.version` }
-        reason: { type: string, minLength: 1, maxLength: 500, description: 审核退回或取消原因，写入 `return_order.status_reason` }
+        reason: { type: string, minLength: 1, maxLength: 500, description: 取消原因，写入 `return_order.status_reason` }
 
     SalesCustomerPage:
       type: object

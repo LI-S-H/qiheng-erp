@@ -157,7 +157,6 @@ export interface ReturnOrderService {
   deleteReturn: (returnOrderId: string, version: number) => Promise<void>;
   submitReturn: (returnOrderId: string, version: number) => Promise<void>;
   approveReturn: (returnOrderId: string, payload: ReturnOrderApprovePayload) => Promise<void>;
-  rejectReturn: (returnOrderId: string, payload: ReturnOrderReasonActionPayload) => Promise<void>;
   cancelReturn: (returnOrderId: string, payload: ReturnOrderReasonActionPayload) => Promise<void>;
   searchPartyOptions: (keyword: string) => Promise<ReturnSelectOption[]>;
   searchWarehouseOptions: (keyword: string) => Promise<ReturnSelectOption[]>;

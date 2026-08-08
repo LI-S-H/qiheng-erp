@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS return_order (
     return_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '退货原因补充说明',
     total_amount INT NOT NULL DEFAULT 0 COMMENT '当前有效退货总金额，放大100倍保存，17600表示176.00',
     status VARCHAR(32) NOT NULL DEFAULT 'DRAFT' COMMENT '状态：DRAFT、SUBMITTED、APPROVED、PARTIAL_EXECUTED、COMPLETED、CANCELLED',
-    status_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '最近一次审核退回或取消原因',
+    status_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '最近一次取消原因',
     created_by_id BIGINT DEFAULT NULL COMMENT '创建人ID',
     created_by_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '创建人姓名快照',
     submitted_at DATETIME DEFAULT NULL COMMENT '提交时间',

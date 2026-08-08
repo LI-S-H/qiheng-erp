@@ -42,7 +42,7 @@ async function checkApiContracts() {
     ['get', '/returns/source-orders/{sourceOrderId}/items'], ['get', '/returns/{returnOrderId}'],
     ['put', '/returns/{returnOrderId}'], ['delete', '/returns/{returnOrderId}'],
     ['post', '/returns/{returnOrderId}/submit'], ['post', '/returns/{returnOrderId}/approve'],
-    ['post', '/returns/{returnOrderId}/reject'], ['post', '/returns/{returnOrderId}/cancel'],
+    ['post', '/returns/{returnOrderId}/cancel'],
   ];
   for (const [method, path] of canonicalOperations) {
     assert(api.paths[path]?.[method], `统一退货 OpenAPI 缺少 ${method.toUpperCase()} ${path}`);
@@ -50,7 +50,7 @@ async function checkApiContracts() {
   for (const legacyPath of ['/purchase/returns', '/sales/returns']) {
     assert(!api.paths[legacyPath], `OpenAPI 不得保留重复退货路径：${legacyPath}`);
   }
-  for (const action of ['submit', 'approve', 'reject', 'cancel']) {
+  for (const action of ['submit', 'approve', 'cancel']) {
     const operation = api.paths[`/returns/{returnOrderId}/${action}`].post;
     assert(operation.security?.some(item => 'SaTokenAuth' in item), `统一退货 ${action} 动作缺少鉴权声明`);
     assert(operation.parameters?.some(parameter => parameter.in === 'path' && parameter.name === 'returnOrderId'),
@@ -115,7 +115,6 @@ async function checkApiContracts() {
   for (const [action, requestSchema] of [
     ['submit', 'OptimisticLockVersionRequest'],
     ['approve', 'ReturnOrderApproveRequest'],
-    ['reject', 'ReturnOrderReasonActionRequest'],
     ['cancel', 'ReturnOrderReasonActionRequest'],
   ]) {
     const target = operation('post', `/returns/{returnOrderId}/${action}`);

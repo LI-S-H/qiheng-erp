@@ -502,25 +502,11 @@ export async function approvePurchaseReturn(returnOrderId: string, payload: Retu
     item.approvedQty = approval.approvedQty;
     if (approval.approvedQty > 0) positiveCount += 1;
   });
-  if (positiveCount === 0) throw new Error('至少一条明细的审核数量必须大于 0；全部不通过请使用审核退回');
+  if (positiveCount === 0) throw new Error('至少一条明细的审核数量必须大于 0；全部不通过请使用取消');
   row.status = 'APPROVED';
   row.approvedById = '1900000000000000002';
   row.approvedByName = '采购主管';
   row.approvedAt = nowText();
-  row.version += 1;
-  row.updateTime = nowText();
-  refreshMockAmounts(row);
-}
-
-export async function rejectPurchaseReturn(returnOrderId: string, payload: ReturnOrderReasonActionPayload) {
-  if (!useMockApi) {
-    await postResult<void>(`${RETURN_API}/${returnOrderId}/reject`, payload);
-    return;
-  }
-  const row = await mockStatusRow(returnOrderId, payload.version, ['SUBMITTED']);
-  row.status = 'DRAFT';
-  row.statusReason = payload.reason.trim();
-  row.submittedAt = null;
   row.version += 1;
   row.updateTime = nowText();
   refreshMockAmounts(row);

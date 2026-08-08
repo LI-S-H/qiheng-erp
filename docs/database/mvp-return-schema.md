@@ -76,7 +76,7 @@
 | `COMPLETED` | 已完成 | 已完成 | 所有明细均满足 `processed_qty = approved_qty` |
 | `CANCELLED` | 已取消 | 已取消 | 未产生仓储事实前取消，终态 |
 
-审核不通过不增加 `REJECTED` 状态，而是执行 `SUBMITTED -> DRAFT`，将原因写入 `status_reason`。本期不提供“部分执行后放弃剩余数量”的操作。
+审核不通过不增加 `REJECTED` 状态，也不提供审核退回；审核人如不通过可取消单据（`SUBMITTED -> CANCELLED`），原因写入 `status_reason`。本期不提供“部分执行后放弃剩余数量”的操作。
 
 ## 表：return_order（退货单主表）
 
@@ -98,7 +98,7 @@
 | `return_reason`           | `varchar(500)`  |    否 | `''`                | 退货原因补充说明                                 |
 | `total_amount`            | `int`           |    否 | `0`                 | 当前有效退货总金额，放大100倍保存，17600表示176.00            |
 | `status`                  | `varchar(32)`   |    否 | `DRAFT`             | 退货单状态                                    |
-| `status_reason`           | `varchar(500)`  |    否 | `''`                | 最近一次审核退回或取消原因                            |
+| `status_reason`           | `varchar(500)`  |    否 | `''`                | 最近一次取消原因                            |
 | `created_by_id`           | `bigint`        |    是 | `NULL`              | 创建人ID，来自当前登录用户                           |
 | `created_by_name`         | `varchar(100)`  |    否 | `''`                | 创建人姓名快照                                  |
 | `submitted_at`            | `datetime`      |    是 | `NULL`              | 提交时间                                     |
@@ -241,7 +241,6 @@ stateDiagram-v2
     [*] --> DRAFT
     DRAFT --> SUBMITTED: 提交
     DRAFT --> CANCELLED: 取消
-    SUBMITTED --> DRAFT: 审核退回
     SUBMITTED --> APPROVED: 审核通过
     SUBMITTED --> CANCELLED: 取消
     APPROVED --> PARTIAL_EXECUTED: 仓库部分确认
@@ -254,7 +253,7 @@ stateDiagram-v2
 | 当前状态 | 可见动作 | 可编辑字段 | 动作前校验 | 结果状态 |
 |---|---|---|---|---|
 | `DRAFT` | 保存、提交、删除、取消 | 原订单、仓库、日期、处理方式、原因、备注、明细 | 提交时校验必填字段、可退数量和来源有效性 | `DRAFT`、`SUBMITTED`、`CANCELLED` |
-| `SUBMITTED` | 审核通过、审核退回、取消 | 审核人仅可填写各明细审核数量和审核意见 | 重新锁定来源明细并校验可退数量 | `APPROVED`、`DRAFT`、`CANCELLED` |
+| `SUBMITTED` | 审核通过、取消 | 审核人仅可填写各明细审核数量和审核意见 | 重新锁定来源明细并校验可退数量 | `APPROVED`、`CANCELLED` |
 | `APPROVED` | 查看、取消 | 业务字段不可编辑 | 取消仅允许所有明细 `processed_qty = 0`，且在同一事务内取消未确认工作单；采购退货还须释放实物库存预占 | `APPROVED`、`CANCELLED` |
 | `PARTIAL_EXECUTED` | 查看 | 不可编辑 | 必须继续执行剩余审核数量 | `PARTIAL_EXECUTED`、`COMPLETED` |
 | `COMPLETED` | 查看 | 不可编辑 | 终态，不可撤回 | `COMPLETED` |

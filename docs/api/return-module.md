@@ -10,7 +10,7 @@
 | `GET /returns?returnType=SALES_RETURN` | 分页查询销售退货单 | 销售来源提供者未部署时返回明确业务错误 |
 | `GET /returns/{returnOrderId}` | 查询退货单详情 | 已实现；按单据类型校验权限 |
 | `POST /returns`、`PUT /returns/{returnOrderId}`、`DELETE /returns/{returnOrderId}` | 新建、编辑、删除统一退货草稿 | 已定义契约，后端待实现 |
-| `POST /returns/{returnOrderId}/submit`、`approve`、`reject`、`cancel` | 提交、审核、退回、取消统一退货单 | 已定义契约，后端待实现 |
+| `POST /returns/{returnOrderId}/submit`、`approve`、`cancel` | 提交、审核、取消统一退货单 | 已定义契约，后端待实现 |
 | `GET /returns/source-orders?returnType=PURCHASE_RETURN` | 搜索可退采购来源订单 | 已实现 |
 | `GET /returns/source-orders/{sourceOrderId}/items?returnType=PURCHASE_RETURN` | 查询来源订单可退明细 | 已实现 |
 | `GET /returns/source-orders/{sourceOrderId}/items?returnType=SALES_RETURN` | 查询销售来源可退明细 | 等销售模块提供来源适配器后启用 |

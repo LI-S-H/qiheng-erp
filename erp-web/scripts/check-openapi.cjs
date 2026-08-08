@@ -124,7 +124,6 @@ const requiredPaths = [
   '/returns/{returnOrderId}:',
   '/returns/{returnOrderId}/submit:',
   '/returns/{returnOrderId}/approve:',
-  '/returns/{returnOrderId}/reject:',
   '/returns/{returnOrderId}/cancel:',
 ];
 
@@ -223,7 +222,7 @@ const purchaseReturnDetailPath = source.slice(purchaseReturnDetailPathStart, pur
 for (const method of ['get:', 'put:', 'delete:']) {
   if (!purchaseReturnDetailPath.includes(`    ${method}`)) throw new Error(`采购退回详情资源缺少 ${method}`);
 }
-for (const action of ['submit', 'approve', 'reject', 'cancel']) {
+for (const action of ['submit', 'approve', 'cancel']) {
   const actionStart = source.indexOf(`  /returns/{returnOrderId}/${action}:`);
   const nextPath = source.indexOf('\n  /', actionStart + 4);
   const actionContract = source.slice(actionStart, nextPath < 0 ? source.length : nextPath);
@@ -239,7 +238,6 @@ for (const fragment of [
   'http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })',
   '`${RETURN_API}/${returnOrderId}/submit`',
   '`${RETURN_API}/${returnOrderId}/approve`',
-  '`${RETURN_API}/${returnOrderId}/reject`',
   '`${RETURN_API}/${returnOrderId}/cancel`',
   'getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`',
   '`${RETURN_API}/source-orders/${sourceOrderId}/items`',
@@ -322,7 +320,7 @@ const salesReturnDetailPath = source.slice(salesReturnDetailPathStart, salesRetu
 for (const method of ['get:', 'put:', 'delete:']) {
   if (!salesReturnDetailPath.includes(`    ${method}`)) throw new Error(`销售退货详情资源缺少 ${method}`);
 }
-for (const action of ['submit', 'approve', 'reject', 'cancel']) {
+for (const action of ['submit', 'approve', 'cancel']) {
   const actionStart = source.indexOf(`  /returns/{returnOrderId}/${action}:`);
   const nextPath = source.indexOf('\n  /', actionStart + 4);
   const actionContract = source.slice(actionStart, nextPath < 0 ? source.length : nextPath);
@@ -338,7 +336,6 @@ for (const fragment of [
   'http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })',
   '`${RETURN_API}/${returnOrderId}/submit`',
   '`${RETURN_API}/${returnOrderId}/approve`',
-  '`${RETURN_API}/${returnOrderId}/reject`',
   '`${RETURN_API}/${returnOrderId}/cancel`',
   'getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`',
   '`${RETURN_API}/source-orders/${sourceOrderId}/items`',

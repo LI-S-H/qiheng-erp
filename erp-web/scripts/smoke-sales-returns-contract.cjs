@@ -164,15 +164,6 @@ runSmoke({
     await approveDialog.waitFor({ state: 'hidden' });
     await approvePreview.waitFor({ state: 'hidden' });
 
-    await selectRowAction(page, 'SR202607902', '审核退回');
-    const rejectPreview = page.getByRole('dialog', { name: '销售退货详情' });
-    await rejectPreview.getByRole('button', { name: '审核退回', exact: true }).click();
-    const rejectDialog = page.getByRole('dialog', { name: '审核退回销售退货' });
-    await rejectDialog.getByPlaceholder('请输入审核退回原因').fill('数量依据需补充');
-    await rejectDialog.getByRole('button', { name: '确认退回', exact: true }).click();
-    await rejectDialog.waitFor({ state: 'hidden' });
-    await rejectPreview.waitFor({ state: 'hidden' });
-
     await selectRowAction(page, 'SR202607903', '取消销售退货');
     const cancelPreview = page.getByRole('dialog', { name: '销售退货详情' });
     await cancelPreview.getByRole('button', { name: '取消销售退货', exact: true }).click();
@@ -212,7 +203,6 @@ runSmoke({
     const expectedActions = [
       ['POST', '/api/sales/returns/301/submit', body => body.version === 3],
       ['POST', '/api/sales/returns/302/approve', body => body.version === 3 && body.items?.[0]?.approvedQty === 2],
-      ['POST', '/api/sales/returns/302/reject', body => body.version === 3 && body.reason === '数量依据需补充'],
       ['POST', '/api/sales/returns/303/cancel', body => body.version === 3 && body.reason === '客户协商取消'],
       ['DELETE', '/api/sales/returns/301', body => body.version === 3],
     ];

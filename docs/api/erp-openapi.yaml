@@ -2594,7 +2594,7 @@ paths:
     get:
       tags: [Return]
       summary: 分页查询统一退货单
-      description: 通过必填的 `returnType` 区分采购退货与销售退货；所有筛选条件按 AND 组合。采购前端固定传 `PURCHASE_RETURN`，销售前端固定传 `SALES_RETURN`，页面不允许用户自行切换类型。采购查询需要 `purchase:query`，销售查询需要 `sales:query`。销售来源能力未部署时返回明确业务错误，不返回半成品数据。
+      description: 通过必填的 `returnType` 区分采购退货与销售退货；所有筛选条件按 AND 组合。采购前端固定传 `PURCHASE_RETURN`，销售前端固定传 `SALES_RETURN`，页面不允许用户自行切换类型。退货查询需要 `return:query` 权限，不区分采购/销售方向。销售来源能力未部署时返回明确业务错误，不返回半成品数据。
       operationId: returnOrderPage
       security:
         - SaTokenAuth: []
@@ -2771,7 +2771,7 @@ paths:
     put:
       tags: [Return]
       summary: 编辑统一退货单草稿
-      description: '`DRAFT` 和 `SUBMITTED` 可编辑，审核（`APPROVED`）后不可编辑；创建后的 `returnType` 不可修改。本接口需要 `return:create` 或 `return:manage` 权限；后端同时校验乐观锁、来源订单、仓库、数量精度、预计执行日期和当前剩余可退数量。'
+      description: '`DRAFT` 和 `SUBMITTED` 可编辑，审核（`APPROVED`）后不可编辑；创建后的 `returnType` 不可修改。采购退货需要 `purchase:manage`，销售退货需要 `sales:manage`；后端同时校验乐观锁、来源订单、仓库、数量精度、预计执行日期和当前剩余可退数量。'
       operationId: returnOrderUpdate
       security:
         - SaTokenAuth: []
@@ -2799,7 +2799,7 @@ paths:
     delete:
       tags: [Return]
       summary: 删除统一退货单草稿
-      description: 仅 `DRAFT` 可逻辑删除主单，并在同一事务内删除对应明细；后端根据退货方向校验对应管理权限和乐观锁。
+      description: 仅 `DRAFT` 可逻辑删除主单，并在同一事务内删除对应明细；后端按退货方向校验 `purchase:manage`/`sales:manage` 和乐观锁。
       operationId: returnOrderDelete
       security:
         - SaTokenAuth: []
@@ -2824,7 +2824,7 @@ paths:
     post:
       tags: [Return]
       summary: 提交统一退货单
-      description: 仅允许 `DRAFT -> SUBMITTED`。后端按退货方向校验管理权限、预计执行日期和剩余可退数量，并保证重复请求幂等。
+      description: 仅允许 `DRAFT -> SUBMITTED`。后端按退货方向校验 `purchase:manage`/`sales:manage`、预计执行日期和剩余可退数量，并保证重复请求幂等。
       operationId: returnOrderSubmit
       security:
         - SaTokenAuth: []
@@ -2855,7 +2855,7 @@ paths:
       tags: [Return]
       summary: 审核统一退货单
       description: |
-        仅允许 `SUBMITTED -> APPROVED`。审核人逐明细提交审核数量；后端锁定来源明细并重新校验占用与可退数量。
+        仅允许 `SUBMITTED -> APPROVED`。审核人逐明细提交审核数量；后端锁定来源明细并重新校验占用与可退数量。采购退货需要 `purchase:manage`，销售退货需要 `sales:manage`。
         审核采购退货时生成 `outbound_type=PURCHASE_RETURN`、`source_type=PURCHASE_RETURN_ORDER`、`entry_mode=SOURCE_GENERATED` 的待确认出库单；审核销售退货时生成 `inbound_type=SALES_RETURN`、`source_type=SALES_RETURN_ORDER`、`entry_mode=SOURCE_GENERATED` 的待确认入库单。审核不直接改变库存，实际库存变化由仓储确认完成。
       operationId: returnOrderApprove
       security:
@@ -2886,7 +2886,7 @@ paths:
     post:
       tags: [Return]
       summary: 取消统一退货单
-      description: 仅允许 `DRAFT`、`SUBMITTED` 或尚未产生处理数量的 `APPROVED` 进入 `CANCELLED`；部分执行后不得取消。已生成但未确认的仓储工作单须在同一事务内取消。
+      description: 仅允许 `DRAFT`、`SUBMITTED` 或尚未产生处理数量的 `APPROVED` 进入 `CANCELLED`；部分执行后不得取消。采购退货需要 `purchase:manage`，销售退货需要 `sales:manage`。已生成但未确认的仓储工作单须在同一事务内取消。
       operationId: returnOrderCancel
       security:
         - SaTokenAuth: []

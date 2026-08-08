@@ -148,7 +148,6 @@ public class ReturnOrderController {
             @Parameter(description = "退货单ID", required = true)
             @PathVariable String returnOrderId,
             @Valid @RequestBody ReturnOrderUpdateDto dto) {
-        StpUtil.checkPermissionOr("return:create", "return:manage");
         Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
         log.info("编辑统一退货单草稿，ID: {}, 参数: {}", id, dto);
         return Result.ok(returnOrderService.update(id, dto));
@@ -167,7 +166,6 @@ public class ReturnOrderController {
             @Parameter(description = "退货单ID", required = true)
             @PathVariable String returnOrderId,
             @Valid @RequestBody OptimisticLockVersionDto dto) {
-        StpUtil.checkPermission("return:manage");
         Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
         log.info("删除统一退货单草稿，ID: {}, 版本: {}", id, dto.getVersion());
         returnOrderService.delete(id, dto.getVersion());
@@ -187,7 +185,6 @@ public class ReturnOrderController {
             @Parameter(description = "退货单ID", required = true)
             @PathVariable String returnOrderId,
             @Valid @RequestBody OptimisticLockVersionDto dto) {
-        StpUtil.checkPermission("return:manage");
         Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
         log.info("提交统一退货单，ID: {}, 版本: {}", id, dto.getVersion());
         returnOrderService.submit(id, dto.getVersion());
@@ -202,11 +199,11 @@ public class ReturnOrderController {
         StpUtil.checkPermission("return:query");
     }
 
-    /** 创建退货单统一使用 return:create 权限，不区分采购/销售方向。 */
+    /** 创建退货单按业务方向校验权限：采购退货需 purchase:create，销售退货需 sales:create。 */
     private void checkCreatePermission(ReturnType type) {
         if (type == null) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "退货类型不能为空");
         }
-        StpUtil.checkPermission("return:create");
+        StpUtil.checkPermission(type == ReturnType.PURCHASE_RETURN ? "purchase:create" : "sales:create");
     }
 }

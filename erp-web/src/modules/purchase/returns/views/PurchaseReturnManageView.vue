@@ -42,7 +42,7 @@ const config: ReturnOrderPageConfig = {
   partialHint: '退货出库处理中',
   approvalResultDescription: '审核通过后将生成待确认采购退货出库单，不直接扣减库存。',
   permissions: {
-    query: 'purchase:query',
+    query: 'return:query',
     create: 'purchase:create',
     manage: 'purchase:manage',
   },

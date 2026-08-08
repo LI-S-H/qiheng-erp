@@ -168,7 +168,7 @@ for (const fragment of [
   'returnType: { type: string, enum: [PURCHASE_RETURN]',
   'source_type=PURCHASE_RETURN_ORDER',
   'entry_mode=SOURCE_GENERATED',
-  'purchase:query',
+  'return:query',
   'purchase:create',
   'purchase:manage',
 ]) {
@@ -257,7 +257,7 @@ for (const fragment of [
   if (!returnViewSource.includes(fragment)) throw new Error(`通用退货页面未复用标准组件或缺少关键实现：${fragment}`);
 }
 for (const fragment of [
-  "returnType: 'PURCHASE_RETURN'", "query: 'purchase:query'", "create: 'purchase:create'", "manage: 'purchase:manage'",
+  "returnType: 'PURCHASE_RETURN'", "query: 'return:query'", "create: 'purchase:create'", "manage: 'purchase:manage'",
   'listReturns: listPurchaseReturns', 'createReturn: createPurchaseReturn', 'searchSourceOrders: searchPurchaseReturnSourceOrders',
 ]) {
   if (!purchaseReturnViewSource.includes(fragment)) throw new Error(`采购退回页面配置缺少适配或权限：${fragment}`);
@@ -292,7 +292,6 @@ for (const fragment of [
   'returnType: { type: string, enum: [SALES_RETURN]',
   'source_type=SALES_RETURN_ORDER',
   'inbound_type=SALES_RETURN',
-  'sales:query',
   'sales:create',
   'sales:manage',
 ]) {
@@ -361,7 +360,7 @@ if (source.includes('原采购明细单价快照')) {
   throw new Error('共享退货来源明细单价描述不得残留采购专属语义');
 }
 for (const fragment of [
-  "returnType: 'SALES_RETURN'", "query: 'sales:query'", "create: 'sales:create'", "manage: 'sales:manage'",
+  "returnType: 'SALES_RETURN'", "query: 'return:query'", "create: 'sales:create'", "manage: 'sales:manage'",
   "returnNoPlaceholder: '如 SR202607001'", "fulfilledQuantityLabel: '已出库'", 'listReturns: listSalesReturns', 'createReturn: createSalesReturn',
   'searchSourceOrders: searchSalesReturnSourceOrders',
 ]) {

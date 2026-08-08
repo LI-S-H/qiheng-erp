@@ -1,5 +1,6 @@
 package com.qiheng.erp.returnorder.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -245,6 +246,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 1. 校验状态是否可编辑以及版本号是否正确
         ReturnOrder existing = loadAndCheckStatus(returnOrderId, dto.getVersion(),
                 ReturnStatus.DRAFT, ReturnStatus.SUBMITTED);
+        // 按业务方向校验管理权限（采购退货需 purchase:manage，销售退货需 sales:manage）
+        checkManagePermission(existing.getReturnType());
         // 2. 校验预计执行日期是否正确
         validateExpectedExecutionDate(dto.getExpectedExecutionDate());
         // 3. 校验参数是否正确
@@ -302,6 +305,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     public void delete(Long returnOrderId, Integer version) {
         // 1. 校验退货单是否存在、状态是否为草稿、乐观锁版本是否正确
         ReturnOrder existing = loadAndCheckStatus(returnOrderId, version, ReturnStatus.DRAFT);
+        // 按业务方向校验管理权限（采购退货需 purchase:manage，销售退货需 sales:manage）
+        checkManagePermission(existing.getReturnType());
         // 2. 逻辑删除退货单主表（带乐观锁版本条件，防止并发覆盖）
         int rows = returnOrderMapper.delete(new LambdaQueryWrapper<ReturnOrder>()
                 .eq(ReturnOrder::getId, returnOrderId)
@@ -329,6 +334,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         if (existing == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货单不存在");
         }
+        // 按业务方向校验管理权限（returnType 不可改，锁外校验安全，无权限快速拒绝不抢锁）
+        checkManagePermission(existing.getReturnType());
         // 2. 快速幂等：已提交状态直接返回，避免重复请求抢锁
         if (ReturnStatus.SUBMITTED.name().equals(existing.getStatus())) {
             return;
@@ -754,6 +761,11 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
         }
         return order;
+    }
+
+    /** 按退货单业务方向校验管理权限：采购退货需 purchase:manage，销售退货需 sales:manage。 */
+    private void checkManagePermission(String returnType) {
+        StpUtil.checkPermission(ReturnType.PURCHASE_RETURN.name().equals(returnType) ? "purchase:manage" : "sales:manage");
     }
 
     /** 来源上下文：来源订单快照 + 来源明细映射 + 库存可用映射。 */

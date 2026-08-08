@@ -47,7 +47,7 @@ const config: ReturnOrderPageConfig = {
   backendEnabled: mockEnabled,
   backendUnavailableMessage: '销售退货来源与入库回写后端尚未部署，当前仅保留页面入口与结构，不发起列表查询，也不可新增、提交、审核或取消。',
   permissions: {
-    query: 'sales:query',
+    query: 'return:query',
     create: 'sales:create',
     manage: 'sales:manage',
   },

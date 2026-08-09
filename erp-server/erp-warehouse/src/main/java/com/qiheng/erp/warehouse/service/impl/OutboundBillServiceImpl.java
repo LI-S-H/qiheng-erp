@@ -42,6 +42,8 @@ import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.qiheng.erp.warehouse.service.StockBillServiceHelper;
 import com.qiheng.erp.warehouse.service.support.StockBillDraftSupport;
 import com.qiheng.erp.warehouse.service.support.StockBillEditingSupport;
+import com.qiheng.erp.warehouse.service.support.SourceOperationLockSupport;
+import com.qiheng.erp.warehouse.service.support.WarehouseStockLockSupport;
 import com.qiheng.erp.warehouse.service.support.WarehouseStockReservationSupport;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -79,6 +81,12 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
 
     @Autowired
     private IWarehouseStockService warehouseStockService;
+
+    @Autowired
+    private WarehouseStockLockSupport warehouseStockLockSupport;
+
+    @Autowired
+    private SourceOperationLockSupport sourceOperationLockSupport;
 
     @Autowired
     private IStockBillService stockBillService;
@@ -446,6 +454,13 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         if (bill == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库单不存在");
         }
+        if (SourceType.PURCHASE_RETURN_ORDER.name().equals(bill.getSourceType()) && bill.getSourceId() != null) {
+            sourceOperationLockSupport.acquire(bill.getSourceType(), bill.getSourceId());
+            bill = this.getById(id);
+            if (bill == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库单不存在");
+            }
+        }
         // 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(bill.getStatus(), bill.getVersion(), dto.getVersion(),
                 "仅待确认状态可确认出库", StockBillStatus.PENDING_CONFIRM);
@@ -459,6 +474,8 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "出库单明细为空，无法确认");
         }
         validateSourceRemainingQuantities(bill, items);
+        Map<Long, WarehouseStock> lockedStocks = warehouseStockLockSupport.lockExistingStocks(
+                bill.getWarehouseId(), items.stream().map(OutboundBillItem::getProductId).toList());
         // 获取当前用户信息与当前时间戳
         LoginUser currentUser = UserContext.requireCurrentUser();
         Long currentUserId = currentUser.getUserId();
@@ -488,11 +505,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "出库数量必须大于0");
             }
             // 校验可用库存是否足够
-            WarehouseStock stock = warehouseStockService.getOne(
-                    new LambdaQueryWrapper<WarehouseStock>()
-                            .eq(WarehouseStock::getWarehouseId, bill.getWarehouseId())
-                            .eq(WarehouseStock::getProductId, item.getProductId())
-            );
+            WarehouseStock stock = lockedStocks.get(item.getProductId());
             Long stockQty = stock == null || stock.getStockQty() == null ? 0L : stock.getStockQty();
             Long lockedQty = stock == null || stock.getLockedQty() == null ? 0L : stock.getLockedQty();
             // 出库确认只消费前序流程已预占的锁定量，不再根据可用库存重新抢占。

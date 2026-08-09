@@ -254,8 +254,27 @@ runSmoke({
       await detailDialog.getByText(text, { exact: true }).first().waitFor();
     }
     await detailDialog.getByRole('button', { name: '关闭' }).click();
+
+    const approvedOrderRow = tableRow(page, 'PO202607001');
+    await approvedOrderRow.getByRole('button', { name: '更多 PO202607001 操作' }).click();
+    const approvedMenu = page.getByRole('menu');
+    await approvedMenu.getByRole('menuitem', { name: '取消采购单', exact: true }).waitFor();
+    if (await approvedMenu.getByRole('menuitem', { name: '编辑采购单', exact: true }).count()
+      || await approvedMenu.getByRole('menuitem', { name: '审核采购单', exact: true }).count()) {
+      throw new Error('未履约的已审核采购订单只能提供取消操作');
+    }
+    await approvedMenu.getByRole('menuitem', { name: '取消采购单', exact: true }).click();
+    const cancelDialog = page.getByRole('alertdialog', { name: '取消采购单' });
+    await cancelDialog.getByText('取消后会作废关联的待确认入库单；尚未确认入库，不会产生库存变动。采购单保留追溯但不能继续流转。').waitFor();
+    await cancelDialog.getByRole('button', { name: '确认取消', exact: true }).click();
+    await cancelDialog.waitFor({ state: 'hidden' });
+    const cancelledApprovedRow = tableRow(page, 'PO202607001');
+    if (await cancelledApprovedRow.locator('[data-slot="badge"]').innerText() !== '已取消'
+      || !(await cancelledApprovedRow.innerText()).includes('流程终止')) {
+      throw new Error('未履约的已审核采购订单取消后未刷新为已取消状态');
+    }
+
     const readonlyStatusExpectations = {
-      PO202607001: ['待入库', '等待入库'],
       PO202607002: ['部分入库', '部分入库'],
       PO202607006: ['已入库', '流程完成'],
       PO202607007: ['已取消', '流程终止'],

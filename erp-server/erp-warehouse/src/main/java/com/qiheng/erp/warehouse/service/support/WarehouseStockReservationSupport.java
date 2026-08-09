@@ -1,6 +1,5 @@
 package com.qiheng.erp.warehouse.service.support;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
@@ -20,9 +19,12 @@ import java.util.Map;
 public class WarehouseStockReservationSupport {
 
     private final IWarehouseStockService warehouseStockService;
+    private final WarehouseStockLockSupport warehouseStockLockSupport;
 
-    public WarehouseStockReservationSupport(IWarehouseStockService warehouseStockService) {
+    public WarehouseStockReservationSupport(IWarehouseStockService warehouseStockService,
+                                            WarehouseStockLockSupport warehouseStockLockSupport) {
         this.warehouseStockService = warehouseStockService;
+        this.warehouseStockLockSupport = warehouseStockLockSupport;
     }
 
     /**
@@ -37,24 +39,21 @@ public class WarehouseStockReservationSupport {
                 .anyMatch(entry -> entry.getKey() == null || entry.getValue() == null)) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "锁定库存变更参数不能为空");
         }
+        Map<Long, WarehouseStock> lockedStocks = warehouseStockLockSupport
+                .lockExistingStocks(warehouseId, deltasByProduct.keySet());
         // 创建和取消只需处理一种方向，避免不必要的遍历；同仓差额编辑才需要先释放再预占。
         if (releaseRequired) {
             deltasByProduct.entrySet().stream().filter(entry -> entry.getValue() < 0)
-                    .forEach(entry -> applyProductLockedQtyChange(warehouseId, entry.getKey(), entry.getValue()));
+                    .forEach(entry -> applyProductLockedQtyChange(lockedStocks, entry.getKey(), entry.getValue()));
         }
         if (reserveRequired) {
             deltasByProduct.entrySet().stream().filter(entry -> entry.getValue() > 0)
-                    .forEach(entry -> applyProductLockedQtyChange(warehouseId, entry.getKey(), entry.getValue()));
+                    .forEach(entry -> applyProductLockedQtyChange(lockedStocks, entry.getKey(), entry.getValue()));
         }
     }
 
-    private void applyProductLockedQtyChange(Long warehouseId, Long productId, long delta) {
-        // 校验商品库存是否存在
-        WarehouseStock stock = warehouseStockService.getOne(
-                new LambdaQueryWrapper<WarehouseStock>()
-                        .eq(WarehouseStock::getWarehouseId, warehouseId)
-                        .eq(WarehouseStock::getProductId, productId)
-        );
+    private void applyProductLockedQtyChange(Map<Long, WarehouseStock> lockedStocks, Long productId, long delta) {
+        WarehouseStock stock = lockedStocks.get(productId);
         if (stock == null) {
             throw new BizException(ErrorCode.STOCK_INSUFFICIENT.getCode(), "商品库存不存在，无法锁定或释放库存");
         }

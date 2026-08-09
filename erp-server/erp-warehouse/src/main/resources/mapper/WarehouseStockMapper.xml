@@ -2,4 +2,17 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.qiheng.erp.warehouse.mapper.WarehouseStockMapper">
 
+    <select id="selectByWarehouseAndProductIdsForUpdate"
+            resultType="com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock">
+        SELECT *
+        FROM warehouse_stock
+        WHERE warehouse_id = #{warehouseId}
+          AND product_id IN
+        <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+            #{productId}
+        </foreach>
+        ORDER BY product_id, id
+        FOR UPDATE
+    </select>
+
 </mapper>

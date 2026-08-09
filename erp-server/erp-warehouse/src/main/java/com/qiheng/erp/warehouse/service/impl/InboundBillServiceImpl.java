@@ -28,6 +28,7 @@ import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.domain.stockbill.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.inbound.enums.InboundType;
 import com.qiheng.erp.warehouse.domain.common.enums.EntryMode;
+import com.qiheng.erp.warehouse.domain.common.enums.SourceType;
 import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillListItemVo;
 import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillPageVo;
@@ -42,6 +43,8 @@ import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.qiheng.erp.warehouse.service.StockBillServiceHelper;
 import com.qiheng.erp.warehouse.service.support.StockBillDraftSupport;
 import com.qiheng.erp.warehouse.service.support.StockBillEditingSupport;
+import com.qiheng.erp.warehouse.service.support.SourceOperationLockSupport;
+import com.qiheng.erp.warehouse.service.support.WarehouseStockLockSupport;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -75,6 +78,12 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     @Autowired
     private IWarehouseStockService warehouseStockService;
+
+    @Autowired
+    private WarehouseStockLockSupport warehouseStockLockSupport;
+
+    @Autowired
+    private SourceOperationLockSupport sourceOperationLockSupport;
 
     @Autowired
     private StockBillServiceHelper stockBillServiceHelper;
@@ -116,7 +125,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 执行查询
         Page<InboundBillListItemVo> result = inboundBillMapper.selectJoinPage(page, InboundBillListItemVo.class, wrapper);
         List<InboundBillListItemVo> records = result.getRecords();
-
         // 处理查询结果
         if (!records.isEmpty()) {
             // 提取入库单ID
@@ -138,10 +146,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 stockBillServiceHelper.populateQuantityFields("本次入库", items, vo);
             }
         }
-        
         // 基于当前分页记录计算汇总信息
         InboundBillSummaryVo summary = stockBillServiceHelper.buildSummary(records, InboundBillSummaryVo::new);
-
         InboundBillPageVo pageVo = new InboundBillPageVo();
         pageVo.setRecords(records);
         pageVo.setTotal((int) result.getTotal());
@@ -376,6 +382,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
         }
 
+
         // 2. 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(
                 bill.getStatus(), bill.getVersion(), dto.getVersion(), "仅草稿状态可提交", StockBillStatus.DRAFT);
@@ -427,6 +434,10 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
         }
 
+        if (EntryMode.SOURCE_GENERATED.name().equals(bill.getEntryMode()) && bill.getSourceType() != null) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "系统生成入库单请通过来源单取消");
+        }
+
         // 2. 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(bill.getStatus(), bill.getVersion(), dto.getVersion(),
                 "仅草稿和待确认状态可取消", StockBillStatus.DRAFT, StockBillStatus.PENDING_CONFIRM);
@@ -456,11 +467,16 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         if (bill == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
         }
-
+        if (SourceType.PURCHASE_ORDER.name().equals(bill.getSourceType()) && bill.getSourceId() != null) {
+            sourceOperationLockSupport.acquire(bill.getSourceType(), bill.getSourceId());
+            bill = this.getById(id);
+            if (bill == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
+            }
+        }
         // 2. 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(bill.getStatus(), bill.getVersion(), dto.getVersion(),
                 "仅待确认状态可确认入库", StockBillStatus.PENDING_CONFIRM);
-
         // 4. 查询入库单明细
         List<InboundBillItem> items = inboundBillItemService.list(
                 new LambdaQueryWrapper<InboundBillItem>()
@@ -470,15 +486,17 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         if (items.isEmpty()) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库单明细为空，无法确认");
         }
+        // 5. 校验来源单剩余数量是否足够
         validateSourceRemainingQuantities(bill, items);
-
-        // 5. 获取当前登录用户
+        // TODO(销售模块完成后)：SALES_RETURN_ORDER 接通来源回写时，在库存变更前获取同一来源单操作锁。
+        Map<Long, WarehouseStock> lockedStocks = warehouseStockLockSupport.lockExistingStocks(
+                bill.getWarehouseId(), items.stream().map(InboundBillItem::getProductId).toList());
+        // 6. 获取当前登录用户
         LoginUser currentUser = UserContext.requireCurrentUser();
         Long currentUserId = currentUser.getUserId();
         String currentUserName = currentUser.getRealName();
         LocalDateTime now = LocalDateTime.now();
-
-        // 6. 生成库存流水主表
+        // 7. 生成库存流水主表
         String stockBillNo = billNoGenerator.nextNo("SL", () -> findMaxBillNoSequence("SL"));
         StockBill stockBill = new StockBill()
                 .setBillNo(stockBillNo)
@@ -494,25 +512,17 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setConfirmedAt(now)
                 .setRemark(bill.getRemark());
         stockBillService.save(stockBill);
-
-        // 7. 查询仓库信息（用于新建库存记录时填充 warehouseCode）
+        // 8. 查询仓库信息（用于新建库存记录时填充 warehouseCode）
         Warehouse warehouse = warehouseMapper.selectById(bill.getWarehouseId());
         String warehouseCode = (warehouse != null) ? warehouse.getWarehouseCode() : null;
-
-        // 8. 处理每条明细：生成库存流水明细 + 更新库存 + 回写入库单明细
+        // 9. 处理每条明细：生成库存流水明细 + 更新库存 + 回写入库单明细
         List<StockBillItem> stockBillItems = new ArrayList<>();
         for (InboundBillItem item : items) {
             Long currentQty = item.getCurrentQty() != null ? item.getCurrentQty() : 0L;
-
             // 查询当前库存
-            WarehouseStock stock = warehouseStockService.getOne(
-                    new LambdaQueryWrapper<WarehouseStock>()
-                            .eq(WarehouseStock::getWarehouseId, bill.getWarehouseId())
-                            .eq(WarehouseStock::getProductId, item.getProductId())
-            );
+            WarehouseStock stock = lockedStocks.get(item.getProductId());
             Long beforeQty = (stock != null && stock.getStockQty() != null) ? stock.getStockQty() : 0L;
             Long afterQty = beforeQty + currentQty;
-
             // 生成库存流水分录
             StockBillItem stockBillItem = new StockBillItem()
                     .setBillId(stockBill.getId())
@@ -530,7 +540,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                     .setDefectiveQty(item.getDefectiveQty())
                     .setRemark(item.getRemark());
             stockBillItems.add(stockBillItem);
-
             // 更新库存余额
             if (stock == null) {
                 WarehouseStock newStock = new WarehouseStock()
@@ -558,7 +567,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 保存库存流水明细
         stockBillItemService.saveBatch(stockBillItems);
 
-        // 9. 回写入库单明细：关联库存流水分录ID、计算剩余数量
+        // 10. 回写入库单明细：关联库存流水分录ID、计算剩余数量
         Map<Long, StockBillItem> stockBillItemsByWorkBillItemId = stockBillItems.stream()
                 .collect(Collectors.toMap(StockBillItem::getWorkBillItemId, item -> item));
         for (InboundBillItem item : items) {

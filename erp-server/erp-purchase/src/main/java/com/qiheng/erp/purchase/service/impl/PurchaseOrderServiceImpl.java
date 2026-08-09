@@ -47,9 +47,14 @@ import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
 import com.qiheng.erp.warehouse.mapper.InboundBillItemMapper;
 import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
+import com.qiheng.erp.warehouse.service.support.SourceOperationLockSupport;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -99,6 +104,12 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
 
     @Autowired
     private InboundBillItemMapper inboundBillItemMapper;
+
+    @Autowired
+    private RedissonClient redissonClient;
+
+    @Autowired
+    private SourceOperationLockSupport sourceOperationLockSupport;
 
     @Autowired
     private BillNoGenerator billNoGenerator;
@@ -494,15 +505,34 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     }
 
     /**
-     * 取消采购订单（DRAFT/SUBMITTED -> CANCELLED）
+     * 取消采购订单。已审核订单仅在尚未发生任何确认入库事实时允许取消。
      * @param purchaseOrderId 采购订单ID
      * @param version 乐观锁版本号
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void cancel(Long purchaseOrderId, Integer version) {
-        loadAndCheckStatus(purchaseOrderId, version,
-                "仅草稿和待审核状态可取消", PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.SUBMITTED);
+        PurchaseOrder existing = purchaseOrderMapper.selectById(purchaseOrderId);
+        if (existing == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND);
+        }
+        if (PurchaseOrderStatus.APPROVED.name().equals(existing.getStatus())) {
+            sourceOperationLockSupport.acquire(SourceType.PURCHASE_ORDER.name(), existing.getId());
+            existing = purchaseOrderMapper.selectById(purchaseOrderId);
+            if (existing == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND);
+            }
+        }
+        // 重复取消不重复变更工作单，直接按幂等成功处理。
+        if (PurchaseOrderStatus.CANCELLED.name().equals(existing.getStatus())) {
+            return;
+        }
+        PurchaseOrder order = loadAndCheckStatus(purchaseOrderId, version,
+                "仅草稿、待审核和未入库的已审核状态可取消",
+                PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.SUBMITTED, PurchaseOrderStatus.APPROVED);
+        if (PurchaseOrderStatus.APPROVED.name().equals(order.getStatus())) {
+            cancelPendingInboundBills(order);
+        }
         // 更新状态为已取消
         PurchaseOrder update = new PurchaseOrder();
         update.setId(purchaseOrderId);
@@ -515,12 +545,37 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     }
 
     /**
+     * 已审核采购单取消时，必须先确认没有任何入库事实，再作废全部未确认入库工作单。
+     * 工作单使用自身乐观锁更新，和仓库确认并发时任一方失败后由外层事务统一回滚。
+     */
+    private void cancelPendingInboundBills(PurchaseOrder order) {
+        // 校验采购订单是否有已确认入库事实
+        List<InboundBill> allBills = inboundBillMapper.selectList(new LambdaQueryWrapper<InboundBill>()
+                .eq(InboundBill::getSourceType, SourceType.PURCHASE_ORDER.name())
+                .eq(InboundBill::getSourceId, order.getId()));
+        boolean hasConfirmed = allBills.stream()
+                .anyMatch(bill -> StockBillStatus.CONFIRMED.name().equals(bill.getStatus()));
+        if (hasConfirmed) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "已发生入库事实的采购订单不允许取消");
+        }
+        for (InboundBill bill : allBills) {
+            if (!StockBillStatus.DRAFT.name().equals(bill.getStatus())
+                    && !StockBillStatus.PENDING_CONFIRM.name().equals(bill.getStatus())) {
+                continue;
+            }
+            InboundBill update = new InboundBill();
+            update.setId(bill.getId());
+            update.setStatus(StockBillStatus.CANCELLED.name());
+            update.setVersion(bill.getVersion());
+            if (inboundBillMapper.updateById(update) == 0) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "入库单[" + bill.getInboundNo() + "]状态已变更，无法取消采购订单");
+            }
+        }
+    }
+
+    /**
      * 加载采购订单并校验状态与乐观锁版本
-     * @param purchaseOrderId 采购订单ID
-     * @param version 期望的乐观锁版本号
-     * @param statusMessage 状态不匹配时的错误提示
-     * @param allowedStatuses 允许的状态集合
-     * @return 采购订单实体
      */
     private PurchaseOrder loadAndCheckStatus(Long purchaseOrderId, Integer version,
                                              String statusMessage, PurchaseOrderStatus... allowedStatuses) {
@@ -716,6 +771,9 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         }
     }
 
+    /**
+     * 构建采购订单完成摘要
+     */
     private PurchaseOrderFulfillmentSummaryVo buildFulfillmentSummary(PurchaseOrder order,
                                                                         List<PurchaseOrderItemVo> items) {
         BigDecimal totalAmount = order.getTotalAmount() == null ? BigDecimal.ZERO
@@ -737,7 +795,9 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 .setInboundAmount(inboundAmount)
                 .setCompletionRate(completionRate);
     }
-
+    /**
+     * 构建采购订单时间线
+     */
     private List<PurchaseOrderTimelineItemVo> buildTimeline(PurchaseOrder order) {
         List<PurchaseOrderTimelineItemVo> timeline = new ArrayList<>();
         addTimelineItem(timeline, "CREATED", order.getCreatedByName(), order.getCreateTime(), null, null);
@@ -759,6 +819,9 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         return timeline;
     }
 
+    /**
+     * 添加采购订单时间线事件
+     */
     private void addTimelineItem(List<PurchaseOrderTimelineItemVo> timeline, String event, String operatorName,
                                  LocalDateTime occurredAt, Long inboundBillId, String inboundBillNo) {
         if (occurredAt == null) {

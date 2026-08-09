@@ -808,10 +808,16 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'subm
     const timestamp = nowText();
     mockOrders = mockOrders.map(item => {
       if (item.purchaseOrderId !== purchaseOrderId) return item;
+      if (action === 'cancel' && item.status === 'CANCELLED') return item;
       assertOptimisticVersion(item.version, version);
       if (action === 'submit' && item.status !== 'DRAFT') throw new Error('仅草稿采购单可以提交');
       if (action === 'approve' && item.status !== 'SUBMITTED') throw new Error('仅已提交采购单可以审核');
-      if (action === 'cancel' && item.status !== 'DRAFT' && item.status !== 'SUBMITTED') throw new Error('仅草稿或已提交采购单可以取消');
+      if (action === 'cancel' && item.status !== 'DRAFT' && item.status !== 'SUBMITTED' && item.status !== 'APPROVED') {
+        throw new Error('仅草稿、已提交或未入库的已审核采购单可以取消');
+      }
+      if (action === 'cancel' && item.status === 'APPROVED' && item.items.some(line => line.inboundQty > 0)) {
+        throw new Error('已发生入库事实的采购订单不允许取消');
+      }
       if ((action === 'submit' || action === 'approve') && !item.expectedArrivalDate) throw new Error('提交或审核采购订单前必须维护预计到货日期');
       const timeline = [...item.timeline];
       if (action === 'submit') {

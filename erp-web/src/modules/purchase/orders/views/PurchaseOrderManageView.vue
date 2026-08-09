@@ -634,7 +634,9 @@ function confirmOrderAction(row: PurchaseOrderListItem, action: 'submit' | 'appr
   const config = {
     submit: ['提交采购单', '提交后进入待审核状态，预计到货日期不能为空；已提交采购单只允许具备审核权限的人继续修改。', '提交', 'default'],
     approve: ['审核采购单', '审核后后端会生成待确认入库单，采购单本身不得再直接修改；库存变动仍以仓库模块确认本次数量为准。', '审核通过', 'warning'],
-    cancel: ['取消采购单', '取消后该采购单保留追溯但不能继续流转。', '确认取消', 'destructive'],
+    cancel: ['取消采购单', row.status === 'APPROVED'
+      ? '取消后会作废关联的待确认入库单；尚未确认入库，不会产生库存变动。采购单保留追溯但不能继续流转。'
+      : '取消后该采购单保留追溯但不能继续流转。', '确认取消', 'destructive'],
   } as const;
   const [title, description, confirmText, variant] = config[action];
   showConfirm(title, description, confirmText, variant, async () => {
@@ -649,6 +651,9 @@ function openOrderActionDetail(row: PurchaseOrderListItem, action: 'submit' | 'a
 }
 
 function getRowActions(row: PurchaseOrderListItem): RowActionOption[] {
+  if (row.status === 'APPROVED') {
+    return [{ key: 'cancel', label: '取消采购单', variant: 'destructive' }];
+  }
   if (row.status !== 'DRAFT' && row.status !== 'SUBMITTED') return [];
 
   return [
@@ -665,7 +670,7 @@ function handleRowAction(row: PurchaseOrderListItem, actionKey: string) {
   if (actionKey === 'edit') openEditDialog(row);
   if (actionKey === 'submit' && row.status === 'DRAFT') openOrderActionDetail(row, 'submit');
   if (actionKey === 'approve' && row.status === 'SUBMITTED') openOrderActionDetail(row, 'approve');
-  if (actionKey === 'cancel' && (row.status === 'DRAFT' || row.status === 'SUBMITTED')) confirmOrderAction(row, 'cancel');
+  if (actionKey === 'cancel' && (row.status === 'DRAFT' || row.status === 'SUBMITTED' || row.status === 'APPROVED')) confirmOrderAction(row, 'cancel');
 }
 
 function detailActionHint(row: PurchaseOrderListItem) {

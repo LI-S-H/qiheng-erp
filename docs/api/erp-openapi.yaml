@@ -2567,7 +2567,7 @@ paths:
     post:
       tags: [PurchaseOrder]
       summary: 取消采购订单
-      description: 仅允许 `DRAFT` 或 `SUBMITTED` 状态取消；取消不改变库存，不生成入库单或库存流水，已审核或已产生入库事实的采购订单不得直接取消。本接口需要 `purchase:create` 权限并保证重复请求幂等。
+      description: 允许 `DRAFT`、`SUBMITTED` 取消，也允许尚未发生任何确认入库事实的 `APPROVED` 取消。取消 `APPROVED` 订单时，后端在同一事务内作废全部 `source_type = PURCHASE_ORDER` 的 `DRAFT`、`PENDING_CONFIRM` 入库工作单；取消不改变实物库存、不生成库存流水。`PARTIAL_INBOUND`、`INBOUND_DONE`，或存在任一已确认入库工作单时返回 `409`。已取消订单重复调用按幂等成功处理且不会重复作废工作单；未取消订单版本过期或与入库确认并发时返回 `409`。本接口需要 `purchase:create` 权限。
       operationId: purchaseOrderCancel
       security:
         - SaTokenAuth: []

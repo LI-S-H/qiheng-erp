@@ -1,9 +1,13 @@
 package com.qiheng.erp.warehouse.service.support;
 
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.mapper.WarehouseStockMapper;
 import org.springframework.stereotype.Component;
 
+import java.sql.SQLException;
+import java.sql.SQLTimeoutException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +37,33 @@ public class WarehouseStockLockSupport {
         if (sortedProductIds.isEmpty()) {
             return Map.of();
         }
-        return warehouseStockMapper.selectByWarehouseAndProductIdsForUpdate(warehouseId, sortedProductIds).stream()
-                .collect(Collectors.toMap(WarehouseStock::getProductId, Function.identity()));
+        try {
+            return warehouseStockMapper.selectByWarehouseAndProductIdsForUpdate(warehouseId, sortedProductIds).stream()
+                    .collect(Collectors.toMap(WarehouseStock::getProductId, Function.identity()));
+        } catch (RuntimeException e) {
+            if (isLockWaitTimeout(e)) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "库存正在被其他单据处理，请稍后重试");
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * MyBatis/Spring 对 JDBC 超时的包装类型随驱动版本不同而变化，
+     * 因此以 JDBC 标准超时类型或 MySQL 1205 错误码识别，不把死锁 1213 误判为可等待冲突。
+     */
+    private boolean isLockWaitTimeout(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SQLTimeoutException) {
+                return true;
+            }
+            if (current instanceof SQLException sqlException && sqlException.getErrorCode() == 1205) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

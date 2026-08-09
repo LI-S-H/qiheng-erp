@@ -3,7 +3,8 @@
 <mapper namespace="com.qiheng.erp.warehouse.mapper.WarehouseStockMapper">
 
     <select id="selectByWarehouseAndProductIdsForUpdate"
-            resultType="com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock">
+            resultType="com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock"
+            timeout="5">
         SELECT *
         FROM warehouse_stock
         WHERE warehouse_id = #{warehouseId}

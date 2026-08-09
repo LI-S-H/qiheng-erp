@@ -1,6 +1,7 @@
 package com.qiheng.erp.warehouse.domain.inbound.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.Version;
@@ -119,6 +120,11 @@ public class InboundBill implements Serializable, StockBillDetailVoMapping.BillS
     @Schema(description="更新时间")
     @TableField("update_time")
     private LocalDateTime updateTime;
+
+    @TableField("deleted")
+    @TableLogic
+    @Schema(description="逻辑删除：0正常，1删除")
+    private Integer deleted;
 
     @Schema(description="手工补录或库存调整原因")
     @TableField("manual_reason")

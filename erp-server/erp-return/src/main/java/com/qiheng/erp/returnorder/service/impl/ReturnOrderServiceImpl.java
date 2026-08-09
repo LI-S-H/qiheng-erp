@@ -14,6 +14,7 @@ import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderApproveItem;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderApproveRequest;
+import com.qiheng.erp.returnorder.domain.dto.ReturnOrderReasonActionRequest;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderItemCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderUpdateDto;
@@ -489,10 +490,124 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     }
 
     /**
+     * 取消退货单（DRAFT/SUBMITTED/APPROVED(processed_qty=0) 可取消）。
+     * <p>无锁，乐观锁足够：重复 cancel 状态已变/version 已变直接拦截；
+     * 并发 cancel updateById rows=0 抛"数据已被他人修改"。
+     * 副作用顺序：先 updateById 改状态，失败回滚避免双重执行。</p>
+     * @param returnOrderId 退货单ID
+     * @param dto 取消请求
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void cancel(Long returnOrderId, ReturnOrderReasonActionRequest dto) {
+        // 1. 查询退货单
+        ReturnOrder existing = returnOrderMapper.selectById(returnOrderId);
+        if (existing == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货单不存在");
+        }
+        // 2. 校验状态：终态/不允许取消的状态
+        String status = existing.getStatus();
+        if (ReturnStatus.CANCELLED.name().equals(status) || ReturnStatus.COMPLETED.name().equals(status)) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "当前状态不允许取消");
+        }
+        if (ReturnStatus.PARTIAL_EXECUTED.name().equals(status)) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "已部分执行的单据不允许取消");
+        }
+        if (ReturnStatus.APPROVED.name().equals(status)) {
+            // APPROVED 仅 processed_qty=0 可取消
+            List<ReturnOrderItem> items = returnOrderItemMapper.selectList(new LambdaQueryWrapper<ReturnOrderItem>()
+                    .eq(ReturnOrderItem::getReturnOrderId, returnOrderId));
+            boolean hasProcessed = items.stream()
+                    .anyMatch(i -> i.getProcessedQty() != null && i.getProcessedQty() > 0);
+            if (hasProcessed) {
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "已部分执行的单据不允许取消");
+            }
+        }
+        // 3. 先 updateById 改状态（乐观锁，rows=0 抛错，事务回滚避免副作用双重执行）
+        ReturnOrder update = new ReturnOrder();
+        update.setId(returnOrderId);
+        update.setStatus(ReturnStatus.CANCELLED.name());
+        update.setStatusReason(dto.getReason());
+        update.setVersion(dto.getVersion());
+        int rows = returnOrderMapper.updateById(update);
+        if (rows == 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
+        }
+        // 4. 副作用：仅 APPROVED 时取消工作单 + 释放预占
+        if (ReturnStatus.APPROVED.name().equals(status)) {
+            if (parseType(existing.getReturnType()) == ReturnType.PURCHASE_RETURN) {
+                cancelPurchaseReturnWorkOrders(existing);
+            } else {
+                cancelSalesReturnWorkOrders(existing);
+            }
+        }
+    }
+
+    /**
+     * 取消采购退货的未确认出库单（DRAFT/PENDING_CONFIRM）并释放锁定库存。
+     */
+    private void cancelPurchaseReturnWorkOrders(ReturnOrder order) {
+        // 1. 查同退货单的未确认出库单
+        List<OutboundBill> bills = outboundBillMapper.selectList(new LambdaQueryWrapper<OutboundBill>()
+                .eq(OutboundBill::getSourceId, order.getId())
+                .in(OutboundBill::getStatus, "DRAFT", "PENDING_CONFIRM"));
+        if (bills.isEmpty()) {
+            return;
+        }
+        // 2. 按产品汇总需释放的锁定库存（取负数，WarehouseStockReservationSupport 仅处理 delta<0 的项）
+        Map<Long, Long> releaseDeltas = new HashMap<>();
+        for (OutboundBill bill : bills) {
+            // 3. 主表改状态为 CANCELLED（updateById 带乐观锁，防并发确认）
+            OutboundBill update = new OutboundBill();
+            update.setId(bill.getId());
+            update.setStatus(StockBillStatus.CANCELLED.name());
+            update.setVersion(bill.getVersion());
+            int rows = outboundBillMapper.updateById(update);
+            if (rows == 0) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "出库单[" + bill.getBillNo() + "]状态已变更，无法取消");
+            }
+            // 4. 汇总释放量（仅取消成功才汇总）
+            List<OutboundBillItem> items = outboundBillItemMapper.selectList(
+                    new LambdaQueryWrapper<OutboundBillItem>().eq(OutboundBillItem::getOutboundBillId, bill.getId()));
+            for (OutboundBillItem item : items) {
+                releaseDeltas.merge(item.getProductId(), -item.getPlanQty(), Long::sum);
+            }
+        }
+        // 5. 释放 locked_qty（releaseRequired=true, reserveRequired=false）
+        if (!releaseDeltas.isEmpty()) {
+            warehouseStockReservationSupport.applyLockedQtyChanges(
+                    order.getWarehouseId(), releaseDeltas, true, false);
+        }
+    }
+
+    /**
+     * 取消销售退货的未确认入库单（DRAFT/PENDING_CONFIRM），不涉及库存。
+     */
+    private void cancelSalesReturnWorkOrders(ReturnOrder order) {
+        // 1. 查同退货单的未确认入库单
+        List<InboundBill> bills = inboundBillMapper.selectList(new LambdaQueryWrapper<InboundBill>()
+                .eq(InboundBill::getSourceId, order.getId())
+                .in(InboundBill::getStatus, StockBillStatus.DRAFT.name(), StockBillStatus.PENDING_CONFIRM.name()));
+        if (bills.isEmpty()) {
+            return;
+        }
+        for (InboundBill bill : bills) {
+            // 2. 主表改状态为 CANCELLED（updateById 带乐观锁，防并发确认）
+            InboundBill update = new InboundBill();
+            update.setId(bill.getId());
+            update.setStatus(StockBillStatus.CANCELLED.name());
+            update.setVersion(bill.getVersion());
+            int rows = inboundBillMapper.updateById(update);
+            if (rows == 0) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "入库单[" + bill.getBillNo() + "]状态已变更，无法取消");
+            }
+        }
+    }
+
+    /**
      * 生成采购退货出库单（PENDING_CONFIRM）并预占实物库存。
-     * @param order 退货单
-     * @param approvedItems 审核数量大于 0 的明细
-     * @param approvedQtyMap 明细ID -> 审核数量（×100 整数）
      */
     private void generatePurchaseReturnOutbound(ReturnOrder order, List<ReturnOrderItem> approvedItems,
                                                 Map<Long, Integer> approvedQtyMap, boolean needLockStock) {
@@ -796,8 +911,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                 (item.getApprovedQty() == null ? 0 : item.getApprovedQty()) == (item.getProcessedQty() == null ? 0 : item.getProcessedQty()));
         order.setStatus(completed ? ReturnStatus.COMPLETED.name() : ReturnStatus.PARTIAL_EXECUTED.name());
         int rows = returnOrderMapper.update(order, new LambdaQueryWrapper<ReturnOrder>()
-                .eq(ReturnOrder::getId, order.getId())
-                .eq(ReturnOrder::getVersion, order.getVersion()));
+                .eq(ReturnOrder::getId, order.getId()));
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "退货单已被其他操作更新，请刷新后重试");
         }

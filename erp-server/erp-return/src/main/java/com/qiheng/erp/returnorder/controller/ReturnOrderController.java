@@ -10,6 +10,7 @@ import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderApproveRequest;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderCreateDto;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderPageDto;
+import com.qiheng.erp.returnorder.domain.dto.ReturnOrderReasonActionRequest;
 import com.qiheng.erp.returnorder.domain.dto.ReturnOrderUpdateDto;
 import com.qiheng.erp.returnorder.domain.port.ReturnType;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
@@ -208,6 +209,25 @@ public class ReturnOrderController {
         Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
         log.info("审核统一退货单，ID: {}, 版本: {}", id, dto.getVersion());
         returnOrderService.approve(id, dto);
+        return Result.ok();
+    }
+
+    /**
+     * 取消统一退货单（DRAFT/SUBMITTED/APPROVED(processed_qty=0) 可取消）。
+     *
+     * @param returnOrderId 退货单ID
+     * @param dto 取消请求
+     * @return 空结果
+     */
+    @PostMapping("/{returnOrderId}/cancel")
+    @Operation(summary = "取消统一退货单")
+    public Result<Void> cancel(
+            @Parameter(description = "退货单ID", required = true)
+            @PathVariable String returnOrderId,
+            @Valid @RequestBody ReturnOrderReasonActionRequest dto) {
+        Long id = IdUtil.parseRequiredLongId(returnOrderId, "退货单ID");
+        log.info("取消统一退货单，ID: {}, 原因: {}", id, dto.getReason());
+        returnOrderService.cancel(id, dto);
         return Result.ok();
     }
 

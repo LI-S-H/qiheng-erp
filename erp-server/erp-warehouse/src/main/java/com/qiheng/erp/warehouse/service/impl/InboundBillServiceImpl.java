@@ -381,13 +381,10 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         if (bill == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
         }
-
-
         // 2. 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(
                 bill.getStatus(), bill.getVersion(), dto.getVersion(), "仅草稿状态可提交", StockBillStatus.DRAFT);
         stockBillEditingSupport.validateBeforeSubmit(bill);
-
         // 4. 变更状态为待确认
         bill.setStatus(StockBillStatus.PENDING_CONFIRM.name());
         if (!this.updateById(bill)) {
@@ -433,21 +430,17 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         if (bill == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "入库单不存在");
         }
-
         if (EntryMode.SOURCE_GENERATED.name().equals(bill.getEntryMode()) && bill.getSourceType() != null) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "系统生成入库单请通过来源单取消");
         }
-
         // 2. 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(bill.getStatus(), bill.getVersion(), dto.getVersion(),
                 "仅草稿和待确认状态可取消", StockBillStatus.DRAFT, StockBillStatus.PENDING_CONFIRM);
-
         // 4. 变更状态为已取消
         bill.setStatus(StockBillStatus.CANCELLED.name());
         if (!this.updateById(bill)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
         }
-
         // 5. 查询明细和库存，组装返回详情
         return getInboundBillDetailVo(id);
     }
@@ -488,7 +481,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
         // 5. 校验来源单剩余数量是否足够
         validateSourceRemainingQuantities(bill, items);
-        // TODO(销售模块完成后)：SALES_RETURN_ORDER 接通来源回写时，在库存变更前获取同一来源单操作锁。
         Map<Long, WarehouseStock> lockedStocks = warehouseStockLockSupport.lockExistingStocks(
                 bill.getWarehouseId(), items.stream().map(InboundBillItem::getProductId).toList());
         // 6. 获取当前登录用户
@@ -583,7 +575,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
         inboundBillItemService.updateBatchById(items);
 
-        // 10. 更新入库单主表状态为已确认
+        // 11. 更新入库单主表状态为已确认
         bill.setStatus(StockBillStatus.CONFIRMED.name());
         bill.setConfirmedById(currentUserId);
         bill.setConfirmedByName(currentUserName);
@@ -596,9 +588,10 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         }
 
         // 采购等来源模块在同一事务内回写累计数量和来源状态；未接入的来源类型暂不阻塞仓储确认。
+        // TODO(销售模块完成后)：SALES_RETURN_ORDER 接通来源回写时，在库存变更前获取同一来源单操作锁。
         dispatchSourceWriteback(bill, items);
 
-        // 11. 返回详情
+        // 12. 返回详情
         return getInboundBillDetailVo(id);
     }
 
@@ -660,7 +653,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                               InboundType billType) {
         stockBillDraftSupport.validateQualityQuantities(itemDtos, billType);
         Map<Long, Product> productMap = stockBillDraftSupport.loadProductMap(itemDtos);
-
         // 全删
         if (!existingItems.isEmpty()) {
             List<Long> idsToDelete = existingItems.stream()
@@ -668,7 +660,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                     .toList();
             inboundBillItemService.removeByIds(idsToDelete);
         }
-
         // 全插
         String inboundNo = bill.getInboundNo();
         List<InboundBillItem> itemsToSave = new ArrayList<>();

@@ -93,12 +93,10 @@ public class StockBillEditingSupport {
             // 修改来源仓库
             updateSourceParty(bill, dto);
         }
-
         // 除了系统生成单，其他状态可修改人工原因
         if (entryMode != EntryMode.SOURCE_GENERATED && dto.getManualReason() != null) {
             bill.setManualReason(dto.getManualReason());
         }
-
         // 全部状态可修改备注
         if (dto.getRemark() != null) {
             bill.setRemark(dto.getRemark());

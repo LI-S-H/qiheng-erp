@@ -78,9 +78,10 @@
 | product_code   | varchar(64)   | 产品编码，冗余 |
 | product_name   | varchar(200)  | 产品名称，冗余 |
 | unit_name      | varchar(32)   | 单位名称，冗余 |
-| quantity       | decimal(18,4) | 销售数量    |
-| locked_qty     | decimal(18,4) | 已锁定库存数量 |
-| outbound_qty   | decimal(18,4) | 已出库数量   |
+| quantity_precision | tinyint    | 数量小数位快照：0-2，下单时从 product.quantity_precision 固化 |
+| quantity       | bigint        | 销售数量，放大100倍保存，N 表示 N/100.00    |
+| locked_qty     | bigint        | 已锁定库存数量，放大100倍保存    |
+| outbound_qty   | bigint        | 已出库数量，放大100倍保存   |
 | unit_price     | int           | 销售单价，放大100倍保存，0表示0.00    |
 | total_amount   | int           | 明细金额，放大100倍保存，0表示0.00    |
 | create_time    | datetime      | 创建时间    |

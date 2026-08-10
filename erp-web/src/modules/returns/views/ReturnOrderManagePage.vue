@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
 import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
 import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
-import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
 import BusinessDetailTimeline from '@/components/common/BusinessDetailTimeline.vue';
 import type { BusinessDetailTimelineItem } from '@/components/common/BusinessDetailTimeline.vue';
+import BusinessDetailWorkbenchCard from '@/components/common/BusinessDetailWorkbenchCard.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
@@ -19,8 +19,6 @@ import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import PromptDialog from '@/components/common/PromptDialog.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
-import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
-import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -576,22 +574,6 @@ async function submitForm() {
   }
 }
 
-function getRowActions(row: ReturnOrderListItem): RowActionOption[] {
-  if (!canManage.value) return [];
-  if (row.status === 'DRAFT') return [
-    { key: 'edit', label: `编辑${businessLabel.value}` },
-    { key: 'submit', label: `提交${businessLabel.value}` },
-    { key: 'cancel', label: `取消${businessLabel.value}`, separated: true },
-    { key: 'delete', label: '删除草稿', variant: 'destructive' },
-  ];
-  if (row.status === 'SUBMITTED') return [
-    { key: 'approve', label: `审核${businessLabel.value}` },
-    { key: 'cancel', label: `取消${businessLabel.value}`, separated: true },
-  ];
-  if (row.status === 'APPROVED') return [{ key: 'cancel', label: `取消${businessLabel.value}`, variant: 'destructive' }];
-  return [];
-}
-
 async function openDetail(row: ReturnOrderListItem, mode: DetailActionMode = 'view') {
   if (mode !== 'view' && !canManage.value) {
     toast.error(`没有${businessLabel.value}管理权限`);
@@ -601,7 +583,9 @@ async function openDetail(row: ReturnOrderListItem, mode: DetailActionMode = 'vi
   try {
     const detail = await props.config.service.getReturnDetail(row.returnOrderId);
     detailRow.value = detail;
-    detailActionMode.value = mode;
+    detailActionMode.value = mode === 'view' && canManage.value
+      ? (detail.status === 'DRAFT' ? 'submit' : detail.status === 'SUBMITTED' ? 'approve' : 'view')
+      : mode;
     Object.keys(approvalQuantities).forEach(key => delete approvalQuantities[key]);
     detail.items.forEach(item => { approvalQuantities[item.returnOrderItemId] = item.requestedQty; });
     detailDialogOpen.value = true;
@@ -612,11 +596,19 @@ async function openDetail(row: ReturnOrderListItem, mode: DetailActionMode = 'vi
   }
 }
 
-async function handleRowAction(row: ReturnOrderListItem, action: string) {
-  if (action === 'edit') return openEditDialog(row);
-  if (['submit', 'approve', 'cancel', 'delete'].includes(action)) {
-    await openDetail(row, action as DetailActionMode);
-  }
+function hasReturnActions(row: ReturnOrderListItem) {
+  return canManage.value && (row.status === 'DRAFT' || row.status === 'SUBMITTED' || row.status === 'APPROVED');
+}
+
+async function openDetailEdit(row: ReturnOrderDetail) {
+  detailDialogOpen.value = false;
+  await nextTick();
+  await openEditDialog(row);
+}
+
+function runDetailRiskAction(action: 'cancel' | 'delete') {
+  detailActionMode.value = action;
+  runDetailAction();
 }
 
 function openConfirm(title: string, description: string, confirmText: string, onConfirm: () => Promise<void>, variant: 'default' | 'destructive' | 'warning' = 'warning') {
@@ -864,12 +856,12 @@ onMounted(() => {
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
-        <div class="table-toolbar__title"><strong class="text-sm">{{ config.listTitle }}</strong><span class="text-xs text-muted-foreground">退回审核只生成来源工作单，实际库存变化由仓库确认</span></div>
+        <div class="table-toolbar__title"><strong class="text-sm">{{ config.listTitle }}</strong><span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；退回审核只生成来源工作单，实际库存变化由仓库确认</span></div>
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy || !canQuery" @click="refreshList">刷新</Button><Button v-if="canCreate" size="sm" @click="openCreateDialog">{{ config.createButtonLabel }}</Button></div>
       </div>
 
       <Table class="business-data-table min-w-[1140px] table-fixed" :scroll-label="config.listTitle" data-return-order-table>
-        <colgroup><col class="w-[125px]" /><col class="w-[125px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[120px]" /></colgroup>
+        <colgroup><col class="w-[125px]" /><col class="w-[125px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
         <TableHeader><TableRow><TableHead data-return-no-column>退回单号</TableHead><TableHead>{{ config.sourceOrderLabel }}号</TableHead><TableHead>{{ config.partyLabel }}</TableHead><TableHead>{{ config.warehouseLabel }}</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">退回金额</TableHead><TableHead class="text-center">预计执行</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-return-actions-column>操作</TableHead></TableRow></TableHeader>
         <TableBody>
           <TableRow v-if="loading && rows.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -883,7 +875,7 @@ onMounted(() => {
             <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.totalAmount) }}</TableCell>
             <TableCell class="text-center">{{ row.expectedExecutionDate || '未设置' }}</TableCell>
             <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-            <TableCell class="text-center" data-return-actions-column><div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap"><Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" :disabled="detailLoading" @click="openDetail(row)">{{ detailLoading ? '加载中' : '详情' }}</Button><RowActionsMenu :actions="getRowActions(row)" :disabled="detailLoading || actionSubmitting" :label="`更多 ${row.returnNo} 操作`" @select="handleRowAction(row, $event)" /></div></TableCell>
+            <TableCell class="text-center" data-return-actions-column><Button variant="ghost" size="sm" :class="hasReturnActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="detailLoading || actionSubmitting" @click="openDetail(row)">{{ detailLoading ? '加载中' : hasReturnActions(row) ? '处理' : '查看' }}</Button></TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -947,26 +939,30 @@ onMounted(() => {
     </Dialog>
 
     <Dialog v-model:open="detailDialogOpen">
-      <DialogContent placement="app-content" :inert="confirmState.open || promptState.open" class="flex h-[min(770px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl" data-return-detail-dialog>
-        <DialogHeader><DialogTitle>{{ config.detailTitle }}</DialogTitle><DialogDescription>{{ detailActionDescription() }}</DialogDescription></DialogHeader>
-        <DialogScrollArea>
-          <div v-if="detailRow" class="space-y-6 p-1">
+      <DialogContent placement="app-content" :inert="(confirmState.open || promptState.open) ? '' : undefined" data-order-workbench class="return-order-workbench flex h-[min(770px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl" data-return-detail-dialog>
+        <DialogHeader class="sr-only"><DialogTitle>{{ config.detailTitle }}</DialogTitle><DialogDescription>{{ detailActionDescription() }}</DialogDescription></DialogHeader>
+        <DialogScrollArea content-class="px-5 py-5 pr-6">
+          <div v-if="detailRow" class="space-y-5">
             <BusinessDetailHero
               :eyebrow="returnTypeLabel"
               :title="detailRow.returnNo"
               :subtitle="`${detailRow.partyCode} · ${detailRow.partyName} · ${detailRow.warehouseName}`"
               :status-label="statusLabels[detailRow.status]"
               :status-class="statusClassNames[detailRow.status]"
+              :metric-columns="3"
+              variant="canvas"
             >
               <template #metrics>
                 <div class="business-detail-hero__metric"><span>退回金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
                 <div class="business-detail-hero__metric"><span>商品明细</span><strong>{{ detailRow.items.length }} 项</strong></div>
                 <div class="business-detail-hero__metric"><span>{{ config.executionDateLabel }}</span><strong>{{ detailRow.expectedExecutionDate || '未设置' }}</strong></div>
-                <div class="business-detail-hero__metric"><span>当前任务</span><strong>{{ statusHint(detailRow.status) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>{{ executionSummaryCopy.amountLabel }}</span><strong>{{ formatMoney(returnExecutionSummary(detailRow).completedAmount) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>{{ config.warehouseLabel }}</span><strong>{{ detailRow.warehouseName }}</strong></div>
+                <div class="business-detail-hero__metric"><span>{{ config.partyLabel }}</span><strong>{{ detailRow.partyName }}</strong></div>
               </template>
             </BusinessDetailHero>
 
-            <BusinessExecutionProgress
+            <BusinessDetailWorkbenchCard><section class="return-workbench-section return-workbench-section--progress"><BusinessExecutionProgress
               :steps="returnProgressSteps(detailRow)"
               description="状态由退回、审核和仓储执行流程生成，不能在详情中直接修改。"
               :amount-label="executionSummaryCopy.amountLabel"
@@ -978,19 +974,11 @@ onMounted(() => {
                 { label: executionSummaryCopy.pendingLabel, value: returnExecutionSummary(detailRow).pendingItems, pending: returnExecutionSummary(detailRow).pendingItems > 0 },
                 { label: '已完成明细', value: returnExecutionSummary(detailRow).completedItems },
               ]"
-            />
+            /></section></BusinessDetailWorkbenchCard>
 
-            <section>
-              <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">业务信息</h3><p class="mt-1 text-xs text-muted-foreground">来源单据、往来对象、仓库及退回依据。</p></div></div>
-              <dl class="return-detail-facts">
-                <div><dt>{{ config.sourceOrderLabel }}</dt><dd><code>{{ detailRow.sourceOrderNo }}</code></dd></div>
-                <div><dt>{{ config.partyLabel }}</dt><dd><strong>{{ detailRow.partyName }}</strong><small>{{ detailRow.partyCode }}</small></dd></div>
-                <div><dt>{{ config.warehouseLabel }}</dt><dd><strong>{{ detailRow.warehouseName }}</strong></dd></div>
-                <div><dt>处理方式 / 原因</dt><dd><strong>{{ handlingLabel(detailRow.handlingType) }}</strong><small>{{ reasonLabel(detailRow.reasonCode) }}</small></dd></div>
-              </dl>
-            </section>
-
-            <section>
+            <BusinessDetailWorkbenchCard>
+              <section class="return-workbench-section return-workbench-info"><h3 class="return-workbench-info__title">业务信息</h3><dl class="return-workbench-info__facts"><div class="return-workbench-info__fact"><dt>{{ config.partyLabel }}</dt><dd><strong>{{ detailRow.partyName }}</strong><small>{{ detailRow.partyCode }}</small></dd></div><div class="return-workbench-info__fact"><dt>{{ config.executionDateLabel }}</dt><dd>{{ detailRow.expectedExecutionDate || '未设置' }}</dd></div><div class="return-workbench-info__fact"><dt>退回单号</dt><dd><code>{{ detailRow.returnNo }}</code></dd></div><div class="return-workbench-info__fact"><dt>{{ config.sourceOrderLabel }}</dt><dd><code>{{ detailRow.sourceOrderNo }}</code></dd></div><div class="return-workbench-info__fact"><dt>{{ config.warehouseLabel }}</dt><dd>{{ detailRow.warehouseName }}</dd></div><div class="return-workbench-info__fact"><dt>处理方式</dt><dd>{{ handlingLabel(detailRow.handlingType) }}</dd></div><div class="return-workbench-info__fact"><dt>退回原因</dt><dd>{{ reasonLabel(detailRow.reasonCode) }}</dd></div></dl></section>
+              <section class="return-workbench-section">
               <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">商品明细</h3><p class="mt-1 text-xs text-muted-foreground">核对原单履约、申请与审核数量，以及仓储实际处理进度。</p></div><span class="text-xs text-muted-foreground">共 {{ detailRow.items.length }} 项</span></div>
               <ScrollArea class="purchase-order-line-scroll detail-table-floating w-full" aria-label="退回单商品明细">
                 <Table class="return-detail-items min-w-[1180px] table-fixed" data-return-detail-items>
@@ -999,48 +987,38 @@ onMounted(() => {
                   <TableBody><TableRow v-for="item in detailRow.items" :key="item.returnOrderItemId"><TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell><TableCell class="text-center tabular-nums">{{ formatQuantity(item.sourceFulfilledQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatQuantity(item.requestedQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center"><div v-if="detailActionMode === 'approve'" class="flex items-center gap-2"><Input v-model.number="approvalQuantities[item.returnOrderItemId]" type="number" min="0" :max="item.requestedQty" :step="quantityStep(item.quantityPrecision)" class="text-right" /><span class="text-xs text-muted-foreground">{{ item.unitName }}</span></div><span v-else class="tabular-nums">{{ formatQuantity(item.approvedQty, item.quantityPrecision) }} {{ item.unitName }}</span></TableCell><TableCell class="text-center tabular-nums">{{ formatQuantity(item.processedQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center font-medium tabular-nums" :class="item.approvedQty > item.processedQty ? 'text-amber-700' : 'text-emerald-700'">{{ formatQuantity(Math.max(0, item.approvedQty - item.processedQty), item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell><TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell><TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell></TableRow></TableBody>
                 </Table>
               </ScrollArea>
-            </section>
+              </section>
+            </BusinessDetailWorkbenchCard>
 
-            <BusinessDetailSection title="流程记录" description="聚合退回单审计字段和仓储执行状态，不额外新增操作日志。"><BusinessDetailTimeline :items="returnTimelineItems(detailRow)" :aria-label="`${config.detailTitle}流程记录`" /><div class="mt-3 grid grid-cols-1 gap-2 text-xs text-muted-foreground"><p v-if="detailRow.statusReason" class="rounded-md bg-muted px-3 py-2"><span class="mr-2 font-semibold text-foreground">状态原因</span>{{ detailRow.statusReason }}</p><p v-if="detailRow.returnReason" class="rounded-md bg-muted px-3 py-2"><span class="mr-2 font-semibold text-foreground">原因说明</span>{{ detailRow.returnReason }}</p><p v-if="detailRow.remark" class="rounded-md bg-muted px-3 py-2"><span class="mr-2 font-semibold text-foreground">备注</span>{{ detailRow.remark }}</p></div></BusinessDetailSection>
+            <BusinessDetailWorkbenchCard><section class="return-workbench-section"><div class="mb-2"><h3 class="text-sm font-semibold">流程记录</h3><p class="mt-1 text-xs text-muted-foreground">聚合退回单审计字段和仓储执行状态，不额外新增操作日志。</p></div><BusinessDetailTimeline :items="returnTimelineItems(detailRow)" :aria-label="`${config.detailTitle}流程记录`" /><div v-if="detailRow.statusReason || detailRow.returnReason || detailRow.remark" class="return-workbench-notes"><p v-if="detailRow.statusReason"><span>状态原因</span>{{ detailRow.statusReason }}</p><p v-if="detailRow.returnReason"><span>原因说明</span>{{ detailRow.returnReason }}</p><p v-if="detailRow.remark"><span>备注</span>{{ detailRow.remark }}</p></div></section></BusinessDetailWorkbenchCard>
           </div>
         </DialogScrollArea>
-        <DialogFooter class="items-center justify-between gap-3"><span v-if="detailRow && detailActionMode !== 'view'" class="mr-auto text-xs text-muted-foreground">操作前将再次校验权限、状态、乐观锁和剩余可退数量</span><Button variant="outline" :disabled="actionSubmitting" @click="detailDialogOpen = false">关闭</Button><Button v-if="detailRow && detailActionMode !== 'view'" :variant="detailActionMode === 'delete' || detailActionMode === 'cancel' ? 'destructive' : 'default'" :disabled="actionSubmitting" @click="runDetailAction">{{ actionSubmitting ? '处理中' : detailActionButtonLabel() }}</Button></DialogFooter>
+        <DialogFooter class="items-center justify-between gap-3"><div class="mr-auto flex items-center gap-3"><Button v-if="detailRow && hasReturnActions(detailRow)" variant="outline" class="border-rose-200 bg-white text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" :disabled="actionSubmitting" @click="runDetailRiskAction('cancel')">取消{{ businessLabel }}</Button><Button v-if="detailRow && detailRow.status === 'DRAFT' && canManage" variant="outline" class="border-rose-200 bg-white text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" :disabled="actionSubmitting" @click="runDetailRiskAction('delete')">删除草稿</Button></div><Button v-if="detailRow && detailRow.status === 'DRAFT' && canManage" variant="outline" :disabled="actionSubmitting" @click="openDetailEdit(detailRow)">编辑</Button><Button v-if="detailRow && (detailActionMode === 'submit' || detailActionMode === 'approve')" :disabled="actionSubmitting" @click="runDetailAction">{{ actionSubmitting ? '处理中' : detailActionButtonLabel() }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
+    <ConfirmDialog placement="app-content" :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
     <PromptDialog :open="promptState.open" :title="promptState.title" :description="promptState.description" :input-placeholder="'请输入取消原因'" :input-pattern="/^\s*\S[\s\S]{0,499}$/" input-error-message="原因必填且不能超过 500 字" :confirm-text="promptState.confirmText" :loading="actionSubmitting" @update:open="promptState.open = $event" @confirm="runReasonAction" />
   </section>
 </template>
 
 <style scoped>
-/* 与采购订单详情保持相同的四栏事实卡片：使用分隔线而非通用网格间隙。 */
-.return-detail-facts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--muted) 38%, var(--card));
-}
-
-.return-detail-facts > div { min-width: 0; padding: 12px 14px; }
-.return-detail-facts > div + div { border-left: 1px solid var(--border); }
-.return-detail-facts dt { color: var(--muted-foreground); font-size: 12px; line-height: 1.3; }
-.return-detail-facts dd { min-width: 0; margin: 5px 0 0; color: var(--foreground); font-size: 14px; line-height: 1.35; }
-.return-detail-facts dd code, .return-detail-facts dd strong, .return-detail-facts dd small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.return-detail-facts dd strong { font-weight: 600; }
-.return-detail-facts dd small { margin-top: 2px; color: var(--muted-foreground); font-size: 12px; }
-
-@media (max-width: 960px) {
-  .return-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .return-detail-facts > div:nth-child(3) { border-top: 1px solid var(--border); border-left: 0; }
-  .return-detail-facts > div:nth-child(4) { border-top: 1px solid var(--border); }
-}
+.return-workbench-section { padding: 18px 20px; }
+.return-workbench-section + .return-workbench-section { border-top: 1px solid #e5eaf0; }
+.return-workbench-section--progress { padding: 0; }
+.return-workbench-info__title { margin: 0 0 14px; color: var(--foreground); font-size: 14px; font-weight: 650; line-height: 20px; }
+.return-workbench-info__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 42px; margin: 0; }
+.return-workbench-info__fact { display: grid; grid-template-columns: 88px minmax(0, 1fr); column-gap: 10px; align-items: start; min-width: 0; color: var(--foreground); font-size: 13px; line-height: 20px; }
+.return-workbench-info__fact dt { color: var(--muted-foreground); font-size: inherit; white-space: nowrap; }
+.return-workbench-info__fact dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.return-workbench-info__fact dd > strong { font-weight: 600; }
+.return-workbench-info__fact dd > small { margin-left: 7px; color: var(--muted-foreground); font-size: inherit; }
+.return-workbench-info__fact dd > code { font-size: inherit; }
+.return-workbench-notes { display: grid; gap: 8px; margin-top: 14px; color: var(--muted-foreground); font-size: 12px; line-height: 20px; }
+.return-workbench-notes p { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--muted); }
+.return-workbench-notes span { margin-right: 8px; color: var(--foreground); font-weight: 600; }
 
 @media (max-width: 640px) {
-  .return-detail-facts { grid-template-columns: 1fr; }
-  .return-detail-facts > div + div { border-top: 1px solid var(--border); border-left: 0; }
+  .return-workbench-info__facts { grid-template-columns: 1fr; gap: 9px; }
 }
 </style>

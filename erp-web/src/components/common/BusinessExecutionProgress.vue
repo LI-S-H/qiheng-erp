@@ -34,7 +34,7 @@ function formatRate(value: number) {
 </script>
 
 <template>
-  <section class="rounded-lg border border-border bg-card px-4 py-4">
+  <section class="px-5 py-5">
     <div class="mb-4 flex items-center justify-between gap-3">
       <div>
         <h3 class="text-sm font-semibold">业务进度</h3>

@@ -1,15 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
-import BusinessDetailFacts from '@/components/common/BusinessDetailFacts.vue';
 import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
 import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
-import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
 import BusinessDetailTimeline from '@/components/common/BusinessDetailTimeline.vue';
 import type { BusinessDetailTimelineItem } from '@/components/common/BusinessDetailTimeline.vue';
+import BusinessDetailWorkbenchCard from '@/components/common/BusinessDetailWorkbenchCard.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
@@ -19,8 +18,6 @@ import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
-import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
-import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -476,7 +473,9 @@ async function openDetail(row: SalesOrderListItem, actionMode: 'view' | 'submit'
   detailLoading.value = true;
   try {
     detailRow.value = await getSalesOrderDetail(row.salesOrderId);
-    detailActionMode.value = actionMode;
+    detailActionMode.value = actionMode === 'view'
+      ? (row.status === 'DRAFT' ? 'submit' : row.status === 'SUBMITTED' ? 'approve' : 'view')
+      : actionMode;
     detailDialogOpen.value = true;
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '销售订单详情加载失败');
@@ -515,36 +514,14 @@ function confirmOrderAction(row: SalesOrderListItem, action: 'submit' | 'approve
   });
 }
 
-function openOrderActionDetail(row: SalesOrderListItem, action: 'submit' | 'approve') {
-  openDetail(row, action);
+function hasOrderActions(row: SalesOrderListItem) {
+  return row.status === 'DRAFT' || row.status === 'SUBMITTED';
 }
 
-function getRowActions(row: SalesOrderListItem): RowActionOption[] {
-  if (row.status !== 'DRAFT' && row.status !== 'SUBMITTED') return [];
-
-  return [
-    { key: 'edit', label: '编辑销售单' },
-    row.status === 'DRAFT'
-      ? { key: 'submit', label: '提交销售单' }
-      : { key: 'approve', label: '审核销售单' },
-    { key: 'cancel', label: '取消销售单', variant: 'destructive', separated: true },
-  ];
-}
-
-function handleRowAction(row: SalesOrderListItem, actionKey: string) {
-  if (detailLoading.value || actionSubmitting.value) return;
-  if (actionKey === 'edit') openEditDialog(row);
-  if (actionKey === 'submit' && row.status === 'DRAFT') openOrderActionDetail(row, 'submit');
-  if (actionKey === 'approve' && row.status === 'SUBMITTED') openOrderActionDetail(row, 'approve');
-  if (actionKey === 'cancel' && (row.status === 'DRAFT' || row.status === 'SUBMITTED')) confirmOrderAction(row, 'cancel');
-}
-
-function detailActionHint(row: SalesOrderListItem) {
-  if (detailActionMode.value === 'view') return '';
-  if (!row.expectedDeliveryDate) return '预计发货日期为空，提交或审核前请先编辑维护。';
-  return detailActionMode.value === 'submit'
-    ? '请先核对销售单头和全部销售明细，再提交进入待审核并锁定库存。'
-    : '请先核对销售单头和全部销售明细，审核通过后将生成待确认销售出库单。';
+async function openDetailEdit(row: SalesOrderDetail) {
+  detailDialogOpen.value = false;
+  await nextTick();
+  await openEditDialog(row);
 }
 
 function runDetailAction(row: SalesOrderListItem) {
@@ -690,12 +667,12 @@ onMounted(() => {
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
-        <div class="table-toolbar__title"><strong class="text-sm">销售订单列表</strong><span class="text-xs text-muted-foreground">审核动作只生成待确认出库单，库存扣减由仓库确认本次数量</span></div>
+        <div class="table-toolbar__title"><strong class="text-sm">销售订单列表</strong><span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；审核只生成待确认出库单，库存扣减由仓库确认本次数量</span></div>
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增销售单</Button></div>
       </div>
 
       <Table class="business-data-table min-w-[1087px] table-fixed" scroll-label="销售订单列表">
-          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[135px]" /><col class="w-[132px]" /></colgroup>
+          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[135px]" /><col class="w-[96px]" /></colgroup>
           <TableHeader><TableRow><TableHead data-sales-no-column>销售单号</TableHead><TableHead>客户</TableHead><TableHead>出库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计发货</TableHead><TableHead>锁定数量</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-sales-actions-column>操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -709,12 +686,7 @@ onMounted(() => {
               <TableCell class="text-center text-sm">{{ row.expectedDeliveryDate || '未设置' }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ lockedInventoryText(row) }}</TableCell>
               <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-center" data-sales-actions-column>
-                <div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
-                <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" :disabled="detailLoading" @click="openDetail(row)">{{ detailLoading ? '加载中' : '详情' }}</Button>
-                <RowActionsMenu :actions="getRowActions(row)" :disabled="detailLoading || actionSubmitting" :label="`更多 ${row.salesNo} 操作`" @select="handleRowAction(row, $event)" />
-                </div>
-              </TableCell>
+              <TableCell class="text-center" data-sales-actions-column><Button variant="ghost" size="sm" :class="hasOrderActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="detailLoading || actionSubmitting" @click="openDetail(row)">{{ detailLoading ? '加载中' : hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
             </TableRow>
           </TableBody>
       </Table>
@@ -765,26 +737,30 @@ onMounted(() => {
     </Dialog>
 
     <Dialog v-model:open="detailDialogOpen">
-      <DialogContent placement="app-content" class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl">
-        <DialogHeader><DialogTitle>销售单详情</DialogTitle><DialogDescription>核对销售单头、明细数量、库存锁定和出库流转状态。</DialogDescription></DialogHeader>
-        <DialogScrollArea>
-          <div v-if="detailRow" class="space-y-6 p-1">
+      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" data-order-workbench class="sales-order-workbench flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl">
+        <DialogHeader class="sr-only"><DialogTitle>销售单详情</DialogTitle><DialogDescription>核对销售单头、明细数量、库存锁定和出库流转状态。</DialogDescription></DialogHeader>
+        <DialogScrollArea content-class="px-5 py-5 pr-6">
+          <div v-if="detailRow" class="space-y-5">
             <BusinessDetailHero
               eyebrow="销售订单"
               :title="detailRow.salesNo"
               :subtitle="`${detailRow.customerCode} · ${detailRow.customerName} · ${detailRow.warehouseName}`"
               :status-label="statusMeta(detailRow.status).label"
               :status-class="statusMeta(detailRow.status).className"
+              :metric-columns="3"
+              variant="canvas"
             >
               <template #metrics>
                 <div class="business-detail-hero__metric"><span>订单金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
                 <div class="business-detail-hero__metric"><span>商品明细</span><strong>{{ detailRow.items.length }} 项</strong></div>
                 <div class="business-detail-hero__metric"><span>预计发货</span><strong>{{ detailRow.expectedDeliveryDate || '未设置' }}</strong></div>
-                <div class="business-detail-hero__metric"><span>库存锁定</span><strong>{{ lockedInventoryText(detailRow) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>累计出库</span><strong>{{ formatMoney(salesOutboundSummary(detailRow).completedAmount) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>出库仓库</span><strong>{{ detailRow.warehouseName }}</strong></div>
+                <div class="business-detail-hero__metric"><span>销售人员</span><strong>{{ detailRow.createdByName || '系统' }}</strong></div>
               </template>
             </BusinessDetailHero>
 
-            <BusinessExecutionProgress
+            <BusinessDetailWorkbenchCard><section class="sales-workbench-section sales-workbench-section--progress"><BusinessExecutionProgress
               :steps="salesProgressSteps(detailRow)"
               description="状态由销售、审核与仓储出库流程生成，不能在详情中直接修改。"
               amount-label="累计出库"
@@ -796,11 +772,11 @@ onMounted(() => {
                 { label: '待出库明细', value: salesOutboundSummary(detailRow).pendingItems, pending: salesOutboundSummary(detailRow).pendingItems > 0 },
                 { label: '已完成明细', value: salesOutboundSummary(detailRow).completedItems },
               ]"
-            />
+            /></section></BusinessDetailWorkbenchCard>
 
-            <BusinessDetailSection title="业务信息" description="客户、出库仓库与发货安排。"><BusinessDetailFacts><div class="business-detail-fact"><dt>销售单号</dt><dd><code>{{ detailRow.salesNo }}</code></dd></div><div class="business-detail-fact"><dt>客户</dt><dd><strong>{{ detailRow.customerName }}</strong><small>{{ detailRow.customerCode }}</small></dd></div><div class="business-detail-fact"><dt>出库仓库</dt><dd><strong>{{ detailRow.warehouseName }}</strong></dd></div><div class="business-detail-fact"><dt>预计发货</dt><dd><strong>{{ detailRow.expectedDeliveryDate || '未设置' }}</strong></dd></div></BusinessDetailFacts></BusinessDetailSection>
-
-            <section class="space-y-3"><div class="flex items-end justify-between gap-3"><div><h3 class="text-sm font-semibold text-foreground">商品明细</h3><p class="mt-1 text-xs text-muted-foreground">优先核对销售、锁定、出库与剩余待出库数量。</p></div><span class="shrink-0 text-xs text-muted-foreground">共 {{ detailRow.items.length }} 项</span></div>
+            <BusinessDetailWorkbenchCard>
+              <section class="sales-workbench-section sales-workbench-info"><h3 class="sales-workbench-info__title">业务信息</h3><dl class="sales-workbench-info__facts"><div class="sales-workbench-info__fact"><dt>客户</dt><dd><strong>{{ detailRow.customerName }}</strong><small>{{ detailRow.customerCode }}</small></dd></div><div class="sales-workbench-info__fact"><dt>订单日期</dt><dd>{{ detailRow.createTime }}</dd></div><div class="sales-workbench-info__fact"><dt>销售单号</dt><dd><code>{{ detailRow.salesNo }}</code></dd></div><div class="sales-workbench-info__fact"><dt>预计发货</dt><dd>{{ detailRow.expectedDeliveryDate || '未设置' }}</dd></div><div class="sales-workbench-info__fact"><dt>出库仓库</dt><dd>{{ detailRow.warehouseName }}</dd></div><div class="sales-workbench-info__fact"><dt>制单人</dt><dd>{{ detailRow.createdByName || '系统' }}</dd></div><div class="sales-workbench-info__fact"><dt>提交人</dt><dd>{{ detailRow.submittedByName || '未提交' }}</dd></div><div class="sales-workbench-info__fact"><dt>审核人</dt><dd>{{ detailRow.approvedByName || '未审核' }}</dd></div><div class="sales-workbench-info__fact sales-workbench-info__fact--note"><dt>备注</dt><dd>{{ detailRow.remark || '未填写' }}</dd></div></dl></section>
+              <section class="sales-workbench-section"><div class="mb-2 flex items-end justify-between gap-3"><div><h3 class="text-sm font-semibold text-foreground">商品明细</h3><p class="mt-1 text-xs text-muted-foreground">优先核对销售、锁定、出库与剩余待出库数量。</p></div><span class="shrink-0 text-xs text-muted-foreground">共 {{ detailRow.items.length }} 项</span></div>
               <ScrollArea class="w-full purchase-order-line-scroll detail-table-floating" aria-label="销售订单商品明细">
                 <Table class="min-w-[1020px] table-fixed">
                   <colgroup><col class="w-[240px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[160px]" /></colgroup>
@@ -813,20 +789,23 @@ onMounted(() => {
                   </TableRow></TableBody>
                 </Table>
               </ScrollArea>
-            </section>
+              </section>
+            </BusinessDetailWorkbenchCard>
 
-            <BusinessDetailSection title="流程记录" description="聚合销售订单审计字段和仓储流转状态，不额外新增操作日志。"><BusinessDetailTimeline :items="salesTimelineItems(detailRow)" aria-label="销售订单流程记录" /><p v-if="detailRow.remark" class="mt-3 rounded-md bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"><span class="mr-2 font-semibold text-foreground">备注</span>{{ detailRow.remark }}</p></BusinessDetailSection>
+            <BusinessDetailWorkbenchCard><section class="sales-workbench-section"><div class="mb-2"><h3 class="text-sm font-semibold">流程记录</h3><p class="mt-1 text-xs text-muted-foreground">聚合销售订单审计字段和仓储流转状态，不额外新增操作日志。</p></div><BusinessDetailTimeline :items="salesTimelineItems(detailRow)" aria-label="销售订单流程记录" /></section></BusinessDetailWorkbenchCard>
           </div>
         </DialogScrollArea>
         <DialogFooter class="items-center justify-between gap-3">
-          <span v-if="detailRow && detailActionMode !== 'view'" class="mr-auto text-xs" :class="detailRow.expectedDeliveryDate ? 'text-muted-foreground' : 'text-destructive'">{{ detailActionHint(detailRow) }}</span>
-          <Button variant="outline" :disabled="actionSubmitting" @click="detailDialogOpen = false">关闭</Button>
+          <div class="mr-auto flex items-center gap-3">
+            <Button v-if="detailRow && hasOrderActions(detailRow)" variant="outline" class="mr-auto border-rose-200 bg-white text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" :disabled="actionSubmitting" @click="confirmOrderAction(detailRow, 'cancel')">取消销售单</Button>
+          </div>
+          <Button v-if="detailRow && hasOrderActions(detailRow)" variant="outline" :disabled="actionSubmitting" @click="openDetailEdit(detailRow)">编辑</Button>
           <Button v-if="detailRow && detailActionMode !== 'view'" :disabled="actionSubmitting || !detailRow.expectedDeliveryDate" @click="runDetailAction(detailRow)">{{ actionSubmitting ? '处理中' : detailActionMode === 'submit' ? '提交销售单' : '审核通过' }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
+    <ConfirmDialog placement="app-content" :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
   </section>
 </template>
 
@@ -834,4 +813,21 @@ onMounted(() => {
 .price-input { appearance: textfield; }
 .price-input::-webkit-inner-spin-button,
 .price-input::-webkit-outer-spin-button { margin: 0; appearance: none; }
+
+.sales-workbench-section { padding: 18px 20px; }
+.sales-workbench-section + .sales-workbench-section { border-top: 1px solid #e5eaf0; }
+.sales-workbench-section--progress { padding: 0; }
+.sales-workbench-info__title { margin: 0 0 14px; color: var(--foreground); font-size: 14px; font-weight: 650; line-height: 20px; }
+.sales-workbench-info__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 42px; margin: 0; }
+.sales-workbench-info__fact { display: grid; grid-template-columns: 76px minmax(0, 1fr); column-gap: 10px; align-items: start; min-width: 0; color: var(--foreground); font-size: 13px; line-height: 20px; }
+.sales-workbench-info__fact dt { color: var(--muted-foreground); font-size: inherit; white-space: nowrap; }
+.sales-workbench-info__fact dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.sales-workbench-info__fact dd > strong { font-weight: 600; }
+.sales-workbench-info__fact dd > small { margin-left: 7px; color: var(--muted-foreground); font-size: inherit; }
+.sales-workbench-info__fact dd > code { font-size: inherit; }
+.sales-workbench-info__fact--note { grid-column: 1 / -1; }
+
+@media (max-width: 640px) {
+  .sales-workbench-info__facts { grid-template-columns: 1fr; gap: 9px; }
+}
 </style>

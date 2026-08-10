@@ -22,6 +22,7 @@
     "smoke:warehouse-warehouses": "node scripts/smoke-warehouse-warehouses.cjs",
     "smoke:warehouse-stocks": "node scripts/smoke-warehouse-stocks.cjs",
     "smoke:warehouse-stock-bills": "node scripts/smoke-warehouse-stock-bills.cjs",
+    "smoke:order-workbench": "node scripts/smoke-order-workbench.cjs",
     "smoke:warehouse-stock-ledgers": "node scripts/smoke-warehouse-stock-ledgers.cjs",
     "smoke:dashboard": "node scripts/smoke-dashboard.cjs",
     "smoke:ai": "node scripts/smoke-ai.cjs",

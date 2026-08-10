@@ -20,6 +20,7 @@ interface Props {
   cancelText?: string;
   variant?: 'default' | 'destructive' | 'warning';
   loading?: boolean;
+  placement?: 'viewport' | 'app-content';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -27,6 +28,7 @@ const props = withDefaults(defineProps<Props>(), {
   cancelText: '取消',
   variant: 'default',
   loading: false,
+  placement: 'viewport',
 });
 
 const emit = defineEmits<{
@@ -60,7 +62,7 @@ function handleCancel() {
 
 <template>
   <AlertDialog :open="props.open" @update:open="emit('update:open', $event)">
-    <AlertDialogContent data-confirm-dialog class="gap-0 overflow-hidden p-0 sm:max-w-[440px]">
+    <AlertDialogContent :placement="props.placement" data-confirm-dialog class="gap-0 overflow-hidden p-0 sm:max-w-[440px]">
       <AlertDialogHeader class="flex-row items-start gap-4 px-6 pb-5 pt-6 text-left">
         <div
           data-confirm-dialog-icon

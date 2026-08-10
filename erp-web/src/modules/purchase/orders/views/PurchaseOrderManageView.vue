@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
 import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
+import BusinessDetailWorkbenchCard from '@/components/common/BusinessDetailWorkbenchCard.vue';
 import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
@@ -15,8 +16,6 @@ import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
-import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
-import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -606,7 +605,9 @@ async function openDetail(row: PurchaseOrderListItem, actionMode: 'view' | 'subm
   detailLoading.value = true;
   try {
     detailRow.value = await getPurchaseOrderDetail(row.purchaseOrderId);
-    detailActionMode.value = actionMode;
+    detailActionMode.value = actionMode === 'view'
+      ? (row.status === 'DRAFT' ? 'submit' : row.status === 'SUBMITTED' ? 'approve' : 'view')
+      : actionMode;
     detailDialogOpen.value = true;
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '采购订单详情加载失败');
@@ -646,39 +647,18 @@ function confirmOrderAction(row: PurchaseOrderListItem, action: 'submit' | 'appr
   });
 }
 
-function openOrderActionDetail(row: PurchaseOrderListItem, action: 'submit' | 'approve') {
-  openDetail(row, action);
+function hasOrderActions(row: PurchaseOrderListItem) {
+  return row.status === 'DRAFT' || row.status === 'SUBMITTED' || row.status === 'APPROVED';
 }
 
-function getRowActions(row: PurchaseOrderListItem): RowActionOption[] {
-  if (row.status === 'APPROVED') {
-    return [{ key: 'cancel', label: '取消采购单', variant: 'destructive' }];
-  }
-  if (row.status !== 'DRAFT' && row.status !== 'SUBMITTED') return [];
-
-  return [
-    { key: 'edit', label: '编辑采购单' },
-    row.status === 'DRAFT'
-      ? { key: 'submit', label: '提交采购单' }
-      : { key: 'approve', label: '审核采购单' },
-    { key: 'cancel', label: '取消采购单', variant: 'destructive', separated: true },
-  ];
+function canEditOrder(row: PurchaseOrderListItem) {
+  return row.status === 'DRAFT' || row.status === 'SUBMITTED';
 }
 
-function handleRowAction(row: PurchaseOrderListItem, actionKey: string) {
-  if (detailLoading.value || actionSubmitting.value) return;
-  if (actionKey === 'edit') openEditDialog(row);
-  if (actionKey === 'submit' && row.status === 'DRAFT') openOrderActionDetail(row, 'submit');
-  if (actionKey === 'approve' && row.status === 'SUBMITTED') openOrderActionDetail(row, 'approve');
-  if (actionKey === 'cancel' && (row.status === 'DRAFT' || row.status === 'SUBMITTED' || row.status === 'APPROVED')) confirmOrderAction(row, 'cancel');
-}
-
-function detailActionHint(row: PurchaseOrderListItem) {
-  if (detailActionMode.value === 'view') return '';
-  if (!row.expectedArrivalDate) return '预计到货日期为空，提交或审核前请先编辑维护。';
-  return detailActionMode.value === 'submit'
-    ? '请先核对采购单头和全部采购明细，再提交进入待审核。'
-    : '请先核对采购单头和全部采购明细，审核通过后将生成待确认入库单。';
+async function openDetailEdit(row: PurchaseOrderDetail) {
+  detailDialogOpen.value = false;
+  await nextTick();
+  await openEditDialog(row);
 }
 
 function runDetailAction(row: PurchaseOrderListItem) {
@@ -791,12 +771,12 @@ onMounted(() => {
     <div class="data-panel relative">
       <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
-        <div class="table-toolbar__title"><strong class="text-sm">采购订单列表</strong><span class="text-xs text-muted-foreground">审核动作只生成待确认入库单，实际入库由仓库确认本次数量</span></div>
+        <div class="table-toolbar__title"><strong class="text-sm">采购订单列表</strong><span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；审核动作只生成待确认入库单，实际入库由仓库确认本次数量</span></div>
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增采购单</Button></div>
       </div>
 
       <Table class="business-data-table min-w-[1107px] table-fixed" scroll-label="采购订单列表">
-          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[132px]" /></colgroup>
+          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
           <TableHeader><TableRow><TableHead data-purchase-no-column>采购单号</TableHead><TableHead>供应商</TableHead><TableHead>入库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计到货</TableHead><TableHead>创建人</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-purchase-actions-column>操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="loading && orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
@@ -810,12 +790,7 @@ onMounted(() => {
               <TableCell class="text-center text-sm">{{ row.expectedArrivalDate || '未设置' }}</TableCell>
               <TableCell class="whitespace-nowrap" :title="row.createdByName || '系统'">{{ row.createdByName || '系统' }}</TableCell>
               <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-center" data-purchase-actions-column>
-                <div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
-                <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" :disabled="detailLoading" @click="openDetail(row)">{{ detailLoading ? '加载中' : '详情' }}</Button>
-                <RowActionsMenu :actions="getRowActions(row)" :disabled="detailLoading || actionSubmitting" :label="`更多 ${row.purchaseNo} 操作`" @select="handleRowAction(row, $event)" />
-                </div>
-              </TableCell>
+              <TableCell class="text-center" data-purchase-actions-column><Button variant="ghost" size="sm" :class="hasOrderActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="detailLoading || actionSubmitting" @click="openDetail(row)">{{ detailLoading ? '加载中' : hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
             </TableRow>
           </TableBody>
       </Table>
@@ -867,93 +842,94 @@ onMounted(() => {
     </Dialog>
 
     <Dialog v-model:open="detailDialogOpen">
-      <DialogContent placement="app-content" class="flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !p-4 sm:max-w-6xl">
+      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" data-order-workbench class="purchase-order-workbench flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl">
         <DialogHeader class="sr-only"><DialogTitle>采购单详情</DialogTitle><DialogDescription>先查看单据状态和入库进度，再核对明细与审批信息。</DialogDescription></DialogHeader>
-        <DialogScrollArea>
-          <div v-if="detailRow" class="space-y-5 p-1">
-            <BusinessDetailHero eyebrow="采购订单" :title="detailRow.purchaseNo" :subtitle="`${detailRow.supplierCode} · ${detailRow.supplierName} · ${detailRow.warehouseName}`" :status-label="statusMeta(detailRow.status).label" :status-class="statusMeta(detailRow.status).className">
+        <DialogScrollArea content-class="px-5 py-5 pr-6">
+          <div v-if="detailRow" class="space-y-5">
+            <BusinessDetailHero eyebrow="采购订单" :title="detailRow.purchaseNo" :subtitle="`${detailRow.supplierCode} · ${detailRow.supplierName} · ${detailRow.warehouseName}`" :status-label="statusMeta(detailRow.status).label" :status-class="statusMeta(detailRow.status).className" :metric-columns="3" variant="canvas">
               <template #metrics>
                 <div class="business-detail-hero__metric"><span>订单金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
                 <div class="business-detail-hero__metric"><span>明细项目</span><strong>{{ detailRow.items.length }} 项</strong></div>
                 <div class="business-detail-hero__metric"><span>预计到货</span><strong>{{ detailRow.expectedArrivalDate || '未设置' }}</strong></div>
-                <div class="business-detail-hero__metric"><span>当前任务</span><strong>{{ statusHint(detailRow.status) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>累计入库</span><strong>{{ formatMoney(detailRow.fulfillmentSummary.inboundAmount) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>入库仓库</span><strong>{{ detailRow.warehouseName }}</strong></div>
+                <div class="business-detail-hero__metric"><span>采购人员</span><strong>{{ detailRow.createdByName || '系统' }}</strong></div>
               </template>
             </BusinessDetailHero>
 
-            <BusinessExecutionProgress
-              :steps="purchaseProgressSteps(detailRow)"
-              description="状态由系统业务流转生成，不能在详情中直接修改。"
-              amount-label="累计入库"
-              :completed-amount="detailRow.fulfillmentSummary.inboundAmount"
-              :completion-rate="purchaseInboundSummary(detailRow).completionRate"
-              completion-rate-hint="完成率按累计入库金额 ÷ 订单总金额计算。"
-              :metrics="[
-                { label: '已入库明细', value: purchaseInboundSummary(detailRow).inboundItems },
-                { label: '待入库明细', value: purchaseInboundSummary(detailRow).pendingItems, pending: purchaseInboundSummary(detailRow).pendingItems > 0 },
-                { label: '已完成明细', value: purchaseInboundSummary(detailRow).completedItems },
-              ]"
-            />
+            <BusinessDetailWorkbenchCard>
+              <section class="purchase-workbench-record__section purchase-workbench-record__section--progress"><BusinessExecutionProgress
+                :steps="purchaseProgressSteps(detailRow)"
+                description="状态由系统业务流转生成，不能在详情中直接修改。"
+                amount-label="累计入库"
+                :completed-amount="detailRow.fulfillmentSummary.inboundAmount"
+                :completion-rate="purchaseInboundSummary(detailRow).completionRate"
+                completion-rate-hint="完成率按累计入库金额 ÷ 订单总金额计算。"
+                :metrics="[
+                  { label: '已入库明细', value: purchaseInboundSummary(detailRow).inboundItems },
+                  { label: '待入库明细', value: purchaseInboundSummary(detailRow).pendingItems, pending: purchaseInboundSummary(detailRow).pendingItems > 0 },
+                  { label: '已完成明细', value: purchaseInboundSummary(detailRow).completedItems },
+                ]"
+              /></section>
+            </BusinessDetailWorkbenchCard>
 
-            <section>
-              <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">业务信息</h3><p class="mt-1 text-xs text-muted-foreground">供应商、仓库及到货安排。</p></div></div>
-              <dl class="purchase-detail-facts">
-                <div><dt>采购单号</dt><dd><code>{{ detailRow.purchaseNo }}</code></dd></div>
-                <div><dt>供应商</dt><dd><strong>{{ detailRow.supplierName }}</strong><small>{{ detailRow.supplierCode }}</small></dd></div>
-                <div><dt>入库仓库</dt><dd><strong>{{ detailRow.warehouseName }}</strong></dd></div>
-                <div><dt>预计到货</dt><dd><strong>{{ detailRow.expectedArrivalDate || '未设置' }}</strong></dd></div>
-              </dl>
-            </section>
+            <BusinessDetailWorkbenchCard>
+              <section class="purchase-workbench-record__section purchase-workbench-info" aria-labelledby="purchase-workbench-info-title"><h3 id="purchase-workbench-info-title" class="purchase-workbench-info__title">业务信息</h3><dl class="purchase-workbench-info__facts"><div class="purchase-workbench-info__fact"><dt>供应商</dt><dd><strong>{{ detailRow.supplierName }}</strong><small>{{ detailRow.supplierCode }}</small></dd></div><div class="purchase-workbench-info__fact"><dt>订单日期</dt><dd>{{ detailRow.createTime }}</dd></div><div class="purchase-workbench-info__fact"><dt>采购单号</dt><dd><code>{{ detailRow.purchaseNo }}</code></dd></div><div class="purchase-workbench-info__fact"><dt>预计到货</dt><dd>{{ detailRow.expectedArrivalDate || '未设置' }}</dd></div><div class="purchase-workbench-info__fact"><dt>入库仓库</dt><dd>{{ detailRow.warehouseName }}</dd></div><div class="purchase-workbench-info__fact"><dt>制单人</dt><dd>{{ detailRow.createdByName || '系统' }}</dd></div><div class="purchase-workbench-info__fact"><dt>提交人</dt><dd>{{ detailRow.submittedByName || '未提交' }}</dd></div><div class="purchase-workbench-info__fact"><dt>审核人</dt><dd>{{ detailRow.approvedByName || '未审核' }}</dd></div><div class="purchase-workbench-info__fact purchase-workbench-info__fact--note"><dt>备注</dt><dd>{{ detailRow.remark || '未填写' }}</dd></div></dl></section>
 
-            <section>
-              <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">商品明细</h3><p class="mt-1 text-xs text-muted-foreground">优先核对订购、已入库与剩余待入库数量。</p></div><span class="text-xs text-muted-foreground">共 {{ detailRow.items.length }} 项</span></div>
-              <ScrollArea class="w-full purchase-order-line-scroll detail-table-floating" aria-label="采购订单商品明细">
-              <Table class="min-w-[1020px] table-fixed">
-                <colgroup><col class="w-[240px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[160px]" /></colgroup>
-                <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">订购数量</TableHead><TableHead class="text-center">已入库</TableHead><TableHead class="text-center">待入库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  <TableRow v-for="item in detailRow.items" :key="item.purchaseOrderItemId">
-                    <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell>
-                    <TableCell class="text-center tabular-nums">{{ item.quantity }} {{ item.unitName }}</TableCell>
-                    <TableCell class="text-center tabular-nums">{{ item.inboundQty }} {{ item.unitName }}</TableCell>
-                    <TableCell class="text-center font-medium tabular-nums" :class="item.quantity > item.inboundQty ? 'text-amber-700' : 'text-emerald-700'">{{ Math.max(0, item.quantity - item.inboundQty) }} {{ item.unitName }}</TableCell>
-                    <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell>
-                    <TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell>
-                    <TableCell class="text-center">{{ item.selectedSupplierScore.toFixed(1) }}</TableCell>
-                    <TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-              </ScrollArea>
-            </section>
+              <section class="purchase-workbench-record__section">
+                <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">商品明细</h3><p class="mt-1 text-xs text-muted-foreground">优先核对订购、已入库与剩余待入库数量。</p></div><span class="text-xs text-muted-foreground">共 {{ detailRow.items.length }} 项</span></div>
+                <ScrollArea class="w-full purchase-order-line-scroll detail-table-floating" aria-label="采购订单商品明细">
+                <Table class="min-w-[1020px] table-fixed">
+                  <colgroup><col class="w-[240px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[160px]" /></colgroup>
+                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">订购数量</TableHead><TableHead class="text-center">已入库</TableHead><TableHead class="text-center">待入库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    <TableRow v-for="item in detailRow.items" :key="item.purchaseOrderItemId">
+                      <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell>
+                      <TableCell class="text-center tabular-nums">{{ item.quantity }} {{ item.unitName }}</TableCell>
+                      <TableCell class="text-center tabular-nums">{{ item.inboundQty }} {{ item.unitName }}</TableCell>
+                      <TableCell class="text-center font-medium tabular-nums" :class="item.quantity > item.inboundQty ? 'text-amber-700' : 'text-emerald-700'">{{ Math.max(0, item.quantity - item.inboundQty) }} {{ item.unitName }}</TableCell>
+                      <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell>
+                      <TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell>
+                      <TableCell class="text-center">{{ item.selectedSupplierScore.toFixed(1) }}</TableCell>
+                      <TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+                </ScrollArea>
+              </section>
+            </BusinessDetailWorkbenchCard>
 
-            <section>
-              <div class="mb-2"><h3 class="text-sm font-semibold">流程记录</h3><p class="mt-1 text-xs text-muted-foreground">聚合采购单审计字段与关联入库单，不额外新增操作日志。</p></div>
-              <ol class="purchase-detail-timeline" aria-label="采购订单流程记录">
-                <li v-for="item in detailRow.timeline" :key="`${item.event}-${item.occurredAt}-${item.inboundBillId || ''}`">
-                  <i aria-hidden="true" />
-                  <div class="purchase-detail-timeline__body">
-                    <div class="purchase-detail-timeline__title"><strong>{{ timelineMeta(item.event).action }}</strong><span class="purchase-detail-timeline__type" :class="timelineMeta(item.event).className">{{ timelineMeta(item.event).type }}</span></div>
-                    <div class="purchase-detail-timeline__meta">
-                      <span><small>操作人</small>{{ item.operatorName }}</span>
-                      <span v-if="item.inboundBillNo" class="purchase-detail-timeline__reference"><small>关联入库单</small><code>{{ item.inboundBillNo }}</code></span>
-                      <span class="purchase-detail-timeline__time"><small>操作时间</small>{{ item.occurredAt }}</span>
+            <BusinessDetailWorkbenchCard>
+              <section class="purchase-workbench-record__section">
+                <div class="mb-2"><h3 class="text-sm font-semibold">流程记录</h3><p class="mt-1 text-xs text-muted-foreground">聚合采购单审计字段与关联入库单，不额外新增操作日志。</p></div>
+                <ol class="purchase-detail-timeline" aria-label="采购订单流程记录">
+                  <li v-for="item in detailRow.timeline" :key="`${item.event}-${item.occurredAt}-${item.inboundBillId || ''}`">
+                    <i aria-hidden="true" />
+                    <div class="purchase-detail-timeline__body">
+                      <div class="purchase-detail-timeline__title"><strong>{{ timelineMeta(item.event).action }}</strong><span class="purchase-detail-timeline__type" :class="timelineMeta(item.event).className">{{ timelineMeta(item.event).type }}</span></div>
+                      <div class="purchase-detail-timeline__meta">
+                        <span><small>操作人</small>{{ item.operatorName }}</span>
+                        <span v-if="item.inboundBillNo" class="purchase-detail-timeline__reference"><small>关联入库单</small><code>{{ item.inboundBillNo }}</code></span>
+                        <span class="purchase-detail-timeline__time"><small>操作时间</small>{{ item.occurredAt }}</span>
+                      </div>
                     </div>
-                  </div>
-                </li>
-              </ol>
-              <p v-if="detailRow.remark" class="purchase-detail-remark"><span>备注</span>{{ detailRow.remark }}</p>
-            </section>
+                  </li>
+                </ol>
+              </section>
+            </BusinessDetailWorkbenchCard>
           </div>
         </DialogScrollArea>
         <DialogFooter class="items-center justify-between gap-3">
-          <span v-if="detailRow && detailActionMode !== 'view'" class="mr-auto text-xs" :class="detailRow.expectedArrivalDate ? 'text-muted-foreground' : 'text-destructive'">{{ detailActionHint(detailRow) }}</span>
-          <Button variant="outline" :disabled="actionSubmitting" @click="detailDialogOpen = false">关闭</Button>
+          <div class="mr-auto flex items-center gap-3">
+            <Button v-if="detailRow && hasOrderActions(detailRow)" variant="outline" class="mr-auto border-rose-200 bg-white text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" :disabled="actionSubmitting" @click="confirmOrderAction(detailRow, 'cancel')">取消采购单</Button>
+          </div>
+          <Button v-if="detailRow && canEditOrder(detailRow)" variant="outline" :disabled="actionSubmitting" @click="openDetailEdit(detailRow)">编辑</Button>
           <Button v-if="detailRow && detailActionMode !== 'view'" :disabled="actionSubmitting || !detailRow.expectedArrivalDate" @click="runDetailAction(detailRow)">{{ actionSubmitting ? '处理中' : detailActionMode === 'submit' ? '提交采购单' : '审核通过' }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
+    <ConfirmDialog placement="app-content" :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
   </section>
 </template>
 
@@ -962,24 +938,19 @@ onMounted(() => {
 .price-input::-webkit-inner-spin-button,
 .price-input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 
-.purchase-detail-facts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--muted) 38%, var(--card));
-}
-
-.purchase-detail-facts > div { min-width: 0; padding: 12px 14px; }
-.purchase-detail-facts > div + div { border-left: 1px solid var(--border); }
-.purchase-detail-facts dt { color: var(--muted-foreground); font-size: 12px; line-height: 1.3; }
-.purchase-detail-facts dd { min-width: 0; margin: 5px 0 0; color: var(--foreground); font-size: 14px; line-height: 1.35; }
-.purchase-detail-facts dd code, .purchase-detail-facts dd strong, .purchase-detail-facts dd small { overflow: hidden; display: block; text-overflow: ellipsis; white-space: nowrap; }
-.purchase-detail-facts dd strong { font-weight: 600; }
-.purchase-detail-facts dd small { margin-top: 2px; color: var(--muted-foreground); font-size: 12px; }
-
+.purchase-workbench-record__section { padding: 18px 20px; }
+.purchase-workbench-record__section + .purchase-workbench-record__section { border-top: 1px solid #e5eaf0; }
+.purchase-workbench-record__section--progress { padding: 0; }
+.purchase-workbench-info { padding-top: 18px; }
+.purchase-workbench-info__title { margin: 0 0 14px; color: var(--foreground); font-size: 14px; font-weight: 650; line-height: 20px; }
+.purchase-workbench-info__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 42px; margin: 0; }
+.purchase-workbench-info__fact { display: grid; grid-template-columns: 76px minmax(0, 1fr); column-gap: 10px; align-items: start; min-width: 0; color: var(--foreground); font-size: 13px; line-height: 20px; }
+.purchase-workbench-info__fact dt { color: var(--muted-foreground); font-size: inherit; white-space: nowrap; }
+.purchase-workbench-info__fact dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.purchase-workbench-info__fact dd > strong { font-weight: 600; }
+.purchase-workbench-info__fact dd > small { margin-left: 7px; color: var(--muted-foreground); font-size: inherit; }
+.purchase-workbench-info__fact dd > code { font-size: inherit; }
+.purchase-workbench-info__fact--note { grid-column: 1 / -1; }
 
 .purchase-detail-timeline { position: relative; margin: 0; padding: 3px 0; list-style: none; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); }
 .purchase-detail-timeline li { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; padding: 11px 14px; }
@@ -1002,16 +973,8 @@ onMounted(() => {
 .purchase-detail-remark { margin: 10px 0 0; padding: 10px 12px; border-radius: calc(var(--radius) - 2px); background: color-mix(in srgb, var(--muted) 44%, transparent); color: var(--muted-foreground); font-size: 13px; line-height: 1.55; }
 .purchase-detail-remark span { margin-right: 8px; color: var(--foreground); font-weight: 600; }
 
-@media (max-width: 960px) {
-  .purchase-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .purchase-detail-facts > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--border); }
-  .purchase-detail-facts > div:nth-child(4) { border-top: 1px solid var(--border); }
-}
-
 @media (max-width: 640px) {
-  .purchase-detail-facts { grid-template-columns: 1fr; }
-  .purchase-detail-facts > div + div { border-top: 1px solid var(--border); border-left: 0; }
-  .purchase-detail-facts > div:nth-child(3) { border-left: 0; }
+  .purchase-workbench-info__facts { grid-template-columns: 1fr; gap: 9px; }
   .purchase-detail-timeline__time { margin-left: 0; }
 }
 </style>

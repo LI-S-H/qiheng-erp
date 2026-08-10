@@ -22,6 +22,7 @@ type DialogPlacement = 'viewport' | 'app-content'
 
 const props = withDefaults(defineProps<DialogContentProps & {
   class?: HTMLAttributes["class"]
+  overlayClass?: HTMLAttributes["class"]
   placement?: DialogPlacement
   showCloseButton?: boolean
 }>(), {
@@ -30,14 +31,14 @@ const props = withDefaults(defineProps<DialogContentProps & {
 })
 const emits = defineEmits<DialogContentEmits>()
 
-const delegatedProps = reactiveOmit(props, "class", "placement", "showCloseButton")
+const delegatedProps = reactiveOmit(props, "class", "overlayClass", "placement", "showCloseButton")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
   <DialogPortal>
-    <DialogOverlay />
+    <DialogOverlay :class="props.overlayClass" />
     <DialogContent
       data-slot="dialog-content"
       style="z-index: 50; pointer-events: auto"

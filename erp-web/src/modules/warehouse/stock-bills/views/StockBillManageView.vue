@@ -6,13 +6,12 @@ import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
-import BusinessDetailFacts from '@/components/common/BusinessDetailFacts.vue';
 import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
 import BusinessDetailProgress from '@/components/common/BusinessDetailProgress.vue';
 import type { BusinessDetailProgressStep } from '@/components/common/BusinessDetailProgress.vue';
-import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
 import BusinessDetailTimeline from '@/components/common/BusinessDetailTimeline.vue';
 import type { BusinessDetailTimelineItem } from '@/components/common/BusinessDetailTimeline.vue';
+import BusinessDetailWorkbenchCard from '@/components/common/BusinessDetailWorkbenchCard.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
@@ -22,8 +21,6 @@ import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import WarehouseDetailTableFrame from '@/components/common/WarehouseDetailTableFrame.vue';
-import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
-import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -287,7 +284,6 @@ const summary = reactive(emptySummary());
 const detailVisible = ref(false);
 const detailLoading = ref(false);
 const detail = ref<StockBillDetail | null>(null);
-const detailActionMode = ref<'view' | 'submit' | 'confirm'>('view');
 const expandedDetails = reactive<Record<string, StockBillDetail | undefined>>({});
 const detailLoadingIds = ref<Set<string>>(new Set());
 const detailLoadErrors = reactive<Record<string, string | undefined>>({});
@@ -853,8 +849,7 @@ const {
   },
 });
 
-async function openDetail(row: StockBillListItem, actionMode: 'view' | 'submit' | 'confirm' = 'view') {
-  detailActionMode.value = actionMode;
+async function openDetail(row: StockBillListItem) {
   detailVisible.value = true;
   detailLoading.value = true;
   detail.value = null;
@@ -1172,16 +1167,6 @@ function openConfirmDialog(options: Omit<typeof confirmState, 'open' | 'onConfir
   confirmState.open = true;
 }
 
-function openConfirmDetail(row: StockBillListItem) {
-  if (row.status !== 'PENDING_CONFIRM') return;
-  openDetail(row, 'confirm');
-}
-
-function openSubmitDetail(row: StockBillListItem) {
-  if (row.status !== 'DRAFT') return;
-  openDetail(row, 'submit');
-}
-
 function getSubmitValidationError(row: StockBillDetail) {
   if (!row.warehouseId || !row.warehouseName) return '提交前必须选择仓库';
   if (row.entryMode === 'MANUAL_SUPPLEMENT' && Boolean(row.sourceId) !== Boolean(row.sourceNo.trim())) return '来源单据ID和来源单号必须同时存在或同时留空';
@@ -1262,7 +1247,7 @@ function handleSubmit(row: StockBillListItem | StockBillDetail) {
   });
 }
 
-function handleCancel(row: StockBillListItem) {
+function handleCancel(row: StockBillListItem | StockBillDetail) {
   openConfirmDialog({
     title: `取消${pageText.value.formTitle}`,
     description: `${row.billNo} 取消后不改变库存余额，后续如需处理要重新创建单据。`,
@@ -1276,24 +1261,14 @@ function handleCancel(row: StockBillListItem) {
   });
 }
 
-function getRowActions(row: StockBillListItem): RowActionOption[] {
-  if (row.status !== 'DRAFT' && row.status !== 'PENDING_CONFIRM') return [];
-
-  return [
-    { key: 'edit', label: `编辑${pageText.value.formTitle}` },
-    row.status === 'DRAFT'
-      ? { key: 'submit', label: '提交确认' }
-      : { key: 'confirm', label: isInboundPage.value ? '确认入库' : '确认出库' },
-    { key: 'cancel', label: `取消${pageText.value.formTitle}`, variant: 'destructive', separated: true },
-  ];
+function hasStockBillActions(row: StockBillListItem) {
+  return row.status === 'DRAFT' || row.status === 'PENDING_CONFIRM';
 }
 
-function handleRowAction(row: StockBillListItem, actionKey: string) {
-  if (actionSubmitting.value) return;
-  if (actionKey === 'edit') openEditDialog(row);
-  if (actionKey === 'submit') openSubmitDetail(row);
-  if (actionKey === 'confirm') openConfirmDetail(row);
-  if (actionKey === 'cancel') handleCancel(row);
+async function openDetailEdit(row: StockBillDetail) {
+  detailVisible.value = false;
+  await nextTick();
+  await openEditDialog(row);
 }
 
 async function runConfirmAction() {
@@ -1371,7 +1346,7 @@ onMounted(async () => {
       <div class="table-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">{{ pageText.title }}列表</strong>
-          <span class="text-xs text-muted-foreground">列表只显示本单作业数量；来源订单进度在详情和原单中查看</span>
+          <span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；列表只显示本单作业数量，来源订单进度在详情和原单中查看</span>
         </div>
         <div class="table-toolbar__actions">
           <DropdownMenu>
@@ -1486,10 +1461,7 @@ onMounted(async () => {
                   <TableCell v-if="isListColumnVisible('responsible')" class="truncate" :title="row.responsibleByName">{{ row.responsibleByName }}</TableCell>
                   <TableCell v-if="isListColumnVisible('createTime')" class="whitespace-nowrap text-muted-foreground">{{ row.createTime }}</TableCell>
                   <TableCell class="stock-bill-actions-column sticky right-0 z-20 whitespace-nowrap border-l border-border/60 bg-background text-center group-hover:bg-muted/50" data-table-sticky-edge="end">
-                    <div class="inline-flex flex-nowrap items-center justify-center gap-1">
-                      <Button size="sm" variant="ghost" class="text-cyan-700 hover:text-cyan-800" :disabled="actionSubmitting" @click="openDetail(row)">详情</Button>
-                      <RowActionsMenu :actions="getRowActions(row)" :disabled="actionSubmitting" :label="`更多 ${row.billNo} 操作`" @select="handleRowAction(row, $event)" />
-                    </div>
+                    <Button size="sm" variant="ghost" :class="hasStockBillActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting || detailLoading" @click="openDetail(row)">{{ detailLoading ? '加载中' : hasStockBillActions(row) ? '处理' : '查看' }}</Button>
                   </TableCell>
                 </TableRow>
                 <TableRow class="stock-bill-detail-host-row bg-background" :data-stock-bill-detail-host-id="row.workBillId">
@@ -1705,28 +1677,35 @@ onMounted(async () => {
     </Dialog>
 
     <Dialog v-model:open="detailVisible">
-      <DialogContent placement="app-content" class="flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1180px]">
-        <DialogHeader><DialogTitle>{{ pageText.formTitle }}详情</DialogTitle><DialogDescription>查看业务来源、往来对象、确认信息、本次数量以及本次处理后来源订单的剩余数量。</DialogDescription></DialogHeader>
+      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" data-order-workbench class="stock-bill-workbench flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl">
+        <DialogHeader class="sr-only"><DialogTitle>{{ pageText.formTitle }}详情</DialogTitle><DialogDescription>查看业务来源、往来对象、确认信息、本次数量以及本次处理后来源订单的剩余数量。</DialogDescription></DialogHeader>
         <div v-if="detailLoading" class="flex min-h-64 flex-1 items-center justify-center gap-2 text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
-        <DialogScrollArea v-else-if="detail">
-          <div class="space-y-5 py-1">
+        <DialogScrollArea v-else-if="detail" content-class="px-5 py-5 pr-6">
+          <div class="space-y-5">
             <BusinessDetailHero
               eyebrow="仓储作业单"
               :title="detail.billNo"
               :subtitle="`${billTypeMap[detail.billType].label} · ${detail.warehouseName} · ${sourcePartyDisplay(detail)}`"
               :status-label="statusMap[detail.status].label"
               :status-class="statusMap[detail.status].className"
+              :metric-columns="3"
+              variant="canvas"
             >
               <template #metrics>
                 <div class="business-detail-hero__metric"><span>作业类型</span><strong>{{ billTypeMap[detail.billType].label }}</strong></div>
                 <div class="business-detail-hero__metric"><span>商品明细</span><strong>{{ detail.items.length }} 项</strong></div>
                 <div class="business-detail-hero__metric"><span>本次数量</span><strong>{{ detail.quantitySummary }}</strong></div>
-                <div class="business-detail-hero__metric"><span>当前任务</span><strong>{{ statusMap[detail.status].label }}</strong></div>
+                <div class="business-detail-hero__metric"><span>作业仓库</span><strong>{{ detail.warehouseName }}</strong></div>
+                <div class="business-detail-hero__metric"><span>{{ sourcePartyLabel(detail.billType) }}</span><strong>{{ sourcePartyDisplay(detail) }}</strong></div>
+                <div class="business-detail-hero__metric"><span>负责人</span><strong>{{ detail.responsibleByName }}</strong></div>
               </template>
             </BusinessDetailHero>
-            <BusinessDetailSection title="业务进度" description="状态由仓储作业和确认流程生成，不能在详情中直接修改。"><BusinessDetailProgress :steps="stockBillProgressSteps(detail)" /></BusinessDetailSection>
-            <BusinessDetailSection title="业务信息" description="仓库、来源单据、往来对象与本次作业范围。"><BusinessDetailFacts class="detail-field-grid"><div class="business-detail-fact"><dt>仓库</dt><dd><strong>{{ detail.warehouseName }}</strong></dd></div><div class="business-detail-fact"><dt>录入方式</dt><dd><strong>{{ entryModeMap[detail.entryMode] }}</strong></dd></div><div class="business-detail-fact"><dt>来源类型</dt><dd><strong>{{ sourceTypeMap[detail.sourceType] }}</strong></dd></div><div class="business-detail-fact"><dt>来源单号</dt><dd><code>{{ detail.sourceNo || '-' }}</code></dd></div><div class="business-detail-fact"><dt>{{ sourcePartyLabel(detail.billType) }}</dt><dd><strong>{{ sourcePartyDisplay(detail) }}</strong></dd></div><div class="business-detail-fact"><dt>负责人</dt><dd><strong>{{ detail.responsibleByName }}</strong></dd></div><div class="business-detail-fact"><dt>本次数量</dt><dd><strong>{{ detail.quantitySummary }}</strong></dd></div><div class="business-detail-fact"><dt>确认状态</dt><dd><strong>{{ detail.confirmedByName || '未确认' }}</strong><small>{{ detail.confirmedAt || '-' }}</small></dd></div></BusinessDetailFacts></BusinessDetailSection>
-            <div>
+
+            <BusinessDetailWorkbenchCard><section class="stock-workbench-section"><div class="mb-4"><h3 class="text-sm font-semibold">业务进度</h3><p class="mt-1 text-xs text-muted-foreground">状态由仓储作业和确认流程生成，不能在详情中直接修改。</p></div><BusinessDetailProgress :steps="stockBillProgressSteps(detail)" /></section></BusinessDetailWorkbenchCard>
+
+            <BusinessDetailWorkbenchCard>
+              <section class="stock-workbench-section stock-workbench-info"><h3 class="stock-workbench-info__title">业务信息</h3><dl class="stock-workbench-info__facts"><div class="stock-workbench-info__fact"><dt>作业单号</dt><dd><code>{{ detail.billNo }}</code></dd></div><div class="stock-workbench-info__fact"><dt>作业仓库</dt><dd>{{ detail.warehouseName }}</dd></div><div class="stock-workbench-info__fact"><dt>{{ sourcePartyLabel(detail.billType) }}</dt><dd>{{ sourcePartyDisplay(detail) }}</dd></div><div class="stock-workbench-info__fact"><dt>来源类型</dt><dd>{{ sourceTypeMap[detail.sourceType] }}</dd></div><div class="stock-workbench-info__fact"><dt>来源单号</dt><dd><code>{{ detail.sourceNo || '-' }}</code></dd></div><div class="stock-workbench-info__fact"><dt>录入方式</dt><dd>{{ entryModeMap[detail.entryMode] }}</dd></div><div class="stock-workbench-info__fact"><dt>负责人</dt><dd>{{ detail.responsibleByName }}</dd></div><div class="stock-workbench-info__fact"><dt>本次数量</dt><dd>{{ detail.quantitySummary }}</dd></div><div class="stock-workbench-info__fact"><dt>确认信息</dt><dd><strong>{{ detail.confirmedByName || '尚未确认' }}</strong><small v-if="detail.confirmedAt">{{ detail.confirmedAt }}</small><small v-else>—</small></dd></div></dl></section>
+              <section class="stock-workbench-section">
               <div class="mb-2 flex items-center justify-between"><h3 class="text-sm font-semibold">产品明细</h3><span class="text-xs text-muted-foreground">共 {{ detail.items.length }} 条</span></div>
               <div class="detail-table-floating">
                 <div class="stock-bill-dialog-table-scroll w-full">
@@ -1749,20 +1728,24 @@ onMounted(async () => {
                   </Table>
                 </div>
               </div>
-            </div>
-            <BusinessDetailSection title="流程记录" description="聚合仓储作业单审计字段和确认状态，不额外新增操作日志。"><BusinessDetailTimeline :items="stockBillTimelineItems(detail)" :aria-label="`${pageText.formTitle}流程记录`" /><p v-if="detail.entryMode !== 'SOURCE_GENERATED' && detail.manualReason" class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800"><span class="mr-2 font-semibold">{{ detail.entryMode === 'MANUAL_SUPPLEMENT' ? '补录原因' : '调整原因' }}</span>{{ detail.manualReason }}</p><p v-if="detail.remark" class="mt-2 rounded-md bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"><span class="mr-2 font-semibold text-foreground">备注</span>{{ detail.remark }}</p></BusinessDetailSection>
+              </section>
+            </BusinessDetailWorkbenchCard>
+
+            <BusinessDetailWorkbenchCard><section class="stock-workbench-section"><div class="mb-2"><h3 class="text-sm font-semibold">流程记录</h3><p class="mt-1 text-xs text-muted-foreground">聚合仓储作业单审计字段和确认状态，不额外新增操作日志。</p></div><BusinessDetailTimeline :items="stockBillTimelineItems(detail)" :aria-label="`${pageText.formTitle}流程记录`" /><div v-if="(detail.entryMode !== 'SOURCE_GENERATED' && detail.manualReason) || detail.remark" class="stock-workbench-notes"><p v-if="detail.entryMode !== 'SOURCE_GENERATED' && detail.manualReason"><span>{{ detail.entryMode === 'MANUAL_SUPPLEMENT' ? '补录原因' : '调整原因' }}</span>{{ detail.manualReason }}</p><p v-if="detail.remark"><span>备注</span>{{ detail.remark }}</p></div></section></BusinessDetailWorkbenchCard>
           </div>
         </DialogScrollArea>
-        <DialogFooter v-if="detail && (detail.status === 'DRAFT' || detail.status === 'PENDING_CONFIRM')" class="items-center justify-between gap-3">
-          <span v-if="detailActionMode !== 'view'" class="mr-auto text-xs text-muted-foreground">请先核对完整单头和产品明细，再执行{{ detail.status === 'DRAFT' ? '提交' : '确认' }}。</span>
-          <Button variant="outline" :disabled="actionSubmitting" @click="detailVisible = false">关闭</Button>
+        <DialogFooter v-if="detail" class="items-center justify-between gap-3">
+          <div class="mr-auto flex items-center gap-3">
+            <Button v-if="hasStockBillActions(detail)" variant="outline" class="mr-auto border-rose-200 bg-white text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" :disabled="actionSubmitting" @click="handleCancel(detail)">取消{{ pageText.formTitle }}</Button>
+          </div>
+          <Button v-if="hasStockBillActions(detail)" variant="outline" :disabled="actionSubmitting" @click="openDetailEdit(detail)">编辑</Button>
           <Button v-if="detail.status === 'DRAFT'" :disabled="actionSubmitting" @click="handleSubmit(detail)">{{ actionSubmitting ? '处理中...' : '提交确认' }}</Button>
-          <Button v-else :disabled="actionSubmitting" @click="handleConfirm(detail)">{{ actionSubmitting ? '处理中...' : isInboundPage ? '确认入库' : '确认出库' }}</Button>
+          <Button v-else-if="detail.status === 'PENDING_CONFIRM'" :disabled="actionSubmitting" @click="handleConfirm(detail)">{{ actionSubmitting ? '处理中...' : isInboundPage ? '确认入库' : '确认出库' }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <ConfirmDialog :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
+    <ConfirmDialog placement="app-content" :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
   </section>
 </template>
 
@@ -2157,6 +2140,20 @@ onMounted(async () => {
   grid-template-columns: minmax(210px, 1.4fr) repeat(7, minmax(96px, 0.62fr)) minmax(160px, 1fr);
 }
 
+.stock-workbench-section { padding: 18px 20px; }
+.stock-workbench-section + .stock-workbench-section { border-top: 1px solid #e5eaf0; }
+.stock-workbench-info__title { margin: 0 0 14px; color: var(--foreground); font-size: 14px; font-weight: 650; line-height: 20px; }
+.stock-workbench-info__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 42px; margin: 0; }
+.stock-workbench-info__fact { display: grid; grid-template-columns: 76px minmax(0, 1fr); column-gap: 10px; align-items: start; min-width: 0; color: var(--foreground); font-size: 13px; line-height: 20px; }
+.stock-workbench-info__fact dt { color: var(--muted-foreground); font-size: inherit; white-space: nowrap; }
+.stock-workbench-info__fact dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.stock-workbench-info__fact dd > strong { font-weight: 600; }
+.stock-workbench-info__fact dd > small { margin-left: 7px; color: var(--muted-foreground); font-size: inherit; }
+.stock-workbench-info__fact dd > code { font-size: inherit; }
+.stock-workbench-notes { display: grid; gap: 8px; margin-top: 14px; color: var(--muted-foreground); font-size: 12px; line-height: 20px; }
+.stock-workbench-notes p { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--muted); }
+.stock-workbench-notes span { margin-right: 8px; color: var(--foreground); font-weight: 600; }
+
 @media (max-width: 1279px) {
   .draft-item-grid,
   .draft-item-grid--quality,
@@ -2171,6 +2168,8 @@ onMounted(async () => {
 }
 
 @media (max-width: 640px) {
+  .stock-workbench-info__facts { grid-template-columns: 1fr; gap: 9px; }
+
   .draft-item-grid,
   .draft-item-grid--quality,
   .draft-item-grid--source,

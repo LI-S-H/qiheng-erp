@@ -7,15 +7,19 @@ withDefaults(defineProps<{
   subtitle?: string;
   statusLabel?: string;
   statusClass?: string;
+  metricColumns?: 2 | 3;
+  variant?: 'default' | 'canvas';
 }>(), {
   subtitle: '',
   statusLabel: '',
   statusClass: '',
+  metricColumns: 2,
+  variant: 'default',
 });
 </script>
 
 <template>
-  <section class="business-detail-hero">
+  <section class="business-detail-hero" :class="`business-detail-hero--${variant}`">
     <div class="business-detail-hero__main">
       <span class="business-detail-hero__eyebrow">{{ eyebrow }}</span>
       <div class="business-detail-hero__title-row">
@@ -24,7 +28,7 @@ withDefaults(defineProps<{
       </div>
       <p v-if="subtitle" class="business-detail-hero__subtitle">{{ subtitle }}</p>
     </div>
-    <div class="business-detail-hero__metrics" aria-label="关键指标">
+    <div class="business-detail-hero__metrics" :class="`business-detail-hero__metrics--${metricColumns}`" aria-label="关键指标">
       <slot name="metrics" />
     </div>
   </section>
@@ -94,6 +98,20 @@ withDefaults(defineProps<{
   background: var(--border);
 }
 
+.business-detail-hero__metrics--3 { grid-template-columns: repeat(3, minmax(112px, auto)); }
+
+.business-detail-hero--canvas {
+  gap: 24px;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.business-detail-hero--canvas .business-detail-hero__eyebrow { letter-spacing: .02em; }
+.business-detail-hero--canvas .business-detail-hero__metrics { border-color: #dfe5ed; background: #dfe5ed; }
+.business-detail-hero--canvas .business-detail-hero__metrics :slotted(.business-detail-hero__metric) { background: #fff; }
+
 .business-detail-hero__metrics :slotted(.business-detail-hero__metric) {
   min-width: 112px;
   padding: 10px 12px;
@@ -118,7 +136,7 @@ withDefaults(defineProps<{
 
 @media (max-width: 680px) {
   .business-detail-hero { grid-template-columns: 1fr; }
-  .business-detail-hero__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .business-detail-hero__metrics, .business-detail-hero__metrics--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .business-detail-hero__metrics :slotted(.business-detail-hero__metric) { min-width: 0; }
 }
 </style>

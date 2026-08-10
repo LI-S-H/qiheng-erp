@@ -75,7 +75,12 @@ function handleKeydown(e: KeyboardEvent) {
 
 <template>
   <Dialog :open="props.open" @update:open="emit('update:open', $event)">
-    <DialogContent class="sm:max-w-[425px]">
+    <DialogContent
+      placement="app-content"
+      overlay-class="!z-[70] !bg-slate-950/30 !backdrop-blur-[3px]"
+      data-prompt-dialog
+      class="!z-[80] sm:max-w-[425px]"
+    >
       <DialogHeader>
         <DialogTitle>{{ props.title }}</DialogTitle>
         <DialogDescription v-if="props.description">{{ props.description }}</DialogDescription>

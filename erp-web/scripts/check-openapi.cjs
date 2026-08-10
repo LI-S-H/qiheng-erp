@@ -251,8 +251,8 @@ for (const fragment of ['normalizeReturnDetail', 'normalizeReturnItem', 'normali
 }
 for (const fragment of [
   'ListFilterPanel', 'ListFilterActions', 'ListSummaryStrip', 'ListLoadingOverlay', 'DataTablePagination',
-  'RemoteSearchSelect', 'AnchoredSelect', 'OrderDatePicker', 'RowActionsMenu', 'ConfirmDialog', 'PromptDialog',
-  'usePagedQuery', 'props.config.service', 'availableReturnQty', 'businessLabel',
+  'RemoteSearchSelect', 'AnchoredSelect', 'OrderDatePicker', 'ConfirmDialog', 'PromptDialog',
+  'usePagedQuery', 'props.config.service', 'availableReturnQty', 'businessLabel', 'hasReturnActions', 'openDetailEdit', '处理',
 ]) {
   if (!returnViewSource.includes(fragment)) throw new Error(`通用退货页面未复用标准组件或缺少关键实现：${fragment}`);
 }
@@ -714,11 +714,11 @@ if (!stockBillViewSource.includes('新增入库单')
   || !stockBillViewSource.includes('defectiveQty')
   || !stockBillViewSource.includes('responsibleByName')
   || !stockBillViewSource.includes('itemQuantityStep')
-  || !stockBillViewSource.includes('openSubmitDetail(row)')
-  || !stockBillViewSource.includes('openConfirmDetail(row)')
+  || !stockBillViewSource.includes('hasStockBillActions')
+  || !stockBillViewSource.includes('openDetailEdit')
   || !stockBillViewSource.includes('handleConfirm(detail)')
   || !stockBillViewSource.includes('handleSubmit(detail)')
-  || !stockBillViewSource.includes('handleCancel(row)')
+  || !stockBillViewSource.includes('@click="handleCancel(detail)"')
   || !stockBillViewSource.includes('<ListFilterPanel layout="content"')
   || !stockBillViewSource.includes('data-filter-size="compact"')
   || !stockBillViewSource.includes('entryModeOptions')
@@ -729,7 +729,8 @@ if (!stockBillViewSource.includes('新增入库单')
   || !stockBillViewSource.includes('submitStockBill')
   || !stockBillViewSource.includes('stock-bill-table-scroll')
   || !stockBillViewSource.includes('stock-bill-form-table-scroll')
-  || !stockBillViewSource.includes('detail-field-grid')
+  || !stockBillViewSource.includes('stock-workbench-info__facts')
+  || !stockBillViewSource.includes('<dt>作业单号</dt>')
   || !stockBillViewSource.includes('本次入库数量')
   || !stockBillViewSource.includes('本次出库数量')
   || !pageDesign.includes('## 16. 仓库库存模块：入库单与出库单')

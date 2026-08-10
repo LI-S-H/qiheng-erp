@@ -24,12 +24,12 @@
 | contact_name  | varchar(100)  | 联系人                |
 | contact_phone | varchar(32)   | 联系电话               |
 | address       | varchar(255)  | 地址                 |
-| credit_limit  | decimal(18,2) | 信用额度，MVP 先仅记录不做强拦截 |
+| credit_limit  | int           | 信用额度，放大100倍保存，18000000表示180000.00，MVP 仅记录不做强拦截 |
 | status        | tinyint       | 状态：1 启用，0 禁用       |
 | create_time   | datetime      | 创建时间               |
 | update_time   | datetime      | 更新时间               |
-| updated_by_id | bigint        | 最后维护人ID，历史数据可为空       |
-| updated_by_name | varchar(100) | 最后维护人姓名，历史数据可为空     |
+| updated_by_id | bigint        | 最后维护人ID，新建/编辑/启停时由后端写入，不允许为空       |
+| updated_by_name | varchar(100) | 最后维护人姓名，新建/编辑/启停时由后端写入，不允许为空     |
 | deleted       | tinyint       | 逻辑删除               |
 | remark        | varchar(500)  | 备注                 |
 
@@ -47,7 +47,7 @@
 | warehouse_id           | bigint        | 出库仓库ID                                                                           |
 | warehouse_name         | varchar(100)  | 出库仓库名称，冗余                                                                        |
 | status                 | varchar(32)   | 状态：`DRAFT`、`SUBMITTED`、`APPROVED`、`PARTIAL_OUTBOUND`、`OUTBOUND_DONE`、`CANCELLED` |
-| total_amount           | decimal(18,2) | 订单总金额                                                                            |
+| total_amount           | int           | 订单总金额，放大100倍保存，0表示0.00                                                                            |
 | expected_delivery_date | date          | 预计发货日期                                                                           |
 | locked_at              | datetime      | 库存锁定时间                                                                           |
 | created_by_id          | bigint        | 创建人ID                                                                            |
@@ -81,8 +81,8 @@
 | quantity       | decimal(18,4) | 销售数量    |
 | locked_qty     | decimal(18,4) | 已锁定库存数量 |
 | outbound_qty   | decimal(18,4) | 已出库数量   |
-| unit_price     | decimal(18,2) | 销售单价    |
-| total_amount   | decimal(18,2) | 明细金额    |
+| unit_price     | int           | 销售单价，放大100倍保存，0表示0.00    |
+| total_amount   | int           | 明细金额，放大100倍保存，0表示0.00    |
 | create_time    | datetime      | 创建时间    |
 | update_time    | datetime      | 更新时间    |
 | remark         | varchar(500)  | 备注      |

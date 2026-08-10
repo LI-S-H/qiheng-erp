@@ -1,14 +1,14 @@
 package com.qiheng.erp.sales.domain.salesorder.entity;
 
 import java.io.Serial;
-import java.math.BigDecimal;
-
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.annotation.IdType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -65,9 +65,9 @@ public class SalesOrder implements Serializable {
     @TableField("status")
     private String status;
 
-    @Schema(description = "订单总金额")
+    @Schema(description = "订单总金额，放大100倍保存，N 表示 N/100.00")
     @TableField("total_amount")
-    private BigDecimal totalAmount;
+    private Integer totalAmount;
 
     @Schema(description = "预计发货日期")
     @TableField("expected_delivery_date")
@@ -119,6 +119,7 @@ public class SalesOrder implements Serializable {
 
     @Schema(description = "逻辑删除：0正常，1删除")
     @TableField("deleted")
+    @TableLogic
     private Integer deleted;
 
     @Schema(description = "备注")

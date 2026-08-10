@@ -6917,7 +6917,7 @@ components:
         pageSize: { type: integer, minimum: 1 }
     SalesOrder:
       type: object
-      required: [salesOrderId, salesNo, customerId, customerCode, customerName, warehouseId, warehouseName, status, totalAmount, expectedDeliveryDate, lockedAt, createdById, createdByName, submittedAt, approvedById, approvedByName, approvedAt, createTime, updateTime, version, remark]
+      required: [salesOrderId, salesNo, customerId, customerCode, customerName, warehouseId, warehouseName, status, totalAmount, createdById, createdByName, approvedByName, createTime, updateTime, version, remark]
       properties:
         salesOrderId: { type: string, description: 对应 `sales_order.id`，BIGINT 按字符串传输 }
         salesNo: { type: string, maxLength: 64, readOnly: true, description: 对应 `sales_order.sales_no`，由后端生成、全局唯一 }

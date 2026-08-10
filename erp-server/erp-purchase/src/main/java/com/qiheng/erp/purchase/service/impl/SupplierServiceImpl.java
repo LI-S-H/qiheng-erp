@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.CodeGen;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierBatchDeleteDto;
@@ -124,7 +125,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     public SupplierVo create(SupplierCreateDto dto) {
         LoginUser currentUser = UserContext.requireCurrentUser();
         Supplier entity = new Supplier();
-        entity.setSupplierCode(generateSupplierCode());
+        entity.setSupplierCode(CodeGen.next(stringRedisTemplate, "supplier:code", "S", 4));
         entity.setSupplierName(dto.getSupplierName());
         entity.setContactName(dto.getContactName());
         entity.setContactPhone(dto.getContactPhone());
@@ -261,15 +262,6 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商存在供货产品，无法删除");
         }
         // TODO 采购订单模块完成后，补充检查供应商是否存在采购订单，存在则拒绝删除
-    }
-
-    /**
-     * 生成供应商编码
-     * @return 供应商编码
-     */
-    private String generateSupplierCode() {
-        Long seq = stringRedisTemplate.opsForValue().increment("supplier:code");
-        return "S" + String.format("%04d", seq);
     }
 
     /**

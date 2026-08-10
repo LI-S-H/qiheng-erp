@@ -1,7 +1,6 @@
 package com.qiheng.erp.sales.domain.customer.entity;
 
 import java.io.Serial;
-import java.math.BigDecimal;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -57,7 +56,7 @@ public class Customer implements Serializable {
 
     @Schema(description = "信用额度")
     @TableField("credit_limit")
-    private BigDecimal creditLimit;
+    private Integer creditLimit;
 
     @Schema(description = "状态：1启用，0禁用")
     @TableField("status")
@@ -73,7 +72,7 @@ public class Customer implements Serializable {
 
     @Schema(description = "最后维护人ID")
     @TableField("updated_by_id")
-    private Long updatedById;
+    private long updatedById;
 
     @Schema(description = "最后维护人姓名")
     @TableField("updated_by_name")

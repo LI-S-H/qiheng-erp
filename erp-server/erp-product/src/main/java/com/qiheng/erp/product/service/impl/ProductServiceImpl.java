@@ -9,6 +9,7 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.CodeGen;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
@@ -136,7 +137,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     @Override
     @DistributedLock(key ="'product:category:global'",waitTime = 5,leaseTime = 10,timeUnit = TimeUnit.SECONDS)
     public ProductVo add(Product product) {
-        product.setProductCode(generateProductCode());
+        product.setProductCode(CodeGen.next(stringRedisTemplate, "product:code", "P", 6));
         if (product.getSafetyStockQty() != null) {
             product.setSafetyStockQty(BigDecimal.valueOf(QtyUtil.toStored(product.getSafetyStockQty())));
         }
@@ -183,15 +184,6 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         return vo;
     }
 
-
-    /**
-     * 生成产品编码
-     * @return 产品编码
-     */
-    private String generateProductCode() {
-        Long seq = stringRedisTemplate.opsForValue().increment("product:code");
-        return "P" + String.format("%06d", seq);
-    }
 
     /**
      * 批量更新产品状态

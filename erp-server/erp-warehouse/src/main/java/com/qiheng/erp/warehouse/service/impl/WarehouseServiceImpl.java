@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.CodeGen;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseBatchDeleteDto;
 import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseBatchStatusDto;
@@ -109,7 +110,7 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
      */
     @Override
     public WarehouseVo add(Warehouse warehouse) {
-        warehouse.setWarehouseCode(generateWarehouseCode());
+        warehouse.setWarehouseCode(CodeGen.next(stringRedisTemplate, "warehouse:code", "WH", 6));
         if (warehouse.getStatus() == null) {
             warehouse.setStatus(1);
         }
@@ -118,15 +119,6 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
         }
         warehouseMapper.insert(warehouse);
         return getDetailById(warehouse.getId());
-    }
-
-    /**
-     * 生成仓库编码
-     * @return 仓库编码
-     */
-    private String generateWarehouseCode() {
-        Long seq = stringRedisTemplate.opsForValue().increment("warehouse:code");
-        return "WH" + String.format("%06d", seq);
     }
 
     /**

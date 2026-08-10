@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderPageDto;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
+import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
 
 /**
@@ -22,4 +23,11 @@ public interface ISalesOrderService extends IService<SalesOrder> {
      * @return 分页结果集
      */
     PageResult<SalesOrderVo> page(SalesOrderPageDto dto);
+
+    /**
+     * 获取销售订单详情（主表 + 明细数组）
+     * @param salesOrderId 销售订单ID
+     * @return 销售订单详情VO
+     */
+    SalesOrderDetailVo getDetail(Long salesOrderId);
 }

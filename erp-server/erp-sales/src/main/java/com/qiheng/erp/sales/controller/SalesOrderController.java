@@ -5,6 +5,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderPageDto;
+import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
 import com.qiheng.erp.sales.service.ISalesOrderService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -12,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -43,6 +45,20 @@ public class SalesOrderController {
         log.info("分页查询销售订单，参数: {}", dto);
         PageResult<SalesOrderVo> page = salesOrderService.page(dto);
         return Result.ok(page);
+    }
+
+    /**
+     * 获取销售订单详情（主表 + 明细数组）
+     * @param salesOrderId 销售订单ID
+     * @return 销售订单详情VO
+     */
+    @GetMapping("/{salesOrderId}")
+    @Operation(summary = "获取销售订单详情")
+    public Result<SalesOrderDetailVo> getDetail(@PathVariable Long salesOrderId) {
+        StpUtil.checkPermission("sales:query");
+        log.info("获取销售订单详情，参数: salesOrderId={}", salesOrderId);
+        SalesOrderDetailVo detail = salesOrderService.getDetail(salesOrderId);
+        return Result.ok(detail);
     }
 
 }

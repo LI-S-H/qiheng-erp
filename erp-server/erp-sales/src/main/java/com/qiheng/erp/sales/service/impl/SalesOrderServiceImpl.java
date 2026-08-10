@@ -4,19 +4,25 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderPageDto;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
+import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrderItem;
+import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
+import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderItemVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
+import com.qiheng.erp.sales.mapper.SalesOrderItemMapper;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
 import com.qiheng.erp.sales.service.ISalesOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * <p>
@@ -30,6 +36,8 @@ import java.math.BigDecimal;
 public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOrder> implements ISalesOrderService {
     @Autowired
     private SalesOrderMapper salesOrderMapper;
+    @Autowired
+    private SalesOrderItemMapper salesOrderItemMapper;
 
     /**
      * 销售订单分页查询（逻辑删除过滤按全局配置自动追加）
@@ -56,22 +64,47 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     }
 
     /**
+     * 获取销售订单详情（主表 + 明细数组）
+     * @param salesOrderId 销售订单ID
+     * @return 销售订单详情VO
+     */
+    @Override
+    public SalesOrderDetailVo getDetail(Long salesOrderId) {
+        SalesOrder order = salesOrderMapper.selectById(salesOrderId);
+        if (order == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND);
+        }
+        List<SalesOrderItem> items = salesOrderItemMapper.selectList(
+                new LambdaQueryWrapper<SalesOrderItem>()
+                        .eq(SalesOrderItem::getSalesOrderId, salesOrderId)
+        );
+        SalesOrderDetailVo detail = new SalesOrderDetailVo();
+        BeanUtil.copyProperties(toVo(order), detail);
+        detail.setItems(items.stream().map(this::toItemVo).toList());
+        return detail;
+    }
+
+    /**
      * 实体转 VO，订单总金额从 100 倍存储值还原为业务小数
      */
     private SalesOrderVo toVo(SalesOrder entity) {
         SalesOrderVo vo = BeanUtil.copyProperties(entity, SalesOrderVo.class);
         vo.setSalesOrderId(entity.getId());
-        vo.setTotalAmount(totalAmountToDecimal(entity.getTotalAmount()));
+        vo.setTotalAmount(QtyUtil.toDecimal(entity.getTotalAmount()));
         return vo;
     }
 
     /**
-     * 订单总金额 100 倍存储值转业务小数
+     * 明细实体转 VO，数量与金额字段均从 100 倍存储值还原为业务小数
      */
-    private BigDecimal totalAmountToDecimal(Integer totalAmount) {
-        if (totalAmount == null) {
-            return null;
-        }
-        return QtyUtil.toDecimal(BigDecimal.valueOf(totalAmount));
+    private SalesOrderItemVo toItemVo(SalesOrderItem entity) {
+        SalesOrderItemVo vo = BeanUtil.copyProperties(entity, SalesOrderItemVo.class);
+        vo.setSalesOrderItemId(entity.getId());
+        vo.setQuantity(QtyUtil.toDecimal(entity.getQuantity()));
+        vo.setLockedQty(QtyUtil.toDecimal(entity.getLockedQty()));
+        vo.setOutboundQty(QtyUtil.toDecimal(entity.getOutboundQty()));
+        vo.setUnitPrice(QtyUtil.toDecimal(entity.getUnitPrice()));
+        vo.setTotalAmount(QtyUtil.toDecimal(entity.getTotalAmount()));
+        return vo;
     }
 }

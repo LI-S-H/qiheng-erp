@@ -2919,7 +2919,7 @@ paths:
       description: |
         查询未删除的 `customer` 数据。客户编码、客户名称和联系人分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
         不接收含义不明确的 `keyword` 参数；`creditLimit` 按金额真实值返回，对应数据库 `customer.credit_limit`。
-        本接口需要 `sales:query` 权限。
+        本接口需要 `customer:query` 权限。
       operationId: salesCustomerPage
       security:
         - SaTokenAuth: []
@@ -2964,7 +2964,7 @@ paths:
     post:
       tags: [SalesCustomer]
       summary: 新增客户
-      description: 客户编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交客户编码；信用额度仅记录，不在 MVP 阶段强拦截销售下单。本接口需要 `sales:create` 权限。
+      description: 客户编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交客户编码；信用额度仅记录，不在 MVP 阶段强拦截销售下单。本接口需要 `customer:create` 权限。
       operationId: salesCustomerCreate
       security:
         - SaTokenAuth: []
@@ -2993,7 +2993,7 @@ paths:
     patch:
       tags: [SalesCustomer]
       summary: 批量修改客户状态
-      description: 停用客户后不得用于新建销售订单，但历史订单继续保留客户快照。本接口需要 `sales:create` 权限。
+      description: 停用客户后不得用于新建销售订单，但历史订单继续保留客户快照。本接口需要 `customer:manage` 权限。
       operationId: salesCustomerBatchStatus
       security:
         - SaTokenAuth: []
@@ -3017,7 +3017,7 @@ paths:
     post:
       tags: [SalesCustomer]
       summary: 批量删除客户
-      description: 批量逻辑删除客户；任一客户存在销售订单时整批返回 409，避免破坏销售追溯链路。本接口需要 `sales:create` 权限。
+      description: 批量逻辑删除客户；任一客户存在销售订单或销售退货单时整批返回 409，避免破坏销售追溯链路。本接口需要 `customer:manage` 权限。
       operationId: salesCustomerBatchDelete
       security:
         - SaTokenAuth: []
@@ -3041,7 +3041,7 @@ paths:
     put:
       tags: [SalesCustomer]
       summary: 编辑客户
-      description: 编辑请求不接收 `customerCode`；客户名称修改时，后端同步当前可编辑销售订单快照，历史已审核订单继续保留下单时客户快照。本接口需要 `sales:create` 权限。
+      description: 编辑请求不接收 `customerCode`；客户名称修改时，后端同步当前可编辑销售订单快照，历史已审核订单继续保留下单时客户快照。本接口需要 `customer:create` 权限。
       operationId: salesCustomerUpdate
       security:
         - SaTokenAuth: []
@@ -3071,7 +3071,7 @@ paths:
     delete:
       tags: [SalesCustomer]
       summary: 删除客户
-      description: 逻辑删除客户；存在 `sales_order` 销售订单时返回 409。本接口需要 `sales:create` 权限。
+      description: 逻辑删除客户；存在 `sales_order` 销售订单或销售退货单时返回 409。本接口需要 `customer:manage` 权限。
       operationId: salesCustomerDelete
       security:
         - SaTokenAuth: []
@@ -3097,7 +3097,7 @@ paths:
     patch:
       tags: [SalesCustomer]
       summary: 修改客户状态
-      description: 停用后客户不能用于新建销售订单，历史订单不受影响。本接口需要 `sales:create` 权限。
+      description: 停用后客户不能用于新建销售订单，历史订单不受影响。本接口需要 `customer:manage` 权限。
       operationId: salesCustomerStatus
       security:
         - SaTokenAuth: []
@@ -6839,7 +6839,7 @@ components:
 
     SalesCustomer:
       type: object
-      required: [customerId, customerCode, customerName, contactName, contactPhone, address, creditLimit, status, version, remark, createTime, updateTime]
+      required: [customerId, customerCode, customerName, contactName, contactPhone, address, creditLimit, status, version, remark, createTime, updateTime, updatedById, updatedByName]
       properties:
         customerId: { type: string, description: 对应 `customer.id`，BIGINT 按字符串传输 }
         customerCode: { type: string, minLength: 1, maxLength: 64, readOnly: true, description: 对应 `customer.customer_code`，由后端生成、全局唯一且创建后不可修改 }
@@ -6853,8 +6853,8 @@ components:
         remark: { type: string, maxLength: 500, description: 对应 `customer.remark` }
         createTime: { type: string, description: 对应 `customer.create_time` }
         updateTime: { type: string, description: 对应 `customer.update_time` }
-        updatedById: { type: string, nullable: true, readOnly: true, description: 对应 `customer.updated_by_id`；销售后端待实现，BIGINT 按字符串传输 }
-        updatedByName: { type: string, nullable: true, readOnly: true, description: 对应 `customer.updated_by_name`；销售后端待实现 }
+        updatedById: { type: string, readOnly: true, description: 对应 `customer.updated_by_id`，BIGINT 按字符串传输，后端必有值 }
+        updatedByName: { type: string, readOnly: true, description: 对应 `customer.updated_by_name`，后端必有值 }
 
     SalesCustomerFormRequest:
       type: object

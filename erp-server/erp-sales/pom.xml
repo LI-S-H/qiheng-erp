@@ -29,6 +29,10 @@
         </dependency>
         <dependency>
             <groupId>com.qiheng</groupId>
+            <artifactId>erp-return</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qiheng</groupId>
             <artifactId>erp-system</artifactId>
         </dependency>
     </dependencies>

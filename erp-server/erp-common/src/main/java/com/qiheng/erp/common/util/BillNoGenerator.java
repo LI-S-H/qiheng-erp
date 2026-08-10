@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 import java.util.function.LongSupplier;
 import java.util.Collection;
 
@@ -65,7 +66,7 @@ public class BillNoGenerator {
     public long findMaxExistingSequence(String prefix, Collection<Object> billNos) {
         String dayPrefix = prefix + LocalDate.now().format(DAY_FMT);
         return billNos.stream()
-                .filter(java.util.Objects::nonNull)
+                .filter(Objects::nonNull)
                 .map(String::valueOf)
                 .filter(billNo -> billNo.startsWith(dayPrefix) && billNo.length() >= dayPrefix.length() + 5)
                 .map(billNo -> billNo.substring(billNo.length() - 5))

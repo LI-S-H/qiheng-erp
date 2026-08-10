@@ -7,22 +7,42 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.util.BillNoGenerator;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
+import com.qiheng.erp.product.domain.entity.Product;
+import com.qiheng.erp.product.mapper.ProductMapper;
+import com.qiheng.erp.sales.domain.customer.entity.Customer;
+import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderCreateDto;
+import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderDraftItemDto;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderPageDto;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrderItem;
+import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderItemVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
+import com.qiheng.erp.sales.mapper.CustomerMapper;
 import com.qiheng.erp.sales.mapper.SalesOrderItemMapper;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
+import com.qiheng.erp.sales.service.ISalesOrderItemService;
 import com.qiheng.erp.sales.service.ISalesOrderService;
+import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
+import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
+import com.qiheng.erp.security.context.UserContext;
+import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -38,6 +58,16 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private SalesOrderMapper salesOrderMapper;
     @Autowired
     private SalesOrderItemMapper salesOrderItemMapper;
+    @Autowired
+    private ISalesOrderItemService salesOrderItemService;
+    @Autowired
+    private CustomerMapper customerMapper;
+    @Autowired
+    private ProductMapper productMapper;
+    @Autowired
+    private WarehouseMapper warehouseMapper;
+    @Autowired
+    private BillNoGenerator billNoGenerator;
 
     /**
      * 销售订单分页查询（逻辑删除过滤按全局配置自动追加）
@@ -85,6 +115,104 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     }
 
     /**
+     * 新增销售订单草稿（后端生成销售单号、写入客户/仓库/产品快照、数量×100 持久化、重算订单总金额）
+     * @param dto 草稿新增请求 DTO
+     * @return 新增后的销售订单详情VO
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SalesOrderDetailVo createDraft(SalesOrderCreateDto dto) {
+        Long customerId = IdUtil.parseRequiredLongId(dto.getCustomerId(), "客户ID");
+        Long warehouseId = IdUtil.parseRequiredLongId(dto.getWarehouseId(), "出库仓库ID");
+        // 1. 校验客户存在 + 启用
+        Customer customer = customerMapper.selectById(customerId);
+        if (customer == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "客户不存在");
+        }
+        if (Integer.valueOf(0).equals(customer.getStatus())) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "客户已停用，不能下单");
+        }
+        // 2. 校验出库仓库存在 + 启用
+        Warehouse warehouse = warehouseMapper.selectById(warehouseId);
+        if (warehouse == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库仓库不存在");
+        }
+        if (Integer.valueOf(0).equals(warehouse.getStatus())) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "出库仓库已停用，不能下单");
+        }
+        // 3. 批量查询产品（避免循环查库）
+        List<Long> productIds = dto.getItems().stream()
+                .map(item -> IdUtil.parseRequiredLongId(item.getProductId(), "产品ID"))
+                .toList();
+        Map<Long, Product> productMap = productMapper.selectByIds(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+        // 当前登录用户
+        LoginUser loginUser = UserContext.requireCurrentUser();
+        // 4. 生成销售单号（Redis 按月重置，单号按天显示 yyyyMMdd）
+        String salesNo = billNoGenerator.nextNo("SO");
+        // 5. 校验明细 + 同时累加总金额 + 构建明细实体
+        Set<Long> seenProductIds = new HashSet<>();
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        List<SalesOrderItem> items = new ArrayList<>();
+        for (SalesOrderDraftItemDto itemDto : dto.getItems()) {
+            Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
+            // 重复产品校验
+            if (!seenProductIds.add(productId)) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "同一产品不能重复添加: " + itemDto.getProductId());
+            }
+            // 校验产品存在 + 启用
+            Product product = productMap.get(productId);
+            if (product == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "产品不存在: " + itemDto.getProductId());
+            }
+            if (Integer.valueOf(0).equals(product.getStatus())) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "产品已停用，不能下单: " + product.getProductCode());
+            }
+            // 数量精度校验：业务小数位不得超过 product.quantityPrecision
+            validateQuantityPrecision(itemDto.getQuantity(), product.getQuantityPrecision(),
+                    product.getProductCode());
+            BigDecimal lineAmount = itemDto.getQuantity().multiply(itemDto.getUnitPrice())
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            totalAmount = totalAmount.add(lineAmount);
+            SalesOrderItem item = new SalesOrderItem();
+            item.setSalesNo(salesNo);
+            item.setProductId(productId);
+            item.setProductCode(product.getProductCode());
+            item.setProductName(product.getProductName());
+            item.setUnitName(product.getUnitName());
+            item.setQuantityPrecision(product.getQuantityPrecision());
+            item.setQuantity(QtyUtil.toStored(itemDto.getQuantity()));
+            item.setLockedQty(0L);
+            item.setOutboundQty(0L);
+            item.setUnitPrice(QtyUtil.toStoredInt(itemDto.getUnitPrice()));
+            item.setTotalAmount(QtyUtil.toStoredInt(lineAmount));
+            item.setRemark(itemDto.getRemark());
+            items.add(item);
+        }
+        // 6. 插入主表
+        SalesOrder order = new SalesOrder();
+        order.setSalesNo(salesNo);
+        order.setCustomerId(customerId);
+        order.setCustomerCode(customer.getCustomerCode());
+        order.setCustomerName(customer.getCustomerName());
+        order.setWarehouseId(warehouseId);
+        order.setWarehouseName(warehouse.getWarehouseName());
+        order.setStatus(SalesOrderStatus.DRAFT.name());
+        order.setExpectedDeliveryDate(dto.getExpectedDeliveryDate());
+        order.setTotalAmount(QtyUtil.toStoredInt(totalAmount));
+        order.setCreatedById(loginUser.getUserId());
+        order.setCreatedByName(loginUser.getRealName());
+        order.setRemark(dto.getRemark());
+        salesOrderMapper.insert(order);
+        // 7. 回填明细的订单ID并批量插入
+        items.forEach(item -> item.setSalesOrderId(order.getId()));
+        salesOrderItemService.saveBatch(items);
+        return getDetail(order.getId());
+    }
+
+    /**
      * 实体转 VO，订单总金额从 100 倍存储值还原为业务小数
      */
     private SalesOrderVo toVo(SalesOrder entity) {
@@ -106,5 +234,25 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         vo.setUnitPrice(QtyUtil.toDecimal(entity.getUnitPrice()));
         vo.setTotalAmount(QtyUtil.toDecimal(entity.getTotalAmount()));
         return vo;
+    }
+
+    /**
+     * 校验销售数量的小数位不得超过产品数量精度
+     */
+    private void validateQuantityPrecision(BigDecimal quantity, Integer quantityPrecision, String productCode) {
+        if (quantity == null || quantityPrecision == null) {
+            return;
+        }
+        // stripTrailingZeros 后小数位 0 表示整数
+        BigDecimal normalized = quantity.stripTrailingZeros();
+        int scale = normalized.scale();
+        // stripTrailingZeros 对整数会返回 scale < 0 的情况（如 100 → scale=-2），需 clamp 到 0
+        if (scale < 0) {
+            scale = 0;
+        }
+        if (scale > quantityPrecision) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "产品 " + productCode + " 数量小数位不得超过 " + quantityPrecision + " 位");
+        }
     }
 }

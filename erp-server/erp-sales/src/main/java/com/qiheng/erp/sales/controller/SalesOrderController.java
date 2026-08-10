@@ -4,6 +4,7 @@ package com.qiheng.erp.sales.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
+import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderCreateDto;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderPageDto;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
@@ -14,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -45,6 +48,20 @@ public class SalesOrderController {
         log.info("分页查询销售订单，参数: {}", dto);
         PageResult<SalesOrderVo> page = salesOrderService.page(dto);
         return Result.ok(page);
+    }
+
+    /**
+     * 新增销售订单草稿（不锁定库存、不生成出库单；销售单号、客户/仓库/产品快照、订单总金额、创建人和审计字段由后端维护）
+     * @param dto 草稿新增请求 DTO
+     * @return 新增后的销售订单详情VO
+     */
+    @PostMapping
+    @Operation(summary = "新增销售订单草稿")
+    public Result<SalesOrderDetailVo> createDraft(@Valid @RequestBody SalesOrderCreateDto dto) {
+        StpUtil.checkPermission("sales:create");
+        log.info("新增销售订单草稿，参数: {}", dto);
+        SalesOrderDetailVo detail = salesOrderService.createDraft(dto);
+        return Result.ok(detail);
     }
 
     /**

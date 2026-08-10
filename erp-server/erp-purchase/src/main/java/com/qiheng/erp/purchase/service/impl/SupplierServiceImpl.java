@@ -28,7 +28,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,14 +87,14 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         vo.setContactPhone(entity.getContactPhone());
         vo.setAddress(entity.getAddress());
         vo.setPaymentTerms(entity.getPaymentTerms());
-        vo.setOverallScore(scoreToDecimal(entity.getOverallScore()));
-        vo.setDeliveryScore(scoreToDecimal(entity.getDeliveryScore()));
-        vo.setQualityScore(scoreToDecimal(entity.getQualityScore()));
-        vo.setPriceScore(scoreToDecimal(entity.getPriceScore()));
-        vo.setServiceScore(scoreToDecimal(entity.getServiceScore()));
+        vo.setOverallScore(QtyUtil.toDecimal(entity.getOverallScore()));
+        vo.setDeliveryScore(QtyUtil.toDecimal(entity.getDeliveryScore()));
+        vo.setQualityScore(QtyUtil.toDecimal(entity.getQualityScore()));
+        vo.setPriceScore(QtyUtil.toDecimal(entity.getPriceScore()));
+        vo.setServiceScore(QtyUtil.toDecimal(entity.getServiceScore()));
         vo.setAvgDeliveryDays(entity.getAvgDeliveryDays());
-        vo.setOnTimeRate(scoreToDecimal(entity.getOnTimeRate()));
-        vo.setQualifiedRate(scoreToDecimal(entity.getQualifiedRate()));
+        vo.setOnTimeRate(QtyUtil.toDecimal(entity.getOnTimeRate()));
+        vo.setQualifiedRate(QtyUtil.toDecimal(entity.getQualifiedRate()));
         vo.setStatus(entity.getStatus());
         vo.setVersion(entity.getVersion());
         vo.setRemark(entity.getRemark());
@@ -104,16 +103,6 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         vo.setUpdatedById(entity.getUpdatedById());
         vo.setUpdatedByName(entity.getUpdatedByName());
         return vo;
-    }
-
-    /**
-     * 评分/百分率整数转业务小数（存储值 ÷ 100）
-     */
-    private BigDecimal scoreToDecimal(Integer score) {
-        if (score == null) {
-            return null;
-        }
-        return QtyUtil.toDecimal(BigDecimal.valueOf(score));
     }
 
     /**
@@ -131,14 +120,14 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         entity.setContactPhone(dto.getContactPhone());
         entity.setAddress(dto.getAddress());
         entity.setPaymentTerms(dto.getPaymentTerms());
-        entity.setOverallScore(scoreToStored(dto.getOverallScore()));
-        entity.setDeliveryScore(scoreToStored(dto.getDeliveryScore()));
-        entity.setQualityScore(scoreToStored(dto.getQualityScore()));
-        entity.setPriceScore(scoreToStored(dto.getPriceScore()));
-        entity.setServiceScore(scoreToStored(dto.getServiceScore()));
+        entity.setOverallScore(QtyUtil.toStoredInt(dto.getOverallScore()));
+        entity.setDeliveryScore(QtyUtil.toStoredInt(dto.getDeliveryScore()));
+        entity.setQualityScore(QtyUtil.toStoredInt(dto.getQualityScore()));
+        entity.setPriceScore(QtyUtil.toStoredInt(dto.getPriceScore()));
+        entity.setServiceScore(QtyUtil.toStoredInt(dto.getServiceScore()));
         entity.setAvgDeliveryDays(dto.getAvgDeliveryDays());
-        entity.setOnTimeRate(scoreToStored(dto.getOnTimeRate()));
-        entity.setQualifiedRate(scoreToStored(dto.getQualifiedRate()));
+        entity.setOnTimeRate(QtyUtil.toStoredInt(dto.getOnTimeRate()));
+        entity.setQualifiedRate(QtyUtil.toStoredInt(dto.getQualifiedRate()));
         entity.setStatus(dto.getStatus());
         entity.setRemark(dto.getRemark());
         entity.setUpdatedById(currentUser.getUserId());
@@ -169,14 +158,14 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         entity.setContactPhone(dto.getContactPhone());
         entity.setAddress(dto.getAddress());
         entity.setPaymentTerms(dto.getPaymentTerms());
-        entity.setOverallScore(scoreToStored(dto.getOverallScore()));
-        entity.setDeliveryScore(scoreToStored(dto.getDeliveryScore()));
-        entity.setQualityScore(scoreToStored(dto.getQualityScore()));
-        entity.setPriceScore(scoreToStored(dto.getPriceScore()));
-        entity.setServiceScore(scoreToStored(dto.getServiceScore()));
+        entity.setOverallScore(QtyUtil.toStoredInt(dto.getOverallScore()));
+        entity.setDeliveryScore(QtyUtil.toStoredInt(dto.getDeliveryScore()));
+        entity.setQualityScore(QtyUtil.toStoredInt(dto.getQualityScore()));
+        entity.setPriceScore(QtyUtil.toStoredInt(dto.getPriceScore()));
+        entity.setServiceScore(QtyUtil.toStoredInt(dto.getServiceScore()));
         entity.setAvgDeliveryDays(dto.getAvgDeliveryDays());
-        entity.setOnTimeRate(scoreToStored(dto.getOnTimeRate()));
-        entity.setQualifiedRate(scoreToStored(dto.getQualifiedRate()));
+        entity.setOnTimeRate(QtyUtil.toStoredInt(dto.getOnTimeRate()));
+        entity.setQualifiedRate(QtyUtil.toStoredInt(dto.getQualifiedRate()));
         entity.setStatus(dto.getStatus());
         entity.setRemark(dto.getRemark());
         entity.setVersion(dto.getVersion());
@@ -262,15 +251,5 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商存在供货产品，无法删除");
         }
         // TODO 采购订单模块完成后，补充检查供应商是否存在采购订单，存在则拒绝删除
-    }
-
-    /**
-     * 业务小数转100倍存储值（如 89.75 → 8975）
-     */
-    private Integer scoreToStored(BigDecimal score) {
-        if (score == null) {
-            return null;
-        }
-        return score.multiply(BigDecimal.valueOf(100)).intValue();
     }
 }

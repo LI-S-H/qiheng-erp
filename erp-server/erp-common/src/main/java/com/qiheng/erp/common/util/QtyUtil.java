@@ -36,6 +36,19 @@ public final class QtyUtil {
     }
 
     /**
+     * 100 倍存储值转业务小数（Integer 重载，1235 → 12.35）
+     *
+     * @param stored 数据库存储值，null 返回 null
+     * @return 业务小数，保留 2 位
+     */
+    public static BigDecimal toDecimal(Integer stored) {
+        if (stored == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(stored).divide(DIVISOR, SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
      * 100 倍存储值（BigDecimal 形式）转业务小数
      * <p>
      * 适用于 VO 字段已为 BigDecimal、但仍按 100 倍存储的场景。
@@ -63,6 +76,21 @@ public final class QtyUtil {
         return decimal.multiply(DIVISOR)
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValue();
+    }
+
+    /**
+     * 业务小数转 100 倍存储值（Integer 重载，12.35 → 1235）
+     *
+     * @param decimal 业务小数，null 返回 null
+     * @return 100 倍整数
+     */
+    public static Integer toStoredInt(BigDecimal decimal) {
+        if (decimal == null) {
+            return null;
+        }
+        return decimal.multiply(DIVISOR)
+                .setScale(0, RoundingMode.HALF_UP)
+                .intValue();
     }
 
     /**

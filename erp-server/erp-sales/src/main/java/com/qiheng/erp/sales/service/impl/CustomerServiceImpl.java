@@ -34,8 +34,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +54,6 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
     private ReturnOrderMapper returnOrderMapper;
     @Autowired
     private SalesOrderMapper salesOrderMapper;
-
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
@@ -93,7 +90,7 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
         LoginUser currentUser = UserContext.requireCurrentUser();
         Customer entity = BeanUtil.copyProperties(dto, Customer.class);
         entity.setCustomerCode(CodeGen.next(stringRedisTemplate, "customer:code", "C", 4));
-        entity.setCreditLimit(creditLimitToStored(dto.getCreditLimit()));
+        entity.setCreditLimit(QtyUtil.toStoredInt(dto.getCreditLimit()));
         entity.setUpdatedById(currentUser.getUserId());
         entity.setUpdatedByName(currentUser.getRealName());
         customerMapper.insert(entity);
@@ -118,7 +115,7 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
         Customer entity = BeanUtil.copyProperties(dto, Customer.class);
         entity.setId(customerId);
         entity.setCustomerCode(null);
-        entity.setCreditLimit(creditLimitToStored(dto.getCreditLimit()));
+        entity.setCreditLimit(QtyUtil.toStoredInt(dto.getCreditLimit()));
         entity.setUpdatedById(currentUser.getUserId());
         entity.setUpdatedByName(currentUser.getRealName());
         int rows = customerMapper.updateById(entity);
@@ -219,29 +216,10 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
     private CustomerVo toVo(Customer entity) {
         CustomerVo vo = BeanUtil.copyProperties(entity, CustomerVo.class);
         vo.setCustomerId(entity.getId());
-        vo.setCreditLimit(creditLimitToDecimal(entity.getCreditLimit()));
+        vo.setCreditLimit(QtyUtil.toDecimal(entity.getCreditLimit()));
         return vo;
     }
 
-    /**
-     * 信用额度 100 倍存储值转业务小数
-     */
-    private BigDecimal creditLimitToDecimal(Integer creditLimit) {
-        if (creditLimit == null) {
-            return null;
-        }
-        return QtyUtil.toDecimal(BigDecimal.valueOf(creditLimit));
-    }
-
-    /**
-     * 业务小数转信用额度 100 倍存储值
-     */
-    private Integer creditLimitToStored(BigDecimal creditLimit) {
-        if (creditLimit == null) {
-            return null;
-        }
-        return QtyUtil.toStored(creditLimit).intValue();
-    }
 
     /**
      * 客户停用前置校验：存在未完成退货单或销售单时不允许停用

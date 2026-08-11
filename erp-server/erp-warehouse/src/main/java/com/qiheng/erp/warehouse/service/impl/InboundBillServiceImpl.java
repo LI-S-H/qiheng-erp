@@ -573,7 +573,10 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 item.setPendingQty(Math.max(0L, remaining - item.getCurrentQty()));
             }
         }
-        inboundBillItemService.updateBatchById(items);
+        if (!inboundBillItemService.updateBatchById(items)) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                    "入库单明细已被其他人修改，请刷新后重试");
+        }
 
         // 11. 更新入库单主表状态为已确认
         bill.setStatus(StockBillStatus.CONFIRMED.name());

@@ -565,7 +565,10 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 item.setPendingQty(Math.max(0L, remaining - item.getCurrentQty()));
             }
         }
-        outboundBillItemService.updateBatchById(items);
+        if (!outboundBillItemService.updateBatchById(items)) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                    "出库单明细已被其他人修改，请刷新后重试");
+        }
         // 更新出库单状态为已确认
         bill.setStatus(StockBillStatus.CONFIRMED.name());
         bill.setConfirmedById(currentUserId);

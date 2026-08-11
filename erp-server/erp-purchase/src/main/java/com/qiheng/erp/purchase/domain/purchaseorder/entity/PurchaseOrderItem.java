@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -89,4 +90,8 @@ public class PurchaseOrderItem implements Serializable {
     @TableField("remark")
     @Schema(description = "备注")
     private String remark;
+
+    @Schema(description = "乐观锁版本号")
+    @Version
+    private Integer version;
 }

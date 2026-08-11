@@ -2,6 +2,8 @@ package com.qiheng.erp.warehouse.domain.inbound.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 
 import java.io.Serial;
 import java.time.LocalDateTime;
@@ -106,6 +108,10 @@ public class InboundBillItem implements Serializable, StockBillDetailVoMapping.B
     @Schema(description="备注")
     @TableField("remark")
     private String remark;
+
+    @Schema(description="乐观锁版本号")
+    @Version
+    private Integer version;
 
     @Override
     @JsonIgnore

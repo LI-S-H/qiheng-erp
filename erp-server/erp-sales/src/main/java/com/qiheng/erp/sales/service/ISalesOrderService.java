@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderCreateDto;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderPageDto;
+import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderUpdateDto;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * <p>
@@ -59,4 +61,13 @@ public interface ISalesOrderService extends IService<SalesOrder> {
      * @param version 乐观锁版本号
      */
     void cancel(Long salesOrderId, Integer version);
+
+    /**
+     * 编辑销售订单（DRAFT / SUBMITTED 可编辑；SUBMITTED 含库存精确回算）
+     * @param salesOrderId 销售订单ID
+     * @param dto 编辑请求 DTO
+     * @return 编辑后的销售订单详情VO
+     */
+    SalesOrderDetailVo update(Long salesOrderId, SalesOrderUpdateDto dto);
+
 }

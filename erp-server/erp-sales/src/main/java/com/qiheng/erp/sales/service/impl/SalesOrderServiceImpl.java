@@ -16,6 +16,7 @@ import com.qiheng.erp.sales.domain.customer.entity.Customer;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderCreateDto;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderDraftItemDto;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderPageDto;
+import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderUpdateDto;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrderItem;
 import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
@@ -41,6 +42,7 @@ import com.qiheng.erp.warehouse.service.IOutboundBillItemService;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.qiheng.erp.warehouse.service.support.SourceOperationLockSupport;
 import com.qiheng.erp.warehouse.service.support.WarehouseStockLockSupport;
+import com.qiheng.erp.warehouse.service.support.WarehouseStockReservationSupport;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -51,11 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -69,6 +67,12 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOrder> implements ISalesOrderService {
+
+    /**
+     * 客户 + 仓库 校验结果载体（validateCustomerAndWarehouse 返回值）
+     */
+    private record CustomerWarehouse(Customer customer, Warehouse warehouse) {}
+
     @Autowired
     private SalesOrderMapper salesOrderMapper;
     @Autowired
@@ -95,6 +99,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private com.qiheng.erp.warehouse.service.IOutboundBillService outboundBillService;
     @Autowired
     private IOutboundBillItemService outboundBillItemService;
+    @Autowired
+    private WarehouseStockReservationSupport warehouseStockReservationSupport;
 
     /**
      * 销售订单分页查询（逻辑删除过滤按全局配置自动追加）
@@ -151,22 +157,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     public SalesOrderDetailVo createDraft(SalesOrderCreateDto dto) {
         Long customerId = IdUtil.parseRequiredLongId(dto.getCustomerId(), "客户ID");
         Long warehouseId = IdUtil.parseRequiredLongId(dto.getWarehouseId(), "出库仓库ID");
-        // 1. 校验客户存在 + 启用
-        Customer customer = customerMapper.selectById(customerId);
-        if (customer == null) {
-            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "客户不存在");
-        }
-        if (Integer.valueOf(0).equals(customer.getStatus())) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "客户已停用，不能下单");
-        }
-        // 2. 校验出库仓库存在 + 启用
-        Warehouse warehouse = warehouseMapper.selectById(warehouseId);
-        if (warehouse == null) {
-            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库仓库不存在");
-        }
-        if (Integer.valueOf(0).equals(warehouse.getStatus())) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "出库仓库已停用，不能下单");
-        }
+        // 1. 校验客户/仓库存在 + 启用（共用私有方法，返回实体供后续使用）
+        CustomerWarehouse cw = validateCustomerAndWarehouse(customerId, warehouseId);
         // 3. 批量查询产品（避免循环查库）
         List<Long> productIds = dto.getItems().stream()
                 .map(item -> IdUtil.parseRequiredLongId(item.getProductId(), "产品ID"))
@@ -177,55 +169,22 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         LoginUser loginUser = UserContext.requireCurrentUser();
         // 4. 生成销售单号（Redis 按月重置，单号按天显示 yyyyMMdd）
         String salesNo = billNoGenerator.nextNo("SO");
-        // 5. 校验明细 + 同时累加总金额 + 构建明细实体
-        Set<Long> seenProductIds = new HashSet<>();
-        BigDecimal totalAmount = BigDecimal.ZERO;
+        // 4. 校验明细 + 累加总金额（重复产品 / 产品启用 / 数量精度）
+        BigDecimal totalAmount = validateItemsAndComputeTotal(dto.getItems(), productMap);
+        // 5. 构建明细实体（lockedQty = 0，salesOrderId 由插入主表后回填）
         List<SalesOrderItem> items = new ArrayList<>();
         for (SalesOrderDraftItemDto itemDto : dto.getItems()) {
-            Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
-            // 重复产品校验
-            if (!seenProductIds.add(productId)) {
-                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
-                        "同一产品不能重复添加: " + itemDto.getProductId());
-            }
-            // 校验产品存在 + 启用
-            Product product = productMap.get(productId);
-            if (product == null) {
-                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "产品不存在: " + itemDto.getProductId());
-            }
-            if (Integer.valueOf(0).equals(product.getStatus())) {
-                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
-                        "产品已停用，不能下单: " + product.getProductCode());
-            }
-            // 数量精度校验：业务小数位不得超过 product.quantityPrecision
-            validateQuantityPrecision(itemDto.getQuantity(), product.getQuantityPrecision(),
-                    product.getProductCode());
-            BigDecimal lineAmount = itemDto.getQuantity().multiply(itemDto.getUnitPrice())
-                    .setScale(2, java.math.RoundingMode.HALF_UP);
-            totalAmount = totalAmount.add(lineAmount);
-            SalesOrderItem item = new SalesOrderItem();
-            item.setSalesNo(salesNo);
-            item.setProductId(productId);
-            item.setProductCode(product.getProductCode());
-            item.setProductName(product.getProductName());
-            item.setUnitName(product.getUnitName());
-            item.setQuantityPrecision(product.getQuantityPrecision());
-            item.setQuantity(QtyUtil.toStored(itemDto.getQuantity()));
-            item.setLockedQty(0L);
-            item.setOutboundQty(0L);
-            item.setUnitPrice(QtyUtil.toStoredInt(itemDto.getUnitPrice()));
-            item.setTotalAmount(QtyUtil.toStoredInt(lineAmount));
-            item.setRemark(itemDto.getRemark());
-            items.add(item);
+            Product product = productMap.get(IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID"));
+            items.add(buildSalesOrderItem(itemDto, product, null, salesNo, 0L));
         }
         // 6. 插入主表
         SalesOrder order = new SalesOrder();
         order.setSalesNo(salesNo);
         order.setCustomerId(customerId);
-        order.setCustomerCode(customer.getCustomerCode());
-        order.setCustomerName(customer.getCustomerName());
+        order.setCustomerCode(cw.customer.getCustomerCode());
+        order.setCustomerName(cw.customer.getCustomerName());
         order.setWarehouseId(warehouseId);
-        order.setWarehouseName(warehouse.getWarehouseName());
+        order.setWarehouseName(cw.warehouse.getWarehouseName());
         order.setStatus(SalesOrderStatus.DRAFT.name());
         order.setExpectedDeliveryDate(dto.getExpectedDeliveryDate());
         order.setTotalAmount(QtyUtil.toStoredInt(totalAmount));
@@ -278,7 +237,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                         "产品 " + item.getProductCode() + " 销售数量必须大于0");
             }
         }
-        revalidateOrderBusiness(order, items);
+        validateOrderBusiness(order, items);
         // 4. 提取待锁定产品 ID（去重排序，配合 WarehouseStockLockSupport 避免多产品死锁）
         List<Long> productIds = items.stream()
                 .map(SalesOrderItem::getProductId)
@@ -372,7 +331,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (items.isEmpty()) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "销售订单无明细，无法审核");
         }
-        revalidateOrderBusiness(order, items);
+        validateOrderBusiness(order, items);
         for (SalesOrderItem item : items) {
             if (item.getQuantity() == null || item.getLockedQty() == null
                     || !item.getLockedQty().equals(item.getQuantity())) {
@@ -548,6 +507,150 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     }
 
     /**
+     * 编辑销售订单（DRAFT / SUBMITTED 可编辑；SUBMITTED 含库存精确回算）
+     * @param salesOrderId 销售订单ID
+     * @param dto 编辑请求 DTO
+     * @return 编辑后的销售订单详情VO
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public SalesOrderDetailVo update(Long salesOrderId, SalesOrderUpdateDto dto) {
+        // 1. 锁前快速校验（不抢分布式锁）：主表 selectById + 版本/状态/字段非空/预计发货日期
+        SalesOrder order = salesOrderMapper.selectById(salesOrderId);
+        if (order == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND);
+        }
+        validateVersion(order, dto.getVersion());
+        String currentStatus = order.getStatus();
+        boolean isDraft = SalesOrderStatus.DRAFT.name().equals(currentStatus);
+        boolean isSubmitted = SalesOrderStatus.SUBMITTED.name().equals(currentStatus);
+        if (!isDraft && !isSubmitted) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                    "已审核或已产生出库事实的销售订单不允许编辑，当前状态: " + currentStatus);
+        }
+        if (isSubmitted && (dto.getExpectedDeliveryDate() == null || dto.getExpectedDeliveryDate().isBefore(LocalDate.now()))) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                    "已提交的订单预计发货日期不能为空或早于今天");
+        }
+        Long customerId = IdUtil.parseRequiredLongId(dto.getCustomerId(), "客户ID");
+        Long warehouseId = IdUtil.parseRequiredLongId(dto.getWarehouseId(), "出库仓库ID");
+        // 1.1 防改仓库：仅 SUBMITTED 状态禁止改仓库（DRAFT 允许改，因为没锁定库存；SUBMITTED 跨仓库需释放旧仓库 + 锁定新仓库，单独 PR 实施）
+        if (isSubmitted && !order.getWarehouseId().equals(warehouseId)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "已锁定库存的销售订单不允许改仓库，请先取消订单再重新创建");
+        }
+        // 2. 校验客户/仓库存在 + 启用（共用私有方法）
+        CustomerWarehouse cw = validateCustomerAndWarehouse(customerId, warehouseId);
+        // 3. 批量查产品
+        List<Long> productIds = dto.getItems().stream()
+                .map(item -> IdUtil.parseRequiredLongId(item.getProductId(), "产品ID"))
+                .toList();
+        Map<Long, Product> productMap = productMapper.selectByIds(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+        // 4. 校验明细 + 累加总金额（重复产品 / 产品启用 / 数量精度）
+        BigDecimal totalAmount = validateItemsAndComputeTotal(dto.getItems(), productMap);
+        // 5. 分布式锁（DRAFT 和 SUBMITTED 都加，防与 submit / cancel / approve 并发）
+        sourceOperationLockSupport.acquire(SourceType.SALES_ORDER.name(), salesOrderId);
+        // 5.1 锁内重新查询 + 二次版本/状态校验（防 TOCTOU；给明确错误信息）
+        SalesOrder reloaded = salesOrderMapper.selectById(salesOrderId);
+        if (reloaded == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND);
+        }
+        validateVersion(reloaded, dto.getVersion());
+        String reloadedStatus = reloaded.getStatus();
+        if (!SalesOrderStatus.DRAFT.name().equals(reloadedStatus)
+                && !SalesOrderStatus.SUBMITTED.name().equals(reloadedStatus)) {
+            String hint = SalesOrderStatus.CANCELLED.name().equals(reloadedStatus)
+                    ? "订单已取消，无法编辑"
+                    : "订单已审核/已出库，无法编辑";
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                    hint + "，当前状态: " + reloadedStatus);
+        }
+        order = reloaded;
+        boolean reloadedIsSubmitted = SalesOrderStatus.SUBMITTED.name().equals(reloadedStatus);
+        // 6. 库存精确回算（仅 SUBMITTED；行锁 + 先释放后预占 + 校验可用 + updateById 校验）
+        if (reloadedIsSubmitted) {
+            List<SalesOrderItem> existingItems = salesOrderItemMapper.selectList(
+                    new LambdaQueryWrapper<SalesOrderItem>()
+                            .eq(SalesOrderItem::getSalesOrderId, salesOrderId)
+            );
+            Map<Long, Long> deltasByProduct = new HashMap<>();
+            Map<Long, Long> oldLockedByProduct = existingItems.stream().collect(
+                    Collectors.groupingBy(
+                            SalesOrderItem::getProductId,
+                            Collectors.summingLong(item -> item.getLockedQty() == null ? 0L : item.getLockedQty())));
+            Map<Long, Long> newQtyByProduct = dto.getItems().stream().collect(
+                    Collectors.groupingBy(
+                            item -> IdUtil.parseRequiredLongId(item.getProductId(), "产品ID"),
+                            Collectors.summingLong(item -> QtyUtil.toStored(item.getQuantity()))));
+            Set<Long> allProductIds = new HashSet<>();
+            allProductIds.addAll(oldLockedByProduct.keySet());
+            allProductIds.addAll(newQtyByProduct.keySet());
+            for (Long productId : allProductIds) {
+                long oldLocked = oldLockedByProduct.getOrDefault(productId, 0L);
+                long newQty = newQtyByProduct.getOrDefault(productId, 0L);
+                long delta = newQty - oldLocked;
+                if (delta != 0L) {
+                    deltasByProduct.put(productId, delta);
+                }
+            }
+            if (!deltasByProduct.isEmpty()) {
+                warehouseStockReservationSupport.applyLockedQtyChanges(
+                        order.getWarehouseId(), deltasByProduct, true, true);
+            }
+        }
+        // 7. 主表 update（乐观锁 + 全字段 + 重算 totalAmount；先于明细操作，rows==0 早失败）
+        SalesOrder update = new SalesOrder();
+        update.setId(salesOrderId);
+        update.setCustomerId(customerId);
+        update.setCustomerCode(cw.customer().getCustomerCode());
+        update.setCustomerName(cw.customer().getCustomerName());
+        update.setWarehouseId(warehouseId);
+        update.setWarehouseName(cw.warehouse().getWarehouseName());
+        update.setExpectedDeliveryDate(dto.getExpectedDeliveryDate());
+        update.setTotalAmount(QtyUtil.toStoredInt(totalAmount));
+        update.setRemark(dto.getRemark());
+        update.setVersion(dto.getVersion());
+        int rows = salesOrderMapper.updateById(update);
+        if (rows == 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "数据已发生变化，请刷新后重试");
+        }
+        // 8. 物理删除现有明细（全删全插，无 diff 复杂度）
+        List<SalesOrderItem> existingItemsForDelete = salesOrderItemMapper.selectList(
+                new LambdaQueryWrapper<SalesOrderItem>()
+                        .eq(SalesOrderItem::getSalesOrderId, salesOrderId)
+        );
+        if (!existingItemsForDelete.isEmpty()) {
+            List<Long> idsToDelete = existingItemsForDelete.stream()
+                    .map(SalesOrderItem::getId)
+                    .toList();
+            try {
+                salesOrderItemService.removeByIds(idsToDelete);
+            } catch (Exception e) {
+                log.error("销售订单[{}]编辑异常:删除明细失败", order.getSalesNo(), e);
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "销售明细已被其他人修改，请刷新后重试");
+            }
+        }
+        // 9. 保存新明细（SUBMITTED 时 lockedQty = quantity 继承原锁定量；DRAFT 时 = 0）
+        List<SalesOrderItem> itemsToSave = new ArrayList<>();
+        for (SalesOrderDraftItemDto itemDto : dto.getItems()) {
+            Product product = productMap.get(IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID"));
+            itemsToSave.add(buildSalesOrderItem(itemDto, product, salesOrderId, order.getSalesNo(),
+                    reloadedIsSubmitted ? QtyUtil.toStored(itemDto.getQuantity()) : 0L));
+        }
+        try {
+            salesOrderItemService.saveBatch(itemsToSave);
+        } catch (Exception e) {
+            log.error("销售订单[{}]编辑异常:保存新明细失败", order.getSalesNo(), e);
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "销售明细保存失败，请刷新后重试");
+        }
+        return getDetail(salesOrderId);
+    }
+
+    /**
      * 生成 SALES_OUT 待确认出库单（同事务内调用；幂等检查避免重复生成）
      */
     private void generateSalesOutboundBill(SalesOrder order, List<SalesOrderItem> items) {
@@ -633,35 +736,31 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     }
 
     /**
-     * 重新校验客户/仓库/产品当前启用状态（草稿到提交/审核之间状态可能变化）
+     * 校验销售订单的业务规则（客户/仓库/产品启用状态）
      */
-    private void revalidateOrderBusiness(SalesOrder order, List<SalesOrderItem> items) {
-        Customer customer = customerMapper.selectById(order.getCustomerId());
-        // 校验客户是否启用
-        if (customer == null) {
-            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "客户不存在");
-        }
-        if (Integer.valueOf(0).equals(customer.getStatus())) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "客户已停用，无法");
-        }
-        // 校验出库仓库是否启用
-        Warehouse warehouse = warehouseMapper.selectById(order.getWarehouseId());
-        if (warehouse == null) {
-            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库仓库不存在");
-        }
-        if (Integer.valueOf(0).equals(warehouse.getStatus())) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "出库仓库已停用，无法");
-        }
+    private void validateOrderBusiness(SalesOrder order, List<SalesOrderItem> items) {
+        // 1. 校验客户/仓库存在 + 启用
+        validateCustomerAndWarehouse(order.getCustomerId(), order.getWarehouseId());
+        // 2. 校验明细中每个产品启用状态
+        validateItemsStatus(items);
+    }
+
+    /**
+     * 校验明细中每个产品启用状态（输入 SalesOrderItem entity，复用于 submit / approve / cancel 现有明细）
+     */
+    private void validateItemsStatus(List<SalesOrderItem> items) {
+        // 1. 校验明细是否为空
         if (items == null || items.isEmpty()) {
             return;
         }
-        // 校验产品是否启用
+        // 2. 批量查询产品（避免循环查库）
         List<Long> productIds = items.stream()
                 .map(SalesOrderItem::getProductId)
                 .distinct()
                 .toList();
         Map<Long, Product> productMap = productMapper.selectByIds(productIds).stream()
                 .collect(Collectors.toMap(Product::getId, p -> p));
+        // 3. 校验每个产品启用状态
         for (SalesOrderItem item : items) {
             Product product = productMap.get(item.getProductId());
             if (product == null) {
@@ -673,6 +772,82 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                         "产品已停用，无法: " + product.getProductCode());
             }
         }
+    }
+
+    /**
+     * 校验客户/仓库存在 + 启用（返回 customer + warehouse 实体供调用方使用，避免重复查询）
+     */
+    private CustomerWarehouse validateCustomerAndWarehouse(Long customerId, Long warehouseId) {
+        Customer customer = customerMapper.selectById(customerId);
+        if (customer == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "客户不存在");
+        }
+        if (Integer.valueOf(0).equals(customer.getStatus())) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "客户已停用，不能下单");
+        }
+        Warehouse warehouse = warehouseMapper.selectById(warehouseId);
+        if (warehouse == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库仓库不存在");
+        }
+        if (Integer.valueOf(0).equals(warehouse.getStatus())) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "出库仓库已停用，不能下单");
+        }
+        return new CustomerWarehouse(customer, warehouse);
+    }
+
+    /**
+     * 校验明细 + 累加总金额：重复产品校验、产品存在 + 启用、数量精度、累加 totalAmount
+     * @return 累加后的总金额（业务小数，已 ×100 校验 setScale 2）
+     */
+    private BigDecimal validateItemsAndComputeTotal(List<SalesOrderDraftItemDto> items,
+                                                   Map<Long, Product> productMap) {
+        Set<Long> seenProductIds = new HashSet<>();
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        for (SalesOrderDraftItemDto itemDto : items) {
+            Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
+            if (!seenProductIds.add(productId)) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "同一产品不能重复添加: " + itemDto.getProductId());
+            }
+            Product product = productMap.get(productId);
+            if (product == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(),
+                        "产品不存在: " + itemDto.getProductId());
+            }
+            if (Integer.valueOf(0).equals(product.getStatus())) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "产品已停用，不能下单: " + product.getProductCode());
+            }
+            validateQuantityPrecision(itemDto.getQuantity(), product.getQuantityPrecision(),
+                    product.getProductCode());
+            BigDecimal lineAmount = itemDto.getQuantity().multiply(itemDto.getUnitPrice())
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            totalAmount = totalAmount.add(lineAmount);
+        }
+        return totalAmount;
+    }
+
+    /**
+     * 构建销售订单明细实体（createDraft / update 共用，lockedQty 由调用方控制）
+     */
+    private SalesOrderItem buildSalesOrderItem(SalesOrderDraftItemDto itemDto, Product product,
+                                             Long salesOrderId, String salesNo, Long lockedQty) {
+        BigDecimal lineAmount = itemDto.getQuantity().multiply(itemDto.getUnitPrice())
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        return new SalesOrderItem()
+                .setSalesOrderId(salesOrderId)
+                .setSalesNo(salesNo)
+                .setProductId(product.getId())
+                .setProductCode(product.getProductCode())
+                .setProductName(product.getProductName())
+                .setUnitName(product.getUnitName())
+                .setQuantityPrecision(product.getQuantityPrecision())
+                .setQuantity(QtyUtil.toStored(itemDto.getQuantity()))
+                .setLockedQty(lockedQty)
+                .setOutboundQty(0L)
+                .setUnitPrice(QtyUtil.toStoredInt(itemDto.getUnitPrice()))
+                .setTotalAmount(QtyUtil.toStoredInt(lineAmount))
+                .setRemark(itemDto.getRemark());
     }
 
     /**

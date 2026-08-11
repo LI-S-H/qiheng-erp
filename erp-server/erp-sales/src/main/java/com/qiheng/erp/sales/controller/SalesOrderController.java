@@ -7,6 +7,7 @@ import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderCreateDto;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderPageDto;
+import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderUpdateDto;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
 import com.qiheng.erp.sales.service.ISalesOrderService;
@@ -17,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -125,6 +127,22 @@ public class SalesOrderController {
         log.info("取消销售订单，参数: salesOrderId={}, version={}", salesOrderId, dto.getVersion());
         salesOrderService.cancel(salesOrderId, dto.getVersion());
         return Result.ok();
+    }
+
+    /**
+     * 编辑销售订单（DRAFT / SUBMITTED 可编辑；SUBMITTED 含库存精确回算）
+     * @param salesOrderId 销售订单ID
+     * @param dto 编辑请求 DTO
+     * @return 编辑后的销售订单详情VO
+     */
+    @PutMapping("/{salesOrderId}")
+    @Operation(summary = "编辑销售订单")
+    public Result<SalesOrderDetailVo> update(@PathVariable Long salesOrderId,
+                                            @Valid @RequestBody SalesOrderUpdateDto dto) {
+        StpUtil.checkPermission("sales:manage");
+        log.info("编辑销售订单，参数: salesOrderId={}, dto={}", salesOrderId, dto);
+        SalesOrderDetailVo detail = salesOrderService.update(salesOrderId, dto);
+        return Result.ok(detail);
     }
 
 }

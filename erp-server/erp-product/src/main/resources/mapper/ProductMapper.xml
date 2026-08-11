@@ -11,4 +11,100 @@
               #{productId}
           </foreach>
     </select>
+
+    <!-- 停用校验：OR EXISTS 短路，找到任一未完成引用即返回 true -->
+    <!-- 注意：明细子表(sales_order_item / purchase_order_item / return_order_item / inbound_bill_item / outbound_bill_item / warehouse_stock)无 deleted 列,只校验主表 deleted=0 -->
+    <select id="existsUnfinishedBusinessReferencesByProductIds" resultType="java.lang.Boolean">
+        SELECT
+            EXISTS(SELECT 1 FROM sales_order_item
+                JOIN sales_order ON sales_order_item.sales_order_id = sales_order.id
+                WHERE sales_order.deleted = 0
+                    AND sales_order.status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL_OUTBOUND')
+                    AND sales_order_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM purchase_order_item
+                JOIN purchase_order ON purchase_order_item.purchase_order_id = purchase_order.id
+                WHERE purchase_order.deleted = 0
+                    AND purchase_order.status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL_INBOUND')
+                    AND purchase_order_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM return_order_item
+                JOIN return_order ON return_order_item.return_order_id = return_order.id
+                WHERE return_order.deleted = 0
+                    AND return_order.status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL_EXECUTED')
+                    AND return_order_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM inbound_bill_item
+                JOIN inbound_bill ON inbound_bill_item.inbound_bill_id = inbound_bill.id
+                WHERE inbound_bill.deleted = 0
+                    AND inbound_bill.status IN ('PENDING_CONFIRM')
+                    AND inbound_bill_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM outbound_bill_item
+                JOIN outbound_bill ON outbound_bill_item.outbound_bill_id = outbound_bill.id
+                WHERE outbound_bill.deleted = 0
+                    AND outbound_bill.status IN ('PENDING_CONFIRM')
+                    AND outbound_bill_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM warehouse_stock
+                WHERE 1=1
+                    AND warehouse_stock.locked_qty > 0
+                    AND warehouse_stock.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+    </select>
+
+    <!-- 删除校验：OR EXISTS 短路，找到任一软删除外引用即返回 true -->
+    <!-- 注意：明细子表无 deleted 列，只校验主表 deleted=0 -->
+    <select id="existsAnyActiveReferencesByProductIds" resultType="java.lang.Boolean">
+        SELECT
+            EXISTS(SELECT 1 FROM sales_order_item
+                WHERE sales_order_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM purchase_order_item
+                WHERE purchase_order_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM return_order_item
+                WHERE return_order_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM inbound_bill_item
+                WHERE inbound_bill_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM outbound_bill_item
+                WHERE outbound_bill_item.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM warehouse_stock
+                WHERE 1=1
+                    AND warehouse_stock.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+            OR EXISTS(SELECT 1 FROM supplier_product
+                WHERE supplier_product.deleted = 0
+                    AND supplier_product.product_id IN
+                    <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+                        #{productId}
+                    </foreach>)
+    </select>
 </mapper>

@@ -192,6 +192,15 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     @DistributedLock(key = "'product:lock:global'")
     @Override
     public void updateBatchStatus(ProductBatchStatusDto dto) {
+        // 停用时校验：产品不能被未完成的业务单据引用（OR EXISTS 短路校验）
+        if (Integer.valueOf(0).equals(dto.getStatus())) {
+            Boolean hasUnfinishedRef = productMapper.existsUnfinishedBusinessReferencesByProductIds(
+                    dto.getProductIds());
+            if (Boolean.TRUE.equals(hasUnfinishedRef)) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "产品被未完成业务引用，无法停用");
+            }
+        }
         LambdaUpdateWrapper<Product> updateWrapper = new LambdaUpdateWrapper<Product>()
                 .set(Product::getStatus, dto.getStatus())
                 .in(Product::getId, dto.getProductIds());
@@ -206,6 +215,15 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     @DistributedLock(key = "'product:lock:' + #productId")
     @Override
     public void updateStatus(Long productId, Integer status) {
+        // 停用时校验：产品不能被未完成的业务单据引用（OR EXISTS 短路校验）
+        if (Integer.valueOf(0).equals(status)) {
+            Boolean hasUnfinishedRef = productMapper.existsUnfinishedBusinessReferencesByProductIds(
+                    List.of(String.valueOf(productId)));
+            if (Boolean.TRUE.equals(hasUnfinishedRef)) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "产品被未完成业务引用，无法停用");
+            }
+        }
         LambdaUpdateWrapper<Product> updateWrapper = new LambdaUpdateWrapper<Product>()
                 .set(Product::getStatus, status)
                 .eq(Product::getId, productId);
@@ -226,11 +244,12 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         if (count > 0) {
             throw new BizException(ErrorCode.STATUS_INVALID);
         }
-        Long supplierProductCount = productMapper.countActiveSupplierProductReferences(ids);
-        if (supplierProductCount > 0) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "产品存在供货关系，无法删除");
+        // 删除校验：产品不能被任何软删除外的业务记录引用（OR EXISTS 短路校验；已包含 supplier_product）
+        Boolean hasActiveRef = productMapper.existsAnyActiveReferencesByProductIds(ids);
+        if (Boolean.TRUE.equals(hasActiveRef)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "产品被业务记录引用，无法删除");
         }
-        //TODO 检查是否存在库存记录
         productMapper.deleteByIds(ids);
     }
 

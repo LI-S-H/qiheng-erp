@@ -2,6 +2,8 @@ package com.qiheng.erp.product.controller;
 
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
@@ -116,6 +118,9 @@ public class ProductController {
     public Result<Void> deleteBatch(@RequestBody Map<String, List<String>> productIds) {
         StpUtil.checkPermission("product:manage");
         List<String> ids = productIds.get("productIds");
+        if (ids == null || ids.isEmpty()) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "产品ID列表不能为空");
+        }
         log.info("批量删除产品，参数: {}", ids);
         productService.deleteBatch(ids);
         return Result.ok();

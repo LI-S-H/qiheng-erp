@@ -45,4 +45,18 @@ public interface ISalesOrderService extends IService<SalesOrder> {
      * @param version 乐观锁版本号
      */
     void submit(Long salesOrderId, Integer version);
+
+    /**
+     * 审核销售订单（SUBMITTED → APPROVED，同一事务内生成 SALES_OUT 待确认出库单）
+     * @param salesOrderId 销售订单ID
+     * @param version 乐观锁版本号
+     */
+    void approve(Long salesOrderId, Integer version);
+
+    /**
+     * 取消销售订单（DRAFT / SUBMITTED → CANCELLED；SUBMITTED 需同一事务内释放锁定库存）
+     * @param salesOrderId 销售订单ID
+     * @param version 乐观锁版本号
+     */
+    void cancel(Long salesOrderId, Integer version);
 }

@@ -89,9 +89,41 @@ public class SalesOrderController {
     @Operation(summary = "提交销售订单")
     public Result<Void> submit(@PathVariable Long salesOrderId,
                                @Valid @RequestBody OptimisticLockVersionDto dto) {
-        StpUtil.checkPermission("sales:create");
+        StpUtil.checkPermission("sales:manage");
         log.info("提交销售订单，参数: salesOrderId={}, version={}", salesOrderId, dto.getVersion());
         salesOrderService.submit(salesOrderId, dto.getVersion());
+        return Result.ok();
+    }
+
+    /**
+     * 审核销售订单（SUBMITTED → APPROVED，同一事务内生成 SALES_OUT 待确认出库单）
+     * @param salesOrderId 销售订单ID
+     * @param dto 乐观锁版本号请求
+     * @return 空结果
+     */
+    @PostMapping("/{salesOrderId}/approve")
+    @Operation(summary = "审核销售订单")
+    public Result<Void> approve(@PathVariable Long salesOrderId,
+                                @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("sales:manage");
+        log.info("审核销售订单，参数: salesOrderId={}, version={}", salesOrderId, dto.getVersion());
+        salesOrderService.approve(salesOrderId, dto.getVersion());
+        return Result.ok();
+    }
+
+    /**
+     * 取消销售订单（DRAFT / SUBMITTED → CANCELLED；SUBMITTED 需同一事务内释放锁定库存）
+     * @param salesOrderId 销售订单ID
+     * @param dto 乐观锁版本号请求
+     * @return 空结果
+     */
+    @PostMapping("/{salesOrderId}/cancel")
+    @Operation(summary = "取消销售订单")
+    public Result<Void> cancel(@PathVariable Long salesOrderId,
+                               @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("sales:manage");
+        log.info("取消销售订单，参数: salesOrderId={}, version={}", salesOrderId, dto.getVersion());
+        salesOrderService.cancel(salesOrderId, dto.getVersion());
         return Result.ok();
     }
 

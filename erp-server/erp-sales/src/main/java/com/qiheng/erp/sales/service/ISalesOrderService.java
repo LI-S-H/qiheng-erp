@@ -38,4 +38,11 @@ public interface ISalesOrderService extends IService<SalesOrder> {
      * @return 新增后的销售订单详情VO（含主表 + 明细）
      */
     SalesOrderDetailVo createDraft(SalesOrderCreateDto dto);
+
+    /**
+     * 提交销售订单（DRAFT → SUBMITTED，数据库行锁锁定可用库存，同步更新明细与主表状态）
+     * @param salesOrderId 销售订单ID
+     * @param version 乐观锁版本号
+     */
+    void submit(Long salesOrderId, Integer version);
 }

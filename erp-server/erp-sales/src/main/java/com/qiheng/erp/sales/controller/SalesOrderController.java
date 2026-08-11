@@ -2,6 +2,7 @@ package com.qiheng.erp.sales.controller;
 
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.qiheng.erp.common.dto.OptimisticLockVersionDto;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderCreateDto;
@@ -76,6 +77,22 @@ public class SalesOrderController {
         log.info("获取销售订单详情，参数: salesOrderId={}", salesOrderId);
         SalesOrderDetailVo detail = salesOrderService.getDetail(salesOrderId);
         return Result.ok(detail);
+    }
+
+    /**
+     * 提交销售订单（DRAFT → SUBMITTED，数据库行锁锁定可用库存）
+     * @param salesOrderId 销售订单ID
+     * @param dto 乐观锁版本号请求
+     * @return 空结果
+     */
+    @PostMapping("/{salesOrderId}/submit")
+    @Operation(summary = "提交销售订单")
+    public Result<Void> submit(@PathVariable Long salesOrderId,
+                               @Valid @RequestBody OptimisticLockVersionDto dto) {
+        StpUtil.checkPermission("sales:create");
+        log.info("提交销售订单，参数: salesOrderId={}, version={}", salesOrderId, dto.getVersion());
+        salesOrderService.submit(salesOrderId, dto.getVersion());
+        return Result.ok();
     }
 
 }

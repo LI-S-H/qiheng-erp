@@ -28,7 +28,10 @@ import com.qiheng.erp.sales.mapper.SalesOrderMapper;
 import com.qiheng.erp.sales.service.ISalesOrderItemService;
 import com.qiheng.erp.sales.service.ISalesOrderService;
 import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
+import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
+import com.qiheng.erp.warehouse.service.IWarehouseStockService;
+import com.qiheng.erp.warehouse.service.support.WarehouseStockLockSupport;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -37,6 +40,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -68,6 +73,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private WarehouseMapper warehouseMapper;
     @Autowired
     private BillNoGenerator billNoGenerator;
+    @Autowired
+    private WarehouseStockLockSupport warehouseStockLockSupport;
+    @Autowired
+    private IWarehouseStockService warehouseStockService;
 
     /**
      * 销售订单分页查询（逻辑删除过滤按全局配置自动追加）
@@ -210,6 +219,103 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         items.forEach(item -> item.setSalesOrderId(order.getId()));
         salesOrderItemService.saveBatch(items);
         return getDetail(order.getId());
+    }
+
+    /**
+     * 提交销售订单（DRAFT → SUBMITTED，数据库行锁锁定可用库存，同步更新明细与主表状态）
+     * @param salesOrderId 销售订单ID
+     * @param version 乐观锁版本号
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void submit(Long salesOrderId, Integer version) {
+        // 1. 校验订单存在 + 状态为 DRAFT + 乐观锁版本
+        SalesOrder order = salesOrderMapper.selectById(salesOrderId);
+        if (order == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND);
+        }
+        if (!SalesOrderStatus.DRAFT.name().equals(order.getStatus())) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                    "仅草稿状态可提交，当前状态: " + order.getStatus());
+        }
+        if (!order.getVersion().equals(version)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "数据已发生变化，请刷新后重试");
+        }
+        // 2. 校验预计发货日期非空且不早于今天
+        if (order.getExpectedDeliveryDate() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计发货日期不能为空");
+        }
+        if (order.getExpectedDeliveryDate().isBefore(LocalDate.now())) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计发货日期不能早于今天");
+        }
+        // 3. 查明细 + 提取待锁定产品 ID（去重排序，配合 WarehouseStockLockSupport 避免多产品死锁）
+        List<SalesOrderItem> items = salesOrderItemMapper.selectList(
+                new LambdaQueryWrapper<SalesOrderItem>()
+                        .eq(SalesOrderItem::getSalesOrderId, salesOrderId)
+        );
+        if (items.isEmpty()) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "销售订单无明细，无法提交");
+        }
+        for (SalesOrderItem item : items) {
+            if (item.getQuantity() == null || item.getQuantity() <= 0) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        "产品 " + item.getProductCode() + " 销售数量必须大于0");
+            }
+        }
+        List<Long> productIds = items.stream()
+                .map(SalesOrderItem::getProductId)
+                .distinct()
+                .sorted()
+                .toList();
+        // 4. 数据库行锁：SELECT ... FOR UPDATE 同仓库的所有相关产品库存
+        Map<Long, WarehouseStock> lockedStocks =
+                warehouseStockLockSupport.lockExistingStocks(order.getWarehouseId(), productIds);
+        // 5. 校验每条明细可用库存：available = stock_qty - locked_qty >= quantity
+        // （建单时已校验同一产品不重复，故每条明细对应唯一产品，无需汇总）
+        for (SalesOrderItem item : items) {
+            WarehouseStock stock = lockedStocks.get(item.getProductId());
+            if (stock == null) {
+                throw new BizException(ErrorCode.STOCK_INSUFFICIENT.getCode(),
+                        "产品 " + item.getProductCode() + " 在该仓库无库存记录");
+            }
+            long stockQty = stock.getStockQty() == null ? 0L : stock.getStockQty();
+            long lockedQty = stock.getLockedQty() == null ? 0L : stock.getLockedQty();
+            long available = stockQty - lockedQty;
+            long need = item.getQuantity();
+            if (available < need) {
+                throw new BizException(ErrorCode.STOCK_INSUFFICIENT.getCode(),
+                        "产品 " + item.getProductCode() + " 可用库存不足，可用: "
+                                + QtyUtil.toDecimal(available) + "，需锁定: " + QtyUtil.toDecimal(need));
+            }
+            // 累加库存锁定量（同一事务内，写后读其他事务看不到未提交的数据，行锁保证并发安全）
+            stock.setLockedQty(lockedQty + need);
+            // 累加明细的已锁定数量
+            long itemLocked = (item.getLockedQty() == null ? 0L : item.getLockedQty()) + need;
+            item.setLockedQty(itemLocked);
+        }
+        // 6. 批量更新库存余额（@Version 乐观锁，任一失败即抛错，整个事务回滚）
+        if (!warehouseStockService.updateBatchById(List.copyOf(lockedStocks.values()))) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "库存数据已被其他人修改，请刷新后重试");
+        }
+        // 7. 更新主表：状态 SUBMITTED + 提交人 + 提交时间 + 锁定时间（乐观锁校验）
+        LoginUser loginUser = UserContext.requireCurrentUser();
+        LocalDateTime now = LocalDateTime.now();
+        SalesOrder update = new SalesOrder();
+        update.setId(salesOrderId);
+        update.setStatus(SalesOrderStatus.SUBMITTED.name());
+        update.setSubmittedAt(now);
+        update.setSubmittedById(loginUser.getUserId());
+        update.setSubmittedByName(loginUser.getRealName());
+        update.setLockedAt(now);
+        update.setVersion(version);
+        int rows = salesOrderMapper.updateById(update);
+        if (rows == 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "数据已发生变化，请刷新后重试");
+        }
+        // 8. 批量更新明细的已锁定数量（主表已更新为 SUBMITTED，并发编辑已被状态校验挡住）
+        salesOrderItemService.updateBatchById(items);
     }
 
     /**

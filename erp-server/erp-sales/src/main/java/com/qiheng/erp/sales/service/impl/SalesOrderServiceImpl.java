@@ -39,6 +39,7 @@ import com.qiheng.erp.warehouse.mapper.OutboundBillMapper;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
 import com.qiheng.erp.warehouse.service.IOutboundBillItemService;
 import com.qiheng.erp.warehouse.service.IWarehouseStockService;
+import com.qiheng.erp.warehouse.service.support.SourceOperationLockSupport;
 import com.qiheng.erp.warehouse.service.support.WarehouseStockLockSupport;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
@@ -86,6 +87,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private WarehouseStockLockSupport warehouseStockLockSupport;
     @Autowired
     private IWarehouseStockService warehouseStockService;
+    @Autowired
+    private SourceOperationLockSupport sourceOperationLockSupport;
     @Autowired
     private OutboundBillMapper outboundBillMapper;
     @Autowired
@@ -261,7 +264,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (order.getExpectedDeliveryDate().isBefore(LocalDate.now())) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计发货日期不能早于今天");
         }
-        // 3. 查明细 + 提取待锁定产品 ID（去重排序，配合 WarehouseStockLockSupport 避免多产品死锁）
+        // 3. 查明细 + 重新校验客户/仓库/产品当前启用状态（草稿后状态可能变化）
         List<SalesOrderItem> items = salesOrderItemMapper.selectList(
                 new LambdaQueryWrapper<SalesOrderItem>()
                         .eq(SalesOrderItem::getSalesOrderId, salesOrderId)
@@ -275,12 +278,14 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                         "产品 " + item.getProductCode() + " 销售数量必须大于0");
             }
         }
+        revalidateOrderBusiness(order, items);
+        // 4. 提取待锁定产品 ID（去重排序，配合 WarehouseStockLockSupport 避免多产品死锁）
         List<Long> productIds = items.stream()
                 .map(SalesOrderItem::getProductId)
                 .distinct()
                 .sorted()
                 .toList();
-        // 4. 数据库行锁：SELECT ... FOR UPDATE 同仓库的所有相关产品库存
+        // 5. 数据库行锁：SELECT ... FOR UPDATE 同仓库的所有相关产品库存
         Map<Long, WarehouseStock> lockedStocks =
                 warehouseStockLockSupport.lockExistingStocks(order.getWarehouseId(), productIds);
         // 5. 校验每条明细可用库存：available = stock_qty - locked_qty >= quantity
@@ -367,6 +372,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (items.isEmpty()) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "销售订单无明细，无法审核");
         }
+        revalidateOrderBusiness(order, items);
         for (SalesOrderItem item : items) {
             if (item.getQuantity() == null || item.getLockedQty() == null
                     || !item.getLockedQty().equals(item.getQuantity())) {
@@ -393,6 +399,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                     "数据已发生变化，请刷新后重试");
         }
         // 5. 生成 SALES_OUT 待确认出库单（主表已 APPROVED，审核权已拿到）
+        log.info("审核销售订单[{}]，生成待确认出库单", order.getSalesNo());
         generateSalesOutboundBill(order, items);
     }
 
@@ -429,9 +436,11 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 new LambdaQueryWrapper<SalesOrderItem>()
                         .eq(SalesOrderItem::getSalesOrderId, salesOrderId)
         );
-        // 6. APPROVED 分支：校验出库单未确认 + 取消关联出库单
+        // 6. APPROVED 分支：先加分布式锁防止与仓库 confirmBill SALES_OUT 跨资源并发死锁，
+        // 再校验出库单未确认 + 取消关联出库单
         boolean needReleaseStock = false;
         if (SalesOrderStatus.APPROVED.name().equals(currentStatus)) {
+            sourceOperationLockSupport.acquire(SourceType.SALES_ORDER.name(), salesOrderId);
             // 6.1 查询关联出库单
             List<OutboundBill> outboundBills = outboundBillMapper.selectList(
                     new LambdaQueryWrapper<OutboundBill>()
@@ -531,7 +540,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             for (SalesOrderItem item : items) {
                 item.setLockedQty(0L);
             }
-            salesOrderItemService.updateBatchById(items);
+            if (!salesOrderItemService.updateBatchById(items)) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "销售明细数据已被其他人修改，请刷新后重试");
+            }
         }
     }
 
@@ -617,6 +629,49 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (order.getVersion() == null || !order.getVersion().equals(expectedVersion)) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
                     "数据已发生变化，请刷新后重试");
+        }
+    }
+
+    /**
+     * 重新校验客户/仓库/产品当前启用状态（草稿到提交/审核之间状态可能变化）
+     */
+    private void revalidateOrderBusiness(SalesOrder order, List<SalesOrderItem> items) {
+        Customer customer = customerMapper.selectById(order.getCustomerId());
+        // 校验客户是否启用
+        if (customer == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "客户不存在");
+        }
+        if (Integer.valueOf(0).equals(customer.getStatus())) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "客户已停用，无法");
+        }
+        // 校验出库仓库是否启用
+        Warehouse warehouse = warehouseMapper.selectById(order.getWarehouseId());
+        if (warehouse == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库仓库不存在");
+        }
+        if (Integer.valueOf(0).equals(warehouse.getStatus())) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "出库仓库已停用，无法");
+        }
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        // 校验产品是否启用
+        List<Long> productIds = items.stream()
+                .map(SalesOrderItem::getProductId)
+                .distinct()
+                .toList();
+        Map<Long, Product> productMap = productMapper.selectByIds(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+        for (SalesOrderItem item : items) {
+            Product product = productMap.get(item.getProductId());
+            if (product == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(),
+                        "产品不存在: " + item.getProductCode());
+            }
+            if (Integer.valueOf(0).equals(product.getStatus())) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                        "产品已停用，无法: " + product.getProductCode());
+            }
         }
     }
 

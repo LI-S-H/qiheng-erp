@@ -253,10 +253,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
                     "仅草稿状态可提交，当前状态: " + order.getStatus());
         }
-        if (!order.getVersion().equals(version)) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
-                    "数据已发生变化，请刷新后重试");
-        }
+        validateVersion(order, version);
         // 2. 校验预计发货日期非空且不早于今天
         if (order.getExpectedDeliveryDate() == null) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计发货日期不能为空");
@@ -354,10 +351,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
                     "仅待审核状态可审核，当前状态: " + order.getStatus());
         }
-        if (!order.getVersion().equals(version)) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
-                    "数据已发生变化，请刷新后重试");
-        }
+        validateVersion(order, version);
         // 2. 校验预计发货日期非空且不早于今天
         if (order.getExpectedDeliveryDate() == null) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计发货日期不能为空");
@@ -429,10 +423,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                     "已出库的销售订单不得取消，当前状态: " + currentStatus);
         }
         // 4. 乐观锁版本号预校验
-        if (!order.getVersion().equals(version)) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
-                    "数据已发生变化，请刷新后重试");
-        }
+        validateVersion(order, version);
         // 5. 查明细
         List<SalesOrderItem> items = salesOrderItemMapper.selectList(
                 new LambdaQueryWrapper<SalesOrderItem>()
@@ -458,9 +449,11 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 ob.setStatus(StockBillStatus.CANCELLED.name());
                 billsToCancel.add(ob);
             }
-            // 6.3 批量取消出库单（明细无状态字段，随主表取消即可）
-            if (!billsToCancel.isEmpty()) {
-                outboundBillService.updateBatchById(billsToCancel);
+            // 6.3 批量取消出库单（明细无状态字段，随主表取消即可；@Version 乐观锁任一失败即抛错）
+            if (!billsToCancel.isEmpty()
+                    && !outboundBillService.updateBatchById(billsToCancel)) {
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                        "出库单状态已被其他人修改，请刷新后重试");
             }
             needReleaseStock = true;
         } else if (SalesOrderStatus.SUBMITTED.name().equals(currentStatus)) {
@@ -615,6 +608,16 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         vo.setSalesOrderId(entity.getId());
         vo.setTotalAmount(QtyUtil.toDecimal(entity.getTotalAmount()));
         return vo;
+    }
+
+    /**
+     * 校验销售订单的乐观锁版本号是否匹配当前数据库值
+     */
+    private void validateVersion(SalesOrder order, Integer expectedVersion) {
+        if (order.getVersion() == null || !order.getVersion().equals(expectedVersion)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "数据已发生变化，请刷新后重试");
+        }
     }
 
     /**

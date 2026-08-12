@@ -495,15 +495,18 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         if (bill == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库单不存在");
         }
-        // 如果是采购退货出库单，需要上锁来源单，防止并发操作(如采购退货单确认)
-        if (SourceType.PURCHASE_RETURN_ORDER.name().equals(bill.getSourceType()) && bill.getSourceId() != null) {
+        // 2. 系统生成出库单（销售出库/采购退货出库）需上锁来源单，与来源单 cancel 互斥，
+        //    防止 TOCTOU 导致状态机错乱（确认已取消的出库、或取消已确认的出库）。锁内重新加载出库单。
+        if (bill.getSourceId() != null
+                && (SourceType.SALES_ORDER.name().equals(bill.getSourceType())
+                        || SourceType.PURCHASE_RETURN_ORDER.name().equals(bill.getSourceType()))) {
             sourceOperationLockSupport.acquire(bill.getSourceType(), bill.getSourceId());
             bill = this.getById(id);
             if (bill == null) {
                 throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库单不存在");
             }
         }
-        // 校验状态和乐观锁版本
+        // 3. 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(bill.getStatus(), bill.getVersion(), dto.getVersion(),
                 "仅待确认状态可确认出库", StockBillStatus.PENDING_CONFIRM);
         // 查询出库单明细
@@ -515,10 +518,10 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         if (items.isEmpty()) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "出库单明细为空，无法确认");
         }
-        // ── 加锁 ──
+        // 4. 加锁库存，防止并发操作
         Map<Long, WarehouseStock> lockedStocks = warehouseStockLockSupport.lockExistingStocks(
                 bill.getWarehouseId(), items.stream().map(OutboundBillItem::getProductId).toList());
-        // ── 校验 ──
+        // 5. 校验出库单明细里面的记录是否充足
         validateOutboundRemainingQuantities(bill, items);
         for (OutboundBillItem item : items) {
             Long currentQty = item.getCurrentQty();
@@ -538,7 +541,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                         "商品 " + item.getProductName() + " 锁定库存不足，无法确认出库");
             }
         }
-        // ── 写入 ──
+        // 6. 写入库存流水
         LoginUser currentUser = UserContext.requireCurrentUser();
         Long currentUserId = currentUser.getUserId();
         String currentUserName = currentUser.getRealName();
@@ -559,7 +562,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 .setRemark(bill.getRemark());
         stockBillService.save(stockBill);
         // 所有出库单均应在建单或来源审核时完成库存预占，确认时只消费本单对应的锁定量。
-        // 构建库存流水分录 + 修改库存内存对象
+        // 7. 构建库存流水明细 + 修改库存内存对象
         List<StockBillItem> stockBillItems = new ArrayList<>();
         List<WarehouseStock> updatedStocks = new ArrayList<>();
         for (OutboundBillItem item : items) {
@@ -587,13 +590,13 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
             stock.setLockedQty(lockedQty - currentQty);
             updatedStocks.add(stock);
         }
-        // 批量保存库存流水分录
+        // 8. 批量保存库存流水明细
         stockBillItemService.saveBatch(stockBillItems);
-        // 批量更新库存余额
+        // 9. 批量更新库存余额
         if (!warehouseStockService.updateBatchById(updatedStocks)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "库存数据已被其他人修改，请刷新后重试");
         }
-        // 回写出库单明细（关联流水分录ID、计算 pendingQty）
+        // 10. 回写出库单明细（关联库存流水明细ID、计算 pendingQty）
         Map<Long, StockBillItem> stockBillItemsByWorkBillItemId = stockBillItems.stream()
                 .collect(Collectors.toMap(StockBillItem::getWorkBillItemId, item -> item));
         for (OutboundBillItem item : items) {
@@ -606,9 +609,6 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 long remaining = item.getPlanQty() - item.getProcessedQty();
                 item.setPendingQty(Math.max(0L, remaining - item.getCurrentQty()));
             }
-        }
-        // 防御性校验出库单明细数量平衡（确认时最后一次）
-        for (OutboundBillItem item : items) {
             validateItemBalance(item, bill.getOutboundNo());
         }
         if (!outboundBillItemService.updateBatchById(items)) {
@@ -626,16 +626,6 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         if (!this.updateById(bill)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
         }
-
-        // TODO 接入来源业务模块后，在此按 sourceItemId 回写来源单明细的已出库数量和处理状态：
-        //      采购退货出库回写采购退货单明细，销售出库回写销售订单明细；库存调整出库没有来源单，无需回写。
-        //      销售出库还需同步扣减销售订单明细的锁定数量；回写必须与库存、出库单确认处于同一事务，
-        //      回写前须校验 sourceItemId 确实属于 bill.sourceId，并校验来源明细的剩余数量和乐观锁版本。
-        //      采购退货审核通过时，来源模块必须在生成 SOURCE_GENERATED 待确认出库单的同一事务内，
-        //      按 approvedQty - processedQty 汇总预占 warehouse_stock.locked_qty；不得按本单 currentQty 预占，
-        //      部分确认后生成下一张工作单也不得重复预占。APPROVED 且未处理的取消必须同步释放该剩余锁定量。
-        //      还需处理部分确认状态，以及取消、编辑、重新生成工作单时的来源数量和锁定库存回滚，避免并发超额出库。
-
         // 来源单回写（出库单自身状态已落盘，再回写关联方）
         dispatchSourceWriteback(bill, items);
         return getOutboundBillDetailVo(id);
@@ -664,9 +654,11 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
      */
     private void validateOutboundRemainingQuantities(OutboundBill bill, List<OutboundBillItem> items) {
         for (OutboundBillItem item : items) {
+            // 1. 跳过未关联来源单的明细(库存调整出库)
             if (!hasSourceQuantitySnapshot(bill, item)) {
                 continue;
             }
+            // 2. 校验剩余数量是否足够
             long remaining = item.getPlanQty() - item.getProcessedQty();
             if (item.getCurrentQty() > remaining) {
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(),

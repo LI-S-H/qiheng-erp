@@ -477,14 +477,40 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         for (InboundBillItem inboundItem : inboundItems) {
             PurchaseOrderItem purchaseItem = itemById.get(inboundItem.getSourceItemId());
             if (purchaseItem == null) {
-                throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库明细未关联当前采购订单明细");
+                log.error("采购订单[{}]入库回写异常:入库明细[{}]未关联当前采购订单明细(来源明细ID:{},产品编码:{},产品名称:{},入库单号:{})",
+                        order.getPurchaseNo(), inboundItem.getId(), inboundItem.getSourceItemId(),
+                        inboundItem.getProductCode(), inboundItem.getProductName(), inboundItem.getInboundNo());
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        "入库明细未关联当前采购订单明细(来源明细ID:" + inboundItem.getSourceItemId()
+                                + ",产品编码:" + inboundItem.getProductCode()
+                                + ",产品名称:" + inboundItem.getProductName() + ")");
             }
             // 校验入库确认数量是否超过采购订单剩余数量
             long currentQty = inboundItem.getCurrentQty() != null ? inboundItem.getCurrentQty() : 0L;
             long inboundQty = (purchaseItem.getInboundQty() != null ? purchaseItem.getInboundQty() : 0L) + currentQty;
             long planQty = purchaseItem.getQuantity() != null ? purchaseItem.getQuantity() : 0L;
-            if (currentQty < 0 || inboundQty > planQty) {
-                throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库确认数量超过采购订单剩余数量");
+            if (currentQty < 0) {
+                log.error("采购订单[{}]入库回写异常:入库明细[{}]本次入库数量为负(来源明细ID:{},产品编码:{},产品名称:{},本次入库:{})",
+                        order.getPurchaseNo(), inboundItem.getId(), inboundItem.getSourceItemId(),
+                        inboundItem.getProductCode(), inboundItem.getProductName(),
+                        QtyUtil.toDecimal(currentQty));
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        "入库确认数量不能为负(产品编码:" + inboundItem.getProductCode()
+                                + ",产品名称:" + inboundItem.getProductName()
+                                + ",本次入库:" + QtyUtil.toDecimal(currentQty) + ")");
+            }
+            if (inboundQty > planQty) {
+                log.error("采购订单[{}]入库回写异常:入库明细[{}]入库数量超过剩余数量(来源明细ID:{},产品编码:{},产品名称:{},计划数量:{},已入库:{},本次入库:{})",
+                        order.getPurchaseNo(), inboundItem.getId(), inboundItem.getSourceItemId(),
+                        inboundItem.getProductCode(), inboundItem.getProductName(),
+                        QtyUtil.toDecimal(planQty), QtyUtil.toDecimal(purchaseItem.getInboundQty()),
+                        QtyUtil.toDecimal(currentQty));
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        "入库确认数量超过采购订单剩余数量(产品编码:" + inboundItem.getProductCode()
+                                + ",产品名称:" + inboundItem.getProductName()
+                                + ",计划数量:" + QtyUtil.toDecimal(planQty)
+                                + ",已入库:" + QtyUtil.toDecimal(purchaseItem.getInboundQty())
+                                + ",本次入库:" + QtyUtil.toDecimal(currentQty) + ")");
             }
             // 更新采购订单明细累计入库数量
             purchaseItem.setInboundQty(Math.toIntExact(inboundQty));
@@ -512,25 +538,29 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void cancel(Long purchaseOrderId, Integer version) {
+        // 1. 加载采购订单
         PurchaseOrder existing = purchaseOrderMapper.selectById(purchaseOrderId);
         if (existing == null) {
-            throw new BizException(ErrorCode.DATA_NOT_FOUND);
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "采购订单不存在");
         }
+        // 2. 校验采购订单状态是否可取消
         if (PurchaseOrderStatus.APPROVED.name().equals(existing.getStatus())) {
             sourceOperationLockSupport.acquire(SourceType.PURCHASE_ORDER.name(), existing.getId());
             existing = purchaseOrderMapper.selectById(purchaseOrderId);
             if (existing == null) {
-                throw new BizException(ErrorCode.DATA_NOT_FOUND);
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "采购订单已被其他人修改，请刷新后重试");
             }
         }
-        // 重复取消不重复变更工作单，直接按幂等成功处理。
+        // 3. 重复取消不重复变更采购订单状态
         if (PurchaseOrderStatus.CANCELLED.name().equals(existing.getStatus())) {
             return;
         }
+        // 4. 校验采购订单状态是否可取消
         PurchaseOrder order = loadAndCheckStatus(purchaseOrderId, version,
                 "仅草稿、待审核和未入库的已审核状态可取消",
                 PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.SUBMITTED, PurchaseOrderStatus.APPROVED);
         if (PurchaseOrderStatus.APPROVED.name().equals(order.getStatus())) {
+            // 5. 已审核采购单取消时，必须先确认没有任何入库事实，再作废全部未确认入库工作单
             cancelPendingInboundBills(order);
         }
         // 更新状态为已取消
@@ -558,6 +588,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         if (hasConfirmed) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "已发生入库事实的采购订单不允许取消");
         }
+        // 作废全部未确认入库工作单
         for (InboundBill bill : allBills) {
             if (!StockBillStatus.DRAFT.name().equals(bill.getStatus())
                     && !StockBillStatus.PENDING_CONFIRM.name().equals(bill.getStatus())) {

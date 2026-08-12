@@ -508,15 +508,19 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         if (existing == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货单不存在");
         }
-        if (ReturnStatus.APPROVED.name().equals(existing.getStatus())
-                && parseType(existing.getReturnType()) == ReturnType.PURCHASE_RETURN) {
-            sourceOperationLockSupport.acquire(SourceType.PURCHASE_RETURN_ORDER.name(), existing.getId());
+        // 2. 加锁退货单，与仓储 confirmBill（出入库确认）互斥，防止 TOCTOU 导致状态机错乱
+        //    （取消已确认的工作单、或确认已取消的工作单）。锁内必须重新加载退货单，防止锁外读到的状态已过期。
+        if (ReturnStatus.APPROVED.name().equals(existing.getStatus())) {
+            String sourceType = parseType(existing.getReturnType()) == ReturnType.PURCHASE_RETURN
+                    ? SourceType.PURCHASE_RETURN_ORDER.name()
+                    : SourceType.SALES_RETURN_ORDER.name();
+            sourceOperationLockSupport.acquire(sourceType, existing.getId());
             existing = returnOrderMapper.selectById(returnOrderId);
             if (existing == null) {
                 throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货单不存在");
             }
         }
-        // 2. 校验状态：终态/不允许取消的状态
+        // 3. 校验状态：终态/不允许取消的状态
         String status = existing.getStatus();
         if (ReturnStatus.CANCELLED.name().equals(status) || ReturnStatus.COMPLETED.name().equals(status)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "当前状态不允许取消");
@@ -524,24 +528,29 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         if (ReturnStatus.PARTIAL_EXECUTED.name().equals(status)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "已部分执行的单据不允许取消");
         }
-        List<OutboundBill> purchaseReturnBills = List.of();
-        List<InboundBill> salesReturnBills = List.of();
+        List<OutboundBill> purchaseReturnBills;
+        List<InboundBill> salesReturnBills;
+        List<ReturnOrderItem> items;
+        // 4. APPROVED 状态：校验无已处理事实 → 取消工作单 → 释放库存（加锁顺序：工作单→库存→来源单）
         if (ReturnStatus.APPROVED.name().equals(status)) {
-            // APPROVED 仅 processed_qty=0 可取消
-            List<ReturnOrderItem> items = returnOrderItemMapper.selectList(new LambdaQueryWrapper<ReturnOrderItem>()
+            // 4.1 校验退货明细无已处理事实
+            items = returnOrderItemMapper.selectList(new LambdaQueryWrapper<ReturnOrderItem>()
                     .eq(ReturnOrderItem::getReturnOrderId, returnOrderId));
             boolean hasProcessed = items.stream()
                     .anyMatch(i -> i.getProcessedQty() != null && i.getProcessedQty() > 0);
             if (hasProcessed) {
                 throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "已部分执行的单据不允许取消");
             }
+            // 4.2 取消工作单 + 释放预占
             if (parseType(existing.getReturnType()) == ReturnType.PURCHASE_RETURN) {
                 purchaseReturnBills = loadCancellablePurchaseReturnWorkBills(existing);
+                cancelPurchaseReturnWorkOrders(existing, purchaseReturnBills, items);
             } else {
                 salesReturnBills = loadCancellableSalesReturnWorkBills(existing);
+                cancelSalesReturnWorkOrders(salesReturnBills);
             }
         }
-        // 3. 先 updateById 改状态（乐观锁，rows=0 抛错，事务回滚避免副作用双重执行）
+        // 5. 最后 updateById 改来源单状态（乐观锁，rows=0 抛错，事务回滚撤销已取消的工作单和释放的库存）
         ReturnOrder update = new ReturnOrder();
         update.setId(returnOrderId);
         update.setStatus(ReturnStatus.CANCELLED.name());
@@ -551,24 +560,17 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
         }
-        // 4. 副作用：仅 APPROVED 时取消工作单 + 释放预占
-        if (ReturnStatus.APPROVED.name().equals(status)) {
-            if (parseType(existing.getReturnType()) == ReturnType.PURCHASE_RETURN) {
-                cancelPurchaseReturnWorkOrders(existing, purchaseReturnBills);
-            } else {
-                cancelSalesReturnWorkOrders(salesReturnBills);
-            }
-        }
     }
 
     /**
      * 取消采购退货的未确认出库单（DRAFT/PENDING_CONFIRM）并释放锁定库存。
+     * <p>释放量按退货单明细 {@code approved - processed} 计算，与审核预占口径完全对称，
+     * 不依赖出库单明细，避免出库单缺失导致锁定库存无法释放。
      */
-    private void cancelPurchaseReturnWorkOrders(ReturnOrder order, List<OutboundBill> bills) {
-        // 1. 按产品汇总需释放的锁定库存（取负数，WarehouseStockReservationSupport 仅处理 delta<0 的项）
-        Map<Long, Long> releaseDeltas = new HashMap<>();
+    private void cancelPurchaseReturnWorkOrders(ReturnOrder order, List<OutboundBill> bills,
+                                                List<ReturnOrderItem> items) {
+        // 1. 取消未确认出库单（乐观锁，防并发确认；任一失败即抛错，事务回滚不释放库存）
         for (OutboundBill bill : bills) {
-            // 2. 主表改状态为 CANCELLED（updateById 带乐观锁，防并发确认）
             OutboundBill update = new OutboundBill();
             update.setId(bill.getId());
             update.setStatus(StockBillStatus.CANCELLED.name());
@@ -578,14 +580,17 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                 throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
                         "出库单[" + bill.getBillNo() + "]正在确认或已被其他操作变更，请刷新后重试");
             }
-            // 3. 汇总释放量（仅取消成功才汇总）
-            List<OutboundBillItem> items = outboundBillItemMapper.selectList(
-                    new LambdaQueryWrapper<OutboundBillItem>().eq(OutboundBillItem::getOutboundBillId, bill.getId()));
-            for (OutboundBillItem item : items) {
-                releaseDeltas.merge(item.getProductId(), -item.getPlanQty(), Long::sum);
-            }
         }
-        // 4. 释放 locked_qty（releaseRequired=true, reserveRequired=false）
+        // 2. 按退货单明细汇总释放量（与审核预占对称：预占 approved-processed，释放同量取负）
+        Map<Long, Long> releaseDeltas = new HashMap<>();
+        for (ReturnOrderItem item : items) {
+            long approved = item.getApprovedQty() == null ? 0L : item.getApprovedQty().longValue();
+            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty().longValue();
+            long pending = approved - processed;
+            if (pending <= 0L) continue;
+            releaseDeltas.merge(item.getProductId(), -pending, Long::sum);
+        }
+        // 3. 释放 locked_qty（releaseRequired=true, reserveRequired=false）
         if (!releaseDeltas.isEmpty()) {
             warehouseStockReservationSupport.applyLockedQtyChanges(
                     order.getWarehouseId(), releaseDeltas, true, false);
@@ -614,13 +619,16 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      * 已审核采购退货单必须关联尚未确认的采购退货出库单；已确认或已作废都代表来源状态不一致。
      */
     private List<OutboundBill> loadCancellablePurchaseReturnWorkBills(ReturnOrder order) {
+        // 1. 加载出库单
         List<OutboundBill> allBills = outboundBillMapper.selectList(new LambdaQueryWrapper<OutboundBill>()
                 .eq(OutboundBill::getSourceType, SourceType.PURCHASE_RETURN_ORDER.name())
                 .eq(OutboundBill::getSourceId, order.getId()));
+        // 2. 过滤出未确认的出库单（DRAFT/PENDING_CONFIRM）
         List<OutboundBill> activeBills = allBills.stream()
                 .filter(bill -> StockBillStatus.DRAFT.name().equals(bill.getStatus())
                         || StockBillStatus.PENDING_CONFIRM.name().equals(bill.getStatus()))
                 .toList();
+        // 3. 校验采购退货出库单是否已确认或已作废
         validateApprovedReturnWorkBills(order, "采购退货出库单", allBills.size(), activeBills.size(),
                 allBills.stream().anyMatch(bill -> StockBillStatus.CONFIRMED.name().equals(bill.getStatus())));
         return activeBills;
@@ -630,13 +638,16 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      * 已审核销售退货单必须关联尚未确认的销售退货入库单；已确认或已作废都代表来源状态不一致。
      */
     private List<InboundBill> loadCancellableSalesReturnWorkBills(ReturnOrder order) {
+        // 1. 加载销售退货入库单
         List<InboundBill> allBills = inboundBillMapper.selectList(new LambdaQueryWrapper<InboundBill>()
                 .eq(InboundBill::getSourceType, SourceType.SALES_RETURN_ORDER.name())
                 .eq(InboundBill::getSourceId, order.getId()));
+        // 2. 过滤出未确认的销售退货入库单（DRAFT/PENDING_CONFIRM）
         List<InboundBill> activeBills = allBills.stream()
                 .filter(bill -> StockBillStatus.DRAFT.name().equals(bill.getStatus())
                         || StockBillStatus.PENDING_CONFIRM.name().equals(bill.getStatus()))
                 .toList();
+        // 3. 校验销售退货入库单是否已确认或已作废
         validateApprovedReturnWorkBills(order, "销售退货入库单", allBills.size(), activeBills.size(),
                 allBills.stream().anyMatch(bill -> StockBillStatus.CONFIRMED.name().equals(bill.getStatus())));
         return activeBills;
@@ -771,7 +782,13 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         inboundBillMapper.insert(bill);
         // 3. 构造入库单明细（销售退货是入库操作，不预占库存）
         for (ReturnOrderItem item : approvedItems) {
+            // 通过的退货数量
             long approved = approvedQtyMap.get(item.getId());
+            // 累计已经完成的退货数量
+            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty().longValue();
+            // 待处理退货数量
+            long pending = approved - processed;
+            if (pending <= 0L) continue;
             InboundBillItem billItem = new InboundBillItem()
                     .setInboundBillId(bill.getId())
                     .setInboundNo(inboundNo)
@@ -782,9 +799,9 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                     .setUnitName(item.getUnitName())
                     .setQuantityPrecision(item.getQuantityPrecision())
                     .setPlanQty(approved)
-                    .setProcessedQty(0L)
+                    .setProcessedQty(processed)
                     .setCurrentQty(0L)
-                    .setPendingQty(approved)
+                    .setPendingQty(pending)
                     .setQualifiedQty(0L)
                     .setDefectiveQty(0L);
             inboundBillItemMapper.insert(billItem);
@@ -948,8 +965,23 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 4. 校验采购退货出库单明细是否关联有效退货单明细
         for (OutboundBillItem outboundItem : items) {
             ReturnOrderItem returnItem = returnItems.get(outboundItem.getSourceItemId());
-            if (returnItem == null || outboundItem.getCurrentQty() == null) {
-                throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "采购退货出库明细未关联有效退货明细");
+            if (returnItem == null) {
+                log.error("采购退货单[{}]出库回写异常:出库明细[{}]未关联有效退货明细(来源明细ID:{},产品编码:{},产品名称:{},出库单号:{})",
+                        order.getReturnNo(), outboundItem.getId(), outboundItem.getSourceItemId(),
+                        outboundItem.getProductCode(), outboundItem.getProductName(), outboundItem.getOutboundNo());
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                        "采购退货出库明细未关联有效退货明细(来源明细ID:" + outboundItem.getSourceItemId()
+                                + ",产品编码:" + outboundItem.getProductCode()
+                                + ",产品名称:" + outboundItem.getProductName() + ")");
+            }
+            if (outboundItem.getCurrentQty() == null) {
+                log.error("采购退货单[{}]出库回写异常:出库明细[{}]本次出库数量为空(来源明细ID:{},产品编码:{},产品名称:{},出库单号:{})",
+                        order.getReturnNo(), outboundItem.getId(), outboundItem.getSourceItemId(),
+                        outboundItem.getProductCode(), outboundItem.getProductName(), outboundItem.getOutboundNo());
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                        "采购退货出库明细本次出库数量为空(来源明细ID:" + outboundItem.getSourceItemId()
+                                + ",产品编码:" + outboundItem.getProductCode()
+                                + ",产品名称:" + outboundItem.getProductName() + ")");
             }
             // 计算此次出库量+已退库数量是否超过已审核数量
             int approved = returnItem.getApprovedQty() == null ? 0 : returnItem.getApprovedQty();

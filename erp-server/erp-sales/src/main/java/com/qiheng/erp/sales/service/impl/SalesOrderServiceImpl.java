@@ -665,6 +665,15 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             log.warn("销售订单[{}]已存在未确认出库单，跳过生成", order.getSalesNo());
             return;
         }
+        // 已全部出库时不创建空的待确认出库单；正常分支至少保留一条剩余明细。
+        boolean hasRemainingQuantity = items.stream().anyMatch(item -> {
+            long planQty = item.getQuantity() == null ? 0L : item.getQuantity();
+            long outboundQty = item.getOutboundQty() == null ? 0L : item.getOutboundQty();
+            return planQty > outboundQty;
+        });
+        if (!hasRemainingQuantity) {
+            return;
+        }
         // 生成出库单号
         String outboundNo = billNoGenerator.nextNo(OutboundType.SALES_OUT.billNoPrefix());
         LoginUser loginUser = UserContext.requireCurrentUser();
@@ -689,12 +698,15 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 .setResponsibleByName(currentUserName)
                 .setRemark(order.getRemark());
         outboundBillMapper.insert(bill);
-        // 构建出库单明细
+        // 构建出库单明细（跳过已满量明细，部分出库后只保留待出库项）
         List<OutboundBillItem> billItems = new ArrayList<>();
         for (SalesOrderItem item : items) {
             long planQty = item.getQuantity() == null ? 0L : item.getQuantity();
             long processedQty = item.getOutboundQty() == null ? 0L : item.getOutboundQty();
             long pendingQty = Math.max(0L, planQty - processedQty);
+            if (pendingQty == 0L) {
+                continue;
+            }
             billItems.add(new OutboundBillItem()
                     .setOutboundBillId(bill.getId())
                     .setOutboundNo(outboundNo)
@@ -881,6 +893,109 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (scale > quantityPrecision) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
                     "产品 " + productCode + " 数量小数位不得超过 " + quantityPrecision + " 位");
+        }
+    }
+
+    /**
+     * 仓库确认销售出库后回写销售订单（同一事务内累加明细 outbound_qty，推进主表状态 PARTIAL_OUTBOUND / OUTBOUND_DONE）。
+     * 由 SalesOutboundWritebackPort 回调。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void handleOutboundConfirmation(OutboundBill bill, List<OutboundBillItem> items) {
+        // 1. 校验出库单来源必须是销售订单
+        if (!SourceType.SALES_ORDER.name().equals(bill.getSourceType()) || bill.getSourceId() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "出库单不是销售订单来源，不能回写销售订单");
+        }
+        // 2. 加载销售订单
+        SalesOrder order = salesOrderMapper.selectById(bill.getSourceId());
+        if (order == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "销售订单不存在，无法完成出库回写");
+        }
+        // 2.1 防御性校验订单状态（与采购/退货一致）
+        SalesOrderStatus currentStatus = SalesOrderStatus.valueOf(order.getStatus());
+        if (currentStatus != SalesOrderStatus.APPROVED
+                && currentStatus != SalesOrderStatus.PARTIAL_OUTBOUND) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "当前销售订单状态不允许出库回写，当前状态: " + currentStatus);
+        }
+        // 3. 加载所有销售订单明细
+        List<SalesOrderItem> allItems = salesOrderItemMapper.selectList(
+                new LambdaQueryWrapper<SalesOrderItem>()
+                        .eq(SalesOrderItem::getSalesOrderId, order.getId()));
+        Map<Long, SalesOrderItem> itemById = allItems.stream()
+                .collect(Collectors.toMap(SalesOrderItem::getId, item -> item));
+        // 4. 按 source_item_id 累加 outbound_qty
+        for (OutboundBillItem outboundItem : items) {
+            SalesOrderItem salesItem = itemById.get(outboundItem.getSourceItemId());
+            if (salesItem == null) {
+                log.error("销售订单[{}]出库回写异常:出库明细[{}]未关联有效销售明细(来源明细ID:{},产品编码:{},产品名称:{},出库单号:{})",
+                        order.getSalesNo(), outboundItem.getId(), outboundItem.getSourceItemId(),
+                        outboundItem.getProductCode(), outboundItem.getProductName(), outboundItem.getOutboundNo());
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                        "出库明细未关联有效销售明细(来源明细ID:" + outboundItem.getSourceItemId()
+                                + ",产品编码:" + outboundItem.getProductCode()
+                                + ",产品名称:" + outboundItem.getProductName() + ")");
+            }
+            if (outboundItem.getCurrentQty() == null) {
+                log.error("销售订单[{}]出库回写异常:出库明细[{}]本次出库数量为空(来源明细ID:{},产品编码:{},产品名称:{},出库单号:{})",
+                        order.getSalesNo(), outboundItem.getId(), outboundItem.getSourceItemId(),
+                        outboundItem.getProductCode(), outboundItem.getProductName(), outboundItem.getOutboundNo());
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                        "出库明细本次出库数量为空(来源明细ID:" + outboundItem.getSourceItemId()
+                                + ",产品编码:" + outboundItem.getProductCode()
+                                + ",产品名称:" + outboundItem.getProductName() + ")");
+            }
+            long currentOutbound = salesItem.getOutboundQty() == null ? 0L : salesItem.getOutboundQty();
+            long nextOutbound = currentOutbound + outboundItem.getCurrentQty();
+            long planQty = salesItem.getQuantity() == null ? 0L : salesItem.getQuantity();
+            if (nextOutbound > planQty) {
+                log.error("销售订单[{}]出库回写异常:出库明细[{}]出库数量超过剩余数量(来源明细ID:{},产品编码:{},产品名称:{},计划数量:{},已出库:{},本次出库:{})",
+                        order.getSalesNo(), outboundItem.getId(), outboundItem.getSourceItemId(),
+                        outboundItem.getProductCode(), outboundItem.getProductName(),
+                        QtyUtil.toDecimal(planQty), QtyUtil.toDecimal(currentOutbound),
+                        QtyUtil.toDecimal(outboundItem.getCurrentQty()));
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                        "出库数量超过销售订单剩余数量(产品编码:" + outboundItem.getProductCode()
+                                + ",产品名称:" + outboundItem.getProductName()
+                                + ",计划数量:" + QtyUtil.toDecimal(planQty)
+                                + ",已出库:" + QtyUtil.toDecimal(currentOutbound)
+                                + ",本次出库:" + QtyUtil.toDecimal(outboundItem.getCurrentQty()) + ")");
+            }
+            salesItem.setOutboundQty(nextOutbound);
+        }
+        // 5. 更新明细（乐观锁自动 WHERE version = ?）
+        if (!salesOrderItemService.updateBatchById(allItems)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "销售明细回写失败，请刷新后重试");
+        }
+        // 6. 状态推进：OUTBOUND_DONE 不再回退
+        boolean allDone = allItems.stream().allMatch(item ->
+                (item.getOutboundQty() == null ? 0L : item.getOutboundQty())
+                        >= (item.getQuantity() == null ? 0L : item.getQuantity()));
+        boolean anyOutbound = allItems.stream().anyMatch(item ->
+                item.getOutboundQty() != null && item.getOutboundQty() > 0);
+        String newStatus;
+        if (allDone) {
+            newStatus = SalesOrderStatus.OUTBOUND_DONE.name();
+        } else if (anyOutbound) {
+            newStatus = SalesOrderStatus.PARTIAL_OUTBOUND.name();
+        } else {
+            newStatus = order.getStatus();
+        }
+        if (!newStatus.equals(order.getStatus())) {
+            SalesOrder update = new SalesOrder();
+            update.setId(order.getId());
+            update.setStatus(newStatus);
+            update.setVersion(order.getVersion());
+            int rows = salesOrderMapper.updateById(update);
+            if (rows == 0) {
+                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "销售订单已发生变化，请刷新后重试");
+            }
+            order.setStatus(newStatus);
+        }
+        // 7. 部分出库后生成下一张待确认出库单（与采购入库保持一致）；全部出库完成则不再生成
+        if (!allDone) {
+            generateSalesOutboundBill(order, allItems);
         }
     }
 }

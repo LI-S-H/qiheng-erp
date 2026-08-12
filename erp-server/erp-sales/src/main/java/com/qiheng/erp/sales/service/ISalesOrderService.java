@@ -8,7 +8,11 @@ import com.qiheng.erp.sales.domain.salesorder.dto.SalesOrderUpdateDto;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
+import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBill;
+import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBillItem;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * <p>
@@ -69,5 +73,12 @@ public interface ISalesOrderService extends IService<SalesOrder> {
      * @return 编辑后的销售订单详情VO
      */
     SalesOrderDetailVo update(Long salesOrderId, SalesOrderUpdateDto dto);
+
+    /**
+     * 仓库确认销售出库后回写销售订单（同一事务内累加明细 outbound_qty，推进主表状态 PARTIAL_OUTBOUND / OUTBOUND_DONE）
+     * @param bill 仓库出库单（sourceType=SALES_ORDER）
+     * @param items 出库单明细
+     */
+    void handleOutboundConfirmation(OutboundBill bill, List<OutboundBillItem> items);
 
 }

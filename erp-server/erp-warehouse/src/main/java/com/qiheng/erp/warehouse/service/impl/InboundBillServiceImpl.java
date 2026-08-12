@@ -33,6 +33,7 @@ import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillListItemVo;
 import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillPageVo;
 import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillSummaryVo;
+import com.qiheng.erp.warehouse.mapper.InboundBillItemMapper;
 import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
 import com.qiheng.erp.warehouse.service.IInboundBillItemService;
@@ -105,6 +106,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     @Autowired
     private BillNoGenerator billNoGenerator;
+
+    @Autowired
+    private InboundBillItemMapper inboundBillItemMapper;
 
     @Autowired(required = false)
     private List<InboundSourceWritebackPort> inboundSourceWritebackPorts = Collections.emptyList();
@@ -297,6 +301,13 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
      * 新增入库单明细
      */
     private void addItem(String inboundNo, InboundBill bill, List<InboundBillItem> items, Long productId, Product product, String sourceItemId, BigDecimal planQty, BigDecimal currentQty, BigDecimal qualifiedQty, BigDecimal defectiveQty, String remark) {
+        // 修复：计算同 source_item_id 已确认入库单的 current_qty 累加(processed_qty 历史累计)
+        Long processedQty = null;
+        if (sourceItemId != null && !sourceItemId.isBlank()) {
+            Long sum = inboundBillItemMapper
+                    .sumConfirmedCurrentQtyBySourceItemId(Long.parseLong(sourceItemId));
+            processedQty = sum == null ? 0L : sum;
+        }
         InboundBillItem item = new InboundBillItem()
                 .setInboundBillId(bill.getId())
                 .setInboundNo(inboundNo)
@@ -307,13 +318,34 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setUnitName(product.getUnitName())
                 .setQuantityPrecision(product.getQuantityPrecision())
                 .setPlanQty(planQty != null && planQty.compareTo(BigDecimal.ZERO) > 0 ? QtyUtil.toStored(planQty) : null)
-                .setProcessedQty(null)
+                .setProcessedQty(processedQty)
                 .setCurrentQty(QtyUtil.toStored(currentQty))
                 .setPendingQty(null)
                 .setQualifiedQty(QtyUtil.toStored(qualifiedQty))
                 .setDefectiveQty(QtyUtil.toStored(defectiveQty))
                 .setRemark(remark);
         items.add(item);
+        validateInboundItemBalance(item, inboundNo);
+    }
+
+    /**
+     * 防御性校验入库单明细数量平衡：processed_qty + current_qty + pending_qty = plan_qty
+     * 不平衡时 log.error 记录明细 id / productCode / 4 个数量，不抛错
+     */
+    private void validateInboundItemBalance(InboundBillItem item, String inboundNo) {
+        if (item.getPlanQty() == null || item.getCurrentQty() == null
+                || item.getPendingQty() == null || item.getProcessedQty() == null) {
+            return;
+        }
+        long plan = item.getPlanQty();
+        long current = item.getCurrentQty();
+        long pending = item.getPendingQty();
+        long processed = item.getProcessedQty();
+        if (processed + current + pending != plan) {
+            log.error("入库单[{}]明细数量不平衡:id={}, productCode={}, processed={}, current={}, pending={}, plan={}, sum={}",
+                    inboundNo, item.getId(), item.getProductCode(),
+                    processed, current, pending, plan, processed + current + pending);
+        }
     }
 
     /**
@@ -385,6 +417,13 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         stockBillEditingSupport.validateStatusAndVersion(
                 bill.getStatus(), bill.getVersion(), dto.getVersion(), "仅草稿状态可提交", StockBillStatus.DRAFT);
         stockBillEditingSupport.validateBeforeSubmit(bill);
+        // 防御性校验入库单明细数量平衡
+        List<InboundBillItem> items = inboundBillItemService.list(
+                new LambdaQueryWrapper<InboundBillItem>()
+                        .eq(InboundBillItem::getInboundBillId, id));
+        for (InboundBillItem item : items) {
+            validateInboundItemBalance(item, bill.getInboundNo());
+        }
         // 4. 变更状态为待确认
         bill.setStatus(StockBillStatus.PENDING_CONFIRM.name());
         if (!this.updateById(bill)) {
@@ -572,6 +611,10 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 long remaining = item.getPlanQty() - item.getProcessedQty();
                 item.setPendingQty(Math.max(0L, remaining - item.getCurrentQty()));
             }
+        }
+        // 防御性校验入库单明细数量平衡（确认时最后一次）
+        for (InboundBillItem item : items) {
+            validateInboundItemBalance(item, bill.getInboundNo());
         }
         if (!inboundBillItemService.updateBatchById(items)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(),

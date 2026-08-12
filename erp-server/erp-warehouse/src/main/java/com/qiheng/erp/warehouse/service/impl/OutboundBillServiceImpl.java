@@ -33,6 +33,8 @@ import com.qiheng.erp.warehouse.domain.outbound.vo.OutboundBillDetailVo;
 import com.qiheng.erp.warehouse.domain.outbound.vo.OutboundBillListItemVo;
 import com.qiheng.erp.warehouse.domain.outbound.vo.OutboundBillPageVo;
 import com.qiheng.erp.warehouse.domain.outbound.vo.OutboundBillSummaryVo;
+import com.qiheng.erp.warehouse.mapper.InboundBillItemMapper;
+import com.qiheng.erp.warehouse.mapper.OutboundBillItemMapper;
 import com.qiheng.erp.warehouse.mapper.OutboundBillMapper;
 import com.qiheng.erp.warehouse.service.IOutboundBillItemService;
 import com.qiheng.erp.warehouse.service.IOutboundBillService;
@@ -108,6 +110,9 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
 
     @Autowired
     private BillNoGenerator billNoGenerator;
+
+    @Autowired
+    private OutboundBillItemMapper outboundBillItemMapper;
 
     @Autowired(required = false)
     private List<OutboundSourceWritebackPort> outboundSourceWritebackPorts = Collections.emptyList();
@@ -296,6 +301,13 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
      * 新增出库单明细
      */
     private void addItem(String outboundNo, OutboundBill bill, List<OutboundBillItem> items, Long productId, Product product, String sourceItemId, BigDecimal planQty, BigDecimal currentQty, BigDecimal qualifiedQty, BigDecimal defectiveQty, String remark) {
+        // 修复：计算同 source_item_id 已确认出库单的 current_qty 累加(processed_qty 历史累计)
+        Long processedQty = null;
+        if (sourceItemId != null && !sourceItemId.isBlank()) {
+            Long sum = outboundBillItemMapper
+                    .sumConfirmedCurrentQtyBySourceItemId(Long.parseLong(sourceItemId));
+            processedQty = sum == null ? 0L : sum;
+        }
         OutboundBillItem item = new OutboundBillItem()
                 .setOutboundBillId(bill.getId())
                 .setOutboundNo(outboundNo)
@@ -306,13 +318,34 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 .setUnitName(product.getUnitName())
                 .setQuantityPrecision(product.getQuantityPrecision())
                 .setPlanQty(planQty != null && planQty.compareTo(BigDecimal.ZERO) > 0 ? QtyUtil.toStored(planQty) : null)
-                .setProcessedQty(null)
+                .setProcessedQty(processedQty)
                 .setCurrentQty(QtyUtil.toStored(currentQty))
                 .setPendingQty(null)
                 .setQualifiedQty(QtyUtil.toStored(qualifiedQty))
                 .setDefectiveQty(QtyUtil.toStored(defectiveQty))
                 .setRemark(remark);
         items.add(item);
+        validateItemBalance(item, outboundNo);
+    }
+
+    /**
+     * 防御性校验出库单明细数量平衡：processed_qty + current_qty + pending_qty = plan_qty
+     * 不平衡时 log.error 记录明细 id / productCode / 4 个数量，不抛错
+     */
+    private void validateItemBalance(OutboundBillItem item, String outboundNo) {
+        if (item.getPlanQty() == null || item.getCurrentQty() == null
+                || item.getPendingQty() == null || item.getProcessedQty() == null) {
+            return;
+        }
+        long plan = item.getPlanQty();
+        long current = item.getCurrentQty();
+        long pending = item.getPendingQty();
+        long processed = item.getProcessedQty();
+        if (processed + current + pending != plan) {
+            log.error("出库单[{}]明细数量不平衡:id={}, productCode={}, processed={}, current={}, pending={}, plan={}, sum={}",
+                    outboundNo, item.getId(), item.getProductCode(),
+                    processed, current, pending, plan, processed + current + pending);
+        }
     }
 
     /**
@@ -391,6 +424,13 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         stockBillEditingSupport.validateStatusAndVersion(
                 bill.getStatus(), bill.getVersion(), dto.getVersion(), "仅草稿状态可提交", StockBillStatus.DRAFT);
         stockBillEditingSupport.validateBeforeSubmit(bill);
+        // 防御性校验出库单明细数量平衡
+        List<OutboundBillItem> items = outboundBillItemService.list(
+                new LambdaQueryWrapper<OutboundBillItem>()
+                        .eq(OutboundBillItem::getOutboundBillId, id));
+        for (OutboundBillItem item : items) {
+            validateItemBalance(item, bill.getOutboundNo());
+        }
         // 更新状态为待确认
         bill.setStatus(StockBillStatus.PENDING_CONFIRM.name());
         if (!this.updateById(bill)) {
@@ -413,10 +453,10 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         if (bill == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库单不存在");
         }
-        // 系统生成采购退货单的库存预占与来源单状态必须一起维护，不能由仓储通用取消接口单独处理。
-        if (OutboundType.PURCHASE_RETURN.name().equals(bill.getOutboundType())
-                && EntryMode.SOURCE_GENERATED.name().equals(bill.getEntryMode())) {
-            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "系统生成采购退货出库单请通过采购退货单取消");
+        // 系统生成出库单的库存预占与来源单状态必须一起维护，不能由仓储通用取消接口单独处理，
+        // 否则出库单被取消但来源单仍占用锁定库存，形成孤儿锁定。统一由来源单取消。
+        if (EntryMode.SOURCE_GENERATED.name().equals(bill.getEntryMode())) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "系统生成出库单请通过来源单取消");
         }
         // 校验状态和乐观锁版本
         stockBillEditingSupport.validateStatusAndVersion(bill.getStatus(), bill.getVersion(), dto.getVersion(),
@@ -449,11 +489,13 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OutboundBillDetailVo confirmBill(String outboundBillId, OptimisticLockVersionDto dto) {
+        // 1. 校验出库单是否存在
         Long id = stockBillEditingSupport.parseBillId(outboundBillId, "出库单");
         OutboundBill bill = this.getById(id);
         if (bill == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "出库单不存在");
         }
+        // 如果是采购退货出库单，需要上锁来源单，防止并发操作(如采购退货单确认)
         if (SourceType.PURCHASE_RETURN_ORDER.name().equals(bill.getSourceType()) && bill.getSourceId() != null) {
             sourceOperationLockSupport.acquire(bill.getSourceType(), bill.getSourceId());
             bill = this.getById(id);
@@ -477,7 +519,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         Map<Long, WarehouseStock> lockedStocks = warehouseStockLockSupport.lockExistingStocks(
                 bill.getWarehouseId(), items.stream().map(OutboundBillItem::getProductId).toList());
         // ── 校验 ──
-        validateSourceRemainingQuantities(bill, items);
+        validateOutboundRemainingQuantities(bill, items);
         for (OutboundBillItem item : items) {
             Long currentQty = item.getCurrentQty();
             if (currentQty == null || currentQty <= 0) {
@@ -565,6 +607,10 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 item.setPendingQty(Math.max(0L, remaining - item.getCurrentQty()));
             }
         }
+        // 防御性校验出库单明细数量平衡（确认时最后一次）
+        for (OutboundBillItem item : items) {
+            validateItemBalance(item, bill.getOutboundNo());
+        }
         if (!outboundBillItemService.updateBatchById(items)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
                     "出库单明细已被其他人修改，请刷新后重试");
@@ -613,7 +659,10 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         matches.getFirst().onOutboundConfirmed(bill, items);
     }
 
-    private void validateSourceRemainingQuantities(OutboundBill bill, List<OutboundBillItem> items) {
+    /**
+     * 校验出库单明细的剩余数量是否足够。
+     */
+    private void validateOutboundRemainingQuantities(OutboundBill bill, List<OutboundBillItem> items) {
         for (OutboundBillItem item : items) {
             if (!hasSourceQuantitySnapshot(bill, item)) {
                 continue;
@@ -626,6 +675,9 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         }
     }
 
+    /**
+     * 校验出库单明细是否关联来源单。
+     */
     private boolean hasSourceQuantitySnapshot(OutboundBill bill, OutboundBillItem item) {
         return bill.getSourceId() != null && item.getSourceItemId() != null
                 && item.getPlanQty() != null && item.getProcessedQty() != null;

@@ -59,21 +59,25 @@ public class PurchaseOrderItem implements Serializable {
     @Schema(description = "单位名称")
     private String unitName;
 
+    @TableField("quantity_precision")
+    @Schema(description = "下单时固化的数量小数位快照，范围 0-2")
+    private Integer quantityPrecision;
+
     @TableField("quantity")
     @Schema(description = "数量，放大100倍保存")
-    private Integer quantity;
+    private Long quantity;
 
     @TableField("inbound_qty")
     @Schema(description = "已入库数量，放大100倍保存")
-    private Integer inboundQty;
+    private Long inboundQty;
 
     @TableField("unit_price")
     @Schema(description = "单价")
-    private Integer unitPrice;
+    private Long unitPrice;
 
     @TableField("total_amount")
     @Schema(description = "总金额")
-    private Integer totalAmount;
+    private Long totalAmount;
 
     @TableField("selected_supplier_score")
     @Schema(description = "选中供应商评分")

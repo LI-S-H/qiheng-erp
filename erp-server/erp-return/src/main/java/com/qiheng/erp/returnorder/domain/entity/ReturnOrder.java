@@ -87,7 +87,7 @@ public class ReturnOrder implements Serializable {
 
     @TableField("total_amount")
     @Schema(description = "总金额（元）")
-    private Integer totalAmount;
+    private Long totalAmount;
 
     @TableField("status")
     @Schema(description = "状态")

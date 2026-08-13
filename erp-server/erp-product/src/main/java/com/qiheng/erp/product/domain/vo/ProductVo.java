@@ -1,6 +1,8 @@
  package com.qiheng.erp.product.domain.vo;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.qiheng.erp.common.config.MoneyStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -42,9 +44,11 @@ public class ProductVo {
     private String barcode;
 
     @Schema(description = "参考采购价")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal referencePurchasePrice;
 
     @Schema(description = "参考销售价")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal referenceSalePrice;
 
     @Schema(description = "安全库存数量，业务真实值")

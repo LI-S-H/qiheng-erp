@@ -1,6 +1,8 @@
 package com.qiheng.erp.purchase.domain.purchaseorder.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.qiheng.erp.common.config.MoneyStringSerializer;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -16,9 +18,11 @@ public class PurchaseOrderFulfillmentSummaryVo {
     private String calculationMode;
 
     @Schema(description = "订单总金额")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal totalAmount;
 
     @Schema(description = "累计入库金额")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal inboundAmount;
 
     @Schema(description = "按金额核算的完成率，范围 0-100")

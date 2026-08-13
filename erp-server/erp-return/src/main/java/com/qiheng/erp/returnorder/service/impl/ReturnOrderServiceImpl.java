@@ -172,7 +172,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 1. 查询来源订单
         ReturnSourceOrder sourceOrder = provider.getSourceOrder(sourceOrderId);
         // 2. 计算占用数量（排除自身）
-        Map<Long, Integer> occupied = buildOccupiedMap(returnType, sourceOrderId, null);
+        Map<Long, Long> occupied = buildOccupiedMap(returnType, sourceOrderId, null);
         // 3. 查询来源订单明细
         List<ReturnSourceItem> sourceItems = provider.listSourceItems(List.of(sourceOrderId))
                 .getOrDefault(sourceOrderId, List.of());
@@ -183,15 +183,15 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         Map<Long, Long> stockAvailableMap = loadStockAvailable(returnType, sourceOrder.warehouseId(), productIds);
         return sourceItems.stream().map(source -> {
             // 查询来源单已入库数量
-            int fulfilled = source.fulfilledQty() == null ? 0 : source.fulfilledQty();
+            long fulfilled = source.fulfilledQty() == null ? 0L : source.fulfilledQty();
             // 查询已占用数量（排除自身,草稿和取消状态订单, 即已退货数量）
-            int used = occupied.getOrDefault(source.sourceOrderItemId(), 0);
+            long used = occupied.getOrDefault(source.sourceOrderItemId(), 0L);
             // 查询来源可退数量(已入库数量-已退货数量)
-            int sourceAvailable = Math.max(0, fulfilled - used);
+            long sourceAvailable = Math.max(0L, fulfilled - used);
             // 查询库存可用数量
             long stockAvail = stockAvailableMap.getOrDefault(source.productId(), 0L);
             // 查询最终可退数量（采购退货受库存限制，销售退货不受限）
-            int available = calculateAvailable(returnType, sourceAvailable, stockAvail);
+            long available = calculateAvailable(returnType, sourceAvailable, stockAvail);
             ReturnOrderItemVo vo = new ReturnOrderItemVo();
             vo.setSourceOrderItemId(source.sourceOrderItemId());
             vo.setProductId(source.productId());
@@ -201,8 +201,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             vo.setQuantityPrecision(source.quantityPrecision());
             vo.setSourceFulfilledQty(toDecimal(fulfilled));
             vo.setOccupiedQty(toDecimal(used));
-            vo.setStockAvailableQty(toDecimal((int) Math.max(0L, stockAvail)));
-            vo.setUnitPrice(toDecimal(source.unitPrice()));
+            vo.setStockAvailableQty(toDecimal(Math.max(0L, stockAvail)));
+        vo.setUnitPrice(toDecimal(source.unitPrice()));
             vo.setAvailableReturnQty(toDecimal(available));
             return vo;
         }).toList();
@@ -228,7 +228,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "退货仓库必须与原订单仓库一致");
         }
         // 4. 计算占用数量（排除自身）
-        Map<Long, Integer> occupied = buildOccupiedMap(returnType, sourceOrderId, null);
+        Map<Long, Long> occupied = buildOccupiedMap(returnType, sourceOrderId, null);
         // 5. 构建退货单明细(退货单明细列表,退货总金额),同时校验申请退回数量以及精度是否符合要求
         BuiltItems built = buildReturnItems(returnType, ctx.sourceItemMap, dto.getItems(), occupied, ctx.stockAvailableMap, null);
         // 6. 获取当前用户信息
@@ -250,7 +250,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                 .setHandlingType(dto.getHandlingType())
                 .setReasonCode(dto.getReasonCode())
                 .setReturnReason(dto.getReturnReason())
-                .setTotalAmount(QtyUtil.toStored(built.totalAmount).intValue())
+                .setTotalAmount(QtyUtil.toStored(built.totalAmount))
                 .setStatus(ReturnStatus.DRAFT.name())
                 .setStatusReason("")
                 .setCreatedById(loginUser.getUserId())
@@ -289,7 +289,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "退货仓库必须与原订单仓库一致");
         }
         // 6. 计算占用数量（排除自身）
-        Map<Long, Integer> occupied = buildOccupiedMap(returnType, sourceOrderId, returnOrderId);
+        Map<Long, Long> occupied = buildOccupiedMap(returnType, sourceOrderId, returnOrderId);
         // 7. 构建退货单明细(退货单明细列表,退货总金额),同时校验申请退回数量以及精度是否符合要求
         BuiltItems built = buildReturnItems(returnType, ctx.sourceItemMap, dto.getItems(), occupied, ctx.stockAvailableMap, returnOrderId);
         // 8. 更新退货单主表信息
@@ -306,7 +306,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         update.setHandlingType(dto.getHandlingType());
         update.setReasonCode(dto.getReasonCode());
         update.setReturnReason(dto.getReturnReason());
-        update.setTotalAmount(QtyUtil.toStored(built.totalAmount).intValue());
+        update.setTotalAmount(QtyUtil.toStored(built.totalAmount));
         update.setRemark(dto.getRemark());
         update.setVersion(dto.getVersion());
         // 9. 更新退货单主表信息
@@ -430,7 +430,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 4.1 校验审核数量是否在申请数量范围内
         Map<Long, ReturnOrderItem> itemMap = items.stream()
                 .collect(Collectors.toMap(ReturnOrderItem::getId, item -> item));
-        Map<Long, Integer> approvedQtyMap = new HashMap<>();
+        Map<Long, Long> approvedQtyMap = new HashMap<>();
         int positiveCount = 0;
         // 4.2 校验审核数量是否在申请数量范围内
         for (ReturnOrderApproveItem approveItem : dto.getItems()) {
@@ -439,8 +439,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             if (item == null) {
                 throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货明细不存在: " + itemId);
             }
-            int requested = item.getRequestedQty() == null ? 0 : item.getRequestedQty();
-            int approvedStored = QtyUtil.toStored(approveItem.getApprovedQty()).intValue();
+            long requested = item.getRequestedQty() == null ? 0L : item.getRequestedQty();
+            long approvedStored = QtyUtil.toStored(approveItem.getApprovedQty());
             if (approvedStored < 0 || approvedStored > requested) {
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
                         item.getProductName() + " 的审核数量必须在 0～申请数量之间");
@@ -459,7 +459,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         revalidateAvailable(returnType, returnOrderId, existing.getSourceOrderId());
         // 6. 更新退货单明细审核数量
         for (ReturnOrderItem item : items) {
-            Integer approved = approvedQtyMap.get(item.getId());
+            Long approved = approvedQtyMap.get(item.getId());
             if (approved == null) {
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "缺少退货明细的审核数量: " + item.getId());
             }
@@ -483,7 +483,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         }
         // 8. 生成仓库工作单（采购退货出库单 + 实物库存预占，销售退货入库单）
         List<ReturnOrderItem> approvedItems = items.stream()
-                .filter(item -> approvedQtyMap.getOrDefault(item.getId(), 0) > 0)
+                .filter(item -> approvedQtyMap.getOrDefault(item.getId(), 0L) > 0)
                 .toList();
         if (returnType == ReturnType.PURCHASE_RETURN) {
             generatePurchaseReturnOutbound(existing, approvedItems, approvedQtyMap, true);
@@ -584,8 +584,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 2. 按退货单明细汇总释放量（与审核预占对称：预占 approved-processed，释放同量取负）
         Map<Long, Long> releaseDeltas = new HashMap<>();
         for (ReturnOrderItem item : items) {
-            long approved = item.getApprovedQty() == null ? 0L : item.getApprovedQty().longValue();
-            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty().longValue();
+            long approved = item.getApprovedQty() == null ? 0L : item.getApprovedQty();
+            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty();
             long pending = approved - processed;
             if (pending <= 0L) continue;
             releaseDeltas.merge(item.getProductId(), -pending, Long::sum);
@@ -670,7 +670,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      * 生成采购退货出库单（PENDING_CONFIRM）并预占实物库存。
      */
     private void generatePurchaseReturnOutbound(ReturnOrder order, List<ReturnOrderItem> approvedItems,
-                                                Map<Long, Integer> approvedQtyMap, boolean needLockStock) {
+                                                Map<Long, Long> approvedQtyMap, boolean needLockStock) {
         // 1. 工作单幂等：同一退货单已存在未确认出库单则跳过生成
         Long activeCount = outboundBillMapper.selectCount(new LambdaQueryWrapper<OutboundBill>()
                 .eq(OutboundBill::getSourceId, order.getId())
@@ -707,7 +707,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             // 通过的退货数量
             long approved = approvedQtyMap.get(item.getId());
             // 累计已经完成的退货数量
-            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty().longValue();
+            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty();
             // 待处理退货数量
             long pending = approved - processed;
             if (pending <= 0L) continue;
@@ -748,7 +748,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      * @param approvedQtyMap 明细ID -> 审核数量（×100 整数）
      */
     private void generateSalesReturnInbound(ReturnOrder order, List<ReturnOrderItem> approvedItems,
-                                            Map<Long, Integer> approvedQtyMap) {
+                                            Map<Long, Long> approvedQtyMap) {
         // 在仓库确认销售退货入库后同一事务回写退货明细 processed_qty 与退货单状态。
         // 1. 工作单幂等：同一退货单已存在未确认入库单则跳过生成
         Long activeCount = inboundBillMapper.selectCount(new LambdaQueryWrapper<InboundBill>()
@@ -785,7 +785,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             // 通过的退货数量
             long approved = approvedQtyMap.get(item.getId());
             // 累计已经完成的退货数量
-            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty().longValue();
+            long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty();
             // 待处理退货数量
             long pending = approved - processed;
             if (pending <= 0L) continue;
@@ -820,7 +820,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 1. 获取来源上下文（来源订单快照 + 来源明细映射 + 库存可用映射）
         SourceContext ctx = resolveSourceContext(returnType, sourceOrderId);
         // 2. 计算占用数量（排除自身，当前为草稿本就不占用，传 returnOrderId 语义明确）
-        Map<Long, Integer> occupied = buildOccupiedMap(returnType, sourceOrderId, returnOrderId);
+        Map<Long, Long> occupied = buildOccupiedMap(returnType, sourceOrderId, returnOrderId);
         // 3. 查询退货单明细
         List<ReturnOrderItem> items = returnOrderItemMapper.selectList(new LambdaQueryWrapper<ReturnOrderItem>()
                 .eq(ReturnOrderItem::getReturnOrderId, returnOrderId));
@@ -830,15 +830,15 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             if (source == null) {
                 throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "来源明细不存在: " + item.getSourceOrderItemId());
             }
-            int fulfilled = source.fulfilledQty() == null ? 0 : source.fulfilledQty();
-            int used = occupied.getOrDefault(item.getSourceOrderItemId(), 0);
-            int sourceAvailable = Math.max(0, fulfilled - used);
+            long fulfilled = source.fulfilledQty() == null ? 0L : source.fulfilledQty();
+            long used = occupied.getOrDefault(item.getSourceOrderItemId(), 0L);
+            long sourceAvailable = Math.max(0L, fulfilled - used);
             long stockAvail = ctx.stockAvailableMap.getOrDefault(item.getProductId(), 0L);
-            int available = calculateAvailable(returnType, sourceAvailable, stockAvail);
-            int requested = item.getRequestedQty() == null ? 0 : item.getRequestedQty();
+            long available = calculateAvailable(returnType, sourceAvailable, stockAvail);
+            long requested = item.getRequestedQty() == null ? 0L : item.getRequestedQty();
             if (requested > available) {
                 String detail = returnType == ReturnType.PURCHASE_RETURN
-                        ? String.format("来源可退 %s，仓库可用库存 %s", toDecimal(sourceAvailable), toDecimal((int) Math.max(0L, stockAvail)))
+                        ? String.format("来源可退 %s，仓库可用库存 %s", toDecimal(sourceAvailable), toDecimal(Math.max(0L, stockAvail)))
                         : String.format("来源可退 %s", toDecimal(sourceAvailable));
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
                         "申请退回数量 " + toDecimal(requested) + " 超过剩余可退数量 " + toDecimal(available) + "（" + detail + "）");
@@ -880,7 +880,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         List<Long> sourceOrderIds = sources.stream().map(ReturnSourceOrder::sourceOrderId).toList();
         Map<Long, List<ReturnSourceItem>> sourceItemsMap = provider.listSourceItems(sourceOrderIds);
         // 2. 批量查询占用数量（来源单ID -> 来源明细ID -> 占用数量）
-        Map<Long, Map<Long, Integer>> occupiedMap = buildOccupiedMapBatch(returnType, sourceOrderIds);
+        Map<Long, Map<Long, Long>> occupiedMap = buildOccupiedMapBatch(returnType, sourceOrderIds);
         // 3. 按仓库对来源单中的产品ID进行去重分组（仓库ID -> 产品ID列表）
         Map<Long, Set<Long>> warehouseProducts = new HashMap<>();
         for (ReturnSourceOrder src : sources) {
@@ -903,7 +903,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             // 4.1. 获取当前来源单的明细
             List<ReturnSourceItem> items = sourceItemsMap.getOrDefault(source.sourceOrderId(), List.of());
             // 4.2. 获取当前来源单的占用数量
-            Map<Long, Integer> occupied = occupiedMap.getOrDefault(source.sourceOrderId(), Map.of());
+            Map<Long, Long> occupied = occupiedMap.getOrDefault(source.sourceOrderId(), Map.of());
             // 4.3. 获取当前仓库的产品的可用库存
             Map<Long, Long> stockAvailMap = stockCache.getOrDefault(source.warehouseId(), Map.of());
             // 4.4. 计算当前来源单的可退数量
@@ -911,15 +911,15 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             int fulfilledCount = 0;
             for (ReturnSourceItem sourceItem : items) {
                 // 获取当前来源单明细的已入库数量
-                int fulfilled = sourceItem.fulfilledQty() == null ? 0 : sourceItem.fulfilledQty();
+                long fulfilled = sourceItem.fulfilledQty() == null ? 0L : sourceItem.fulfilledQty();
                 // 获取当前来源单明细的占用数量(已退数量)
-                int used = occupied.getOrDefault(sourceItem.sourceOrderItemId(), 0);
+                long used = occupied.getOrDefault(sourceItem.sourceOrderItemId(), 0L);
                 // 计算当前来源单明细的可退数量(已入库数量-已退数量)
-                int sourceAvailable = Math.max(0, fulfilled - used);
+                long sourceAvailable = Math.max(0L, fulfilled - used);
                 // 获取当前来源单明细的可用库存
                 long stockAvail = stockAvailMap.getOrDefault(sourceItem.productId(), 0L);
                 // 计算最终可退数量（采购退货受库存限制，销售退货不受限）
-                int available = calculateAvailable(returnType, sourceAvailable, stockAvail);
+                long available = calculateAvailable(returnType, sourceAvailable, stockAvail);
                 if (available > 0) {
                     fulfilledCount++;
                     totalAvailable = totalAvailable.add(toDecimal(available));
@@ -984,13 +984,13 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                                 + ",产品名称:" + outboundItem.getProductName() + ")");
             }
             // 计算此次出库量+已退库数量是否超过已审核数量
-            int approved = returnItem.getApprovedQty() == null ? 0 : returnItem.getApprovedQty();
-            int processed = returnItem.getProcessedQty() == null ? 0 : returnItem.getProcessedQty();
-            long nextProcessed = (long) processed + outboundItem.getCurrentQty();
+            long approved = returnItem.getApprovedQty() == null ? 0L : returnItem.getApprovedQty();
+            long processed = returnItem.getProcessedQty() == null ? 0L : returnItem.getProcessedQty();
+            long nextProcessed = processed + outboundItem.getCurrentQty();
             if (nextProcessed > approved) {
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "采购退货出库数量超过已审核数量");
             }
-            returnItem.setProcessedQty((int) nextProcessed);
+            returnItem.setProcessedQty(nextProcessed);
         }
         // 5. 判断退货单是否完成并更新主表状态
         boolean completed = returnItems.values().stream().allMatch(item ->
@@ -1009,17 +1009,17 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         if (!completed) {
             List<ReturnOrderItem> remainingItems = returnItems.values().stream()
                     .filter(item -> {
-                        int approved = item.getApprovedQty() == null ? 0 : item.getApprovedQty();
-                        int processed = item.getProcessedQty() == null ? 0 : item.getProcessedQty();
+                        long approved = item.getApprovedQty() == null ? 0L : item.getApprovedQty();
+                        long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty();
                         return approved - processed > 0;
                     })
                     .toList();
             if (!remainingItems.isEmpty()) {
                 // 为剩余数量生成下一张待确认出库单，串行化同一来源的退货审核，防止并发超额
-                Map<Long, Integer> remainingQtyMap = remainingItems.stream()
+                Map<Long, Long> remainingQtyMap = remainingItems.stream()
                         .collect(Collectors.toMap(
                                 ReturnOrderItem::getId,
-                                item -> item.getApprovedQty() == null ? 0 : item.getApprovedQty()));
+                                item -> item.getApprovedQty() == null ? 0L : item.getApprovedQty()));
                 generatePurchaseReturnOutbound(order, remainingItems, remainingQtyMap, false);
             }
         }
@@ -1031,7 +1031,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      * （审核通过后实际占用来源的量是审核量而非申请量，避免申请量大于审核量时虚占来源可退量）。
      * 编辑当前退货单时传 excludeReturnOrderId 排除自身。</p>
      */
-    private Map<Long, Integer> buildOccupiedMap(ReturnType returnType, Long sourceOrderId, Long excludeReturnOrderId) {
+    private Map<Long, Long> buildOccupiedMap(ReturnType returnType, Long sourceOrderId, Long excludeReturnOrderId) {
         // 1. 查询所有有效退货单(排除自身, 草稿和已取消单)
         List<ReturnOrder> validOrders = returnOrderMapper.selectList(new LambdaQueryWrapper<ReturnOrder>()
                         .eq(ReturnOrder::getReturnType, returnType.name())
@@ -1048,20 +1048,20 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                 .stream()
                 .collect(Collectors.groupingBy(
                         ReturnOrderItem::getSourceOrderItemId,
-                        Collectors.summingInt(item -> {
+                        Collectors.summingLong(item -> {
                             // 3. 计算占用数量（已提交按申请量，已审核按审核量）
                             ReturnStatus status = orderStatusMap.get(item.getReturnOrderId());
                             if (status == ReturnStatus.SUBMITTED) {
-                                return item.getRequestedQty() == null ? 0 : item.getRequestedQty();
+                                return item.getRequestedQty() == null ? 0L : item.getRequestedQty();
                             }
-                            return item.getApprovedQty() == null ? 0 : item.getApprovedQty();
+                            return item.getApprovedQty() == null ? 0L : item.getApprovedQty();
                         })));
     }
 
     /**
      * 批量查询多个来源订单下，有效退货单对各来源明细的占用数量。
      */
-    private Map<Long, Map<Long, Integer>> buildOccupiedMapBatch(ReturnType returnType, List<Long> sourceOrderIds) {
+    private Map<Long, Map<Long, Long>> buildOccupiedMapBatch(ReturnType returnType, List<Long> sourceOrderIds) {
         if (sourceOrderIds == null || sourceOrderIds.isEmpty()) return Map.of();
         // 1. 查询所有有效退货单(排除自身, 草稿和已取消单)
         List<ReturnOrder> validOrders = returnOrderMapper.selectList(new LambdaQueryWrapper<ReturnOrder>()
@@ -1085,12 +1085,12 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                         item -> orderToSourceMap.get(item.getReturnOrderId()),
                         Collectors.groupingBy(
                                 ReturnOrderItem::getSourceOrderItemId,
-                                Collectors.summingInt(item -> {
+                                Collectors.summingLong(item -> {
                                     ReturnStatus status = orderStatusMap.get(item.getReturnOrderId());
                                     if (status == ReturnStatus.SUBMITTED) {
-                                        return item.getRequestedQty() == null ? 0 : item.getRequestedQty();
+                                        return item.getRequestedQty() == null ? 0L : item.getRequestedQty();
                                     }
-                                    return item.getApprovedQty() == null ? 0 : item.getApprovedQty();
+                                    return item.getApprovedQty() == null ? 0L : item.getApprovedQty();
                                 }))));
     }
 
@@ -1099,7 +1099,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         ReturnOrderVo vo = new ReturnOrderVo();
         BeanUtil.copyProperties(entity, vo, "id");
         vo.setReturnOrderId(entity.getId());
-        vo.setTotalAmount(entity.getTotalAmount() == null ? null : QtyUtil.toDecimal(entity.getTotalAmount().longValue()));
+        vo.setTotalAmount(QtyUtil.toDecimal(entity.getTotalAmount()));
         return vo;
     }
 
@@ -1143,8 +1143,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     }
 
     /** 将放大整数数量或金额转换为接口使用的十进制数值。 */
-    private BigDecimal toDecimal(Integer value) {
-        return value == null ? null : QtyUtil.toDecimal(value.longValue());
+    private BigDecimal toDecimal(Long value) {
+        return QtyUtil.toDecimal(value);
     }
 
     /**
@@ -1153,11 +1153,11 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      * <p>采购退货是出库操作，不能超过仓库可用库存；销售退货是入库操作，不受库存限制，
      * 只看来源已履约数量减去其他退货单占用。</p>
      */
-    private int calculateAvailable(ReturnType returnType, int sourceAvailable, long stockAvail) {
+    private long calculateAvailable(ReturnType returnType, long sourceAvailable, long stockAvail) {
         if (returnType == ReturnType.SALES_RETURN) {
-            return Math.max(0, sourceAvailable);
+            return Math.max(0L, sourceAvailable);
         }
-        return (int) Math.max(0L, Math.min(sourceAvailable, stockAvail));
+        return Math.max(0L, Math.min(sourceAvailable, stockAvail));
     }
 
     /**
@@ -1244,7 +1244,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     private BuiltItems buildReturnItems(ReturnType returnType,
                                          Map<Long, ReturnSourceItem> sourceItemMap,
                                          List<ReturnOrderItemCreateDto> dtoItems,
-                                         Map<Long, Integer> occupied,
+                                         Map<Long, Long> occupied,
                                          Map<Long, Long> stockAvailableMap,
                                          Long returnOrderId) {
         // 1. 去重(来源订单明细ID)
@@ -1264,16 +1264,16 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                 throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "来源明细不存在: " + sourceItemItemId);
             }
             // 3. 获取来源明细已入库数量
-            int fulfilled = source.fulfilledQty() == null ? 0 : source.fulfilledQty();
+            long fulfilled = source.fulfilledQty() == null ? 0L : source.fulfilledQty();
             // 4. 计算已占用数量(已退回数量)
-            int used = occupied.getOrDefault(sourceItemItemId, 0);
+            long used = occupied.getOrDefault(sourceItemItemId, 0L);
             // 5. 计算可退数量(已入库数量 - 已退回数量)
-            int sourceAvailable = Math.max(0, fulfilled - used);
+            long sourceAvailable = Math.max(0L, fulfilled - used);
             // 6. 获取库存可用数量(产品ID -> 库存可用数量)
             long stockAvail = stockAvailableMap.getOrDefault(source.productId(), 0L);
             // 7. 计算最终可退数量（采购退货受库存限制，销售退货不受限）
-            int available = calculateAvailable(returnType, sourceAvailable, stockAvail);
-            int requestedStored = QtyUtil.toStored(itemDto.getRequestedQty()).intValue();
+            long available = calculateAvailable(returnType, sourceAvailable, stockAvail);
+            long requestedStored = QtyUtil.toStored(itemDto.getRequestedQty());
             // 8. 校验申请退回数量是否>0
             if (requestedStored <= 0) {
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "申请退回数量必须大于0");
@@ -1281,7 +1281,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             // 9. 校验申请退回数量是否超过剩余可退数量
             if (requestedStored > available) {
                 String detail = returnType == ReturnType.PURCHASE_RETURN
-                        ? String.format("来源可退 %s，仓库可用库存 %s", toDecimal(sourceAvailable), toDecimal((int) Math.max(0L, stockAvail)))
+                        ? String.format("来源可退 %s，仓库可用库存 %s", toDecimal(sourceAvailable), toDecimal(Math.max(0L, stockAvail)))
                         : String.format("来源可退 %s", toDecimal(sourceAvailable));
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
                         "申请退回数量 " + toDecimal(requestedStored) + " 超过剩余可退数量 " + toDecimal(available) + "（" + detail + "）");
@@ -1290,7 +1290,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             int precision = source.quantityPrecision() == null ? 0 : source.quantityPrecision();
             validateQuantityPrecision(itemDto.getRequestedQty(), precision);
             // 11. 计算退货金额(申请退回数量 * 单价)
-            int unitPriceStored = source.unitPrice() == null ? 0 : source.unitPrice();
+        long unitPriceStored = source.unitPrice() == null ? 0L : source.unitPrice();
             BigDecimal lineAmount = itemDto.getRequestedQty()
                     .multiply(BigDecimal.valueOf(unitPriceStored).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
             // 12. 累加退货金额
@@ -1304,10 +1304,10 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                     .setQuantityPrecision(precision)
                     .setSourceFulfilledQty(fulfilled)
                     .setRequestedQty(requestedStored)
-                    .setApprovedQty(0)
-                    .setProcessedQty(0)
+                    .setApprovedQty(0L)
+                    .setProcessedQty(0L)
                     .setUnitPrice(unitPriceStored)
-                    .setTotalAmount(QtyUtil.toStored(lineAmount).intValue())
+                .setTotalAmount(QtyUtil.toStored(lineAmount))
                     .setRemark(itemDto.getRemark());
             if (returnOrderId != null) {
                 // 13. 设置退货单ID

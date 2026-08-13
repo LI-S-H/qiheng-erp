@@ -1,5 +1,6 @@
 import { getResult } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { normalizeMoneyNumber } from '@/shared/utils/money';
 import type {
   DashboardMetric,
   DashboardNotificationPopover,
@@ -144,9 +145,9 @@ function normalizeMetric(item: DashboardMetric): DashboardMetric {
 function normalizeTrendPoint(item: DashboardTrendPoint): DashboardTrendPoint {
   return {
     ...item,
-    salesAmount: normalizeFiniteNumber(item.salesAmount, 'salesAmount'),
-    purchaseAmount: normalizeFiniteNumber(item.purchaseAmount, 'purchaseAmount'),
-    grossMarginAmount: normalizeFiniteNumber(item.grossMarginAmount, 'grossMarginAmount'),
+    salesAmount: normalizeMoneyNumber(item.salesAmount, 'salesAmount', false, useMockApi)!,
+    purchaseAmount: normalizeMoneyNumber(item.purchaseAmount, 'purchaseAmount', false, useMockApi)!,
+    grossMarginAmount: normalizeMoneyNumber(item.grossMarginAmount, 'grossMarginAmount', false, useMockApi)!,
   };
 }
 
@@ -217,7 +218,7 @@ function normalizeTopProduct(item: DashboardTopProduct): DashboardTopProduct {
   return {
     ...item,
     productId: normalizeStringId(item.productId, 'productId'),
-    salesAmount: normalizeFiniteNumber(item.salesAmount, 'salesAmount'),
+    salesAmount: normalizeMoneyNumber(item.salesAmount, 'salesAmount', false, useMockApi)!,
     salesQty: normalizeFiniteNumber(item.salesQty, 'salesQty'),
     availableQty: normalizeFiniteNumber(item.availableQty, 'availableQty'),
   };

@@ -5,12 +5,34 @@ import com.qiheng.erp.common.exception.ErrorCode;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class IdUtilTest {
+
+    @Test
+    void toStoredShouldKeepBigintUpperBoundary() {
+        assertEquals(Long.MAX_VALUE, QtyUtil.toStored(new BigDecimal("92233720368547758.07")));
+    }
+
+    @Test
+    void toStoredShouldRejectOverflowInsteadOfTruncating() {
+        BizException exception = assertThrows(BizException.class,
+                () -> QtyUtil.toStored(new BigDecimal("92233720368547758.08")));
+
+        assertEquals(ErrorCode.PARAM_ERROR.getCode(), exception.getCode());
+    }
+
+    @Test
+    void toStoredIntShouldRejectOverflowInsteadOfTruncating() {
+        BizException exception = assertThrows(BizException.class,
+                () -> QtyUtil.toStoredInt(new BigDecimal("21474836.48")));
+
+        assertEquals(ErrorCode.PARAM_ERROR.getCode(), exception.getCode());
+    }
 
     @Test
     void parseRequiredLongIdShouldKeepLargeLongValue() {

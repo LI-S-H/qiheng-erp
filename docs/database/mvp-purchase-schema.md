@@ -62,8 +62,8 @@
 | supplier_id           | bigint        | 供应商ID                 |
 | product_id            | bigint        | 产品ID                  |
 | supplier_product_code | varchar(100)  | 供应商侧产品编码              |
-| latest_purchase_price | int，可为空   | 最近采购单价，放大 100 倍保存，3520 表示 35.20；尚未采购时为空 |
-| min_order_qty         | int           | 最小起订量，放大 100 倍保存，1000 表示 10.00      |
+| latest_purchase_price | bigint，可为空 | 最近采购单价，按分（×100）保存，3520 表示 35.20；尚未采购时为空 |
+| min_order_qty         | bigint        | 最小起订量，放大 100 倍保存，1000 表示 10.00      |
 | lead_time_days        | int           | 预计交期天数                |
 | delivery_score        | int           | 该产品维度交付评分，放大 100 倍保存  |
 | quality_score         | int           | 该产品维度质量评分，放大 100 倍保存  |
@@ -92,7 +92,7 @@
 | warehouse_id          | bigint        | 目标入库仓库ID                                                                       |
 | warehouse_name        | varchar(100)  | 目标入库仓库名称，冗余                                                                    |
 | status                | varchar(32)   | 状态：`DRAFT`、`SUBMITTED`、`APPROVED`、`PARTIAL_INBOUND`、`INBOUND_DONE`、`CANCELLED` |
-| total_amount          | int           | 订单总金额，放大 100 倍保存，84480 表示 844.80                                          |
+| total_amount          | bigint        | 订单总金额，按分（×100）保存，84480 表示 844.80                                          |
 | expected_arrival_date | date          | 预计到货日期；草稿阶段可为空，提交和审核前必须校验非空                                                    |
 | created_by_id         | bigint        | 创建人ID                                                                          |
 | created_by_name       | varchar(100)  | 创建人姓名                                                                          |
@@ -121,10 +121,11 @@
 | product_code            | varchar(64)   | 产品编码，冗余                |
 | product_name            | varchar(200)  | 产品名称，冗余                |
 | unit_name               | varchar(32)   | 单位名称，冗余                |
-| quantity                | int           | 采购数量，放大 100 倍保存，2400 表示 24.00  |
-| inbound_qty             | int           | 已入库数量，放大 100 倍保存，900 表示 9.00   |
-| unit_price              | int           | 采购单价，放大 100 倍保存，3520 表示 35.20  |
-| total_amount            | int           | 明细金额，放大 100 倍保存，168960 表示 1689.60 |
+| quantity_precision      | tinyint       | 数量小数位快照：0-2；创建时从 `product.quantity_precision` 固化，后续不得因产品主数据变更而改写 |
+| quantity                | bigint        | 采购数量，放大 100 倍保存，2400 表示 24.00  |
+| inbound_qty             | bigint        | 已入库数量，放大 100 倍保存，900 表示 9.00   |
+| unit_price              | bigint     | 采购单价，按分（×100）保存，3520 表示 35.20  |
+| total_amount            | bigint     | 明细金额，按分（×100）保存，168960 表示 1689.60 |
 | selected_supplier_score | int           | 下单时供应商推荐分快照，放大 100 倍保存 |
 | create_time             | datetime      | 创建时间                   |
 | update_time             | datetime      | 更新时间                   |
@@ -190,6 +191,7 @@
 - 采购明细可以保存供应商推荐分快照。
 - 审核采购订单后能生成 `PURCHASE_IN` 待确认入库单。
 - 确认入库后能更新库存，并回写采购明细已入库数量。
+- 新建采购明细时，前端随明细提交 `quantityPrecision` 仅用于显式表达所见产品规则；后端必须重新读取产品精度并校验请求值一致，再把服务端值固化到 `purchase_order_item.quantity_precision`。编辑历史明细、生成入库工作单和采购退货来源均以该明细快照为准，不再联查当前产品精度。
 - 确认入库时记录合格数量和不合格数量，供应商评分刷新任务可以据此计算质量分。
 - AI 后续可以按产品查询候选供应商，并按 `ai_score` 等字段选择推荐供应商。
 

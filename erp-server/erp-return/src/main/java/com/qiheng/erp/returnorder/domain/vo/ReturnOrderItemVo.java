@@ -3,6 +3,7 @@ package com.qiheng.erp.returnorder.domain.vo;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.qiheng.erp.common.config.MoneyStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -66,9 +67,11 @@ public class ReturnOrderItemVo {
     private BigDecimal processedQty;
 
     @Schema(description = "单价，按100倍整数存储的放大值")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal unitPrice;
 
     @Schema(description = "明细总金额")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal totalAmount;
 
     @Schema(description = "备注")

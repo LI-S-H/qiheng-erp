@@ -1,11 +1,10 @@
 package com.qiheng.erp.sales.domain.customer.entity;
 
 import java.io.Serial;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.annotation.IdType;
+
+import com.baomidou.mybatisplus.annotation.*;
+
 import java.time.LocalDateTime;
-import com.baomidou.mybatisplus.annotation.TableId;
 import java.io.Serializable;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -56,7 +55,7 @@ public class Customer implements Serializable {
 
     @Schema(description = "信用额度")
     @TableField("credit_limit")
-    private Integer creditLimit;
+    private Long creditLimit;
 
     @Schema(description = "状态：1启用，0禁用")
     @TableField("status")
@@ -88,6 +87,7 @@ public class Customer implements Serializable {
 
     @Schema(description = "乐观锁版本号")
     @TableField("version")
+    @Version
     private Integer version;
 
 

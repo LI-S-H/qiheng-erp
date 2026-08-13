@@ -1,6 +1,7 @@
 import { getResult, http, postResult } from '@/api/http';
 import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { normalizeMoneyNumber, serializeMoney } from '@/shared/utils/money';
 import { getMockProductSnapshot, listProducts } from '@/modules/product/products/api';
 import { listWarehouses } from '@/modules/warehouse/warehouses/api';
 import type { WarehouseListItem } from '@/modules/warehouse/warehouses/types';
@@ -219,7 +220,7 @@ function normalizeCustomer(item: CustomerListItem): CustomerListItem {
     contactName: String(item.contactName),
     contactPhone: String(item.contactPhone),
     address: String(item.address),
-    creditLimit: normalizeFiniteNumber(item.creditLimit, 'creditLimit'),
+    creditLimit: normalizeMoneyNumber(item.creditLimit, 'creditLimit', false, useMockApi)!,
     status: normalizeBinaryStatus(item.status),
     version: normalizeFiniteNumber(item.version, 'version'),
     remark: String(item.remark),
@@ -238,8 +239,8 @@ function normalizeOrderItem(item: SalesOrderItem): SalesOrderItem {
     quantity: normalizeFiniteNumber(item.quantity, 'quantity'),
     lockedQty: normalizeFiniteNumber(item.lockedQty, 'lockedQty'),
     outboundQty: normalizeFiniteNumber(item.outboundQty, 'outboundQty'),
-    unitPrice: normalizeFiniteNumber(item.unitPrice, 'unitPrice'),
-    totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
+    unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, useMockApi)!,
+    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, useMockApi)!,
   };
 }
 
@@ -249,7 +250,7 @@ function normalizeOrder(item: SalesOrderListItem): SalesOrderListItem {
     salesOrderId: normalizeStringId(item.salesOrderId, 'salesOrderId'),
     customerId: normalizeStringId(item.customerId, 'customerId'),
     warehouseId: normalizeStringId(item.warehouseId, 'warehouseId'),
-    totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
+    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, useMockApi)!,
     lockedAt: item.lockedAt || null,
     expectedDeliveryDate: item.expectedDeliveryDate || null,
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
@@ -352,7 +353,8 @@ export function createCustomer(payload: CustomerFormPayload) {
     mockCustomers = [...mockCustomers, created];
     return Promise.resolve(normalizeCustomer(created));
   }
-  return postResult<CustomerListItem, CustomerFormPayload>('/sales/customers', payload).then(normalizeCustomer);
+  const request = { ...payload, creditLimit: serializeMoney(payload.creditLimit, '信用额度') };
+  return postResult<CustomerListItem, typeof request>('/sales/customers', request).then(normalizeCustomer);
 }
 
 export async function updateCustomer(customerId: string, payload: CustomerFormPayload) {
@@ -365,7 +367,8 @@ export async function updateCustomer(customerId: string, payload: CustomerFormPa
     const customer = mockCustomers.find(item => item.customerId === customerId);
     return customer ? normalizeCustomer(customer) : null;
   }
-  const response = await http.put(`/sales/customers/${customerId}`, payload);
+  const request = { ...payload, creditLimit: serializeMoney(payload.creditLimit, '信用额度') };
+  const response = await http.put(`/sales/customers/${customerId}`, request);
   return normalizeCustomer(response.data.data as CustomerListItem);
 }
 
@@ -503,7 +506,8 @@ export function createSalesOrder(payload: SalesOrderFormPayload) {
     mockOrders = [created, ...mockOrders];
     return Promise.resolve(created);
   }
-  return postResult<SalesOrderDetail, SalesOrderFormPayload>('/sales/orders', payload).then(normalizeOrderDetail);
+  const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '销售单价') })) };
+  return postResult<SalesOrderDetail, typeof request>('/sales/orders', request).then(normalizeOrderDetail);
 }
 
 export async function updateSalesOrder(salesOrderId: string, payload: SalesOrderFormPayload) {
@@ -533,7 +537,8 @@ export async function updateSalesOrder(salesOrderId: string, payload: SalesOrder
     mockOrders = mockOrders.map(item => (item.salesOrderId === salesOrderId ? updated : item));
     return Promise.resolve(updated);
   }
-  const response = await http.put(`/sales/orders/${salesOrderId}`, payload);
+  const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '销售单价') })) };
+  const response = await http.put(`/sales/orders/${salesOrderId}`, request);
   return normalizeOrderDetail(response.data.data as SalesOrderDetail);
 }
 

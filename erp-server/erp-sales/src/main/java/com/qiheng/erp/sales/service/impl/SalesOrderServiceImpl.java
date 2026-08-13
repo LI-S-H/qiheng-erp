@@ -96,8 +96,6 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     @Autowired
     private OutboundBillMapper outboundBillMapper;
     @Autowired
-    private com.qiheng.erp.warehouse.service.IOutboundBillService outboundBillService;
-    @Autowired
     private IOutboundBillItemService outboundBillItemService;
     @Autowired
     private WarehouseStockReservationSupport warehouseStockReservationSupport;
@@ -187,7 +185,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         order.setWarehouseName(cw.warehouse.getWarehouseName());
         order.setStatus(SalesOrderStatus.DRAFT.name());
         order.setExpectedDeliveryDate(dto.getExpectedDeliveryDate());
-        order.setTotalAmount(QtyUtil.toStoredInt(totalAmount));
+        order.setTotalAmount(QtyUtil.toStored(totalAmount));
         order.setCreatedById(loginUser.getUserId());
         order.setCreatedByName(loginUser.getRealName());
         order.setRemark(dto.getRemark());
@@ -417,11 +415,16 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 ob.setStatus(StockBillStatus.CANCELLED.name());
                 billsToCancel.add(ob);
             }
-            // 6.3 批量取消出库单（明细无状态字段，随主表取消即可；@Version 乐观锁任一失败即抛错）
-            if (!billsToCancel.isEmpty()
-                    && !outboundBillService.updateBatchById(billsToCancel)) {
-                throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
-                        "出库单状态已被其他人修改，请刷新后重试");
+            // 6.3 逐条取消出库单（明细无状态字段，随主表取消即可；@Version 乐观锁逐条校验，与采购单保持一致）
+            for (OutboundBill billToCancel : billsToCancel) {
+                OutboundBill update = new OutboundBill();
+                update.setId(billToCancel.getId());
+                update.setStatus(StockBillStatus.CANCELLED.name());
+                update.setVersion(billToCancel.getVersion());
+                if (outboundBillMapper.updateById(update) == 0) {
+                    throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                            "出库单[" + billToCancel.getOutboundNo() + "]状态已变更，无法取消销售订单");
+                }
             }
             needReleaseStock = true;
         } else if (SalesOrderStatus.SUBMITTED.name().equals(currentStatus)) {
@@ -608,7 +611,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         update.setWarehouseId(warehouseId);
         update.setWarehouseName(cw.warehouse().getWarehouseName());
         update.setExpectedDeliveryDate(dto.getExpectedDeliveryDate());
-        update.setTotalAmount(QtyUtil.toStoredInt(totalAmount));
+        update.setTotalAmount(QtyUtil.toStored(totalAmount));
         update.setRemark(dto.getRemark());
         update.setVersion(dto.getVersion());
         int rows = salesOrderMapper.updateById(update);
@@ -857,8 +860,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 .setQuantity(QtyUtil.toStored(itemDto.getQuantity()))
                 .setLockedQty(lockedQty)
                 .setOutboundQty(0L)
-                .setUnitPrice(QtyUtil.toStoredInt(itemDto.getUnitPrice()))
-                .setTotalAmount(QtyUtil.toStoredInt(lineAmount))
+                .setUnitPrice(QtyUtil.toStored(itemDto.getUnitPrice()))
+                .setTotalAmount(QtyUtil.toStored(lineAmount))
                 .setRemark(itemDto.getRemark());
     }
 

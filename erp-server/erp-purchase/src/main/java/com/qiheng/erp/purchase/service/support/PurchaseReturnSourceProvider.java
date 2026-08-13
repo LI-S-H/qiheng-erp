@@ -5,8 +5,6 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
-import com.qiheng.erp.product.domain.entity.Product;
-import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrderItem;
 import com.qiheng.erp.purchase.domain.purchaseorder.enums.PurchaseOrderStatus;
@@ -37,14 +35,9 @@ public class PurchaseReturnSourceProvider implements ReturnSourceProvider {
     // 搜索最大返回条数
     private static final int MAX_SEARCH_LIMIT = 50;
 
-    // 产品缺失时兜底的数量小数位
-    private static final int DEFAULT_QUANTITY_PRECISION = 2;
-
     private final PurchaseOrderMapper purchaseOrderMapper;
 
     private final PurchaseOrderItemMapper purchaseOrderItemMapper;
-
-    private final ProductMapper productMapper;
 
     /**
      * 支持的退货类型。
@@ -77,8 +70,9 @@ public class PurchaseReturnSourceProvider implements ReturnSourceProvider {
     @Override
     public ReturnSourceOrder getSourceOrder(Long sourceOrderId) {
         PurchaseOrder order = purchaseOrderMapper.selectById(sourceOrderId);
-        if (order == null)
+        if (order == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "采购订单不存在");
+        }
         return new ReturnSourceOrder(order.getId(), order.getPurchaseNo(), order.getSupplierId(), order.getSupplierCode(),
                 order.getSupplierName(), order.getWarehouseId(), order.getWarehouseName());
     }
@@ -98,23 +92,11 @@ public class PurchaseReturnSourceProvider implements ReturnSourceProvider {
                 .gt(PurchaseOrderItem::getInboundQty, 0)
                 .orderByAsc(PurchaseOrderItem::getId));
         if (items.isEmpty()) return Map.of();
-        // 3. 批量查询产品信息
-        List<Long> productIds = items.stream().map(PurchaseOrderItem::getProductId).distinct().toList();
-        Map<Long, Product> productMap = productMapper.selectByIds(productIds).stream()
-                .collect(Collectors.toMap(Product::getId, p -> p));
-        // 4. 转换为退货来源明细Map(采购订单ID -> 退货来源明细列表)
+        // 精度必须使用采购明细快照，避免产品档案修改影响历史退货规则。
         return items.stream()
-                .map(item -> {
-                    Product product = productMap.get(item.getProductId());
-                    // 4. 兜底处理：产品缺失时，使用默认的数量小数位
-                    int qtyPrecision = product != null && product.getQuantityPrecision() != null
-                            ? product.getQuantityPrecision()
-                            : DEFAULT_QUANTITY_PRECISION;
-                    return Map.entry(item.getPurchaseOrderId(),
-                            new ReturnSourceItem(item.getId(), item.getProductId(), item.getProductCode(),
-                                    item.getProductName(), item.getUnitName(), qtyPrecision, item.getInboundQty(), item.getUnitPrice()));
-                })
-                .collect(Collectors.groupingBy(Map.Entry::getKey,
-                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+                .collect(Collectors.groupingBy(PurchaseOrderItem::getPurchaseOrderId,
+                        Collectors.mapping(item -> new ReturnSourceItem(item.getId(), item.getProductId(), item.getProductCode(),
+                                item.getProductName(), item.getUnitName(), item.getQuantityPrecision(), item.getInboundQty(), item.getUnitPrice()),
+                                Collectors.toList())));
     }
 }

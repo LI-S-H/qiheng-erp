@@ -605,7 +605,7 @@ update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMEST
 
 这样做是为了避免 Java 对象转换、JSON 序列化、前端展示过程中出现小数精度和舍入问题。
 
-金额仍然使用 `decimal(18,2)`，数量和库存仍然使用 `decimal(18,4)`。这个整数规则只针对评分和百分率类字段。
+产品参考价仍使用 `decimal(18,2)`；采购、销售、退货交易单价和金额及客户信用额度统一使用 `bigint` 保存“元 × 100”的分值。采购、销售、退货、库存和仓库工作单数量统一使用 `bigint` 保存“真实业务值 × 100”的整数，并由业务明细 `quantity_precision` 快照控制 0～2 位小数；该规则不再只适用于评分和百分率。
 
 ## 核心表间关系
 

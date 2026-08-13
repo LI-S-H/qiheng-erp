@@ -14,9 +14,9 @@ public record ReturnSourceItem(
         String unitName,
         // 单位精度
         Integer quantityPrecision,
-        // 已入库数量
-        Integer fulfilledQty,
+        // 已履约数量（采购退货为已入库数量，销售退货为已出库数量）
+        Long fulfilledQty,
         // 单价
-        Integer unitPrice
+        Long unitPrice
 ) {
 }

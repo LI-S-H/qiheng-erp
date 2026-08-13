@@ -1,5 +1,8 @@
 package com.qiheng.erp.common.util;
 
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
@@ -73,9 +76,13 @@ public final class QtyUtil {
         if (decimal == null) {
             return null;
         }
-        return decimal.multiply(DIVISOR)
-                .setScale(0, RoundingMode.HALF_UP)
-                .longValue();
+        try {
+            return decimal.multiply(DIVISOR)
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValueExact();
+        } catch (ArithmeticException exception) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "数量或金额超出 BIGINT 可存储范围");
+        }
     }
 
     /**
@@ -88,9 +95,13 @@ public final class QtyUtil {
         if (decimal == null) {
             return null;
         }
-        return decimal.multiply(DIVISOR)
-                .setScale(0, RoundingMode.HALF_UP)
-                .intValue();
+        try {
+            return decimal.multiply(DIVISOR)
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .intValueExact();
+        } catch (ArithmeticException exception) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "数值超出 INT 可存储范围");
+        }
     }
 
     /**

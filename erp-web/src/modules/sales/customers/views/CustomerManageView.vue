@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import {
   batchDeleteCustomers,
   batchUpdateCustomerStatus,
@@ -197,7 +198,7 @@ function validateForm() {
   if (form.contactName.trim().length > 100) formErrors.contactName = '联系人不能超过 100 个字符';
   if (form.contactPhone.trim().length > 32) formErrors.contactPhone = '联系电话不能超过 32 个字符';
   if (form.address.trim().length > 255) formErrors.address = '地址不能超过 255 个字符';
-  if (!Number.isFinite(Number(form.creditLimit)) || Number(form.creditLimit) < 0) formErrors.creditLimit = '信用额度不能小于 0';
+  if (!Number.isFinite(Number(form.creditLimit)) || Number(form.creditLimit) < 0 || Number(form.creditLimit) > MAX_SAFE_MONEY) formErrors.creditLimit = '信用额度超出安全金额范围';
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   return Object.keys(formErrors).length === 0;
 }

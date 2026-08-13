@@ -1,5 +1,6 @@
 import { getResult, http } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { normalizeMoneyNumber } from '@/shared/utils/money';
 import type { Result } from '@/shared/types/api';
 import type {
   AiActionCard,
@@ -656,7 +657,7 @@ function normalizeWorkbenchLine(value: unknown, workbenchType: AiAssistantWorkbe
     supplierProductId: normalizeNullableStringId(item.supplierProductId, `workbench.lines[${index}].supplierProductId`),
     supplierId: normalizeNullableStringId(item.supplierId, `workbench.lines[${index}].supplierId`),
     supplierName: item.supplierName == null || item.supplierName === '' ? null : requiredText(item.supplierName, `workbench.lines[${index}].supplierName`),
-    unitPrice: item.unitPrice == null ? null : normalizeFiniteNumber(item.unitPrice, `workbench.lines[${index}].unitPrice`),
+    unitPrice: item.unitPrice == null ? null : normalizeMoneyNumber(item.unitPrice, `workbench.lines[${index}].unitPrice`, false, useMockApi),
     selectedSupplierScore: item.selectedSupplierScore == null ? null : normalizeFiniteNumber(item.selectedSupplierScore, `workbench.lines[${index}].selectedSupplierScore`),
     targetWarehouseId: normalizeNullableStringId(item.targetWarehouseId, `workbench.lines[${index}].targetWarehouseId`),
     targetWarehouseName: item.targetWarehouseName == null || item.targetWarehouseName === '' ? null : requiredText(item.targetWarehouseName, `workbench.lines[${index}].targetWarehouseName`),

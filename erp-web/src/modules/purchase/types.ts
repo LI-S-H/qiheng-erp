@@ -223,6 +223,11 @@ export interface PurchaseOrderDraftItemPayload {
   purchaseOrderItemId?: string | null;
   supplierProductId: string;
   productId: string;
+  /**
+   * 前端按所选产品回传的数量精度。服务端不得信任该值，必须按 productId
+   * 重新校验并将最终值固化到采购明细快照。
+   */
+  quantityPrecision: number;
   quantity: number;
   unitPrice: number;
   selectedSupplierScore: number;

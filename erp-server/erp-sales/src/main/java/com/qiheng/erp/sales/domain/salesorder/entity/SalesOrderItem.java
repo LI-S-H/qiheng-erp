@@ -72,11 +72,11 @@ public class SalesOrderItem implements Serializable {
 
     @Schema(description = "销售单价，放大100倍保存，0表示0.00")
     @TableField("unit_price")
-    private Integer unitPrice;
+    private Long unitPrice;
 
     @Schema(description = "明细金额，放大100倍保存，0表示0.00")
     @TableField("total_amount")
-    private Integer totalAmount;
+    private Long totalAmount;
 
     @Schema(description = "创建时间")
     private LocalDateTime createTime;

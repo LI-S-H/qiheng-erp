@@ -25,6 +25,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import {
   createPurchaseOrder,
   getEnabledSupplierProductTotal,
@@ -408,6 +409,7 @@ async function openEditDialog(row: PurchaseOrderListItem) {
       purchaseOrderItemId: item.purchaseOrderItemId,
       supplierProductId: item.supplierProductId,
       productId: item.productId,
+      quantityPrecision: item.quantityPrecision,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       selectedSupplierScore: item.selectedSupplierScore,
@@ -425,6 +427,7 @@ function newDraftItem(): DraftItem {
     purchaseOrderItemId: null,
     supplierProductId: null,
     productId: '',
+    quantityPrecision: 0,
     quantity: 1,
     unitPrice: 0,
     selectedSupplierScore: 0,
@@ -466,6 +469,7 @@ function clearLineProduct(line: DraftItem) {
   line.unitPrice = 0;
   line.selectedSupplierScore = 0;
   line.unitName = '';
+  line.quantityPrecision = 0;
 }
 
 function applySupplierProduct(line: DraftItem, supplierProduct: SupplierProductListItem) {
@@ -476,6 +480,7 @@ function applySupplierProduct(line: DraftItem, supplierProduct: SupplierProductL
     ?? 0;
   line.selectedSupplierScore = supplierProduct.aiScore;
   line.unitName = supplierProduct.unitName;
+  line.quantityPrecision = supplierProduct.quantityPrecision;
 }
 
 async function refreshSelectableProductTotal() {
@@ -511,7 +516,10 @@ function selectProduct(line: DraftItem, productId: string | number) {
     toast.warning('同一产品不能重复添加');
     return;
   }
+  const productChanged = line.productId !== selectedProductId;
   line.productId = selectedProductId;
+  // 编辑时改选产品即成为新明细，不能把旧明细的数量精度快照带到新产品上。
+  if (productChanged) line.purchaseOrderItemId = null;
   delete formErrors[`items.${draftItems.value.findIndex(item => item.rowId === line.rowId)}.productId`];
   const otherProductIds = draftItems.value
     .filter(item => item.rowId !== line.rowId)
@@ -525,20 +533,21 @@ function selectProduct(line: DraftItem, productId: string | number) {
   line.unitPrice = supplierProduct?.latestPurchasePrice || product?.referencePurchasePrice || 0;
   line.selectedSupplierScore = supplierProduct?.aiScore || 0;
   line.unitName = supplierProduct?.unitName || product?.unitName || '';
+  line.quantityPrecision = supplierProduct?.quantityPrecision ?? product?.quantityPrecision ?? 0;
 }
 
-function getProductPrecision(productId: string) {
-  return productOptions.value.find(item => item.value === productId)?.quantityPrecision ?? 0;
+function getLineQuantityPrecision(line: DraftItem) {
+  return line.quantityPrecision;
 }
 
-function quantityStep(productId: string) {
-  const precision = getProductPrecision(productId);
+function quantityStep(line: DraftItem) {
+  const precision = getLineQuantityPrecision(line);
   if (precision <= 0) return '1';
   return `0.${'0'.repeat(Math.max(precision - 1, 0))}1`;
 }
 
-function quantityPrecisionValid(value: number, productId: string) {
-  const precision = getProductPrecision(productId);
+function quantityPrecisionValid(value: number, line: DraftItem) {
+  const precision = getLineQuantityPrecision(line);
   const decimal = String(value).split('.')[1] || '';
   return decimal.length <= precision;
 }
@@ -554,8 +563,9 @@ function validateForm() {
     else if (draftItems.value.some(other => other.rowId !== item.rowId && other.productId === item.productId)) formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
     if (item.productId && form.supplierId && !findSupplierProduct(form.supplierId, item.productId)) formErrors[`items.${index}.productId`] = '当前供应商未维护该产品的启用供货关系';
     if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0) formErrors[`items.${index}.quantity`] = '采购数量必须大于 0';
-    if (item.productId && !quantityPrecisionValid(Number(item.quantity), item.productId)) formErrors[`items.${index}.quantity`] = `数量最多保留 ${getProductPrecision(item.productId)} 位小数`;
-    if (!Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0) formErrors[`items.${index}.unitPrice`] = '采购单价不能小于 0';
+    if (!Number.isInteger(item.quantityPrecision) || item.quantityPrecision < 0 || item.quantityPrecision > 2) formErrors[`items.${index}.quantity`] = '产品数量精度无效，请重新选择产品';
+    if (item.productId && !quantityPrecisionValid(Number(item.quantity), item)) formErrors[`items.${index}.quantity`] = `数量最多保留 ${getLineQuantityPrecision(item)} 位小数`;
+    if (!Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0 || Number(item.unitPrice) > MAX_SAFE_MONEY) formErrors[`items.${index}.unitPrice`] = '采购单价超出安全金额范围';
     if (item.remark.trim().length > 500) formErrors[`items.${index}.remark`] = '明细备注不能超过 500 个字符';
   });
   return Object.keys(formErrors).length === 0;
@@ -572,6 +582,7 @@ function buildPayload(): PurchaseOrderFormPayload {
       ...(item.purchaseOrderItemId ? { purchaseOrderItemId: item.purchaseOrderItemId } : {}),
       supplierProductId: findSupplierProduct(form.supplierId, item.productId)!.supplierProductId,
       productId: item.productId,
+      quantityPrecision: Number(item.quantityPrecision),
       quantity: Number(item.quantity),
       unitPrice: Number(item.unitPrice),
       selectedSupplierScore: Number(item.selectedSupplierScore),
@@ -823,7 +834,7 @@ onMounted(() => {
                   <TableBody>
                     <TableRow v-for="(line, index) in draftItems" :key="line.rowId">
                       <TableCell class="align-top"><RemoteSearchSelect :model-value="line.productId" :selected-label="selectedProductLabel(line.productId)" :fetch-options="keyword => fetchPurchaseProductSearchOptions(keyword, line.rowId)" :disabled="!form.supplierId" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
-                      <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line.productId)" class="min-w-0 text-right" /><span v-if="line.unitName" class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error text-center">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
+                      <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line)" class="min-w-0 text-right" /><span v-if="line.unitName" class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error text-center">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="price-input pl-8 text-center" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
                       <TableCell class="text-center tabular-nums">{{ Number(line.selectedSupplierScore || 0).toFixed(1) }}</TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0)) }}</TableCell>

@@ -165,7 +165,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         if (order == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND);
         }
-        // 查询明细（联表 product 获取 quantityPrecision）
+        // 数量精度必须读取下单时的明细快照，不能随产品档案变更而漂移。
         MPJLambdaWrapper<PurchaseOrderItem> wrapper = new MPJLambdaWrapper<PurchaseOrderItem>()
                 .selectAs(PurchaseOrderItem::getId, PurchaseOrderItemVo::getPurchaseOrderItemId)
                 .select(PurchaseOrderItem::getPurchaseOrderId)
@@ -175,14 +175,13 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 .select(PurchaseOrderItem::getProductCode)
                 .select(PurchaseOrderItem::getProductName)
                 .select(PurchaseOrderItem::getUnitName)
-                .selectAs(Product::getQuantityPrecision, PurchaseOrderItemVo::getQuantityPrecision)
+                .select(PurchaseOrderItem::getQuantityPrecision)
                 .select(PurchaseOrderItem::getQuantity)
                 .select(PurchaseOrderItem::getInboundQty)
                 .select(PurchaseOrderItem::getUnitPrice)
                 .select(PurchaseOrderItem::getTotalAmount)
                 .select(PurchaseOrderItem::getSelectedSupplierScore)
                 .select(PurchaseOrderItem::getRemark)
-                .leftJoin(Product.class, Product::getId, PurchaseOrderItem::getProductId)
                 .eq(PurchaseOrderItem::getPurchaseOrderId, purchaseOrderId);
         List<PurchaseOrderItemVo> items = purchaseOrderItemMapper.selectJoinList(PurchaseOrderItemVo.class, wrapper);
         items.forEach(this::convertItemStoredValues);
@@ -234,6 +233,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             if (product == null) {
                 throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "产品不存在: " + itemDto.getProductId());
             }
+            validateQuantityPrecision(itemDto, product.getQuantityPrecision());
             BigDecimal unitPrice = itemDto.getUnitPrice();
             BigDecimal lineAmount = itemDto.getQuantity().multiply(unitPrice)
                     .setScale(2, RoundingMode.HALF_UP);
@@ -246,11 +246,12 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             item.setProductCode(product.getProductCode());
             item.setProductName(product.getProductName());
             item.setUnitName(product.getUnitName());
-            item.setQuantity(QtyUtil.toStored(itemDto.getQuantity()).intValue());
-            item.setInboundQty(0);
-            item.setUnitPrice(QtyUtil.toStored(unitPrice).intValue());
-            item.setTotalAmount(QtyUtil.toStored(lineAmount).intValue());
-            item.setSelectedSupplierScore(QtyUtil.toStored(itemDto.getSelectedSupplierScore()).intValue());
+            item.setQuantityPrecision(product.getQuantityPrecision());
+            item.setQuantity(QtyUtil.toStored(itemDto.getQuantity()));
+            item.setInboundQty(0L);
+            item.setUnitPrice(QtyUtil.toStored(unitPrice));
+            item.setTotalAmount(QtyUtil.toStored(lineAmount));
+            item.setSelectedSupplierScore(QtyUtil.toStoredInt(itemDto.getSelectedSupplierScore()));
             item.setRemark(itemDto.getRemark());
             items.add(item);
         }
@@ -266,7 +267,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         order.setExpectedArrivalDate(dto.getExpectedArrivalDate());
         order.setCreatedById(loginUser.getUserId());
         order.setCreatedByName(loginUser.getRealName());
-        order.setTotalAmount(QtyUtil.toStored(totalAmount).intValue());
+        order.setTotalAmount(QtyUtil.toStored(totalAmount));
         order.setRemark(dto.getRemark());
         purchaseOrderMapper.insert(order);
         // 回填明细的订单ID并批量插入
@@ -327,6 +328,8 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         List<PurchaseOrderItem> existingItems = purchaseOrderItemService.list(
                 new LambdaQueryWrapper<PurchaseOrderItem>()
                         .eq(PurchaseOrderItem::getPurchaseOrderId, purchaseOrderId));
+        Map<Long, PurchaseOrderItem> existingItemById = existingItems.stream()
+                .collect(Collectors.toMap(PurchaseOrderItem::getId, item -> item));
         if (!existingItems.isEmpty()) {
             List<Long> idsToDelete = existingItems.stream()
                     .map(PurchaseOrderItem::getId)
@@ -342,6 +345,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             if (product == null) {
                 throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "产品不存在: " + itemDto.getProductId());
             }
+            Integer quantityPrecision = resolveUpdateQuantityPrecision(itemDto, productId, product.getQuantityPrecision(), existingItemById);
             // 单价使用前端提交的业务值
             BigDecimal unitPrice = itemDto.getUnitPrice();
             BigDecimal lineAmount = itemDto.getQuantity().multiply(unitPrice)
@@ -355,11 +359,12 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             item.setProductCode(product.getProductCode());
             item.setProductName(product.getProductName());
             item.setUnitName(product.getUnitName());
-            item.setQuantity(QtyUtil.toStored(itemDto.getQuantity()).intValue());
-            item.setInboundQty(0);
-            item.setUnitPrice(QtyUtil.toStored(unitPrice).intValue());
-            item.setTotalAmount(QtyUtil.toStored(lineAmount).intValue());
-            item.setSelectedSupplierScore(QtyUtil.toStored(itemDto.getSelectedSupplierScore()).intValue());
+            item.setQuantityPrecision(quantityPrecision);
+            item.setQuantity(QtyUtil.toStored(itemDto.getQuantity()));
+            item.setInboundQty(0L);
+            item.setUnitPrice(QtyUtil.toStored(unitPrice));
+            item.setTotalAmount(QtyUtil.toStored(lineAmount));
+            item.setSelectedSupplierScore(QtyUtil.toStoredInt(itemDto.getSelectedSupplierScore()));
             item.setRemark(itemDto.getRemark());
             itemsToSave.add(item);
         }
@@ -375,7 +380,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         update.setWarehouseId(warehouseId);
         update.setWarehouseName(warehouse.getWarehouseName());
         update.setExpectedArrivalDate(dto.getExpectedArrivalDate());
-        update.setTotalAmount(QtyUtil.toStored(totalAmount).intValue());
+        update.setTotalAmount(QtyUtil.toStored(totalAmount));
         update.setRemark(dto.getRemark());
         update.setVersion(dto.getVersion());
         int rows = purchaseOrderMapper.updateById(update);
@@ -513,14 +518,14 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                                 + ",本次入库:" + QtyUtil.toDecimal(currentQty) + ")");
             }
             // 更新采购订单明细累计入库数量
-            purchaseItem.setInboundQty(Math.toIntExact(inboundQty));
+            purchaseItem.setInboundQty(inboundQty);
         }
         if (!purchaseOrderItemService.updateBatchById(purchaseItems)) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "采购订单明细回写失败，请刷新后重试");
         }
         // 校验采购订单明细是否全部入库
         boolean allInbound = purchaseItems.stream().allMatch(item ->
-                (item.getInboundQty() != null ? item.getInboundQty() : 0) >= (item.getQuantity() != null ? item.getQuantity() : 0));
+                (item.getInboundQty() != null ? item.getInboundQty() : 0L) >= (item.getQuantity() != null ? item.getQuantity() : 0L));
         order.setStatus(allInbound ? PurchaseOrderStatus.INBOUND_DONE.name() : PurchaseOrderStatus.PARTIAL_INBOUND.name());
         if (purchaseOrderMapper.updateById(order) == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "采购订单已发生变化，请刷新后重试");
@@ -699,6 +704,15 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         if (items.isEmpty()) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "采购明细不能为空");
         }
+        for (PurchaseOrderItem item : items) {
+            if (item.getQuantityPrecision() == null || item.getQuantityPrecision() < 0 || item.getQuantityPrecision() > 2) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "采购明细数量精度快照无效: " + item.getId());
+            }
+            BigDecimal quantity = QtyUtil.toDecimal(item.getQuantity());
+            if (quantity == null || quantity.signum() <= 0 || quantity.stripTrailingZeros().scale() > item.getQuantityPrecision()) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "采购明细数量不符合精度快照: " + item.getId());
+            }
+        }
         // 校验供货关系仍然有效
         Map<Long, Long> supplierProductToProduct = items
                 .stream()
@@ -707,6 +721,47 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "采购明细有误,有产品无与之匹配的供应商");
         }
         validateSupplierProductRelations(order.getSupplierId(), supplierProductToProduct);
+    }
+
+    /**
+     * 客户端需要回传精度以保证表单契约完整，但精度只能由服务端产品主数据裁决。
+     */
+    private void validateQuantityPrecision(PurchaseOrderItemDto itemDto, Integer serverPrecision) {
+        int precision = serverPrecision == null ? 0 : serverPrecision;
+        if (!Integer.valueOf(precision).equals(itemDto.getQuantityPrecision())) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "数量精度与当前产品不一致，请刷新产品后重试");
+        }
+        BigDecimal quantity = itemDto.getQuantity();
+        if (quantity.stripTrailingZeros().scale() > precision) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "采购数量最多保留 " + precision + " 位小数");
+        }
+    }
+
+    /**
+     * 编辑时，已有明细必须使用下单时的精度快照；仅新增明细才读取当前产品精度。
+     */
+    private Integer resolveUpdateQuantityPrecision(PurchaseOrderItemDto itemDto, Long productId, Integer productPrecision,
+                                                    Map<Long, PurchaseOrderItem> existingItemById) {
+        if (StrUtil.isBlank(itemDto.getPurchaseOrderItemId())) {
+            validateQuantityPrecision(itemDto, productPrecision);
+            return productPrecision == null ? 0 : productPrecision;
+        }
+        Long itemId = IdUtil.parseRequiredLongId(itemDto.getPurchaseOrderItemId(), "采购订单明细ID");
+        PurchaseOrderItem existingItem = existingItemById.get(itemId);
+        if (existingItem == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "采购订单明细不属于当前订单: " + itemDto.getPurchaseOrderItemId());
+        }
+        if (!productId.equals(existingItem.getProductId())) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "变更采购明细产品时必须作为新增明细提交");
+        }
+        int snapshotPrecision = existingItem.getQuantityPrecision() == null ? 0 : existingItem.getQuantityPrecision();
+        if (!Integer.valueOf(snapshotPrecision).equals(itemDto.getQuantityPrecision())) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "数量精度与原采购明细快照不一致，请刷新后重试");
+        }
+        if (itemDto.getQuantity().stripTrailingZeros().scale() > snapshotPrecision) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "采购数量最多保留 " + snapshotPrecision + " 位小数");
+        }
+        return snapshotPrecision;
     }
 
     /**
@@ -731,17 +786,13 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         }
         // 已全部入库时不创建空的待确认入库单；正常分支至少保留一条剩余明细。
         boolean hasRemainingQuantity = items.stream().anyMatch(item -> {
-            long planQty = item.getQuantity() != null ? item.getQuantity().longValue() : 0L;
-            long inboundQty = item.getInboundQty() != null ? item.getInboundQty().longValue() : 0L;
+            long planQty = item.getQuantity() != null ? item.getQuantity() : 0L;
+            long inboundQty = item.getInboundQty() != null ? item.getInboundQty() : 0L;
             return planQty > inboundQty;
         });
         if (!hasRemainingQuantity) {
             return;
         }
-        // 批量查询产品获取数量精度
-        List<Long> productIds = items.stream().map(PurchaseOrderItem::getProductId).toList();
-        Map<Long, Product> productMap = productMapper.selectByIds(productIds).stream()
-                .collect(Collectors.toMap(Product::getId, p -> p));
         // 生成入库单号
         String inboundNo = billNoGenerator.nextNo(InboundType.PURCHASE_IN.billNoPrefix(),
                 this::findMaxInboundBillSequence);
@@ -771,10 +822,9 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         // 构建入库单明细
         List<InboundBillItem> billItems = new ArrayList<>();
         for (PurchaseOrderItem item : items) {
-            Product product = productMap.get(item.getProductId());
-            Integer precision = product != null ? product.getQuantityPrecision() : 0;
-            Long planQty = item.getQuantity() != null ? item.getQuantity().longValue() : 0L;
-            Long processedQty = item.getInboundQty() != null ? item.getInboundQty().longValue() : 0L;
+            Integer precision = item.getQuantityPrecision() != null ? item.getQuantityPrecision() : 0;
+            Long planQty = item.getQuantity() != null ? item.getQuantity() : 0L;
+            Long processedQty = item.getInboundQty() != null ? item.getInboundQty() : 0L;
             long pendingQty = Math.max(0L, planQty - processedQty);
             if (pendingQty == 0L) {
                 continue;
@@ -807,13 +857,12 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
      */
     private PurchaseOrderFulfillmentSummaryVo buildFulfillmentSummary(PurchaseOrder order,
                                                                         List<PurchaseOrderItemVo> items) {
-        BigDecimal totalAmount = order.getTotalAmount() == null ? BigDecimal.ZERO
-                : QtyUtil.toDecimal(order.getTotalAmount().longValue());
+        BigDecimal totalAmount = QtyUtil.defaultZero(QtyUtil.toDecimal(order.getTotalAmount()));
         BigDecimal inboundAmount = items.stream()
                 .map(item -> {
                     BigDecimal inboundQty = item.getInboundQty() == null ? BigDecimal.ZERO : item.getInboundQty();
                     BigDecimal quantity = item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity();
-                    BigDecimal unitPrice = item.getUnitPrice() == null ? BigDecimal.ZERO : item.getUnitPrice();
+                BigDecimal unitPrice = QtyUtil.defaultZero(QtyUtil.toDecimal(item.getUnitPrice()));
                     return inboundQty.min(quantity).multiply(unitPrice);
                 })
                 .reduce(BigDecimal.ZERO, BigDecimal::add)

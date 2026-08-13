@@ -3,6 +3,7 @@ package com.qiheng.erp.purchase.domain.supplierproduct.vo;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.qiheng.erp.common.config.MoneyStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -55,6 +56,7 @@ public class SupplierProductVo {
     private String supplierProductCode;
 
     @Schema(description = "最近采购单价")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal latestPurchasePrice;
 
     @Schema(description = "最小起订量")

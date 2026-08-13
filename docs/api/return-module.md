@@ -28,7 +28,7 @@
 - `ReturnSourceOrder`
 - `ReturnSourceItem`
 
-采购模块已实现 `PurchaseReturnSourceProvider` 并单向依赖 `erp-return`；销售模块暂不实现。统一退货服务会要求每个 `returnType` 恰好匹配一个来源提供者：缺失或重复配置都会直接失败，绝不创建无法闭环的退货数据。
+采购、销售模块均应实现各自的 `ReturnSourceProvider` 并单向依赖 `erp-return`；统一退货服务会要求每个 `returnType` 恰好匹配一个来源提供者：缺失或重复配置都会直接失败，绝不创建无法闭环的退货数据。来源适配器返回的履约数量统一为 `BIGINT` 的“×100”存储值，数量精度必须取来源业务明细的 `quantity_precision` 快照，禁止优先读取当前 `product.quantity_precision`。
 
 ## 仓储回写
 

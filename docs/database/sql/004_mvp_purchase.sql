@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS supplier_product (
     supplier_id BIGINT NOT NULL COMMENT '供应商ID',
     product_id BIGINT NOT NULL COMMENT '产品ID',
     supplier_product_code VARCHAR(100) NOT NULL DEFAULT '' COMMENT '供应商侧产品编码',
-    latest_purchase_price INT NULL DEFAULT NULL COMMENT '最近采购单价，放大100倍保存，3520表示35.20；尚未采购时为空',
-    min_order_qty INT NOT NULL DEFAULT 0 COMMENT '最小起订量，放大100倍保存，1000表示10.00',
+    latest_purchase_price BIGINT NULL DEFAULT NULL COMMENT '最近采购单价，放大100倍保存，3520表示35.20；尚未采购时为空',
+    min_order_qty BIGINT NOT NULL DEFAULT 0 COMMENT '最小起订量，放大100倍保存，1000表示10.00',
     lead_time_days INT NOT NULL DEFAULT 0 COMMENT '预计交期天数',
     delivery_score INT NOT NULL DEFAULT 0 COMMENT '该产品维度交付评分，放大100倍保存，10000表示100.00',
     quality_score INT NOT NULL DEFAULT 0 COMMENT '该产品维度质量评分，放大100倍保存，10000表示100.00',
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS purchase_order (
     warehouse_id BIGINT NOT NULL COMMENT '目标入库仓库ID',
     warehouse_name VARCHAR(100) NOT NULL COMMENT '目标入库仓库名称冗余',
     status VARCHAR(32) NOT NULL DEFAULT 'DRAFT' COMMENT '状态：DRAFT、SUBMITTED、APPROVED、PARTIAL_INBOUND、INBOUND_DONE、CANCELLED',
-    total_amount INT NOT NULL DEFAULT 0 COMMENT '订单总金额，放大100倍保存，84480表示844.80',
+    total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '订单总金额，放大100倍保存，84480表示844.80',
     expected_arrival_date DATE DEFAULT NULL COMMENT '预计到货日期，提交和审核前必须非空',
     created_by_id BIGINT DEFAULT NULL COMMENT '创建人ID',
     created_by_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '创建人姓名',
@@ -105,10 +105,11 @@ CREATE TABLE IF NOT EXISTS purchase_order_item (
     product_code VARCHAR(64) NOT NULL COMMENT '产品编码冗余',
     product_name VARCHAR(200) NOT NULL COMMENT '产品名称冗余',
     unit_name VARCHAR(32) NOT NULL DEFAULT '件' COMMENT '单位名称冗余',
-    quantity INT NOT NULL DEFAULT 0 COMMENT '采购数量，放大100倍保存，2400表示24.00',
-    inbound_qty INT NOT NULL DEFAULT 0 COMMENT '已入库数量，放大100倍保存，900表示9.00',
-    unit_price INT NOT NULL DEFAULT 0 COMMENT '采购单价，放大100倍保存，3520表示35.20',
-    total_amount INT NOT NULL DEFAULT 0 COMMENT '明细金额，放大100倍保存，168960表示1689.60',
+    quantity_precision TINYINT NOT NULL DEFAULT 0 COMMENT '数量小数位快照：0-2，下单时从 product.quantity_precision 固化',
+    quantity BIGINT NOT NULL DEFAULT 0 COMMENT '采购数量，放大100倍保存，2400表示24.00',
+    inbound_qty BIGINT NOT NULL DEFAULT 0 COMMENT '已入库数量，放大100倍保存，900表示9.00',
+    unit_price BIGINT NOT NULL DEFAULT 0 COMMENT '采购单价，放大100倍保存，3520表示35.20',
+    total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '明细金额，放大100倍保存，168960表示1689.60',
     selected_supplier_score INT NOT NULL DEFAULT 0 COMMENT '下单时供应商推荐分快照，放大100倍保存，10000表示100.00',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -117,7 +118,8 @@ CREATE TABLE IF NOT EXISTS purchase_order_item (
     PRIMARY KEY (id),
     KEY idx_purchase_order_item_order (purchase_order_id),
     KEY idx_purchase_order_item_product (product_id),
-    KEY idx_purchase_order_item_supplier_product (supplier_product_id)
+    KEY idx_purchase_order_item_supplier_product (supplier_product_id),
+    CONSTRAINT chk_purchase_order_item_quantity_precision CHECK (quantity_precision BETWEEN 0 AND 2)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='采购订单明细表';
 
 -- ============================================================
@@ -218,13 +220,16 @@ create_time = VALUES(create_time), update_time = VALUES(update_time), remark = V
 UPDATE purchase_order SET total_amount = ROUND(total_amount * 100);
 UPDATE purchase_order_item SET unit_price = ROUND(unit_price * 100), total_amount = ROUND(total_amount * 100);
 ALTER TABLE purchase_order
-  MODIFY COLUMN total_amount INT NOT NULL DEFAULT 0 COMMENT '订单总金额，放大100倍保存，84480表示844.80';
+  MODIFY COLUMN total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '订单总金额，放大100倍保存，84480表示844.80';
 ALTER TABLE purchase_order_item
-  MODIFY COLUMN unit_price INT NOT NULL DEFAULT 0 COMMENT '采购单价，放大100倍保存，3520表示35.20',
-  MODIFY COLUMN total_amount INT NOT NULL DEFAULT 0 COMMENT '明细金额，放大100倍保存，168960表示1689.60';
+  MODIFY COLUMN unit_price BIGINT NOT NULL DEFAULT 0 COMMENT '采购单价，放大100倍保存，3520表示35.20',
+  MODIFY COLUMN total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '明细金额，放大100倍保存，168960表示1689.60';
 
 -- 存量数据迁移：采购数量、已入库数量从 DECIMAL 改为 INT×100
 UPDATE purchase_order_item SET quantity = ROUND(quantity * 100), inbound_qty = ROUND(inbound_qty * 100);
 ALTER TABLE purchase_order_item
-  MODIFY COLUMN quantity INT NOT NULL DEFAULT 0 COMMENT '采购数量，放大100倍保存，2400表示24.00',
-  MODIFY COLUMN inbound_qty INT NOT NULL DEFAULT 0 COMMENT '已入库数量，放大100倍保存，900表示9.00';
+  MODIFY COLUMN quantity BIGINT NOT NULL DEFAULT 0 COMMENT '采购数量，放大100倍保存，2400表示24.00',
+  MODIFY COLUMN inbound_qty BIGINT NOT NULL DEFAULT 0 COMMENT '已入库数量，放大100倍保存，900表示9.00';
+
+-- quantity_precision 为新建表 DDL 的快照字段；已存在库请执行
+-- migrate_purchase_quantity_bigint_and_precision.sql，先从 product 回填再设为 NOT NULL。

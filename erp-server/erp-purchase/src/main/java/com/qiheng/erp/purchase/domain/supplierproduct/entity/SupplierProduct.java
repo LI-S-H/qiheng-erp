@@ -47,11 +47,11 @@ public class SupplierProduct implements Serializable {
 
     @Schema(description = "最近采购单价，放大100倍保存")
     @TableField("latest_purchase_price")
-    private Integer latestPurchasePrice;
+    private Long latestPurchasePrice;
 
     @Schema(description = "最小起订量，放大100倍保存")
     @TableField("min_order_qty")
-    private Integer minOrderQty;
+    private Long minOrderQty;
 
     @Schema(description = "预计交期天数")
     @TableField("lead_time_days")

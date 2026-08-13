@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS return_order (
     handling_type VARCHAR(32) NOT NULL DEFAULT 'REFUND' COMMENT '处理方式：REFUND、EXCHANGE、OTHER',
     reason_code VARCHAR(32) NOT NULL DEFAULT 'OTHER' COMMENT '退货原因编码',
     return_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '退货原因补充说明',
-    total_amount INT NOT NULL DEFAULT 0 COMMENT '当前有效退货总金额，放大100倍保存，17600表示176.00',
+    total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '当前有效退货总金额，放大100倍保存，17600表示176.00',
     status VARCHAR(32) NOT NULL DEFAULT 'DRAFT' COMMENT '状态：DRAFT、SUBMITTED、APPROVED、PARTIAL_EXECUTED、COMPLETED、CANCELLED',
     status_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '最近一次取消原因',
     created_by_id BIGINT DEFAULT NULL COMMENT '创建人ID',
@@ -60,12 +60,12 @@ CREATE TABLE IF NOT EXISTS return_order_item (
     product_name VARCHAR(200) NOT NULL COMMENT '产品名称快照',
     unit_name VARCHAR(32) NOT NULL DEFAULT '件' COMMENT '单位名称快照',
     quantity_precision TINYINT NOT NULL DEFAULT 0 COMMENT '数量小数位快照：0-2',
-    source_fulfilled_qty INT NOT NULL DEFAULT 0 COMMENT '创建退货明细时原订单累计已出库或已入库数量快照，放大100倍保存',
-    requested_qty INT NOT NULL DEFAULT 0 COMMENT '申请退货数量，放大100倍保存，500表示5.00',
-    approved_qty INT NOT NULL DEFAULT 0 COMMENT '审核通过数量，放大100倍保存',
-    processed_qty INT NOT NULL DEFAULT 0 COMMENT '仓库累计确认的实际处理总量，放大100倍保存',
-    unit_price INT NOT NULL DEFAULT 0 COMMENT '原采购或销售订单明细单价快照，放大100倍保存，3520表示35.20',
-    total_amount INT NOT NULL DEFAULT 0 COMMENT '当前有效明细金额，放大100倍保存，17600表示176.00',
+    source_fulfilled_qty BIGINT NOT NULL DEFAULT 0 COMMENT '创建退货明细时原订单累计已出库或已入库数量快照，放大100倍保存',
+    requested_qty BIGINT NOT NULL DEFAULT 0 COMMENT '申请退货数量，放大100倍保存，500表示5.00',
+    approved_qty BIGINT NOT NULL DEFAULT 0 COMMENT '审核通过数量，放大100倍保存',
+    processed_qty BIGINT NOT NULL DEFAULT 0 COMMENT '仓库累计确认的实际处理总量，放大100倍保存',
+    unit_price BIGINT NOT NULL DEFAULT 0 COMMENT '原采购或销售订单明细单价快照，放大100倍保存，3520表示35.20',
+    total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '当前有效明细金额，放大100倍保存，17600表示176.00',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '明细备注',
@@ -465,11 +465,11 @@ UPDATE return_order_item SET
   unit_price = ROUND(unit_price * 100),
   total_amount = ROUND(total_amount * 100);
 ALTER TABLE return_order
-  MODIFY COLUMN total_amount INT NOT NULL DEFAULT 0 COMMENT '当前有效退货总金额，放大100倍保存，17600表示176.00';
+  MODIFY COLUMN total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '当前有效退货总金额，放大100倍保存，17600表示176.00';
 ALTER TABLE return_order_item
-  MODIFY COLUMN source_fulfilled_qty INT NOT NULL DEFAULT 0 COMMENT '创建退货明细时原订单累计已出库或已入库数量快照，放大100倍保存',
-  MODIFY COLUMN requested_qty INT NOT NULL DEFAULT 0 COMMENT '申请退货数量，放大100倍保存，500表示5.00',
-  MODIFY COLUMN approved_qty INT NOT NULL DEFAULT 0 COMMENT '审核通过数量，放大100倍保存',
-  MODIFY COLUMN processed_qty INT NOT NULL DEFAULT 0 COMMENT '仓库累计确认的实际处理总量，放大100倍保存',
-  MODIFY COLUMN unit_price INT NOT NULL DEFAULT 0 COMMENT '原采购或销售订单明细单价快照，放大100倍保存，3520表示35.20',
-  MODIFY COLUMN total_amount INT NOT NULL DEFAULT 0 COMMENT '当前有效明细金额，放大100倍保存，17600表示176.00';
+  MODIFY COLUMN source_fulfilled_qty BIGINT NOT NULL DEFAULT 0 COMMENT '创建退货明细时原订单累计已出库或已入库数量快照，放大100倍保存',
+  MODIFY COLUMN requested_qty BIGINT NOT NULL DEFAULT 0 COMMENT '申请退货数量，放大100倍保存，500表示5.00',
+  MODIFY COLUMN approved_qty BIGINT NOT NULL DEFAULT 0 COMMENT '审核通过数量，放大100倍保存',
+  MODIFY COLUMN processed_qty BIGINT NOT NULL DEFAULT 0 COMMENT '仓库累计确认的实际处理总量，放大100倍保存',
+  MODIFY COLUMN unit_price BIGINT NOT NULL DEFAULT 0 COMMENT '原采购或销售订单明细单价快照，放大100倍保存，3520表示35.20',
+  MODIFY COLUMN total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '当前有效明细金额，放大100倍保存，17600表示176.00';

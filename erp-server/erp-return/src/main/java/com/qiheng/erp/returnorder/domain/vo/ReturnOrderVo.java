@@ -3,6 +3,7 @@ package com.qiheng.erp.returnorder.domain.vo;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.qiheng.erp.common.config.MoneyStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -62,6 +63,7 @@ public class ReturnOrderVo {
     private String returnReason;
 
     @Schema(description = "退货单总金额")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal totalAmount;
 
     @Schema(description = "退货单状态：DRAFT-草稿、SUBMITTED-已提交、APPROVED-已审核、PARTIAL_EXECUTED-部分执行、COMPLETED-已完成、CANCELLED-已取消")

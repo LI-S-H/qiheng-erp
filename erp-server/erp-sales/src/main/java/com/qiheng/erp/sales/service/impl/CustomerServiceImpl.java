@@ -90,7 +90,7 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
         LoginUser currentUser = UserContext.requireCurrentUser();
         Customer entity = BeanUtil.copyProperties(dto, Customer.class);
         entity.setCustomerCode(CodeGen.next(stringRedisTemplate, "customer:code", "C", 4));
-        entity.setCreditLimit(QtyUtil.toStoredInt(dto.getCreditLimit()));
+        entity.setCreditLimit(QtyUtil.toStored(dto.getCreditLimit()));
         entity.setUpdatedById(currentUser.getUserId());
         entity.setUpdatedByName(currentUser.getRealName());
         customerMapper.insert(entity);
@@ -115,7 +115,7 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
         Customer entity = BeanUtil.copyProperties(dto, Customer.class);
         entity.setId(customerId);
         entity.setCustomerCode(null);
-        entity.setCreditLimit(QtyUtil.toStoredInt(dto.getCreditLimit()));
+        entity.setCreditLimit(QtyUtil.toStored(dto.getCreditLimit()));
         entity.setUpdatedById(currentUser.getUserId());
         entity.setUpdatedByName(currentUser.getRealName());
         int rows = customerMapper.updateById(entity);

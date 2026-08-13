@@ -1,6 +1,7 @@
 import { getResult, postResult, http } from '@/api/http';
 import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { normalizeMoneyNumber, serializeMoney } from '@/shared/utils/money';
 import { getMockProductCategoryScope, getMockProductCategorySnapshot } from '../categories/api';
 import type {
   ProductBatchIdsPayload,
@@ -91,8 +92,8 @@ function normalizeProduct(item: ProductListItem): ProductListItem {
     categoryId: normalizeNullableStringId(item.categoryId, 'categoryId'),
     status: normalizeBinaryStatus(item.status),
     quantityPrecision,
-    referencePurchasePrice: normalizeFiniteNumber(item.referencePurchasePrice, 'referencePurchasePrice'),
-    referenceSalePrice: normalizeFiniteNumber(item.referenceSalePrice, 'referenceSalePrice'),
+    referencePurchasePrice: normalizeMoneyNumber(item.referencePurchasePrice, 'referencePurchasePrice', false, useMockApi)!,
+    referenceSalePrice: normalizeMoneyNumber(item.referenceSalePrice, 'referenceSalePrice', false, useMockApi)!,
     safetyStockQty: normalizeFiniteNumber(item.safetyStockQty, 'safetyStockQty'),
   };
 }
@@ -170,7 +171,8 @@ export function createProduct(payload: ProductFormPayload) {
     mockProducts = [...mockProducts, created];
     return Promise.resolve(normalizeProduct(created));
   }
-  return postResult<ProductListItem, ProductFormPayload>('/products', payload).then(normalizeProduct);
+  const request = { ...payload, referencePurchasePrice: serializeMoney(payload.referencePurchasePrice, '参考采购价'), referenceSalePrice: serializeMoney(payload.referenceSalePrice, '参考销售价') };
+  return postResult<ProductListItem, typeof request>('/products', request).then(normalizeProduct);
 }
 
 export async function updateProduct(productId: string, payload: ProductFormPayload) {
@@ -182,7 +184,8 @@ export async function updateProduct(productId: string, payload: ProductFormPaylo
     const product = mockProducts.find(item => item.productId === productId);
     return product ? normalizeProduct(product) : null;
   }
-  const response = await http.put(`/products/${productId}`, payload);
+  const request = { ...payload, referencePurchasePrice: serializeMoney(payload.referencePurchasePrice, '参考采购价'), referenceSalePrice: serializeMoney(payload.referenceSalePrice, '参考销售价') };
+  const response = await http.put(`/products/${productId}`, request);
   return normalizeProduct(response.data.data as ProductListItem);
 }
 

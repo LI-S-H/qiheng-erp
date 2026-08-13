@@ -69,7 +69,7 @@ public class PurchaseOrder implements Serializable {
 
     @Schema(description = "订单总金额，放大100倍保存")
     @TableField("total_amount")
-    private Integer totalAmount;
+    private Long totalAmount;
 
     @Schema(description = "预计到货日期")
     @TableField("expected_arrival_date")

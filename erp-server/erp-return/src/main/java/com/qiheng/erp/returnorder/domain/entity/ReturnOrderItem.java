@@ -59,27 +59,27 @@ public class ReturnOrderItem implements Serializable {
 
     @TableField("source_fulfilled_qty")
     @Schema(description = "来源订单已满量数量")
-    private Integer sourceFulfilledQty;
+    private Long sourceFulfilledQty;
 
     @TableField("requested_qty")
     @Schema(description = "请求数量")
-    private Integer requestedQty;
+    private Long requestedQty;
 
     @TableField("approved_qty")
     @Schema(description = "已审批数量")
-    private Integer approvedQty;
+    private Long approvedQty;
 
     @TableField("processed_qty")
     @Schema(description = "已处理数量")
-    private Integer processedQty;
+    private Long processedQty;
 
     @TableField("unit_price")
     @Schema(description = "单价")
-    private Integer unitPrice;
+    private Long unitPrice;
 
     @TableField("total_amount")
     @Schema(description = "总金额")
-    private Integer totalAmount;
+    private Long totalAmount;
 
     @TableField("create_time")
     @Schema(description = "创建时间")

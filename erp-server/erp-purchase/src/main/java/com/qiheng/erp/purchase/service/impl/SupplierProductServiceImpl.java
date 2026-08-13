@@ -161,22 +161,24 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         if (supplierMapper.selectById(supplierId) == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "供应商不存在");
         }
-        if (productMapper.selectById(productId) == null) {
+        Product product = productMapper.selectById(productId);
+        if (product == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "产品不存在");
         }
+        validateQuantityPrecision(dto.getMinOrderQty(), product.getQuantityPrecision());
         SupplierProduct entity = new SupplierProduct();
         entity.setSupplierId(supplierId);
         entity.setProductId(productId);
         entity.setSupplierProductCode(dto.getSupplierProductCode());
         // latestPurchasePrice 可为 null，表示尚未采购过
         Long storedPrice = QtyUtil.toStored(dto.getLatestPurchasePrice());
-        entity.setLatestPurchasePrice(storedPrice != null ? storedPrice.intValue() : null);
-        entity.setMinOrderQty(QtyUtil.toStored(dto.getMinOrderQty()).intValue());
+        entity.setLatestPurchasePrice(storedPrice);
+        entity.setMinOrderQty(QtyUtil.toStored(dto.getMinOrderQty()));
         entity.setLeadTimeDays(dto.getLeadTimeDays());
-        entity.setDeliveryScore(QtyUtil.toStored(dto.getDeliveryScore()).intValue());
-        entity.setQualityScore(QtyUtil.toStored(dto.getQualityScore()).intValue());
-        entity.setPriceScore(QtyUtil.toStored(dto.getPriceScore()).intValue());
-        entity.setAiScore(QtyUtil.toStored(dto.getAiScore()).intValue());
+        entity.setDeliveryScore(QtyUtil.toStoredInt(dto.getDeliveryScore()));
+        entity.setQualityScore(QtyUtil.toStoredInt(dto.getQualityScore()));
+        entity.setPriceScore(QtyUtil.toStoredInt(dto.getPriceScore()));
+        entity.setAiScore(QtyUtil.toStoredInt(dto.getAiScore()));
         entity.setStatus(dto.getStatus());
         entity.setRemark(dto.getRemark());
         return entity;
@@ -243,6 +245,13 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         vo.setAiScore(QtyUtil.toDecimal(vo.getAiScore()));
         vo.setLatestPurchasePrice(QtyUtil.toDecimal(vo.getLatestPurchasePrice()));
         vo.setMinOrderQty(QtyUtil.toDecimal(vo.getMinOrderQty()));
+    }
+
+    private void validateQuantityPrecision(java.math.BigDecimal quantity, Integer precisionValue) {
+        int precision = precisionValue == null ? 0 : precisionValue;
+        if (quantity == null || quantity.signum() <= 0 || quantity.stripTrailingZeros().scale() > precision) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "最小起订量必须大于0，且最多保留 " + precision + " 位小数");
+        }
     }
 
     /**

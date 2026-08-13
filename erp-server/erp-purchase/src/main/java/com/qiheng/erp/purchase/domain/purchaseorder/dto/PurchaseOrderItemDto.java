@@ -29,6 +29,12 @@ public class PurchaseOrderItemDto {
     @Schema(description = "产品ID")
     private String productId;
 
+    @NotNull(message = "数量精度不能为空")
+    @Min(value = 0, message = "数量精度不能小于0")
+    @Max(value = 2, message = "数量精度不能大于2")
+    @Schema(description = "前端根据所选产品回传的数量小数位；服务端按产品或既有明细快照复核")
+    private Integer quantityPrecision;
+
     @NotNull(message = "采购数量不能为空")
     @DecimalMin(value = "0.01", message = "采购数量必须大于0")
     @Schema(description = "采购数量")

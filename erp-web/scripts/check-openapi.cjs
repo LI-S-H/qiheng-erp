@@ -44,6 +44,9 @@ const stockBillViewSource = readProjectFile('erp-web', 'src', 'modules', 'wareho
 const stockLedgerViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-ledgers', 'views', 'StockLedgerManageView.vue');
 const aiApiSource = readProjectFile('erp-web', 'src', 'modules', 'ai', 'api.ts');
 const aiViewSource = readProjectFile('erp-web', 'src', 'modules', 'ai', 'views', 'AiAssistantView.vue');
+const purchaseApiSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'api.ts');
+const purchaseTypeSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'types.ts');
+const purchaseOrderViewSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'orders', 'views', 'PurchaseOrderManageView.vue');
 
 const routerSource = readProjectFile('erp-web', 'src', 'router', 'index.ts');
 const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
@@ -853,9 +856,84 @@ const stalePermissionDescriptions = [
   /暂不设计[^\n]*独立权限表/,
   /后续[^\n]*新增[^\n]*sys_permission/,
 ];
+
+const purchaseItemStart = source.indexOf('    PurchaseOrderItem:');
+const purchaseItemEnd = source.indexOf('    PurchaseOrderCreateRequest:', purchaseItemStart);
+const purchaseItemSchema = source.slice(purchaseItemStart, purchaseItemEnd);
+const purchaseDraftStart = source.indexOf('    PurchaseOrderDraftItemRequest:');
+const purchaseDraftEnd = source.indexOf('    ReturnOrderPage:', purchaseDraftStart);
+const purchaseDraftSchema = source.slice(purchaseDraftStart, purchaseDraftEnd);
+if (purchaseItemStart < 0 || purchaseItemEnd < 0 || purchaseDraftStart < 0 || purchaseDraftEnd < 0
+  || !purchaseItemSchema.includes('quantityPrecision:')
+  || !purchaseItemSchema.includes('100 倍 BIGINT 整数存储')
+  || !purchaseDraftSchema.includes('required: [supplierProductId, productId, quantityPrecision, quantity, unitPrice, selectedSupplierScore, remark]')
+  || !purchaseDraftSchema.includes('后端不得信任')) {
+  throw new Error('采购明细数量精度快照或 BIGINT 数量 OpenAPI 契约不完整');
+}
+for (const fragment of [
+  'quantityPrecision: number;',
+  'function normalizeQuantityPrecision(value: unknown)',
+  'function resolveOrderQuantityPrecision(line:',
+  'resolveOrderQuantityPrecision(line, product.productId)',
+]) {
+  if (!purchaseTypeSource.includes(fragment) && !purchaseApiSource.includes(fragment)) {
+    throw new Error(`采购明细数量精度 DTO 或 Mock 服务端复核缺少：${fragment}`);
+  }
+}
+for (const fragment of [
+  'quantityPrecision: item.quantityPrecision',
+  'quantityPrecision: 0,',
+  'line.quantityPrecision = supplierProduct?.quantityPrecision ?? product?.quantityPrecision ?? 0;',
+  'if (productChanged) line.purchaseOrderItemId = null;',
+  'function getLineQuantityPrecision(line: DraftItem)',
+  'quantityPrecision: Number(item.quantityPrecision),',
+  ':step="quantityStep(line)"',
+]) {
+  if (!purchaseOrderViewSource.includes(fragment)) {
+    throw new Error(`采购创建/编辑页面未完整回传或使用明细数量精度快照：${fragment}`);
+  }
+}
 for (const document of [databaseOverview, permissionSchema, projectPlan]) {
   if (stalePermissionDescriptions.some(pattern => pattern.test(document))) {
     throw new Error('项目文档仍残留权限目录表的旧设计口径');
+  }
+}
+
+const bigintMoneyColumns = [
+  ['customer', 'credit_limit'],
+  ['supplier_product', 'latest_purchase_price'],
+  ['purchase_order', 'total_amount'],
+  ['purchase_order_item', 'unit_price'],
+  ['purchase_order_item', 'total_amount'],
+  ['sales_order', 'total_amount'],
+  ['sales_order_item', 'unit_price'],
+  ['sales_order_item', 'total_amount'],
+  ['return_order', 'total_amount'],
+  ['return_order_item', 'unit_price'],
+  ['return_order_item', 'total_amount'],
+];
+for (const [tableName, columnName] of bigintMoneyColumns) {
+  const createTableStart = allSql.search(new RegExp(`CREATE TABLE IF NOT EXISTS\\s+\\\`?${tableName}\\\`?`, 'i'));
+  const createTableEnd = allSql.indexOf(';', createTableStart);
+  const createTable = createTableStart >= 0 ? allSql.slice(createTableStart, createTableEnd) : '';
+  if (!new RegExp(`\\\`?${columnName}\\\`?\\s+BIGINT`, 'i').test(createTable)) {
+    throw new Error(`金额字段必须使用 BIGINT：${tableName}.${columnName}`);
+  }
+}
+if (!allSql.includes('交易金额统一为 BIGINT（按“元 × 100”的分值存储）')) {
+  throw new Error('缺少交易金额 BIGINT 的可重复执行迁移脚本');
+}
+for (const schemaName of [
+  'AiWorkbenchLine', 'DashboardTrendPoint', 'DashboardTopProduct', 'PurchaseSupplierProduct',
+  'PurchaseOrder', 'PurchaseOrderItem', 'ReturnOrder', 'ReturnOrderItem', 'SalesCustomer',
+  'SalesOrder', 'SalesOrderItem',
+]) {
+  const schemaStart = source.indexOf(`    ${schemaName}:`);
+  const nextSchemaMatch = /\n    [A-Za-z][A-Za-z0-9]+:\n/.exec(source.slice(schemaStart + 1));
+  const schemaEnd = nextSchemaMatch ? schemaStart + 1 + nextSchemaMatch.index : source.length;
+  const schema = schemaStart >= 0 ? source.slice(schemaStart, schemaEnd) : '';
+  if (!schema.includes('type: string') || !schema.includes("pattern: '^\\d+(\\.\\d{1,2})?$'")) {
+    throw new Error(`金额 API 必须采用元字符串契约：${schemaName}`);
   }
 }
 

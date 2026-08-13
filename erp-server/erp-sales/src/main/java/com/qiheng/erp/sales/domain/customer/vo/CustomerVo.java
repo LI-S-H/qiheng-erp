@@ -3,6 +3,7 @@ package com.qiheng.erp.sales.domain.customer.vo;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.qiheng.erp.common.config.MoneyStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -41,6 +42,7 @@ public class CustomerVo {
     private String address;
 
     @Schema(description = "信用额度")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal creditLimit;
 
     @Schema(description = "状态：1启用，0禁用")

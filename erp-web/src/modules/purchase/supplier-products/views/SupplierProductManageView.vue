@@ -23,6 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import {
   batchDeleteSupplierProducts,
   batchUpdateSupplierProductStatus,
@@ -291,7 +292,7 @@ function validateForm() {
   if (!form.supplierId) formErrors.supplierId = '请选择供应商';
   if (!form.productId) formErrors.productId = '请选择产品';
   if (form.supplierProductCode.trim().length > 100) formErrors.supplierProductCode = '供应商侧编码不能超过 100 个字符';
-  if (form.latestPurchasePrice !== null && (!Number.isFinite(Number(form.latestPurchasePrice)) || Number(form.latestPurchasePrice) < 0)) formErrors.latestPurchasePrice = '采购价不能小于 0';
+  if (form.latestPurchasePrice !== null && (!Number.isFinite(Number(form.latestPurchasePrice)) || Number(form.latestPurchasePrice) < 0 || Number(form.latestPurchasePrice) > MAX_SAFE_MONEY)) formErrors.latestPurchasePrice = '采购价超出安全金额范围';
   if (!Number.isFinite(Number(form.minOrderQty)) || Number(form.minOrderQty) <= 0) formErrors.minOrderQty = '起订量必须大于 0';
   else if (!matchesQuantityPrecision(Number(form.minOrderQty), selectedProductPrecision.value)) formErrors.minOrderQty = `起订量最多保留 ${selectedProductPrecision.value} 位小数`;
   if (!Number.isInteger(Number(form.leadTimeDays)) || Number(form.leadTimeDays) < 0) formErrors.leadTimeDays = '交期必须是非负整数';

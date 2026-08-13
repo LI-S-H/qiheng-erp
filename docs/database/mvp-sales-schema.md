@@ -11,7 +11,7 @@
 - 销售订单主表冗余客户、仓库名称，明细冗余产品信息，减少列表查询联表。
 - 销售退货后续复用仓库模块 `SALES_RETURN` 入库单；如果退货流程复杂，再补销售退货单表。
 - MVP 暂不设计收款单、发票、对账、复杂价格策略、审批流。
-- 评分和百分率字段如后续加入，统一遵守 `database-design-conventions.md`：用 `int` 存放大 100 倍后的整数。
+- 评分和百分率字段如后续加入，统一遵守 `database-design-conventions.md`：用 `int` 存放大 100 倍后的整数；数量统一为 `bigint` 存放大 100 倍后的整数。
 - 销售订单明细是订单事实明细，不使用 `deleted`；删除草稿明细时直接物理删除，已审核订单通过订单状态控制。
 
 ## 表：customer（客户表）
@@ -24,7 +24,7 @@
 | contact_name  | varchar(100)  | 联系人                |
 | contact_phone | varchar(32)   | 联系电话               |
 | address       | varchar(255)  | 地址                 |
-| credit_limit  | int           | 信用额度，放大100倍保存，18000000表示180000.00，MVP 仅记录不做强拦截 |
+| credit_limit  | bigint        | 信用额度，按分（×100）保存，18000000表示180000.00，MVP 仅记录不做强拦截 |
 | status        | tinyint       | 状态：1 启用，0 禁用       |
 | create_time   | datetime      | 创建时间               |
 | update_time   | datetime      | 更新时间               |
@@ -47,7 +47,7 @@
 | warehouse_id           | bigint        | 出库仓库ID                                                                           |
 | warehouse_name         | varchar(100)  | 出库仓库名称，冗余                                                                        |
 | status                 | varchar(32)   | 状态：`DRAFT`、`SUBMITTED`、`APPROVED`、`PARTIAL_OUTBOUND`、`OUTBOUND_DONE`、`CANCELLED` |
-| total_amount           | int           | 订单总金额，放大100倍保存，0表示0.00                                                                            |
+| total_amount           | bigint        | 订单总金额，按分（×100）保存，0表示0.00                                                                            |
 | expected_delivery_date | date          | 预计发货日期                                                                           |
 | locked_at              | datetime      | 库存锁定时间                                                                           |
 | created_by_id          | bigint        | 创建人ID                                                                            |
@@ -82,8 +82,8 @@
 | quantity       | bigint        | 销售数量，放大100倍保存，N 表示 N/100.00    |
 | locked_qty     | bigint        | 已锁定库存数量，放大100倍保存    |
 | outbound_qty   | bigint        | 已出库数量，放大100倍保存   |
-| unit_price     | int           | 销售单价，放大100倍保存，0表示0.00    |
-| total_amount   | int           | 明细金额，放大100倍保存，0表示0.00    |
+| unit_price     | bigint        | 销售单价，按分（×100）保存，0表示0.00    |
+| total_amount   | bigint        | 明细金额，按分（×100）保存，0表示0.00    |
 | create_time    | datetime      | 创建时间    |
 | update_time    | datetime      | 更新时间    |
 | remark         | varchar(500)  | 备注      |

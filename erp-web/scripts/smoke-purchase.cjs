@@ -17,6 +17,23 @@ const screenshotDirectory = path.resolve(
 );
 const screenshotPath = filename => path.join(screenshotDirectory, filename);
 
+const purchaseTypeSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'modules', 'purchase', 'types.ts'), 'utf8');
+const purchaseApiSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'modules', 'purchase', 'api.ts'), 'utf8');
+const purchaseOrderViewSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'modules', 'purchase', 'orders', 'views', 'PurchaseOrderManageView.vue'), 'utf8');
+
+function assertPurchaseQuantityPrecisionPayloadContract() {
+  for (const [name, content, fragment] of [
+    ['采购 DTO', purchaseTypeSource, 'quantityPrecision: number;'],
+    ['采购 Mock', purchaseApiSource, 'resolveOrderQuantityPrecision(line, product.productId)'],
+    ['采购 Mock', purchaseApiSource, 'normalizeQuantityPrecision(line.quantityPrecision);'],
+    ['采购订单页面', purchaseOrderViewSource, 'quantityPrecision: Number(item.quantityPrecision),'],
+    ['采购订单页面', purchaseOrderViewSource, 'function getLineQuantityPrecision(line: DraftItem)'],
+    ['采购订单页面', purchaseOrderViewSource, ':step="quantityStep(line)"'],
+  ]) {
+    if (!content.includes(fragment)) throw new Error(`${name}缺少采购明细数量精度快照契约：${fragment}`);
+  }
+}
+
 fs.mkdirSync(screenshotDirectory, { recursive: true });
 
 async function selectRemoteOption(page, dialog, comboboxIndex, keyword, optionText) {
@@ -94,6 +111,7 @@ runSmoke({
   route: '/purchase/suppliers',
   screenshot: screenshotPath('purchase-orders-normal.png'),
   async test(page) {
+    assertPurchaseQuantityPrecisionPayloadContract();
     await assertSupplierProductsNavigation(page);
     await page.getByRole('heading', { name: '供应商管理' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '供应商数据汇总', filterLabel: '供应商筛选' });

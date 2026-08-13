@@ -1,6 +1,7 @@
 import { getResult, http, postResult } from '@/api/http';
 import type { Result } from '@/shared/types/api';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { normalizeMoneyNumber } from '@/shared/utils/money';
 import { getSalesOrderDetail, listEnabledSalesWarehouseOptions, listSalesOrders, searchCustomerOptions } from '../api';
 import type { SalesOrderDetail } from '../types';
 import type {
@@ -77,8 +78,8 @@ function normalizeReturnItem(item: ReturnOrderItem): ReturnOrderItem {
     requestedQty: normalizeQuantity(item.requestedQty, quantityPrecision, 'requestedQty'),
     approvedQty: normalizeQuantity(item.approvedQty, quantityPrecision, 'approvedQty'),
     processedQty: normalizeQuantity(item.processedQty, quantityPrecision, 'processedQty'),
-    unitPrice: normalizeFiniteNumber(item.unitPrice, 'unitPrice'),
-    totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
+    unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, useMockApi)!,
+    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, useMockApi)!,
     remark: String(item.remark || ''),
   };
 }
@@ -102,7 +103,7 @@ function normalizeReturn(row: ReturnOrderListItem): ReturnOrderListItem {
     handlingType: assertEnum(row.handlingType, handlingTypes, 'handlingType'),
     reasonCode: assertEnum(row.reasonCode, reasonCodes, 'reasonCode'),
     returnReason: String(row.returnReason || ''),
-    totalAmount: normalizeFiniteNumber(row.totalAmount, 'totalAmount'),
+    totalAmount: normalizeMoneyNumber(row.totalAmount, 'totalAmount', false, useMockApi)!,
     status: assertEnum(row.status, returnStatuses, 'status'),
     statusReason: String(row.statusReason || ''),
     createdById: normalizeNullableStringId(row.createdById, 'createdById'),
@@ -150,7 +151,7 @@ function normalizeSourceItem(item: ReturnableSourceOrderItem): ReturnableSourceO
     sourceFulfilledQty: normalizeQuantity(item.sourceFulfilledQty, quantityPrecision, 'sourceFulfilledQty'),
     occupiedQty: normalizeQuantity(item.occupiedQty, quantityPrecision, 'occupiedQty'),
     availableReturnQty: normalizeQuantity(item.availableReturnQty, quantityPrecision, 'availableReturnQty'),
-    unitPrice: normalizeFiniteNumber(item.unitPrice, 'unitPrice'),
+    unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, useMockApi)!,
   };
 }
 

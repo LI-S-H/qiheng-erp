@@ -3,6 +3,7 @@ package com.qiheng.erp.purchase.domain.purchaseorder.vo;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.qiheng.erp.common.config.MoneyStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -50,6 +51,7 @@ public class PurchaseOrderVo {
     private String status;
 
     @Schema(description = "订单总金额")
+    @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal totalAmount;
 
     @Schema(description = "预计到货日期")

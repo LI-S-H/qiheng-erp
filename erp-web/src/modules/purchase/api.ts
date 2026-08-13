@@ -1,6 +1,7 @@
 import { getResult, http, postResult } from '@/api/http';
 import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
+import { normalizeMoneyNumber, serializeMoney } from '@/shared/utils/money';
 import { getMockProductSnapshot, listProducts } from '@/modules/product/products/api';
 import { listWarehouses } from '@/modules/warehouse/warehouses/api';
 import type { WarehouseListItem } from '@/modules/warehouse/warehouses/types';
@@ -295,7 +296,7 @@ function normalizeSupplierProduct(item: SupplierProductListItem): SupplierProduc
     supplierId: normalizeStringId(item.supplierId, 'supplierId'),
     productId: normalizeStringId(item.productId, 'productId'),
     quantityPrecision: normalizeFiniteNumber(item.quantityPrecision, 'quantityPrecision'),
-    latestPurchasePrice: normalizeNullableFiniteNumber(item.latestPurchasePrice, 'latestPurchasePrice'),
+    latestPurchasePrice: normalizeMoneyNumber(item.latestPurchasePrice, 'latestPurchasePrice', true, useMockApi),
     minOrderQty: normalizeFiniteNumber(item.minOrderQty, 'minOrderQty'),
     leadTimeDays: normalizeFiniteNumber(item.leadTimeDays, 'leadTimeDays'),
     deliveryScore: normalizeFiniteNumber(item.deliveryScore, 'deliveryScore'),
@@ -322,20 +323,32 @@ function normalizeOrderItem(item: PurchaseOrderItem): PurchaseOrderItem {
     purchaseOrderId: normalizeStringId(item.purchaseOrderId, 'purchaseOrderId'),
     supplierProductId: normalizeNullableStringId(item.supplierProductId, 'supplierProductId'),
     productId: normalizeStringId(item.productId, 'productId'),
+    quantityPrecision: normalizeQuantityPrecision(item.quantityPrecision),
     quantity: normalizeFiniteNumber(item.quantity, 'quantity'),
     inboundQty: normalizeFiniteNumber(item.inboundQty, 'inboundQty'),
-    unitPrice: normalizeFiniteNumber(item.unitPrice, 'unitPrice'),
-    totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
+    unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, useMockApi)!,
+    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, useMockApi)!,
     selectedSupplierScore: normalizeFiniteNumber(item.selectedSupplierScore, 'selectedSupplierScore'),
   };
 }
 
+function normalizeQuantityPrecision(value: unknown): number {
+  const precision = normalizeFiniteNumber(value, 'quantityPrecision');
+  if (!Number.isInteger(precision) || precision < 0 || precision > 2) {
+    throw new Error('quantityPrecision 必须为 0～2 的整数');
+  }
+  return precision;
+}
+
+/** Mock 与服务端保持同一边界：请求必须带精度，但最终快照只采信产品档案。 */
+function resolveOrderQuantityPrecision(line: PurchaseOrderFormPayload['items'][number], productId: string) {
+  normalizeQuantityPrecision(line.quantityPrecision);
+  return normalizeQuantityPrecision(mockProductSnapshotById(productId).quantityPrecision);
+}
+
 function buildFulfillmentSummary(items: PurchaseOrderItem[]) {
   const totalAmount = items.reduce((sum, item) => sum + item.totalAmount, 0);
-  const inboundAmount = items.reduce(
-    (sum, item) => sum + Math.min(item.quantity, item.inboundQty) * item.unitPrice,
-    0,
-  );
+  const inboundAmount = items.reduce((sum, item) => sum + Math.min(item.quantity, item.inboundQty) * item.unitPrice, 0);
   return {
     calculationMode: 'AMOUNT_WEIGHTED' as const,
     totalAmount,
@@ -350,7 +363,7 @@ function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
     purchaseOrderId: normalizeStringId(item.purchaseOrderId, 'purchaseOrderId'),
     supplierId: normalizeStringId(item.supplierId, 'supplierId'),
     warehouseId: normalizeStringId(item.warehouseId, 'warehouseId'),
-    totalAmount: normalizeFiniteNumber(item.totalAmount, 'totalAmount'),
+    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, useMockApi)!,
     createdById: normalizeNullableStringId(item.createdById, 'createdById'),
     submittedById: normalizeNullableStringId(item.submittedById, 'submittedById'),
     submittedByName: String(item.submittedByName || ''),
@@ -365,8 +378,8 @@ function normalizeOrderDetail(item: PurchaseOrderDetail): PurchaseOrderDetail {
     items: item.items.map(normalizeOrderItem),
     fulfillmentSummary: {
       ...item.fulfillmentSummary,
-      totalAmount: normalizeFiniteNumber(item.fulfillmentSummary.totalAmount, 'fulfillmentSummary.totalAmount'),
-      inboundAmount: normalizeFiniteNumber(item.fulfillmentSummary.inboundAmount, 'fulfillmentSummary.inboundAmount'),
+      totalAmount: normalizeMoneyNumber(item.fulfillmentSummary.totalAmount, 'fulfillmentSummary.totalAmount', false, useMockApi)!,
+      inboundAmount: normalizeMoneyNumber(item.fulfillmentSummary.inboundAmount, 'fulfillmentSummary.inboundAmount', false, useMockApi)!,
       completionRate: normalizeFiniteNumber(item.fulfillmentSummary.completionRate, 'fulfillmentSummary.completionRate'),
     },
     timeline: item.timeline.map(timelineItem => ({
@@ -595,7 +608,8 @@ export function createSupplierProduct(payload: SupplierProductFormPayload) {
     mockSupplierProducts = [...mockSupplierProducts, created];
     return Promise.resolve(normalizeSupplierProduct(created));
   }
-  return postResult<SupplierProductListItem, SupplierProductFormPayload>('/purchase/supplier-products', payload).then(normalizeSupplierProduct);
+  const request = { ...payload, latestPurchasePrice: serializeMoney(payload.latestPurchasePrice, '最近采购价', true) };
+  return postResult<SupplierProductListItem, typeof request>('/purchase/supplier-products', request).then(normalizeSupplierProduct);
 }
 
 export async function updateSupplierProduct(supplierProductId: string, payload: SupplierProductFormPayload) {
@@ -620,7 +634,8 @@ export async function updateSupplierProduct(supplierProductId: string, payload: 
     const result = mockSupplierProducts.find(item => item.supplierProductId === supplierProductId);
     return result ? normalizeSupplierProduct(result) : null;
   }
-  const response = await http.put(`/purchase/supplier-products/${supplierProductId}`, payload);
+  const request = { ...payload, latestPurchasePrice: serializeMoney(payload.latestPurchasePrice, '最近采购价', true) };
+  const response = await http.put(`/purchase/supplier-products/${supplierProductId}`, request);
   return normalizeSupplierProduct(response.data.data as SupplierProductListItem);
 }
 
@@ -707,7 +722,7 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
         productCode: product.productCode,
         productName: product.productName,
         unitName: product.unitName,
-        quantityPrecision: mockProductSnapshotById(product.productId).quantityPrecision,
+        quantityPrecision: resolveOrderQuantityPrecision(line, product.productId),
         quantity: line.quantity,
         inboundQty: 0,
         unitPrice: line.unitPrice,
@@ -746,7 +761,8 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
     mockOrders = [created, ...mockOrders];
     return Promise.resolve(created);
   }
-  return postResult<PurchaseOrderDetail, PurchaseOrderFormPayload>('/purchase/orders', payload).then(normalizeOrderDetail);
+  const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '采购单价') })) };
+  return postResult<PurchaseOrderDetail, typeof request>('/purchase/orders', request).then(normalizeOrderDetail);
 }
 
 export async function updatePurchaseOrder(purchaseOrderId: string, payload: PurchaseOrderFormPayload) {
@@ -772,7 +788,7 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
         productCode: product.productCode,
         productName: product.productName,
         unitName: product.unitName,
-        quantityPrecision: mockProductSnapshotById(product.productId).quantityPrecision,
+        quantityPrecision: resolveOrderQuantityPrecision(line, product.productId),
         quantity: line.quantity,
         inboundQty: 0,
         unitPrice: line.unitPrice,
@@ -799,7 +815,8 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
     mockOrders = mockOrders.map(item => (item.purchaseOrderId === purchaseOrderId ? updated : item));
     return Promise.resolve(updated);
   }
-  const response = await http.put(`/purchase/orders/${purchaseOrderId}`, payload);
+  const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '采购单价') })) };
+  const response = await http.put(`/purchase/orders/${purchaseOrderId}`, request);
   return normalizeOrderDetail(response.data.data as PurchaseOrderDetail);
 }
 

@@ -27,6 +27,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import {
   createSalesOrder,
   getEnabledSalesProductTotal,
@@ -425,7 +426,7 @@ function validateForm() {
     else if (draftItems.value.some(other => other.rowId !== item.rowId && other.productId === item.productId)) formErrors[`items.${index}.productId`] = '同一产品不能重复添加';
     if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0) formErrors[`items.${index}.quantity`] = '销售数量必须大于 0';
     if (item.productId && !quantityPrecisionValid(Number(item.quantity), item.productId)) formErrors[`items.${index}.quantity`] = `数量最多保留 ${getProductPrecision(item.productId)} 位小数`;
-    if (!Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0) formErrors[`items.${index}.unitPrice`] = '销售单价不能小于 0';
+    if (!Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0 || Number(item.unitPrice) > MAX_SAFE_MONEY) formErrors[`items.${index}.unitPrice`] = '销售单价超出安全金额范围';
     if (item.remark.trim().length > 500) formErrors[`items.${index}.remark`] = '明细备注不能超过 500 个字符';
   });
   return Object.keys(formErrors).length === 0;

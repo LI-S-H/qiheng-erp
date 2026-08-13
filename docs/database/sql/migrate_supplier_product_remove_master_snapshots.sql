@@ -63,19 +63,24 @@ BEGIN
          WHERE _price_amount_migrated = 0;
 
         ALTER TABLE supplier_product
-            MODIFY COLUMN latest_purchase_price INT NULL DEFAULT NULL COMMENT '最近采购单价，放大100倍保存，3520表示35.20；尚未采购时为空',
-            MODIFY COLUMN min_order_qty INT NOT NULL DEFAULT 0 COMMENT '最小起订量，放大100倍保存，1000表示10.00';
-        SET price_data_type = 'int';
-    ELSEIF price_data_type <> 'int' THEN
+            MODIFY COLUMN latest_purchase_price BIGINT NULL DEFAULT NULL COMMENT '最近采购单价，放大100倍保存，3520表示35.20；尚未采购时为空',
+            MODIFY COLUMN min_order_qty BIGINT NOT NULL DEFAULT 0 COMMENT '最小起订量，放大100倍保存，1000表示10.00';
+        SET price_data_type = 'bigint';
+    ELSEIF price_data_type = 'int' THEN
+        -- 已是“×100”整数分值的旧库只扩容类型，不能再次换算。
+        ALTER TABLE supplier_product
+            MODIFY COLUMN latest_purchase_price BIGINT NULL DEFAULT NULL COMMENT '最近采购单价，放大100倍保存，3520表示35.20；尚未采购时为空';
+        SET price_data_type = 'bigint';
+    ELSEIF price_data_type <> 'bigint' THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'supplier_product.latest_purchase_price 不是预期的 decimal 或 int 类型，已中止迁移';
     ELSEIF price_is_nullable = 'NO' THEN
         ALTER TABLE supplier_product
-            MODIFY COLUMN latest_purchase_price INT NULL DEFAULT NULL COMMENT '最近采购单价，放大100倍保存，3520表示35.20；尚未采购时为空';
+            MODIFY COLUMN latest_purchase_price BIGINT NULL DEFAULT NULL COMMENT '最近采购单价，放大100倍保存，3520表示35.20；尚未采购时为空';
     END IF;
 
     -- 转换完成后再移除临时标记；若此前中断而类型已改为 int，本次会只做清理，不会再换算金额。
-    IF price_data_type = 'int' AND migration_marker_column_count = 1 THEN
+    IF price_data_type IN ('int', 'bigint') AND migration_marker_column_count = 1 THEN
         ALTER TABLE supplier_product DROP COLUMN _price_amount_migrated;
     END IF;
 

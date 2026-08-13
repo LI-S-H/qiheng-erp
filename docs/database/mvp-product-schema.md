@@ -58,7 +58,7 @@
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
-关系说明：采购订单明细、销售订单明细、库存表后续都通过 `product_id` 关联本表，同时在业务单据明细中冗余 `product_code`、`product_name`、`unit_name`、`quantity_precision`，保留历史快照并减少列表查询联表。`product` 是当前主数据，不冗余 `category_name`；分类展示名称按 `category_id` 关联查询，避免分类改名后产生双写和数据不一致。
+关系说明：采购订单明细、销售订单明细、库存表后续都通过 `product_id` 关联本表，同时在业务单据明细中冗余 `product_code`、`product_name`、`unit_name`、`quantity_precision`，保留历史快照并减少列表查询联表。采购、销售、仓库和退货的历史数量校验必须以各自明细快照为准，不能因 `product.quantity_precision` 后续修改而改变已发生单据的规则。`product` 是当前主数据，不冗余 `category_name`；分类展示名称按 `category_id` 关联查询，避免分类改名后产生双写和数据不一致。
 
 ## 表间关系
 

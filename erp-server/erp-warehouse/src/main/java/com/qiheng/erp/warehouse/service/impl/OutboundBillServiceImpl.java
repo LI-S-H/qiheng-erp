@@ -86,34 +86,24 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
 
     @Autowired
     private WarehouseStockLockSupport warehouseStockLockSupport;
-
     @Autowired
     private SourceOperationLockSupport sourceOperationLockSupport;
-
     @Autowired
     private IStockBillService stockBillService;
-
     @Autowired
     private IStockBillItemService stockBillItemService;
-
     @Autowired
     private StockBillServiceHelper stockBillServiceHelper;
-
     @Autowired
     private StockBillDraftSupport stockBillDraftSupport;
-
     @Autowired
     private StockBillEditingSupport stockBillEditingSupport;
-
     @Autowired
     private WarehouseStockReservationSupport warehouseStockReservationSupport;
-
     @Autowired
     private BillNoGenerator billNoGenerator;
-
     @Autowired
     private OutboundBillItemMapper outboundBillItemMapper;
-
     @Autowired(required = false)
     private List<OutboundSourceWritebackPort> outboundSourceWritebackPorts = Collections.emptyList();
 
@@ -243,9 +233,9 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
                 .setOutboundNo(outboundNo)
                 .setOutboundType(billType.name())
                 .setSourceType(billType.sourceType().name())
-                .setSourceId(stockBillDraftSupport.toNullableLong(dto.getSourceId()))
+                .setSourceId(IdUtil.parseOptionalLongId(dto.getSourceId(), "ID"))
                 .setSourceNo(sourceNo)
-                .setSourcePartyId(stockBillDraftSupport.toNullableLong(dto.getSourcePartyId()))
+                .setSourcePartyId(IdUtil.parseOptionalLongId(dto.getSourcePartyId(), "ID"))
                 .setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null))
                 .setEntryMode(billType.entryMode().name())
                 .setWarehouseId(warehouseId)
@@ -262,7 +252,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         // 7. 组装出库单明细
         List<OutboundBillItem> items = new ArrayList<>();
         for (OutboundBillItemCreateDto itemDto : dto.getItems()) {
-            Long productId = stockBillDraftSupport.parseRequiredId(itemDto.getProductId(), "产品ID");
+            Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
             Product product = productMap.get(productId);
             addItem(bill.getOutboundNo(),
                     bill,
@@ -311,7 +301,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         OutboundBillItem item = new OutboundBillItem()
                 .setOutboundBillId(bill.getId())
                 .setOutboundNo(outboundNo)
-                .setSourceItemId(stockBillDraftSupport.toNullableLong(sourceItemId))
+                .setSourceItemId(IdUtil.parseOptionalLongId(sourceItemId, "ID"))
                 .setProductId(productId)
                 .setProductCode(product.getProductCode())
                 .setProductName(product.getProductName())
@@ -741,7 +731,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
     private Map<Long, Long> collectRequestedCurrentQtyByProduct(List<StockBillUpdateDto> itemDtos) {
         Map<Long, Long> quantitiesByProduct = new HashMap<>();
         for (StockBillUpdateDto itemDto : itemDtos) {
-            Long productId = stockBillDraftSupport.parseRequiredId(itemDto.getProductId(), "产品ID");
+            Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
             Long currentQty = QtyUtil.toStored(itemDto.getCurrentQty());
             if (currentQty == null || currentQty <= 0) {
                 throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "出库数量必须大于0");
@@ -795,7 +785,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         String outboundNo = bill.getOutboundNo();
         List<OutboundBillItem> itemsToSave = new ArrayList<>();
         for (StockBillUpdateDto itemDto : itemDtos) {
-            Long productId = stockBillDraftSupport.parseRequiredId(itemDto.getProductId(), "产品ID");
+            Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
             Product product = productMap.get(productId);
             addItem(outboundNo, bill, itemsToSave, productId, product,
                     itemDto.getSourceItemId(), itemDto.getPlanQty(),

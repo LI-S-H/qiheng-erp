@@ -1,6 +1,5 @@
 package com.qiheng.erp.warehouse.service.support;
 
-import cn.hutool.core.util.StrUtil;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.IdUtil;
@@ -40,39 +39,13 @@ public class StockBillDraftSupport {
     public DraftContext prepare(String warehouseId,
                                 Collection<? extends StockBillDraftItem> items,
                                 StockBillTypePolicy typePolicy) {
-        Warehouse warehouse = requireEnabledWarehouse(warehouseId);
-        Map<Long, Product> productMap = loadProductMap(items);
-        validateQualityQuantities(items, typePolicy);
-        return new DraftContext(warehouse, productMap);
-    }
-
-    /**
-     * 保持原有建单语义：空白来源 ID 不关联，非空值按 Long 类型解析。
-     */
-    public Long toNullableLong(String value) {
-        return parseNullableId(value, "ID");
-    }
-
-    /**
-     * 将前端字符串 ID 转换为 Long，并将非法输入统一返回为参数错误。
-     */
-    public Long parseRequiredId(String value, String fieldName) {
-        return IdUtil.parseRequiredLongId(value, fieldName);
-    }
-
-    public Long parseNullableId(String value, String fieldName) {
-        return IdUtil.parseOptionalLongId(value, fieldName);
-    }
-
-    /**
-     * 校验仓库是否存在且未禁用
-     */
-    private Warehouse requireEnabledWarehouse(String warehouseId) {
-        Warehouse warehouse = warehouseMapper.selectById(parseRequiredId(warehouseId, "仓库ID"));
+        Warehouse warehouse = warehouseMapper.selectById(IdUtil.parseRequiredLongId(warehouseId, "仓库ID"));
         if (warehouse == null || warehouse.getStatus() == null || warehouse.getStatus() != 1) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "仓库不存在或已禁用");
         }
-        return warehouse;
+        Map<Long, Product> productMap = loadProductMap(items);
+        validateQualityQuantities(items, typePolicy);
+        return new DraftContext(warehouse, productMap);
     }
 
     /**
@@ -80,7 +53,7 @@ public class StockBillDraftSupport {
      */
     public Map<Long, Product> loadProductMap(Collection<? extends StockBillDraftItem> items) {
         List<Long> productIds = items.stream()
-                .map(item -> parseRequiredId(item.getProductId(), "产品ID"))
+                .map(item -> IdUtil.parseRequiredLongId(item.getProductId(), "产品ID"))
                 .distinct()
                 .toList();
         List<Product> products = productMapper.selectByIds(productIds);

@@ -159,7 +159,7 @@ public class StockBillEditingSupport {
         if (StrUtil.isBlank(warehouseIdValue)) {
             return;
         }
-        Long warehouseId = parseRequiredId(warehouseIdValue, "仓库ID");
+        Long warehouseId = IdUtil.parseRequiredLongId(warehouseIdValue, "仓库ID");
         if (warehouseId.equals(bill.getWarehouseId())) {
             return;
         }
@@ -176,7 +176,7 @@ public class StockBillEditingSupport {
     private <T extends StockBillEditMapping.EditableBill<T>> void updateSourceParty(
             T bill, StockBillItemUpdateDto dto) {
         if (dto.getSourcePartyId() != null) {
-            bill.setSourcePartyId(parseNullableId(dto.getSourcePartyId(), "来源对象ID"));
+            bill.setSourcePartyId(IdUtil.parseOptionalLongId(dto.getSourcePartyId(), "来源对象ID"));
         }
         if (dto.getSourcePartyName() != null) {
             bill.setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null));
@@ -196,7 +196,7 @@ public class StockBillEditingSupport {
         if (hasSourceId != hasSourceNo) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "来源单据ID和来源单号必须同时填写或同时留空");
         }
-        bill.setSourceId(hasSourceId ? parseNullableId(dto.getSourceId(), "来源单据ID") : null);
+        bill.setSourceId(hasSourceId ? IdUtil.parseOptionalLongId(dto.getSourceId(), "来源单据ID") : null);
         bill.setSourceNo(hasSourceNo ? dto.getSourceNo().trim() : null);
     }
 
@@ -221,8 +221,8 @@ public class StockBillEditingSupport {
      */
     private PendingConfirmItemSnapshot toPendingConfirmItemSnapshot(StockBillUpdateDto dto) {
         return new PendingConfirmItemSnapshot(
-                parseRequiredId(dto.getProductId(), "产品ID"),
-                parseNullableId(dto.getSourceItemId(), "来源明细ID"),
+                IdUtil.parseRequiredLongId(dto.getProductId(), "产品ID"),
+                IdUtil.parseOptionalLongId(dto.getSourceItemId(), "来源明细ID"),
                 toStoredPlanQty(dto.getPlanQty()));
     }
 
@@ -248,20 +248,6 @@ public class StockBillEditingSupport {
                         Comparator.nullsFirst(Comparator.naturalOrder()))
                 .thenComparing(PendingConfirmItemSnapshot::planQty,
                         Comparator.nullsFirst(Comparator.naturalOrder()));
-    }
-
-    /**
-     * 解析必填ID字符串为Long类型。
-     */
-    private Long parseRequiredId(String value, String fieldName) {
-        return IdUtil.parseRequiredLongId(value, fieldName);
-    }
-
-    /**
-     * 解析可空ID字符串为Long类型。
-     */
-    private Long parseNullableId(String value, String fieldName) {
-        return IdUtil.parseOptionalLongId(value, fieldName);
     }
 
     /**

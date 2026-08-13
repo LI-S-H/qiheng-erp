@@ -248,9 +248,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setInboundNo(inboundNo)
                 .setInboundType(billType.name())
                 .setSourceType(billType.sourceType().name())
-                .setSourceId(stockBillDraftSupport.toNullableLong(dto.getSourceId()))
+                .setSourceId(IdUtil.parseOptionalLongId(dto.getSourceId(), "ID"))
                 .setSourceNo(sourceNo)
-                .setSourcePartyId(stockBillDraftSupport.toNullableLong(dto.getSourcePartyId()))
+                .setSourcePartyId(IdUtil.parseOptionalLongId(dto.getSourcePartyId(), "ID"))
                 .setSourcePartyName(StrUtil.blankToDefault(dto.getSourcePartyName(), null))
                 .setEntryMode(billType.entryMode().name())
                 .setWarehouseId(warehouseId)
@@ -267,7 +267,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         // 6. 组装入库单明细
         List<InboundBillItem> items = new ArrayList<>();
         for (InboundBillItemCreateDto itemDto : dto.getItems()) {
-            Long productId = stockBillDraftSupport.parseRequiredId(itemDto.getProductId(), "产品ID");
+            Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
             Product product = productMap.get(productId);
             // 新增明细
             addItem(bill.getInboundNo(),
@@ -311,7 +311,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         InboundBillItem item = new InboundBillItem()
                 .setInboundBillId(bill.getId())
                 .setInboundNo(inboundNo)
-                .setSourceItemId(stockBillDraftSupport.toNullableLong(sourceItemId))
+                .setSourceItemId(IdUtil.parseOptionalLongId(sourceItemId, "ID"))
                 .setProductId(productId)
                 .setProductCode(product.getProductCode())
                 .setProductName(product.getProductName())
@@ -634,8 +634,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         if (!this.updateById(bill)) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "数据已被其他人修改，请刷新后重试");
         }
-        // 来源模块在同一事务内回写累计数量和来源状态；未接入的来源类型暂不阻塞仓储确认。
-        // SALES_RETURN_ORDER 的分布式锁已在方法入口获取，但来源回写适配器尚未接通（见 ReturnOrderServiceImpl TODO）。
+        // 12. 来源模块在同一事务内回写累计数量和来源状态
         dispatchSourceWriteback(bill, items);
         // 13. 返回详情
         return getInboundBillDetailVo(id);
@@ -710,7 +709,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         String inboundNo = bill.getInboundNo();
         List<InboundBillItem> itemsToSave = new ArrayList<>();
         for (StockBillUpdateDto itemDto : itemDtos) {
-            Long productId = stockBillDraftSupport.parseRequiredId(itemDto.getProductId(), "产品ID");
+            Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
             Product product = productMap.get(productId);
             addItem(inboundNo, bill, itemsToSave, productId, product,
                     itemDto.getSourceItemId(), itemDto.getPlanQty(),

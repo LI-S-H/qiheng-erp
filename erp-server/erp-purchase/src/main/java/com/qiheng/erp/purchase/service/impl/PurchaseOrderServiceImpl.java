@@ -461,6 +461,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void handleInboundConfirmation(InboundBill bill, List<InboundBillItem> inboundItems) {
+        // 1. 校验入库单来源类型是否匹配(仅支持采购订单来源)
         if (!SourceType.PURCHASE_ORDER.name().equals(bill.getSourceType()) || bill.getSourceId() == null) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "入库单不是采购订单来源，不能回写采购订单");
         }
@@ -468,6 +469,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         if (order == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "采购订单不存在，无法完成入库确认");
         }
+        // 2. 校验采购订单状态是否允许入库确认(仅支持已审核或部分执行状态)
         if (!PurchaseOrderStatus.APPROVED.name().equals(order.getStatus())
                 && !PurchaseOrderStatus.PARTIAL_INBOUND.name().equals(order.getStatus())) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "当前采购订单状态不允许入库确认");

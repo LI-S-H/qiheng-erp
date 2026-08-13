@@ -66,6 +66,7 @@ import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -737,10 +738,6 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         }
     }
 
-    // TODO(销售模块完成后)：补充 SALES_RETURN_ORDER 的 InboundSourceWritebackPort，
-    // 在仓库确认销售退货入库的同一事务中回写退货明细 processed_qty 与退货单状态；
-    // 同时在入库库存变更前获取 warehouse:source-operation:SALES_RETURN_ORDER:{returnOrderId} 锁。
-
     /**
      * 生成销售退货入库单（PENDING_CONFIRM），不预占库存。
      * @param order 退货单
@@ -992,37 +989,113 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             }
             returnItem.setProcessedQty(nextProcessed);
         }
-        // 5. 判断退货单是否完成并更新主表状态
-        boolean completed = returnItems.values().stream().allMatch(item ->
-                (item.getApprovedQty() == null ? 0 : item.getApprovedQty()) == (item.getProcessedQty() == null ? 0 : item.getProcessedQty()));
+        // 5. 判断退货单是否完成并更新主表状态与明细
+        boolean completed = updateReturnProgress(order, returnItems.values());
+        // 6. 部分出库后，为剩余数量生成下一张待确认出库单（不重复预占库存，剩余锁定量已在确认时保留）
+        if (!completed) {
+            List<ReturnOrderItem> remainingItems = filterRemainingItems(returnItems.values());
+            if (!remainingItems.isEmpty()) {
+                // 为剩余数量生成下一张待确认出库单，串行化同一来源的退货审核，防止并发超额
+                generatePurchaseReturnOutbound(order, remainingItems,
+                        remainingItems.stream().collect(Collectors.toMap(ReturnOrderItem::getId,
+                                item -> item.getApprovedQty() == null ? 0L : item.getApprovedQty())), false);
+            }
+        }
+    }
+
+    /**
+     * 仓储确认销售退货入库后，同一事务内回写退货单进度。
+     * @param bill 销售退货入库单。
+     * @param items 销售退货入库单明细。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void handleInboundConfirmation(InboundBill bill, List<InboundBillItem> items) {
+        // 1. 校验销售退货入库单是否关联有效退货单(仅支持销售退货来源)
+        ReturnOrder order = returnOrderMapper.selectById(bill.getSourceId());
+        if (order == null || parseType(order.getReturnType()) != ReturnType.SALES_RETURN) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "销售退货入库单未关联有效退货单");
+        }
+        // 2. 校验退货单状态是否允许入库确认(仅支持已审核或部分执行状态)
+        ReturnStatus currentStatus = ReturnStatus.valueOf(order.getStatus());
+        if (currentStatus != ReturnStatus.APPROVED && currentStatus != ReturnStatus.PARTIAL_EXECUTED) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "当前退货单状态不允许入库确认");
+        }
+        // 3. 构建退货单明细映射表(退货单明细ID -> 退货单明细)
+        Map<Long, ReturnOrderItem> returnItems = returnOrderItemMapper.selectList(new LambdaQueryWrapper<ReturnOrderItem>()
+                .eq(ReturnOrderItem::getReturnOrderId, order.getId())).stream()
+                .collect(Collectors.toMap(ReturnOrderItem::getId, item -> item));
+        // 4. 校验销售退货入库单明细是否关联有效退货单明细
+        for (InboundBillItem inboundItem : items) {
+            ReturnOrderItem returnItem = returnItems.get(inboundItem.getSourceItemId());
+            if (returnItem == null) {
+                log.error("销售退货单[{}]入库回写异常:入库明细[{}]未关联有效退货明细(来源明细ID:{},产品编码:{},产品名称:{},入库单号:{})",
+                        order.getReturnNo(), inboundItem.getId(), inboundItem.getSourceItemId(),
+                        inboundItem.getProductCode(), inboundItem.getProductName(), inboundItem.getInboundNo());
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                        "销售退货入库明细未关联有效退货明细(来源明细ID:" + inboundItem.getSourceItemId()
+                                + ",产品编码:" + inboundItem.getProductCode()
+                                + ",产品名称:" + inboundItem.getProductName() + ")");
+            }
+            if (inboundItem.getCurrentQty() == null) {
+                log.error("销售退货单[{}]入库回写异常:入库明细[{}]本次入库数量为空(来源明细ID:{},产品编码:{},产品名称:{},入库单号:{})",
+                        order.getReturnNo(), inboundItem.getId(), inboundItem.getSourceItemId(),
+                        inboundItem.getProductCode(), inboundItem.getProductName(), inboundItem.getInboundNo());
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(),
+                        "销售退货入库明细本次入库数量为空(来源明细ID:" + inboundItem.getSourceItemId()
+                                + ",产品编码:" + inboundItem.getProductCode()
+                                + ",产品名称:" + inboundItem.getProductName() + ")");
+            }
+            // 计算此次入库量+已入库数量是否超过已审核数量
+            long approved = returnItem.getApprovedQty() == null ? 0L : returnItem.getApprovedQty();
+            long processed = returnItem.getProcessedQty() == null ? 0L : returnItem.getProcessedQty();
+            long nextProcessed = processed + inboundItem.getCurrentQty();
+            if (nextProcessed > approved) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "销售退货入库数量超过已审核数量");
+            }
+            returnItem.setProcessedQty(nextProcessed);
+        }
+        // 5. 判断退货单是否完成并更新主表状态与明细
+        boolean completed = updateReturnProgress(order, returnItems.values());
+        // 6. 部分入库后，为剩余数量生成下一张待确认入库单（销售退货入库不预占库存）
+        if (!completed) {
+            List<ReturnOrderItem> remainingItems = filterRemainingItems(returnItems.values());
+            if (!remainingItems.isEmpty()) {
+                generateSalesReturnInbound(order, remainingItems,
+                        remainingItems.stream().collect(Collectors.toMap(ReturnOrderItem::getId,
+                                item -> item.getApprovedQty() == null ? 0L : item.getApprovedQty())));
+            }
+        }
+    }
+
+    /**
+     * 按明细已处理数量推进退货单状态并批量落库，返回退货单是否已全部处理完成。
+     */
+    private boolean updateReturnProgress(ReturnOrder order, Collection<ReturnOrderItem> returnItems) {
+        boolean completed = returnItems.stream().allMatch(item ->
+                (item.getApprovedQty() == null ? 0L : item.getApprovedQty())
+                        == (item.getProcessedQty() == null ? 0L : item.getProcessedQty()));
         order.setStatus(completed ? ReturnStatus.COMPLETED.name() : ReturnStatus.PARTIAL_EXECUTED.name());
         int rows = returnOrderMapper.update(order, new LambdaQueryWrapper<ReturnOrder>()
                 .eq(ReturnOrder::getId, order.getId()));
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "退货单已被其他操作更新，请刷新后重试");
         }
-        // 6. 批量更新退货单明细
-        if (!returnOrderItemService.updateBatchById(returnItems.values())) {
+        if (!returnOrderItemService.updateBatchById(returnItems)) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "退货明细更新失败，请刷新后重试");
         }
-        // 7. 部分出库后，为剩余数量生成下一张待确认出库单（不重复预占库存，剩余锁定量已在确认时保留）
-        if (!completed) {
-            List<ReturnOrderItem> remainingItems = returnItems.values().stream()
-                    .filter(item -> {
-                        long approved = item.getApprovedQty() == null ? 0L : item.getApprovedQty();
-                        long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty();
-                        return approved - processed > 0;
-                    })
-                    .toList();
-            if (!remainingItems.isEmpty()) {
-                // 为剩余数量生成下一张待确认出库单，串行化同一来源的退货审核，防止并发超额
-                Map<Long, Long> remainingQtyMap = remainingItems.stream()
-                        .collect(Collectors.toMap(
-                                ReturnOrderItem::getId,
-                                item -> item.getApprovedQty() == null ? 0L : item.getApprovedQty()));
-                generatePurchaseReturnOutbound(order, remainingItems, remainingQtyMap, false);
-            }
-        }
+        return completed;
+    }
+
+    /** 筛选审核数量尚未处理完的退货明细。 */
+    private List<ReturnOrderItem> filterRemainingItems(Collection<ReturnOrderItem> returnItems) {
+        return returnItems.stream()
+                .filter(item -> {
+                    long approved = item.getApprovedQty() == null ? 0L : item.getApprovedQty();
+                    long processed = item.getProcessedQty() == null ? 0L : item.getProcessedQty();
+                    return approved - processed > 0;
+                })
+                .toList();
     }
 
     /**

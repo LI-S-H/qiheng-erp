@@ -13,6 +13,8 @@ import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderItemVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnableSourceOrderVo;
+import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
+import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBillItem;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBill;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBillItem;
 
@@ -58,4 +60,7 @@ public interface IReturnOrderService extends IService<ReturnOrder> {
 
     /** 采购退货出库确认后，回写退货单明细已处理数量和退货单状态。 */
     void handleOutboundConfirmation(OutboundBill bill, List<OutboundBillItem> items);
+
+    /** 销售退货入库确认后，回写退货单明细已处理数量和退货单状态。 */
+    void handleInboundConfirmation(InboundBill bill, List<InboundBillItem> items);
 }

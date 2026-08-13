@@ -9,6 +9,8 @@ import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.util.CodeGen;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
+import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
+import com.qiheng.erp.purchase.domain.purchaseorder.enums.PurchaseOrderStatus;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierBatchDeleteDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierBatchStatusDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierCreateDto;
@@ -17,9 +19,14 @@ import com.qiheng.erp.purchase.domain.supplier.dto.SupplierUpdateDto;
 import com.qiheng.erp.purchase.domain.supplier.entity.Supplier;
 import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierVo;
+import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.purchase.mapper.SupplierMapper;
 import com.qiheng.erp.purchase.mapper.SupplierProductMapper;
 import com.qiheng.erp.purchase.service.ISupplierService;
+import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
+import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
+import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.mapper.ReturnOrderMapper;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -49,6 +56,12 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
 
     @Autowired
     private SupplierProductMapper supplierProductMapper;
+
+    @Autowired
+    private PurchaseOrderMapper purchaseOrderMapper;
+
+    @Autowired
+    private ReturnOrderMapper returnOrderMapper;
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
@@ -146,8 +159,13 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     @Transactional(rollbackFor = Exception.class)
     public SupplierVo update(Long supplierId, SupplierUpdateDto dto) {
         // 查询原记录，确认供应商仍存在
-        if (supplierMapper.selectById(supplierId) == null) {
+        Supplier existing = supplierMapper.selectById(supplierId);
+        if (existing == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND);
+        }
+        // 从启用切到停用时校验：供应商不能被未完成的业务单据引用
+        if (Integer.valueOf(0).equals(dto.getStatus()) && !Integer.valueOf(0).equals(existing.getStatus())) {
+            ensureCanDisable(supplierId);
         }
         Supplier entity = new Supplier();
         LoginUser currentUser = UserContext.requireCurrentUser();
@@ -204,6 +222,10 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
             if (!entity.getVersion().equals(expectedVersion)) {
                 throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商数据已被他人修改，请刷新后重试");
             }
+            // 从启用切到停用时校验：供应商不能被未完成的业务单据引用
+            if (Integer.valueOf(0).equals(dto.getStatus()) && !Integer.valueOf(0).equals(entity.getStatus())) {
+                ensureCanDisable(supplierIds.get(index));
+            }
             entity.setStatus(dto.getStatus());
             entity.setUpdatedById(currentUser.getUserId());
             entity.setUpdatedByName(currentUser.getRealName());
@@ -239,10 +261,11 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     }
 
     /**
-     * 删除前校验：存在供货产品时不允许删除
+     * 删除前校验：存在供货产品、采购订单或采购退货单时不允许删除（任意状态都会破坏追溯）。
      * @param supplierId 供应商ID
      */
     private void ensureCanDelete(Long supplierId) {
+        // 1. 校验是否存在供货产品
         Long productCount = supplierProductMapper.selectCount(
                 new LambdaQueryWrapper<SupplierProduct>()
                         .eq(SupplierProduct::getSupplierId, supplierId)
@@ -250,6 +273,57 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         if (productCount > 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商存在供货产品，无法删除");
         }
-        // TODO 采购订单模块完成后，补充检查供应商是否存在采购订单，存在则拒绝删除
+        // 2. 校验是否存在采购订单
+        if (purchaseOrderMapper.selectCount(
+                new LambdaQueryWrapper<PurchaseOrder>()
+                        .eq(PurchaseOrder::getSupplierId, supplierId)
+        ) > 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商存在采购订单，无法删除");
+        }
+        // 3. 校验是否存在采购退货单
+        if (returnOrderMapper.selectCount(
+                new LambdaQueryWrapper<ReturnOrder>()
+                        .eq(ReturnOrder::getPartyId, supplierId)
+                        .eq(ReturnOrder::getReturnType, ReturnType.PURCHASE_RETURN.name())
+        ) > 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商存在业务引用，无法删除");
+        }
+    }
+
+    /**
+     * 停用前校验：存在未完成的采购订单或采购退货单时不允许停用。
+     * <p>已完成（INBOUND_DONE / COMPLETED）或已取消的单据不阻挡停用。</p>
+     * @param supplierId 供应商ID
+     */
+    private void ensureCanDisable(Long supplierId) {
+        // 1. 校验是否存在供货产品
+        Long productCount = supplierProductMapper.selectCount(
+                new LambdaQueryWrapper<SupplierProduct>()
+                        .eq(SupplierProduct::getSupplierId, supplierId)
+        );
+        if (productCount > 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商存在供货产品，无法删除");
+        }
+        // 2. 校验是否存在采购未完成的采购订单
+        if (purchaseOrderMapper.selectCount(
+                new LambdaQueryWrapper<PurchaseOrder>()
+                        .eq(PurchaseOrder::getSupplierId, supplierId)
+                        .notIn(PurchaseOrder::getStatus,
+                                PurchaseOrderStatus.INBOUND_DONE.name(),
+                                PurchaseOrderStatus.CANCELLED.name())
+        ) > 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商被未完成采购订单引用，无法停用");
+        }
+        // 3. 校验是否存在采购未完成的采购退货单
+        if (returnOrderMapper.selectCount(
+                new LambdaQueryWrapper<ReturnOrder>()
+                        .eq(ReturnOrder::getPartyId, supplierId)
+                        .eq(ReturnOrder::getReturnType, ReturnType.PURCHASE_RETURN.name())
+                        .notIn(ReturnOrder::getStatus,
+                                ReturnStatus.COMPLETED.name(),
+                                ReturnStatus.CANCELLED.name())
+        ) > 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商被未完成业务引用，无法停用");
+        }
     }
 }

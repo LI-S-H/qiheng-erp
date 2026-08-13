@@ -17,6 +17,7 @@ import com.qiheng.erp.warehouse.domain.warehouse.entity.Warehouse;
 import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
 import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBill;
+import com.qiheng.erp.warehouse.domain.port.WarehouseUsageValidator;
 import com.qiheng.erp.warehouse.domain.stockbill.entity.StockBill;
 import com.qiheng.erp.warehouse.domain.stockbill.enums.StockBillStatus;
 import com.qiheng.erp.warehouse.domain.warehouse.vo.WarehouseVo;
@@ -33,6 +34,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +68,9 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
 
     @Autowired
     private IStockBillService stockBillService;
+
+    @Autowired(required = false)
+    private List<WarehouseUsageValidator> warehouseUsageValidators = Collections.emptyList();
 
     /**
      * 分页查询仓库
@@ -259,11 +264,17 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
                 .eq(WarehouseStock::getWarehouseId, warehouseId)
                 .and(wrapper -> wrapper.gt(WarehouseStock::getStockQty, 0)
                         .or().gt(WarehouseStock::getLockedQty, 0)));
+        // 1. 检查仓库是否有可用或已锁定库存
         if (hasStockBalance) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库存在可用或锁定库存，不能停用");
         }
+        // 2. 检查仓库是否有未完成的、引用本仓库的出入库记录
         if (hasUnfinishedBills(warehouseId)) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库存在草稿或待确认出入库单，不能停用");
+        }
+        // 3. 检查仓库是否有未完成的、引用本仓库的业务记录
+        if (WarehouseUsageValidator.anyHasActiveReferences(warehouseUsageValidators, warehouseId)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库被未完成业务记录引用，不能停用");
         }
     }
 
@@ -283,8 +294,14 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
                 .eq(StockBill::getWarehouseId, warehouseId))) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库存在历史单据或库存流水，不能删除");
         }
+        if (WarehouseUsageValidator.anyHasAnyReferences(warehouseUsageValidators, warehouseId)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "仓库被业务记录引用，不能删除");
+        }
     }
 
+    /**
+     * 检查仓库是否有未完成的、引用本仓库的出入库记录（用于停用校验）。
+     */
     private boolean hasUnfinishedBills(Long warehouseId) {
         return inboundBillService.exists(new LambdaQueryWrapper<InboundBill>()
                 .eq(InboundBill::getWarehouseId, warehouseId)

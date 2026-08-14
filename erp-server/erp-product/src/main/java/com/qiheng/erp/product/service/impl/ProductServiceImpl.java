@@ -9,7 +9,8 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
-import com.qiheng.erp.common.util.CodeGen;
+import com.qiheng.erp.common.util.CodeNoDefinition;
+import com.qiheng.erp.common.util.CodeNoGenerator;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
@@ -20,10 +21,7 @@ import com.qiheng.erp.product.mapper.ProductCategoryMapper;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.product.service.IProductService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -42,6 +40,8 @@ import java.util.stream.Collectors;
 @Service
 public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> implements IProductService {
 
+    private static final CodeNoDefinition PRODUCT_CODE = new CodeNoDefinition("product:code", "P", 6);
+
     @Autowired
     private ProductMapper productMapper;
 
@@ -49,10 +49,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     private ProductCategoryMapper productCategoryMapper;
 
     @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    private CodeNoGenerator codeNoGenerator;
 
-    @Autowired
-    private RedissonClient redissonClient;
     /**
      * 产品分页查询
      * @param dto 分页查询参数DTO
@@ -137,7 +135,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     @Override
     @DistributedLock(key ="'product:category:global'",waitTime = 5,leaseTime = 10,timeUnit = TimeUnit.SECONDS)
     public ProductVo add(Product product) {
-        product.setProductCode(CodeGen.next(stringRedisTemplate, "product:code", "P", 6));
+        product.setProductCode(codeNoGenerator.nextNo(PRODUCT_CODE, () -> productMapper.findMaxProductCodeSequence(
+                PRODUCT_CODE.prefix(), PRODUCT_CODE.prefix().length(), PRODUCT_CODE.width())));
         if (product.getSafetyStockQty() != null) {
             product.setSafetyStockQty(BigDecimal.valueOf(QtyUtil.toStored(product.getSafetyStockQty())));
         }
@@ -189,7 +188,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
      * 批量更新产品状态
      * @param dto 批量更新产品状态参数DTO
      */
-    @DistributedLock(key = "'product:lock:global'")
+    @DistributedLock(key = "'product:category:global'")
     @Override
     public void updateBatchStatus(ProductBatchStatusDto dto) {
         // 停用时校验：产品不能被未完成的业务单据引用（OR EXISTS 短路校验）
@@ -212,7 +211,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
      * @param productId 产品ID
      * @param status 状态
      */
-    @DistributedLock(key = "'product:lock:' + #productId")
+    @DistributedLock(key = "'product:category:global'")
     @Override
     public void updateStatus(Long productId, Integer status) {
         // 停用时校验：产品不能被未完成的业务单据引用（OR EXISTS 短路校验）
@@ -234,7 +233,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
      * 批量删除产品
      * @param ids 产品ID列表
      */
-    @DistributedLock(key = "'product:lock:global'")
+    @DistributedLock(key = "'product:category:global'")
     @Override
     public void deleteBatch(List<String> ids) {
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<Product>()
@@ -258,37 +257,18 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
      * @param product 产品实体
      * @return 产品VO
      */
-    @DistributedLock(key = "'product:lock:global'")
+    @DistributedLock(key = "'product:category:global'")
     @Override
     public ProductVo update(Product product) {
         product.setProductCode(null);
         if (product.getCategoryId() != null) {
-            // 校验分类是否存在
-            RLock categoryLock = redissonClient.getLock("product:category:global");
-            boolean acquired;
-            try {
-                // 尝试获取分类锁
-                acquired = categoryLock.tryLock(5, 10, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                // 如果线程在等待锁的过程中被中断，重新设置中断状态并抛出异常
-                Thread.currentThread().interrupt();
-                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作被中断");
+            // 产品与分类写操作共用同一把锁，校验分类状态后不会被并发分类停用穿透。
+            ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
+            if (category == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND);
             }
-            if (!acquired) {
-                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "分类正在被其他用户操作，请稍后再试");
-            }
-            try {
-                ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
-                if (category == null) {
-                    throw new BizException(ErrorCode.DATA_NOT_FOUND);
-                }
-                if (category.getStatus() == 0) {
-                    throw new BizException(ErrorCode.CATEGORY_DISABLED);
-                }
-            } finally {
-                if (categoryLock.isHeldByCurrentThread()) {
-                    categoryLock.unlock();
-                }
+            if (category.getStatus() == 0) {
+                throw new BizException(ErrorCode.CATEGORY_DISABLED);
             }
         }
 

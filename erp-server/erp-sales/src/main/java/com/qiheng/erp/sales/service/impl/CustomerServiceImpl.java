@@ -8,7 +8,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
-import com.qiheng.erp.common.util.CodeGen;
+import com.qiheng.erp.common.util.CodeNoDefinition;
+import com.qiheng.erp.common.util.CodeNoGenerator;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
@@ -31,7 +32,6 @@ import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
@@ -48,6 +48,8 @@ import java.util.Map;
  */
 @Service
 public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> implements ICustomerService {
+    private static final CodeNoDefinition CUSTOMER_CODE = new CodeNoDefinition("customer:code", "C", 4);
+
     @Autowired
     private CustomerMapper customerMapper;
     @Autowired
@@ -55,7 +57,7 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
     @Autowired
     private SalesOrderMapper salesOrderMapper;
     @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    private CodeNoGenerator codeNoGenerator;
 
 
     /**
@@ -89,7 +91,8 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
     public CustomerVo create(CustomerCreateDto dto) {
         LoginUser currentUser = UserContext.requireCurrentUser();
         Customer entity = BeanUtil.copyProperties(dto, Customer.class);
-        entity.setCustomerCode(CodeGen.next(stringRedisTemplate, "customer:code", "C", 4));
+        entity.setCustomerCode(codeNoGenerator.nextNo(CUSTOMER_CODE, () -> customerMapper.findMaxCustomerCodeSequence(
+                CUSTOMER_CODE.prefix(), CUSTOMER_CODE.prefix().length(), CUSTOMER_CODE.width())));
         entity.setCreditLimit(QtyUtil.toStored(dto.getCreditLimit()));
         entity.setUpdatedById(currentUser.getUserId());
         entity.setUpdatedByName(currentUser.getRealName());

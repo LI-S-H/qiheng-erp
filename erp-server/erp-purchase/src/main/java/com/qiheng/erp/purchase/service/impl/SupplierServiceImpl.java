@@ -6,7 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
-import com.qiheng.erp.common.util.CodeGen;
+import com.qiheng.erp.common.util.CodeNoDefinition;
+import com.qiheng.erp.common.util.CodeNoGenerator;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
@@ -31,7 +32,6 @@ import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +51,8 @@ import java.util.stream.Collectors;
 @Service
 public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> implements ISupplierService {
 
+    private static final CodeNoDefinition SUPPLIER_CODE = new CodeNoDefinition("supplier:code", "S", 4);
+
     @Autowired
     private SupplierMapper supplierMapper;
 
@@ -64,7 +66,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     private ReturnOrderMapper returnOrderMapper;
 
     @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    private CodeNoGenerator codeNoGenerator;
 
     /**
      * 供应商分页查询
@@ -127,7 +129,8 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     public SupplierVo create(SupplierCreateDto dto) {
         LoginUser currentUser = UserContext.requireCurrentUser();
         Supplier entity = new Supplier();
-        entity.setSupplierCode(CodeGen.next(stringRedisTemplate, "supplier:code", "S", 4));
+        entity.setSupplierCode(codeNoGenerator.nextNo(SUPPLIER_CODE, () -> supplierMapper.findMaxSupplierCodeSequence(
+                SUPPLIER_CODE.prefix(), SUPPLIER_CODE.prefix().length(), SUPPLIER_CODE.width())));
         entity.setSupplierName(dto.getSupplierName());
         entity.setContactName(dto.getContactName());
         entity.setContactPhone(dto.getContactPhone());

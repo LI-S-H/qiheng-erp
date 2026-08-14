@@ -7,7 +7,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
-import com.qiheng.erp.common.util.CodeGen;
+import com.qiheng.erp.common.util.CodeNoDefinition;
+import com.qiheng.erp.common.util.CodeNoGenerator;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseBatchDeleteDto;
 import com.qiheng.erp.warehouse.domain.warehouse.dto.WarehouseBatchStatusDto;
@@ -30,7 +31,6 @@ import com.qiheng.erp.warehouse.service.IWarehouseStockService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,11 +51,13 @@ import java.util.stream.Collectors;
 @Service
 public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse> implements IWarehouseService {
 
+    private static final CodeNoDefinition WAREHOUSE_CODE = new CodeNoDefinition("warehouse:code", "WH", 6);
+
     @Autowired
     private WarehouseMapper warehouseMapper;
 
     @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    private CodeNoGenerator codeNoGenerator;
 
     @Autowired
     private IWarehouseStockService warehouseStockService;
@@ -115,7 +117,8 @@ public class WarehouseServiceImpl extends ServiceImpl<WarehouseMapper, Warehouse
      */
     @Override
     public WarehouseVo add(Warehouse warehouse) {
-        warehouse.setWarehouseCode(CodeGen.next(stringRedisTemplate, "warehouse:code", "WH", 6));
+        warehouse.setWarehouseCode(codeNoGenerator.nextNo(WAREHOUSE_CODE, () -> warehouseMapper.findMaxWarehouseCodeSequence(
+                WAREHOUSE_CODE.prefix(), WAREHOUSE_CODE.prefix().length(), WAREHOUSE_CODE.width())));
         if (warehouse.getStatus() == null) {
             warehouse.setStatus(1);
         }

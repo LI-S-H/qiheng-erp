@@ -220,8 +220,8 @@
 - `outbound_bill_item.outbound_bill_id` -> `outbound_bill.id`
 - `stock_bill.work_bill_id` 根据 `bill_type` 指向 `inbound_bill.id` 或 `outbound_bill.id`；`PURCHASE_IN`、`SALES_RETURN`、`ADJUST_IN` 对应入库单，其余类型对应出库单
 - `stock_bill_item.work_bill_item_id` 根据主表 `bill_type` 指向入库单明细或出库单明细
-- `inbound_bill_item.source_item_id` 可指向 `purchase_order_item.id` 或后续销售退货明细ID
-- `outbound_bill_item.source_item_id` 可指向 `sales_order_item.id` 或后续采购退货明细ID
+- `inbound_bill_item.source_item_id` 可指向 `purchase_order_item.id` 或 `return_order_item.id`（销售退货）
+- `outbound_bill_item.source_item_id` 可指向 `sales_order_item.id` 或 `return_order_item.id`（采购退货）
 
 ## MVP 业务规则
 

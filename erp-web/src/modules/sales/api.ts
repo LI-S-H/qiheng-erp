@@ -173,7 +173,7 @@ function buildOrderSeed(
       unitPrice: line[2],
       totalAmount: line[1] * line[2],
       remark: line[3] || '',
-    });
+    }, true);
   });
   const historicalTimes: Record<string, { createTime: string; updateTime: string; submittedAt: string; approvedAt: string; lockedAt: string | null; remark: string }> = {
     SO202606001: { createTime: '2026-06-13 09:20:00', updateTime: '2026-06-14 10:05:00', submittedAt: '2026-06-13 09:20:00', approvedAt: '2026-06-13 10:00:00', lockedAt: null, remark: '对应 OB202606140002，已确认出库' },
@@ -229,7 +229,7 @@ function normalizeCustomer(item: CustomerListItem): CustomerListItem {
   };
 }
 
-function normalizeOrderItem(item: SalesOrderItem): SalesOrderItem {
+function normalizeOrderItem(item: SalesOrderItem, allowMockMoney = useMockApi): SalesOrderItem {
   return {
     ...item,
     salesOrderItemId: normalizeStringId(item.salesOrderItemId, 'salesOrderItemId'),
@@ -239,8 +239,8 @@ function normalizeOrderItem(item: SalesOrderItem): SalesOrderItem {
     quantity: normalizeFiniteNumber(item.quantity, 'quantity'),
     lockedQty: normalizeFiniteNumber(item.lockedQty, 'lockedQty'),
     outboundQty: normalizeFiniteNumber(item.outboundQty, 'outboundQty'),
-    unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, useMockApi)!,
-    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, useMockApi)!,
+    unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, allowMockMoney)!,
+    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, allowMockMoney)!,
   };
 }
 
@@ -262,7 +262,7 @@ function normalizeOrder(item: SalesOrderListItem): SalesOrderListItem {
 }
 
 function normalizeOrderDetail(item: SalesOrderDetail): SalesOrderDetail {
-  return { ...normalizeOrder(item), items: item.items.map(normalizeOrderItem) };
+  return { ...normalizeOrder(item), items: item.items.map(row => normalizeOrderItem(row)) };
 }
 
 function normalizePage<T>(page: PageResult<T>, mapper: (item: T) => T): PageResult<T> {

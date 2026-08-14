@@ -1,40 +1,43 @@
 # 统一退货模块接口与模块边界
 
-## 路由
+## 当前实现状态
 
-退货数据由独立模块 `erp-return` 统一提供。所有请求使用 `returnType` 明确业务方向，避免通过前端页面或单号前缀推断来源。
+退货能力已由独立模块 `erp-return` 完整提供，并已接入采购、销售和仓储模块。采购、销售页面分别固定业务方向，但所有后端请求统一使用 `/returns` 与 `returnType`；不得通过页面路径或单号前缀推断业务来源。
 
 | 接口 | 说明 | 当前状态 |
 | --- | --- | --- |
 | `GET /returns?returnType=PURCHASE_RETURN` | 分页查询采购退货单 | 已实现 |
-| `GET /returns?returnType=SALES_RETURN` | 分页查询销售退货单 | 销售来源提供者未部署时返回明确业务错误 |
-| `GET /returns/{returnOrderId}` | 查询退货单详情 | 已实现；按单据类型校验权限 |
-| `POST /returns`、`PUT /returns/{returnOrderId}`、`DELETE /returns/{returnOrderId}` | 新建、编辑、删除统一退货草稿 | 已定义契约，后端待实现 |
-| `POST /returns/{returnOrderId}/submit`、`approve`、`cancel` | 提交、审核、取消统一退货单 | 已定义契约，后端待实现 |
+| `GET /returns?returnType=SALES_RETURN` | 分页查询销售退货单 | 已实现 |
+| `GET /returns/{returnOrderId}` | 查询退货单详情 | 已实现，按实际退货类型校验 `return:query` 权限 |
+| `POST /returns`、`PUT /returns/{returnOrderId}`、`DELETE /returns/{returnOrderId}` | 新建、编辑、删除统一退货草稿 | 已实现；编辑支持 `DRAFT`、`SUBMITTED`，删除仅限 `DRAFT` |
+| `POST /returns/{returnOrderId}/submit`、`approve`、`cancel` | 提交、审核、取消统一退货单 | 已实现；提交幂等，审核与取消使用乐观锁和事务 |
 | `GET /returns/source-orders?returnType=PURCHASE_RETURN` | 搜索可退采购来源订单 | 已实现 |
-| `GET /returns/source-orders/{sourceOrderId}/items?returnType=PURCHASE_RETURN` | 查询来源订单可退明细 | 已实现 |
-| `GET /returns/source-orders/{sourceOrderId}/items?returnType=SALES_RETURN` | 查询销售来源可退明细 | 等销售模块提供来源适配器后启用 |
+| `GET /returns/source-orders?returnType=SALES_RETURN` | 搜索可退销售来源订单 | 已实现 |
+| `GET /returns/source-orders/{sourceOrderId}/items?returnType=PURCHASE_RETURN` | 查询采购来源订单的可退明细 | 已实现 |
+| `GET /returns/source-orders/{sourceOrderId}/items?returnType=SALES_RETURN` | 查询销售来源订单的可退明细 | 已实现 |
 
-列表参数：`returnType`、`returnNo`、`sourceOrderNo`、`partyId`、`warehouseId`、`status`、`pageNum`、`pageSize`。
+列表参数为 `returnType`、`returnNo`、`sourceOrderNo`、`partyId`、`warehouseId`、`status`、`pageNum`、`pageSize`。`partyId` 在采购退货中表示供应商 ID，在销售退货中表示客户 ID；所有有效筛选条件按 AND 组合。
 
-`/purchase/returns` 与 `/sales/returns` 不是正式接口，已从 OpenAPI 移除。采购、销售两个前端入口均调用 `/returns`，仅由各自 API 适配器固定注入不同的 `returnType`。
+`/purchase/returns` 与 `/sales/returns` 是前端页面路由，不是后端接口。两个页面的 API adapter 都调用 `/returns`，并分别固定注入 `PURCHASE_RETURN` 与 `SALES_RETURN`。
 
-## 来源扩展契约
+## 来源与库存边界
 
-`erp-return` 内的 `returnorder.domain.port` 包包含下列来源契约；契约本身不依赖 Spring、MyBatis 或采购/销售实现：
+`erp-return` 的 `returnorder.domain.port` 包含 `ReturnType`、`ReturnSourceProvider`、`ReturnSourceOrder` 和 `ReturnSourceItem`。采购、销售模块均已实现各自的 `ReturnSourceProvider`，统一退货服务要求每个 `returnType` 恰好匹配一个来源提供者；缺失或重复注册会拒绝请求，避免创建无法闭环的退货数据。
 
-- `ReturnType`
-- `ReturnSourceProvider`
-- `ReturnSourceOrder`
-- `ReturnSourceItem`
+来源明细数量统一以 `BIGINT ×100` 在内部传递，数量精度读取来源订单明细快照。查询响应中的 `sourceFulfilledQty`、`occupiedQty`、`stockAvailableQty` 与 `availableReturnQty` 都由服务端计算：
 
-采购、销售模块均应实现各自的 `ReturnSourceProvider` 并单向依赖 `erp-return`；统一退货服务会要求每个 `returnType` 恰好匹配一个来源提供者：缺失或重复配置都会直接失败，绝不创建无法闭环的退货数据。来源适配器返回的履约数量统一为 `BIGINT` 的“×100”存储值，数量精度必须取来源业务明细的 `quantity_precision` 快照，禁止优先读取当前 `product.quantity_precision`。
+- 销售退货：`availableReturnQty = max(0, sourceFulfilledQty - occupiedQty)`，不受当前库存限制；服务端跳过库存查询，因此 `stockAvailableQty` 当前返回 `0`，且不参与退货资格计算。前端必须以 `availableReturnQty` 判断是否可申请。
+- 采购退货：`availableReturnQty = max(0, min(sourceFulfilledQty - occupiedQty, stockAvailableQty))`，其中 `stockAvailableQty = warehouse_stock.stock_qty - warehouse_stock.locked_qty`。
 
-## 仓储回写
+草稿不占用可退额度；提交后按申请数量占用，审核后按审核数量占用。提交与审核都会锁定同一来源订单并重新聚合校验，前端显示值不能作为最终依据。
 
-仓储模块通过 `OutboundSourceWritebackPort` 发出出库确认事件。采购退货出库确认时，`ReturnOutboundWritebackPort` 在同一事务内回写 `return_order_item.processed_qty`，并将主单更新为：
+## 仓储执行与回写
 
-- 全部审核数量已处理：`COMPLETED`
-- 仅处理部分审核数量：`PARTIAL_EXECUTED`
+审核通过不会直接生成库存事实，而是生成来源工作单：
 
-入库侧也改为要求来源回写适配器唯一匹配，防止此前 `findFirst()` 静默选择第一个实现类而漏写来源单。
+- 采购退货生成 `PURCHASE_RETURN`、`SOURCE_GENERATED` 的待确认出库单，并对未处理审核数量预占实物库存。
+- 销售退货生成 `SALES_RETURN`、`SOURCE_GENERATED` 的待确认入库单，不预占库存。
+
+仓储确认采购退货出库后，通过 `PurchaseReturnOutboundWritebackPort` 回写 `return_order_item.processed_qty`；确认销售退货入库后，通过 `SalesReturnInboundWritebackPort` 回写同一字段。所有审核数量已处理时主单变为 `COMPLETED`，否则为 `PARTIAL_EXECUTED`。采购退货取消尚未执行的已审核单时，会在同一事务内取消待确认出库单并释放预占库存；销售退货取消时同步取消待确认入库单。
+
+具体请求与响应字段、错误码及权限以 [erp-openapi.yaml](erp-openapi.yaml) 为权威契约。

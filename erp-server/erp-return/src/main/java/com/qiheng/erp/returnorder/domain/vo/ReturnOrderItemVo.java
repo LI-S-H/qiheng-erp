@@ -45,7 +45,7 @@ public class ReturnOrderItemVo {
     @Schema(description = "来源单已履约数量（如采购已入库数量）")
     private BigDecimal sourceFulfilledQty;
 
-    @Schema(description = "当前仓库可用库存数量，来源可退明细查询时返回")
+    @Schema(description = "当前仓库可用库存数量；采购退货来源明细返回真实可用库存，销售退货不查询库存并返回 0")
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private BigDecimal stockAvailableQty;
 
@@ -53,7 +53,7 @@ public class ReturnOrderItemVo {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private BigDecimal occupiedQty;
 
-    @Schema(description = "剩余可退数量 = min(来源已履约数, 仓库可用库存) - 已占用数，仅新增/编辑来源时返回")
+    @Schema(description = "剩余可退数量；销售退货为来源已履约数减已占用数，采购退货还受仓库可用库存限制，仅新增/编辑来源时返回")
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private BigDecimal availableReturnQty;
 

@@ -81,7 +81,7 @@ function ensureEnabledCategory(payload: Pick<ProductFormPayload, 'categoryId' | 
   }
 }
 
-function normalizeProduct(item: ProductListItem): ProductListItem {
+function normalizeProduct(item: ProductListItem, allowMockMoney = useMockApi): ProductListItem {
   const quantityPrecision = normalizeFiniteNumber(item.quantityPrecision, 'quantityPrecision');
   if (!Number.isInteger(quantityPrecision) || quantityPrecision < 0 || quantityPrecision > 2) {
     throw new Error('接口字段 quantityPrecision 必须是 0 到 2 的整数');
@@ -92,8 +92,8 @@ function normalizeProduct(item: ProductListItem): ProductListItem {
     categoryId: normalizeNullableStringId(item.categoryId, 'categoryId'),
     status: normalizeBinaryStatus(item.status),
     quantityPrecision,
-    referencePurchasePrice: normalizeMoneyNumber(item.referencePurchasePrice, 'referencePurchasePrice', false, useMockApi)!,
-    referenceSalePrice: normalizeMoneyNumber(item.referenceSalePrice, 'referenceSalePrice', false, useMockApi)!,
+    referencePurchasePrice: normalizeMoneyNumber(item.referencePurchasePrice, 'referencePurchasePrice', false, allowMockMoney)!,
+    referenceSalePrice: normalizeMoneyNumber(item.referenceSalePrice, 'referenceSalePrice', false, allowMockMoney)!,
     safetyStockQty: normalizeFiniteNumber(item.safetyStockQty, 'safetyStockQty'),
   };
 }
@@ -101,7 +101,7 @@ function normalizeProduct(item: ProductListItem): ProductListItem {
 function normalizeProductPage(page: PageResult<ProductListItem>): PageResult<ProductListItem> {
   return {
     ...page,
-    records: page.records.map(normalizeProduct),
+    records: page.records.map(item => normalizeProduct(item)),
     total: normalizeFiniteNumber(page.total, 'total'),
     pageNum: normalizeFiniteNumber(page.pageNum, 'pageNum'),
     pageSize: normalizeFiniteNumber(page.pageSize, 'pageSize'),
@@ -112,7 +112,8 @@ export function getMockProductSnapshot(productId: string): ProductListItem | und
   const product = mockProducts.find(item => item.productId === productId);
   if (!product) return undefined;
   const { referenced: _, ...snapshot } = product;
-  return normalizeProduct({ ...snapshot });
+  // 本地种子始终使用 number 表示金额；即使当前页面走真实 API，也不能按后端字符串契约误判该内部快照。
+  return normalizeProduct({ ...snapshot }, true);
 }
 
 function filterProducts(params: ProductQuery): PageResult<ProductListItem> {

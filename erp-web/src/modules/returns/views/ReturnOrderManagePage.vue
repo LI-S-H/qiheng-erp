@@ -167,9 +167,9 @@ const promptState = reactive({
   confirmText: '',
 });
 
-const canQuery = computed(() => props.config.backendEnabled !== false && authStore.hasPermission(props.config.permissions.query));
-const canCreate = computed(() => props.config.backendEnabled !== false && authStore.hasPermission(props.config.permissions.create));
-const canManage = computed(() => props.config.backendEnabled !== false && authStore.hasPermission(props.config.permissions.manage));
+const canQuery = computed(() => authStore.hasPermission(props.config.permissions.query));
+const canCreate = computed(() => authStore.hasPermission(props.config.permissions.create));
+const canManage = computed(() => authStore.hasPermission(props.config.permissions.manage));
 const queryBusy = computed(() => loading.value || queryPending.value);
 const selectedSource = computed(() => sourceOrderCache.get(form.sourceOrderId));
 const selectedSourceLabel = computed(() => sourceOrderOptions.value.find(option => option.value === form.sourceOrderId)?.label
@@ -291,6 +291,7 @@ function newDraftLine(): DraftLine {
     unitName: '',
     quantityPrecision: 0,
     sourceFulfilledQty: 0,
+    stockAvailableQty: 0,
     occupiedQty: 0,
     availableReturnQty: 0,
     unitPrice: 0,
@@ -330,6 +331,7 @@ async function loadSourceLines(sourceOrderId: string, existing?: ReturnOrderDeta
       unitName: saved.unitName,
       quantityPrecision: saved.quantityPrecision,
       sourceFulfilledQty: saved.sourceFulfilledQty,
+      stockAvailableQty: 0,
       // 来源接口不再返回该草稿中已失效的明细时，保留原申请数量供用户修订；剩余可退数量仍以来源接口为准。
       occupiedQty: 0,
       availableReturnQty: saved.requestedQty,
@@ -347,6 +349,7 @@ async function loadSourceLines(sourceOrderId: string, existing?: ReturnOrderDeta
         unitName: saved.unitName,
         quantityPrecision: saved.quantityPrecision,
         sourceFulfilledQty: saved.sourceFulfilledQty,
+        stockAvailableQty: 0,
         occupiedQty: 0,
         availableReturnQty: saved.requestedQty,
         unitPrice: saved.unitPrice,
@@ -823,7 +826,6 @@ function reasonLabel(value: ReturnReasonCode) {
 }
 
 onMounted(() => {
-  if (props.config.backendEnabled === false) return;
   if (!canQuery.value) {
     toast.error(`缺少 ${props.config.permissions.query} 权限`);
     return;
@@ -838,7 +840,6 @@ onMounted(() => {
       <div>
         <h1 class="page-title">{{ config.title }}</h1>
         <p class="page-description">{{ config.description }}</p>
-        <p v-if="config.backendEnabled === false" class="mt-2 text-sm text-amber-700">{{ config.backendUnavailableMessage }}</p>
       </div>
     </div>
 

@@ -2594,7 +2594,7 @@ paths:
     get:
       tags: [Return]
       summary: 分页查询统一退货单
-      description: 通过必填的 `returnType` 区分采购退货与销售退货；所有筛选条件按 AND 组合。采购前端固定传 `PURCHASE_RETURN`，销售前端固定传 `SALES_RETURN`，页面不允许用户自行切换类型。退货查询需要 `return:query` 权限，不区分采购/销售方向。销售来源能力未部署时返回明确业务错误，不返回半成品数据。
+      description: 通过必填的 `returnType` 区分采购退货与销售退货；所有筛选条件按 AND 组合。采购前端固定传 `PURCHASE_RETURN`，销售前端固定传 `SALES_RETURN`，页面不允许用户自行切换类型。退货查询需要 `return:query` 权限，不区分采购/销售方向。采购与销售来源能力均已部署。
       operationId: returnOrderPage
       security:
         - SaTokenAuth: []
@@ -2620,11 +2620,9 @@ paths:
           schema: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_EXECUTED, COMPLETED, CANCELLED] }
         - name: pageNum
           in: query
-          required: true
           schema: { type: integer, minimum: 1, default: 1 }
         - name: pageSize
           in: query
-          required: true
           schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
       responses:
         "200":
@@ -2688,7 +2686,6 @@ paths:
           schema: { type: string, maxLength: 64 }
         - name: pageSize
           in: query
-          required: true
           schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
       responses:
         "200":
@@ -2711,7 +2708,7 @@ paths:
     get:
       tags: [Return]
       summary: 查询来源订单可退明细
-      description: 返回指定来源单中实际履约且仍有剩余可退数量的明细。`occupiedQty` 与 `availableReturnQty` 为服务端派生字段；提交、审核时后端仍须锁定来源明细并重新校验。
+      description: 返回指定来源单中所有已实际履约的明细；即使 `availableReturnQty` 为 0，明细仍会返回。`occupiedQty` 与 `availableReturnQty` 为服务端派生字段；前端仅允许选择 `availableReturnQty > 0` 的明细，提交、审核时后端仍须锁定来源明细并重新校验。
       operationId: returnSourceItemList
       security:
         - SaTokenAuth: []
@@ -6647,10 +6644,10 @@ components:
         warehouseId: { type: string, description: 对应 `return_order.warehouse_id`，BIGINT 按字符串传输 }
         warehouseName: { type: string, maxLength: 100, readOnly: true, description: 对应 `return_order.warehouse_name` 仓库名称快照 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 对应 `return_order.expected_execution_date`；草稿可空，提交前必填 }
-        handlingType: { type: string, enum: [REFUND, EXCHANGE, OTHER], description: 对应 `return_order.handling_type` }
-        reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER], description: 对应 `return_order.reason_code` }
-        returnReason: { type: string, maxLength: 500, description: 对应 `return_order.return_reason`；原因选择 OTHER 时必填 }
-        totalAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 退货总金额字符串；数据库 `return_order.total_amount` 按 100 倍 BIGINT 整数存储；取消单保留历史快照 }
+        handlingType: { type: string, description: 对应 `return_order.handling_type`；当前后端要求非空，但尚未强制枚举值 }
+        reasonCode: { type: string, description: 对应 `return_order.reason_code`；当前后端要求非空，但尚未强制枚举值 }
+        returnReason: { type: string, maxLength: 500, description: 对应 `return_order.return_reason`；当前创建和编辑请求均要求非空，与 reasonCode 取值无关 }
+        totalAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 退货申请金额快照；创建或编辑时由后端按申请数量与来源单价计算，数据库 `return_order.total_amount` 按 100 倍 BIGINT 整数存储；审核和仓储确认不重算该字段 }
         status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_EXECUTED, COMPLETED, CANCELLED], readOnly: true, description: 对应 `return_order.status` }
         statusReason: { type: string, maxLength: 500, readOnly: true, description: 对应 `return_order.status_reason`，仅记录最近一次取消原因 }
         createdById: { type: string, nullable: true, readOnly: true, description: 对应 `return_order.created_by_id`，BIGINT 按字符串传输 }
@@ -6691,7 +6688,7 @@ components:
         approvedQty: { type: number, format: double, minimum: 0, readOnly: true, description: 审核通过数量展示值；数据库按 100 倍 BIGINT 整数存储，仅审核接口可提交 }
         processedQty: { type: number, format: double, minimum: 0, readOnly: true, description: 仓库累计确认的实际处理总量展示值；数据库按 100 倍 BIGINT 整数存储，由仓库确认回写 }
         unitPrice: { type: string, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 原订单单价快照金额字符串；数据库按 100 倍 BIGINT 整数存储 }
-        totalAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 明细金额字符串；数据库按 100 倍 BIGINT 整数存储，由后端计算 }
+        totalAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 明细申请金额快照；创建或编辑时由后端按申请数量与来源单价计算，数据库按 100 倍 BIGINT 整数存储；审核和仓储确认不重算该字段 }
         createTime: { type: string, readOnly: true, description: 对应 `return_order_item.create_time` }
         updateTime: { type: string, readOnly: true, description: 对应 `return_order_item.update_time` }
         remark: { type: string, maxLength: 500, description: 对应 `return_order_item.remark` }
@@ -6723,7 +6720,7 @@ components:
 
     ReturnableSourceOrderItem:
       type: object
-      required: [sourceOrderItemId, productId, productCode, productName, unitName, quantityPrecision, sourceFulfilledQty, occupiedQty, availableReturnQty, unitPrice]
+      required: [sourceOrderItemId, productId, productCode, productName, unitName, quantityPrecision, sourceFulfilledQty, stockAvailableQty, occupiedQty, availableReturnQty, unitPrice]
       properties:
         sourceOrderItemId: { type: string, description: 原采购或销售明细 ID，BIGINT 按字符串传输 }
         productId: { type: string, description: 产品 ID，BIGINT 按字符串传输 }
@@ -6732,8 +6729,9 @@ components:
         unitName: { type: string, maxLength: 32, description: 原订单明细单位快照 }
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 来源订单明细已固化的产品数量精度快照；退回数量只允许 0～2 位小数 }
         sourceFulfilledQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, description: 原订单累计履约数量；采购取 `purchase_order_item.inbound_qty`，销售取 `sales_order_item.outbound_qty`；数量精度分别取来源订单明细快照，不得 JOIN 当前产品档案 }
+        stockAvailableQty: { type: number, format: double, minimum: 0, description: 当前仓库可用库存；采购退货返回 `stockQty - lockedQty`，销售退货不消耗库存，当前返回 0 且不参与资格计算 }
         occupiedQty: { type: number, format: double, minimum: 0, description: 其他同类型有效退货单占用数量，服务端查询派生，不落退货明细 }
-        availableReturnQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, description: "sourceFulfilledQty - occupiedQty，服务端查询派生，前端不得自行跨单计算" }
+        availableReturnQty: { type: number, format: double, minimum: 0, description: "销售退货为 max(0, sourceFulfilledQty - occupiedQty)；采购退货为 max(0, min(sourceFulfilledQty - occupiedQty, stockAvailableQty))。该字段可以为 0，服务端查询派生；前端不得自行跨单计算，且仅允许选择大于 0 的明细" }
         unitPrice: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 原采购或销售订单明细单价快照金额字符串 }
 
     ReturnOrderCreateRequest:
@@ -6748,15 +6746,15 @@ components:
 
     PurchaseReturnOrderCreateRequest:
       type: object
-      required: [returnType, sourceOrderId, warehouseId, expectedExecutionDate, handlingType, reasonCode, returnReason, remark, items]
+      required: [returnType, sourceOrderId, warehouseId, handlingType, reasonCode, returnReason, items]
       properties:
         returnType: { type: string, enum: [PURCHASE_RETURN], description: 由采购退货前端适配器固定注入，页面不可编辑；后端据此选择采购来源校验与出库工作单生成规则 }
         sourceOrderId: { type: string, description: 原采购订单 ID，BIGINT 按字符串传输 }
         warehouseId: { type: string, description: 退货出库仓库 ID，BIGINT 按字符串传输 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
-        handlingType: { type: string, enum: [REFUND, EXCHANGE, OTHER] }
-        reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER] }
-        returnReason: { type: string, maxLength: 500, description: 原因选择 OTHER 时必须非空 }
+        handlingType: { type: string, description: 必填；当前后端未强制枚举值 }
+        reasonCode: { type: string, description: 必填；当前后端未强制枚举值 }
+        returnReason: { type: string, maxLength: 500, description: 必填，最长 500 字，与 reasonCode 取值无关 }
         remark: { type: string, maxLength: 500 }
         items:
           type: array
@@ -6765,15 +6763,15 @@ components:
 
     SalesReturnOrderCreateRequest:
       type: object
-      required: [returnType, sourceOrderId, warehouseId, expectedExecutionDate, handlingType, reasonCode, returnReason, remark, items]
+      required: [returnType, sourceOrderId, warehouseId, handlingType, reasonCode, returnReason, items]
       properties:
         returnType: { type: string, enum: [SALES_RETURN], description: 由销售退货前端适配器固定注入，页面不可编辑；后端据此选择销售来源校验与入库工作单生成规则 }
         sourceOrderId: { type: string, description: 原销售订单 ID，BIGINT 按字符串传输 }
         warehouseId: { type: string, description: 退货入库仓库 ID，BIGINT 按字符串传输 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
-        handlingType: { type: string, enum: [REFUND, EXCHANGE, OTHER] }
-        reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER] }
-        returnReason: { type: string, maxLength: 500, description: 原因选择 OTHER 时必须非空 }
+        handlingType: { type: string, description: 必填；当前后端未强制枚举值 }
+        reasonCode: { type: string, description: 必填；当前后端未强制枚举值 }
+        returnReason: { type: string, maxLength: 500, description: 必填，最长 500 字，与 reasonCode 取值无关 }
         remark: { type: string, maxLength: 500 }
         items:
           type: array
@@ -6782,15 +6780,15 @@ components:
 
     ReturnOrderUpdateRequest:
       type: object
-      required: [version, sourceOrderId, warehouseId, expectedExecutionDate, handlingType, reasonCode, returnReason, remark, items]
+      required: [version, sourceOrderId, warehouseId, handlingType, reasonCode, returnReason, items]
       properties:
         version: { type: integer, minimum: 0, description: 当前 `return_order.version` }
         sourceOrderId: { type: string, description: 原订单 ID，BIGINT 按字符串传输 }
         warehouseId: { type: string, description: 退货执行仓库 ID，BIGINT 按字符串传输 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
-        handlingType: { type: string, enum: [REFUND, EXCHANGE, OTHER] }
-        reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER] }
-        returnReason: { type: string, maxLength: 500, description: 原因选择 OTHER 时必须非空 }
+        handlingType: { type: string, description: 必填；当前后端未强制枚举值 }
+        reasonCode: { type: string, description: 必填；当前后端未强制枚举值 }
+        returnReason: { type: string, maxLength: 500, description: 必填，最长 500 字，与 reasonCode 取值无关 }
         remark: { type: string, maxLength: 500 }
         items:
           type: array
@@ -6799,7 +6797,7 @@ components:
 
     ReturnOrderDraftItemRequest:
       type: object
-      required: [sourceOrderItemId, requestedQty, remark]
+      required: [sourceOrderItemId, requestedQty]
       properties:
         sourceOrderItemId: { type: string, description: 原订单明细 ID，BIGINT 按字符串传输 }
         requestedQty: { type: number, format: double, exclusiveMinimum: true, minimum: 0, description: 申请退回数量，不得超过服务端重新计算的剩余可退数量，且小数位不得超过数量精度 }
@@ -6934,8 +6932,8 @@ components:
         createdById: { type: string, nullable: true, description: 对应 `sales_order.created_by_id`，BIGINT 按字符串传输 }
         createdByName: { type: string, maxLength: 100, description: 对应 `sales_order.created_by_name` }
         submittedAt: { type: string, nullable: true, description: 对应 `sales_order.submitted_at` }
-        submittedById: { type: string, nullable: true, readOnly: true, description: 对应 `sales_order.submitted_by_id`；销售后端待实现，BIGINT 按字符串传输 }
-        submittedByName: { type: string, nullable: true, readOnly: true, description: 对应 `sales_order.submitted_by_name`；销售后端待实现 }
+        submittedById: { type: string, nullable: true, readOnly: true, description: 对应 `sales_order.submitted_by_id`，由销售订单提交动作写入，BIGINT 按字符串传输 }
+        submittedByName: { type: string, nullable: true, readOnly: true, description: 对应 `sales_order.submitted_by_name`，由销售订单提交动作写入 }
         approvedById: { type: string, nullable: true, description: 对应 `sales_order.approved_by_id`，BIGINT 按字符串传输 }
         approvedByName: { type: string, maxLength: 100, description: 对应 `sales_order.approved_by_name` }
         approvedAt: { type: string, nullable: true, description: 对应 `sales_order.approved_at` }

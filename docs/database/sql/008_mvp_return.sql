@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS return_order (
     handling_type VARCHAR(32) NOT NULL DEFAULT 'REFUND' COMMENT '处理方式：REFUND、EXCHANGE、OTHER',
     reason_code VARCHAR(32) NOT NULL DEFAULT 'OTHER' COMMENT '退货原因编码',
     return_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '退货原因补充说明',
-    total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '当前有效退货总金额，放大100倍保存，17600表示176.00',
+    total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '退货申请总金额快照，创建或编辑时按申请数量计算，放大100倍保存，17600表示176.00',
     status VARCHAR(32) NOT NULL DEFAULT 'DRAFT' COMMENT '状态：DRAFT、SUBMITTED、APPROVED、PARTIAL_EXECUTED、COMPLETED、CANCELLED',
     status_reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '最近一次取消原因',
     created_by_id BIGINT DEFAULT NULL COMMENT '创建人ID',
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS return_order_item (
     approved_qty BIGINT NOT NULL DEFAULT 0 COMMENT '审核通过数量，放大100倍保存',
     processed_qty BIGINT NOT NULL DEFAULT 0 COMMENT '仓库累计确认的实际处理总量，放大100倍保存',
     unit_price BIGINT NOT NULL DEFAULT 0 COMMENT '原采购或销售订单明细单价快照，放大100倍保存，3520表示35.20',
-    total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '当前有效明细金额，放大100倍保存，17600表示176.00',
+    total_amount BIGINT NOT NULL DEFAULT 0 COMMENT '退货申请明细金额快照，创建或编辑时按申请数量计算，放大100倍保存，17600表示176.00',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     remark VARCHAR(500) NOT NULL DEFAULT '' COMMENT '明细备注',
@@ -308,13 +308,9 @@ FROM (
     FROM return_order ro
     JOIN return_order_item roi ON roi.return_order_id = ro.id
     WHERE ro.id BETWEEN 2030000000000000001 AND 2040000000000000006
-    GROUP BY ro.id, ro.total_amount, ro.status
+    GROUP BY ro.id, ro.total_amount
     HAVING ro.total_amount <> ROUND(SUM(roi.total_amount), 2)
-       OR SUM(roi.total_amount <> ROUND((CASE
-            WHEN ro.status IN ('APPROVED', 'PARTIAL_EXECUTED') THEN roi.approved_qty
-            WHEN ro.status = 'COMPLETED' THEN roi.processed_qty
-            ELSE roi.requested_qty
-          END) * roi.unit_price, 2)) > 0
+       OR SUM(roi.total_amount <> ROUND(roi.requested_qty * roi.unit_price / 100, 0)) > 0
 ) invalid_amount;
 
 SELECT COUNT(*) AS invalid_return_seed_status_audit_count

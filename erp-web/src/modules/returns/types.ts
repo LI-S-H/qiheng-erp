@@ -138,6 +138,11 @@ export interface ReturnableSourceOrderItem {
   unitName: string;
   quantityPrecision: number;
   sourceFulfilledQty: number;
+  /**
+   * 当前仓库可用库存。采购退货会使用该值参与后端可退量计算；
+   * 销售退货后端返回 0，前端不得据此判断是否可退。
+   */
+  stockAvailableQty: number;
   occupiedQty: number;
   availableReturnQty: number;
   unitPrice: number;
@@ -189,9 +194,6 @@ export interface ReturnOrderPageConfig {
   approvedHint: string;
   partialHint: string;
   approvalResultDescription: string;
-  /** 销售来源能力尚未部署时保留查询页，但禁止创建与状态流转。 */
-  backendEnabled?: boolean;
-  backendUnavailableMessage?: string;
   permissions: {
     query: string;
     create: string;

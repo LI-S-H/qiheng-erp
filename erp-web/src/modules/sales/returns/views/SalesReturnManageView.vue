@@ -16,9 +16,6 @@ import {
   updateSalesReturn,
 } from '@/modules/sales/returns/api';
 
-// 销售退货后端尚未部署，但开发环境启用 Mock 时必须允许完整演示与页面验收。
-const mockEnabled = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
-
 const config: ReturnOrderPageConfig = {
   returnType: 'SALES_RETURN',
   title: '销售退货',
@@ -44,8 +41,6 @@ const config: ReturnOrderPageConfig = {
   approvedHint: '等待仓库入库',
   partialHint: '退货入库处理中',
   approvalResultDescription: '审核通过后将生成待确认销售退货入库单，不直接增加库存。',
-  backendEnabled: mockEnabled,
-  backendUnavailableMessage: '销售退货来源与入库回写后端尚未部署，当前仅保留页面入口与结构，不发起列表查询，也不可新增、提交、审核或取消。',
   permissions: {
     query: 'return:query',
     create: 'sales:create',

@@ -202,7 +202,7 @@ function buildOrderSeed(
       totalAmount: line[1] * line[2],
       selectedSupplierScore: product.aiScore,
       remark: line[3] || '',
-    });
+    }, true);
   });
   const historicalTimes: Record<string, { createTime: string; updateTime: string; submittedAt: string; approvedAt: string | null; remark: string }> = {
     PO202606001: { createTime: '2026-06-13 09:10:00', updateTime: '2026-06-14 09:12:00', submittedAt: '2026-06-13 09:10:00', approvedAt: '2026-06-13 10:00:00', remark: '对应 IB202606140001，已确认入库' },
@@ -316,7 +316,7 @@ function normalizeNullableFiniteNumber(value: unknown, fieldName: string): numbe
   return normalizeFiniteNumber(value, fieldName);
 }
 
-function normalizeOrderItem(item: PurchaseOrderItem): PurchaseOrderItem {
+function normalizeOrderItem(item: PurchaseOrderItem, allowMockMoney = useMockApi): PurchaseOrderItem {
   return {
     ...item,
     purchaseOrderItemId: normalizeStringId(item.purchaseOrderItemId, 'purchaseOrderItemId'),
@@ -326,8 +326,8 @@ function normalizeOrderItem(item: PurchaseOrderItem): PurchaseOrderItem {
     quantityPrecision: normalizeQuantityPrecision(item.quantityPrecision),
     quantity: normalizeFiniteNumber(item.quantity, 'quantity'),
     inboundQty: normalizeFiniteNumber(item.inboundQty, 'inboundQty'),
-    unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, useMockApi)!,
-    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, useMockApi)!,
+    unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, allowMockMoney)!,
+    totalAmount: normalizeMoneyNumber(item.totalAmount, 'totalAmount', false, allowMockMoney)!,
     selectedSupplierScore: normalizeFiniteNumber(item.selectedSupplierScore, 'selectedSupplierScore'),
   };
 }
@@ -375,7 +375,7 @@ function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
 function normalizeOrderDetail(item: PurchaseOrderDetail): PurchaseOrderDetail {
   return {
     ...normalizeOrder(item),
-    items: item.items.map(normalizeOrderItem),
+    items: item.items.map(row => normalizeOrderItem(row)),
     fulfillmentSummary: {
       ...item.fulfillmentSummary,
       totalAmount: normalizeMoneyNumber(item.fulfillmentSummary.totalAmount, 'fulfillmentSummary.totalAmount', false, useMockApi)!,

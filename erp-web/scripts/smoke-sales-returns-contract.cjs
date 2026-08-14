@@ -1,5 +1,6 @@
 process.env.SMOKE_BASE_URL = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5192';
 process.env.VITE_USE_MOCK_API = 'false';
+process.env.VITE_USE_MOCK_AUTH = 'true';
 
 const path = require('path');
 const { runSmoke, tableRow } = require('./smoke-helpers.cjs');
@@ -23,8 +24,8 @@ function item(returnOrderId, returnOrderItemId) {
     requestedQty: 2,
     approvedQty: 0,
     processedQty: 0,
-    unitPrice: 48,
-    totalAmount: 96,
+    unitPrice: '48.00',
+    totalAmount: '96.00',
     createTime: '2026-07-19 10:00:00',
     updateTime: '2026-07-19 10:00:00',
     remark: '',
@@ -47,7 +48,7 @@ function detail(id, no, status) {
     handlingType: 'REFUND',
     reasonCode: 'QUALITY_ISSUE',
     returnReason: '客户反馈异常',
-    totalAmount: 96,
+    totalAmount: '96.00',
     status,
     statusReason: '',
     createdById: '190000000000000001',
@@ -70,6 +71,17 @@ const records = [
   detail('303', 'SR202607903', 'APPROVED'),
 ];
 
+const smokeUser = {
+  userId: '1900000000000000001',
+  username: 'admin',
+  realName: '系统管理员',
+  deptId: '1900000000000000100',
+  deptName: '行政部',
+  isAdmin: true,
+  roleCodes: ['SUPER_ADMIN'],
+  permissionCodes: [],
+};
+
 function ok(data) {
   return { code: 0, message: 'success', data };
 }
@@ -79,13 +91,12 @@ async function bodyOf(request) {
   return text ? JSON.parse(text) : null;
 }
 
-async function selectRowAction(page, returnNo, actionLabel) {
-  await tableRow(page, returnNo).getByRole('button', { name: `更多 ${returnNo} 操作` }).click();
-  await page.getByRole('menuitem', { name: actionLabel, exact: true }).click();
+async function openRowDetail(page, returnNo) {
+  await tableRow(page, returnNo).getByRole('button', { name: '处理', exact: true }).click();
 }
 
 async function confirmPreviewAction(page, returnNo, actionLabel, nestedTitle, confirmLabel) {
-  await selectRowAction(page, returnNo, actionLabel);
+  await openRowDetail(page, returnNo);
   const preview = page.getByRole('dialog', { name: '销售退货详情' });
   await preview.getByRole('button', { name: actionLabel, exact: true }).click();
   const nested = page.getByRole('alertdialog', { name: nestedTitle });
@@ -97,7 +108,12 @@ async function confirmPreviewAction(page, returnNo, actionLabel, nestedTitle, co
 runSmoke({
   route: '/sales/returns',
   screenshot: path.resolve('qa-artifacts/sales-returns/sales-returns-contract.png'),
+  autoLogin: false,
   async setupPage(page) {
+    await page.addInitScript(() => {
+      localStorage.setItem('erp_auth_token', 'smoke-token');
+      localStorage.setItem('erp_auth_token_name', 'satoken');
+    });
     await page.route('**/api/**', async route => {
       const request = route.request();
       const url = new URL(request.url());
@@ -110,19 +126,24 @@ runSmoke({
       requests.push({ method, pathname: url.pathname, query: Object.fromEntries(url.searchParams), body });
 
       let data = null;
-      if (method === 'GET' && url.pathname === '/api/sales/returns') {
+      if (method === 'GET' && url.pathname === '/api/auth/me') {
+        data = smokeUser;
+      } else if (method === 'POST' && url.pathname === '/api/auth/login') {
+        data = { token: 'smoke-token', tokenName: 'satoken', user: smokeUser };
+      } else if (method === 'GET' && url.pathname === '/api/returns') {
         data = { records, total: records.length, pageNum: 1, pageSize: 10, hasNext: false };
       } else if (method === 'GET' && url.pathname === '/api/sales/customers') {
-        data = { records: [{ customerId: '212000000000000001', customerCode: 'C001', customerName: '华东商贸有限公司', contactName: '张经理', contactPhone: '13800000000', address: '南京市', creditLimit: 100000, status: 1, version: 0, remark: '', createTime: '2026-07-01 09:00:00', updateTime: '2026-07-01 09:00:00' }], total: 1, pageNum: 1, pageSize: 10, hasNext: false };
-      } else if (method === 'GET' && url.pathname === '/api/sales/returns/source-orders') {
-        data = { records: [{ sourceOrderId, sourceOrderNo: 'SO202607900', partyId: '212000000000000001', partyCode: 'C001', partyName: '华东商贸有限公司', warehouseId: '200000000000000101', warehouseName: '南京备货仓', fulfilledItemCount: 1, totalAvailableReturnQty: 6 }], total: 1, pageNum: 1, pageSize: 10, hasNext: false };
-      } else if (method === 'GET' && url.pathname === `/api/sales/returns/source-orders/${sourceOrderId}/items`) {
-        data = [{ sourceOrderItemId: sourceItemId, productId: '200000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 2, sourceFulfilledQty: 10, occupiedQty: 4, availableReturnQty: 6, unitPrice: 48 }];
-      } else if (method === 'GET' && /^\/api\/sales\/returns\/\d+$/.test(url.pathname)) {
-        data = records.find(row => `/api/sales/returns/${row.returnOrderId}` === url.pathname);
-      } else if (method === 'POST' && url.pathname === '/api/sales/returns') {
+        data = { records: [{ customerId: '212000000000000001', customerCode: 'C001', customerName: '华东商贸有限公司', contactName: '张经理', contactPhone: '13800000000', address: '南京市', creditLimit: '100000.00', status: 1, version: 0, remark: '', createTime: '2026-07-01 09:00:00', updateTime: '2026-07-01 09:00:00' }], total: 1, pageNum: 1, pageSize: 10, hasNext: false };
+      } else if (method === 'GET' && url.pathname === '/api/returns/source-orders') {
+        data = [{ sourceOrderId, sourceOrderNo: 'SO202607900', partyId: '212000000000000001', partyCode: 'C001', partyName: '华东商贸有限公司', warehouseId: '200000000000000101', warehouseName: '南京备货仓', fulfilledItemCount: 1, totalAvailableReturnQty: 6 }];
+      } else if (method === 'GET' && url.pathname === `/api/returns/source-orders/${sourceOrderId}/items`) {
+        // 销售退货来源不读取库存；库存字段为 0 不能阻断仍为 6 的可退数量。
+        data = [{ sourceOrderItemId: sourceItemId, productId: '200000000000000001', productCode: 'P000001', productName: '经典原味苏打水', unitName: '箱', quantityPrecision: 2, sourceFulfilledQty: 10, stockAvailableQty: 0, occupiedQty: 4, availableReturnQty: 6, unitPrice: '48.00' }];
+      } else if (method === 'GET' && /^\/api\/returns\/\d+$/.test(url.pathname)) {
+        data = records.find(row => `/api/returns/${row.returnOrderId}` === url.pathname);
+      } else if (method === 'POST' && url.pathname === '/api/returns') {
         data = detail('304', 'SR202607904', 'DRAFT');
-      } else if (method === 'PUT' && url.pathname === '/api/sales/returns/301') {
+      } else if (method === 'PUT' && url.pathname === '/api/returns/301') {
         data = records[0];
       }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ok(data)) });
@@ -134,11 +155,14 @@ runSmoke({
     await page.getByPlaceholder('请选择原销售单').fill('SO202607900');
     const filterPanel = page.getByRole('search', { name: '销售退货筛选' });
     await filterPanel.getByRole('combobox').first().click();
-    await page.locator('[data-remote-search-select-content]').last().getByText('C001 华东商贸有限公司', { exact: true }).click();
+    const partyOptions = page.locator('[data-remote-search-select-content]').last();
+    await partyOptions.locator('input').fill('C001');
+    await partyOptions.getByText('C001 华东商贸有限公司', { exact: true }).click();
     await page.getByRole('button', { name: '查询', exact: true }).click();
     await page.locator('[data-list-loading]').waitFor({ state: 'hidden' });
 
-    await selectRowAction(page, 'SR202607901', '编辑销售退货');
+    await openRowDetail(page, 'SR202607901');
+    await page.getByRole('dialog', { name: '销售退货详情' }).getByRole('button', { name: '编辑', exact: true }).click();
     const editDialog = page.getByRole('dialog', { name: '编辑销售退货' });
     await editDialog.getByRole('button', { name: '保存修改', exact: true }).click();
     await editDialog.waitFor({ state: 'hidden' });
@@ -147,16 +171,20 @@ runSmoke({
     const createDialog = page.getByRole('dialog', { name: '新增销售退货草稿' });
     await createDialog.getByRole('combobox').first().click();
     const options = page.locator('[data-remote-search-select-content]').last();
+    await options.locator('input').fill('SO202607900');
     await options.getByText('SO202607900', { exact: false }).click();
-    const itemRow = createDialog.getByRole('checkbox').first().locator('xpath=ancestor::tr');
-    await itemRow.getByRole('checkbox').click();
+    const itemRow = createDialog.locator('[data-return-form-items] tbody tr').last();
+    await itemRow.getByRole('combobox').click();
+    const productOptions = page.locator('[data-remote-search-select-content]').last();
+    await productOptions.locator('input').fill('P000001');
+    await productOptions.getByText('P000001', { exact: false }).click();
     await itemRow.locator('input[type="number"]').fill('0.29');
     await createDialog.getByRole('button', { name: '保存草稿', exact: true }).click();
     await createDialog.waitFor({ state: 'hidden' });
 
     await confirmPreviewAction(page, 'SR202607901', '提交销售退货', '提交销售退货', '确认提交');
 
-    await selectRowAction(page, 'SR202607902', '审核销售退货');
+    await openRowDetail(page, 'SR202607902');
     const approvePreview = page.getByRole('dialog', { name: '销售退货详情' });
     await approvePreview.getByRole('button', { name: '审核销售退货', exact: true }).click();
     const approveDialog = page.getByRole('alertdialog', { name: '审核通过销售退货' });
@@ -164,7 +192,7 @@ runSmoke({
     await approveDialog.waitFor({ state: 'hidden' });
     await approvePreview.waitFor({ state: 'hidden' });
 
-    await selectRowAction(page, 'SR202607903', '取消销售退货');
+    await openRowDetail(page, 'SR202607903');
     const cancelPreview = page.getByRole('dialog', { name: '销售退货详情' });
     await cancelPreview.getByRole('button', { name: '取消销售退货', exact: true }).click();
     const cancelDialog = page.getByRole('dialog', { name: '取消销售退货' });
@@ -176,13 +204,13 @@ runSmoke({
     await confirmPreviewAction(page, 'SR202607901', '删除草稿', '删除销售退货草稿', '确认删除');
 
     const find = (method, pathname) => requests.find(request => request.method === method && request.pathname === pathname);
-    const listRequest = requests.find(request => request.method === 'GET' && request.pathname === '/api/sales/returns' && request.query.returnNo);
+    const listRequest = requests.find(request => request.method === 'GET' && request.pathname === '/api/returns' && request.query.returnNo);
     if (!listRequest || listRequest.query.returnNo !== 'SR202607901' || listRequest.query.sourceOrderNo !== 'SO202607900'
-      || listRequest.query.customerId !== '212000000000000001' || 'partyId' in listRequest.query
+      || listRequest.query.partyId !== '212000000000000001' || 'customerId' in listRequest.query
       || listRequest.query.pageNum !== '1' || listRequest.query.pageSize !== '10' || 'keyword' in listRequest.query) {
       throw new Error(`销售退货列表实际查询参数不符合契约：${JSON.stringify(listRequest)}`);
     }
-    const createRequest = find('POST', '/api/sales/returns');
+    const createRequest = find('POST', '/api/returns');
     if (!createRequest || createRequest.body.returnType !== 'SALES_RETURN' || createRequest.body.sourceOrderId !== sourceOrderId
       || createRequest.body.items?.[0]?.sourceOrderItemId !== sourceItemId || createRequest.body.items?.[0]?.requestedQty !== 0.29) {
       throw new Error(`销售退货创建实际请求体不符合契约：${JSON.stringify(createRequest)}`);
@@ -193,7 +221,7 @@ runSmoke({
     if (createRequest.body.items.some(item => 'returnOrderItemId' in item)) {
       throw new Error('销售退货创建明细不得提交后端生成的 returnOrderItemId');
     }
-    const updateRequest = find('PUT', '/api/sales/returns/301');
+    const updateRequest = find('PUT', '/api/returns/301');
     if (!updateRequest || updateRequest.body.version !== 3 || 'returnType' in updateRequest.body) {
       throw new Error(`销售退货更新实际请求体不符合契约：${JSON.stringify(updateRequest)}`);
     }
@@ -201,10 +229,10 @@ runSmoke({
       throw new Error('销售退货更新明细应按 sourceOrderItemId 对齐，不得提交 returnOrderItemId');
     }
     const expectedActions = [
-      ['POST', '/api/sales/returns/301/submit', body => body.version === 3],
-      ['POST', '/api/sales/returns/302/approve', body => body.version === 3 && body.items?.[0]?.approvedQty === 2],
-      ['POST', '/api/sales/returns/303/cancel', body => body.version === 3 && body.reason === '客户协商取消'],
-      ['DELETE', '/api/sales/returns/301', body => body.version === 3],
+      ['POST', '/api/returns/301/submit', body => body.version === 3],
+      ['POST', '/api/returns/302/approve', body => body.version === 3 && body.items?.[0]?.approvedQty === 2],
+      ['POST', '/api/returns/303/cancel', body => body.version === 3 && body.reason === '客户协商取消'],
+      ['DELETE', '/api/returns/301', body => body.version === 3],
     ];
     for (const [method, pathname, verify] of expectedActions) {
       const request = find(method, pathname);

@@ -7,7 +7,7 @@
 
 - `erp-return`：退货主数据、来源契约、可退数量派生、状态回写，以及仓储回写适配器；该模块不得依赖采购或销售模块。
 - `erp-purchase`：实现采购来源提供者；不再拥有退货实体、Mapper、Controller 或 Service。
-- `erp-sales`：后续实现销售来源提供者；未部署前销售退货接口必须明确失败，不得写入半成品单据。
+- `erp-sales`：已实现销售来源提供者，支持销售退货来源订单与可退明细查询；不得写入无法闭环的半成品单据。
 - `erp-warehouse`：只通过入库/出库回写端口通知来源业务；采购退货出库确认与退货进度回写在同一事务内完成。
 
 ## 设计目标
@@ -49,7 +49,7 @@
 | `EXCHANGE` | 换货 |
 | `OTHER` | 其他处理方式，具体内容写入备注 |
 
-`handling_type` 只记录业务处理意向，本期不生成退款单、结算单或换货订单，也不据此直接改变库存。
+`handling_type` 只记录业务处理意向，本期不生成退款单、结算单或换货订单，也不据此直接改变库存。当前后端仅校验该字段非空，尚未强制上述枚举值。
 
 ### 退货原因 `reason_code`
 
@@ -63,14 +63,14 @@
 | `NO_LONGER_NEEDED` | 不再需要 |
 | `OTHER` | 其他原因 |
 
-选择 `OTHER` 时，`return_reason` 必须填写具体原因；其他原因也允许填写补充说明。
+`return_reason` 当前对所有 `reason_code` 均为必填，最长 500 字；`reason_code` 同样仅校验非空，尚未由后端强制限制为上述枚举值。
 
 ### 退货状态 `status`
 
 | 值 | 销售退货页面 | 采购退货页面 | 含义 |
 |---|---|---|---|
 | `DRAFT` | 草稿 | 草稿 | 可编辑、可删除、可提交 |
-| `SUBMITTED` | 待审核 | 待审核 | 已提交审核，普通创建人不能修改 |
+| `SUBMITTED` | 待审核 | 待审核 | 已提交审核；具备对应 `*:manage` 权限的用户仍可编辑并保持该状态 |
 | `APPROVED` | 待退货入库 | 待退货出库 | 已审核，等待仓库处理 |
 | `PARTIAL_EXECUTED` | 退货入库中 | 退货出库中 | 仓库已确认部分数量，剩余数量必须继续执行 |
 | `COMPLETED` | 已完成 | 已完成 | 所有明细均满足 `processed_qty = approved_qty` |
@@ -180,7 +180,7 @@
 | 仓库名称 | `warehouse_name` | 后端根据仓库ID查询 | 否 | 不提交 |
 | 退货产品 | `source_order_item_id` | 原订单明细接口 | 是 | 只提交原订单明细ID |
 | 产品快照 | `product_id/code/name/unit_name` | 后端从原订单明细读取 | 否 | 不提交 |
-| 数量精度 | `quantity_precision` | 后端从产品读取 | 否 | 不提交 |
+| 数量精度 | `quantity_precision` | 后端从来源订单明细快照读取 | 否 | 不提交 |
 | 申请数量 | `requested_qty` | 用户输入 | 是 | 必填，按数量精度校验 |
 | 审核数量 | `approved_qty` | 审核动作 | 审核人可编辑 | 仅审核接口提交 |
 | 已处理数量 | `processed_qty` | 仓库确认回写 | 否 | 不提交 |
@@ -192,15 +192,13 @@
 
 ## 金额规则
 
-`total_amount` 表示当前状态下的有效退货金额，统一由后端计算并保留两位小数：
+`total_amount` 当前表示申请金额快照，不是随状态变化的有效退货金额：
 
-- `DRAFT`、`SUBMITTED`：明细金额为 `requested_qty × unit_price`。
-- `APPROVED`、`PARTIAL_EXECUTED`：明细金额为 `approved_qty × unit_price`。
-- `COMPLETED`：明细金额为 `processed_qty × unit_price`，此时 `processed_qty = approved_qty`。
-- `CANCELLED`：保留取消前的申请金额快照，明细金额为 `requested_qty × unit_price`；取消后占用数量仍为 0，金额只用于历史追溯，不代表应退款或应付款。
-- 主表 `return_order.total_amount` 等于全部明细 `total_amount` 之和。
+- 创建或编辑时，后端按 `requested_qty × unit_price` 计算明细金额，并汇总写入主表。
+- 审核只更新 `approved_qty`；仓储确认只更新 `processed_qty` 和状态，两者均不重算主表或明细金额。
+- 主表 `return_order.total_amount` 始终等于全部明细申请金额快照之和；取消单保留该历史快照，不代表应退款、应付款或实际执行金额。
 
-金额使用 `RoundingMode.HALF_UP` 四舍五入到两位。前端计算结果只能用于即时展示，落库金额以服务端计算为准。
+金额使用 `RoundingMode.HALF_UP` 四舍五入到两位。若后续需要审核通过金额或实际执行金额，必须新增明确字段或同步改造状态动作、迁移和测试，不能误用当前 `total_amount`。
 
 ## 可退数量与占用规则
 
@@ -223,16 +221,22 @@
 计算公式：
 
 ```text
-销售明细剩余可退数量
-= sales_order_item.outbound_qty
-- 该销售明细在其他有效退货单中的占用数量
+销售明细剩余可退数量（availableReturnQty）
+= max(0, sales_order_item.outbound_qty - 该销售明细在其他有效退货单中的占用数量)
 
-采购明细剩余可退数量
-= purchase_order_item.inbound_qty
-- 该采购明细在其他有效退货单中的占用数量
+销售退货来源明细的 stockAvailableQty
+= 0（当前实现为入库操作跳过库存查询；该值不参与是否可退的判断）
+
+采购明细剩余可退数量（availableReturnQty）
+= max(0, min(
+    purchase_order_item.inbound_qty - 该采购明细在其他有效退货单中的占用数量,
+    warehouse_stock.stock_qty - warehouse_stock.locked_qty
+  ))
 ```
 
-提交和审核退货单时，后端必须锁定原订单明细并重新聚合占用数量，避免并发提交造成超额退货。草稿不占用数量；提交后开始占用；审核数量小于申请数量时，未通过部分自动释放。
+前端只能使用 `availableReturnQty` 判断或限制申请数量：采购退货的库存为 0 会导致 `availableReturnQty` 为 0；销售退货的 `stockAvailableQty` 为 0 不代表不可退，因为客户退回的实物将在后续入库确认时增加库存。
+
+提交和审核退货单时，后端以来源订单 ID 获取分布式锁，并在锁内重新聚合有效退货单占用数量、校验来源明细快照，避免并发超额退货。草稿不占用数量；提交后开始占用；审核数量小于申请数量时，未通过部分自动释放。
 
 ## 状态流转与动作规则
 
@@ -253,7 +257,7 @@ stateDiagram-v2
 | 当前状态 | 可见动作 | 可编辑字段 | 动作前校验 | 结果状态 |
 |---|---|---|---|---|
 | `DRAFT` | 保存、提交、删除、取消 | 原订单、仓库、日期、处理方式、原因、备注、明细 | 提交时校验必填字段、可退数量和来源有效性 | `DRAFT`、`SUBMITTED`、`CANCELLED` |
-| `SUBMITTED` | 审核通过、取消 | 审核人仅可填写各明细审核数量和审核意见 | 重新锁定来源明细并校验可退数量 | `APPROVED`、`CANCELLED` |
+| `SUBMITTED` | 编辑、审核通过、取消 | 具备对应 `*:manage` 权限时可全量编辑原订单、仓库、日期、处理方式、原因、备注和明细；审核时填写各明细审核数量 | 编辑校验乐观锁、来源订单、仓库、精度和可退数量；审核在来源订单锁内重新聚合校验 | `SUBMITTED`、`APPROVED`、`CANCELLED` |
 | `APPROVED` | 查看、取消 | 业务字段不可编辑 | 取消仅允许所有明细 `processed_qty = 0`，且在同一事务内取消未确认工作单；采购退货还须释放实物库存预占 | `APPROVED`、`CANCELLED` |
 | `PARTIAL_EXECUTED` | 查看 | 不可编辑 | 必须继续执行剩余审核数量 | `PARTIAL_EXECUTED`、`COMPLETED` |
 | `COMPLETED` | 查看 | 不可编辑 | 终态，不可撤回 | `COMPLETED` |
@@ -326,7 +330,7 @@ stock_bill_item.business_source_item_id = return_order_item.id
 ### 工作单生成与幂等规则
 
 - 同一张退货单同一时间最多存在一张 `DRAFT` 或 `PENDING_CONFIRM` 的仓库工作单。
-- 生成工作单时锁定 `return_order`，在同一事务内检查现有未确认工作单，防止重复生成。
+- 在来源订单分布式锁和事务内检查现有未确认工作单，防止重复生成。
 - 工作单只包含 `approved_qty > processed_qty` 的明细。
 - 工作单 `plan_qty` 对应审核数量，`processed_qty` 对应生成本单前的退货累计处理数量，`current_qty` 由仓库填写，`pending_qty` 由后端计算。
 - 对采购退货，首次审核通过生成工作单时才按 `approved_qty - processed_qty` 完成实物库存预占；后续因部分执行生成工作单时只带入剩余计划数量，不得重复预占。

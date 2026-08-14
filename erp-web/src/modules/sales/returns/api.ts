@@ -149,6 +149,7 @@ function normalizeSourceItem(item: ReturnableSourceOrderItem): ReturnableSourceO
     unitName: String(item.unitName),
     quantityPrecision,
     sourceFulfilledQty: normalizeQuantity(item.sourceFulfilledQty, quantityPrecision, 'sourceFulfilledQty'),
+    stockAvailableQty: normalizeQuantity(item.stockAvailableQty, quantityPrecision, 'stockAvailableQty'),
     occupiedQty: normalizeQuantity(item.occupiedQty, quantityPrecision, 'occupiedQty'),
     availableReturnQty: normalizeQuantity(item.availableReturnQty, quantityPrecision, 'availableReturnQty'),
     unitPrice: normalizeMoneyNumber(item.unitPrice, 'unitPrice', false, useMockApi)!,
@@ -290,6 +291,8 @@ async function mockSourceItems(sourceOrderId: string): Promise<ReturnableSourceO
         unitName: item.unitName,
         quantityPrecision: normalizeQuantityPrecision(item.quantityPrecision),
         sourceFulfilledQty: item.outboundQty,
+        // 销售退货为入库操作，真实后端跳过库存查询并返回 0；是否可退仍由 availableReturnQty 决定。
+        stockAvailableQty: 0,
         occupiedQty,
         availableReturnQty: Math.max(0, item.outboundQty - occupiedQty),
         unitPrice: item.unitPrice,

@@ -9,7 +9,7 @@
 - MVP 设计 3 张表：`customer`、`sales_order`、`sales_order_item`。
 - 销售出库不在销售模块单独建表，统一使用仓库模块 `outbound_bill` / `outbound_bill_item`。
 - 销售订单主表冗余客户、仓库名称，明细冗余产品信息，减少列表查询联表。
-- 销售退货后续复用仓库模块 `SALES_RETURN` 入库单；如果退货流程复杂，再补销售退货单表。
+- 销售退货已由独立 `erp-return` 模块承接，审核后生成仓储模块 `SALES_RETURN` 待确认入库单；销售模块不再建设独立退货单表。
 - MVP 暂不设计收款单、发票、对账、复杂价格策略、审批流。
 - 评分和百分率字段如后续加入，统一遵守 `database-design-conventions.md`：用 `int` 存放大 100 倍后的整数；数量统一为 `bigint` 存放大 100 倍后的整数。
 - 销售订单明细是订单事实明细，不使用 `deleted`；删除草稿明细时直接物理删除，已审核订单通过订单状态控制。
@@ -65,7 +65,7 @@
 
 关系说明：销售订单审核后，可生成仓库模块 `outbound_bill`，其中 `source_type = SALES_ORDER`，`source_id = sales_order.id`，`source_no = sales_order.sales_no`，并快照客户、出库仓库、销售数量和累计已出库数量。待确认出库单的本次出库数量初始为 0 或空业务值，由仓库人员按实物发货填写；剩余未出库数量由后端按 `销售数量 - 累计已出库数量 - 本次出库数量` 计算，不允许前端或用户手动维护。
 
-> 当前销售 Java 后端尚未生成。本次已固化字段、前端展示和接口契约；后续实现时，提交操作必须写入 `submitted_by_id/submitted_by_name`，客户创建、编辑、启停必须写入 `updated_by_id/updated_by_name`。
+> 当前销售 Java 后端已实现。提交操作会写入 `submitted_by_id/submitted_by_name`，客户创建、编辑、启停会写入 `updated_by_id/updated_by_name`；销售退货来源查询、退货审核后的入库工作单生成及入库回写由 `erp-sales` 与 `erp-return` 的端口契约协作完成。
 
 ## 表：sales_order_item（销售订单明细表）
 
@@ -114,7 +114,7 @@
 - 当明细 `outbound_qty < quantity` 时订单为 `PARTIAL_OUTBOUND`，全部出库后为 `OUTBOUND_DONE`。
 - 销售后端实现出库确认回写时，应由仓储模块在 `outbound_bill` 真实“出库确认”后调用销售来源端口；销售端在同一事务内累计 `sales_order_item.outbound_qty`、更新订单状态，并且仅当不存在待确认出库单且仍有剩余数量时生成下一张只含剩余数量的 `PENDING_CONFIRM` 出库单。编辑待确认单不生成新单，已确认单不得编辑。
 - 取消未出库订单时，需要释放已锁定库存。
-- 销售退货后续使用 `SALES_RETURN` 入库流水；如需退货申请、退款、质检等复杂流程，再补销售退货单表。
+- 销售退货申请统一使用 `return_order` / `return_order_item`，审核后使用 `SALES_RETURN` 入库单和库存流水完成实物入库，并回写销售退货单及退货明细的处理进度；来源销售订单仅提供已出库履约快照与可退校验依据，累计已出库量保持不变。退款、质检、换货结算等售后能力仍未纳入本期。
 
 ## 测试场景
 

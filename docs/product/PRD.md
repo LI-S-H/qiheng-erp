@@ -280,7 +280,7 @@
 
 | 页面/区域 | 入口 | 角色目标 | 权限 |
 | --- | --- | --- | --- |
-| 采购退回列表 | `/purchase/returns` | 查询和跟踪退供应商处理进度 | `purchase:query` |
+| 采购退回列表 | `/purchase/returns` | 查询和跟踪退供应商处理进度 | `return:query` |
 | 新增采购退回 | 列表工具栏“新增采购退回” | 基于已有实际入库采购单创建草稿 | `purchase:create` |
 | 管理动作 | 草稿或待审核行操作、详情预览 | 编辑、删除、提交、审核、取消 | `purchase:manage` |
 
@@ -296,25 +296,26 @@
 | 供应商 | `party_id/code/name` | 后端从采购订单读取 | 否 | 不提交，不允许单独更换 |
 | 退货仓库 | `warehouse_id` / `warehouseId` | 仓库分页搜索 | 草稿可编辑 | 只提交字符串 ID |
 | 预计退货日期 | `expected_execution_date` / `expectedExecutionDate` | 用户输入 | 草稿可编辑 | 草稿可空，提交前必填 |
-| 处理方式 | `handling_type` / `handlingType` | 固定枚举 | 草稿可编辑 | `REFUND`、`EXCHANGE`、`OTHER` |
-| 退货原因 | `reason_code` / `reasonCode` | 固定枚举 | 草稿可编辑 | `OTHER` 时补充原因必填 |
-| 原因说明 | `return_reason` / `returnReason` | 用户输入 | 草稿可编辑 | 最长 500 字 |
+| 处理方式 | `handling_type` / `handlingType` | 前端使用固定选项 | 草稿可编辑 | 前端提供 `REFUND`、`EXCHANGE`、`OTHER`；当前后端仅校验非空，未强制枚举 |
+| 退货原因 | `reason_code` / `reasonCode` | 前端使用固定选项 | 草稿可编辑 | 当前后端仅校验非空，未强制枚举 |
+| 原因说明 | `return_reason` / `returnReason` | 用户输入 | 草稿可编辑 | 创建、编辑均必填，最长 500 字，与 `reasonCode` 取值无关 |
 | 备注 | `remark` | 用户输入 | 草稿可编辑 | 最长 500 字 |
 | 退回单号、金额、状态、审计 | 主表只读字段 | 后端生成、计算或状态动作 | 否 | 普通保存不得提交 |
 | 原采购明细 | `source_order_item_id` / `sourceOrderItemId` | 来源明细接口 | 草稿可选择 | 只提交字符串 ID，同一草稿不可重复 |
 | 已入库数量 | `source_fulfilled_qty` / `sourceFulfilledQty` | `purchase_order_item.inbound_qty` 快照 | 否 | 不提交 |
-| 已占用/剩余可退 | `occupiedQty` / `availableReturnQty` | 服务端聚合其他有效退货单 | 否 | 查询派生，不落退货表，不提交 |
+| 仓库可用库存 | `stockAvailableQty` | `warehouse_stock.stock_qty - locked_qty` | 否 | 采购退货来源明细返回真实可用库存；不提交 |
+| 已占用/剩余可退 | `occupiedQty` / `availableReturnQty` | 服务端聚合其他有效退货单与库存余额 | 否 | `availableReturnQty = max(0, min(sourceFulfilledQty - occupiedQty, stockAvailableQty))`；仅它决定是否可申请，不落退货表，不提交 |
 | 申请数量 | `requested_qty` / `requestedQty` | 用户输入 | 草稿可编辑 | 大于 0、不超过 `availableReturnQty`，按 0～2 位精度校验 |
 | 审核数量 | `approved_qty` / `approvedQty` | 审核人输入 | 仅审核动作 | 0～申请数量，只通过审核接口提交 |
 | 已处理数量 | `processed_qty` / `processedQty` | 仓库确认出库回写 | 否 | 不提交 |
-| 产品、单位、单价和金额 | 明细快照与计算字段 | 后端从原采购明细读取或计算 | 否 | 不提交 |
+| 产品、单位、单价和金额 | 明细快照与计算字段 | 后端从原采购明细读取或计算 | 否 | 金额是按申请数量和原单价计算的申请金额快照，不随审核或仓储确认重算，不提交 |
 
 ### 16.4 状态与动作
 
 | 状态 | 页面文案 | 可见动作 | 结果与限制 |
 | --- | --- | --- | --- |
 | `DRAFT` | 草稿 | 编辑、提交、删除、取消 | 提交前校验日期、明细和剩余可退数量；删除仅逻辑删除主表并物理删除明细 |
-| `SUBMITTED` | 待审核 | 审核通过、取消 | 审核数量不得超过申请数量；不通过可取消并写入 `status_reason` |
+| `SUBMITTED` | 待审核 | 编辑、审核通过、取消 | 拥有对应 `*:manage` 权限时可完整编辑并保持待审核；审核数量不得超过申请数量；不通过可取消并写入 `status_reason` |
 | `APPROVED` | 待退货出库 | 查看、取消 | 审核通过生成 `PURCHASE_RETURN_ORDER` 来源的待确认出库单；仅全部已处理数量为 0 时可取消 |
 | `PARTIAL_EXECUTED` | 退货出库中 | 查看 | 不允许取消或放弃剩余数量，仓库必须继续处理 |
 | `COMPLETED` | 已完成 | 查看 | 终态，只读 |
@@ -324,7 +325,7 @@
 
 ### 16.5 查询、异常与边界
 
-- 列表筛选分别使用 `returnNo`、`sourceOrderNo`、`supplierId`、`warehouseId`、`status`，多个有效条件按 AND 组合，不使用 `keyword`。
+- 列表筛选使用 `returnNo`、`sourceOrderNo`、`partyId`、`warehouseId`、`status`，多个有效条件按 AND 组合，不使用 `keyword`。采购页面的供应商筛选由前端适配为统一的 `partyId`。
 - 来源订单接口只返回至少一条 `availableReturnQty > 0` 的采购订单；来源明细只返回已有实际入库数量的明细。
 - 草稿不占用可退数量；提交后按申请数量占用，审核后按审核数量占用。提交和审核时后端必须锁定来源明细并重新聚合，前端显示值不能作为最终依据。
 - 采购退货确认出库前由仓库接口重新校验可用库存；库存不足返回 `409 Conflict`，不得生成库存流水或回写处理数量。
@@ -343,10 +344,10 @@
 | PRET-07 | 契约一致 | OpenAPI、前端 adapter、Mock 与浏览器实际 method、URL、query、body 完全一致，BIGINT ID 始终为字符串 |
 | PRET-08 | 页面一致性 | 复用现有列表、筛选、按钮、弹窗、分页、行操作和提示组件；1440×900 与 1115×838 下无意外溢出或遮挡 |
 
-### 16.7 待确认与实施前置
+### 16.7 数据迁移与上线前置
 
 - 退货表数量精度为两位，而原采购明细 `inbound_qty` 为四位。后端正式建表和投产前必须确认历史已入库数据没有三、四位有效小数；前端按权威退货设计限制为 0～2 位，不做静默截断。
-- 退货表 DDL 与幂等种子位于 `docs/database/sql/008_mvp_return.sql`；上线前必须先执行脚本中的历史数量精度检查，Mock 页面与契约测试通过仍不能替代真实后端实现和数据库执行验证。
+- 退货表 DDL 与幂等种子位于 `docs/database/sql/008_mvp_return.sql`；上线前必须先执行脚本中的历史数量精度检查，Mock 页面与契约测试通过仍不能替代后端集成与数据库执行验证。
 
 ### 16.8 变更记录
 
@@ -366,7 +367,7 @@
 
 | 页面/区域 | 入口 | 角色目标 | 权限 |
 | --- | --- | --- | --- |
-| 销售退货列表 | `/sales/returns` | 查询和跟踪客户退货处理进度 | `sales:query` |
+| 销售退货列表 | `/sales/returns` | 查询和跟踪客户退货处理进度 | `return:query` |
 | 新增销售退货 | 列表工具栏“新增销售退货” | 基于已有实际出库销售单创建草稿 | `sales:create` |
 | 管理动作 | 草稿或待审核行操作、详情预览 | 编辑、删除、提交、审核、取消 | `sales:manage` |
 
@@ -382,25 +383,26 @@
 | 客户 | `party_id/code/name` | 后端从销售订单读取 | 否 | 不提交，不允许单独更换 |
 | 退货仓库 | `warehouse_id` / `warehouseId` | 仓库分页搜索 | 草稿可编辑 | 只提交字符串 ID |
 | 预计退货日期 | `expected_execution_date` / `expectedExecutionDate` | 用户输入 | 草稿可编辑 | 草稿可空，提交前必填 |
-| 处理方式 | `handling_type` / `handlingType` | 固定枚举 | 草稿可编辑 | `REFUND`、`EXCHANGE`、`OTHER` |
-| 退货原因 | `reason_code` / `reasonCode` | 固定枚举 | 草稿可编辑 | `OTHER` 时补充原因必填 |
-| 原因说明 | `return_reason` / `returnReason` | 用户输入 | 草稿可编辑 | 最长 500 字 |
+| 处理方式 | `handling_type` / `handlingType` | 前端使用固定选项 | 草稿可编辑 | 前端提供 `REFUND`、`EXCHANGE`、`OTHER`；当前后端仅校验非空，未强制枚举 |
+| 退货原因 | `reason_code` / `reasonCode` | 前端使用固定选项 | 草稿可编辑 | 当前后端仅校验非空，未强制枚举 |
+| 原因说明 | `return_reason` / `returnReason` | 用户输入 | 草稿可编辑 | 创建、编辑均必填，最长 500 字，与 `reasonCode` 取值无关 |
 | 备注 | `remark` | 用户输入 | 草稿可编辑 | 最长 500 字 |
 | 退货单号、金额、状态、审计 | 主表只读字段 | 后端生成、计算或状态动作 | 否 | 普通保存不得提交 |
 | 原销售明细 | `source_order_item_id` / `sourceOrderItemId` | 来源明细接口 | 草稿可选择 | 只提交字符串 ID，同一草稿不可重复 |
 | 已出库数量 | `source_fulfilled_qty` / `sourceFulfilledQty` | `sales_order_item.outbound_qty` 快照 | 否 | 不提交 |
-| 已占用/剩余可退 | `occupiedQty` / `availableReturnQty` | 服务端聚合其他有效退货单 | 否 | 查询派生，不落退货表，不提交 |
+| 仓库可用库存 | `stockAvailableQty` | 销售退货来源查询不读取库存 | 否 | 当前后端返回 `0`；前端不展示该字段，也不得据此判断是否可退 |
+| 已占用/剩余可退 | `occupiedQty` / `availableReturnQty` | 服务端聚合其他有效退货单 | 否 | `availableReturnQty = max(0, sourceFulfilledQty - occupiedQty)`；仅它决定是否可申请，不落退货表，不提交 |
 | 申请数量 | `requested_qty` / `requestedQty` | 用户输入 | 草稿可编辑 | 大于 0、不超过 `availableReturnQty`，按 0～2 位精度校验 |
 | 审核数量 | `approved_qty` / `approvedQty` | 审核人输入 | 仅审核动作 | 0～申请数量，只通过审核接口提交 |
 | 已处理数量 | `processed_qty` / `processedQty` | 仓库确认入库回写 | 否 | 不提交 |
-| 产品、单位、单价和金额 | 明细快照与计算字段 | 后端从原销售明细读取或计算 | 否 | 不提交 |
+| 产品、单位、单价和金额 | 明细快照与计算字段 | 后端从原销售明细读取或计算 | 否 | 金额是按申请数量和原单价计算的申请金额快照，不随审核或仓储确认重算，不提交 |
 
 ### 17.4 状态与动作
 
 | 状态 | 页面文案 | 可见动作 | 结果与限制 |
 | --- | --- | --- | --- |
 | `DRAFT` | 草稿 | 编辑、提交、删除、取消 | 提交前校验日期、明细和剩余可退数量；删除仅逻辑删除主表并物理删除明细 |
-| `SUBMITTED` | 待审核 | 审核通过、取消 | 审核数量不得超过申请数量；不通过可取消并写入 `status_reason` |
+| `SUBMITTED` | 待审核 | 编辑、审核通过、取消 | 拥有对应 `*:manage` 权限时可完整编辑并保持待审核；审核数量不得超过申请数量；不通过可取消并写入 `status_reason` |
 | `APPROVED` | 待退货入库 | 查看、取消 | 审核通过生成 `SALES_RETURN_ORDER` 来源的待确认入库单；仅全部已处理数量为 0 时可取消 |
 | `PARTIAL_EXECUTED` | 退货入库中 | 查看 | 不允许取消或放弃剩余数量，仓库必须继续处理 |
 | `COMPLETED` | 已完成 | 查看 | 终态，只读 |
@@ -410,7 +412,7 @@
 
 ### 17.5 查询、异常与边界
 
-- 列表筛选分别使用 `returnNo`、`sourceOrderNo`、`customerId`、`warehouseId`、`status`，多个有效条件按 AND 组合，不使用 `keyword`。
+- 列表筛选使用 `returnNo`、`sourceOrderNo`、`partyId`、`warehouseId`、`status`，多个有效条件按 AND 组合，不使用 `keyword`。销售页面的客户筛选由前端适配为统一的 `partyId`。
 - 来源订单接口只返回至少一条 `availableReturnQty > 0` 的销售订单；来源明细只返回已有实际出库数量的明细。
 - 草稿不占用可退数量；提交后按申请数量占用，审核后按审核数量占用。提交和审核时后端必须锁定来源明细并重新聚合，前端显示值不能作为最终依据。
 - 销售退货确认入库时，仓库按实际合格数量、次品数量记录入库结果并回写处理数量；这些仓库执行字段不进入 `return_order_item`，销售退货页面不得自行扩展数据库字段。
@@ -429,10 +431,10 @@
 | SRET-07 | 契约一致 | OpenAPI、前端 adapter、Mock 与浏览器实际 method、URL、query、body 完全一致，BIGINT ID 始终为字符串 |
 | SRET-08 | 页面一致性 | 复用现有列表、筛选、按钮、弹窗、分页、行操作和提示组件；1440×900 与 1115×838 下无意外溢出或遮挡 |
 
-### 17.7 待确认与实施前置
+### 17.7 数据迁移与上线前置
 
 - 退货表数量精度为两位，而原销售明细 `outbound_qty` 为四位。后端正式建表和投产前必须确认历史已出库数据没有三、四位有效小数；前端按权威退货设计限制为 0～2 位，不做静默截断。
-- 退货表 DDL 与幂等种子位于 `docs/database/sql/008_mvp_return.sql`；上线前必须先执行脚本中的历史数量精度检查，Mock 页面与契约测试通过仍不能替代真实后端实现和数据库执行验证。
+- 退货表 DDL 与幂等种子位于 `docs/database/sql/008_mvp_return.sql`；上线前必须先执行脚本中的历史数量精度检查，Mock 页面与契约测试通过仍不能替代后端集成与数据库执行验证。
 
 ### 17.8 变更记录
 

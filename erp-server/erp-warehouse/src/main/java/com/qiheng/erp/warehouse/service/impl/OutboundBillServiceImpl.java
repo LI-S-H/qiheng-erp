@@ -36,6 +36,7 @@ import com.qiheng.erp.warehouse.domain.outbound.vo.OutboundBillSummaryVo;
 import com.qiheng.erp.warehouse.mapper.InboundBillItemMapper;
 import com.qiheng.erp.warehouse.mapper.OutboundBillItemMapper;
 import com.qiheng.erp.warehouse.mapper.OutboundBillMapper;
+import com.qiheng.erp.warehouse.mapper.StockBillMapper;
 import com.qiheng.erp.warehouse.service.IOutboundBillItemService;
 import com.qiheng.erp.warehouse.service.IOutboundBillService;
 import com.qiheng.erp.warehouse.service.IStockBillItemService;
@@ -77,6 +78,9 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
 
     @Autowired
     private OutboundBillMapper outboundBillMapper;
+
+    @Autowired
+    private StockBillMapper stockBillMapper;
 
     @Autowired
     private IOutboundBillItemService outboundBillItemService;
@@ -218,7 +222,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
 
         // 4. 生成出库单号
         String outboundNo = billNoGenerator.nextNo(billType.billNoPrefix(),
-                () -> findMaxBillNoSequence(billType.billNoPrefix()));
+                dayPrefix -> outboundBillMapper.findMaxOutboundNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         String sourceNo = billType == OutboundType.ADJUST_OUT
                 ? "ADJ" + outboundNo.substring(billType.billNoPrefix().length())
                 : StrUtil.blankToDefault(dto.getSourceNo(), null);
@@ -538,7 +542,7 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
         LocalDateTime now = LocalDateTime.now();
         // 生成库存流水主表
         StockBill stockBill = new StockBill()
-                .setBillNo(billNoGenerator.nextNo("SL", () -> findMaxBillNoSequence("SL")))
+                .setBillNo(billNoGenerator.nextNo("SL", dayPrefix -> stockBillMapper.findMaxStockBillNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH)))
                 .setBillType(bill.getOutboundType())
                 .setWorkBillId(String.valueOf(bill.getId()))
                 .setBusinessSourceId(bill.getSourceId())
@@ -663,16 +667,6 @@ public class OutboundBillServiceImpl extends ServiceImpl<OutboundBillMapper, Out
     private boolean hasSourceQuantitySnapshot(OutboundBill bill, OutboundBillItem item) {
         return bill.getSourceId() != null && item.getSourceItemId() != null
                 && item.getPlanQty() != null && item.getProcessedQty() != null;
-    }
-
-    /**
-     * 出库工作单和库存流水分别位于不同业务表，Redis 序列首次初始化时按对应表查询当天最大单号。
-     */
-    private long findMaxBillNoSequence(String prefix) {
-        List<Object> billNos = "SL".equals(prefix)
-                ? stockBillService.listObjs(new LambdaQueryWrapper<StockBill>().select(StockBill::getBillNo))
-                : this.listObjs(new LambdaQueryWrapper<OutboundBill>().select(OutboundBill::getOutboundNo));
-        return billNoGenerator.findMaxExistingSequence(prefix, billNos);
     }
 
     /**

@@ -222,8 +222,8 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 .collect(Collectors.toMap(Product::getId, p -> p));
         // 获取当前登录用户
         LoginUser loginUser = UserContext.requireCurrentUser();
-        // 生成采购单号
-        String purchaseNo = billNoGenerator.nextNo("PO");
+        // 生成采购单号。Mapper 聚合查询包含逻辑删除记录，避免 Redis 重建后碰撞唯一单号。
+        String purchaseNo = billNoGenerator.nextNo("PO", dayPrefix -> purchaseOrderMapper.findMaxPurchaseNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         // 构建明细并累加总金额
         BigDecimal totalAmount = BigDecimal.ZERO;
         List<PurchaseOrderItem> items = new ArrayList<>();
@@ -797,7 +797,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         }
         // 生成入库单号
         String inboundNo = billNoGenerator.nextNo(InboundType.PURCHASE_IN.billNoPrefix(),
-                this::findMaxInboundBillSequence);
+                dayPrefix -> inboundBillMapper.findMaxInboundNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         // 获取当前登录用户（审核人即入库单负责人）
         LoginUser loginUser = UserContext.requireCurrentUser();
         Long currentUserId = loginUser.getUserId();
@@ -915,16 +915,6 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 .setOccurredAt(occurredAt)
                 .setInboundBillId(inboundBillId)
                 .setInboundBillNo(inboundBillNo));
-    }
-
-    /**
-     * 查询入库单表当天最大单号序号，供 Redis 序列首次初始化使用
-     * @return 当天最大序号，无记录返回0
-     */
-    private long findMaxInboundBillSequence() {
-        List<Object> billNos = inboundBillMapper.selectObjs(
-                new LambdaQueryWrapper<InboundBill>().select(InboundBill::getInboundNo));
-        return billNoGenerator.findMaxExistingSequence(InboundType.PURCHASE_IN.billNoPrefix(), billNos);
     }
 
     /**

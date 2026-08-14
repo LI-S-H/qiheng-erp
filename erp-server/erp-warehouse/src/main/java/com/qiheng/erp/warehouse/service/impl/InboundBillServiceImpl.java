@@ -35,6 +35,7 @@ import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillPageVo;
 import com.qiheng.erp.warehouse.domain.inbound.vo.InboundBillSummaryVo;
 import com.qiheng.erp.warehouse.mapper.InboundBillItemMapper;
 import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
+import com.qiheng.erp.warehouse.mapper.StockBillMapper;
 import com.qiheng.erp.warehouse.mapper.WarehouseMapper;
 import com.qiheng.erp.warehouse.service.IInboundBillItemService;
 import com.qiheng.erp.warehouse.service.IInboundBillService;
@@ -73,6 +74,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
     @Autowired
     private InboundBillMapper inboundBillMapper;
+
+    @Autowired
+    private StockBillMapper stockBillMapper;
 
     @Autowired
     private IInboundBillItemService inboundBillItemService;
@@ -233,7 +237,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
 
         // 4. 生成入库单号
         String inboundNo = billNoGenerator.nextNo(billType.billNoPrefix(),
-                () -> findMaxBillNoSequence(billType.billNoPrefix()));
+                dayPrefix -> inboundBillMapper.findMaxInboundNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         String sourceNo = billType == InboundType.ADJUST_IN
                 ? "ADJ" + inboundNo.substring(billType.billNoPrefix().length())
                 : StrUtil.blankToDefault(dto.getSourceNo(), null);
@@ -533,7 +537,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         String currentUserName = currentUser.getRealName();
         LocalDateTime now = LocalDateTime.now();
         // 8. 生成库存流水主表
-        String stockBillNo = billNoGenerator.nextNo("SL", () -> findMaxBillNoSequence("SL"));
+        String stockBillNo = billNoGenerator.nextNo("SL", dayPrefix -> stockBillMapper.findMaxStockBillNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         StockBill stockBill = new StockBill()
                 .setBillNo(stockBillNo)
                 .setBillType(bill.getInboundType())
@@ -677,16 +681,6 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     private boolean hasSourceQuantitySnapshot(InboundBill bill, InboundBillItem item) {
         return bill.getSourceId() != null && item.getSourceItemId() != null
                 && item.getPlanQty() != null && item.getProcessedQty() != null;
-    }
-
-    /**
-     * 入库工作单和库存流水分别位于不同业务表，Redis 序列首次初始化时按对应表查询当天最大单号。
-     */
-    private long findMaxBillNoSequence(String prefix) {
-        List<Object> billNos = "SL".equals(prefix)
-                ? stockBillService.listObjs(new LambdaQueryWrapper<StockBill>().select(StockBill::getBillNo))
-                : this.listObjs(new LambdaQueryWrapper<InboundBill>().select(InboundBill::getInboundNo));
-        return billNoGenerator.findMaxExistingSequence(prefix, billNos);
     }
 
     /**

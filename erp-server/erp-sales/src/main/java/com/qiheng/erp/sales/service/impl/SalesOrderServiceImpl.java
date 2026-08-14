@@ -165,8 +165,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 .collect(Collectors.toMap(Product::getId, p -> p));
         // 当前登录用户
         LoginUser loginUser = UserContext.requireCurrentUser();
-        // 4. 生成销售单号（Redis 按月重置，单号按天显示 yyyyMMdd）
-        String salesNo = billNoGenerator.nextNo("SO");
+        // 4. 生成销售单号。Mapper 聚合查询包含逻辑删除记录，避免 Redis 重建后碰撞唯一单号。
+        String salesNo = billNoGenerator.nextNo("SO", dayPrefix -> salesOrderMapper.findMaxSalesNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         // 4. 校验明细 + 累加总金额（重复产品 / 产品启用 / 数量精度）
         BigDecimal totalAmount = validateItemsAndComputeTotal(dto.getItems(), productMap);
         // 5. 构建明细实体（lockedQty = 0，salesOrderId 由插入主表后回填）
@@ -677,8 +677,9 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (!hasRemainingQuantity) {
             return;
         }
-        // 生成出库单号
-        String outboundNo = billNoGenerator.nextNo(OutboundType.SALES_OUT.billNoPrefix());
+        // 生成出库单号。Mapper 聚合查询包含逻辑删除记录，避免 Redis 重建后碰撞唯一单号。
+        String outboundPrefix = OutboundType.SALES_OUT.billNoPrefix();
+        String outboundNo = billNoGenerator.nextNo(outboundPrefix, dayPrefix -> outboundBillMapper.findMaxOutboundNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         LoginUser loginUser = UserContext.requireCurrentUser();
         Long currentUserId = loginUser.getUserId();
         String currentUserName = loginUser.getRealName();

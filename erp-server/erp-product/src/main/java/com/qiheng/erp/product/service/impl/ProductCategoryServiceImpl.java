@@ -8,12 +8,14 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.IdUtil;
+import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.domain.entity.ProductCategory;
 import com.qiheng.erp.product.domain.vo.ProductCategoryVo;
 import com.qiheng.erp.product.mapper.ProductCategoryMapper;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.product.service.IProductCategoryService;
+import com.qiheng.erp.product.service.IProductService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,9 @@ public class ProductCategoryServiceImpl extends ServiceImpl<ProductCategoryMappe
 
     @Autowired
     private ProductMapper productMapper;
+
+    @Autowired
+    private IProductService productService;
 
     /**
      * 查询产品分类列表，包含产品数量
@@ -117,16 +122,26 @@ public class ProductCategoryServiceImpl extends ServiceImpl<ProductCategoryMappe
         for (Long categoryId : categoryIds) {
             collectDescendants(childrenMap, categoryId, allIds);
         }
+        // 查询这些分类下的产品ID
+        List<String> productIds = productMapper.selectList(
+                        new LambdaQueryWrapper<Product>()
+                                .select(Product::getId)
+                                .in(Product::getCategoryId, allIds))
+                .stream()
+                .map(p -> String.valueOf(p.getId()))
+                .toList();
+        // 禁用所有分类下的产品（走产品侧校验逻辑）
+        if (!productIds.isEmpty()) {
+            ProductBatchStatusDto dto = new ProductBatchStatusDto();
+            dto.setProductIds(productIds);
+            dto.setStatus(0);
+            productService.updateBatchStatus(dto);
+        }
         // 禁用所有分类
         LambdaUpdateWrapper<ProductCategory> categoryUpdate = new LambdaUpdateWrapper<ProductCategory>()
                 .set(ProductCategory::getStatus, 0)
                 .in(ProductCategory::getId, allIds);
         productCategoryMapper.update(null, categoryUpdate);
-        // 禁用所有分类下的产品
-        LambdaUpdateWrapper<Product> productUpdate = new LambdaUpdateWrapper<Product>()
-                .set(Product::getStatus, 0)
-                .in(Product::getCategoryId, allIds);
-        productMapper.update(null, productUpdate);
     }
 
     /**

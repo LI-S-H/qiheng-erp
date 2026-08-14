@@ -61,7 +61,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -234,8 +233,9 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         BuiltItems built = buildReturnItems(returnType, ctx.sourceItemMap, dto.getItems(), occupied, ctx.stockAvailableMap, null);
         // 6. 获取当前用户信息
         LoginUser loginUser = UserContext.requireCurrentUser();
-        // 7. 生成退货单编号
-        String returnNo = billNoGenerator.nextNo(returnType == ReturnType.PURCHASE_RETURN ? "PR" : "SR");
+        // 7. 生成退货单编号。Mapper 聚合查询包含逻辑删除记录，避免 Redis 重建后碰撞唯一单号。
+        String returnPrefix = returnType == ReturnType.PURCHASE_RETURN ? "PR" : "SR";
+        String returnNo = billNoGenerator.nextNo(returnPrefix, dayPrefix -> returnOrderMapper.findMaxReturnNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         // 8. 构建退货单主表信息
         ReturnOrder order = new ReturnOrder()
                 .setReturnNo(returnNo)
@@ -682,8 +682,9 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             return;
         }
         LoginUser loginUser = UserContext.requireCurrentUser();
-        // 2. 构造出库单主表
-        String outboundNo = billNoGenerator.nextNo(OutboundType.PURCHASE_RETURN.billNoPrefix());
+        // 2. 构造出库单主表。Mapper 聚合查询包含逻辑删除记录，避免 Redis 重建后碰撞唯一单号。
+        String outboundPrefix = OutboundType.PURCHASE_RETURN.billNoPrefix();
+        String outboundNo = billNoGenerator.nextNo(outboundPrefix, dayPrefix -> outboundBillMapper.findMaxOutboundNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         OutboundBill bill = new OutboundBill()
                 .setOutboundNo(outboundNo)
                 .setOutboundType(OutboundType.PURCHASE_RETURN.name())
@@ -757,8 +758,9 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             return;
         }
         LoginUser loginUser = UserContext.requireCurrentUser();
-        // 2. 构造入库单主表
-        String inboundNo = billNoGenerator.nextNo(InboundType.SALES_RETURN.billNoPrefix());
+        // 2. 构造入库单主表。Mapper 聚合查询包含逻辑删除记录，避免 Redis 重建后碰撞唯一单号。
+        String inboundPrefix = InboundType.SALES_RETURN.billNoPrefix();
+        String inboundNo = billNoGenerator.nextNo(inboundPrefix, dayPrefix -> inboundBillMapper.findMaxInboundNoSequence(dayPrefix, BillNoGenerator.SEQUENCE_WIDTH));
         InboundBill bill = new InboundBill()
                 .setInboundNo(inboundNo)
                 .setInboundType(InboundType.SALES_RETURN.name())

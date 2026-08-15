@@ -10,7 +10,6 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -323,7 +322,6 @@ onMounted(fetchCustomers);
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">客户列表</strong><span class="text-xs text-muted-foreground">客户编码由后端生成，页面不提交编码字段</span></div>
         <div class="table-toolbar__actions">
@@ -340,8 +338,7 @@ onMounted(fetchCustomers);
           <colgroup><col class="w-[44px]" /><col class="w-[105px]" /><col class="w-[200px]" /><col class="w-[160px]" /><col class="w-[130px]" /><col class="w-[80px]" /><col class="w-[150px]" /><col class="w-[220px]" /></colgroup>
           <TableHeader><TableRow><TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>编码</TableHead><TableHead>客户</TableHead><TableHead>联系人</TableHead><TableHead class="text-right">信用额度</TableHead><TableHead class="text-center">状态</TableHead><TableHead>更新时间</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading && customers.length === 0"><TableCell colspan="8" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="customers.length === 0"><TableCell colspan="8" class="h-28 text-center text-muted-foreground">暂无客户</TableCell></TableRow>
+            <TableRow v-if="customers.length === 0"><TableCell colspan="8" class="h-28 text-center text-muted-foreground">暂无客户</TableCell></TableRow>
             <TableRow v-for="row in customers" v-else :key="row.customerId">
               <TableCell><Checkbox :model-value="selectedIds.has(row.customerId)" @update:model-value="value => toggleSelect(row.customerId, value)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.customerCode }}</code></TableCell>

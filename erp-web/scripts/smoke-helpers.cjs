@@ -356,7 +356,7 @@ async function assertTreeCollapseStability(page, {
 
 async function clickQueryAndAssertLoading(page, screenshotPath) {
   await page.getByRole('button', { name: '查询', exact: true }).click();
-  const overlay = page.locator('[data-list-loading]');
+  const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
   const busyButton = page.getByRole('button', { name: '查询中', exact: true });
   if (!(await busyButton.isDisabled())) throw new Error('查询进行中按钮未禁用');
@@ -378,7 +378,7 @@ async function clickQueryAndAssertLoading(page, screenshotPath) {
 async function clickPaginationAndAssertLoading(page, label) {
   const pagination = page.locator('[data-table-pagination]');
   await pagination.getByText(label, { exact: true }).click();
-  const overlay = page.locator('[data-list-loading]');
+  const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
   if ((await pagination.getAttribute('aria-busy')) !== 'true') {
     throw new Error(`分页切换期间未进入忙碌状态：${label}`);
@@ -391,7 +391,7 @@ async function clickPaginationAndAssertLoading(page, label) {
 async function clickRefreshAndAssertLoading(page, screenshotPath) {
   const refreshButton = page.getByRole('button', { name: '刷新', exact: true });
   await refreshButton.click();
-  const overlay = page.locator('[data-list-loading]');
+  const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
   if (!(await refreshButton.isDisabled())) throw new Error('刷新进行中按钮未禁用');
   if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -401,7 +401,7 @@ async function clickRefreshAndAssertLoading(page, screenshotPath) {
 async function clickResetAndAssertLoading(page, screenshotPath) {
   const resetButton = page.getByRole('button', { name: '重置', exact: true });
   await resetButton.click();
-  const overlay = page.locator('[data-list-loading]');
+  const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
   if (!(await resetButton.isDisabled())) throw new Error('重置查询进行中按钮未禁用');
   if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });

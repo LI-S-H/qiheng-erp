@@ -283,5 +283,8 @@ export async function getDashboardNotifications() {
     });
   }
 
-  return getResult<DashboardNotificationPopover>('/dashboard/notifications').then(normalizeNotificationPopover);
+  return getResult<DashboardNotificationPopover>('/dashboard/notifications', undefined, {
+    skipPageLoading: true,
+    suppressErrorToast: true,
+  }).then(normalizeNotificationPopover);
 }

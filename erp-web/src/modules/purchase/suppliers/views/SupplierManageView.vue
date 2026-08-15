@@ -10,7 +10,6 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -359,7 +358,6 @@ onMounted(fetchSuppliers);
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">供应商列表</strong><span class="text-xs text-muted-foreground">供应商编码由后端生成，页面不提交编码字段</span></div>
         <div class="table-toolbar__actions">
@@ -376,8 +374,7 @@ onMounted(fetchSuppliers);
           <colgroup><col class="w-[48px]" /><col class="w-[96px]" /><col class="w-[270px]" /><col class="w-[170px]" /><col class="w-[96px]" /><col class="w-[86px]" /><col class="w-[96px]" /><col class="w-[96px]" /><col class="w-[190px]" /><col class="w-[230px]" /></colgroup>
           <TableHeader><TableRow><TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>编码</TableHead><TableHead>供应商</TableHead><TableHead>联系人</TableHead><TableHead class="text-center">综合评分</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-center">准时率</TableHead><TableHead class="text-center">合格率</TableHead><TableHead>付款条件</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading && suppliers.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="suppliers.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无供应商</TableCell></TableRow>
+            <TableRow v-if="suppliers.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无供应商</TableCell></TableRow>
             <TableRow v-for="row in suppliers" v-else :key="row.supplierId">
               <TableCell><Checkbox :model-value="selectedIds.has(row.supplierId)" @update:model-value="value => toggleSelect(row.supplierId, value)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.supplierCode }}</code></TableCell>

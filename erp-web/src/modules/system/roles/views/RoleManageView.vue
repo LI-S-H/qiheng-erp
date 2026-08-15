@@ -33,7 +33,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
@@ -459,7 +458,6 @@ function togglePermForm(code: string, checked: boolean) {
 
     <!-- Table -->
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-toolbar__title">

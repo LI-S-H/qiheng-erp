@@ -13,7 +13,6 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
@@ -855,7 +854,6 @@ onMounted(() => {
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">{{ config.listTitle }}</strong><span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；退回审核只生成来源工作单，实际库存变化由仓库确认</span></div>
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy || !canQuery" @click="refreshList">刷新</Button><Button v-if="canCreate" size="sm" @click="openCreateDialog">{{ config.createButtonLabel }}</Button></div>
@@ -865,8 +863,7 @@ onMounted(() => {
         <colgroup><col class="w-[125px]" /><col class="w-[125px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
         <TableHeader><TableRow><TableHead data-return-no-column>退回单号</TableHead><TableHead>{{ config.sourceOrderLabel }}号</TableHead><TableHead>{{ config.partyLabel }}</TableHead><TableHead>{{ config.warehouseLabel }}</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">退回金额</TableHead><TableHead class="text-center">预计执行</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-return-actions-column>操作</TableHead></TableRow></TableHeader>
         <TableBody>
-          <TableRow v-if="loading && rows.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-          <TableRow v-else-if="rows.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">{{ config.emptyText }}</TableCell></TableRow>
+          <TableRow v-if="rows.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">{{ config.emptyText }}</TableCell></TableRow>
           <TableRow v-for="row in rows" v-else :key="row.returnOrderId">
             <TableCell data-return-no-column><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.returnNo }}</code></TableCell>
             <TableCell><code class="text-xs">{{ row.sourceOrderNo }}</code></TableCell>
@@ -916,7 +913,7 @@ onMounted(() => {
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">{{ config.fulfilledQuantityLabel }}</TableHead><TableHead class="text-right">其他退货已占</TableHead><TableHead class="text-right">剩余可退</TableHead><TableHead class="text-right">申请数量</TableHead><TableHead class="text-right">原单价</TableHead><TableHead class="text-right">预计金额</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-if="!form.sourceOrderId"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">请先选择{{ config.sourceOrderLabel }}</TableCell></TableRow>
-                    <TableRow v-else-if="draftLines.length === 0"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">该订单暂无剩余可退明细</TableCell></TableRow>
+                    <TableRow v-if="draftLines.length === 0"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">该订单暂无剩余可退明细</TableCell></TableRow>
                     <TableRow v-for="(line, index) in draftLines" v-else :key="line.rowId" :data-source-item-id="line.sourceOrderItemId">
                       <TableCell class="align-top"><RemoteSearchSelect :model-value="line.sourceOrderItemId" :selected-label="selectedProductLabel(line)" :fetch-options="keyword => fetchReturnProductOptions(keyword, line.rowId)" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectReturnProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
                       <TableCell class="text-right tabular-nums">{{ line.sourceOrderItemId ? `${formatQuantity(line.sourceFulfilledQty, line.quantityPrecision)} ${line.unitName}` : '-' }}</TableCell>

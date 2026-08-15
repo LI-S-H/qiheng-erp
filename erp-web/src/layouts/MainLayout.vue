@@ -14,7 +14,7 @@ import {
   Loader2,
   ChevronRight,
 } from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import logoUrl from '@/assets/brand/qiheng-logo.svg';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
@@ -32,6 +32,7 @@ import CollapseReveal from '@/components/common/CollapseReveal.vue';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { getDashboardNotifications } from '@/modules/dashboard/api';
 import type { DashboardNotificationPopover, DashboardTodoItem } from '@/modules/dashboard/types';
+import { isPageLoading } from '@/shared/utils/page-loading';
 
 interface MenuItem {
   index: string;
@@ -48,15 +49,12 @@ const authStore = useAuthStore();
 const activeMenu = computed(() => route.path);
 const openedMenus = reactive(new Set<string>());
 const logoutConfirmOpen = ref(false);
-const pageLoading = ref(false);
 const notificationOpen = ref(false);
 const userMenuOpen = ref(false);
 const notificationLoading = ref(false);
 const notificationError = ref('');
 const notificationData = ref<DashboardNotificationPopover | null>(null);
 let notificationLoadedAt = 0;
-let pageLoadingTimer: number | undefined;
-let pageLoadingFrame: number | undefined;
 
 const menus: MenuItem[] = [
   { index: '/dashboard', title: '工作台', icon: Home },
@@ -218,20 +216,6 @@ function openCurrentParent(path: string) {
   if (parent) openedMenus.add(parent.index);
 }
 
-function showPageLoading() {
-  pageLoading.value = true;
-  window.clearTimeout(pageLoadingTimer);
-  if (pageLoadingFrame !== undefined) window.cancelAnimationFrame(pageLoadingFrame);
-
-  nextTick(() => {
-    pageLoadingFrame = window.requestAnimationFrame(() => {
-      pageLoadingTimer = window.setTimeout(() => {
-        pageLoading.value = false;
-      }, 220);
-    });
-  });
-}
-
 function handleLogout() {
   logoutConfirmOpen.value = true;
 }
@@ -244,21 +228,12 @@ async function confirmLogout() {
 
 watch(
   () => route.path,
-  (path, previousPath) => {
+  path => {
     openCurrentParent(path);
-    if (previousPath !== undefined && previousPath !== path) showPageLoading();
   },
   { immediate: true },
 );
 
-onMounted(() => {
-  void loadNotifications();
-});
-
-onBeforeUnmount(() => {
-  window.clearTimeout(pageLoadingTimer);
-  if (pageLoadingFrame !== undefined) window.cancelAnimationFrame(pageLoadingFrame);
-});
 </script>
 
 <template>
@@ -410,12 +385,10 @@ onBeforeUnmount(() => {
       <!-- Page content -->
       <main class="relative flex-1 overflow-auto bg-background">
         <RouterView v-slot="{ Component, route: viewRoute }">
-          <Transition name="page-view" mode="out-in">
-            <component :is="Component" :key="viewRoute.fullPath" />
-          </Transition>
+          <component :is="Component" :key="viewRoute.fullPath" />
         </RouterView>
         <Transition name="page-loading">
-          <div v-if="pageLoading" class="page-loading-mask" data-page-loading aria-live="polite" aria-label="页面加载中">
+          <div v-if="isPageLoading" class="page-loading-mask" data-page-loading aria-live="polite" aria-label="页面加载中">
             <div class="page-loading-indicator">
               <span class="page-loading-spinner" aria-hidden="true" />
               页面加载中

@@ -14,6 +14,7 @@ const databaseSql = readProjectFile('docs', 'database', 'sql', '001_mvp_system_p
 const productSql = readProjectFile('docs', 'database', 'sql', '002_mvp_product.sql');
 const authStoreSource = readProjectFile('erp-web', 'src', 'modules', 'auth', 'stores', 'authStore.ts');
 const httpSource = readProjectFile('erp-web', 'src', 'api', 'http.ts');
+const pageLoadingSource = readProjectFile('erp-web', 'src', 'shared', 'utils', 'page-loading.ts');
 const storageSource = readProjectFile('erp-web', 'src', 'shared', 'constants', 'storage.ts');
 const frontendDevelopmentGuide = readProjectFile('docs', 'frontend-development-guide.md');
 const agentInstructions = readProjectFile('AGENTS.md');
@@ -253,7 +254,7 @@ for (const fragment of ['normalizeReturnDetail', 'normalizeReturnItem', 'normali
   if (!purchaseReturnApiSource.includes(fragment)) throw new Error(`采购退回前端适配层缺少响应规范化或服务端可退量字段：${fragment}`);
 }
 for (const fragment of [
-  'ListFilterPanel', 'ListFilterActions', 'ListSummaryStrip', 'ListLoadingOverlay', 'DataTablePagination',
+  'ListFilterPanel', 'ListFilterActions', 'ListSummaryStrip', 'DataTablePagination',
   'RemoteSearchSelect', 'AnchoredSelect', 'OrderDatePicker', 'ConfirmDialog', 'PromptDialog',
   'usePagedQuery', 'props.config.service', 'availableReturnQty', 'businessLabel', 'hasReturnActions', 'openDetailEdit', '处理',
 ]) {
@@ -869,6 +870,22 @@ if (purchaseItemStart < 0 || purchaseItemEnd < 0 || purchaseDraftStart < 0 || pu
   || !purchaseDraftSchema.includes('required: [supplierProductId, productId, quantityPrecision, quantity, unitPrice, selectedSupplierScore, remark]')
   || !purchaseDraftSchema.includes('后端不得信任')) {
   throw new Error('采购明细数量精度快照或 BIGINT 数量 OpenAPI 契约不完整');
+}
+if (returnViewSource.includes('ListLoadingOverlay')) {
+  throw new Error('通用退货页面不得保留表格局部加载遮罩');
+}
+for (const fragment of ['beginPageLoading', 'isPageLoading', 'pendingCount', 'MIN_VISIBLE_DURATION']) {
+  if (!pageLoadingSource.includes(fragment)) throw new Error(`全局页面加载器缺少关键实现：${fragment}`);
+}
+if (!pageLoadingSource.includes('const MIN_VISIBLE_DURATION = 240')) {
+  throw new Error('全局页面加载器必须保持 240ms 的最短展示时长，避免本地请求过快导致闪烁');
+}
+if (!httpSource.includes('const PAGE_READ_TIMEOUT = 5_000') || !httpSource.includes("'页面加载超时，请重试'")) {
+  throw new Error('读取型页面请求必须在 5 秒后超时并反馈可重试提示');
+}
+if (!purchaseReturnApiSource.includes('normalizeReturnReasonCode(row.reasonCode)')
+  || !salesReturnApiSource.includes('normalizeReturnReasonCode(row.reasonCode)')) {
+  throw new Error('退货前端适配层必须兼容历史 QUALITY 原因码并统一为 QUALITY_ISSUE');
 }
 for (const fragment of [
   'quantityPrecision: number;',

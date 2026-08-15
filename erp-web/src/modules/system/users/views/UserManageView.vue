@@ -35,7 +35,6 @@ import PromptDialog from '@/components/common/PromptDialog.vue';
 import MultiSelect from '@/components/common/MultiSelect.vue';
 import TreeSelect from '@/components/common/TreeSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
@@ -673,7 +672,6 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
 
     <!-- Table -->
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-toolbar__title">

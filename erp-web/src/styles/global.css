@@ -449,29 +449,19 @@ a {
   min-width: 0;
 }
 
-.page-view-enter-active,
-.page-view-leave-active {
-  transition:
-    opacity var(--motion-duration-fast) ease,
-    transform var(--motion-duration-fast) ease;
+.page-loading-enter-active {
+  transition: none;
 }
 
-.page-view-enter-from {
-  opacity: 0;
-  transform: translateY(4px);
-}
-
-.page-view-leave-to {
-  opacity: 0;
-  transform: translateY(-2px);
-}
-
-.page-loading-enter-active,
 .page-loading-leave-active {
-  transition: opacity var(--motion-duration-fast) ease;
+  /* 新页面已准备好后，留出可感知的淡入时间，而不是瞬间露出。 */
+  transition: opacity 360ms ease-in-out;
 }
 
-.page-loading-enter-from,
+.page-loading-enter-from {
+  opacity: 1;
+}
+
 .page-loading-leave-to {
   opacity: 0;
 }
@@ -479,11 +469,19 @@ a {
 .page-loading-mask {
   position: absolute;
   inset: 0;
-  z-index: 30;
+  /* 必须高于出入库表的 sticky 单号列、操作列和表头（最高为 40）。 */
+  z-index: 50;
   display: grid;
+  overflow: hidden;
   place-items: center;
-  background: color-mix(in srgb, var(--background) 82%, transparent);
-  backdrop-filter: blur(1.5px);
+  isolation: isolate;
+  /* 过渡期间完全遮住业务内容，避免旧页与新页同时被半透明洗白。 */
+  background: color-mix(in srgb, var(--background) 97%, #f8fafc);
+}
+
+.page-loading-indicator {
+  position: relative;
+  z-index: 1;
 }
 
 .page-loading-indicator {

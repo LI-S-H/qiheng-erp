@@ -10,7 +10,6 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
@@ -445,7 +444,6 @@ onMounted(() => {
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">供货产品列表</strong><span class="text-xs text-muted-foreground">供应商 + 产品唯一，推荐分用于采购建议候选排序</span></div>
         <div class="table-toolbar__actions">
@@ -462,8 +460,7 @@ onMounted(() => {
           <colgroup><col class="w-[44px]" /><col class="w-[135px]" /><col class="w-[180px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[82px]" /><col class="w-[76px]" /><col class="w-[82px]" /><col class="w-[75px]" /><col class="w-[225px]" /></colgroup>
           <TableHeader><TableRow><TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>供应商</TableHead><TableHead>产品</TableHead><TableHead>供应商侧编码</TableHead><TableHead class="text-right">最近采购价</TableHead><TableHead class="text-right">起订量</TableHead><TableHead class="text-center">交期</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading && records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无供货产品</TableCell></TableRow>
+            <TableRow v-if="records.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无供货产品</TableCell></TableRow>
             <TableRow v-for="row in records" v-else :key="row.supplierProductId">
               <TableCell><Checkbox :model-value="selectedIds.has(row.supplierProductId)" @update:model-value="value => toggleSelect(row.supplierProductId, value)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.supplierCode }}</code><div class="mt-1 truncate font-medium">{{ row.supplierName }}</div></TableCell>

@@ -24,7 +24,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
@@ -452,7 +451,6 @@ function handleBatchDelete() {
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">权限码列表</strong>
@@ -488,8 +486,7 @@ function handleBatchDelete() {
             <TableHead>更新时间</TableHead><TableHead class="w-[190px] text-center">操作</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="permissions.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+            <TableRow v-if="permissions.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
             <TableRow v-for="row in permissions" v-else :key="row.permissionId">
               <TableCell><Checkbox :model-value="selectedIds.has(row.permissionId)" @update:model-value="toggleSelect(row.permissionId, $event)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium text-foreground">{{ row.permissionCode }}</code></TableCell>

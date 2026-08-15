@@ -220,7 +220,7 @@ function CreateReturnAndApprove([string]$ReturnType, [string]$SourceOrderId, [st
         warehouseId = $script:warehouseId
         expectedExecutionDate = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
         handlingType = 'REFUND'
-        reasonCode = 'QUALITY'
+        reasonCode = 'QUALITY_ISSUE'
         returnReason = "$Prefix 质量测试"
         remark = "$Prefix $ReturnType"
         items = @(@{

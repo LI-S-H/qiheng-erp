@@ -6645,7 +6645,7 @@ components:
         warehouseName: { type: string, maxLength: 100, readOnly: true, description: 对应 `return_order.warehouse_name` 仓库名称快照 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 对应 `return_order.expected_execution_date`；草稿可空，提交前必填 }
         handlingType: { type: string, description: 对应 `return_order.handling_type`；当前后端要求非空，但尚未强制枚举值 }
-        reasonCode: { type: string, description: 对应 `return_order.reason_code`；当前后端要求非空，但尚未强制枚举值 }
+        reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER], description: 对应 `return_order.reason_code`；历史值 QUALITY 对外兼容为 QUALITY_ISSUE }
         returnReason: { type: string, maxLength: 500, description: 对应 `return_order.return_reason`；当前创建和编辑请求均要求非空，与 reasonCode 取值无关 }
         totalAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 退货申请金额快照；创建或编辑时由后端按申请数量与来源单价计算，数据库 `return_order.total_amount` 按 100 倍 BIGINT 整数存储；审核和仓储确认不重算该字段 }
         status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_EXECUTED, COMPLETED, CANCELLED], readOnly: true, description: 对应 `return_order.status` }
@@ -6753,7 +6753,7 @@ components:
         warehouseId: { type: string, description: 退货出库仓库 ID，BIGINT 按字符串传输 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
         handlingType: { type: string, description: 必填；当前后端未强制枚举值 }
-        reasonCode: { type: string, description: 必填；当前后端未强制枚举值 }
+        reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER], description: 必填；后端严格校验枚举值 }
         returnReason: { type: string, maxLength: 500, description: 必填，最长 500 字，与 reasonCode 取值无关 }
         remark: { type: string, maxLength: 500 }
         items:
@@ -6770,7 +6770,7 @@ components:
         warehouseId: { type: string, description: 退货入库仓库 ID，BIGINT 按字符串传输 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
         handlingType: { type: string, description: 必填；当前后端未强制枚举值 }
-        reasonCode: { type: string, description: 必填；当前后端未强制枚举值 }
+        reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER], description: 必填；后端严格校验枚举值 }
         returnReason: { type: string, maxLength: 500, description: 必填，最长 500 字，与 reasonCode 取值无关 }
         remark: { type: string, maxLength: 500 }
         items:
@@ -6787,7 +6787,7 @@ components:
         warehouseId: { type: string, description: 退货执行仓库 ID，BIGINT 按字符串传输 }
         expectedExecutionDate: { type: string, format: date, nullable: true, description: 草稿可空，提交前必须非空，且不得早于当天 }
         handlingType: { type: string, description: 必填；当前后端未强制枚举值 }
-        reasonCode: { type: string, description: 必填；当前后端未强制枚举值 }
+        reasonCode: { type: string, enum: [QUALITY_ISSUE, DAMAGED, WRONG_ITEM, QUANTITY_ERROR, SPEC_MISMATCH, NO_LONGER_NEEDED, OTHER], description: 必填；后端严格校验枚举值 }
         returnReason: { type: string, maxLength: 500, description: 必填，最长 500 字，与 reasonCode 取值无关 }
         remark: { type: string, maxLength: 500 }
         items:

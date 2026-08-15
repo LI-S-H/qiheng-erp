@@ -4,6 +4,7 @@ import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } f
 import { normalizeMoneyNumber } from '@/shared/utils/money';
 import { getPurchaseOrderDetail, listEnabledWarehouseOptions, listPurchaseOrders, searchSupplierOptions } from '../api';
 import type { PurchaseOrderDetail } from '../types';
+import { normalizeReturnReasonCode } from '@/modules/returns/types';
 import type {
   ReturnHandlingType,
   ReturnOrderApprovePayload,
@@ -101,7 +102,7 @@ function normalizeReturn(row: ReturnOrderListItem): ReturnOrderListItem {
     warehouseName: String(row.warehouseName),
     expectedExecutionDate: row.expectedExecutionDate ? String(row.expectedExecutionDate) : null,
     handlingType: assertEnum(row.handlingType, handlingTypes, 'handlingType'),
-    reasonCode: assertEnum(row.reasonCode, reasonCodes, 'reasonCode'),
+    reasonCode: normalizeReturnReasonCode(row.reasonCode),
     returnReason: String(row.returnReason || ''),
     totalAmount: normalizeMoneyNumber(row.totalAmount, 'totalAmount', false, useMockApi)!,
     status: assertEnum(row.status, returnStatuses, 'status'),

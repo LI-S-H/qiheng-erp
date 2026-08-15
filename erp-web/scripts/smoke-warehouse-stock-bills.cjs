@@ -212,7 +212,7 @@ async function clickButton(page, name) {
 }
 
 async function waitListSettled(page) {
-  await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
+  await page.locator('[data-page-loading]').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
 }
 
 async function assertContentFilterLayout(page, expectedWidths) {
@@ -803,6 +803,33 @@ runSmoke({
 
     await page.locator('[data-menu-path="/warehouse/outbound-bills"]').click();
     await page.getByRole('heading', { name: '出库单' }).waitFor();
+    await clickButton(page, '重置');
+    await page.getByPlaceholder('如 OB202606140002').fill('NO_MATCH');
+    await clickButton(page, '查询');
+    const outboundEmptyState = page.locator('[data-stock-bill-empty-state]');
+    await outboundEmptyState.waitFor();
+    const emptyStateLayout = await outboundEmptyState.evaluate(element => {
+      const table = element.closest('table');
+      const header = table?.querySelector('thead');
+      const viewport = table?.closest('[data-slot="table-container"]');
+      const elementRect = element.getBoundingClientRect();
+      const viewportRect = viewport?.getBoundingClientRect();
+      const headerRect = header?.getBoundingClientRect();
+      const bodyTop = headerRect?.bottom || viewportRect?.top || 0;
+      const bodyHeight = Math.max(0, (viewportRect?.bottom || 0) - bodyTop);
+      return {
+        display: getComputedStyle(element).display,
+        justifyContent: getComputedStyle(element).justifyContent,
+        alignItems: getComputedStyle(element).alignItems,
+        horizontalOffset: Math.abs((elementRect.left + elementRect.width / 2) - ((viewportRect?.left || 0) + (viewportRect?.width || 0) / 2)),
+        verticalOffset: Math.abs((elementRect.top + elementRect.height / 2) - (bodyTop + bodyHeight / 2)),
+      };
+    });
+    if (emptyStateLayout.display !== 'flex' || emptyStateLayout.justifyContent !== 'center'
+      || emptyStateLayout.alignItems !== 'center' || emptyStateLayout.horizontalOffset > 6
+      || emptyStateLayout.verticalOffset > 6) {
+      throw new Error(`出库单空态未在合并单元格中居中：${JSON.stringify(emptyStateLayout)}`);
+    }
     await clickButton(page, '重置');
     await page.getByPlaceholder('如 OB202606140002').fill('OB202607010002');
     await clickButton(page, '查询');

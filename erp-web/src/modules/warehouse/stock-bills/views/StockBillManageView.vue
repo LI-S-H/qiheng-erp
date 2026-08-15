@@ -16,7 +16,6 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
@@ -1342,7 +1341,6 @@ onMounted(async () => {
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy && records.length > 0" label="正在刷新单据..." />
       <div class="table-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">{{ pageText.title }}列表</strong>
@@ -1404,7 +1402,7 @@ onMounted(async () => {
         :data-column-layout-state="columnLayoutState"
         :data-column-layout-scroll-left="preservedColumnScrollLeft"
       >
-        <Table class="stock-bill-list-table table-fixed" :style="{ '--stock-bill-table-min-width': `${tableMinWidth}px` }" :scroll-label="`${pageText.title}列表`" data-stock-bill-list-table>
+        <Table class="stock-bill-list-table table-fixed" :class="{ 'stock-bill-list-table--empty': records.length === 0 }" :style="{ '--stock-bill-table-min-width': `${tableMinWidth}px` }" :scroll-label="`${pageText.title}列表`" data-stock-bill-list-table>
           <colgroup>
             <template v-for="column in stockBillListColumns" :key="column.key">
               <col v-if="isListColumnVisible(column.key)" :style="{ width: `${column.width}px` }" />
@@ -1427,11 +1425,12 @@ onMounted(async () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow v-if="loading && records.length === 0">
-              <TableCell :colspan="visibleColumnCount" class="h-28 text-center text-muted-foreground">正在加载...</TableCell>
-            </TableRow>
-            <TableRow v-else-if="records.length === 0">
-              <TableCell :colspan="visibleColumnCount" class="h-28 text-center text-muted-foreground">{{ pageText.emptyText }}</TableCell>
+            <TableRow v-if="records.length === 0">
+              <TableCell :colspan="visibleColumnCount" class="h-28 p-0">
+                <div class="stock-bill-empty-state" data-stock-bill-empty-state>
+                  {{ pageText.emptyText }}
+                </div>
+              </TableCell>
             </TableRow>
             <template v-else>
               <template v-for="row in records" :key="row.workBillId">
@@ -1789,6 +1788,31 @@ onMounted(async () => {
   max-height: min(74vh, 760px);
   overflow: auto;
   padding-bottom: 10px;
+}
+
+.stock-bill-empty-state {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 7rem;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 1rem;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.stock-bill-table-scroll :deep(.stock-bill-list-table--empty tbody > tr) {
+  height: calc(min(52vh, 430px) - 48px);
+}
+
+.stock-bill-table-scroll :deep(.stock-bill-list-table--empty) {
+  min-width: 100%;
+  width: 100%;
+}
+
+.stock-bill-table-scroll :deep(.stock-bill-list-table--empty col) {
+  width: auto !important;
 }
 
 .stock-bill-table-scroll :deep([data-slot="table-head"].stock-bill-key-column),

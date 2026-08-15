@@ -250,6 +250,13 @@ async function smokeTasksDesktopLayout() {
     viewport: { width: 1440, height: 900 },
     screenshot: screenshotPath('ai-tasks-layout-1440.png'),
     async test(page) {
+      const taskSkeleton = page.locator('[data-ai-task-skeleton]');
+      await taskSkeleton.waitFor({ state: 'visible' });
+      if (await taskSkeleton.locator('tbody tr').count() !== 5
+        || await taskSkeleton.locator('.ai-task-skeleton__results').count() !== 1) {
+        throw new Error('经营任务中心首次加载未保留任务配置与结果区块骨架');
+      }
+      await taskSkeleton.waitFor({ state: 'hidden' });
       const state = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
         const container = wrapper.querySelector('[data-slot="table-container"]');
         const bodyCell = wrapper.querySelector('tbody [data-slot="table-cell"]');

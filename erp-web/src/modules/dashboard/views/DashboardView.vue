@@ -19,7 +19,6 @@ import {
   Truck,
 } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -346,7 +345,6 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="relative">
-      <ListLoadingOverlay :visible="loading" />
 
       <div v-if="overview" class="space-y-4">
         <div class="summary-strip dashboard-metrics">
@@ -793,6 +791,69 @@ onBeforeUnmount(() => {
         </Dialog>
 
       </div>
+      <div v-else class="dashboard-skeleton space-y-4" :aria-busy="loading" data-dashboard-skeleton>
+        <div class="summary-strip dashboard-metrics">
+          <div v-for="index in 4" :key="index" class="summary-item dashboard-metric">
+            <span class="dashboard-skeleton__line dashboard-skeleton__line--label" />
+            <strong class="dashboard-skeleton__line dashboard-skeleton__line--value" />
+            <span class="dashboard-skeleton__line dashboard-skeleton__line--meta" />
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <Card class="dashboard-panel dashboard-panel--trend">
+            <CardHeader class="dashboard-panel__header">
+              <div>
+                <CardTitle class="flex items-center gap-2 text-base"><BarChart3 class="h-4 w-4 text-primary" />经营趋势</CardTitle>
+                <p class="mt-1 text-xs text-muted-foreground">正在准备经营数据</p>
+              </div>
+            </CardHeader>
+            <CardContent class="dashboard-skeleton__trend">
+              <span class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
+              <span class="dashboard-skeleton__chart" />
+              <span class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
+            </CardContent>
+          </Card>
+
+          <Card class="dashboard-panel dashboard-panel--todos">
+            <CardHeader class="dashboard-panel__header">
+              <div>
+                <CardTitle class="flex items-center gap-2 text-base"><Clock3 class="h-4 w-4 text-primary" />业务待办</CardTitle>
+                <p class="mt-1 text-xs text-muted-foreground">正在整理待处理事项</p>
+              </div>
+            </CardHeader>
+            <CardContent class="dashboard-skeleton__todos">
+              <span v-for="index in 5" :key="index" class="dashboard-skeleton__todo" />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div class="dashboard-grid dashboard-grid--three">
+          <Card v-for="title in ['订单流转', '销售商品排行', '供应商履约']" :key="title" class="dashboard-panel dashboard-skeleton__compact-panel">
+            <CardHeader class="dashboard-panel__header">
+              <div>
+                <CardTitle class="text-base">{{ title }}</CardTitle>
+                <p class="mt-1 text-xs text-muted-foreground">正在加载</p>
+              </div>
+            </CardHeader>
+            <CardContent class="dashboard-skeleton__rows">
+              <span v-for="index in 4" :key="index" class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card class="dashboard-panel">
+          <CardHeader class="dashboard-panel__header">
+            <div>
+              <CardTitle class="flex items-center gap-2 text-base"><AlertTriangle class="h-4 w-4 text-amber-600" />库存预警</CardTitle>
+              <p class="mt-1 text-xs text-muted-foreground">正在汇总库存风险</p>
+            </div>
+          </CardHeader>
+          <CardContent class="dashboard-skeleton__table">
+            <span v-for="index in 5" :key="index" class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   </section>
 </template>
@@ -853,6 +914,46 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1;
   flex-direction: column;
+}
+
+.dashboard-skeleton {
+  pointer-events: none;
+}
+
+.dashboard-skeleton__line,
+.dashboard-skeleton__chart,
+.dashboard-skeleton__todo {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #eef2f7 18%, #f8fafc 38%, #eef2f7 62%);
+  background-size: 200% 100%;
+  animation: dashboard-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.dashboard-skeleton__line--label { width: 38%; height: 12px; }
+.dashboard-skeleton__line--value { width: 58%; height: 23px; margin-top: 10px; }
+.dashboard-skeleton__line--meta { width: 66%; height: 12px; margin-top: 14px; }
+.dashboard-skeleton__line--wide { width: 100%; height: 13px; }
+
+.dashboard-skeleton__trend,
+.dashboard-skeleton__todos,
+.dashboard-skeleton__rows,
+.dashboard-skeleton__table {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-skeleton__trend { grid-template-rows: auto 1fr auto; min-height: 316px; }
+.dashboard-skeleton__chart { min-height: 220px; }
+.dashboard-skeleton__todos { align-content: start; }
+.dashboard-skeleton__todo { height: 60px; }
+.dashboard-skeleton__compact-panel { min-height: 246px; }
+.dashboard-skeleton__rows { gap: 18px; }
+.dashboard-skeleton__table { grid-template-columns: repeat(5, minmax(0, 1fr)); min-height: 88px; align-items: center; }
+
+@keyframes dashboard-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
 }
 
 .dashboard-panel__header {
@@ -1903,6 +2004,14 @@ circle.dashboard-trend--margin {
   .dashboard-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-skeleton__line,
+  .dashboard-skeleton__chart,
+  .dashboard-skeleton__todo {
+    animation: none;
   }
 }
 </style>

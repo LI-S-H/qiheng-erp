@@ -18,7 +18,6 @@ import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import MultiSelect from '@/components/common/MultiSelect.vue';
 import RemoteSearchSelect, { type RemoteSearchOption } from '@/components/common/RemoteSearchSelect.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -512,7 +511,6 @@ onMounted(async () => {
     </div>
 
     <div class="relative">
-      <ListLoadingOverlay :visible="loading" />
 
       <div v-if="taskPage" class="ai-task-workspace">
         <ListSummaryStrip :items="summaryItems" aria-label="AI 定时任务数据汇总" />
@@ -834,6 +832,53 @@ onMounted(async () => {
           </article>
         </section>
       </div>
+      <div v-else class="ai-task-workspace ai-task-skeleton" :aria-busy="loading" data-ai-task-skeleton>
+        <div class="summary-strip ai-task-skeleton__summary">
+          <div v-for="index in 4" :key="index" class="summary-item">
+            <span class="ai-task-skeleton__line ai-task-skeleton__line--label" />
+            <strong class="ai-task-skeleton__line ai-task-skeleton__line--value" />
+          </div>
+        </div>
+
+        <div class="ai-template-row">
+          <article v-for="index in 3" :key="index">
+            <div class="ai-task-skeleton__template-lines">
+              <span class="ai-task-skeleton__line ai-task-skeleton__line--badge" />
+              <span class="ai-task-skeleton__line ai-task-skeleton__line--title" />
+              <span class="ai-task-skeleton__line ai-task-skeleton__line--wide" />
+            </div>
+          </article>
+        </div>
+
+        <div class="data-panel">
+          <div class="table-toolbar">
+            <div class="table-toolbar__title">
+              <ClipboardList class="h-4 w-4 text-primary" />
+              <strong>任务配置</strong>
+            </div>
+            <span class="text-xs text-muted-foreground">正在加载任务配置</span>
+          </div>
+          <div class="ai-task-table-wrap">
+            <Table class="business-data-table" scroll-label="经营任务配置加载中" aria-busy="true">
+              <TableHeader>
+                <TableRow>
+                  <TableHead v-for="title in ['任务', '类型', '频率', '商品范围', '仓库范围', '状态', '操作']" :key="title">{{ title }}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="row in 5" :key="row">
+                  <TableCell v-for="column in 7" :key="column"><span class="ai-task-skeleton__line ai-task-skeleton__line--wide" /></TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        <section class="ai-result-board ai-task-skeleton__results">
+          <aside class="ai-result-archive"><span class="ai-task-skeleton__line ai-task-skeleton__line--title" /><span v-for="index in 4" :key="index" class="ai-task-skeleton__line ai-task-skeleton__line--wide" /></aside>
+          <article class="ai-result-card"><span class="ai-task-skeleton__line ai-task-skeleton__line--title" /><span class="ai-task-skeleton__line ai-task-skeleton__line--wide" /><span class="ai-task-skeleton__report" /></article>
+        </section>
+      </div>
     </div>
 
     <Dialog :open="formVisible" @update:open="open => !open && closeForm()">
@@ -942,6 +987,35 @@ onMounted(async () => {
 .ai-task-workspace {
   display: grid;
   gap: 16px;
+}
+
+.ai-task-skeleton {
+  pointer-events: none;
+}
+
+.ai-task-skeleton__line,
+.ai-task-skeleton__report {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #eef2f7 18%, #f8fafc 38%, #eef2f7 62%);
+  background-size: 200% 100%;
+  animation: ai-task-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.ai-task-skeleton__line--label { width: 38%; height: 12px; }
+.ai-task-skeleton__line--value { width: 56%; height: 22px; margin-top: 10px; }
+.ai-task-skeleton__line--badge { width: 56px; height: 22px; }
+.ai-task-skeleton__line--title { width: 46%; height: 16px; }
+.ai-task-skeleton__line--wide { width: 100%; height: 13px; }
+.ai-task-skeleton__template-lines { display: grid; width: 100%; gap: 9px; }
+.ai-task-skeleton__summary .summary-item { min-height: 78px; }
+.ai-task-skeleton__results .ai-result-archive,
+.ai-task-skeleton__results .ai-result-card { display: grid; align-content: start; gap: 14px; min-height: 228px; padding: 16px; }
+.ai-task-skeleton__report { min-height: 126px; }
+
+@keyframes ai-task-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
 }
 
 .ai-template-row {
@@ -1933,6 +2007,13 @@ onMounted(async () => {
 
   .ai-edit-form {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-task-skeleton__line,
+  .ai-task-skeleton__report {
+    animation: none;
   }
 }
 </style>

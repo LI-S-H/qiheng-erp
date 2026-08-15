@@ -47,6 +47,29 @@ runSmoke({
     }
 
     await page.getByRole('heading', { name: '工作台' }).waitFor();
+    const pageLoading = page.locator('[data-page-loading]');
+    await pageLoading.waitFor({ state: 'visible' });
+    const loadingMask = await pageLoading.evaluate(element => ({
+      background: getComputedStyle(element).backgroundColor,
+      opacity: getComputedStyle(element).opacity,
+      zIndex: getComputedStyle(element).zIndex,
+      before: getComputedStyle(element, '::before').content,
+      after: getComputedStyle(element, '::after').content,
+    }));
+    if (loadingMask.background === 'rgba(0, 0, 0, 0)'
+      || loadingMask.opacity !== '1'
+      || loadingMask.zIndex !== '50'
+      || loadingMask.before !== 'none'
+      || loadingMask.after !== 'none') {
+      throw new Error(`全局页面加载器必须使用单层不透明中性背景：${JSON.stringify(loadingMask)}`);
+    }
+    const dashboardSkeleton = page.locator('[data-dashboard-skeleton]');
+    await dashboardSkeleton.waitFor({ state: 'visible' });
+    if (await dashboardSkeleton.locator('.dashboard-panel').count() !== 6
+      || await dashboardSkeleton.locator('.dashboard-skeleton__todo').count() !== 5) {
+      throw new Error('工作台首次加载未保留完整的指标、待办与经营区块骨架');
+    }
+    await dashboardSkeleton.waitFor({ state: 'hidden' });
     await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
     await page.getByText('今日销售额').waitFor();
     const trendSummary = page.locator('[data-dashboard-trend-summary]');
@@ -110,10 +133,8 @@ runSmoke({
 
     const refreshButton = page.locator('.dashboard-heading-actions [data-slot="button"]');
     await refreshButton.click();
-    await page.locator('[data-list-loading]').waitFor({ state: 'visible', timeout: 1000 });
     await page.locator('[data-dashboard-refresh-status]').getByText('正在同步经营数据...', { exact: true }).waitFor();
     if (!(await refreshButton.isDisabled())) throw new Error('工作台刷新期间按钮未禁用');
-    await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 });
     await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
 
     await page.getByRole('button', { name: /销售单待审核/ }).click();
@@ -228,13 +249,8 @@ runSmoke({
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
 
     await page.getByRole('button', { name: '刷新', exact: true }).click();
-    const loadingOverlay = page.locator('[data-list-loading]');
-    await loadingOverlay.waitFor({ state: 'visible', timeout: 1000 });
-    const spinnerAnimation = await loadingOverlay.locator('.page-loading-spinner').evaluate(
-      element => getComputedStyle(element).animationName,
-    );
-    if (spinnerAnimation !== 'none') throw new Error(`减少动态效果模式下加载图标仍在旋转：${spinnerAnimation}`);
-    await loadingOverlay.waitFor({ state: 'hidden', timeout: 5000 });
+    await page.locator('[data-dashboard-refresh-status]').getByText('正在同步经营数据...', { exact: true }).waitFor();
+    await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     if (overflow > 1) throw new Error(`1280px 工作台发生横向溢出：${overflow}`);

@@ -29,6 +29,7 @@
         <module>erp-return</module>
         <module>erp-ai</module>
         <module>erp-job</module>
+        <module>erp-dashboard</module>
         <module>erp-admin</module>
     </modules>
 
@@ -127,6 +128,11 @@
             <dependency>
                 <groupId>com.qiheng</groupId>
                 <artifactId>erp-job</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.qiheng</groupId>
+                <artifactId>erp-dashboard</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

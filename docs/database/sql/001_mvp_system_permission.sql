@@ -133,6 +133,8 @@ VALUES
   (1900000000000002070, 'sales:manage', '销售管理', 'sales', 'manage', 1, 135, '编辑、删除和审核销售订单', '2026-07-16 10:00:00', '2026-07-16 10:00:00', 0, 0),
   (1900000000000002014, 'sales:create', '销售创建', 'sales', 'create', 1, 140, '创建销售订单', '2026-06-08 10:00:00', '2026-06-10 09:30:00', 0, 0),
   (1900000000000002081, 'return:query', '退货查询', 'return', 'query', 1, 145, '查看统一退货单', '2026-08-08 10:00:00', '2026-08-08 10:00:00', 0, 0),
+  (1900000000000002090, 'dashboard:overview:query', '工作台经营概览', 'dashboard', 'query', 1, 146, '查看工作台经营概览、首屏指标、趋势、待办、库存风险、订单流转、商品排行和供应商履约', '2026-08-15 10:00:00', '2026-08-15 10:00:00', 0, 0),
+  (1900000000000002091, 'dashboard:notifications:query', '工作台顶栏通知', 'dashboard', 'query', 1, 147, '查看顶栏通知铃铛摘要，包含前 8 条待办和总待办数量', '2026-08-15 10:00:00', '2026-08-15 10:00:00', 0, 0),
   (1900000000000002015, 'ai:query:stock', '库存问答', 'ai', 'query', 1, 150, '使用库存知识问答', '2026-06-08 10:00:00', '2026-06-10 09:30:00', 0, 0),
   (1900000000000002016, 'ai:query:sales', '销售问答', 'ai', 'query', 1, 160, '使用销售经营问答', '2026-06-08 10:00:00', '2026-06-10 09:30:00', 0, 0),
   (1900000000000002017, 'ai:query:purchase', '采购问答', 'ai', 'query', 1, 170, '使用采购经营问答', '2026-06-08 10:00:00', '2026-06-10 09:30:00', 0, 0),
@@ -146,8 +148,8 @@ VALUES
   (1900000000000001002, 'PURCHASE_STAFF', '采购员', '["product:query", "warehouse:query", "supplier:query", "supplier:create", "purchase:query", "purchase:create", "purchase:manage", "return:query"]', 1, '2026-06-05 20:35:00', '2026-07-16 10:00:00', 0, '负责供应商维护和采购订单操作', 0),
   (1900000000000001003, 'SALES_STAFF', '销售员', '["product:query", "warehouse:query", "customer:query", "customer:create", "sales:query", "sales:create", "sales:manage", "return:query"]', 1, '2026-06-05 20:36:00', '2026-07-16 10:00:00', 0, '负责客户维护和销售订单操作', 0),
   (1900000000000001004, 'WAREHOUSE_STAFF', '仓管员', '["product:query", "warehouse:query", "warehouse:manage", "return:query"]', 1, '2026-06-05 20:37:00', '2026-06-27 14:06:10', 0, '负责仓库管理、出入库和库存调整', 4),
-  (1900000000000001005, 'BUSINESS_MANAGER', '业务主管', '["product:query", "product:manage", "warehouse:query", "warehouse:manage", "supplier:query", "supplier:create", "purchase:query", "purchase:create", "purchase:manage", "customer:query", "customer:create", "sales:query", "sales:create", "sales:manage", "return:query", "ai:query:stock", "ai:query:sales", "ai:query:purchase", "ai:ops:suggest"]', 1, '2026-06-05 20:38:00', '2026-07-16 10:00:00', 0, '查看全链路业务数据和AI分析建议', 0),
-  (1900000000000001006, 'AI_ANALYST', 'AI分析师', '["product:query", "warehouse:query", "supplier:query", "purchase:query", "customer:query", "sales:query", "return:query", "ai:query:stock", "ai:query:sales", "ai:query:purchase", "ai:ops:suggest", "ai:decision:suggest"]', 1, '2026-06-05 20:39:00', '2026-07-03 17:00:43', 0, '仅查询业务数据和AI问答，当前停用', 0);
+  (1900000000000001005, 'BUSINESS_MANAGER', '业务主管', '["product:query", "product:manage", "warehouse:query", "warehouse:manage", "supplier:query", "supplier:create", "purchase:query", "purchase:create", "purchase:manage", "customer:query", "customer:create", "sales:query", "sales:create", "sales:manage", "return:query", "dashboard:overview:query", "dashboard:notifications:query", "ai:query:stock", "ai:query:sales", "ai:query:purchase", "ai:ops:suggest"]', 1, '2026-06-05 20:38:00', '2026-08-15 10:00:00', 0, '查看全链路业务数据和AI分析建议', 0),
+  (1900000000000001006, 'AI_ANALYST', 'AI分析师', '["product:query", "warehouse:query", "supplier:query", "purchase:query", "customer:query", "sales:query", "return:query", "dashboard:overview:query", "dashboard:notifications:query", "ai:query:stock", "ai:query:sales", "ai:query:purchase", "ai:ops:suggest", "ai:decision:suggest"]', 1, '2026-06-05 20:39:00', '2026-08-15 10:00:00', 0, '仅查询业务数据和AI问答，当前停用', 0);
 
 INSERT IGNORE INTO sys_user
   (id, username, password_hash, real_name, dept_id, is_admin, status, last_login_at, create_time, update_time, deleted, version)

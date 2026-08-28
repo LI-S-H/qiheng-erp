@@ -8,8 +8,8 @@ import com.qiheng.erp.dashboard.service.IDashboardNotificationService;
 import com.qiheng.erp.dashboard.service.IDashboardOverviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,21 +28,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/dashboard")
 @Tag(name = "工作台与顶栏通知")
 @Slf4j
+@RequiredArgsConstructor
 public class DashboardController {
-
+    // 工作台经营概览服务
     private final IDashboardOverviewService overviewService;
+    // 顶栏通知服务
     private final IDashboardNotificationService notificationService;
-
-    @Autowired
-    public DashboardController(IDashboardOverviewService overviewService,
-                               IDashboardNotificationService notificationService) {
-        this.overviewService = overviewService;
-        this.notificationService = notificationService;
-    }
 
     /**
      * 获取工作台经营概览
-     * @return 当前用户可见范围内的经营概览数据
+     *
+     * <p>需要 {@code dashboard:overview:query} 权限；按当前用户的业务权限
+     * 裁剪指标、趋势、订单流转等子项，详见 OpenAPI 描述。</p>
+     *
+     * @return 当前用户可见范围内的工作台经营概览数据
      */
     @GetMapping("/overview")
     @Operation(summary = "获取工作台经营概览")
@@ -54,6 +53,10 @@ public class DashboardController {
 
     /**
      * 获取顶栏通知铃铛摘要
+     *
+     * <p>需要 {@code dashboard:notifications:query} 权限；为避免顶栏频繁
+     * 请求重型聚合，本接口只调 todoService，不再复用 overview。</p>
+     *
      * @return 顶栏弹层数据：前 8 条待办和总待办数量
      */
     @GetMapping("/notifications")

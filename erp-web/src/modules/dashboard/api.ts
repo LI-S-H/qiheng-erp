@@ -5,11 +5,13 @@ import type {
   DashboardMetric,
   DashboardNotificationPopover,
   DashboardOrderStage,
+  DashboardOrderStagePermissions,
   DashboardOverview,
   DashboardStockAlert,
   DashboardSupplierPerformance,
   DashboardTodoItem,
   DashboardTopProduct,
+  DashboardTrendPermissions,
   DashboardTrendPoint,
 } from './types';
 
@@ -30,7 +32,7 @@ const mockOverview: DashboardOverview = {
   refreshedAt: '2026-06-30 09:30:00',
   metrics: [
     { label: '今日销售额', value: 286430, unit: '元', changeRate: 12.8, compareText: '较昨日', status: 'good' },
-    { label: '本月毛利额', value: 842600, unit: '元', changeRate: 6.4, compareText: '较上月同期', status: 'good' },
+    { label: '本月毛利额', value: -842600, unit: '元', changeRate: 6.4, compareText: '较上月同期', status: 'risk' },
     { label: '待处理订单', value: 7, unit: '单', changeRate: -8.1, compareText: '较昨日', status: 'watch' },
     { label: '库存风险 SKU', value: 11, unit: '个', changeRate: 18.6, compareText: '较昨日', status: 'risk' },
   ],
@@ -64,7 +66,7 @@ const mockOverview: DashboardOverview = {
     { date: '06-27', salesAmount: 269200, purchaseAmount: 158600, grossMarginAmount: 86200 },
     { date: '06-28', salesAmount: 252700, purchaseAmount: 141300, grossMarginAmount: 80100 },
     { date: '06-29', salesAmount: 276900, purchaseAmount: 167800, grossMarginAmount: 88400 },
-    { date: '06-30', salesAmount: 286430, purchaseAmount: 172600, grossMarginAmount: 92100 },
+    { date: '06-30', salesAmount: 286430, purchaseAmount: 378530, grossMarginAmount: -92100 },
   ],
   todos: [
     { todoId: 'todo-system-exceptions', businessType: 'SYSTEM_EXCEPTION', businessLabel: '系统', title: '系统异常', description: '当前有 4 条系统异常记录需要关注，主要来自 AI/MCP 工具调用、消息队列死信、第三方回调和定时任务失败。', count: 4, priority: 'HIGH', sortWeight: 10, sourceMode: 'PERSISTED', completionMode: 'TRACKED', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: 'system_exception', occurredAt: '2026-07-01 09:20:00', resolveHint: null, evidence: [
@@ -147,7 +149,7 @@ function normalizeTrendPoint(item: DashboardTrendPoint): DashboardTrendPoint {
     ...item,
     salesAmount: normalizeMoneyNumber(item.salesAmount, 'salesAmount', false, useMockApi)!,
     purchaseAmount: normalizeMoneyNumber(item.purchaseAmount, 'purchaseAmount', false, useMockApi)!,
-    grossMarginAmount: normalizeMoneyNumber(item.grossMarginAmount, 'grossMarginAmount', false, useMockApi)!,
+    grossMarginAmount: normalizeMoneyNumber(item.grossMarginAmount, 'grossMarginAmount', false, useMockApi, true)!,
   };
 }
 
@@ -234,14 +236,34 @@ function normalizeSupplierPerformance(item: DashboardSupplierPerformance): Dashb
   };
 }
 
+function normalizeTrendPermissions(value: unknown): DashboardTrendPermissions {
+  const raw = (value ?? null) as Partial<DashboardTrendPermissions> | null;
+  // 旧版本接口不返回该字段时回退为全 true，向后兼容
+  return {
+    canViewSales: typeof raw?.canViewSales === 'boolean' ? raw.canViewSales : true,
+    canViewPurchase: typeof raw?.canViewPurchase === 'boolean' ? raw.canViewPurchase : true,
+    canViewGross: typeof raw?.canViewGross === 'boolean' ? raw.canViewGross : true,
+  };
+}
+
+function normalizeOrderStagePermissions(value: unknown): DashboardOrderStagePermissions {
+  const raw = (value ?? null) as Partial<DashboardOrderStagePermissions> | null;
+  return {
+    canViewPurchase: typeof raw?.canViewPurchase === 'boolean' ? raw.canViewPurchase : true,
+    canViewSales: typeof raw?.canViewSales === 'boolean' ? raw.canViewSales : true,
+  };
+}
+
 function normalizeOverview(data: DashboardOverview): DashboardOverview {
   return {
     refreshedAt: String(data.refreshedAt),
     metrics: data.metrics.map(normalizeMetric),
     trend: data.trend.map(normalizeTrendPoint),
+    trendPermissions: normalizeTrendPermissions(data.trendPermissions),
     todos: data.todos.map(normalizeTodo),
     stockAlerts: data.stockAlerts.map(normalizeStockAlert),
     orderStages: data.orderStages.map(normalizeOrderStage),
+    orderStagePermissions: normalizeOrderStagePermissions(data.orderStagePermissions),
     topProducts: data.topProducts.map(normalizeTopProduct),
     supplierPerformance: data.supplierPerformance.map(normalizeSupplierPerformance),
   };

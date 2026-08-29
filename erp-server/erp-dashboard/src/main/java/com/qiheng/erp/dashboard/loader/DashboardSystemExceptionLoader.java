@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 工作台系统异常聚合器。
@@ -41,7 +42,24 @@ public class DashboardSystemExceptionLoader {
     }
 
     /**
-     * 加载系统异常聚合待办
+     * 按权限加载系统异常聚合待办
+     *
+     * <p>无权限时返回 {@link Optional#empty()}，调用方直接跳过该待办项；
+     * 有权限时按当前 {@code PENDING} 异常记录聚合返回。</p>
+     *
+     * @param canView 是否拥有 dashboard:exception:query 权限
+     * @return 可选的系统异常待办；无权限或无异常时返回空
+     */
+    public Optional<DashboardTodoItemVO> loadIfAllowed(boolean canView) {
+        if (!canView) {
+            return Optional.empty();
+        }
+        return Optional.of(load());
+    }
+
+    /**
+     * 无条件加载系统异常聚合待办
+     *
      * @return 单条 SYSTEM_EXCEPTION 待办；无 PENDING 异常时返回 description 为"当前无系统异常"的占位项
      */
     public DashboardTodoItemVO load() {

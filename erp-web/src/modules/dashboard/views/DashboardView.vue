@@ -19,6 +19,7 @@ import {
   Truck,
 } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
+import DashboardEmptyPanel from '@/components/dashboard/DashboardEmptyPanel.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,7 +27,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { getDashboardOverview } from '../api';
-import type { DashboardMetric, DashboardOverview, DashboardTodoItem } from '../types';
+import type {
+  DashboardMetric,
+  DashboardOrderStagePermissions,
+  DashboardOverview,
+  DashboardTodoItem,
+  DashboardTrendPermissions,
+  DashboardTrendPoint,
+} from '../types';
 
 type DetailType = 'todos' | 'products' | 'suppliers' | 'stockAlerts';
 
@@ -39,6 +47,7 @@ const selectedTodoDetailId = ref<string | null>(null);
 const trendDayOptions = [7, 15, 30] as const;
 const selectedTrendDays = ref<(typeof trendDayOptions)[number]>(7);
 const trendTransitioning = ref(false);
+const activeTrendTooltip = ref<{ point: DashboardTrendPoint; x: number; y: number; placeBelow: boolean } | null>(null);
 let trendAnimationTimer: number | null = null;
 const trendChart = {
   plotWidth: 588,
@@ -53,6 +62,44 @@ const trendSeries = [
   { key: 'grossMarginAmount', label: '毛利额', className: 'dashboard-trend--margin', colorClass: 'bg-emerald-600' },
 ] as const;
 
+const defaultTrendPermissions: DashboardTrendPermissions = {
+  canViewSales: true,
+  canViewPurchase: true,
+  canViewGross: true,
+};
+
+const defaultOrderStagePermissions: DashboardOrderStagePermissions = {
+  canViewPurchase: true,
+  canViewSales: true,
+};
+
+const trendPermissions = computed<DashboardTrendPermissions>(() =>
+  overview.value?.trendPermissions ?? defaultTrendPermissions,
+);
+
+const orderStagePermissions = computed<DashboardOrderStagePermissions>(() =>
+  overview.value?.orderStagePermissions ?? defaultOrderStagePermissions,
+);
+
+const canViewAnyTrend = computed(() => {
+  const perm = trendPermissions.value;
+  return perm.canViewSales || perm.canViewPurchase;
+});
+
+const canViewAnyOrderStage = computed(() => {
+  const perm = orderStagePermissions.value;
+  return perm.canViewPurchase || perm.canViewSales;
+});
+
+const visibleTrendSeries = computed(() => {
+  const perm = trendPermissions.value;
+  return trendSeries.filter(series => {
+    if (series.key === 'salesAmount') return perm.canViewSales;
+    if (series.key === 'purchaseAmount') return perm.canViewPurchase;
+    return perm.canViewGross;
+  });
+});
+
 const displayedTrend = computed(() => overview.value?.trend.slice(-selectedTrendDays.value) || []);
 
 const trendSummary = computed(() => {
@@ -63,55 +110,141 @@ const trendSummary = computed(() => {
   }), { salesAmount: 0, purchaseAmount: 0, grossMarginAmount: 0 });
   const grossMarginRate = totals.salesAmount > 0
     ? (totals.grossMarginAmount / totals.salesAmount) * 100
-    : 0;
+    : null;
+  const perm = trendPermissions.value;
 
-  return [
-    { key: 'sales', label: `${selectedTrendDays.value}日销售合计`, value: formatCurrency(totals.salesAmount) },
-    { key: 'purchase', label: '采购合计', value: formatCurrency(totals.purchaseAmount) },
-    { key: 'margin', label: '毛利合计', value: formatCurrency(totals.grossMarginAmount) },
-    { key: 'rate', label: '区间毛利率', value: `${grossMarginRate.toFixed(1)}%` },
-  ];
+  const items: Array<{
+    key: string;
+    label: string;
+    value: string;
+    hint: string;
+    tone: string;
+    className: string;
+  }> = [];
+  if (perm.canViewSales) {
+    items.push({
+      key: 'sales',
+      label: `${selectedTrendDays.value}日销售合计`,
+      value: formatCurrency(totals.salesAmount),
+      hint: '销售收入累计',
+      tone: 'sales',
+      className: valueTone(totals.salesAmount),
+    });
+  }
+  if (perm.canViewPurchase) {
+    items.push({
+      key: 'purchase',
+      label: '采购合计',
+      value: formatCurrency(totals.purchaseAmount),
+      hint: '采购支出累计',
+      tone: 'purchase',
+      className: valueTone(totals.purchaseAmount),
+    });
+  }
+  if (perm.canViewGross) {
+    items.push({
+      key: 'margin',
+      label: '毛利合计',
+      value: formatCurrency(totals.grossMarginAmount),
+      hint: totals.grossMarginAmount < 0 ? '当前区间亏损' : '当前区间盈利',
+      tone: 'margin',
+      className: valueTone(totals.grossMarginAmount),
+    });
+    items.push({
+      key: 'rate',
+      label: '区间毛利率',
+      value: grossMarginRate === null ? '—' : `${grossMarginRate.toFixed(1)}%`,
+      hint: '毛利 ÷ 销售额',
+      tone: 'rate',
+      className: grossMarginRate === null ? 'is-neutral' : valueTone(grossMarginRate),
+    });
+  }
+  return items;
 });
 
-const trendMax = computed(() => {
-  const values = displayedTrend.value.flatMap(item => [item.salesAmount, item.purchaseAmount, item.grossMarginAmount]);
-  return Math.max(...values, 1);
+const trendScale = computed(() => {
+  const series = visibleTrendSeries.value.map(s => s.key);
+  const values = series.length
+    ? displayedTrend.value.flatMap(item => series.map(k => item[k as keyof DashboardTrendPoint] as number))
+    : [0];
+  const rawMin = Math.min(0, ...values);
+  const rawMax = Math.max(0, ...values);
+  if (rawMin === rawMax) return { min: 0, max: 1, ticks: [1, 0] };
+
+  let step = getNiceTickStep((rawMax - rawMin) / 4);
+  let min = Math.floor(rawMin / step) * step;
+  let max = Math.ceil(rawMax / step) * step;
+  let tickCount = Math.round((max - min) / step) + 1;
+
+  while (tickCount > 6) {
+    step = getNiceTickStep(step * 1.01);
+    min = Math.floor(rawMin / step) * step;
+    max = Math.ceil(rawMax / step) * step;
+    tickCount = Math.round((max - min) / step) + 1;
+  }
+
+  const ticks: number[] = [];
+  for (let tick = max; tick >= min - step * 0.001; tick -= step) {
+    ticks.push(Math.abs(tick) < step * 0.001 ? 0 : tick);
+  }
+  return { min, max, ticks };
+});
+const trendRange = computed(() => trendScale.value.max - trendScale.value.min);
+const trendAxisUnit = computed(() => {
+  const maxMagnitude = Math.max(Math.abs(trendScale.value.min), Math.abs(trendScale.value.max));
+  return maxMagnitude >= 10000
+    ? { divisor: 10000, label: '万元' }
+    : { divisor: 1, label: '元' };
 });
 
 const trendLines = computed(() => {
   const points = displayedTrend.value;
+  const series = visibleTrendSeries.value;
   const xStep = points.length > 1 ? trendChart.plotWidth / (points.length - 1) : trendChart.plotWidth;
-  const y = (value: number) => trendChart.plotHeight - (value / trendMax.value) * trendChart.valueHeight - trendChart.topPadding;
   const build = (field: 'salesAmount' | 'purchaseAmount' | 'grossMarginAmount') =>
-    points.map((item, index) => `${trendChart.offsetX + index * xStep},${y(item[field])}`).join(' ');
-  return {
-    sales: build('salesAmount'),
-    purchase: build('purchaseAmount'),
-    grossMargin: build('grossMarginAmount'),
-  };
+    points.map((item, index) => `${trendChart.offsetX + index * xStep},${trendY(item[field])}`).join(' ');
+  const lines: Record<string, string> = {};
+  for (const s of series) {
+    const key = s.key === 'salesAmount' ? 'sales' : s.key === 'purchaseAmount' ? 'purchase' : 'grossMargin';
+    lines[key] = build(s.key);
+  }
+  return lines;
 });
 
-const trendTicks = computed(() => [trendMax.value, trendMax.value * 0.75, trendMax.value * 0.5, trendMax.value * 0.25, 0]);
-const trendGridLines = computed(() => trendTicks.value.map(value => trendY(value)));
+const trendTicks = computed(() => trendScale.value.ticks);
+const trendGridLines = computed(() => trendTicks.value
+  .filter(value => value !== 0)
+  .map(value => trendY(value)));
+const trendZeroAxisY = computed(() => trendY(0));
 const trendAxisLabels = computed(() => {
   const points = displayedTrend.value;
   const total = points.length;
   if (total === 0) return [];
 
-  const labelCount = total <= 7 ? total : total <= 15 ? 8 : 15;
+  // 折线保留每天的数据点，坐标轴只保留足够间距的代表日期，避免长区间标签相互覆盖。
+  const labelCount = total <= 7 ? total : 8;
   const lastLabelIndex = Math.max(labelCount - 1, 1);
   return Array.from({ length: labelCount }, (_, index) => {
     const pointIndex = labelCount === 1 ? 0 : Math.round(((total - 1) * index) / lastLabelIndex);
+    const fullDate = points[pointIndex].date;
     return {
-      key: `${points[pointIndex].date}-${index}`,
-      date: points[pointIndex].date,
+      key: `${fullDate}-${index}`,
+      date: fullDate.length >= 10 ? fullDate.slice(5, 10) : fullDate,
+      fullDate,
       x: trendChart.offsetX + (trendChart.plotWidth * index) / lastLabelIndex,
     };
   });
 });
 
 const maxStageCount = computed(() => {
-  const values = overview.value?.orderStages.flatMap(item => [item.purchaseCount, item.salesCount]) || [0];
+  const perm = orderStagePermissions.value;
+  const stages = overview.value?.orderStages || [];
+  const values: number[] = [];
+  for (const stage of stages) {
+    if (perm.canViewPurchase) values.push(stage.purchaseCount);
+    if (perm.canViewSales) values.push(stage.salesCount);
+  }
+  if (values.length === 0) values.push(0);
   return Math.max(...values, 1);
 });
 
@@ -179,12 +312,59 @@ async function loadOverview() {
 }
 
 function formatCurrency(value: number) {
-  if (value >= 10000) return `￥${(value / 10000).toFixed(1)}万`;
+  if (Math.abs(value) >= 10000) return `￥${(value / 10000).toFixed(1)}万`;
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 0 }).format(value);
 }
 
 function formatCompactCurrency(value: number) {
-  return value >= 10000 ? `${(value / 10000).toFixed(1)}万` : formatNumber(value);
+  return Math.abs(value) >= 10000 ? `${(value / 10000).toFixed(1)}万` : formatNumber(value);
+}
+
+function formatDetailedCurrency(value: number) {
+  return new Intl.NumberFormat('zh-CN', {
+    style: 'currency',
+    currency: 'CNY',
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatTrendAxisTick(value: number) {
+  return formatNumber(value / trendAxisUnit.value.divisor);
+}
+
+function getNiceTickStep(rawStep: number) {
+  if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const normalized = rawStep / magnitude;
+  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return nice * magnitude;
+}
+
+function valueTone(value: number) {
+  if (value > 0) return 'is-positive';
+  if (value < 0) return 'is-negative';
+  return 'is-neutral';
+}
+
+function showTrendTooltip(event: MouseEvent | FocusEvent, point: DashboardTrendPoint) {
+  const target = event.currentTarget as SVGCircleElement;
+  const chart = target.closest('.dashboard-trend-chart');
+  if (!chart) return;
+
+  const chartRect = chart.getBoundingClientRect();
+  const pointRect = target.getBoundingClientRect();
+  const pointX = pointRect.left + pointRect.width / 2 - chartRect.left;
+  const pointY = pointRect.top + pointRect.height / 2 - chartRect.top;
+  activeTrendTooltip.value = {
+    point,
+    x: Math.min(92, Math.max(8, (pointX / chartRect.width) * 100)),
+    y: Math.min(92, Math.max(8, (pointY / chartRect.height) * 100)),
+    placeBelow: pointY < chartRect.height * 0.28,
+  };
+}
+
+function hideTrendTooltip() {
+  activeTrendTooltip.value = null;
 }
 
 function trendX(index: number) {
@@ -193,7 +373,8 @@ function trendX(index: number) {
 }
 
 function trendY(value: number) {
-  return trendChart.plotHeight - (value / trendMax.value) * trendChart.valueHeight - trendChart.topPadding;
+  return trendChart.plotHeight - trendChart.topPadding
+    - ((value - trendScale.value.min) / trendRange.value) * trendChart.valueHeight;
 }
 
 function selectTrendDays(days: (typeof trendDayOptions)[number]) {
@@ -348,8 +529,15 @@ onBeforeUnmount(() => {
 
       <div v-if="overview" class="space-y-4">
         <div class="summary-strip dashboard-metrics">
-          <div v-for="metric in overview.metrics" :key="metric.label" class="summary-item dashboard-metric">
-            <span>{{ metric.label }}</span>
+          <div
+            v-for="metric in overview.metrics"
+            :key="metric.label"
+            :class="['summary-item', 'dashboard-metric', `dashboard-metric--${metric.status}`]"
+          >
+            <div class="dashboard-metric__head">
+              <span>{{ metric.label }}</span>
+              <i aria-hidden="true" />
+            </div>
             <strong>{{ metricDisplay(metric) }}</strong>
             <div class="mt-2 flex items-center gap-2">
               <Badge variant="outline" :class="metricTone(metric)">
@@ -370,9 +558,12 @@ onBeforeUnmount(() => {
                   <BarChart3 class="h-4 w-4 text-primary" />
                   经营趋势
                 </CardTitle>
-                <p class="mt-1 text-xs text-muted-foreground">近 {{ selectedTrendDays }} 日销售、采购和毛利变化</p>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  <template v-if="!canViewAnyTrend">需要销售或采购权限后查看</template>
+                  <template v-else>近 {{ selectedTrendDays }} 日按当前权限展示销售、采购和毛利变化</template>
+                </p>
               </div>
-              <div class="dashboard-range-switch" aria-label="经营趋势天数选择">
+              <div v-if="canViewAnyTrend" class="dashboard-range-switch" aria-label="经营趋势天数选择">
                 <Button
                   v-for="option in trendDayOptions"
                   :key="option"
@@ -386,17 +577,32 @@ onBeforeUnmount(() => {
               </div>
             </CardHeader>
             <CardContent>
+              <div v-if="!canViewAnyTrend" data-dashboard-trend-empty>
+                <DashboardEmptyPanel
+                  title="暂无经营趋势数据"
+                  description="需要销售或采购模块的查询权限才能查看趋势曲线。"
+                  :required-permissions="['sales:query', 'purchase:query']"
+                />
+              </div>
+              <template v-else>
               <div
                 data-dashboard-trend-summary
                 class="dashboard-trend-summary"
                 :class="{ 'is-transitioning': trendTransitioning }"
                 aria-live="polite"
               >
-                <div v-for="item in trendSummary" :key="item.key">
+                <div
+                  v-for="item in trendSummary"
+                  :key="item.key"
+                  :class="['dashboard-trend-summary__item', `dashboard-trend-summary__item--${item.tone}`]"
+                >
+                  <span class="dashboard-trend-summary__marker" aria-hidden="true" />
                   <small>{{ item.label }}</small>
-                  <strong>{{ item.value }}</strong>
+                  <strong :class="item.className">{{ item.value }}</strong>
+                  <span class="dashboard-trend-summary__hint">{{ item.hint }}</span>
                 </div>
               </div>
+              <div class="dashboard-trend-chart-wrap">
               <svg
                 class="dashboard-trend-chart"
                 :class="{ 'is-transitioning': trendTransitioning }"
@@ -406,47 +612,83 @@ onBeforeUnmount(() => {
               >
                 <g class="dashboard-grid-lines">
                   <line v-for="(lineY, index) in trendGridLines" :key="index" x1="34" :y1="lineY" x2="622" :y2="lineY" />
+                  <line data-dashboard-trend-zero-axis class="dashboard-trend-zero-axis" x1="34" :y1="trendZeroAxisY" x2="622" :y2="trendZeroAxisY" />
                 </g>
                 <g class="dashboard-trend-axis">
-                  <text v-for="(tick, index) in trendTicks" :key="index" x="638" :y="trendGridLines[index] + 4">{{ formatCompactCurrency(tick) }}</text>
+                  <text class="dashboard-trend-axis__unit" x="638" y="15">金额（{{ trendAxisUnit.label }}）</text>
+                  <text v-for="tick in trendTicks" :key="tick" x="638" :y="trendY(tick) + 4">{{ formatTrendAxisTick(tick) }}</text>
                 </g>
                 <g :key="selectedTrendDays" class="dashboard-trend-layer">
-                  <polyline v-for="series in trendSeries" :key="series.key" :points="trendLines[series.key === 'salesAmount' ? 'sales' : series.key === 'purchaseAmount' ? 'purchase' : 'grossMargin']" class="dashboard-trend" :class="series.className" />
+                  <polyline v-for="series in visibleTrendSeries" :key="series.key" :points="trendLines[series.key === 'salesAmount' ? 'sales' : series.key === 'purchaseAmount' ? 'purchase' : 'grossMargin']" class="dashboard-trend" :class="series.className" />
                   <g class="dashboard-trend-points">
-                    <g v-for="series in trendSeries" :key="series.key">
+                    <g v-for="series in visibleTrendSeries" :key="series.key">
                       <circle
                         v-for="(point, index) in displayedTrend"
                         :key="`${series.key}-${point.date}`"
                         :cx="trendX(index)"
                         :cy="trendY(point[series.key])"
-                        r="2.8"
-                        :class="series.className"
+                        r="3.2"
+                        :class="[series.className, { 'is-negative': series.key === 'grossMarginAmount' && point[series.key] < 0 }]"
+                        tabindex="0"
+                        :aria-label="`${point.date} ${series.label}：${formatDetailedCurrency(point[series.key])}`"
+                        @mouseenter="showTrendTooltip($event, point)"
+                        @mouseleave="hideTrendTooltip"
+                        @focus="showTrendTooltip($event, point)"
+                        @blur="hideTrendTooltip"
                       />
                     </g>
                   </g>
                   <g class="dashboard-trend-labels">
-                    <text v-for="label in trendAxisLabels" :key="label.key" :x="label.x" y="238" text-anchor="middle">{{ label.date }}</text>
+                    <text v-for="label in trendAxisLabels" :key="label.key" :x="label.x" y="238" text-anchor="middle">
+                      <title>{{ label.fullDate }}</title>
+                      {{ label.date }}
+                    </text>
                   </g>
                 </g>
               </svg>
+              <div
+                v-if="activeTrendTooltip"
+                data-dashboard-trend-tooltip
+                :class="['dashboard-trend-tooltip', { 'is-below': activeTrendTooltip.placeBelow }]"
+                :style="{ left: `${activeTrendTooltip.x}%`, top: `${activeTrendTooltip.y}%` }"
+                role="tooltip"
+              >
+                <strong>{{ activeTrendTooltip.point.date }}</strong>
+                <span v-for="tooltipSeries in visibleTrendSeries" :key="tooltipSeries.key">
+                  <i :class="tooltipSeries.colorClass" />
+                  {{ tooltipSeries.label }}
+                  <b :class="valueTone(activeTrendTooltip.point[tooltipSeries.key])">{{ formatDetailedCurrency(activeTrendTooltip.point[tooltipSeries.key]) }}</b>
+                </span>
+              </div>
+            </div>
               <div class="dashboard-legend">
-                <span v-for="series in trendSeries" :key="series.key"><i :class="series.colorClass" />{{ series.label }}</span>
+                <span v-for="series in visibleTrendSeries" :key="series.key"><i :class="series.colorClass" />{{ series.label }}</span>
               </div>
               <div
-                class="dashboard-trend-values"
-                :class="{ 'is-transitioning': trendTransitioning }"
-                :style="{ '--trend-day-count': displayedTrend.length }"
+                class="dashboard-trend-values-scroll"
                 aria-label="经营趋势数值明细"
+                role="region"
+                tabindex="0"
               >
-                <div class="dashboard-trend-values__head">指标</div>
-                <div v-for="point in displayedTrend" :key="`head-${point.date}`" class="dashboard-trend-values__head">{{ point.date }}</div>
-                <template v-for="series in trendSeries" :key="series.key">
-                  <div class="dashboard-trend-values__label"><i :class="series.colorClass" />{{ series.label }}</div>
-                  <div v-for="point in displayedTrend" :key="`${series.key}-${point.date}`" class="dashboard-trend-values__value">
-                    {{ formatCompactCurrency(point[series.key]) }}
-                  </div>
-                </template>
+                <div
+                  class="dashboard-trend-values"
+                  :class="{ 'is-transitioning': trendTransitioning }"
+                  :style="{
+                    '--trend-day-count': displayedTrend.length,
+                    '--trend-table-min-width': `${96 + displayedTrend.length * 88}px`,
+                  }"
+                >
+                  <div class="dashboard-trend-values__head">指标</div>
+                  <div v-for="point in displayedTrend" :key="`head-${point.date}`" class="dashboard-trend-values__head">{{ point.date }}</div>
+                  <template v-for="series in visibleTrendSeries" :key="series.key">
+                    <div class="dashboard-trend-values__label"><i :class="series.colorClass" />{{ series.label }}</div>
+                    <div v-for="point in displayedTrend" :key="`${series.key}-${point.date}`" :class="['dashboard-trend-values__value', valueTone(point[series.key])]">
+                      {{ formatCompactCurrency(point[series.key]) }}
+                    </div>
+                  </template>
+                </div>
               </div>
+              </template>
             </CardContent>
           </Card>
 
@@ -505,22 +747,31 @@ onBeforeUnmount(() => {
             </CardHeader>
             <CardContent class="space-y-3">
               <div class="dashboard-stage-legend">
-                <span><i class="bg-amber-500" />采购单</span>
-                <span><i class="bg-blue-600" />销售单</span>
+                <span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />采购单</span>
+                <span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />销售单</span>
               </div>
+              <div v-if="!canViewAnyOrderStage" data-dashboard-order-empty>
+                <DashboardEmptyPanel
+                  title="暂无订单流转数据"
+                  description="需要采购或销售模块的查询权限才能查看订单阶段分布。"
+                  :required-permissions="['purchase:query', 'sales:query']"
+                />
+              </div>
+              <template v-else>
               <div v-for="stage in overview.orderStages" :key="stage.stage" class="dashboard-stage">
                 <div class="flex items-center justify-between text-xs">
                   <span class="font-medium text-slate-700">{{ stage.stage }}</span>
                   <span class="dashboard-stage__counts">
-                    <span><i class="bg-amber-500" />{{ stage.purchaseCount }}</span>
-                    <span><i class="bg-blue-600" />{{ stage.salesCount }}</span>
+                    <span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />{{ stage.purchaseCount }}</span>
+                    <span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />{{ stage.salesCount }}</span>
                   </span>
                 </div>
                 <div class="dashboard-stage__bars">
-                  <span class="bg-amber-500" :style="{ width: `${(stage.purchaseCount / maxStageCount) * 100}%` }" />
-                  <span class="bg-blue-600" :style="{ width: `${(stage.salesCount / maxStageCount) * 100}%` }" />
+                  <span v-if="orderStagePermissions.canViewPurchase" class="bg-amber-500" :style="{ width: `${(stage.purchaseCount / maxStageCount) * 100}%` }" />
+                  <span v-if="orderStagePermissions.canViewSales" class="bg-blue-600" :style="{ width: `${(stage.salesCount / maxStageCount) * 100}%` }" />
                 </div>
               </div>
+              </template>
             </CardContent>
           </Card>
 
@@ -867,6 +1118,88 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
+.dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dashboard-metric {
+  position: relative;
+  display: grid;
+  min-height: 104px;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--muted) 36%, white), white 62%);
+  padding: 14px 15px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
+}
+
+.dashboard-metric::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: #94a3b8;
+  content: '';
+}
+
+.dashboard-metric--good::before { background: #059669; }
+.dashboard-metric--watch::before { background: #d97706; }
+.dashboard-metric--risk::before { background: #e11d48; }
+.dashboard-metric--neutral::before { background: #64748b; }
+
+.dashboard-metric__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dashboard-metric__head > span {
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-metric__head > i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.dashboard-metric--good .dashboard-metric__head > i { background: #059669; }
+.dashboard-metric--watch .dashboard-metric__head > i { background: #d97706; }
+.dashboard-metric--risk .dashboard-metric__head > i { background: #e11d48; }
+.dashboard-metric--neutral .dashboard-metric__head > i { background: #64748b; }
+
+.dashboard-metric > strong {
+  overflow: hidden;
+  color: #172033;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-metric > div:last-child {
+  align-self: end;
+  margin-top: 0 !important;
+}
+
 .dashboard-heading-actions {
   display: flex;
   align-items: center;
@@ -998,41 +1331,91 @@ onBeforeUnmount(() => {
 .dashboard-trend-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  overflow: hidden;
-  margin-bottom: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.dashboard-trend-summary > div {
+.dashboard-trend-summary__item {
+  position: relative;
   display: grid;
-  gap: 4px;
   min-width: 0;
-  padding: 9px 12px;
-  border-right: 1px solid var(--border);
+  min-height: 82px;
+  gap: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--muted) 42%, white), white 62%);
+  padding: 12px 13px 10px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
 }
 
-.dashboard-trend-summary > div:last-child {
-  border-right: 0;
+.dashboard-trend-summary__item::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: #94a3b8;
+  content: '';
 }
+
+.dashboard-trend-summary__item--sales::after { background: #2563eb; }
+.dashboard-trend-summary__item--purchase::after { background: #f59e0b; }
+.dashboard-trend-summary__item--margin::after { background: #059669; }
+.dashboard-trend-summary__item--margin:has(.is-negative)::after { background: #e11d48; }
+.dashboard-trend-summary__item--rate::after { background: #7c3aed; }
+
+.dashboard-trend-summary__marker {
+  position: absolute;
+  top: 11px;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 35%, transparent);
+}
+
+.dashboard-trend-summary__item--sales .dashboard-trend-summary__marker { background: #2563eb; }
+.dashboard-trend-summary__item--purchase .dashboard-trend-summary__marker { background: #f59e0b; }
+.dashboard-trend-summary__item--margin .dashboard-trend-summary__marker { background: #059669; }
+.dashboard-trend-summary__item--margin:has(.is-negative) .dashboard-trend-summary__marker { background: #e11d48; }
+.dashboard-trend-summary__item--rate .dashboard-trend-summary__marker { background: #7c3aed; }
 
 .dashboard-trend-summary small {
   overflow: hidden;
+  padding-right: 14px;
   color: var(--muted-foreground);
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .dashboard-trend-summary strong {
+  overflow: hidden;
   color: #172033;
-  font-size: 15px;
+  font-size: 18px;
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-trend-summary__hint {
+  overflow: hidden;
+  color: #667085;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-trend-summary.is-transitioning {
   animation: dashboard-trend-soft-enter var(--motion-duration-slow) var(--motion-ease-standard);
+}
+
+.dashboard-trend-chart-wrap {
+  position: relative;
 }
 
 .dashboard-trend-chart {
@@ -1073,6 +1456,11 @@ onBeforeUnmount(() => {
   stroke: #059669;
 }
 
+.dashboard-trend-zero-axis {
+  stroke: #98a2b3;
+  stroke-width: 1.5;
+}
+
 .dashboard-trend-labels text {
   fill: #344054;
   font-size: 9px;
@@ -1083,6 +1471,12 @@ onBeforeUnmount(() => {
   fill: #475467;
   font-size: 10px;
   font-weight: 600;
+}
+
+.dashboard-trend-axis .dashboard-trend-axis__unit {
+  fill: #667085;
+  font-size: 9px;
+  font-weight: 700;
 }
 
 .dashboard-trend-points text {
@@ -1112,6 +1506,71 @@ circle.dashboard-trend--margin {
   stroke-width: 2px;
 }
 
+circle.dashboard-trend--margin.is-negative {
+  fill: #e11d48;
+}
+
+.dashboard-trend-points circle {
+  cursor: pointer;
+  transition: r 140ms ease, stroke-width 140ms ease;
+}
+
+.dashboard-trend-points circle:hover,
+.dashboard-trend-points circle:focus-visible {
+  r: 4.8px;
+  stroke-width: 3px;
+  outline: none;
+}
+
+.dashboard-trend-tooltip {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  min-width: 168px;
+  gap: 6px;
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  background: #fff;
+  padding: 9px 10px;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 14%);
+  color: #667085;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 10px));
+}
+
+.dashboard-trend-tooltip.is-below {
+  transform: translate(-50%, 10px);
+}
+
+.dashboard-trend-tooltip strong {
+  color: #172033;
+  font-size: 12px;
+}
+
+.dashboard-trend-tooltip span {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.dashboard-trend-tooltip i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+
+.dashboard-trend-tooltip b {
+  color: #172033;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-trend-tooltip b.is-positive { color: #15803d; }
+.dashboard-trend-tooltip b.is-negative { color: #be123c; }
+.dashboard-trend-tooltip b.is-neutral { color: #667085; }
+
 .dashboard-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1135,14 +1594,24 @@ circle.dashboard-trend--margin {
   border-radius: 999px;
 }
 
-.dashboard-trend-values {
-  display: grid;
-  grid-template-columns: minmax(70px, 0.8fr) repeat(var(--trend-day-count, 7), minmax(64px, 1fr));
-  gap: 0;
+.dashboard-trend-values-scroll {
+  max-width: 100%;
   overflow-x: auto;
   margin-top: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.dashboard-trend-values-scroll:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.dashboard-trend-values {
+  display: grid;
+  grid-template-columns: 96px repeat(var(--trend-day-count, 7), minmax(88px, 1fr));
+  min-width: max(100%, var(--trend-table-min-width));
+  gap: 0;
   background: color-mix(in srgb, var(--muted) 28%, transparent);
   font-size: 12px;
 }
@@ -1165,11 +1634,17 @@ circle.dashboard-trend--margin {
   font-weight: 600;
 }
 
+.dashboard-trend-values__head:first-child,
 .dashboard-trend-values__label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--muted) 92%, white);
+  box-shadow: 1px 0 0 var(--border);
   color: #475467;
   font-weight: 600;
 }
@@ -1183,6 +1658,23 @@ circle.dashboard-trend--margin {
 .dashboard-trend-values__value {
   color: #172033;
   font-variant-numeric: tabular-nums;
+}
+
+.dashboard-trend-values__value.is-positive,
+.dashboard-trend-summary .is-positive {
+  color: #15803d;
+  font-weight: 650;
+}
+
+.dashboard-trend-values__value.is-negative,
+.dashboard-trend-summary .is-negative {
+  color: #be123c;
+  font-weight: 650;
+}
+
+.dashboard-trend-values__value.is-neutral,
+.dashboard-trend-summary .is-neutral {
+  color: #667085;
 }
 
 @keyframes dashboard-trend-soft-enter {
@@ -1916,6 +2408,14 @@ circle.dashboard-trend--margin {
 }
 
 @media (max-width: 760px) {
+  .dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-metric {
+    min-height: 98px;
+  }
+
   .dashboard-heading-actions {
     width: 100%;
     align-items: flex-end;
@@ -1924,14 +2424,6 @@ circle.dashboard-trend--margin {
 
   .dashboard-trend-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .dashboard-trend-summary > div:nth-child(2) {
-    border-right: 0;
-  }
-
-  .dashboard-trend-summary > div:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--border);
   }
 
   .dashboard-panel__header {

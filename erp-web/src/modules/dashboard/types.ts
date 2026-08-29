@@ -91,11 +91,43 @@ export interface DashboardOverview {
   refreshedAt: string;
   metrics: DashboardMetric[];
   trend: DashboardTrendPoint[];
+  trendPermissions?: DashboardTrendPermissions | null;
   todos: DashboardTodoItem[];
   stockAlerts: DashboardStockAlert[];
   orderStages: DashboardOrderStage[];
+  orderStagePermissions?: DashboardOrderStagePermissions | null;
   topProducts: DashboardTopProduct[];
   supplierPerformance: DashboardSupplierPerformance[];
+}
+
+/**
+ * 经营趋势可见维度标记。
+ *
+ * 旧版本接口不返回该字段时，前端回退到全 true（向旧后端兼容）。
+ */
+export interface DashboardTrendPermissions {
+  canViewSales: boolean;
+  canViewPurchase: boolean;
+  canViewGross: boolean;
+}
+
+/**
+ * 订单流转可见维度标记。
+ *
+ * 旧版本接口不返回该字段时，前端回退到全 true。
+ */
+export interface DashboardOrderStagePermissions {
+  canViewPurchase: boolean;
+  canViewSales: boolean;
+}
+
+/**
+ * 工作台空权限降级面板所需的 props。
+ */
+export interface DashboardEmptyPanelProps {
+  title: string;
+  description?: string;
+  requiredPermissions: string[];
 }
 
 export interface DashboardNotificationPopover {

@@ -53,6 +53,7 @@ paths:
       summary: 获取顶栏通知铃铛摘要
       description: |
         返回当前登录用户在顶栏通知铃铛中可见的待处理摘要。该接口只承载待办数量和前 8 条待办，不返回经营趋势、订单流转、商品排行、供应商履约或完整库存预警，避免全局主布局频繁请求较重的 `/dashboard/overview`。
+        本接口只调用后端 todo 聚合服务，不再复用 `/dashboard/overview` 重型聚合，避免顶栏频繁点击触发不必要的销售、采购、库存和商品排行 SQL。系统异常条目由 `dashboard:exception:query` 权限独立控制，业务待办按 `purchase:manage` / `sales:manage` / `warehouse:manage` / `warehouse:query` 模块裁剪；本期不实现指派范围裁剪。
         后端必须按当前用户的模块权限、处理权限、指派用户、指派角色和指派部门裁剪数据；无权模块的数量、标题、描述和证据均不得返回。普通业务事项按采购、销售、仓储等业务状态聚合，系统异常只返回给具备异常处理权限或被指派的用户范围。
         本接口只返回 `status=PENDING` 的事项，并复用 `DashboardTodoItem`。`completionMode=AUTO` 的事项由对应业务状态变化自动完成；`TRACKED` 的系统异常只允许跳转查看详情。
         `pendingCount` 表示权限裁剪和业务去重后的待处理业务事项总量，不是未读数；前端打开弹层不得清零。聚合待办按其 `count` 计入总量，后端必须避免同一业务事实被不同聚合项重复计数。`highPriorityCount` 使用相同口径统计 `priority=HIGH` 的事项总量。
@@ -100,6 +101,7 @@ paths:
                       evidence: []
                       route: /sales/orders
         "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
 
   /dashboard/overview:
     get:
@@ -117,6 +119,14 @@ paths:
         工作台只展示复核证据，不在本接口提供产品、仓库、客户、供应商选择器。若待办详情或跳转页面需要选择产品、仓库、客户、供应商，应复用各模块已有分页查询和共享选择组件，例如 `/products`、`/warehouses`、`/sales/customers`、`/purchase/suppliers`，禁止在工作台接口固定返回大量下拉选项。
         后端建议至少返回：业务待办 20 条以内、销售商品排行 10 条以内、供应商履约 10 条以内、库存预警 20 条以内，避免工作台接口过重；超出范围时应按业务优先级、异常严重程度、影响金额或发生时间排序后截断。若异常待办未来明显超过工作台承载范围，应新增独立异常/任务中心分页接口，工作台只展示高优先级摘要。
         系统异常统一聚合为一条 `businessType=SYSTEM_EXCEPTION`、`completionMode=TRACKED` 的工作台待办，主卡只显示总数和最高优先级；具体异常记录通过 `evidence[]` 展示，例如 AI/MCP 工具调用失败、消息队列死信、第三方回调失败、定时任务失败和数据补偿失败。此类数据来自数据库异常记录表，工作台只提供“查看详情”，不展示“完成处理”；异常状态由后台重试、补偿任务或异常中心更新。
+
+        本期接口返回的字段全部按当前用户权限裁剪：
+        - `metrics` 4 项分别按 `sales:query`、`purchase:query`、`warehouse:query` 判定；无权子项返回 `value=0`，卡片整体仍展示但 value 显示中性
+        - `trend` 与 `trendPermissions` 配合使用；当 `canViewSales == false && canViewPurchase == false` 时 `trend` 返回空数组，前端应整卡降级为"暂无访问权限"提示，不渲染图表
+        - `orderStages` 与 `orderStagePermissions` 配合使用；两边都不可见时 `orderStages` 返回空数组，前端应整卡降级
+        - `todos` 按模块粒度裁剪：采购类依赖 `purchase:manage`、销售类依赖 `sales:manage`、出入库类依赖 `warehouse:manage`、库存复核依赖 `warehouse:query`、系统异常依赖 `dashboard:exception:query`；业务类完成后自动消失
+        - 系统异常待办（`businessType=SYSTEM_EXCEPTION`、来源 `system_exception` 表）只返回给具备 `dashboard:exception:query` 的用户，避免 AI 死信、MQ 死信等信息泄漏
+        - 本期按业务 query / manage 模块裁剪；按"指派用户 / 指派角色 / 指派部门"细化待办范围裁剪待异常中心模块补充
       operationId: dashboardOverview
       security:
         - SaTokenAuth: []
@@ -152,8 +162,8 @@ paths:
                   trend:
                     - date: "06-30"
                       salesAmount: 286430
-                      purchaseAmount: 172600
-                      grossMarginAmount: 92100
+                      purchaseAmount: 378530
+                      grossMarginAmount: -92100
                   todos:
                     - todoId: todo-sales-approve
                       businessType: SALES
@@ -293,6 +303,7 @@ paths:
                       qualityScore: 96.1
                       onTimeRate: 96.5
         "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
 
   /ai/assistant/overview:
     get:
@@ -5295,17 +5306,28 @@ components:
           description: 工作台数据刷新时间，后端生成
         metrics:
           type: array
-          description: 首屏经营指标，按当前用户权限裁剪
+          description: 首屏经营指标，按当前用户权限裁剪；无权子项 value=0
           items: { $ref: '#/components/schemas/DashboardMetric' }
         trend:
           type: array
-          description: 近 30 日经营趋势，销售额、采购额和毛利额均来自可执行聚合查询；前端在工作台卡片内提供 7 天、15 天、30 天切换，只做本地截取、x 轴标签降密和轻量过渡，不额外调用详情接口
+          description: |
+            近 30 日经营趋势，销售额、采购额和毛利额均来自可执行聚合查询；
+            完全无 sales:query 与 purchase:query 时返回空数组，前端应整卡降级。
+            前端在工作台卡片内提供 7 天、15 天、30 天切换，只做本地截取、
+            x 轴标签降密和轻量过渡，不额外调用详情接口。
           items: { $ref: '#/components/schemas/DashboardTrendPoint' }
+        trendPermissions:
+          allOf:
+            - $ref: '#/components/schemas/DashboardTrendPermissions'
+          description: |
+            经营趋势可见维度标记；前端按其决定哪些 series 渲染；
+            旧版本接口不返回时前端回退为全 true。
         todos:
           type: array
           description: |
             当前用户需要优先处理的业务待办完整数组。前端主卡展示前 8 条，详情弹窗展示本接口返回的全部待办。
             待办可以来自单据状态机、库存风险、价格偏离、客户信用、系统异常或其他需要人工审核/人工复核/系统追踪的业务事件。AI/MCP 调用失败、消息队列死信、第三方回调失败、定时任务失败和数据补偿失败等系统问题应统一聚合为 `SYSTEM_EXCEPTION` 待办。
+            业务类待办按 manage / query 权限裁剪；系统异常依赖 `dashboard:exception:query`。
           items: { $ref: '#/components/schemas/DashboardTodoItem' }
         stockAlerts:
           type: array
@@ -5313,8 +5335,14 @@ components:
           items: { $ref: '#/components/schemas/DashboardStockAlert' }
         orderStages:
           type: array
-          description: 采购单和销售单状态分布；前端仅在工作台主卡展示全部阶段，不提供订单流转详情弹窗
+          description: |
+            采购单和销售单状态分布；完全无权时返回空数组，前端应整卡降级。
+            前端仅在工作台主卡展示全部阶段，不提供订单流转详情弹窗。
           items: { $ref: '#/components/schemas/DashboardOrderStage' }
+        orderStagePermissions:
+          allOf:
+            - $ref: '#/components/schemas/DashboardOrderStagePermissions'
+          description: 订单流转可见维度标记；旧版本接口不返回时前端回退为全 true。
         topProducts:
           type: array
           description: 近 30 日销售商品排行完整数组，按 `salesAmount` 降序返回；前端主卡展示前 5 名，详情弹窗展示全部
@@ -5324,12 +5352,46 @@ components:
           description: 核心供应商履约表现完整数组，按综合履约表现降序返回；前端主卡展示前 5 名，详情弹窗展示全部
           items: { $ref: '#/components/schemas/DashboardSupplierPerformance' }
 
+    DashboardTrendPermissions:
+      type: object
+      description: |
+        经营趋势可见维度标记，由后端按当前用户的 `sales:query` /
+        `purchase:query` 计算下发。前端根据本对象决定哪些 series 渲染；
+        两边都不可见时前端应整卡降级为"暂无访问权限"占位，不渲染图表。
+      required: [canViewSales, canViewPurchase, canViewGross]
+      properties:
+        canViewSales:
+          type: boolean
+          description: 是否可见销售曲线；对应 `sales:query` 权限
+        canViewPurchase:
+          type: boolean
+          description: 是否可见采购曲线；对应 `purchase:query` 权限
+        canViewGross:
+          type: boolean
+          description: 是否可见毛利曲线；同时需要 `sales:query` 与 `purchase:query` 才为 true
+
+    DashboardOrderStagePermissions:
+      type: object
+      description: |
+        订单流转可见维度标记，由后端按当前用户的 `purchase:query` /
+        `sales:query` 计算下发。前端根据本对象决定图例、计数和条形按列裁剪；
+        两边都不可见时前端应整卡降级为"暂无访问权限"占位。
+      required: [canViewPurchase, canViewSales]
+      properties:
+        canViewPurchase:
+          type: boolean
+          description: 是否可见采购订单流转；对应 `purchase:query` 权限
+        canViewSales:
+          type: boolean
+          description: 是否可见销售订单流转；对应 `sales:query` 权限
+
     DashboardMetric:
       type: object
       required: [label, value, unit, changeRate, compareText, status]
       properties:
         label: { type: string, description: 指标名称，后端按工作台展示口径返回 }
-        value: { type: number, format: double, description: 指标数值；金额单位为人民币元，不返回格式化文案 }
+        value: { type: number, format: double, description: 指标数值；金额单位为人民币元，不返回格式化文案；本月毛利额允许为负数，表示亏损 }
+
         unit: { type: string, description: 指标单位，例如 `元`、`单`、`个` }
         changeRate: { type: number, format: double, description: 对比周期变化率，单位为百分比数值；负数表示下降 }
         compareText: { type: string, description: 对比周期文案，例如 `较昨日`、`较上月同期` }

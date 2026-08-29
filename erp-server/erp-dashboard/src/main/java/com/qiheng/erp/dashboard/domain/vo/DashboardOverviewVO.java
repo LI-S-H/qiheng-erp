@@ -47,4 +47,10 @@ public class DashboardOverviewVO {
 
     @Schema(description = "供应商履约评分完整数组，按 overallScore 降序返回")
     private List<DashboardSupplierPerformanceVO> supplierPerformance = new ArrayList<>();
+
+    @Schema(description = "经营趋势可见维度标记；前端按其决定 series 渲染与降级")
+    private DashboardTrendPermissionsVO trendPermissions;
+
+    @Schema(description = "订单流转可见维度标记；前端按其决定图例与条形裁剪")
+    private DashboardOrderStagePermissionsVO orderStagePermissions;
 }

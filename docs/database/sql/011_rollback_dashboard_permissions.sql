@@ -8,10 +8,14 @@
 
 USE erp;
 
--- 1) 一线三角色回滚：移除 dashboard:notifications:query
+-- 1) 一线三角色回滚：移除 dashboard:notifications:query 与 dashboard:overview:query
 UPDATE sys_role
    SET permission_codes = JSON_REMOVE(
-         permission_codes,
+         JSON_REMOVE(
+           permission_codes,
+           JSON_UNQUOTE(JSON_SEARCH(permission_codes, 'one',
+                                    'dashboard:overview:query'))
+         ),
          JSON_UNQUOTE(JSON_SEARCH(permission_codes, 'one',
                                   'dashboard:notifications:query'))
        ),

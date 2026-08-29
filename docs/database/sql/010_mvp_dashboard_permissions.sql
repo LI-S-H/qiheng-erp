@@ -49,6 +49,19 @@ UPDATE sys_role
          permission_codes, JSON_QUOTE('dashboard:notifications:query')
        );
 
+-- 2.1) 一线三角色同步新增 dashboard:overview:query，让销售/采购/仓管员
+--      也能在工作台首屏查看按权限裁剪的指标、趋势、订单流转与待办
+UPDATE sys_role
+   SET permission_codes = JSON_ARRAY_APPEND(permission_codes, '$',
+                                            'dashboard:overview:query'),
+       update_time      = NOW()
+ WHERE role_code IN ('PURCHASE_STAFF', 'SALES_STAFF', 'WAREHOUSE_STAFF')
+   AND status  = 1
+   AND deleted = 0
+   AND NOT JSON_CONTAINS(
+         permission_codes, JSON_QUOTE('dashboard:overview:query')
+       );
+
 -- 3) BUSINESS_MANAGER 追加 dashboard:exception:query
 UPDATE sys_role
    SET permission_codes = JSON_ARRAY_APPEND(permission_codes, '$',

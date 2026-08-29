@@ -4,6 +4,8 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.dashboard.domain.vo.DashboardNotificationPopoverVO;
 import com.qiheng.erp.dashboard.domain.vo.DashboardOverviewVO;
+import com.qiheng.erp.dashboard.job.DashboardDailySnapshotJob;
+import com.qiheng.erp.dashboard.job.DashboardMonthlySnapshotJob;
 import com.qiheng.erp.dashboard.service.IDashboardNotificationService;
 import com.qiheng.erp.dashboard.service.IDashboardOverviewService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -11,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,6 +37,10 @@ public class DashboardController {
     private final IDashboardOverviewService overviewService;
     // 顶栏通知服务
     private final IDashboardNotificationService notificationService;
+    // 日快照任务（手动触发用）
+    private final DashboardDailySnapshotJob dailySnapshotJob;
+    // 月快照任务（手动触发用）
+    private final DashboardMonthlySnapshotJob monthlySnapshotJob;
 
     /**
      * 获取工作台经营概览
@@ -65,5 +72,24 @@ public class DashboardController {
         StpUtil.checkPermission("dashboard:notifications:query");
         log.info("加载顶栏通知铃铛摘要");
         return Result.ok(notificationService.popover());
+    }
+
+    /**
+     * 手动触发工作台快照任务（日快照 + 月快照）
+     *
+     * <p>仅限管理岗调试使用；定时任务由 @Scheduled 自动执行，本接口用于
+     * 首次部署 / 缓存丢失 / 调度异常时人工补齐快照。幂等可重复调用。</p>
+     *
+     * @return 固定 success
+     */
+    @PostMapping("/snapshot/trigger")
+    @Operation(summary = "手动触发工作台快照任务")
+    public Result<Void> triggerSnapshot() {
+        StpUtil.checkPermission("dashboard:overview:query");
+        log.info("手动触发工作台快照任务");
+        dailySnapshotJob.snapshot();
+        // 手动触发时拍当月快照（本月尚未结束，拍的是截至此刻的累计；月末调度会覆盖为完整值）
+        monthlySnapshotJob.snapshotOfMonth(java.time.YearMonth.now());
+        return Result.ok();
     }
 }

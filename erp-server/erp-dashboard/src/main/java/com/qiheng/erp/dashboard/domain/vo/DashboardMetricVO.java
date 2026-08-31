@@ -1,7 +1,10 @@
 package com.qiheng.erp.dashboard.domain.vo;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+
+import java.math.BigDecimal;
 
 /**
  * <p>
@@ -15,19 +18,25 @@ import lombok.Data;
 @Schema(description = "工作台首屏经营指标")
 public class DashboardMetricVO {
 
+    @Schema(description = "指标稳定编码，不依赖中文展示名称", allowableValues = {"MONTH_SALES", "MONTH_GROSS_PROFIT", "PENDING_ORDERS", "STOCK_RISK_SKU"})
+    private String key;
+
     @Schema(description = "指标名称，后端按工作台展示口径返回")
     private String label;
 
     @Schema(description = "指标数值；金额单位为人民币元")
-    private Double value;
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    private BigDecimal value;
 
     @Schema(description = "指标单位，例如 元、单、个")
     private String unit;
 
     @Schema(description = "对比周期变化率，单位为百分比数值；负数表示下降")
-    private Double changeRate;
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    private BigDecimal changeRate;
 
     @Schema(description = "对比周期文案，例如 较昨日、较上月同期")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     private String compareText;
 
     @Schema(description = "指标风险色语义：good / watch / risk / neutral", allowableValues = {"good", "watch", "risk", "neutral"})

@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.function.Supplier;
 
 /**
  * 工作台运营类指标日快照任务。
@@ -40,6 +41,9 @@ import java.time.LocalDate;
 @Slf4j
 public class DashboardDailySnapshotJob {
 
+    private static final int MAX_RETRY = 3;
+    private static final long BASE_DELAY_MS = 1000L;
+
     /** Redisson 分布式锁 key（SpEL 字符串字面量语法），多实例部署时只允许一个实例执行 */
     private static final String LOCK_KEY = "'dashboard:job:daily-snapshot'";
 
@@ -57,39 +61,72 @@ public class DashboardDailySnapshotJob {
      * 次日 00:00 起用户访问即可命中缓存，避免跨天调度间隙的 30 分钟 miss 窗口。</p>
      */
     @Scheduled(cron = "0 55 23 * * ?")
-    @DistributedLock(key = LOCK_KEY, leaseTime = 300)
+    @DistributedLock(key = LOCK_KEY, leaseTime = 60)
     public void snapshot() {
         LocalDate today = LocalDate.now();
-        try {
+        // 重试 3 次，每次间隔 1 秒
+        boolean pendingOk = retryStep("待处理订单数", today, () -> {
             long pendingCount = countPendingOrders();
             prevValueCache.putDailySnapshot(today,
                     DashboardPrevValueCache.DailySnapshotType.PENDING_COUNT,
                     BigDecimal.valueOf(pendingCount));
-
+            return pendingCount;
+        });
+        // 重试 3 次，每次间隔 1 秒 线式重试
+        boolean stockOk = retryStep("库存风险SKU数", today, () -> {
             long stockRisk = stockAlertLoader.countRiskSkus();
             prevValueCache.putDailySnapshot(today,
                     DashboardPrevValueCache.DailySnapshotType.STOCK_RISK_COUNT,
                     BigDecimal.valueOf(stockRisk));
+            return stockRisk;
+        });
 
-            log.info("工作台日快照完成 date={} pendingCount={} stockRisk={}", today, pendingCount, stockRisk);
-        } catch (Exception ex) {
-            log.error("工作台日快照执行失败 date={}", today, ex);
+        if (pendingOk && stockOk) {
+            log.info("工作台日快照全部完成 date={}", today);
+        } else {
+            log.warn("工作台日快照部分失败 date={} pendingOk={} stockOk={}", today, pendingOk, stockOk);
         }
+    }
+
+    private <T> boolean retryStep(String stepName, LocalDate today, Supplier<T> action) {
+        for (int attempt = 1; attempt <= MAX_RETRY; attempt++) {
+            try {
+                T result = action.get();
+                log.info("快照步骤[{}]成功 date={} result={}", stepName, today, result);
+                return true;
+            } catch (Exception ex) {
+                log.error("快照步骤[{}]失败 date={} 第{}/{}次", stepName, today, attempt, MAX_RETRY, ex);
+                if (attempt < MAX_RETRY) {
+                    try {
+                        Thread.sleep(BASE_DELAY_MS * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.warn("重试等待被中断，终止重试 date={} step={}", today, stepName);
+                        // TODO: 处理中断异常，如记录日志、通知管理员等
+                        break;
+                    }
+                }
+            }
+        }
+        // TODO: 处理最大重试次数超过，如记录日志、通知管理员等
+        return false;
     }
 
     /** 全公司口径待处理订单总数：待审采购 + 待审销售 + 待确认入库 + 待确认出库 */
     private long countPendingOrders() {
+        // 待审采购订单数
         long pendingPurchase = purchaseOrderMapper.selectCount(
                 new LambdaQueryWrapper<PurchaseOrder>()
-                        .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.SUBMITTED.name())
-                        .eq(PurchaseOrder::getDeleted, 0));
+                        .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.SUBMITTED.name()));
+        // 待审销售订单数
         long pendingSales = salesOrderMapper.selectCount(
                 new LambdaQueryWrapper<SalesOrder>()
-                        .eq(SalesOrder::getStatus, SalesOrderStatus.SUBMITTED.name())
-                        .eq(SalesOrder::getDeleted, 0));
+                        .eq(SalesOrder::getStatus, SalesOrderStatus.SUBMITTED.name()));
+        // 待确认入库单数
         long pendingInbound = inboundBillMapper.selectCount(
                 new LambdaQueryWrapper<InboundBill>()
                         .eq(InboundBill::getStatus, StockBillStatus.PENDING_CONFIRM.name()));
+        // 待确认出库单数
         long pendingOutbound = outboundBillMapper.selectCount(
                 new LambdaQueryWrapper<OutboundBill>()
                         .eq(OutboundBill::getStatus, StockBillStatus.PENDING_CONFIRM.name()));

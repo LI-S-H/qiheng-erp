@@ -1,6 +1,7 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.domain.vo.DashboardStockAlertVO;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.mapper.ProductMapper;
@@ -10,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -47,9 +47,27 @@ public class DashboardStockAlertLoader {
 
     /**
      * 加载库存风险 SKU
+     *
      * @return 风险 SKU VO 列表
      */
     public List<DashboardStockAlertVO> load() {
+        return collectAlerts(buildAlerts());
+    }
+
+    /**
+     * 真实计算 available_qty 小于 safety_stock_qty 的 SKU 数量。
+     * 不返回明细，仅供指标卡使用，避免重复加载明细 VO。
+     *
+     * @return 风险 SKU 数量
+     */
+    public int countRiskSkus() {
+        return buildAlerts().size();
+    }
+
+    /**
+     * 解析 stock + product 数据并组装明细，按 available/safety 不达标过滤
+     */
+    private List<DashboardStockAlertVO> buildAlerts() {
         List<WarehouseStock> stocks = warehouseStockMapper.selectList(null);
         if (stocks.isEmpty()) {
             return new ArrayList<>();
@@ -64,15 +82,17 @@ public class DashboardStockAlertLoader {
             if (product == null) {
                 continue;
             }
-            long stockQty = stock.getStockQty() == null ? 0L : stock.getStockQty();
-            long lockedQty = stock.getLockedQty() == null ? 0L : stock.getLockedQty();
-            long availableQty = stockQty - lockedQty;
-            long safetyQty = product.getSafetyStockQty() == null ? 0L : product.getSafetyStockQty().longValue();
-            if (availableQty >= safetyQty) {
+            BigDecimal stockQty = toQty(stock.getStockQty());
+            BigDecimal lockedQty = toQty(stock.getLockedQty());
+            BigDecimal availableQty = stockQty.subtract(lockedQty);
+            BigDecimal safetyQty = toQty(product.getSafetyStockQty());
+            if (availableQty.compareTo(safetyQty) >= 0) {
                 continue;
             }
             boolean productActive = product.getStatus() != null && product.getStatus() == 1;
-            long suggested = productActive ? Math.max(safetyQty * 2L - availableQty, 0L) : 0L;
+            BigDecimal suggested = productActive
+                    ? safetyQty.multiply(BigDecimal.valueOf(2L)).subtract(availableQty).max(BigDecimal.ZERO)
+                    : BigDecimal.ZERO;
 
             DashboardStockAlertVO vo = new DashboardStockAlertVO();
             vo.setStockId(stock.getId());
@@ -82,26 +102,39 @@ public class DashboardStockAlertLoader {
             vo.setWarehouseId(stock.getWarehouseId());
             vo.setWarehouseName(stock.getWarehouseName());
             vo.setUnitName(stock.getUnitName());
-            vo.setAvailableQty(toQty(availableQty));
-            vo.setSafetyStockQty(toQty(safetyQty));
-            vo.setSuggestedPurchaseQty(toQty(suggested));
-            vo.setSeverity(availableQty <= 0L ? "HIGH" : "MEDIUM");
+            vo.setAvailableQty(availableQty);
+            vo.setSafetyStockQty(safetyQty);
+            vo.setSuggestedPurchaseQty(suggested);
+            vo.setSeverity(availableQty.signum() <= 0 ? "HIGH" : "MEDIUM");
             vo.setLatestOutboundAt(stock.getUpdateTime());
             alerts.add(vo);
         }
-        alerts.sort(Comparator.comparingDouble((DashboardStockAlertVO vo) ->
-                vo.getSafetyStockQty() == null ? 0.0 : vo.getSafetyStockQty() - vo.getAvailableQty()).reversed());
+        return alerts;
+    }
+
+    /** 排序 + 截断 TOP_LIMIT */
+    private List<DashboardStockAlertVO> collectAlerts(List<DashboardStockAlertVO> alerts) {
+        alerts.sort(Comparator.comparing((DashboardStockAlertVO vo) ->
+                vo.getSafetyStockQty() == null ? BigDecimal.ZERO : vo.getSafetyStockQty().subtract(vo.getAvailableQty())).reversed());
         if (alerts.size() > TOP_LIMIT) {
             return alerts.subList(0, TOP_LIMIT);
         }
         return alerts;
     }
 
-    /** 数据库 ×100 转业务小数 */
-    private static Double toQty(Long stored) {
+    /** 数据库 ×100 存储值转业务小数；null 视为 0 */
+    private static BigDecimal toQty(Long stored) {
         if (stored == null) {
-            return 0.0;
+            return BigDecimal.ZERO;
         }
-        return BigDecimal.valueOf(stored).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).doubleValue();
+        return QtyUtil.toDecimal(stored);
+    }
+
+    /** 数据库 ×100 存储值(BigDecimal 形式)转业务小数；null 视为 0 */
+    private static BigDecimal toQty(BigDecimal stored) {
+        if (stored == null) {
+            return BigDecimal.ZERO;
+        }
+        return QtyUtil.toDecimal(stored);
     }
 }

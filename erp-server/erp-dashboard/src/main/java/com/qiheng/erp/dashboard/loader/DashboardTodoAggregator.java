@@ -91,6 +91,9 @@ public class DashboardTodoAggregator {
                         .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.SUBMITTED.name())
                         .orderByDesc(PurchaseOrder::getSubmittedAt)
                         .last("LIMIT " + (EVIDENCE_LIMIT + 1)));
+        if (orders.isEmpty()) {
+            return Collections.emptyList();
+        }
         DashboardTodoItemVO todo = newTodo(
                 "todo-purchase-approve", "PURCHASE", "采购",
                 "采购单待审核", "还有 %d 张采购单需要审核，处理后会自动完成待办。",
@@ -114,6 +117,9 @@ public class DashboardTodoAggregator {
                         .eq(SalesOrder::getStatus, SalesOrderStatus.SUBMITTED.name())
                         .orderByDesc(SalesOrder::getSubmittedAt)
                         .last("LIMIT " + (EVIDENCE_LIMIT + 1)));
+        if (orders.isEmpty()) {
+            return Collections.emptyList();
+        }
         DashboardTodoItemVO todo = newTodo(
                 "todo-sales-approve", "SALES", "销售",
                 "销售单待审核", "还有 %d 张销售单需要审核，处理后会自动完成待办。",
@@ -138,6 +144,9 @@ public class DashboardTodoAggregator {
                         .eq(InboundBill::getInboundType, "PURCHASE_IN")
                         .orderByDesc(InboundBill::getCreateTime)
                         .last("LIMIT " + (EVIDENCE_LIMIT + 1)));
+        if (bills.isEmpty()) {
+            return Collections.emptyList();
+        }
         DashboardTodoItemVO todo = newTodo(
                 "todo-inbound", "WAREHOUSE", "仓储",
                 "待确认入库", "还有 %d 张入库单等待仓库确认。",
@@ -162,6 +171,9 @@ public class DashboardTodoAggregator {
                         .eq(OutboundBill::getOutboundType, "SALES_OUT")
                         .orderByDesc(OutboundBill::getCreateTime)
                         .last("LIMIT " + (EVIDENCE_LIMIT + 1)));
+        if (bills.isEmpty()) {
+            return Collections.emptyList();
+        }
         DashboardTodoItemVO todo = newTodo(
                 "todo-outbound", "WAREHOUSE", "仓储",
                 "待确认出库", "还有 %d 张出库单等待发货确认。",
@@ -182,6 +194,9 @@ public class DashboardTodoAggregator {
         }
         List<DashboardStockAlertVO> alerts = stockAlertLoader.load();
         int count = alerts.size();
+        if (count == 0) {
+            return Collections.emptyList();
+        }
         DashboardTodoItemVO todo = newTodo(
                 "todo-stock-risk-review", "INVENTORY", "库存",
                 "库存异常待复核", "还有 %d 个 SKU 可用库存低于安全线或已无可用库存，需要复核补货或调拨。",

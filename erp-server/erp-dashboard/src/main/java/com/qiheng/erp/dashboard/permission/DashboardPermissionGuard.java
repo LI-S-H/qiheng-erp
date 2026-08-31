@@ -10,11 +10,7 @@ import java.util.Set;
  * 工作台权限裁剪器。
  *
  * <p>根据当前用户的权限码集合判断哪些聚合点应该返回数据；
- * 无权模块的指标、待办、列表返回空数组或 0 值，不泄露无权业务数据。</p>
- *
- * <p>判定一律基于 {@link #permissionSnapshot(LoginUser)} 一次性构建的权限码集合，
- * 单次请求内复用，避免重复 {@code Set.copyOf}。</p>
- *
+ * 无权模块不加载业务数据；指标和面板的展示状态由概览接口的 access 字段明确传达。</p>
  * <p>异常/人工修复类待办的"被指派用户/角色/部门"细化判断由后续异常中心模块补充，
  * 本类仅按业务模块 query / manage 权限裁剪；{@code dashboard:exception:query}
  * 是工作台内部权限码，用于独立控制系统异常聚合的可见性。</p>
@@ -135,6 +131,7 @@ public class DashboardPermissionGuard {
 
     /**
      * 构建当前用户权限码集合的不可变快照，供单次请求内多次复用。
+     *
      * @param user 当前登录用户
      * @return 权限码不可变集合；user 为空或权限码为空时返回空集合
      */
@@ -153,7 +150,11 @@ public class DashboardPermissionGuard {
     }
 
     /**
-     * 判断快照中是否拥有指定权限码；超级管理员视为拥有全部
+     * 判断快照中是否拥有指定权限码；超级管理员视为拥有全部权限。
+     *
+     * @param user 当前登录用户
+     * @param code 待判断的权限码
+     * @return 是否拥有指定权限
      */
     private boolean has(LoginUser user, String code) {
         Set<String> snapshot = permissionSnapshot(user);

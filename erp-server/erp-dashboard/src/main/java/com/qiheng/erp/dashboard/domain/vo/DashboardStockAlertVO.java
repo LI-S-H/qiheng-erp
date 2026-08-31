@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -13,7 +14,7 @@ import java.time.LocalDateTime;
  * 工作台库存风险 SKU VO
  * </p>
  *
- * <p>available_qty = warehouse_stock.stock_qty - warehouse_stock.locked_qty，*100 还原为业务小数展示。</p>
+ * <p>available_qty = warehouse_stock.stock_qty - warehouse_stock.locked_qty，×100 还原为业务小数展示。</p>
  *
  * @author Li
  * @since 2026-08-15
@@ -46,14 +47,14 @@ public class DashboardStockAlertVO {
     @Schema(description = "单位名称")
     private String unitName;
 
-    @Schema(description = "可用库存数量（已锁定库存不计入）")
-    private Double availableQty;
+    @Schema(description = "可用库存数量（已锁定库存不计入），按 100 倍存储值还原为业务小数")
+    private BigDecimal availableQty;
 
-    @Schema(description = "产品安全库存数量")
-    private Double safetyStockQty;
+    @Schema(description = "产品安全库存数量，按 100 倍存储值还原为业务小数")
+    private BigDecimal safetyStockQty;
 
-    @Schema(description = "建议补货数量；停用产品为 0")
-    private Double suggestedPurchaseQty;
+    @Schema(description = "建议补货数量；停用产品为 0，按 100 倍存储值还原为业务小数")
+    private BigDecimal suggestedPurchaseQty;
 
     @Schema(description = "严重程度", allowableValues = {"HIGH", "MEDIUM"})
     private String severity;

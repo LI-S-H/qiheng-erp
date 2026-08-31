@@ -2,7 +2,7 @@ package com.qiheng.erp.dashboard.domain.vo;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.qiheng.erp.common.config.MoneyStringSerializer;
+import com.qiheng.erp.dashboard.config.DashboardNonNegativeMoneySerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -32,13 +32,13 @@ public class DashboardTopProductVO {
     @Schema(description = "产品名称")
     private String productName;
 
-    @Schema(description = "近 30 日销售金额（人民币元）")
-    @JsonSerialize(using = MoneyStringSerializer.class)
+    @Schema(description = "近 30 日销售金额（人民币元，最多两位小数非负金额字符串）")
+    @JsonSerialize(using = DashboardNonNegativeMoneySerializer.class)
     private BigDecimal salesAmount;
 
-    @Schema(description = "近 30 日销售数量")
-    private Double salesQty;
+    @Schema(description = "近 30 日销售数量，按 100 倍存储值还原为业务小数")
+    private BigDecimal salesQty;
 
-    @Schema(description = "当前可用库存数量")
-    private Double availableQty;
+    @Schema(description = "当前可用库存数量，按 100 倍存储值还原为业务小数")
+    private BigDecimal availableQty;
 }

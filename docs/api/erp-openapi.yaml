@@ -109,7 +109,7 @@ paths:
       summary: 获取工作台经营概览
       description: |
         返回当前登录用户可见范围内的经营概览数据，用于工作台首屏展示销售、采购、库存、待办和履约风险。
-        后端应按当前用户权限裁剪模块数据：没有采购、销售、仓储等查询权限时，对应指标、待办和列表返回空数组或 0 值，不泄露无权业务数据。
+        后端应按当前用户权限裁剪模块数据：没有采购、销售、仓储等查询权限时，首屏指标的数值和对比字段显式返回 null，业务面板的数组可为空，并由 access 状态明确区分无权限与暂无数据。
         金额指标来自可执行聚合查询；库存风险来自 `warehouse_stock`、产品安全库存和锁定库存的查询时派生结果；待办分为三类：采购/销售/出入库/库存风险等状态类待办按业务状态动态聚合，业务完成后自动消失；价格偏离、客户信用等复核类待办展示证据并跳转对应业务页面；系统异常统一来自数据库异常记录表，聚合为一条 `SYSTEM_EXCEPTION` 待办并展示具体异常详情，不在工作台直接完成。
         本接口为工作台汇总接口，不接收含义不明的 `keyword`，不要求前端自行并发调用多个业务列表接口后拼装经营指标。
         `todos`、`topProducts`、`supplierPerformance`、`stockAlerts` 返回完整工作台明细数组；前端主页面只截取摘要展示，点击对应“详情”按钮时在同页弹窗展示同一数组的完整内容，不额外请求详情接口。经营趋势和订单流转只在主卡展示，不提供详情弹窗。
@@ -121,7 +121,7 @@ paths:
         系统异常统一聚合为一条 `businessType=SYSTEM_EXCEPTION`、`completionMode=TRACKED` 的工作台待办，主卡只显示总数和最高优先级；具体异常记录通过 `evidence[]` 展示，例如 AI/MCP 工具调用失败、消息队列死信、第三方回调失败、定时任务失败和数据补偿失败。此类数据来自数据库异常记录表，工作台只提供“查看详情”，不展示“完成处理”；异常状态由后台重试、补偿任务或异常中心更新。
 
         本期接口返回的字段全部按当前用户权限裁剪：
-        - `metrics` 4 项分别按 `sales:query`、`purchase:query`、`warehouse:query` 判定；无权子项返回 `value=0`，卡片整体仍展示但 value 显示中性
+        - `metrics` 4 项通过 `access.metrics` 分别表达状态；`DENIED` 时 `value`、`changeRate`、`compareText` 显式返回 `null`，不得以 0 代替无权限
         - `trend` 与 `trendPermissions` 配合使用；当 `canViewSales == false && canViewPurchase == false` 时 `trend` 返回空数组，前端应整卡降级为"暂无访问权限"提示，不渲染图表
         - `orderStages` 与 `orderStagePermissions` 配合使用；两边都不可见时 `orderStages` 返回空数组，前端应整卡降级
         - `todos` 按模块粒度裁剪：采购类依赖 `purchase:manage`、销售类依赖 `sales:manage`、出入库类依赖 `warehouse:manage`、库存复核依赖 `warehouse:query`、系统异常依赖 `dashboard:exception:query`；业务类完成后自动消失
@@ -147,18 +147,31 @@ paths:
                 data:
                   refreshedAt: "2026-06-30 09:30:00"
                   metrics:
-                    - label: 今日销售额
+                    - key: MONTH_SALES
+                      label: 本月销售额
                       value: 286430
                       unit: 元
                       changeRate: 12.8
-                      compareText: 较昨日
+                      compareText: 较上月
                       status: good
-                    - label: 库存风险 SKU
+                    - key: STOCK_RISK_SKU
+                      label: 库存风险 SKU
                       value: 16
                       unit: 个
-                      changeRate: 18.6
-                      compareText: 较昨日
-                      status: risk
+                      changeRate: -18.2
+                      compareText: 较上月
+                      status: warning
+                  access:
+                    metrics:
+                      MONTH_SALES: { state: ALLOWED}
+                      MONTH_GROSS_PROFIT: { state: DENIED}
+                      PENDING_ORDERS: { state: ALLOWED}
+                      STOCK_RISK_SKU: { state: DENIED}
+                    todos: { state: ALLOWED}
+                    stockAlerts: { state: DENIED}
+                    orderStages: { state: ALLOWED}
+                    topProducts: { state: ALLOWED}
+                    supplierPerformance: { state: DENIED}
                   trend:
                     - date: "06-30"
                       salesAmount: 286430
@@ -5299,14 +5312,14 @@ components:
 
     DashboardOverview:
       type: object
-      required: [refreshedAt, metrics, trend, todos, stockAlerts, orderStages, topProducts, supplierPerformance]
+      required: [refreshedAt, metrics, trend, todos, stockAlerts, orderStages, topProducts, supplierPerformance, access]
       properties:
         refreshedAt:
           type: string
           description: 工作台数据刷新时间，后端生成
         metrics:
           type: array
-          description: 首屏经营指标，按当前用户权限裁剪；无权子项 value=0
+          description: 首屏经营指标，按当前用户权限裁剪；无权子项的 value、changeRate、compareText 显式返回 null，具体状态见 access.metrics
           items: { $ref: '#/components/schemas/DashboardMetric' }
         trend:
           type: array
@@ -5316,6 +5329,12 @@ components:
             前端在工作台卡片内提供 7 天、15 天、30 天切换，只做本地截取、
             x 轴标签降密和轻量过渡，不额外调用详情接口。
           items: { $ref: '#/components/schemas/DashboardTrendPoint' }
+        access:
+          allOf:
+            - $ref: '#/components/schemas/DashboardOverviewAccess'
+          description: |
+            除经营趋势外，各指标与业务面板的访问状态。前端必须以该对象渲染，不能用 0 或空数组推断权限。
+            DENIED 时指标 value、changeRate、compareText 为 null，列表仅返回空数组；EMPTY 表示已获准范围暂无数据；ALLOWED 表示已返回当前账号可查看口径的数据。
         trendPermissions:
           allOf:
             - $ref: '#/components/schemas/DashboardTrendPermissions'
@@ -5352,6 +5371,33 @@ components:
           description: 核心供应商履约表现完整数组，按综合履约表现降序返回；前端主卡展示前 5 名，详情弹窗展示全部
           items: { $ref: '#/components/schemas/DashboardSupplierPerformance' }
 
+    DashboardOverviewAccess:
+      type: object
+      required: [metrics, todos, stockAlerts, orderStages, topProducts, supplierPerformance]
+      properties:
+        metrics:
+          type: object
+          required: [MONTH_SALES, MONTH_GROSS_PROFIT, PENDING_ORDERS, STOCK_RISK_SKU]
+          additionalProperties: { $ref: '#/components/schemas/DashboardSectionAccess' }
+          properties:
+            MONTH_SALES: { $ref: '#/components/schemas/DashboardSectionAccess' }
+            MONTH_GROSS_PROFIT: { $ref: '#/components/schemas/DashboardSectionAccess' }
+            PENDING_ORDERS: { $ref: '#/components/schemas/DashboardSectionAccess' }
+            STOCK_RISK_SKU: { $ref: '#/components/schemas/DashboardSectionAccess' }
+        todos: { $ref: '#/components/schemas/DashboardSectionAccess' }
+        stockAlerts: { $ref: '#/components/schemas/DashboardSectionAccess' }
+        orderStages: { $ref: '#/components/schemas/DashboardSectionAccess' }
+        topProducts: { $ref: '#/components/schemas/DashboardSectionAccess' }
+        supplierPerformance: { $ref: '#/components/schemas/DashboardSectionAccess' }
+
+    DashboardSectionAccess:
+      type: object
+      required: [state]
+      description: 工作台统一状态。DENIED 不泄露未授权数据；EMPTY 表示当前授权范围暂无数据；ALLOWED 表示已返回当前账号可查看口径的数据。
+      properties:
+        state:
+          type: string
+          enum: [ALLOWED, EMPTY, DENIED]
     DashboardTrendPermissions:
       type: object
       description: |
@@ -5387,16 +5433,29 @@ components:
 
     DashboardMetric:
       type: object
-      required: [label, value, unit, changeRate, compareText, status]
+      required: [key, label, value, unit, changeRate, compareText, status]
       properties:
+        key:
+          type: string
+          enum: [MONTH_SALES, MONTH_GROSS_PROFIT, PENDING_ORDERS, STOCK_RISK_SKU]
+          description: 指标稳定编码，前端不得依据中文 label 判断业务含义。
         label: { type: string, description: 指标名称，后端按工作台展示口径返回 }
-        value: { type: number, format: double, description: 指标数值；金额单位为人民币元，不返回格式化文案；本月毛利额允许为负数，表示亏损 }
-
+        value:
+          type: number
+          format: double
+          nullable: true
+          description: 指标数值；毛利额允许为负数表示亏损。对应 access 为 DENIED 时必须为 null，不能钳制为 0。
         unit: { type: string, description: 指标单位，例如 `元`、`单`、`个` }
-        changeRate: { type: number, format: double, description: 对比周期变化率，单位为百分比数值；负数表示下降 }
-        compareText: { type: string, description: 对比周期文案，例如 `较昨日`、`较上月同期` }
-        status: { type: string, enum: [good, watch, risk, neutral], description: 指标风险色语义 }
-
+        changeRate:
+          type: number
+          format: double
+          nullable: true
+          description: 对比周期变化率，单位为百分比数值；无权限或比较口径不可用时返回 null。
+        compareText:
+          type: string
+          nullable: true
+          description: 对比周期文案；无权限或不展示环比时返回 null。
+        status: { type: string, enum: [good, watch, risk, neutral], description: 指标风险颜色语义 }
     DashboardTrendPoint:
       type: object
       required: [date, salesAmount, purchaseAmount, grossMarginAmount]

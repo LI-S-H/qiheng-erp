@@ -38,22 +38,17 @@ public class DashboardPrevValueCache {
 
     /** 日快照 key 前缀 */
     private static final String DAILY_KEY_PREFIX = "dashboard:metric:snapshot:";
-
     /** 月快照 key 前缀 */
     private static final String MONTHLY_KEY_PREFIX = "dashboard:metric:monthly:";
-
     /** 日快照 TTL：3 天（覆盖周末 + 节假日调度异常场景） */
     private static final Duration DAILY_TTL = Duration.ofDays(3);
-
     /** 月快照 TTL：90 天（跨月 30 天 + 两个自然月兜底） */
     private static final Duration MONTHLY_TTL = Duration.ofDays(90);
-
+    /** 日快照日期格式 */
     private static final DateTimeFormatter DAILY_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
-
+    /** 月快照日期格式 */
     private static final DateTimeFormatter MONTHLY_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM");
-
     private final RedisUtil redisUtil;
-
     public DashboardPrevValueCache(RedisUtil redisUtil) {
         this.redisUtil = redisUtil;
     }
@@ -153,7 +148,7 @@ public class DashboardPrevValueCache {
      */
     public static BigDecimal computeChangeRate(BigDecimal current, BigDecimal prev) {
         if (prev == null || prev.signum() == 0) {
-            return BigDecimal.ZERO.setScale(2);
+            return BigDecimal.ZERO.setScale(2,RoundingMode.HALF_UP);
         }
         if (current == null) {
             current = BigDecimal.ZERO;

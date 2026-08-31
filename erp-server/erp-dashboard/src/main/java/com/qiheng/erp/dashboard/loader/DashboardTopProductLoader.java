@@ -1,6 +1,7 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.domain.vo.DashboardTopProductVO;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrderItem;
@@ -13,7 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -98,9 +98,9 @@ public class DashboardTopProductLoader {
             vo.setProductId(entry.getKey());
             vo.setProductCode(agg.productCode);
             vo.setProductName(agg.productName);
-            vo.setSalesAmount(agg.salesAmount.divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
-            vo.setSalesQty(agg.salesQty.divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).doubleValue());
-            vo.setAvailableQty(toQty(availableQtyByProduct.getOrDefault(entry.getKey(), 0L)));
+            vo.setSalesAmount(QtyUtil.toDecimal(agg.salesAmount));
+            vo.setSalesQty(QtyUtil.toDecimal(agg.salesQty));
+            vo.setAvailableQty(QtyUtil.toDecimal(availableQtyByProduct.getOrDefault(entry.getKey(), 0L)));
             result.add(vo);
         }
         result.sort(Comparator.comparing(DashboardTopProductVO::getSalesAmount).reversed());
@@ -112,13 +112,6 @@ public class DashboardTopProductLoader {
 
     private static long nullSafe(Long value) {
         return value == null ? 0L : value;
-    }
-
-    private static Double toQty(Long stored) {
-        if (stored == null) {
-            return 0.0;
-        }
-        return BigDecimal.valueOf(stored).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).doubleValue();
     }
 
     /** 产品聚合缓存对象 */

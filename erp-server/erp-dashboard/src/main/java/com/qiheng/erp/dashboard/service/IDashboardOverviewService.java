@@ -19,7 +19,7 @@ public interface IDashboardOverviewService {
     /**
      * 加载工作台经营概览
      *
-     * @return 工作台概览 VO；无权限模块对应字段为空数组或 0 值，
+     * @return 工作台概览 VO；无权限模块保留固定字段结构，并由 access 明确标识为 DENIED；指标数值与对比字段返回 null，
      *         趋势 / 订单流转字段附带 {@code trendPermissions} /
      *         {@code orderStagePermissions} 用于前端三态渲染
      */

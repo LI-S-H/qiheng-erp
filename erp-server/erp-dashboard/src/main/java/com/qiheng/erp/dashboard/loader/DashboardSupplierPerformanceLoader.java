@@ -1,5 +1,6 @@
 package com.qiheng.erp.dashboard.loader;
 
+import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.domain.vo.DashboardSupplierPerformanceVO;
 import com.qiheng.erp.purchase.domain.supplier.entity.Supplier;
 import com.qiheng.erp.purchase.mapper.SupplierMapper;
@@ -52,7 +53,8 @@ public class DashboardSupplierPerformanceLoader {
             vo.setOnTimeRate(toPercent(supplier.getOnTimeRate()));
             result.add(vo);
         }
-        result.sort(Comparator.comparingDouble(DashboardSupplierPerformanceVO::getDeliveryScore).reversed());
+        result.sort(Comparator.comparing(DashboardSupplierPerformanceVO::getDeliveryScore,
+                Comparator.nullsLast(Comparator.naturalOrder())).reversed());
         if (result.size() > TOP_LIMIT) {
             return result.subList(0, TOP_LIMIT);
         }
@@ -60,10 +62,10 @@ public class DashboardSupplierPerformanceLoader {
     }
 
     /** 数据库存储 ×100 转业务百分数（保留 1 位） */
-    private static Double toPercent(Integer stored) {
+    private static BigDecimal toPercent(Integer stored) {
         if (stored == null) {
-            return 0.0;
+            return BigDecimal.ZERO.setScale(1);
         }
-        return BigDecimal.valueOf(stored).divide(BigDecimal.valueOf(100), 1, RoundingMode.HALF_UP).doubleValue();
+        return QtyUtil.toDecimal(stored).setScale(1, RoundingMode.HALF_UP);
     }
 }

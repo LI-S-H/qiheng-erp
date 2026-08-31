@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 /**
  * <p>
  * 工作台供应商履约评分 VO
@@ -29,12 +31,12 @@ public class DashboardSupplierPerformanceVO {
     @Schema(description = "供应商名称")
     private String supplierName;
 
-    @Schema(description = "交付评分（百分制）")
-    private Double deliveryScore;
+    @Schema(description = "交付评分（百分制，保留 1 位小数）")
+    private BigDecimal deliveryScore;
 
-    @Schema(description = "质量评分（百分制）")
-    private Double qualityScore;
+    @Schema(description = "质量评分（百分制，保留 1 位小数）")
+    private BigDecimal qualityScore;
 
-    @Schema(description = "准时交付率（百分制）")
-    private Double onTimeRate;
+    @Schema(description = "准时交付率（百分制，保留 1 位小数）")
+    private BigDecimal onTimeRate;
 }

@@ -19,7 +19,7 @@ import {
   Truck,
 } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
-import DashboardEmptyPanel from '@/components/dashboard/DashboardEmptyPanel.vue';
+import DashboardAccessPanel from '@/components/dashboard/DashboardAccessPanel.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { getDashboardOverview } from '../api';
 import type {
   DashboardMetric,
+  DashboardSectionAccess,
   DashboardOrderStagePermissions,
   DashboardOverview,
   DashboardTodoItem,
@@ -41,6 +42,7 @@ type DetailType = 'todos' | 'products' | 'suppliers' | 'stockAlerts';
 const router = useRouter();
 const loading = ref(false);
 const overview = ref<DashboardOverview | null>(null);
+const loadError = ref('');
 const activeDetail = ref<DetailType | null>(null);
 const expandedTodoId = ref<string | null>(null);
 const selectedTodoDetailId = ref<string | null>(null);
@@ -86,11 +88,28 @@ const canViewAnyTrend = computed(() => {
   return perm.canViewSales || perm.canViewPurchase;
 });
 
-const canViewAnyOrderStage = computed(() => {
-  const perm = orderStagePermissions.value;
-  return perm.canViewPurchase || perm.canViewSales;
-});
+const deniedAccess: DashboardSectionAccess = { state: 'DENIED' };
+const todosAccess = computed(() => overview.value?.access.todos ?? deniedAccess);
+const orderStagesAccess = computed(() => overview.value?.access.orderStages ?? deniedAccess);
+const topProductsAccess = computed(() => overview.value?.access.topProducts ?? deniedAccess);
+const supplierPerformanceAccess = computed(() => overview.value?.access.supplierPerformance ?? deniedAccess);
+const stockAlertsAccess = computed(() => overview.value?.access.stockAlerts ?? deniedAccess);
 
+function metricAccess(metric: DashboardMetric): DashboardSectionAccess {
+  return overview.value?.access.metrics[metric.key] ?? deniedAccess;
+}
+
+function canOpenDetail(type: DetailType) {
+  if (!overview.value) return false;
+  if (type === 'todos') return todosAccess.value.state !== 'DENIED' && overview.value.todos.length > 0;
+  if (type === 'products') return topProductsAccess.value.state !== 'DENIED' && overview.value.topProducts.length > 0;
+  if (type === 'suppliers') return supplierPerformanceAccess.value.state !== 'DENIED' && overview.value.supplierPerformance.length > 0;
+  return stockAlertsAccess.value.state !== 'DENIED' && overview.value.stockAlerts.length > 0;
+}
+
+function panelIsUnavailable(access: DashboardSectionAccess) {
+  return access.state === 'DENIED' || access.state === 'EMPTY';
+}
 const visibleTrendSeries = computed(() => {
   const perm = trendPermissions.value;
   return trendSeries.filter(series => {
@@ -302,10 +321,12 @@ const detailDescription = computed(() => {
 async function loadOverview() {
   if (loading.value) return;
   loading.value = true;
+  loadError.value = '';
   try {
     overview.value = await getDashboardOverview();
   } catch (error) {
-    toast.warning(getApiErrorMessage(error) || '工作台数据加载失败');
+    loadError.value = getApiErrorMessage(error) || '工作台数据加载失败';
+    toast.warning(loadError.value);
   } finally {
     loading.value = false;
   }
@@ -397,6 +418,7 @@ function formatNumber(value: number) {
 }
 
 function metricDisplay(metric: DashboardMetric) {
+  if (metric.value == null) return '无权限';
   return metric.unit === '元' ? formatCurrency(metric.value) : `${formatNumber(metric.value)}${metric.unit}`;
 }
 
@@ -407,7 +429,14 @@ function metricTone(metric: DashboardMetric) {
     risk: 'text-rose-700 bg-rose-50 border-rose-200',
     neutral: 'text-slate-600 bg-slate-50 border-slate-200',
   };
-  return tones[metric.status];
+  return tones[metricCardStatus(metric)];
+}
+
+function metricCardStatus(metric: DashboardMetric): DashboardMetric['status'] {
+  // 这两项分别表示待处理和风险，固定语义色，避免服务端状态回传异常时同色。
+  if (metric.key === 'PENDING_ORDERS') return 'watch';
+  if (metric.key === 'STOCK_RISK_SKU') return 'risk';
+  return metric.status;
 }
 
 function todoIcon(todo: DashboardTodoItem) {
@@ -479,6 +508,7 @@ function todoEvidenceToneClass(tone: 'neutral' | 'watch' | 'risk') {
 }
 
 function openDetail(type: DetailType, todoId?: string) {
+  if (!canOpenDetail(type)) return;
   activeDetail.value = type;
   selectedTodoDetailId.value = type === 'todos' ? todoId || null : null;
   expandedTodoId.value = type === 'todos' && todoId ? todoId : null;
@@ -516,7 +546,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="dashboard-heading-actions">
         <span data-dashboard-refresh-status aria-live="polite">
-          {{ loading ? '正在同步经营数据...' : (overview ? `更新于 ${overview.refreshedAt}` : '等待加载经营数据') }}
+          {{ loading ? '正在同步经营数据...' : (overview ? `更新于 ${overview.refreshedAt}` : '加载失败，请重试') }}
         </span>
         <Button size="sm" variant="outline" :disabled="loading" @click="loadOverview">
           <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': loading }" aria-hidden="true" />
@@ -531,21 +561,21 @@ onBeforeUnmount(() => {
         <div class="summary-strip dashboard-metrics">
           <div
             v-for="metric in overview.metrics"
-            :key="metric.label"
-            :class="['summary-item', 'dashboard-metric', `dashboard-metric--${metric.status}`]"
+            :key="metric.key"
+            :class="['summary-item', 'dashboard-metric', `dashboard-metric--${metricCardStatus(metric)}`]"
           >
             <div class="dashboard-metric__head">
               <span>{{ metric.label }}</span>
               <i aria-hidden="true" />
             </div>
-            <strong>{{ metricDisplay(metric) }}</strong>
-            <div class="mt-2 flex items-center gap-2">
-              <Badge variant="outline" :class="metricTone(metric)">
+            <strong>{{ metricAccess(metric).state === 'DENIED' ? '无权限' : metricDisplay(metric) }}</strong>
+            <div v-if="metricAccess(metric).state !== 'DENIED'" class="mt-2 flex items-center gap-2">
+              <Badge v-if="metric.changeRate !== null" variant="outline" :class="metricTone(metric)">
                 <ArrowUpRight v-if="metric.changeRate >= 0" class="mr-1 h-3 w-3" />
                 <ArrowDownRight v-else class="mr-1 h-3 w-3" />
                 {{ Math.abs(metric.changeRate).toFixed(1) }}%
               </Badge>
-              <small class="text-xs text-muted-foreground">{{ metric.compareText }}</small>
+              <small v-if="metric.compareText" class="text-xs text-muted-foreground">{{ metric.compareText }}</small>
             </div>
           </div>
         </div>
@@ -577,12 +607,8 @@ onBeforeUnmount(() => {
               </div>
             </CardHeader>
             <CardContent>
-              <div v-if="!canViewAnyTrend" data-dashboard-trend-empty>
-                <DashboardEmptyPanel
-                  title="暂无经营趋势数据"
-                  description="需要销售或采购模块的查询权限才能查看趋势曲线。"
-                  :required-permissions="['sales:query', 'purchase:query']"
-                />
+              <div v-if="!canViewAnyTrend" class="dashboard-trend-empty" data-dashboard-trend-empty>
+                <DashboardAccessPanel state="DENIED" />
               </div>
               <template v-else>
               <div
@@ -701,35 +727,36 @@ onBeforeUnmount(() => {
                 </CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">按交付影响排序</p>
               </div>
-              <Button size="sm" variant="outline" aria-label="查看详情业务待办" @click="openDetail('todos')">
+              <Button v-if="canOpenDetail('todos')" size="sm" variant="outline" aria-label="查看详情业务待办" @click="openDetail('todos')">
                 详情
                 <ChevronRight class="ml-1 h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent class="dashboard-todos-list space-y-2">
-              <button
-                v-for="todo in visibleTodos"
-                :key="todo.todoId"
-                type="button"
-                class="dashboard-todo"
-                :aria-label="`${todo.title}，${todo.count}项，${priorityText(todo.priority)}，查看详情`"
-                @click="openDetail('todos', todo.todoId)"
-              >
-                <span class="dashboard-todo__icon">
-                  <component :is="todoIcon(todo)" class="h-4 w-4" />
-                </span>
-                <span class="min-w-0 flex-1 text-left">
-                  <span class="flex items-center gap-2">
-                    <strong class="truncate">{{ todo.title }}</strong>
-                    <Badge variant="outline" :class="priorityClass(todo.priority)">{{ priorityText(todo.priority) }}</Badge>
+            <CardContent class="dashboard-todos-list">
+              <DashboardAccessPanel v-if="panelIsUnavailable(todosAccess)" :state="todosAccess.state" />
+              <template v-else>
+                <button
+                  v-for="todo in visibleTodos"
+                  :key="todo.todoId"
+                  type="button"
+                  class="dashboard-todo"
+                  :aria-label="`${todo.title}，${todo.count}项，${priorityText(todo.priority)}，查看详情`"
+                  @click="openDetail('todos', todo.todoId)"
+                >
+                  <span class="dashboard-todo__icon" aria-hidden="true">
+                    <component :is="todoIcon(todo)" class="h-4 w-4" />
                   </span>
-                  <small>{{ todo.description }}</small>
-                </span>
-                <span class="dashboard-todo__end" aria-hidden="true">
-                  <span class="dashboard-todo__count">{{ todo.count }}</span>
-                  <ChevronRight class="size-4 text-muted-foreground" />
-                </span>
-              </button>
+                  <span class="dashboard-todo__body">
+                    <span class="dashboard-todo__title-row">
+                      <strong>{{ todo.title }}</strong>
+                      <span :class="['dashboard-todo__priority', `dashboard-todo__priority--${todo.priority.toLowerCase()}`]">{{ priorityText(todo.priority) }}</span>
+                    </span>
+                    <small class="dashboard-todo__description">{{ todo.description }}</small>
+                  </span>
+                  <strong class="dashboard-todo__count" aria-hidden="true">{{ todo.count }}</strong>
+                  <ChevronRight class="dashboard-todo__chevron h-4 w-4" aria-hidden="true" />
+                </button>
+              </template>
             </CardContent>
           </Card>
         </div>
@@ -738,39 +765,18 @@ onBeforeUnmount(() => {
           <Card class="dashboard-panel">
             <CardHeader class="dashboard-panel__header">
               <div>
-                <CardTitle class="flex items-center gap-2 text-base">
-                  <Route class="h-4 w-4 text-primary" />
-                  订单流转
-                </CardTitle>
+                <CardTitle class="flex items-center gap-2 text-base"><Route class="h-4 w-4 text-primary" />订单流转</CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">采购与销售单据状态分布</p>
               </div>
             </CardHeader>
             <CardContent class="space-y-3">
-              <div class="dashboard-stage-legend">
-                <span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />采购单</span>
-                <span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />销售单</span>
-              </div>
-              <div v-if="!canViewAnyOrderStage" data-dashboard-order-empty>
-                <DashboardEmptyPanel
-                  title="暂无订单流转数据"
-                  description="需要采购或销售模块的查询权限才能查看订单阶段分布。"
-                  :required-permissions="['purchase:query', 'sales:query']"
-                />
-              </div>
+              <DashboardAccessPanel v-if="panelIsUnavailable(orderStagesAccess)" :state="orderStagesAccess.state" />
               <template v-else>
-              <div v-for="stage in overview.orderStages" :key="stage.stage" class="dashboard-stage">
-                <div class="flex items-center justify-between text-xs">
-                  <span class="font-medium text-slate-700">{{ stage.stage }}</span>
-                  <span class="dashboard-stage__counts">
-                    <span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />{{ stage.purchaseCount }}</span>
-                    <span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />{{ stage.salesCount }}</span>
-                  </span>
+                <div class="dashboard-stage-legend"><span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />采购单</span><span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />销售单</span></div>
+                <div v-for="stage in overview.orderStages" :key="stage.stage" class="dashboard-stage">
+                  <div class="flex items-center justify-between text-xs"><span class="font-medium text-slate-700">{{ stage.stage }}</span><span class="dashboard-stage__counts"><span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />{{ stage.purchaseCount }}</span><span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />{{ stage.salesCount }}</span></span></div>
+                  <div class="dashboard-stage__bars"><span v-if="orderStagePermissions.canViewPurchase" class="bg-amber-500" :style="{ width: `${(stage.purchaseCount / maxStageCount) * 100}%` }" /><span v-if="orderStagePermissions.canViewSales" class="bg-blue-600" :style="{ width: `${(stage.salesCount / maxStageCount) * 100}%` }" /></div>
                 </div>
-                <div class="dashboard-stage__bars">
-                  <span v-if="orderStagePermissions.canViewPurchase" class="bg-amber-500" :style="{ width: `${(stage.purchaseCount / maxStageCount) * 100}%` }" />
-                  <span v-if="orderStagePermissions.canViewSales" class="bg-blue-600" :style="{ width: `${(stage.salesCount / maxStageCount) * 100}%` }" />
-                </div>
-              </div>
               </template>
             </CardContent>
           </Card>
@@ -778,56 +784,28 @@ onBeforeUnmount(() => {
           <Card class="dashboard-panel">
             <CardHeader class="dashboard-panel__header">
               <div>
-                <CardTitle class="flex items-center gap-2 text-base">
-                  <PackageSearch class="h-4 w-4 text-primary" />
-                  销售商品排行
-                </CardTitle>
+                <CardTitle class="flex items-center gap-2 text-base"><PackageSearch class="h-4 w-4 text-primary" />销售商品排行</CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">按近 30 日销售额排序</p>
               </div>
-              <Button size="sm" variant="outline" aria-label="查看详情销售商品排行" @click="openDetail('products')">
-                详情
-                <ChevronRight class="ml-1 h-4 w-4" />
-              </Button>
+              <Button v-if="canOpenDetail('products')" size="sm" variant="outline" aria-label="查看详情销售商品排行" @click="openDetail('products')">详情 <ChevronRight class="ml-1 h-4 w-4" /></Button>
             </CardHeader>
             <CardContent class="space-y-2.5">
-              <div v-for="product in visibleTopProducts" :key="product.productId" class="dashboard-rank">
-                <div class="flex items-center justify-between gap-3">
-                  <div class="min-w-0">
-                    <strong class="block truncate text-[13px]">{{ product.productName }}</strong>
-                    <small class="text-xs text-muted-foreground">{{ product.productCode }} · {{ formatNumber(product.salesQty) }} 件</small>
-                  </div>
-                  <span class="shrink-0 text-[13px] font-semibold tabular-nums">{{ formatCurrency(product.salesAmount) }}</span>
-                </div>
-                <div class="dashboard-rank__bar"><span :style="{ width: `${(product.salesAmount / maxTopProductAmount) * 100}%` }" /></div>
-              </div>
+              <DashboardAccessPanel v-if="panelIsUnavailable(topProductsAccess)" :state="topProductsAccess.state" />
+              <template v-else><div v-for="product in visibleTopProducts" :key="product.productId" class="dashboard-rank"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><strong class="block truncate text-[13px]">{{ product.productName }}</strong><small class="text-xs text-muted-foreground">{{ product.productCode }} · {{ formatNumber(product.salesQty) }} 件</small></div><span class="shrink-0 text-[13px] font-semibold tabular-nums">{{ formatCurrency(product.salesAmount) }}</span></div><div class="dashboard-rank__bar"><span :style="{ width: `${(product.salesAmount / maxTopProductAmount) * 100}%` }" /></div></div></template>
             </CardContent>
           </Card>
 
           <Card class="dashboard-panel">
             <CardHeader class="dashboard-panel__header">
               <div>
-                <CardTitle class="flex items-center gap-2 text-base">
-                  <Truck class="h-4 w-4 text-primary" />
-                  供应商履约
-                </CardTitle>
+                <CardTitle class="flex items-center gap-2 text-base"><Truck class="h-4 w-4 text-primary" />供应商履约</CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">核心供应商交付与质量表现</p>
               </div>
-              <Button size="sm" variant="outline" aria-label="查看详情供应商履约" @click="openDetail('suppliers')">
-                详情
-                <ChevronRight class="ml-1 h-4 w-4" />
-              </Button>
+              <Button v-if="canOpenDetail('suppliers')" size="sm" variant="outline" aria-label="查看详情供应商履约" @click="openDetail('suppliers')">详情 <ChevronRight class="ml-1 h-4 w-4" /></Button>
             </CardHeader>
             <CardContent class="space-y-2.5">
-              <div v-for="supplier in visibleSupplierPerformance" :key="supplier.supplierId" class="dashboard-supplier">
-                <div class="min-w-0">
-                  <strong class="block truncate text-[13px]">{{ supplier.supplierName }}</strong>
-                  <small class="text-xs text-muted-foreground">{{ supplier.supplierCode }} · 准时率 {{ supplier.onTimeRate.toFixed(1) }}%</small>
-                </div>
-                <div class="dashboard-supplier__scores">
-                  <span>交付 {{ supplier.deliveryScore.toFixed(1) }}</span>
-                  <span>质量 {{ supplier.qualityScore.toFixed(1) }}</span>
-                </div>
-              </div>
+              <DashboardAccessPanel v-if="panelIsUnavailable(supplierPerformanceAccess)" :state="supplierPerformanceAccess.state" />
+              <template v-else><div v-for="supplier in visibleSupplierPerformance" :key="supplier.supplierId" class="dashboard-supplier"><div class="min-w-0"><strong class="block truncate text-[13px]">{{ supplier.supplierName }}</strong><small class="text-xs text-muted-foreground">{{ supplier.supplierCode }} · 准时率 {{ supplier.onTimeRate.toFixed(1) }}%</small></div><div class="dashboard-supplier__scores"><span>交付 {{ supplier.deliveryScore.toFixed(1) }}</span><span>质量 {{ supplier.qualityScore.toFixed(1) }}</span></div></div></template>
             </CardContent>
           </Card>
         </div>
@@ -835,62 +813,14 @@ onBeforeUnmount(() => {
         <Card class="dashboard-panel">
           <CardHeader class="dashboard-panel__header">
             <div>
-              <CardTitle class="flex items-center gap-2 text-base">
-                <AlertTriangle class="h-4 w-4 text-amber-600" />
-                库存预警
-              </CardTitle>
+              <CardTitle class="flex items-center gap-2 text-base"><AlertTriangle class="h-4 w-4 text-amber-600" />库存预警</CardTitle>
               <p class="mt-1 text-xs text-muted-foreground">优先补足高销量、低可用库存的 SKU</p>
             </div>
-            <Button size="sm" variant="outline" aria-label="查看详情库存预警" @click="openDetail('stockAlerts')">
-              详情
-              <ChevronRight class="ml-1 h-4 w-4" />
-            </Button>
+            <Button v-if="canOpenDetail('stockAlerts')" size="sm" variant="outline" aria-label="查看详情库存预警" @click="openDetail('stockAlerts')">详情 <ChevronRight class="ml-1 h-4 w-4" /></Button>
           </CardHeader>
           <CardContent>
-            <div class="dashboard-table-scroll">
-              <Table class="business-data-table min-w-[980px] table-fixed">
-                <colgroup>
-                  <col class="w-[220px]" />
-                  <col class="w-[170px]" />
-                  <col class="w-[110px]" />
-                  <col class="w-[110px]" />
-                  <col class="w-[110px]" />
-                  <col class="w-[120px]" />
-                  <col class="w-[140px]" />
-                </colgroup>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>产品</TableHead>
-                    <TableHead>仓库</TableHead>
-                    <TableHead>可用库存</TableHead>
-                    <TableHead>安全库存</TableHead>
-                    <TableHead>建议补货</TableHead>
-                    <TableHead>风险等级</TableHead>
-                    <TableHead>最近出库</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow v-for="alert in overview.stockAlerts" :key="alert.stockId">
-                    <TableCell>
-                      <div class="flex flex-col items-center gap-1 text-center">
-                        <code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ alert.productCode }}</code>
-                        <span class="max-w-full truncate font-medium" :title="alert.productName">{{ alert.productName }}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{{ alert.warehouseName }}</TableCell>
-                    <TableCell class="font-semibold text-rose-700 tabular-nums">{{ formatNumber(alert.availableQty) }} {{ alert.unitName }}</TableCell>
-                    <TableCell class="tabular-nums">{{ formatNumber(alert.safetyStockQty) }} {{ alert.unitName }}</TableCell>
-                    <TableCell class="font-medium tabular-nums">{{ formatNumber(alert.suggestedPurchaseQty) }} {{ alert.unitName }}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" :class="alert.severity === 'HIGH' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'">
-                        {{ alert.severity === 'HIGH' ? '高风险' : '需关注' }}
-                      </Badge>
-                    </TableCell>
-                    <TableCell class="text-xs text-muted-foreground">{{ alert.latestOutboundAt || '-' }}</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
+            <DashboardAccessPanel v-if="panelIsUnavailable(stockAlertsAccess)" :state="stockAlertsAccess.state" />
+            <div v-else class="dashboard-table-scroll"><Table class="business-data-table min-w-[980px] table-fixed"><TableHeader><TableRow><TableHead>产品</TableHead><TableHead>仓库</TableHead><TableHead>可用库存</TableHead><TableHead>安全库存</TableHead><TableHead>建议补货</TableHead><TableHead>风险等级</TableHead><TableHead>最近出库</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="alert in overview.stockAlerts" :key="alert.stockId"><TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ alert.productCode }}</code><span class="max-w-full truncate font-medium" :title="alert.productName">{{ alert.productName }}</span></div></TableCell><TableCell>{{ alert.warehouseName }}</TableCell><TableCell class="font-semibold text-rose-700 tabular-nums">{{ formatNumber(alert.availableQty) }} {{ alert.unitName }}</TableCell><TableCell class="tabular-nums">{{ formatNumber(alert.safetyStockQty) }} {{ alert.unitName }}</TableCell><TableCell class="font-medium tabular-nums">{{ formatNumber(alert.suggestedPurchaseQty) }} {{ alert.unitName }}</TableCell><TableCell><Badge variant="outline" :class="alert.severity === 'HIGH' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'">{{ alert.severity === 'HIGH' ? '高风险' : '需关注' }}</Badge></TableCell><TableCell class="text-xs text-muted-foreground">{{ alert.latestOutboundAt || '-' }}</TableCell></TableRow></TableBody></Table></div>
           </CardContent>
         </Card>
 
@@ -1042,68 +972,25 @@ onBeforeUnmount(() => {
         </Dialog>
 
       </div>
+      <div v-else-if="loadError" class="dashboard-load-error" role="alert">
+        <strong>工作台数据加载失败</strong>
+        <p>{{ loadError }}</p>
+        <Button size="sm" variant="outline" @click="loadOverview">重新加载</Button>
+      </div>
       <div v-else class="dashboard-skeleton space-y-4" :aria-busy="loading" data-dashboard-skeleton>
         <div class="summary-strip dashboard-metrics">
-          <div v-for="index in 4" :key="index" class="summary-item dashboard-metric">
+          <div v-for="index in 4" :key="index" class="summary-item">
             <span class="dashboard-skeleton__line dashboard-skeleton__line--label" />
-            <strong class="dashboard-skeleton__line dashboard-skeleton__line--value" />
+            <span class="dashboard-skeleton__line dashboard-skeleton__line--value" />
             <span class="dashboard-skeleton__line dashboard-skeleton__line--meta" />
           </div>
         </div>
-
         <div class="dashboard-grid">
-          <Card class="dashboard-panel dashboard-panel--trend">
-            <CardHeader class="dashboard-panel__header">
-              <div>
-                <CardTitle class="flex items-center gap-2 text-base"><BarChart3 class="h-4 w-4 text-primary" />经营趋势</CardTitle>
-                <p class="mt-1 text-xs text-muted-foreground">正在准备经营数据</p>
-              </div>
-            </CardHeader>
-            <CardContent class="dashboard-skeleton__trend">
-              <span class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
-              <span class="dashboard-skeleton__chart" />
-              <span class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
-            </CardContent>
-          </Card>
-
-          <Card class="dashboard-panel dashboard-panel--todos">
-            <CardHeader class="dashboard-panel__header">
-              <div>
-                <CardTitle class="flex items-center gap-2 text-base"><Clock3 class="h-4 w-4 text-primary" />业务待办</CardTitle>
-                <p class="mt-1 text-xs text-muted-foreground">正在整理待处理事项</p>
-              </div>
-            </CardHeader>
-            <CardContent class="dashboard-skeleton__todos">
-              <span v-for="index in 5" :key="index" class="dashboard-skeleton__todo" />
-            </CardContent>
-          </Card>
+          <Card class="dashboard-panel"><CardHeader class="dashboard-panel__header"><CardTitle class="text-base">经营趋势</CardTitle></CardHeader><CardContent class="dashboard-skeleton__trend"><span class="dashboard-skeleton__line dashboard-skeleton__line--wide" /><span class="dashboard-skeleton__chart" /><span class="dashboard-skeleton__line dashboard-skeleton__line--wide" /></CardContent></Card>
+          <Card class="dashboard-panel"><CardHeader class="dashboard-panel__header"><CardTitle class="text-base">业务待办</CardTitle></CardHeader><CardContent class="dashboard-skeleton__todos"><span v-for="index in 5" :key="index" class="dashboard-skeleton__todo" /></CardContent></Card>
         </div>
-
-        <div class="dashboard-grid dashboard-grid--three">
-          <Card v-for="title in ['订单流转', '销售商品排行', '供应商履约']" :key="title" class="dashboard-panel dashboard-skeleton__compact-panel">
-            <CardHeader class="dashboard-panel__header">
-              <div>
-                <CardTitle class="text-base">{{ title }}</CardTitle>
-                <p class="mt-1 text-xs text-muted-foreground">正在加载</p>
-              </div>
-            </CardHeader>
-            <CardContent class="dashboard-skeleton__rows">
-              <span v-for="index in 4" :key="index" class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card class="dashboard-panel">
-          <CardHeader class="dashboard-panel__header">
-            <div>
-              <CardTitle class="flex items-center gap-2 text-base"><AlertTriangle class="h-4 w-4 text-amber-600" />库存预警</CardTitle>
-              <p class="mt-1 text-xs text-muted-foreground">正在汇总库存风险</p>
-            </div>
-          </CardHeader>
-          <CardContent class="dashboard-skeleton__table">
-            <span v-for="index in 5" :key="index" class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
-          </CardContent>
-        </Card>
+        <div class="dashboard-grid dashboard-grid--three"><Card v-for="index in 3" :key="index" class="dashboard-panel"><CardContent class="dashboard-skeleton__compact-panel"><span class="dashboard-skeleton__line dashboard-skeleton__line--wide" /></CardContent></Card></div>
+        <Card class="dashboard-panel"><CardContent class="dashboard-skeleton__table"><span v-for="index in 5" :key="index" class="dashboard-skeleton__line dashboard-skeleton__line--wide" /></CardContent></Card>
       </div>
     </div>
   </section>
@@ -1249,6 +1136,31 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
+.dashboard-load-error {
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--muted) 26%, white);
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.dashboard-load-error strong {
+  color: var(--foreground);
+  font-size: 15px;
+}
+
+.dashboard-load-error p {
+  max-width: 520px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .dashboard-skeleton {
   pointer-events: none;
 }
@@ -1328,6 +1240,16 @@ onBeforeUnmount(() => {
   padding-inline: 10px;
 }
 
+.dashboard-trend-empty {
+  display: flex;
+  min-height: 344px;
+  align-items: stretch;
+}
+
+.dashboard-trend-empty :deep(.dashboard-access-panel) {
+  width: 100%;
+  min-height: 344px;
+}
 .dashboard-trend-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1701,76 +1623,109 @@ circle.dashboard-trend--margin.is-negative {
   }
 }
 
-.dashboard-todo {
-  display: flex;
-  width: 100%;
-  min-height: 60px;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 2px);
-  background: color-mix(in srgb, var(--muted) 28%, transparent);
-  padding: 9px 12px;
-  cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
-}
-
 .dashboard-todos-list {
-  justify-content: space-between;
+  display: grid !important;
+  align-content: start;
   gap: 10px;
   padding-top: 0;
   padding-bottom: 12px;
 }
 
-.dashboard-todos-list > * + * { margin-top: 0; }
-
-.dashboard-todo:hover {
-  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
-  box-shadow: 0 10px 24px rgb(15 23 42 / 7%);
-  transform: translateY(-1px);
+.dashboard-todo {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: white;
+  padding: 12px 14px;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.dashboard-todo small {
-  display: block;
-  margin-top: 3px;
-  overflow: hidden;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.dashboard-todo:hover {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  box-shadow: 0 4px 12px rgb(15 23 42 / 7%);
+}
+
+.dashboard-todo:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 72%, transparent);
+  outline-offset: 2px;
 }
 
 .dashboard-todo__icon {
   display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   place-items: center;
-  border-radius: 8px;
-  background: white;
+  border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--border));
+  border-radius: 10px;
+  background: #f5f9ff;
   color: var(--primary);
-  box-shadow: inset 0 0 0 1px var(--border);
 }
 
-.dashboard-todo__count {
-  min-width: 30px;
-  color: #172033;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
-  text-align: right;
-}
-
-.dashboard-todo__end {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
+.dashboard-todo__body {
+  display: grid;
+  min-width: 0;
+  flex: 1;
   gap: 4px;
 }
 
+.dashboard-todo__title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-todo__title-row strong {
+  overflow: hidden;
+  color: #172033;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-todo__priority {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.dashboard-todo__priority--high { background: #fff1f2; color: #e11d48; }
+.dashboard-todo__priority--medium { background: #fffbeb; color: #d97706; }
+.dashboard-todo__priority--low { background: #f1f5f9; color: #64748b; }
+
+.dashboard-todo__description {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-todo__count {
+  flex: 0 0 auto;
+  color: #172033;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-todo__chevron {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
 .dashboard-stage__bars {
   display: grid;
   gap: 5px;
@@ -2425,6 +2380,7 @@ circle.dashboard-trend--margin.is-negative {
   .dashboard-trend-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
 
   .dashboard-panel__header {
     flex-direction: column;

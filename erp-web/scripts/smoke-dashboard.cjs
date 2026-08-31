@@ -46,9 +46,39 @@ runSmoke({
       }
     }
 
+    async function assertTrendValuesAreReadable(label) {
+      const scroll = page.locator('.dashboard-trend-values-scroll');
+      const layout = await scroll.evaluate(element => ({
+        horizontalOverflow: element.scrollWidth - element.clientWidth,
+        stickyPosition: getComputedStyle(element.querySelector('.dashboard-trend-values__label')).position,
+      }));
+      if (layout.horizontalOverflow <= 2) {
+        throw new Error(`${label}经营趋势数值明细应在列宽不足时提供横向滚动`);
+      }
+      if (layout.stickyPosition !== 'sticky') {
+        throw new Error(`${label}经营趋势数值明细的指标列未固定`);
+      }
+
+      const heads = await page.locator('.dashboard-trend-values__head').evaluateAll(nodes =>
+        nodes.slice(1).map(node => {
+          const rect = node.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, text: node.textContent || '' };
+        }),
+      );
+      for (let index = 1; index < heads.length; index += 1) {
+        if (heads[index].left < heads[index - 1].right - 1) {
+          throw new Error(`${label}数值明细日期重叠：${heads[index - 1].text} / ${heads[index].text}`);
+        }
+      }
+    }
+
     await page.getByRole('heading', { name: '工作台' }).waitFor();
     const pageLoading = page.locator('[data-page-loading]');
     await pageLoading.waitFor({ state: 'visible' });
+    await page.waitForFunction(() => {
+      const element = document.querySelector('[data-page-loading]');
+      return element && getComputedStyle(element).opacity === '1';
+    });
     const loadingMask = await pageLoading.evaluate(element => ({
       background: getComputedStyle(element).backgroundColor,
       opacity: getComputedStyle(element).opacity,
@@ -81,11 +111,46 @@ runSmoke({
       throw new Error('当前趋势周期没有通过 aria-pressed 标记');
     }
     await page.getByRole('img', { name: '近 7 日经营趋势' }).waitFor();
-    if ((await page.locator('.dashboard-grid-lines line').count()) !== 5) {
-      throw new Error('经营趋势应展示 5 条横向网格线');
+    const gridLineCount = await page.locator('.dashboard-grid-lines line:not([data-dashboard-trend-zero-axis])').count();
+    if (gridLineCount < 1 || gridLineCount > 5) {
+      throw new Error(`经营趋势网格线应按数据极差保持 1-5 条粗粒度分度线，实际为 ${gridLineCount}`);
+    }
+    if ((await page.locator('[data-dashboard-trend-zero-axis]').count()) !== 1) {
+      throw new Error('经营趋势必须始终展示唯一的零轴');
     }
     if ((await page.locator('.dashboard-trend-points circle').count()) < 21) {
       throw new Error('经营趋势应为每个日期和指标标记折线点');
+    }
+    const lossPoint = page.locator('circle.dashboard-trend--margin.is-negative');
+    await lossPoint.waitFor();
+    const lossLayout = await page.locator('.dashboard-trend-chart').evaluate(chart => {
+      const lossPoint = chart.querySelector('circle.dashboard-trend--margin.is-negative');
+      const zeroAxis = chart.querySelector('[data-dashboard-trend-zero-axis]');
+      const axisLabels = Array.from(chart.querySelectorAll('.dashboard-trend-axis text')).map(node => node.textContent || '');
+      return {
+        lossPointY: Number(lossPoint?.getAttribute('cy')),
+        zeroAxisY: Number(zeroAxis?.getAttribute('y1')),
+        hasNegativeAxisLabel: axisLabels.some(text => text.startsWith('-')),
+        hasZeroAxisLabel: axisLabels.includes('0'),
+        hasAxisUnit: axisLabels.some(text => text.startsWith('金额（')),
+      };
+    });
+    if (!lossLayout.hasNegativeAxisLabel || !lossLayout.hasZeroAxisLabel || !lossLayout.hasAxisUnit || lossLayout.lossPointY <= lossLayout.zeroAxisY) {
+      throw new Error(`经营趋势的负值、零轴或金额单位展示异常：${JSON.stringify(lossLayout)}`);
+    }
+    const negativeTrendValue = page.locator('.dashboard-trend-values__value.is-negative');
+    if ((await negativeTrendValue.innerText()) !== '-9.2万') {
+      throw new Error(`经营趋势明细未正确展示负毛利：${await negativeTrendValue.innerText()}`);
+    }
+    if ((await page.locator('.dashboard-trend-values__value.is-positive').count()) < 1) {
+      throw new Error('经营趋势明细的正数未按绿色语义样式展示');
+    }
+    await lossPoint.hover();
+    const tooltip = page.locator('[data-dashboard-trend-tooltip]');
+    await tooltip.waitFor({ state: 'visible' });
+    const tooltipText = await tooltip.innerText();
+    if (!tooltipText.includes('销售额') || !tooltipText.includes('采购额') || !tooltipText.includes('毛利额') || !tooltipText.includes('-¥92,100')) {
+      throw new Error(`经营趋势点位悬停信息不完整：${tooltipText}`);
     }
     const trend7Labels = await getVisibleTrendLabels(7);
     assertTrendLabelsNotOverlap(trend7Labels, '7天');
@@ -98,15 +163,17 @@ runSmoke({
       throw new Error('趋势周期切换后的 aria-pressed 状态错误');
     }
     const trend15Labels = await getVisibleTrendLabels(8);
+    await assertTrendValuesAreReadable('15天');
     assertTrendLabelsNotOverlap(trend15Labels, '15天');
     await page.getByRole('button', { name: '30天' }).click();
     await page.locator('.dashboard-trend-chart.is-transitioning').waitFor();
     await page.getByText('近 30 日销售、采购和毛利变化').waitFor();
-    const trend30Labels = await getVisibleTrendLabels(15);
+    const trend30Labels = await getVisibleTrendLabels(8);
+    await assertTrendValuesAreReadable('30天');
     assertTrendLabelsNotOverlap(trend30Labels, '30天');
     assertTrendLabelsEvenlySpaced(trend30Labels, '30天');
-    if (!(trend7Labels.length < trend15Labels.length && trend15Labels.length < trend30Labels.length)) {
-      throw new Error(`经营趋势 x 轴标签数量应随天数递增，实际为 7天=${trend7Labels.length}, 15天=${trend15Labels.length}, 30天=${trend30Labels.length}`);
+    if (trend7Labels.length !== 7 || trend15Labels.length !== 8 || trend30Labels.length !== 8) {
+      throw new Error(`经营趋势 x 轴标签数量错误，实际为 7天=${trend7Labels.length}, 15天=${trend15Labels.length}, 30天=${trend30Labels.length}`);
     }
     await page.getByRole('button', { name: '7天' }).click();
     await page.getByText('业务待办').waitFor();

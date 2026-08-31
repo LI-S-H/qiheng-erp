@@ -2,7 +2,10 @@ import { getResult } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
 import { normalizeMoneyNumber } from '@/shared/utils/money';
 import type {
+  DashboardAccessState,
   DashboardMetric,
+  DashboardOverviewAccess,
+  DashboardSectionAccess,
   DashboardNotificationPopover,
   DashboardOrderStage,
   DashboardOrderStagePermissions,
@@ -30,11 +33,24 @@ const defaultTodoLabels: Record<string, string> = {
 
 const mockOverview: DashboardOverview = {
   refreshedAt: '2026-06-30 09:30:00',
+  access: {
+    metrics: {
+      MONTH_SALES: { state: 'ALLOWED' },
+      MONTH_GROSS_PROFIT: { state: 'ALLOWED' },
+      PENDING_ORDERS: { state: 'ALLOWED' },
+      STOCK_RISK_SKU: { state: 'ALLOWED' },
+    },
+    todos: { state: 'ALLOWED' },
+    stockAlerts: { state: 'ALLOWED' },
+    orderStages: { state: 'ALLOWED' },
+    topProducts: { state: 'ALLOWED' },
+    supplierPerformance: { state: 'ALLOWED' },
+  },
   metrics: [
-    { label: '今日销售额', value: 286430, unit: '元', changeRate: 12.8, compareText: '较昨日', status: 'good' },
-    { label: '本月毛利额', value: -842600, unit: '元', changeRate: 6.4, compareText: '较上月同期', status: 'risk' },
-    { label: '待处理订单', value: 7, unit: '单', changeRate: -8.1, compareText: '较昨日', status: 'watch' },
-    { label: '库存风险 SKU', value: 11, unit: '个', changeRate: 18.6, compareText: '较昨日', status: 'risk' },
+    { key: 'MONTH_SALES', label: '本月销售额', value: 286430, unit: '元', changeRate: 12.8, compareText: '较上月', status: 'good' },
+    { key: 'MONTH_GROSS_PROFIT', label: '本月毛利额', value: -842600, unit: '元', changeRate: 6.4, compareText: '较上月', status: 'risk' },
+    { key: 'PENDING_ORDERS', label: '待处理订单', value: 7, unit: '单', changeRate: -8.1, compareText: '较上月', status: 'watch' },
+    { key: 'STOCK_RISK_SKU', label: '库存风险 SKU', value: 11, unit: '个', changeRate: 18.6, compareText: '较上月', status: 'risk' },
   ],
   trend: [
     { date: '06-01', salesAmount: 186200, purchaseAmount: 112400, grossMarginAmount: 54200 },
@@ -136,11 +152,17 @@ const mockOverview: DashboardOverview = {
   ],
 };
 
+const dashboardMetricKeys = ['MONTH_SALES', 'MONTH_GROSS_PROFIT', 'PENDING_ORDERS', 'STOCK_RISK_SKU'] as const;
+
 function normalizeMetric(item: DashboardMetric): DashboardMetric {
+  if (!dashboardMetricKeys.includes(item.key)) {
+    throw new Error(`dashboard metric key is invalid: ${String(item.key)}`);
+  }
   return {
     ...item,
-    value: normalizeFiniteNumber(item.value, 'value'),
-    changeRate: normalizeFiniteNumber(item.changeRate, 'changeRate'),
+    value: item.value == null ? null : normalizeFiniteNumber(item.value, 'value'),
+    changeRate: item.changeRate == null ? null : normalizeFiniteNumber(item.changeRate, 'changeRate'),
+    compareText: item.compareText == null ? null : String(item.compareText),
   };
 }
 
@@ -254,9 +276,40 @@ function normalizeOrderStagePermissions(value: unknown): DashboardOrderStagePerm
   };
 }
 
+function normalizeSectionAccess(value: unknown, field: string): DashboardSectionAccess {
+  const raw = value as Partial<DashboardSectionAccess> | null;
+  const state = raw?.state;
+  if (state !== 'ALLOWED' && state !== 'EMPTY' && state !== 'DENIED') {
+    throw new Error(`dashboard access.${field}.state is invalid`);
+  }
+  return {
+    state: state as DashboardAccessState,
+  };
+}
+
+function normalizeOverviewAccess(value: unknown): DashboardOverviewAccess {
+  const raw = value as Partial<DashboardOverviewAccess> | null;
+  if (!raw || !raw.metrics) {
+    throw new Error('dashboard access is required');
+  }
+  return {
+    metrics: {
+      MONTH_SALES: normalizeSectionAccess(raw.metrics.MONTH_SALES, 'metrics.MONTH_SALES'),
+      MONTH_GROSS_PROFIT: normalizeSectionAccess(raw.metrics.MONTH_GROSS_PROFIT, 'metrics.MONTH_GROSS_PROFIT'),
+      PENDING_ORDERS: normalizeSectionAccess(raw.metrics.PENDING_ORDERS, 'metrics.PENDING_ORDERS'),
+      STOCK_RISK_SKU: normalizeSectionAccess(raw.metrics.STOCK_RISK_SKU, 'metrics.STOCK_RISK_SKU'),
+    },
+    todos: normalizeSectionAccess(raw.todos, 'todos'),
+    stockAlerts: normalizeSectionAccess(raw.stockAlerts, 'stockAlerts'),
+    orderStages: normalizeSectionAccess(raw.orderStages, 'orderStages'),
+    topProducts: normalizeSectionAccess(raw.topProducts, 'topProducts'),
+    supplierPerformance: normalizeSectionAccess(raw.supplierPerformance, 'supplierPerformance'),
+  };
+}
 function normalizeOverview(data: DashboardOverview): DashboardOverview {
   return {
     refreshedAt: String(data.refreshedAt),
+    access: normalizeOverviewAccess(data.access),
     metrics: data.metrics.map(normalizeMetric),
     trend: data.trend.map(normalizeTrendPoint),
     trendPermissions: normalizeTrendPermissions(data.trendPermissions),

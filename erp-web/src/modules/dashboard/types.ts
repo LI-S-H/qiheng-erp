@@ -1,10 +1,26 @@
 export interface DashboardMetric {
+  key: 'MONTH_SALES' | 'MONTH_GROSS_PROFIT' | 'PENDING_ORDERS' | 'STOCK_RISK_SKU';
   label: string;
-  value: number;
+  value: number | null;
   unit: string;
-  changeRate: number;
-  compareText: string;
+  changeRate: number | null;
+  compareText: string | null;
   status: 'good' | 'watch' | 'risk' | 'neutral';
+}
+
+export type DashboardAccessState = 'ALLOWED' | 'EMPTY' | 'DENIED';
+
+export interface DashboardSectionAccess {
+  state: DashboardAccessState;
+}
+
+export interface DashboardOverviewAccess {
+  metrics: Record<DashboardMetric['key'], DashboardSectionAccess>;
+  todos: DashboardSectionAccess;
+  stockAlerts: DashboardSectionAccess;
+  orderStages: DashboardSectionAccess;
+  topProducts: DashboardSectionAccess;
+  supplierPerformance: DashboardSectionAccess;
 }
 
 export interface DashboardTrendPoint {
@@ -98,12 +114,11 @@ export interface DashboardOverview {
   orderStagePermissions?: DashboardOrderStagePermissions | null;
   topProducts: DashboardTopProduct[];
   supplierPerformance: DashboardSupplierPerformance[];
+  access: DashboardOverviewAccess;
 }
 
 /**
- * 经营趋势可见维度标记。
- *
- * 旧版本接口不返回该字段时，前端回退到全 true（向旧后端兼容）。
+ * 经营趋势可见维度标记。旧版本接口不返回该字段时，前端回退到全 true。
  */
 export interface DashboardTrendPermissions {
   canViewSales: boolean;
@@ -111,24 +126,12 @@ export interface DashboardTrendPermissions {
   canViewGross: boolean;
 }
 
-/**
- * 订单流转可见维度标记。
- *
- * 旧版本接口不返回该字段时，前端回退到全 true。
- */
+/** 订单流转的列级可见标记，保留用于采购/销售柱形图裁剪。 */
 export interface DashboardOrderStagePermissions {
   canViewPurchase: boolean;
   canViewSales: boolean;
 }
 
-/**
- * 工作台空权限降级面板所需的 props。
- */
-export interface DashboardEmptyPanelProps {
-  title: string;
-  description?: string;
-  requiredPermissions: string[];
-}
 
 export interface DashboardNotificationPopover {
   refreshedAt: string;

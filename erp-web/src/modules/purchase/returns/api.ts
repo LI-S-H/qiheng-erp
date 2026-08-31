@@ -372,7 +372,7 @@ export async function listPurchaseReturns(query: ReturnOrderQuery): Promise<Retu
 
 export async function getPurchaseReturnDetail(returnOrderId: string): Promise<ReturnOrderDetail> {
   normalizeStringId(returnOrderId, 'returnOrderId');
-  if (!useMockApi) return normalizeReturnDetail(await getResult<ReturnOrderDetail>(`${RETURN_API}/${returnOrderId}`));
+  if (!useMockApi) return normalizeReturnDetail(await getResult<ReturnOrderDetail>(`${RETURN_API}/${returnOrderId}`, undefined, { skipPageLoading: true }));
   const rows = await ensureMockReturns();
   const row = rows.find(item => item.returnOrderId === returnOrderId);
   if (!row) throw new Error('采购退回单不存在');

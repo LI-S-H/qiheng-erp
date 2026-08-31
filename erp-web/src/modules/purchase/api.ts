@@ -698,7 +698,7 @@ export function getPurchaseOrderDetail(purchaseOrderId: string) {
     const order = mockOrders.find(item => item.purchaseOrderId === purchaseOrderId);
     return order ? Promise.resolve(normalizeOrderDetail(order)) : Promise.reject(new Error('采购订单不存在'));
   }
-  return getResult<PurchaseOrderDetail>(`/purchase/orders/${purchaseOrderId}`).then(normalizeOrderDetail);
+  return getResult<PurchaseOrderDetail>(`/purchase/orders/${purchaseOrderId}`, undefined, { skipPageLoading: true }).then(normalizeOrderDetail);
 }
 
 export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {

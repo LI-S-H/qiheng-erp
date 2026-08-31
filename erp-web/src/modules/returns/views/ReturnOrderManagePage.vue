@@ -15,6 +15,7 @@ import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
+import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import PromptDialog from '@/components/common/PromptDialog.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
@@ -581,6 +582,8 @@ async function openDetail(row: ReturnOrderListItem, mode: DetailActionMode = 'vi
     toast.error(`没有${businessLabel.value}管理权限`);
     return;
   }
+  detailRow.value = null;
+  detailDialogOpen.value = true;
   detailLoading.value = true;
   try {
     const detail = await props.config.service.getReturnDetail(row.returnOrderId);
@@ -590,8 +593,9 @@ async function openDetail(row: ReturnOrderListItem, mode: DetailActionMode = 'vi
       : mode;
     Object.keys(approvalQuantities).forEach(key => delete approvalQuantities[key]);
     detail.items.forEach(item => { approvalQuantities[item.returnOrderItemId] = item.requestedQty; });
-    detailDialogOpen.value = true;
+
   } catch (error) {
+    detailDialogOpen.value = false;
     toast.error(getApiErrorMessage(error) || `${businessLabel.value}详情加载失败`);
   } finally {
     detailLoading.value = false;
@@ -859,14 +863,14 @@ onMounted(() => {
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy || !canQuery" @click="refreshList">刷新</Button><Button v-if="canCreate" size="sm" @click="openCreateDialog">{{ config.createButtonLabel }}</Button></div>
       </div>
 
-      <Table class="business-data-table min-w-[1140px] table-fixed" :scroll-label="config.listTitle" data-return-order-table>
-        <colgroup><col class="w-[125px]" /><col class="w-[125px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
+      <Table class="business-data-table min-w-[1430px] table-fixed" :scroll-label="config.listTitle" data-return-order-table>
+        <colgroup><col class="w-[270px]" /><col class="w-[270px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
         <TableHeader><TableRow><TableHead data-return-no-column>退回单号</TableHead><TableHead>{{ config.sourceOrderLabel }}号</TableHead><TableHead>{{ config.partyLabel }}</TableHead><TableHead>{{ config.warehouseLabel }}</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">退回金额</TableHead><TableHead class="text-center">预计执行</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-return-actions-column>操作</TableHead></TableRow></TableHeader>
         <TableBody>
           <TableRow v-if="rows.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">{{ config.emptyText }}</TableCell></TableRow>
           <TableRow v-for="row in rows" v-else :key="row.returnOrderId">
-            <TableCell data-return-no-column><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.returnNo }}</code></TableCell>
-            <TableCell><code class="text-xs">{{ row.sourceOrderNo }}</code></TableCell>
+            <TableCell data-return-no-column><OrderNumberLink :value="row.returnNo" label="退回单号" /></TableCell>
+            <TableCell><OrderNumberLink :value="row.sourceOrderNo" :label="`${config.sourceOrderLabel}号`" /></TableCell>
             <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.partyCode }}</code><div class="mt-1 truncate font-medium" :title="row.partyName">{{ row.partyName }}</div></TableCell>
             <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
             <TableCell class="text-center"><div class="flex flex-col items-center gap-1"><Badge variant="outline" :class="statusClassNames[row.status]">{{ statusLabels[row.status] }}</Badge><span class="text-[11px] text-muted-foreground">{{ statusHint(row.status) }}</span></div></TableCell>
@@ -940,6 +944,7 @@ onMounted(() => {
       <DialogContent placement="app-content" :inert="(confirmState.open || promptState.open) ? '' : undefined" data-order-workbench class="return-order-workbench flex h-[min(770px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl" data-return-detail-dialog>
         <DialogHeader class="sr-only"><DialogTitle>{{ config.detailTitle }}</DialogTitle><DialogDescription>{{ detailActionDescription() }}</DialogDescription></DialogHeader>
         <DialogScrollArea content-class="px-5 py-5 pr-6">
+          <div v-if="detailLoading && !detailRow" class="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
           <div v-if="detailRow" class="space-y-5">
             <BusinessDetailHero
               :eyebrow="returnTypeLabel"
@@ -975,7 +980,7 @@ onMounted(() => {
             /></section></BusinessDetailWorkbenchCard>
 
             <BusinessDetailWorkbenchCard>
-              <section class="return-workbench-section return-workbench-info"><h3 class="return-workbench-info__title">业务信息</h3><dl class="return-workbench-info__facts"><div class="return-workbench-info__fact"><dt>{{ config.partyLabel }}</dt><dd><strong>{{ detailRow.partyName }}</strong><small>{{ detailRow.partyCode }}</small></dd></div><div class="return-workbench-info__fact"><dt>{{ config.executionDateLabel }}</dt><dd>{{ detailRow.expectedExecutionDate || '未设置' }}</dd></div><div class="return-workbench-info__fact"><dt>退回单号</dt><dd><code>{{ detailRow.returnNo }}</code></dd></div><div class="return-workbench-info__fact"><dt>{{ config.sourceOrderLabel }}</dt><dd><code>{{ detailRow.sourceOrderNo }}</code></dd></div><div class="return-workbench-info__fact"><dt>{{ config.warehouseLabel }}</dt><dd>{{ detailRow.warehouseName }}</dd></div><div class="return-workbench-info__fact"><dt>处理方式</dt><dd>{{ handlingLabel(detailRow.handlingType) }}</dd></div><div class="return-workbench-info__fact"><dt>退回原因</dt><dd>{{ reasonLabel(detailRow.reasonCode) }}</dd></div></dl></section>
+              <section class="return-workbench-section return-workbench-info"><h3 class="return-workbench-info__title">业务信息</h3><dl class="return-workbench-info__facts"><div class="return-workbench-info__fact"><dt>{{ config.partyLabel }}</dt><dd><strong>{{ detailRow.partyName }}</strong><small>{{ detailRow.partyCode }}</small></dd></div><div class="return-workbench-info__fact"><dt>{{ config.executionDateLabel }}</dt><dd>{{ detailRow.expectedExecutionDate || '未设置' }}</dd></div><div class="return-workbench-info__fact"><dt>退回单号</dt><dd><code>{{ detailRow.returnNo }}</code></dd></div><div class="return-workbench-info__fact"><dt>{{ config.sourceOrderLabel }}</dt><dd><OrderNumberLink :value="detailRow.sourceOrderNo" :label="`${config.sourceOrderLabel}号`" /></dd></div><div class="return-workbench-info__fact"><dt>{{ config.warehouseLabel }}</dt><dd>{{ detailRow.warehouseName }}</dd></div><div class="return-workbench-info__fact"><dt>处理方式</dt><dd>{{ handlingLabel(detailRow.handlingType) }}</dd></div><div class="return-workbench-info__fact"><dt>退回原因</dt><dd>{{ reasonLabel(detailRow.reasonCode) }}</dd></div></dl></section>
               <section class="return-workbench-section">
               <div class="mb-2 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold">商品明细</h3><p class="mt-1 text-xs text-muted-foreground">核对原单履约、申请与审核数量，以及仓储实际处理进度。</p></div><span class="text-xs text-muted-foreground">共 {{ detailRow.items.length }} 项</span></div>
               <ScrollArea class="purchase-order-line-scroll detail-table-floating w-full" aria-label="退回单商品明细">

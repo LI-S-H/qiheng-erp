@@ -443,7 +443,7 @@ export function getSalesOrderDetail(salesOrderId: string) {
     const order = mockOrders.find(item => item.salesOrderId === salesOrderId);
     return order ? Promise.resolve(normalizeOrderDetail(order)) : Promise.reject(new Error('销售订单不存在'));
   }
-  return getResult<SalesOrderDetail>(`/sales/orders/${salesOrderId}`).then(normalizeOrderDetail);
+  return getResult<SalesOrderDetail>(`/sales/orders/${salesOrderId}`, undefined, { skipPageLoading: true }).then(normalizeOrderDetail);
 }
 
 function buildOrderItems(orderId: string, salesNo: string, payload: SalesOrderFormPayload, existingItems: SalesOrderItem[] = []) {

@@ -8,6 +8,7 @@ import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import WarehouseDetailTableFrame from '@/components/common/WarehouseDetailTableFrame.vue';
@@ -259,14 +260,14 @@ onMounted(() => {
 
       <ScrollArea class="w-full">
         <div class="stock-ledger-table-scroll">
-        <Table class="min-w-[1405px] table-fixed">
-          <colgroup><col class="w-[220px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[130px]" /><col class="w-[175px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[170px]" /><col class="w-[170px]" /></colgroup>
+        <Table class="min-w-[1505px] table-fixed">
+          <colgroup><col class="w-[320px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[130px]" /><col class="w-[175px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[170px]" /><col class="w-[170px]" /></colgroup>
           <TableHeader><TableRow><TableHead class="stock-ledger-key-column sticky left-0 z-20 border-r border-border/60 bg-muted" data-table-sticky-edge="start">流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>录入方式</TableHead><TableHead>来源业务类型</TableHead><TableHead>来源业务单号</TableHead><TableHead>仓库</TableHead><TableHead>确认人</TableHead><TableHead>确认时间</TableHead><TableHead>创建时间</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无符合条件的库存流水</TableCell></TableRow>
             <template v-else v-for="row in records" :key="row.stockLedgerId">
               <TableRow class="group" :data-stock-ledger-id="row.stockLedgerId">
-                <TableCell class="stock-ledger-key-column sticky left-0 z-20 border-r border-border/60 bg-background group-hover:bg-muted/50" data-table-sticky-edge="start"><div class="flex items-center gap-2"><Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-ledger-detail-${row.stockLedgerId}`" :aria-label="`${isRowDetailCollapsed(row) ? '展开' : '收起'} ${row.billNo} 的 ${row.itemCount} 条变动明细`" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button><code class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.billNo }}</code></div></TableCell>
+                <TableCell class="stock-ledger-key-column sticky left-0 z-20 border-r border-border/60 bg-background group-hover:bg-muted/50" data-table-sticky-edge="start"><div class="flex items-center gap-2"><Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-ledger-detail-${row.stockLedgerId}`" :aria-label="`${isRowDetailCollapsed(row) ? '展开' : '收起'} ${row.billNo} 的 ${row.itemCount} 条变动明细`" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button><OrderNumberLink :value="row.billNo" label="库存流水号" /></div></TableCell>
                 <TableCell class="text-center"><Badge variant="outline" :class="billTypeMap[row.billType].className">{{ billTypeMap[row.billType].label }}</Badge></TableCell>
                 <TableCell class="text-muted-foreground" data-stock-ledger-entry-mode>{{ entryModeOptions.find(item => item.value === row.entryMode)?.label || '-' }}</TableCell>
                 <TableCell class="text-muted-foreground" data-stock-ledger-source-type>{{ sourceTypeMap[getStockLedgerSourceType(row.billType)] }}</TableCell>

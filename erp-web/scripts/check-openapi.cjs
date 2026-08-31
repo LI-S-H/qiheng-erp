@@ -636,7 +636,7 @@ for (const fragment of [
   "billResourceEndpoint(direction, stockBillId, 'confirm')",
   "billResourceEndpoint(direction, stockBillId, 'cancel')",
   'http.put(billResourceEndpoint(direction, stockBillId), payload)',
-  'getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId))',
+  'getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId), undefined, { skipPageLoading: true })',
   'sourcePartyId: payload.sourcePartyId,',
   'sourcePartyName: payload.sourcePartyName.trim(),',
   "const adjustmentSourceWarehouseEditable = current.entryMode === 'MANUAL_ADJUSTMENT' && current.status === 'DRAFT'",

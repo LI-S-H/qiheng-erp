@@ -140,6 +140,13 @@ runSmoke({
         metricCount: summaryElement.querySelectorAll('dl').length,
         definitionCount: summaryElement.querySelectorAll('dt').length,
         valueCount: summaryElement.querySelectorAll('dd').length,
+        summaryCards: [...summaryElement.querySelectorAll('.list-summary-strip__item')].map(item => ({
+          tone: item.getAttribute('data-tone'),
+          shadow: getComputedStyle(item).boxShadow,
+          border: getComputedStyle(item).borderTopWidth,
+          radius: getComputedStyle(item).borderRadius,
+          accent: getComputedStyle(item, '::after').backgroundColor,
+        })),
         filterShadow: filterStyle.boxShadow,
         filterBorder: filterStyle.borderTopWidth,
         inputHeight: input.getBoundingClientRect().height,
@@ -152,8 +159,12 @@ runSmoke({
     });
     if (desktopState.summaryColumns !== 4 || desktopState.metricCount !== 4
       || desktopState.definitionCount !== 4 || desktopState.valueCount !== 4
-      || desktopState.summaryShadow === 'none' || desktopState.filterShadow === 'none'
-      || desktopState.summaryBorder === '0px' || desktopState.filterBorder === '0px'
+      || desktopState.summaryShadow !== 'none' || desktopState.filterShadow === 'none'
+      || desktopState.summaryBorder !== '0px' || desktopState.filterBorder === '0px'
+      || desktopState.summaryCards.length !== 4
+      || desktopState.summaryCards.some(card => card.shadow === 'none' || card.border === '0px' || card.radius !== '10px')
+      || new Set(desktopState.summaryCards.map(card => card.tone)).size !== 4
+      || new Set(desktopState.summaryCards.map(card => card.accent)).size !== 4
       || desktopState.inputHeight < 36 || desktopState.filterDisplay !== 'flex' || desktopState.filterWrap !== 'wrap'
       || JSON.stringify(desktopState.sizedFields) !== JSON.stringify([
         { size: 'compact', width: 168 },
@@ -179,14 +190,17 @@ runSmoke({
     }
 
     const firstMetric = summary.locator('.summary-item').first();
-    const beforeHover = await firstMetric.evaluate(element => getComputedStyle(element).backgroundColor);
+    const beforeHover = await firstMetric.evaluate(element => ({
+      borderColor: getComputedStyle(element).borderColor,
+      shadow: getComputedStyle(element).boxShadow,
+    }));
     await firstMetric.hover();
     await page.waitForTimeout(180);
     const afterHover = await firstMetric.evaluate(element => ({
-      background: getComputedStyle(element).backgroundColor,
-      accentOpacity: Number.parseFloat(getComputedStyle(element, '::after').opacity),
+      borderColor: getComputedStyle(element).borderColor,
+      shadow: getComputedStyle(element).boxShadow,
     }));
-    if (beforeHover === afterHover.background || afterHover.accentOpacity < 0.9) {
+    if (beforeHover.borderColor === afterHover.borderColor && beforeHover.shadow === afterHover.shadow) {
       throw new Error(`汇总指标悬停层级不清晰：${JSON.stringify({ beforeHover, afterHover })}`);
     }
 
@@ -268,7 +282,7 @@ runSmoke({
         pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       };
     });
-    if (mobileState.summaryColumns !== 1 || mobileState.filterDisplay !== 'flex'
+    if (mobileState.summaryColumns !== 2 || mobileState.filterDisplay !== 'flex'
       || mobileState.fieldWidths.some(width => Math.abs(width - mobileState.filterWidth) > 1)
       || mobileState.pageOverflow > 1) {
       throw new Error(`列表页共享组件移动端布局异常：${JSON.stringify(mobileState)}`);

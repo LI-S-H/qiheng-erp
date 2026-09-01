@@ -3,6 +3,7 @@ package com.qiheng.erp.dashboard.job;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.dashboard.cache.DashboardPrevValueCache;
+import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
 import com.qiheng.erp.dashboard.loader.DashboardStockAlertLoader;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.domain.purchaseorder.enums.PurchaseOrderStatus;
@@ -27,11 +28,11 @@ import java.util.function.Supplier;
 /**
  * 工作台运营类指标日快照任务。
  *
- * <p>每日 23:55 拍当前时刻的"待处理订单数"与"库存风险 SKU 数"快照，
+ * <p>每日 23:55 拍当前时刻的"待处理订单分项"与"库存风险 SKU 数"快照，
  * 写入 Redis 日快照 key（TTL 3 天），供次日工作台"较昨日"变化率对比使用。</p>
  *
- * <p>快照为全公司口径（不区分用户权限），与首屏指标的 prev 对比期一致。
- * 多实例部署时通过 {@code @DistributedLock}（Redisson RLock）保证只有一个实例执行。</p>
+ * <p>待处理订单快照按来源拆分为采购、销售、入库和出库四项；首屏读取时再按
+ * 当前用户权限组合。多实例部署时通过 {@code @DistributedLock}（Redisson RLock）保证只有一个实例执行。</p>
  *
  * @author Li
  * @since 2026-08-29
@@ -65,12 +66,10 @@ public class DashboardDailySnapshotJob {
     public void snapshot() {
         LocalDate today = LocalDate.now();
         // 重试 3 次，每次间隔 1 秒
-        boolean pendingOk = retryStep("待处理订单数", today, () -> {
-            long pendingCount = countPendingOrders();
-            prevValueCache.putDailySnapshot(today,
-                    DashboardPrevValueCache.DailySnapshotType.PENDING_COUNT,
-                    BigDecimal.valueOf(pendingCount));
-            return pendingCount;
+        boolean pendingOk = retryStep("待处理订单分项", today, () -> {
+            PendingOrderSnapshot snapshot = snapshotPendingOrders();
+            prevValueCache.putPendingOrderSnapshot(today, snapshot);
+            return snapshot;
         });
         // 重试 3 次，每次间隔 1 秒 线式重试
         boolean stockOk = retryStep("库存风险SKU数", today, () -> {
@@ -112,8 +111,8 @@ public class DashboardDailySnapshotJob {
         return false;
     }
 
-    /** 全公司口径待处理订单总数：待审采购 + 待审销售 + 待确认入库 + 待确认出库 */
-    private long countPendingOrders() {
+    /** 全公司口径待处理订单分项：待审采购、待审销售、待确认入库、待确认出库。 */
+    private PendingOrderSnapshot snapshotPendingOrders() {
         // 待审采购订单数
         long pendingPurchase = purchaseOrderMapper.selectCount(
                 new LambdaQueryWrapper<PurchaseOrder>()
@@ -130,6 +129,6 @@ public class DashboardDailySnapshotJob {
         long pendingOutbound = outboundBillMapper.selectCount(
                 new LambdaQueryWrapper<OutboundBill>()
                         .eq(OutboundBill::getStatus, StockBillStatus.PENDING_CONFIRM.name()));
-        return pendingPurchase + pendingSales + pendingInbound + pendingOutbound;
+        return new PendingOrderSnapshot(pendingPurchase, pendingSales, pendingInbound, pendingOutbound);
     }
 }

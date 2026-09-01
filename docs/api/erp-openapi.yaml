@@ -5450,12 +5450,22 @@ components:
           type: number
           format: double
           nullable: true
-          description: 对比周期变化率，单位为百分比数值；无权限或比较口径不可用时返回 null。
+          description: |
+            对比周期变化率，单位为百分比数值，公式为（本期 - 上期）/ abs(上期) × 100；保留正负号，前端不得重新计算。
+            上期缺失、聚合失败，或上期为 0 且本期非 0 时不可比较，返回 null；上期与本期均为 0 时返回 0。
+            因此亏损从 -100 收窄至 -50 时返回 +50，跨零从 -100 变为 50 时返回 +150。
+            `PENDING_ORDERS` 按当前用户可见的采购待审、销售待审、待确认入库、待确认出库来源组合，与昨日同一来源组合的快照比较；不使用全公司总数替代受限账号的基线。
         compareText:
           type: string
           nullable: true
           description: 对比周期文案；无权限或不展示环比时返回 null。
-        status: { type: string, enum: [good, watch, risk, neutral], description: 指标风险颜色语义 }
+        status:
+          type: string
+          enum: [good, watch, risk, neutral]
+          description: |
+            指标趋势语义，仅用于数值下方的环比徽标：good 绿色、watch 琥珀色、risk 红色、neutral 灰色。
+            正向指标（销售额、毛利额）上升为改善；反向指标（待处理订单、库存风险 SKU）下降为改善。
+            变化幅度按指标方向折算后，绝对值大于等于 5% 时为 good 或 risk，0 为 neutral，其余非零为 watch；changeRate 为 null 时返回 neutral，前端不显示徽标。
     DashboardTrendPoint:
       type: object
       required: [date, salesAmount, purchaseAmount, grossMarginAmount]

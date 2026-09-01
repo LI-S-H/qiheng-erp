@@ -1,8 +1,13 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.cache.DashboardPrevValueCache;
+import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
+import com.qiheng.erp.dashboard.domain.enums.MetricKey;
+import com.qiheng.erp.dashboard.domain.enums.MetricStatus;
+import com.qiheng.erp.dashboard.domain.enums.OrderMetricScope;
 import com.qiheng.erp.dashboard.domain.vo.DashboardMetricVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
@@ -24,7 +29,6 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
@@ -104,16 +108,18 @@ public class DashboardMetricsLoader {
         // 从 Redis 缓存获取上月销售累计值,若 miss 则实时聚合
         BigDecimal prevMonthSales = resolveMonthlySnapshot(prevMonth,
                 DashboardPrevValueCache.MonthlySnapshotType.SALES_TOTAL,
-                canSales ? this::sumPrevMonthSales : null);
+                canSales ? () -> sumSalesApprovedBetween(
+                        prevMonth.atDay(1).atStartOfDay(), prevMonth.atEndOfMonth().atTime(23, 59, 59)) : null);
         // 从 Redis 缓存获取上月采购累计值,若 miss 则实时聚合
         BigDecimal prevMonthPurchase = resolveMonthlySnapshot(prevMonth,
                 DashboardPrevValueCache.MonthlySnapshotType.PURCHASE_TOTAL,
-                canPurchase ? this::sumPrevMonthPurchase : null);
-        // 上月毛利只在两个上月累计都有值且当前用户有毛利权限时才可比，否则视为 0（不误导）
+                canPurchase ? () -> sumPurchaseApprovedBetween(
+                        prevMonth.atDay(1).atStartOfDay(), prevMonth.atEndOfMonth().atTime(23, 59, 59)) : null);
+        // 上月毛利只在两个上月累计都有值且当前用户有毛利权限时才可比，否则明确标记为不可比。
         BigDecimal prevMonthGross = (canSales && canPurchase
                 && prevMonthSales != null && prevMonthPurchase != null)
                 ? prevMonthSales.subtract(prevMonthPurchase)
-                : BigDecimal.ZERO;
+                : null;
 
         // 4. 运营类指标：当前快照 + 昨日 23:55 快照对比
         long pendingPurchase = canPurchase ? purchaseOrderMapper.selectCount(
@@ -134,56 +140,55 @@ public class DashboardMetricsLoader {
                 new LambdaQueryWrapper<OutboundBill>()
                         .eq(OutboundBill::getStatus, StockBillStatus.PENDING_CONFIRM.name()))
                 : 0L;
-        long pendingOrder = pendingPurchase + pendingSales + pendingInbound + pendingOutbound;
+        boolean canViewPending = canSales || canPurchase || canWarehouse;
+        PendingOrderSnapshot currentPendingSnapshot = new PendingOrderSnapshot(
+                pendingPurchase, pendingSales, pendingInbound, pendingOutbound);
+        long pendingOrder = sumVisiblePendingOrders(currentPendingSnapshot, canPurchase, canSales, canWarehouse);
         long stockRisk = canWarehouse ? stockAlertLoader.countRiskSkus() : 0L;
 
-        // 昨日快照：miss 时变化率按 0 处理（跨天 23:55~24:00 调度间隙）
+        // 昨日待处理订单使用同一权限组合的分项快照；快照缺失时明确标记为不可比较。
         LocalDate yesterday = today.minusDays(1);
-        BigDecimal prevPending = canSales || canPurchase || canWarehouse
-                ? prevValueCache.getDailySnapshot(yesterday, DashboardPrevValueCache.DailySnapshotType.PENDING_COUNT)
-                : BigDecimal.ZERO;
+        PendingOrderSnapshot prevPendingSnapshot = canViewPending
+                ? prevValueCache.getPendingOrderSnapshot(yesterday) : null;
+        BigDecimal prevPending = prevPendingSnapshot == null ? null : BigDecimal.valueOf(
+                sumVisiblePendingOrders(prevPendingSnapshot, canPurchase, canSales, canWarehouse));
         BigDecimal prevStockRisk = canWarehouse
                 ? prevValueCache.getDailySnapshot(yesterday, DashboardPrevValueCache.DailySnapshotType.STOCK_RISK_COUNT)
                 : BigDecimal.ZERO;
 
         // 5. 构建固定顺序的指标。无权限时数值和对比字段必须为 null，不能伪装为 0。
-        boolean canViewPending = canSales || canPurchase || canWarehouse;
-        boolean canViewAllPending = canSales && canPurchase && canWarehouse;
+
+        BigDecimal monthSalesChangeRate = canSales
+                ? DashboardPrevValueCache.computeChangeRate(monthSales, prevMonthSales) : null;
+        BigDecimal monthGrossChangeRate = canSales && canPurchase
+                ? DashboardPrevValueCache.computeChangeRate(monthGross, prevMonthGross) : null;
+        BigDecimal pendingOrderChangeRate = canViewPending
+                ? DashboardPrevValueCache.computeChangeRate(BigDecimal.valueOf(pendingOrder), prevPending) : null;
+        BigDecimal stockRiskChangeRate = canWarehouse
+                ? DashboardPrevValueCache.computeChangeRate(BigDecimal.valueOf(stockRisk), prevStockRisk) : null;
+
         List<DashboardMetricVO> metrics = new ArrayList<>();
-        metrics.add(buildMetric("MONTH_SALES", "本月销售额",
-                canSales ? QtyUtil.toDecimal(monthSales) : null, "元",
-                canSales ? DashboardPrevValueCache.computeChangeRate(monthSales, prevMonthSales) : null,
-                canSales ? "较上月" : null,
-                canSales ? DashboardPrevValueCache.computeStatus(
-                        DashboardPrevValueCache.computeChangeRate(monthSales, prevMonthSales)) : "neutral"));
-        metrics.add(buildMetric("MONTH_GROSS_PROFIT", "本月毛利额",
-                canSales && canPurchase ? QtyUtil.toDecimal(monthGross) : null, "元",
-                canSales && canPurchase ? DashboardPrevValueCache.computeChangeRate(monthGross, prevMonthGross) : null,
-                canSales && canPurchase ? "较上月" : null,
-                canSales && canPurchase ? DashboardPrevValueCache.computeStatus(
-                        DashboardPrevValueCache.computeChangeRate(monthGross, prevMonthGross)) : "neutral"));
-        metrics.add(buildMetric("PENDING_ORDERS", "待处理订单",
-                canViewPending ? BigDecimal.valueOf(pendingOrder) : null, "单",
-                canViewAllPending ? DashboardPrevValueCache.computeChangeRate(BigDecimal.valueOf(pendingOrder), prevPending) : null,
-                canViewAllPending ? "较昨日" : null,
-                canViewAllPending ? DashboardPrevValueCache.computeStatus(
-                        DashboardPrevValueCache.computeChangeRate(BigDecimal.valueOf(pendingOrder), prevPending)) : "neutral"));
-        metrics.add(buildMetric("STOCK_RISK_SKU", "库存风险 SKU",
-                canWarehouse ? BigDecimal.valueOf(stockRisk) : null, "个",
-                canWarehouse ? DashboardPrevValueCache.computeChangeRate(BigDecimal.valueOf(stockRisk), prevStockRisk) : null,
-                canWarehouse ? "较昨日" : null,
-                canWarehouse ? DashboardPrevValueCache.computeStatus(
-                        DashboardPrevValueCache.computeChangeRate(BigDecimal.valueOf(stockRisk), prevStockRisk)) : "neutral"));
+        metrics.add(buildMetric(MetricKey.MONTH_SALES,
+                canSales ? QtyUtil.toDecimal(monthSales) : null,
+                monthSalesChangeRate,
+                canSales ? DashboardPrevValueCache.computeStatus(monthSalesChangeRate, MetricKey.MONTH_SALES.getDirection()) : MetricStatus.NEUTRAL));
+        metrics.add(buildMetric(MetricKey.MONTH_GROSS_PROFIT,
+                canSales && canPurchase ? QtyUtil.toDecimal(monthGross) : null,
+                monthGrossChangeRate,
+                canSales && canPurchase ? DashboardPrevValueCache.computeStatus(monthGrossChangeRate, MetricKey.MONTH_GROSS_PROFIT.getDirection()) : MetricStatus.NEUTRAL));
+        metrics.add(buildMetric(MetricKey.PENDING_ORDERS,
+                canViewPending ? BigDecimal.valueOf(pendingOrder) : null,
+                pendingOrderChangeRate,
+                canViewPending ? DashboardPrevValueCache.computeStatus(pendingOrderChangeRate, MetricKey.PENDING_ORDERS.getDirection()) : MetricStatus.NEUTRAL));
+        metrics.add(buildMetric(MetricKey.STOCK_RISK_SKU,
+                canWarehouse ? BigDecimal.valueOf(stockRisk) : null,
+                stockRiskChangeRate,
+                canWarehouse ? DashboardPrevValueCache.computeStatus(stockRiskChangeRate, MetricKey.STOCK_RISK_SKU.getDirection()) : MetricStatus.NEUTRAL));
         return metrics;
     }
 
     /**
      * 解析月快照值：优先 Redis 缓存；miss 时用 supplier 实时聚合并回填缓存。
-     *
-     * @param prevMonth 上月
-     * @param type 快照类型
-     * @param fallback 实时聚合函数；null 表示当前用户无对应权限，直接返回 0
-     * @return 上月累计值；无权限时返回 0，缓存与聚合均失败时返回 null（变化率按 0 处理）
      */
     private BigDecimal resolveMonthlySnapshot(YearMonth prevMonth,
                                               DashboardPrevValueCache.MonthlySnapshotType type,
@@ -216,68 +221,61 @@ public class DashboardMetricsLoader {
         return computed;
     }
 
-    /** 上月整月销售累计（实时聚合，仅 cache miss 时调用） */
-    private BigDecimal sumPrevMonthSales() {
-        // 获取上个月对象
-        YearMonth prevMonth = YearMonth.now().minusMonths(1);
-        return sumSalesApprovedBetween(
-                // 上个月 1 日 00:00:00 开始
-                prevMonth.atDay(1).atStartOfDay(),
-                // 上个月最后一天 23:59:59 结束
-                prevMonth.atEndOfMonth().atTime(LocalTime.MAX));
-    }
-
-    /** 上月整月采购累计（实时聚合，仅 cache miss 时调用） */
-    private BigDecimal sumPrevMonthPurchase() {
-        YearMonth prevMonth = YearMonth.now().minusMonths(1);
-        return sumPurchaseApprovedBetween(
-                // 上个月 1 日 00:00:00 开始
-                prevMonth.atDay(1).atStartOfDay(),
-                // 上个月最后一天 23:59:59 结束
-                prevMonth.atEndOfMonth().atTime(LocalTime.MAX));
-    }
-
-    /** 销售单过审后总金额（按 approved_at 在时间段内聚合） */
+    /** 销售单经营金额（按统一状态、approved_at 和时间段在数据库中聚合）。 */
     private BigDecimal sumSalesApprovedBetween(LocalDateTime start, LocalDateTime end) {
-        List<SalesOrder> orders = salesOrderMapper.selectList(
-                new LambdaQueryWrapper<SalesOrder>()
-                        .eq(SalesOrder::getStatus, SalesOrderStatus.OUTBOUND_DONE.name())
-                        .eq(SalesOrder::getDeleted, 0)
-                        .between(SalesOrder::getApprovedAt, start, end));
-        BigDecimal total = BigDecimal.ZERO;
-        for (SalesOrder order : orders) {
-            if (order.getTotalAmount() != null) {
-                total = total.add(BigDecimal.valueOf(order.getTotalAmount()));
-            }
-        }
-        return total;
+        List<Object> result = salesOrderMapper.selectObjs(new QueryWrapper<SalesOrder>()
+                .select("COALESCE(SUM(total_amount), 0)")
+                .in("status", OrderMetricScope.SALES.getStatuses())
+                .eq("deleted", 0)
+                .between("approved_at", start, end));
+        return extractAggregateAmount(result);
     }
 
-    /** 采购单过审后总金额（按 approved_at 在时间段内聚合） */
+    /** 采购单经营金额（按统一状态、approved_at 和时间段在数据库中聚合）。 */
     private BigDecimal sumPurchaseApprovedBetween(LocalDateTime start, LocalDateTime end) {
-        List<PurchaseOrder> orders = purchaseOrderMapper.selectList(
-                new LambdaQueryWrapper<PurchaseOrder>()
-                        .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.INBOUND_DONE.name())
-                        .eq(PurchaseOrder::getDeleted, 0)
-                        .between(PurchaseOrder::getApprovedAt, start, end));
-        BigDecimal total = BigDecimal.ZERO;
-        for (PurchaseOrder order : orders) {
-            if (order.getTotalAmount() != null) {
-                total = total.add(BigDecimal.valueOf(order.getTotalAmount()));
-            }
+        List<Object> result = purchaseOrderMapper.selectObjs(new QueryWrapper<PurchaseOrder>()
+                .select("COALESCE(SUM(total_amount), 0)")
+                .in("status", OrderMetricScope.PURCHASE.getStatuses())
+                .eq("deleted", 0)
+                .between("approved_at", start, end));
+        return extractAggregateAmount(result);
+    }
+
+    /** MyBatis 聚合结果会随驱动返回 Long、BigDecimal 或字符串，这里统一为金额原始分值。 */
+    private static BigDecimal extractAggregateAmount(List<Object> result) {
+        if (result == null || result.isEmpty() || result.getFirst() == null) {
+            return BigDecimal.ZERO;
+        }
+        return new BigDecimal(String.valueOf(result.getFirst()));
+    }
+
+    /** 按当前账号可见的待办来源组合快照，保证本期与昨日基线使用相同口径。 */
+    private static long sumVisiblePendingOrders(PendingOrderSnapshot snapshot,
+                                                boolean canPurchase,
+                                                boolean canSales,
+                                                boolean canWarehouse) {
+        long total = 0L;
+        if (canPurchase) {
+            total += snapshot.pendingPurchase();
+        }
+        if (canSales) {
+            total += snapshot.pendingSales();
+        }
+        if (canWarehouse) {
+            total += snapshot.pendingInbound() + snapshot.pendingOutbound();
         }
         return total;
     }
-
-    private static DashboardMetricVO buildMetric(String key, String label, BigDecimal value, String unit,
-                                                 BigDecimal changeRate, String compareText, String status) {
+    /** 构建指标VO */
+    private static DashboardMetricVO buildMetric(MetricKey key, BigDecimal value,
+                                                 BigDecimal changeRate, MetricStatus status) {
         DashboardMetricVO vo = new DashboardMetricVO();
         vo.setKey(key);
-        vo.setLabel(label);
+        vo.setLabel(key.getLabel());
         vo.setValue(value);
-        vo.setUnit(unit);
+        vo.setUnit(key.getUnit());
         vo.setChangeRate(changeRate);
-        vo.setCompareText(compareText);
+        vo.setCompareText(changeRate != null ? key.getCompareText() : null);
         vo.setStatus(status);
         return vo;
     }

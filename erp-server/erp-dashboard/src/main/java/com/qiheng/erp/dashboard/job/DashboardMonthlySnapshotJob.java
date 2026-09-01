@@ -1,14 +1,12 @@
 package com.qiheng.erp.dashboard.job;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
-import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.cache.DashboardPrevValueCache;
+import com.qiheng.erp.dashboard.domain.enums.OrderMetricScope;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
-import com.qiheng.erp.purchase.domain.purchaseorder.enums.PurchaseOrderStatus;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
-import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +15,10 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * 工作台财务类指标月快照任务。
@@ -37,6 +38,9 @@ import java.time.YearMonth;
 @RequiredArgsConstructor
 @Slf4j
 public class DashboardMonthlySnapshotJob {
+
+    private static final int MAX_RETRY = 3;
+    private static final long BASE_DELAY_MS = 1000L;
 
     /** Redisson 分布式锁 key（SpEL 字符串字面量语法），多实例部署时只允许一个实例执行 */
     private static final String LOCK_KEY = "'dashboard:job:monthly-snapshot'";
@@ -70,55 +74,80 @@ public class DashboardMonthlySnapshotJob {
      */
     @DistributedLock(key = LOCK_KEY, leaseTime = 300)
     public void snapshotOfMonth(YearMonth month) {
-        try {
-            BigDecimal salesTotal = sumSalesApprovedBetween(
-                    month.atDay(1).atStartOfDay(),
-                    month.atEndOfMonth().atTime(java.time.LocalTime.MAX));
+        LocalDateTime start = month.atDay(1).atStartOfDay();
+        LocalDateTime end = month.atEndOfMonth().atTime(23, 59, 59);
+
+        boolean salesOk = retryStep("销售累计", month, () -> {
+            BigDecimal salesTotal = sumSalesApprovedBetween(start, end);
             prevValueCache.putMonthlySnapshot(month,
                     DashboardPrevValueCache.MonthlySnapshotType.SALES_TOTAL, salesTotal);
+            return salesTotal;
+        });
 
-            BigDecimal purchaseTotal = sumPurchaseApprovedBetween(
-                    month.atDay(1).atStartOfDay(),
-                    month.atEndOfMonth().atTime(java.time.LocalTime.MAX));
+        boolean purchaseOk = retryStep("采购累计", month, () -> {
+            BigDecimal purchaseTotal = sumPurchaseApprovedBetween(start, end);
             prevValueCache.putMonthlySnapshot(month,
                     DashboardPrevValueCache.MonthlySnapshotType.PURCHASE_TOTAL, purchaseTotal);
+            return purchaseTotal;
+        });
 
-            log.info("工作台月快照完成 month={} salesTotal={} purchaseTotal={}",
-                    month, QtyUtil.toDecimal(salesTotal), QtyUtil.toDecimal(purchaseTotal));
-        } catch (Exception ex) {
-            log.error("工作台月快照执行失败 month={}", month, ex);
+        if (salesOk && purchaseOk) {
+            log.info("工作台月快照全部完成 month={}", month);
+        } else {
+            log.warn("工作台月快照部分失败 month={} salesOk={} purchaseOk={}", month, salesOk, purchaseOk);
+
         }
     }
 
-    /** 本月整月销售累计（已过审且出库完成的订单，按 approved_at 聚合） */
-    private BigDecimal sumSalesApprovedBetween(java.time.LocalDateTime start, java.time.LocalDateTime end) {
-        java.util.List<SalesOrder> orders = salesOrderMapper.selectList(
-                new LambdaQueryWrapper<SalesOrder>()
-                        .eq(SalesOrder::getStatus, SalesOrderStatus.OUTBOUND_DONE.name())
-                        .between(SalesOrder::getApprovedAt, start, end)
-                        .eq(SalesOrder::getDeleted, 0));
-        BigDecimal total = BigDecimal.ZERO;
-        for (SalesOrder order : orders) {
-            if (order.getTotalAmount() != null) {
-                total = total.add(BigDecimal.valueOf(order.getTotalAmount()));
+    private <T> boolean retryStep(String stepName, YearMonth month, Supplier<T> action) {
+        for (int attempt = 1; attempt <= MAX_RETRY; attempt++) {
+            try {
+                T result = action.get();
+                log.info("快照步骤[{}]成功 month={} result={}", stepName, month, result);
+                return true;
+            } catch (Exception ex) {
+                log.error("快照步骤[{}]失败 month={} 第{}/{}次", stepName, month, attempt, MAX_RETRY, ex);
+                if (attempt < MAX_RETRY) {
+                    try {
+                        Thread.sleep(BASE_DELAY_MS * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.warn("重试等待被中断，终止重试 month={} step={}", month, stepName);
+                        // TODO: 处理中断异常，如记录日志、通知管理员等
+                        break;
+                    }
+                }
             }
         }
-        return total;
+        // TODO: 处理失败异常，如记录日志、通知管理员等
+        return false;
     }
 
-    /** 本月整月采购累计（已审核且入库完成的订单，按 approved_at 聚合） */
-    private BigDecimal sumPurchaseApprovedBetween(java.time.LocalDateTime start, java.time.LocalDateTime end) {
-        java.util.List<PurchaseOrder> orders = purchaseOrderMapper.selectList(
-                new LambdaQueryWrapper<PurchaseOrder>()
-                        .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.INBOUND_DONE.name())
-                        .between(PurchaseOrder::getApprovedAt, start, end)
-                        .eq(PurchaseOrder::getDeleted, 0));
-        BigDecimal total = BigDecimal.ZERO;
-        for (PurchaseOrder order : orders) {
-            if (order.getTotalAmount() != null) {
-                total = total.add(BigDecimal.valueOf(order.getTotalAmount()));
-            }
+    /** 月度销售快照金额（按统一状态、approved_at 和时间段在数据库中聚合）。 */
+    private BigDecimal sumSalesApprovedBetween(LocalDateTime start, java.time.LocalDateTime end) {
+        List<Object> result = salesOrderMapper.selectObjs(new QueryWrapper<SalesOrder>()
+                .select("COALESCE(SUM(total_amount), 0)")
+                .in("status", OrderMetricScope.SALES.getStatuses())
+                .eq("deleted", 0)
+                .between("approved_at", start, end));
+        return extractAggregateAmount(result);
+    }
+
+    /** 月度采购快照金额（按统一状态、approved_at 和时间段在数据库中聚合）。 */
+    private BigDecimal sumPurchaseApprovedBetween(LocalDateTime start, LocalDateTime end) {
+        List<Object> result = purchaseOrderMapper.selectObjs(new QueryWrapper<PurchaseOrder>()
+                .select("COALESCE(SUM(total_amount), 0)")
+                .in("status", OrderMetricScope.PURCHASE.getStatuses())
+                .eq("deleted", 0)
+                .between("approved_at", start, end));
+        return extractAggregateAmount(result);
+    }
+
+    /** MyBatis 聚合结果会随驱动返回 Long、BigDecimal 或字符串，这里统一为金额原始分值。 */
+    private static BigDecimal extractAggregateAmount(java.util.List<Object> result) {
+        if (result == null || result.isEmpty() || result.getFirst() == null) {
+            return BigDecimal.ZERO;
         }
-        return total;
+        return new BigDecimal(String.valueOf(result.getFirst()));
     }
 }

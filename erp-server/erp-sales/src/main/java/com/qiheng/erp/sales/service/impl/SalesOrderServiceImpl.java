@@ -4,6 +4,8 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendInvalidatedEvent;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
@@ -48,6 +50,7 @@ import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -99,6 +102,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private IOutboundBillItemService outboundBillItemService;
     @Autowired
     private WarehouseStockReservationSupport warehouseStockReservationSupport;
+    @Autowired
+    private ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 销售订单分页查询（逻辑删除过滤按全局配置自动追加）
@@ -358,6 +363,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         // 5. 生成 SALES_OUT 待确认出库单（主表已 APPROVED，审核权已拿到）
         log.info("审核销售订单[{}]，生成待确认出库单", order.getSalesNo());
         generateSalesOutboundBill(order, items);
+        applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                DashboardTrendMetric.SALES, now.toLocalDate()));
     }
 
     /**
@@ -493,6 +500,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                     "数据已发生变化，请刷新后重试");
         }
         // 9. 释放锁定库存（SUBMITTED / APPROVED 分支，主表已 CANCELLED，取消权已拿到）
+        if (SalesOrderStatus.APPROVED.name().equals(currentStatus) && order.getApprovedAt() != null) {
+            applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                    DashboardTrendMetric.SALES, order.getApprovedAt().toLocalDate()));
+        }
         if (needReleaseStock) {
             // 9.1 批量更新库存余额（@Version 乐观锁，任一失败即抛错，整个事务回滚）
             if (!warehouseStockService.updateBatchById(List.copyOf(lockedStocks.values()))) {

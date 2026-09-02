@@ -1,135 +1,80 @@
 package com.qiheng.erp.dashboard.loader;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
 import com.qiheng.erp.common.util.QtyUtil;
+import com.qiheng.erp.dashboard.cache.DashboardTrendDailyAmountRefreshService;
 import com.qiheng.erp.dashboard.domain.vo.DashboardTrendPointVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
-import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
-import com.qiheng.erp.purchase.domain.purchaseorder.enums.PurchaseOrderStatus;
-import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
-import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
-import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
-import com.qiheng.erp.sales.mapper.SalesOrderMapper;
 import com.qiheng.erp.security.domain.dto.LoginUser;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 
 /**
  * 工作台经营趋势聚合器。
  *
- * <p>返回近 30 天的销售金额、采购金额和毛利额（销售 - 采购）按天序列。
- * 子项按当前用户权限裁剪：
- * <ul>
- *   <li>无 sales:query → 销售曲线字段为 0</li>
- *   <li>无 purchase:query → 采购曲线字段为 0</li>
- *   <li>毛利仅在销售与采购权限都齐备时计算，否则为 0</li>
- * </ul>
- *
- * <p>前端在工作台卡片内提供 7 天、15 天、30 天切换，只做本地截取，不额外调用接口。</p>
+ * <p>返回近 30 天销售、采购和毛利（销售 - 采购）按日序列。金额原始分值由按日缓存协调器负责
+ * 批量读取及缺失回填；权限仅影响当前用户最终可见的维度。</p>
  *
  * @author Li
  * @since 2026-08-15
  */
 @Component
+@RequiredArgsConstructor
 public class DashboardTrendLoader {
 
     private static final int TREND_DAYS = 30;
 
     private final DashboardPermissionGuard permissionGuard;
-    private final SalesOrderMapper salesOrderMapper;
-    private final PurchaseOrderMapper purchaseOrderMapper;
+    private final DashboardTrendDailyAmountRefreshService trendDailyAmountRefreshService;
 
-    @Autowired
-    public DashboardTrendLoader(DashboardPermissionGuard permissionGuard,
-                               SalesOrderMapper salesOrderMapper,
-                               PurchaseOrderMapper purchaseOrderMapper) {
-        this.permissionGuard = permissionGuard;
-        this.salesOrderMapper = salesOrderMapper;
-        this.purchaseOrderMapper = purchaseOrderMapper;
-    }
-
-    /**
-     * 加载近 30 天经营趋势
-     *
-     * @param user 当前登录用户
-     * @return 按日期升序的 30 个趋势点；无权维度金额归 0
-     */
+    /** 加载近 30 天经营趋势。 */
     public List<DashboardTrendPointVO> load(LoginUser user) {
         LocalDate today = LocalDate.now();
         LocalDate startDate = today.minusDays(TREND_DAYS - 1L);
 
         boolean canSales = permissionGuard.canViewSales(user);
         boolean canPurchase = permissionGuard.canViewPurchase(user);
-
-        Map<LocalDate, BigDecimal> salesByDay = canSales
-                ? aggregateByDay(salesOrderMapper.selectList(
-                            new LambdaQueryWrapper<SalesOrder>()
-                                    .in(SalesOrder::getStatus,
-                                            SalesOrderStatus.APPROVED.name(),
-                                            SalesOrderStatus.PARTIAL_OUTBOUND.name(),
-                                            SalesOrderStatus.OUTBOUND_DONE.name())
-                                    .between(SalesOrder::getApprovedAt,
-                                            startDate.atStartOfDay(),
-                                            today.atTime(23, 59, 59))),
-                        SalesOrder::getApprovedAt,
-                        SalesOrder::getTotalAmount)
-                : new HashMap<>();
-        Map<LocalDate, BigDecimal> purchaseByDay = canPurchase
-                ? aggregateByDay(purchaseOrderMapper.selectList(
-                            new LambdaQueryWrapper<PurchaseOrder>()
-                                    .in(PurchaseOrder::getStatus,
-                                            PurchaseOrderStatus.APPROVED.name(),
-                                            PurchaseOrderStatus.PARTIAL_INBOUND.name(),
-                                            PurchaseOrderStatus.INBOUND_DONE.name())
-                                    .between(PurchaseOrder::getApprovedAt,
-                                            startDate.atStartOfDay(),
-                                            today.atTime(23, 59, 59))),
-                        PurchaseOrder::getApprovedAt,
-                        PurchaseOrder::getTotalAmount)
-                : new HashMap<>();
+        // 1. 从缓存中读取销售、采购、销售退货、采购退货按日序列数据
+        Map<LocalDate, Long> salesByDay = canSales
+                ? trendDailyAmountRefreshService.resolve(DashboardTrendMetric.SALES, startDate, today)
+                : Map.of();
+        Map<LocalDate, Long> salesReturnByDay = canSales
+                ? trendDailyAmountRefreshService.resolve(DashboardTrendMetric.SALES_RETURN, startDate, today)
+                : Map.of();
+        Map<LocalDate, Long> purchaseByDay = canPurchase
+                ? trendDailyAmountRefreshService.resolve(DashboardTrendMetric.PURCHASE, startDate, today)
+                : Map.of();
+        Map<LocalDate, Long> purchaseReturnByDay = canPurchase
+                ? trendDailyAmountRefreshService.resolve(DashboardTrendMetric.PURCHASE_RETURN, startDate, today)
+                : Map.of();
 
         List<DashboardTrendPointVO> points = new ArrayList<>(TREND_DAYS);
-        // 毛利仅在销售与采购权限都齐备时计算，否则为 0，避免无意义的负毛利曲线
+        // 2. 计算销售、采购、毛利按日序列数据
         boolean computeGross = canSales && canPurchase;
         for (int offset = 0; offset < TREND_DAYS; offset++) {
             LocalDate date = startDate.plusDays(offset);
-            BigDecimal salesAmount = QtyUtil.toDecimal(salesByDay.getOrDefault(date, BigDecimal.ZERO));
-            BigDecimal purchaseAmount = QtyUtil.toDecimal(purchaseByDay.getOrDefault(date, BigDecimal.ZERO));
-            // 毛利额是销售额减采购额；亏损日必须保留负值，供前端和对账识别。
+            // 销售净值 = 销售金额 - 销售退货金额
+            BigDecimal salesAmount = QtyUtil.toDecimal(salesByDay.getOrDefault(date, 0L)
+                    - salesReturnByDay.getOrDefault(date, 0L));
+            // 采购净值 = 采购金额 - 采购退货金额
+            BigDecimal purchaseAmount = QtyUtil.toDecimal(purchaseByDay.getOrDefault(date, 0L)
+                    - purchaseReturnByDay.getOrDefault(date, 0L));
+            // 亏损日必须保留负毛利，供前端展示和业务对账使用。
             BigDecimal grossMargin = computeGross ? salesAmount.subtract(purchaseAmount) : BigDecimal.ZERO;
-
-            DashboardTrendPointVO vo = new DashboardTrendPointVO();
-            vo.setDate(date);
-            vo.setSalesAmount(salesAmount);
-            vo.setPurchaseAmount(purchaseAmount);
-            vo.setGrossMarginAmount(grossMargin);
-            points.add(vo);
+            // 3. 构建趋势点
+            DashboardTrendPointVO point = new DashboardTrendPointVO();
+            point.setDate(date);
+            point.setSalesAmount(salesAmount);
+            point.setPurchaseAmount(purchaseAmount);
+            point.setGrossMarginAmount(grossMargin);
+            points.add(point);
         }
         return points;
-    }
-
-    /** 通用按天聚合：将 entity 按 approved_at 日期聚合 amount 之和 */
-    private static <T> Map<LocalDate, BigDecimal> aggregateByDay(List<T> entities,
-                                                                Function<T, java.time.LocalDateTime> timeGetter,
-                                                                Function<T, Long> amountGetter) {
-        Map<LocalDate, BigDecimal> result = new HashMap<>();
-        for (T entity : entities) {
-            java.time.LocalDateTime when = timeGetter.apply(entity);
-            Long amount = amountGetter.apply(entity);
-            if (when == null || amount == null) {
-                continue;
-            }
-            LocalDate day = when.toLocalDate();
-            result.merge(day, BigDecimal.valueOf(amount), BigDecimal::add);
-        }
-        return result;
     }
 }

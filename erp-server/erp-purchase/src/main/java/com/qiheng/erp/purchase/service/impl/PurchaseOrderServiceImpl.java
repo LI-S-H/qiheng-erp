@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendInvalidatedEvent;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.BillNoGenerator;
@@ -51,6 +53,7 @@ import com.qiheng.erp.warehouse.service.support.SourceOperationLockSupport;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -113,6 +116,8 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
 
     @Autowired
     private BillNoGenerator billNoGenerator;
+    @Autowired
+    private ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 采购订单分页查询
@@ -452,6 +457,8 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已发生变化，请刷新后重试");
         }
         // 生成 PURCHASE_IN 待确认入库单
+        applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                DashboardTrendMetric.PURCHASE, now.toLocalDate()));
         generatePurchaseInboundBill(order);
     }
 
@@ -578,6 +585,10 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         int rows = purchaseOrderMapper.updateById(update);
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已发生变化，请刷新后重试");
+        }
+        if (PurchaseOrderStatus.APPROVED.name().equals(order.getStatus()) && order.getApprovedAt() != null) {
+            applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                    DashboardTrendMetric.PURCHASE, order.getApprovedAt().toLocalDate()));
         }
     }
 

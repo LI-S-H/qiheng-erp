@@ -8,9 +8,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -105,6 +108,45 @@ public class RedisUtil {
         }
     }
 
+    // ==================== Hash 存取 ====================
+
+    /**
+     * 批量读取 Hash 字段；缺失字段在返回列表中保持为 {@code null}，顺序与请求字段一致。
+     */
+    public List<String> hashMultiGet(String key, Collection<String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return List.of();
+        }
+        return template.opsForHash().multiGet(key, List.copyOf(fields)).stream()
+                .map(value -> value == null ? null : String.valueOf(value))
+                .toList();
+    }
+
+    /**
+     * 批量写入 Hash 字段，调用方可将一个业务对象拆成可独立失效的字段。
+     */
+    public void hashPutAll(String key, Map<String, String> values) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        template.opsForHash().putAll(key, values);
+    }
+
+    /**
+     * 删除 Hash 中指定字段，不会影响同一 Hash 下其他日期的数据。
+     */
+    public void hashDelete(String key, Collection<String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return;
+        }
+        template.opsForHash().delete(key, fields.toArray());
+    }
+    /** 返回 Hash 的全部字段名，供按日期窗口清理历史字段。 */
+    public Set<String> hashKeys(String key) {
+        return template.opsForHash().keys(key).stream()
+                .map(String::valueOf)
+                .collect(Collectors.toSet());
+    }
     // ==================== List 存取 ====================
 
     /**

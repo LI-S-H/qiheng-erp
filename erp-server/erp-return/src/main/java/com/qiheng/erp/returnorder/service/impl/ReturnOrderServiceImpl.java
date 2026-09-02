@@ -6,6 +6,8 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendInvalidatedEvent;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
@@ -58,6 +60,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -110,6 +113,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     private WarehouseStockReservationSupport warehouseStockReservationSupport;
     @Autowired
     private SourceOperationLockSupport sourceOperationLockSupport;
+    @Autowired
+    private ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 分页查询退货单主信息。
@@ -492,6 +497,11 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         } else {
             generateSalesReturnInbound(existing, approvedItems, approvedQtyMap);
         }
+        applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                returnType == ReturnType.PURCHASE_RETURN
+                        ? DashboardTrendMetric.PURCHASE_RETURN
+                        : DashboardTrendMetric.SALES_RETURN,
+                update.getApprovedAt().toLocalDate()));
     }
 
     /**
@@ -561,6 +571,13 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         int rows = returnOrderMapper.updateById(update);
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
+        }
+        if (ReturnStatus.APPROVED.name().equals(status) && existing.getApprovedAt() != null) {
+            applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                    parseType(existing.getReturnType()) == ReturnType.PURCHASE_RETURN
+                            ? DashboardTrendMetric.PURCHASE_RETURN
+                            : DashboardTrendMetric.SALES_RETURN,
+                    existing.getApprovedAt().toLocalDate()));
         }
     }
 

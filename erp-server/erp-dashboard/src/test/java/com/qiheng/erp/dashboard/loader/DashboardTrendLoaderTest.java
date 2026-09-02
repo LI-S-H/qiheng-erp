@@ -1,52 +1,82 @@
 package com.qiheng.erp.dashboard.loader;
 
+import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
+import com.qiheng.erp.dashboard.cache.DashboardTrendDailyAmountRefreshService;
 import com.qiheng.erp.dashboard.domain.vo.DashboardTrendPointVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
-import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
-import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
-import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
-import com.qiheng.erp.sales.mapper.SalesOrderMapper;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DashboardTrendLoaderTest {
 
     @Test
     void shouldKeepNegativeGrossMarginForLossDay() {
-        SalesOrderMapper salesOrderMapper = mock(SalesOrderMapper.class);
-        PurchaseOrderMapper purchaseOrderMapper = mock(PurchaseOrderMapper.class);
-        DashboardPermissionGuard permissionGuard = mock(DashboardPermissionGuard.class);
-        LoginUser user = new LoginUser();
-        when(permissionGuard.canViewSales(Mockito.any())).thenReturn(true);
-        when(permissionGuard.canViewPurchase(Mockito.any())).thenReturn(true);
+        Fixture fixture = new Fixture();
+        fixture.stubAmounts(10_000L, 16_000L, 0L, 0L);
 
-        LocalDateTime approvedAt = LocalDate.now().atTime(12, 0);
+        DashboardTrendPointVO today = fixture.loadToday();
 
-        SalesOrder salesOrder = new SalesOrder();
-        salesOrder.setApprovedAt(approvedAt);
-        salesOrder.setTotalAmount(10000L);
-        PurchaseOrder purchaseOrder = new PurchaseOrder();
-        purchaseOrder.setApprovedAt(approvedAt);
-        purchaseOrder.setTotalAmount(16000L);
-
-        when(salesOrderMapper.selectList(any())).thenReturn(List.of(salesOrder));
-        when(purchaseOrderMapper.selectList(any())).thenReturn(List.of(purchaseOrder));
-
-        List<DashboardTrendPointVO> trend = new DashboardTrendLoader(permissionGuard, salesOrderMapper, purchaseOrderMapper).load(user);
-
-        DashboardTrendPointVO today = trend.get(trend.size() - 1);
-        assertThat(today.getDate()).isEqualTo(LocalDate.now());
         assertThat(today.getGrossMarginAmount()).isEqualByComparingTo(new BigDecimal("-60"));
+    }
+
+    @Test
+    void shouldDeductApprovedReturnAmountsFromNetAmounts() {
+        Fixture fixture = new Fixture();
+        fixture.stubAmounts(10_000L, 16_000L, 2_000L, 1_000L);
+
+        DashboardTrendPointVO today = fixture.loadToday();
+
+        assertThat(today.getSalesAmount()).isEqualByComparingTo("80");
+        assertThat(today.getPurchaseAmount()).isEqualByComparingTo("150");
+        assertThat(today.getGrossMarginAmount()).isEqualByComparingTo("-70");
+    }
+
+    @Test
+    void shouldNotResolvePurchaseMetricsWithoutPurchasePermission() {
+        Fixture fixture = new Fixture();
+        when(fixture.permissionGuard.canViewPurchase(fixture.user)).thenReturn(false);
+        fixture.stubAmounts(10_000L, 16_000L, 0L, 0L);
+
+        DashboardTrendPointVO today = fixture.loadToday();
+
+        assertThat(today.getPurchaseAmount()).isZero();
+        assertThat(today.getGrossMarginAmount()).isZero();
+        verify(fixture.refreshService, never()).resolve(eq(DashboardTrendMetric.PURCHASE), any(), any());
+        verify(fixture.refreshService, never()).resolve(eq(DashboardTrendMetric.PURCHASE_RETURN), any(), any());
+    }
+
+    private static class Fixture {
+        private final DashboardPermissionGuard permissionGuard = mock(DashboardPermissionGuard.class);
+        private final DashboardTrendDailyAmountRefreshService refreshService = mock(DashboardTrendDailyAmountRefreshService.class);
+        private final LoginUser user = new LoginUser();
+
+        private Fixture() {
+            when(permissionGuard.canViewSales(user)).thenReturn(true);
+            when(permissionGuard.canViewPurchase(user)).thenReturn(true);
+        }
+
+        private void stubAmounts(long sales, long purchase, long salesReturn, long purchaseReturn) {
+            LocalDate today = LocalDate.now();
+            when(refreshService.resolve(eq(DashboardTrendMetric.SALES), any(), any())).thenReturn(Map.of(today, sales));
+            when(refreshService.resolve(eq(DashboardTrendMetric.PURCHASE), any(), any())).thenReturn(Map.of(today, purchase));
+            when(refreshService.resolve(eq(DashboardTrendMetric.SALES_RETURN), any(), any())).thenReturn(Map.of(today, salesReturn));
+            when(refreshService.resolve(eq(DashboardTrendMetric.PURCHASE_RETURN), any(), any())).thenReturn(Map.of(today, purchaseReturn));
+        }
+
+        private DashboardTrendPointVO loadToday() {
+            return new DashboardTrendLoader(permissionGuard, refreshService).load(user).getLast();
+        }
     }
 }

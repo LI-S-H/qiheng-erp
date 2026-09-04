@@ -25,6 +25,12 @@ import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderItemVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
+import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderReturnOverviewVo;
+import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderReturnItemOverviewVo;
+import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.domain.port.ReturnSourceOrderApprovalSummary;
+import com.qiheng.erp.returnorder.domain.port.ReturnSourceItemApprovalSummary;
+import com.qiheng.erp.returnorder.domain.port.ReturnOrderApprovalSummaryProvider;
 import com.qiheng.erp.sales.mapper.CustomerMapper;
 import com.qiheng.erp.sales.mapper.SalesOrderItemMapper;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
@@ -103,6 +109,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     @Autowired
     private WarehouseStockReservationSupport warehouseStockReservationSupport;
     @Autowired
+    private ReturnOrderApprovalSummaryProvider returnOrderApprovalSummaryProvider;
+    @Autowired
     private ApplicationEventPublisher applicationEventPublisher;
 
     /**
@@ -121,8 +129,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 .eq(StrUtil.isNotBlank(dto.getStatus()), SalesOrder::getStatus, dto.getStatus())
                 .orderByDesc(SalesOrder::getCreateTime);
         Page<SalesOrder> result = salesOrderMapper.selectPage(dto.toPage(), wrapper);
+        List<SalesOrderVo> records = result.getRecords().stream().map(this::toVo).toList();
+        attachReturnOverviews(records, loadOrderItemsByOrderId(records), false);
         return PageResult.of(
-                result.getRecords().stream().map(this::toVo).toList(),
+                records,
                 (int) result.getTotal(),
                 (int) result.getCurrent(),
                 (int) result.getSize()
@@ -147,9 +157,72 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         SalesOrderDetailVo detail = new SalesOrderDetailVo();
         BeanUtil.copyProperties(toVo(order), detail);
         detail.setItems(items.stream().map(this::toItemVo).toList());
+        attachReturnOverviews(List.of(detail), Map.of(salesOrderId, items), true);
         return detail;
     }
 
+    /** 批量读取当前页订单明细，避免退货概览在列表中产生 N+1 查询。 */
+    private Map<Long, List<SalesOrderItem>> loadOrderItemsByOrderId(List<SalesOrderVo> orders) {
+        List<Long> orderIds = orders.stream().map(SalesOrderVo::getSalesOrderId).toList();
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        return salesOrderItemMapper.selectList(new LambdaQueryWrapper<SalesOrderItem>()
+                        .in(SalesOrderItem::getSalesOrderId, orderIds))
+                .stream().collect(Collectors.groupingBy(SalesOrderItem::getSalesOrderId));
+    }
+
+    /**
+     * 组装退货模块提供的审批事实，并在销售模块内判断订单是否全量履约、全量退货。
+     * 退货模块不反向读取销售订单，避免跨模块循环依赖。
+     */
+    private void attachReturnOverviews(List<SalesOrderVo> orders,
+                                       Map<Long, List<SalesOrderItem>> itemsByOrderId,
+                                       boolean includeItems) {
+        if (orders.isEmpty()) {
+            return;
+        }
+        Map<Long, ReturnSourceOrderApprovalSummary> summaries = returnOrderApprovalSummaryProvider.summarize(
+                ReturnType.SALES_RETURN, orders.stream().map(SalesOrderVo::getSalesOrderId).toList());
+        for (SalesOrderVo order : orders) {
+            ReturnSourceOrderApprovalSummary summary = summaries.get(order.getSalesOrderId());
+            if (summary == null) {
+                continue;
+            }
+            List<SalesOrderItem> sourceItems = itemsByOrderId.getOrDefault(order.getSalesOrderId(), List.of());
+            boolean hasApprovedReturn = false;
+            boolean fullyReturned = !sourceItems.isEmpty();
+            List<SalesOrderReturnItemOverviewVo> itemOverviews = new ArrayList<>();
+            for (SalesOrderItem item : sourceItems) {
+                ReturnSourceItemApprovalSummary itemSummary = summary.itemSummaries().get(item.getId());
+                long approvedQty = itemSummary == null ? 0L : itemSummary.approvedReturnQty();
+                long orderedQty = item.getQuantity() == null ? 0L : item.getQuantity();
+                long fulfilledQty = item.getOutboundQty() == null ? 0L : item.getOutboundQty();
+                hasApprovedReturn |= approvedQty > 0;
+                fullyReturned &= fulfilledQty >= orderedQty && approvedQty >= orderedQty;
+                if (includeItems) {
+                    SalesOrderReturnItemOverviewVo itemOverview = new SalesOrderReturnItemOverviewVo();
+                    itemOverview.setSalesOrderItemId(item.getId());
+                    itemOverview.setOrderedQty(QtyUtil.toDecimal(orderedQty));
+                    itemOverview.setFulfilledQty(QtyUtil.toDecimal(fulfilledQty));
+                    itemOverview.setApprovedReturnQty(QtyUtil.toDecimal(approvedQty));
+                    itemOverview.setApprovedReturnAmount(QtyUtil.toDecimal(
+                            itemSummary == null ? 0L : itemSummary.approvedReturnAmount()));
+                    itemOverviews.add(itemOverview);
+                }
+            }
+            SalesOrderReturnOverviewVo overview = new SalesOrderReturnOverviewVo();
+            overview.setHasReturnOrder(summary.returnOrderCount() > 0);
+            overview.setCoverage(!hasApprovedReturn ? "NONE" : fullyReturned ? "FULL" : "PARTIAL");
+            overview.setApprovedReturnAmount(QtyUtil.toDecimal(summary.approvedReturnAmount()));
+            overview.setReturnOrderCount(summary.returnOrderCount());
+            overview.setEffectiveReturnOrderCount(summary.effectiveReturnOrderCount());
+            if (includeItems) {
+                overview.setItems(itemOverviews);
+            }
+            order.setReturnOverview(overview);
+        }
+    }
     /**
      * 新增销售订单草稿（后端生成销售单号、写入客户/仓库/产品快照、数量×100 持久化、重算订单总金额）
      * @param dto 草稿新增请求 DTO

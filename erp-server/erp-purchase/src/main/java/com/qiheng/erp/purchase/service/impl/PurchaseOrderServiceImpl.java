@@ -29,6 +29,12 @@ import com.qiheng.erp.purchase.domain.purchaseorder.vo.PurchaseOrderFulfillmentS
 import com.qiheng.erp.purchase.domain.purchaseorder.vo.PurchaseOrderItemVo;
 import com.qiheng.erp.purchase.domain.purchaseorder.vo.PurchaseOrderTimelineItemVo;
 import com.qiheng.erp.purchase.domain.purchaseorder.vo.PurchaseOrderVo;
+import com.qiheng.erp.purchase.domain.purchaseorder.vo.PurchaseOrderReturnOverviewVo;
+import com.qiheng.erp.purchase.domain.purchaseorder.vo.PurchaseOrderReturnItemOverviewVo;
+import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.domain.port.ReturnSourceOrderApprovalSummary;
+import com.qiheng.erp.returnorder.domain.port.ReturnSourceItemApprovalSummary;
+import com.qiheng.erp.returnorder.domain.port.ReturnOrderApprovalSummaryProvider;
 import com.qiheng.erp.purchase.domain.supplier.entity.Supplier;
 import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderItemMapper;
@@ -117,6 +123,8 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     @Autowired
     private BillNoGenerator billNoGenerator;
     @Autowired
+    private ReturnOrderApprovalSummaryProvider returnOrderApprovalSummaryProvider;
+    @Autowired
     private ApplicationEventPublisher applicationEventPublisher;
 
     /**
@@ -138,8 +146,10 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 .orderByDesc(PurchaseOrder::getCreateTime);
         // 执行分页查询
         Page<PurchaseOrder> page = this.page(dto.toPage(), wrapper);
+        List<PurchaseOrderVo> records = page.getRecords().stream().map(this::toVo).toList();
+        attachReturnOverviews(records, loadOrderItemsByOrderId(records), false);
         return PageResult.of(
-                page.getRecords().stream().map(this::toVo).toList(),
+                records,
                 (int) page.getTotal(),
                 (int) page.getCurrent(),
                 (int) page.getSize()
@@ -196,9 +206,69 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         detail.setItems(items);
         detail.setFulfillmentSummary(buildFulfillmentSummary(order, items));
         detail.setTimeline(buildTimeline(order));
+        attachReturnOverviews(List.of(detail), loadOrderItemsByOrderId(List.of(detail)), true);
         return detail;
     }
 
+    /** 批量读取当前页订单明细，避免退货概览在列表中产生 N+1 查询。 */
+    private Map<Long, List<PurchaseOrderItem>> loadOrderItemsByOrderId(List<PurchaseOrderVo> orders) {
+        List<Long> orderIds = orders.stream().map(PurchaseOrderVo::getPurchaseOrderId).toList();
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        return purchaseOrderItemMapper.selectList(new LambdaQueryWrapper<PurchaseOrderItem>()
+                        .in(PurchaseOrderItem::getPurchaseOrderId, orderIds))
+                .stream().collect(Collectors.groupingBy(PurchaseOrderItem::getPurchaseOrderId));
+    }
+
+    /** 在采购模块内以订单总数量、全量入库事实判定退货覆盖度。 */
+    private void attachReturnOverviews(List<PurchaseOrderVo> orders,
+                                       Map<Long, List<PurchaseOrderItem>> itemsByOrderId,
+                                       boolean includeItems) {
+        if (orders.isEmpty()) {
+            return;
+        }
+        Map<Long, ReturnSourceOrderApprovalSummary> summaries = returnOrderApprovalSummaryProvider.summarize(
+                ReturnType.PURCHASE_RETURN, orders.stream().map(PurchaseOrderVo::getPurchaseOrderId).toList());
+        for (PurchaseOrderVo order : orders) {
+            ReturnSourceOrderApprovalSummary summary = summaries.get(order.getPurchaseOrderId());
+            if (summary == null) {
+                continue;
+            }
+            List<PurchaseOrderItem> sourceItems = itemsByOrderId.getOrDefault(order.getPurchaseOrderId(), List.of());
+            boolean hasApprovedReturn = false;
+            boolean fullyReturned = !sourceItems.isEmpty();
+            List<PurchaseOrderReturnItemOverviewVo> itemOverviews = new ArrayList<>();
+            for (PurchaseOrderItem item : sourceItems) {
+                ReturnSourceItemApprovalSummary itemSummary = summary.itemSummaries().get(item.getId());
+                long approvedQty = itemSummary == null ? 0L : itemSummary.approvedReturnQty();
+                long orderedQty = item.getQuantity() == null ? 0L : item.getQuantity();
+                long fulfilledQty = item.getInboundQty() == null ? 0L : item.getInboundQty();
+                hasApprovedReturn |= approvedQty > 0;
+                fullyReturned &= fulfilledQty >= orderedQty && approvedQty >= orderedQty;
+                if (includeItems) {
+                    PurchaseOrderReturnItemOverviewVo itemOverview = new PurchaseOrderReturnItemOverviewVo();
+                    itemOverview.setPurchaseOrderItemId(item.getId());
+                    itemOverview.setOrderedQty(QtyUtil.toDecimal(orderedQty));
+                    itemOverview.setFulfilledQty(QtyUtil.toDecimal(fulfilledQty));
+                    itemOverview.setApprovedReturnQty(QtyUtil.toDecimal(approvedQty));
+                    itemOverview.setApprovedReturnAmount(QtyUtil.toDecimal(
+                            itemSummary == null ? 0L : itemSummary.approvedReturnAmount()));
+                    itemOverviews.add(itemOverview);
+                }
+            }
+            PurchaseOrderReturnOverviewVo overview = new PurchaseOrderReturnOverviewVo();
+            overview.setHasReturnOrder(summary.returnOrderCount() > 0);
+            overview.setCoverage(!hasApprovedReturn ? "NONE" : fullyReturned ? "FULL" : "PARTIAL");
+            overview.setApprovedReturnAmount(QtyUtil.toDecimal(summary.approvedReturnAmount()));
+            overview.setReturnOrderCount(summary.returnOrderCount());
+            overview.setEffectiveReturnOrderCount(summary.effectiveReturnOrderCount());
+            if (includeItems) {
+                overview.setItems(itemOverviews);
+            }
+            order.setReturnOverview(overview);
+        }
+    }
     /**
      * 新增采购订单草稿
      * @param dto 新增采购订单请求DTO

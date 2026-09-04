@@ -6652,6 +6652,7 @@ components:
         createTime: { type: string, description: 对应 `purchase_order.create_time` }
         updateTime: { type: string, description: 对应 `purchase_order.update_time` }
         version: { type: integer, minimum: 0, description: Current `purchase_order.version` for optimistic locking. }
+        returnOverview: { $ref: '#/components/schemas/PurchaseOrderReturnOverview', description: 只读退货汇总；列表不返回明细覆盖项，详情返回 items。 }
         remark: { type: string, maxLength: 500, description: 对应 `purchase_order.remark` }
     PurchaseOrderDetail:
       allOf:
@@ -6688,6 +6689,31 @@ components:
         operatorName: { type: string, maxLength: 100, description: 操作人名称快照；系统自动生成入库单时返回“系统” }
         inboundBillId: { type: string, nullable: true, description: 关联入库单 ID；仅入库单生成和确认事件非空，BIGINT 按字符串传输 }
         inboundBillNo: { type: string, nullable: true, maxLength: 64, description: 关联入库单号；仅入库单生成和确认事件非空 }
+
+    PurchaseOrderReturnOverview:
+      type: object
+      description: 采购订单退货只读汇总；不改变采购订单主状态，金额仅统计已审批通过且未取消的退货事实。
+      required: [hasReturnOrder, coverage, approvedReturnAmount, returnOrderCount, effectiveReturnOrderCount]
+      properties:
+        hasReturnOrder: { type: boolean, description: 是否存在关联退货单，包含已取消退货单 }
+        coverage: { type: string, enum: [NONE, PARTIAL, FULL], description: NONE 表示尚无审批通过退货，PARTIAL 表示未满足全量履约且全量退货，FULL 表示每个来源明细均已全量入库并全量退货 }
+        approvedReturnAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 已审批通过的累计采购退货金额字符串 }
+        returnOrderCount: { type: integer, minimum: 0, description: 所有关联退货单数量，包含已取消与待审批单据 }
+        effectiveReturnOrderCount: { type: integer, minimum: 0, description: 已审批通过且未取消的退货单数量 }
+        items:
+          type: array
+          description: 仅采购订单详情返回的来源明细退货覆盖数据
+          items: { $ref: '#/components/schemas/PurchaseOrderReturnItemOverview' }
+
+    PurchaseOrderReturnItemOverview:
+      type: object
+      required: [purchaseOrderItemId, orderedQty, fulfilledQty, approvedReturnQty, approvedReturnAmount]
+      properties:
+        purchaseOrderItemId: { type: string, description: 对应 `purchase_order_item.id`，BIGINT 按字符串传输 }
+        orderedQty: { type: number, format: double, minimum: 0, description: 原采购数量 }
+        fulfilledQty: { type: number, format: double, minimum: 0, description: 累计已入库数量 }
+        approvedReturnQty: { type: number, format: double, minimum: 0, description: 累计已审批通过的退货数量 }
+        approvedReturnAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 累计已审批通过的退货金额字符串 }
 
     PurchaseOrderItem:
       type: object
@@ -7071,6 +7097,7 @@ components:
         createTime: { type: string, description: 对应 `sales_order.create_time` }
         updateTime: { type: string, description: 对应 `sales_order.update_time` }
         version: { type: integer, minimum: 0, description: Current `sales_order.version` for optimistic locking. }
+        returnOverview: { $ref: '#/components/schemas/SalesOrderReturnOverview', description: 只读退货汇总；列表不返回明细覆盖项，详情返回 items。 }
         remark: { type: string, maxLength: 500, description: 对应 `sales_order.remark` }
     SalesOrderDetail:
       allOf:
@@ -7081,6 +7108,31 @@ components:
             items:
               type: array
               items: { $ref: '#/components/schemas/SalesOrderItem' }
+
+    SalesOrderReturnOverview:
+      type: object
+      description: 销售订单退货只读汇总；不改变销售订单主状态，金额仅统计已审批通过且未取消的退货事实。
+      required: [hasReturnOrder, coverage, approvedReturnAmount, returnOrderCount, effectiveReturnOrderCount]
+      properties:
+        hasReturnOrder: { type: boolean, description: 是否存在关联退货单，包含已取消退货单 }
+        coverage: { type: string, enum: [NONE, PARTIAL, FULL], description: NONE 表示尚无审批通过退货，PARTIAL 表示未满足全量履约且全量退货，FULL 表示每个来源明细均已全量出库并全量退货 }
+        approvedReturnAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 已审批通过的累计销售退货金额字符串 }
+        returnOrderCount: { type: integer, minimum: 0, description: 所有关联退货单数量，包含已取消与待审批单据 }
+        effectiveReturnOrderCount: { type: integer, minimum: 0, description: 已审批通过且未取消的退货单数量 }
+        items:
+          type: array
+          description: 仅销售订单详情返回的来源明细退货覆盖数据
+          items: { $ref: '#/components/schemas/SalesOrderReturnItemOverview' }
+
+    SalesOrderReturnItemOverview:
+      type: object
+      required: [salesOrderItemId, orderedQty, fulfilledQty, approvedReturnQty, approvedReturnAmount]
+      properties:
+        salesOrderItemId: { type: string, description: 对应 `sales_order_item.id`，BIGINT 按字符串传输 }
+        orderedQty: { type: number, format: double, minimum: 0, description: 原销售数量 }
+        fulfilledQty: { type: number, format: double, minimum: 0, description: 累计已出库数量 }
+        approvedReturnQty: { type: number, format: double, minimum: 0, description: 累计已审批通过的退货数量 }
+        approvedReturnAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 累计已审批通过的退货金额字符串 }
 
     SalesOrderItem:
       type: object

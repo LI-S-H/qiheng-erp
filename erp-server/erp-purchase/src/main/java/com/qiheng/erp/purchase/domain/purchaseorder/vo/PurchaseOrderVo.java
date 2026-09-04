@@ -98,6 +98,9 @@ public class PurchaseOrderVo {
     @Schema(description = "乐观锁版本号")
     private Integer version;
 
+    @Schema(description = "退货概览，不修改采购订单主状态")
+    private PurchaseOrderReturnOverviewVo returnOverview;
+
     @Schema(description = "备注")
     private String remark;
 }

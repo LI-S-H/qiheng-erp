@@ -751,6 +751,14 @@ function timelineMeta(event: PurchaseOrderTimelineEvent) {
   return map[event];
 }
 
+function returnCoverageMeta(coverage: string) {
+  return {
+    NONE: { label: '待审批退货', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+    PARTIAL: { label: '部分退货', className: 'border-sky-200 bg-sky-50 text-sky-700' },
+    FULL: { label: '已全量退货', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  }[coverage] || { label: '退货处理中', className: 'border-muted bg-muted text-muted-foreground' };
+}
+
 function formatMoney(value: number) {
   return `￥${value.toFixed(2)}`;
 }
@@ -886,6 +894,13 @@ onMounted(() => {
               /></section>
             </BusinessDetailWorkbenchCard>
 
+            <BusinessDetailWorkbenchCard v-if="detailRow.returnOverview && detailRow.returnOverview.hasReturnOrder">
+              <section class="purchase-workbench-record__section">
+                <div class="mb-4 flex items-start justify-between gap-3"><div><h3 class="text-sm font-semibold">退货概览</h3><p class="mt-1 text-xs text-muted-foreground">退货不改变采购单主状态；金额仅统计已审批通过的退货事实。</p></div><Badge variant="outline" :class="returnCoverageMeta(detailRow.returnOverview.coverage).className">{{ returnCoverageMeta(detailRow.returnOverview.coverage).label }}</Badge></div>
+                <dl class="purchase-workbench-info__facts"><div class="purchase-workbench-info__fact"><dt>关联退货单</dt><dd><strong>{{ detailRow.returnOverview.returnOrderCount }} 张</strong></dd></div><div class="purchase-workbench-info__fact"><dt>已审批退货单</dt><dd><strong>{{ detailRow.returnOverview.effectiveReturnOrderCount }} 张</strong></dd></div><div class="purchase-workbench-info__fact"><dt>已审批退货额</dt><dd><strong class="text-rose-700">{{ formatMoney(detailRow.returnOverview.approvedReturnAmount) }}</strong></dd></div><div class="purchase-workbench-info__fact"><dt>退货覆盖度</dt><dd><strong>{{ returnCoverageMeta(detailRow.returnOverview.coverage).label }}</strong></dd></div></dl>
+                <div v-if="detailRow.returnOverview.items?.length" class="mt-4"><div class="mb-2 flex items-end justify-between gap-3"><div><h4 class="text-sm font-semibold">明细退货覆盖</h4><p class="mt-1 text-xs text-muted-foreground">按来源采购明细核对入库与已审批退货数量。</p></div><span class="shrink-0 text-xs text-muted-foreground">共 {{ detailRow.returnOverview.items.length }} 项</span></div><ScrollArea class="w-full purchase-order-line-scroll detail-table-floating" aria-label="采购订单退货明细"><Table class="min-w-[840px] table-fixed"><colgroup><col class="w-[250px]" /><col class="w-[130px]" /><col class="w-[130px]" /><col class="w-[130px]" /><col class="w-[150px]" /></colgroup><TableHeader><TableRow><TableHead>来源商品</TableHead><TableHead class="text-center">订单数量</TableHead><TableHead class="text-center">已入库</TableHead><TableHead class="text-center">已审批退货</TableHead><TableHead class="text-right">已审批退货额</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="item in detailRow.returnOverview.items" :key="item.purchaseOrderItemId"><TableCell class="truncate" :title="detailRow.items.find(orderItem => orderItem.purchaseOrderItemId === item.purchaseOrderItemId)?.productName || item.purchaseOrderItemId">{{ detailRow.items.find(orderItem => orderItem.purchaseOrderItemId === item.purchaseOrderItemId)?.productName || '订单明细' }}</TableCell><TableCell class="text-center tabular-nums">{{ item.orderedQty }}</TableCell><TableCell class="text-center tabular-nums">{{ item.fulfilledQty }}</TableCell><TableCell class="text-center font-medium tabular-nums text-rose-700">{{ item.approvedReturnQty }}</TableCell><TableCell class="text-right font-medium tabular-nums text-rose-700">{{ formatMoney(item.approvedReturnAmount) }}</TableCell></TableRow></TableBody></Table></ScrollArea></div>
+              </section>
+            </BusinessDetailWorkbenchCard>
             <BusinessDetailWorkbenchCard>
               <section class="purchase-workbench-record__section purchase-workbench-info" aria-labelledby="purchase-workbench-info-title"><h3 id="purchase-workbench-info-title" class="purchase-workbench-info__title">业务信息</h3><dl class="purchase-workbench-info__facts"><div class="purchase-workbench-info__fact"><dt>供应商</dt><dd><strong>{{ detailRow.supplierName }}</strong><small>{{ detailRow.supplierCode }}</small></dd></div><div class="purchase-workbench-info__fact"><dt>订单日期</dt><dd>{{ detailRow.createTime }}</dd></div><div class="purchase-workbench-info__fact"><dt>采购单号</dt><dd><code>{{ detailRow.purchaseNo }}</code></dd></div><div class="purchase-workbench-info__fact"><dt>预计到货</dt><dd>{{ detailRow.expectedArrivalDate || '未设置' }}</dd></div><div class="purchase-workbench-info__fact"><dt>入库仓库</dt><dd>{{ detailRow.warehouseName }}</dd></div><div class="purchase-workbench-info__fact"><dt>制单人</dt><dd>{{ detailRow.createdByName || '系统' }}</dd></div><div class="purchase-workbench-info__fact"><dt>提交人</dt><dd>{{ detailRow.submittedByName || '未提交' }}</dd></div><div class="purchase-workbench-info__fact"><dt>审核人</dt><dd>{{ detailRow.approvedByName || '未审核' }}</dd></div><div class="purchase-workbench-info__fact purchase-workbench-info__fact--note"><dt>备注</dt><dd>{{ detailRow.remark || '未填写' }}</dd></div></dl></section>
 

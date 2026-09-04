@@ -170,6 +170,26 @@ export interface PurchaseOrderTimelineItem {
   inboundBillNo: string | null;
 }
 
+export type PurchaseOrderReturnCoverage = 'NONE' | 'PARTIAL' | 'FULL';
+
+export interface PurchaseOrderReturnItemOverview {
+  purchaseOrderItemId: string;
+  orderedQty: number;
+  fulfilledQty: number;
+  approvedReturnQty: number;
+  approvedReturnAmount: number;
+}
+
+export interface PurchaseOrderReturnOverview {
+  hasReturnOrder: boolean;
+  coverage: PurchaseOrderReturnCoverage;
+  approvedReturnAmount: number;
+  returnOrderCount: number;
+  effectiveReturnOrderCount: number;
+  /** 仅订单详情返回，用于核对每个来源明细的退货覆盖情况。 */
+  items?: PurchaseOrderReturnItemOverview[];
+}
+
 export interface PurchaseOrderListItem {
   purchaseOrderId: string;
   purchaseNo: string;
@@ -192,6 +212,8 @@ export interface PurchaseOrderListItem {
   createTime: string;
   updateTime: string;
   version: number;
+  /** 只读退货汇总；列表不返回明细覆盖项。 */
+  returnOverview?: PurchaseOrderReturnOverview;
   remark: string;
 }
 

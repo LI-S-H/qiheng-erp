@@ -17,6 +17,7 @@ import type {
   SalesOrderItem,
   SalesOrderListItem,
   SalesOrderPage,
+  SalesOrderReturnOverview,
   SalesOrderQuery,
   SalesOrderStatus,
 } from './types';
@@ -244,6 +245,26 @@ function normalizeOrderItem(item: SalesOrderItem, allowMockMoney = useMockApi): 
   };
 }
 
+function normalizeReturnOverview(overview: SalesOrderReturnOverview): SalesOrderReturnOverview {
+  if (!['NONE', 'PARTIAL', 'FULL'].includes(overview.coverage)) {
+    throw new Error('returnOverview.coverage 必须是 NONE、PARTIAL 或 FULL');
+  }
+  return {
+    ...overview,
+    approvedReturnAmount: normalizeMoneyNumber(overview.approvedReturnAmount, 'returnOverview.approvedReturnAmount', false, useMockApi)!,
+    returnOrderCount: normalizeFiniteNumber(overview.returnOrderCount, 'returnOverview.returnOrderCount'),
+    effectiveReturnOrderCount: normalizeFiniteNumber(overview.effectiveReturnOrderCount, 'returnOverview.effectiveReturnOrderCount'),
+    items: overview.items?.map((item) => ({
+      ...item,
+      salesOrderItemId: normalizeStringId(item.salesOrderItemId, 'returnOverview.items.salesOrderItemId'),
+      orderedQty: normalizeFiniteNumber(item.orderedQty, 'returnOverview.items.orderedQty'),
+      fulfilledQty: normalizeFiniteNumber(item.fulfilledQty, 'returnOverview.items.fulfilledQty'),
+      approvedReturnQty: normalizeFiniteNumber(item.approvedReturnQty, 'returnOverview.items.approvedReturnQty'),
+      approvedReturnAmount: normalizeMoneyNumber(item.approvedReturnAmount, 'returnOverview.items.approvedReturnAmount', false, useMockApi)!,
+    })),
+  };
+}
+
 function normalizeOrder(item: SalesOrderListItem): SalesOrderListItem {
   return {
     ...item,
@@ -258,6 +279,7 @@ function normalizeOrder(item: SalesOrderListItem): SalesOrderListItem {
     submittedByName: item.submittedByName || null,
     approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
     version: normalizeFiniteNumber(item.version, 'version'),
+    returnOverview: item.returnOverview ? normalizeReturnOverview(item.returnOverview) : undefined,
   };
 }
 

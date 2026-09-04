@@ -2,7 +2,7 @@ package com.qiheng.erp.dashboard.job;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
-import com.qiheng.erp.dashboard.cache.DashboardPrevValueCache;
+import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.domain.enums.OrderMetricScope;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
@@ -45,7 +45,7 @@ public class DashboardMonthlySnapshotJob {
     /** Redisson 分布式锁 key（SpEL 字符串字面量语法），多实例部署时只允许一个实例执行 */
     private static final String LOCK_KEY = "'dashboard:job:monthly-snapshot'";
 
-    private final DashboardPrevValueCache prevValueCache;
+    private final PrevValueCache prevValueCache;
     private final SalesOrderMapper salesOrderMapper;
     private final PurchaseOrderMapper purchaseOrderMapper;
 
@@ -80,14 +80,14 @@ public class DashboardMonthlySnapshotJob {
         boolean salesOk = retryStep("销售累计", month, () -> {
             BigDecimal salesTotal = sumSalesApprovedBetween(start, end);
             prevValueCache.putMonthlySnapshot(month,
-                    DashboardPrevValueCache.MonthlySnapshotType.SALES_TOTAL, salesTotal);
+                    PrevValueCache.MonthlySnapshotType.SALES_TOTAL, salesTotal);
             return salesTotal;
         });
 
         boolean purchaseOk = retryStep("采购累计", month, () -> {
             BigDecimal purchaseTotal = sumPurchaseApprovedBetween(start, end);
             prevValueCache.putMonthlySnapshot(month,
-                    DashboardPrevValueCache.MonthlySnapshotType.PURCHASE_TOTAL, purchaseTotal);
+                    PrevValueCache.MonthlySnapshotType.PURCHASE_TOTAL, purchaseTotal);
             return purchaseTotal;
         });
 

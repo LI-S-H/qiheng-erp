@@ -3,7 +3,6 @@ package com.qiheng.erp.dashboard.domain.vo;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.qiheng.erp.dashboard.config.DashboardMoneySerializer;
-import com.qiheng.erp.dashboard.config.DashboardNonNegativeMoneySerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -29,12 +28,12 @@ public class DashboardTrendPointVO {
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate date;
 
-    @Schema(description = "当日销售额（人民币元，最多两位小数非负金额字符串）")
-    @JsonSerialize(using = DashboardNonNegativeMoneySerializer.class)
+    @Schema(description = "当日销售净值（人民币元，最多两位小数金额字符串；负数表示退货多于销售）")
+    @JsonSerialize(using = DashboardMoneySerializer.class)
     private BigDecimal salesAmount;
 
-    @Schema(description = "当日采购额（人民币元，最多两位小数非负金额字符串）")
-    @JsonSerialize(using = DashboardNonNegativeMoneySerializer.class)
+    @Schema(description = "当日采购净值（人民币元，最多两位小数金额字符串；负数表示退货多于采购）")
+    @JsonSerialize(using = DashboardMoneySerializer.class)
     private BigDecimal purchaseAmount;
 
     @Schema(description = "当日毛利额（人民币元，最多两位小数金额字符串；负数表示亏损）")

@@ -39,7 +39,7 @@ import java.time.format.DateTimeFormatter;
  */
 @Component
 @RequiredArgsConstructor
-public class DashboardPrevValueCache {
+public class PrevValueCache {
 
     /** 日快照 key 前缀 */
     private static final String DAILY_KEY_PREFIX = "dashboard:metric:snapshot:";

@@ -24,12 +24,12 @@ import java.util.concurrent.TimeUnit;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class DashboardTrendDailyAmountRefreshService {
+public class TrendDailyAmountRefreshService {
 
     private static final String LOCK_KEY_PREFIX = "dashboard:trend:daily-amount:lock:";
     private static final long LOCK_WAIT_SECONDS = 2L;
 
-    private final DashboardTrendDailyAmountCache trendDailyAmountCache;
+    private final TrendDailyAmountCache trendDailyAmountCache;
     private final DashboardTrendDailyAmountQuery dailyAmountQuery;
     private final RedissonClient redissonClient;
 
@@ -49,12 +49,30 @@ public class DashboardTrendDailyAmountRefreshService {
 
     /** 强制按数据库重算指定日期的全部趋势维度，供日终校准使用。 */
     public void refreshDay(LocalDate businessDate) {
+        List<RLock> locks = new ArrayList<>();
+        // 1. 获取四个维度的锁
         for (DashboardTrendMetric metric : DashboardTrendMetric.values()) {
-            refresh(metric, businessDate);
+            locks.add(lock(metric, List.of(businessDate)));
+        }
+        RLock multiLock = locks.size() == 1
+                ? locks.getFirst()
+                : redissonClient.getMultiLock(locks.toArray(RLock[]::new));
+        multiLock.lock();
+        try {
+            // 2. 查询数据库，更新缓存
+            for (DashboardTrendMetric metric : DashboardTrendMetric.values()) {
+                long amount = dailyAmountQuery.query(metric, businessDate, businessDate)
+                        .getOrDefault(businessDate, 0L);
+                trendDailyAmountCache.put(metric, Map.of(businessDate, amount));
+            }
+        } finally {
+            if (multiLock.isHeldByCurrentThread()) {
+                multiLock.unlock();
+            }
         }
     }
 
-    /** 在与缓存回填相同的日期锁内删除字段，避免并发时写回旧值。 */
+    /** 在维度锁内删除字段，避免并发时写回旧值。 */
     public void invalidate(DashboardTrendMetric metric, LocalDate businessDate) {
         if (businessDate == null) {
             return;
@@ -63,21 +81,6 @@ public class DashboardTrendDailyAmountRefreshService {
         lock.lock();
         try {
             trendDailyAmountCache.invalidate(metric, businessDate);
-        } finally {
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
-    }
-
-    /** 在单日锁内强制重算并覆盖缓存，确保日终校准不会被已有字段短路。 */
-    private void refresh(DashboardTrendMetric metric, LocalDate businessDate) {
-        RLock lock = lock(metric, List.of(businessDate));
-        lock.lock();
-        try {
-            long amount = dailyAmountQuery.query(metric, businessDate, businessDate)
-                    .getOrDefault(businessDate, 0L);
-            trendDailyAmountCache.put(metric, Map.of(businessDate, amount));
         } finally {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -104,7 +107,7 @@ public class DashboardTrendDailyAmountRefreshService {
                     return result;
                 }
                 // 3. 合并查询结果并返回
-                return mergeQueryResult(metric, afterWait.misses(), result, false);
+                return mergeQueryResultAndRefresh(metric, afterWait.misses(), result, false);
             }
             // 2. 二次查询缓存，避免并发时写回旧值
             var afterWaiting = trendDailyAmountCache.get(metric, missingDates);
@@ -114,11 +117,11 @@ public class DashboardTrendDailyAmountRefreshService {
                 return result;
             }
             // 4. 合并查询结果并更新redis缓存
-            return mergeQueryResult(metric, afterWaiting.misses(), result, true);
+            return mergeQueryResultAndRefresh(metric, afterWaiting.misses(), result, true);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             log.warn("经营趋势缓存回填等待锁被中断，改为仅查询不写缓存 metric={} dates={}", metric, missingDates);
-            return mergeQueryResult(metric, missingDates, result, false);
+            return mergeQueryResultAndRefresh(metric, missingDates, result, false);
         } finally {
             if (locked && lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -127,10 +130,10 @@ public class DashboardTrendDailyAmountRefreshService {
     }
 
     /** 合并查询结果，回填缺失日期的对应数据并更新redis缓存。 */
-    private Map<LocalDate, Long> mergeQueryResult(DashboardTrendMetric metric,
-                                                   List<LocalDate> missingDates,
-                                                   Map<LocalDate, Long> result,
-                                                   boolean writeCache) {
+    private Map<LocalDate, Long> mergeQueryResultAndRefresh(DashboardTrendMetric metric,
+                                                            List<LocalDate> missingDates,
+                                                            Map<LocalDate, Long> result,
+                                                            boolean writeCache) {
         LocalDate rangeStart = missingDates.getFirst();
         LocalDate rangeEnd = missingDates.getLast();
         // 1. 从数据库中查询缺失日期的对应数据

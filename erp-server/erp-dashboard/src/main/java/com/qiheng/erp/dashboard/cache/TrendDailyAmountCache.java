@@ -22,7 +22,7 @@ import java.util.Set;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class DashboardTrendDailyAmountCache {
+public class TrendDailyAmountCache {
 
     private static final String CACHE_KEY_PREFIX = "dashboard:trend:daily-amount:";
     private static final Duration CACHE_TTL = Duration.ofDays(35);

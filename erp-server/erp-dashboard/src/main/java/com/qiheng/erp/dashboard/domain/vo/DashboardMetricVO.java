@@ -41,6 +41,6 @@ public class DashboardMetricVO {
     @JsonInclude(JsonInclude.Include.ALWAYS)
     private String compareText;
 
-    @Schema(description = "指标趋势语义：good / watch / risk / neutral。前端仅用于环比徽标；无可比基线时为 neutral 且不展示徽标", allowableValues = {"good", "watch", "risk", "neutral"})
+    @Schema(description = "指标趋势语义：good / watch / risk / neutral。前端用于方向和百分比徽标；无可比基线时为 neutral，不展示方向和百分比，可展示中性基线提示", allowableValues = {"good", "watch", "risk", "neutral"})
     private MetricStatus status;
 }

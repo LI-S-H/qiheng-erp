@@ -9,12 +9,12 @@ import java.time.LocalDate;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-class DashboardTrendCacheInvalidationListenerTest {
+class TrendCacheInvalidationListenerTest {
 
     @Test
     void shouldInvalidateOnlyTheChangedMetricAndDateAfterEvent() {
-        DashboardTrendDailyAmountRefreshService refreshService = mock(DashboardTrendDailyAmountRefreshService.class);
-        DashboardTrendCacheInvalidationListener listener = new DashboardTrendCacheInvalidationListener(refreshService);
+        TrendDailyAmountRefreshService refreshService = mock(TrendDailyAmountRefreshService.class);
+        TrendCacheInvalidationListener listener = new TrendCacheInvalidationListener(refreshService);
         LocalDate businessDate = LocalDate.of(2026, 9, 1);
 
         listener.invalidate(new DashboardTrendInvalidatedEvent(DashboardTrendMetric.SALES_RETURN, businessDate));

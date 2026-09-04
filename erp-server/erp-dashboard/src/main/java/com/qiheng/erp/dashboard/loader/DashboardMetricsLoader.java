@@ -3,7 +3,7 @@ package com.qiheng.erp.dashboard.loader;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiheng.erp.common.util.QtyUtil;
-import com.qiheng.erp.dashboard.cache.DashboardPrevValueCache;
+import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
 import com.qiheng.erp.dashboard.domain.enums.MetricKey;
 import com.qiheng.erp.dashboard.domain.enums.MetricStatus;
@@ -16,6 +16,10 @@ import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
+import com.qiheng.erp.returnorder.mapper.ReturnOrderMapper;
+import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
+import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBill;
@@ -42,7 +46,7 @@ import java.util.function.Supplier;
  *   <li><b>财务类（月累计）</b>：本月销售额 / 本月毛利额；
  *       对比期 = 上月整月累计（Redis 月快照，miss 时实时聚合兜底）</li>
  *   <li><b>运营类（状态快照）</b>：待处理订单数 / 库存风险 SKU 数；
- *       对比期 = 昨日 23:55 快照（Redis 日快照，miss 时变化率返回 0）</li>
+ *       对比期 = 昨日 23:55 快照（Redis 日快照；miss 时明确标记为无可比基线）</li>
  * </ul>
  *
  * <p>子项按当前用户业务权限裁剪：
@@ -55,7 +59,7 @@ import java.util.function.Supplier;
  * </ul>
  *
  * <p>无权子项保留固定卡片位置，{@code value}、{@code changeRate}、{@code compareText} 返回 {@code null}；具体权限状态由概览接口的 {@code access.metrics} 统一表达。
- * {@code changeRate} 与 {@code status} 由 {@link DashboardPrevValueCache} 自动计算。</p>
+ * {@code changeRate} 与 {@code status} 由 {@link PrevValueCache} 自动计算。</p>
  *
  * @author Li
  * @since 2026-08-15
@@ -69,8 +73,9 @@ public class DashboardMetricsLoader {
     private final PurchaseOrderMapper purchaseOrderMapper;
     private final InboundBillMapper inboundBillMapper;
     private final OutboundBillMapper outboundBillMapper;
+    private final ReturnOrderMapper returnOrderMapper;
     private final DashboardStockAlertLoader stockAlertLoader;
-    private final DashboardPrevValueCache prevValueCache;
+    private final PrevValueCache prevValueCache;
 
     /**
      * 加载首屏经营指标
@@ -107,12 +112,12 @@ public class DashboardMetricsLoader {
         YearMonth prevMonth = YearMonth.from(monthStart).minusMonths(1);
         // 从 Redis 缓存获取上月销售累计值,若 miss 则实时聚合
         BigDecimal prevMonthSales = resolveMonthlySnapshot(prevMonth,
-                DashboardPrevValueCache.MonthlySnapshotType.SALES_TOTAL,
+                PrevValueCache.MonthlySnapshotType.SALES_TOTAL,
                 canSales ? () -> sumSalesApprovedBetween(
                         prevMonth.atDay(1).atStartOfDay(), prevMonth.atEndOfMonth().atTime(23, 59, 59)) : null);
         // 从 Redis 缓存获取上月采购累计值,若 miss 则实时聚合
         BigDecimal prevMonthPurchase = resolveMonthlySnapshot(prevMonth,
-                DashboardPrevValueCache.MonthlySnapshotType.PURCHASE_TOTAL,
+                PrevValueCache.MonthlySnapshotType.PURCHASE_TOTAL,
                 canPurchase ? () -> sumPurchaseApprovedBetween(
                         prevMonth.atDay(1).atStartOfDay(), prevMonth.atEndOfMonth().atTime(23, 59, 59)) : null);
         // 上月毛利只在两个上月累计都有值且当前用户有毛利权限时才可比，否则明确标记为不可比。
@@ -122,16 +127,18 @@ public class DashboardMetricsLoader {
                 : null;
 
         // 4. 运营类指标：当前快照 + 昨日 23:55 快照对比
-        long pendingPurchase = canPurchase ? purchaseOrderMapper.selectCount(
+        long pendingPurchaseOrder = canPurchase ? purchaseOrderMapper.selectCount(
                 new LambdaQueryWrapper<PurchaseOrder>()
                         .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.SUBMITTED.name())
                         .eq(PurchaseOrder::getDeleted, 0))
                 : 0L;
-        long pendingSales = canSales ? salesOrderMapper.selectCount(
+        long pendingPurchaseReturn = canPurchase ? countPendingReturns(ReturnType.PURCHASE_RETURN) : 0L;
+        long pendingSalesOrder = canSales ? salesOrderMapper.selectCount(
                 new LambdaQueryWrapper<SalesOrder>()
                         .eq(SalesOrder::getStatus, SalesOrderStatus.SUBMITTED.name())
                         .eq(SalesOrder::getDeleted, 0))
                 : 0L;
+        long pendingSalesReturn = canSales ? countPendingReturns(ReturnType.SALES_RETURN) : 0L;
         long pendingInbound = canWarehouse ? inboundBillMapper.selectCount(
                 new LambdaQueryWrapper<InboundBill>()
                         .eq(InboundBill::getStatus, StockBillStatus.PENDING_CONFIRM.name()))
@@ -142,7 +149,8 @@ public class DashboardMetricsLoader {
                 : 0L;
         boolean canViewPending = canSales || canPurchase || canWarehouse;
         PendingOrderSnapshot currentPendingSnapshot = new PendingOrderSnapshot(
-                pendingPurchase, pendingSales, pendingInbound, pendingOutbound);
+                pendingPurchaseOrder, pendingPurchaseReturn, pendingSalesOrder, pendingSalesReturn,
+                pendingInbound, pendingOutbound);
         long pendingOrder = sumVisiblePendingOrders(currentPendingSnapshot, canPurchase, canSales, canWarehouse);
         long stockRisk = canWarehouse ? stockAlertLoader.countRiskSkus() : 0L;
 
@@ -153,37 +161,37 @@ public class DashboardMetricsLoader {
         BigDecimal prevPending = prevPendingSnapshot == null ? null : BigDecimal.valueOf(
                 sumVisiblePendingOrders(prevPendingSnapshot, canPurchase, canSales, canWarehouse));
         BigDecimal prevStockRisk = canWarehouse
-                ? prevValueCache.getDailySnapshot(yesterday, DashboardPrevValueCache.DailySnapshotType.STOCK_RISK_COUNT)
+                ? prevValueCache.getDailySnapshot(yesterday, PrevValueCache.DailySnapshotType.STOCK_RISK_COUNT)
                 : BigDecimal.ZERO;
 
         // 5. 构建固定顺序的指标。无权限时数值和对比字段必须为 null，不能伪装为 0。
 
         BigDecimal monthSalesChangeRate = canSales
-                ? DashboardPrevValueCache.computeChangeRate(monthSales, prevMonthSales) : null;
+                ? PrevValueCache.computeChangeRate(monthSales, prevMonthSales) : null;
         BigDecimal monthGrossChangeRate = canSales && canPurchase
-                ? DashboardPrevValueCache.computeChangeRate(monthGross, prevMonthGross) : null;
+                ? PrevValueCache.computeChangeRate(monthGross, prevMonthGross) : null;
         BigDecimal pendingOrderChangeRate = canViewPending
-                ? DashboardPrevValueCache.computeChangeRate(BigDecimal.valueOf(pendingOrder), prevPending) : null;
+                ? PrevValueCache.computeChangeRate(BigDecimal.valueOf(pendingOrder), prevPending) : null;
         BigDecimal stockRiskChangeRate = canWarehouse
-                ? DashboardPrevValueCache.computeChangeRate(BigDecimal.valueOf(stockRisk), prevStockRisk) : null;
+                ? PrevValueCache.computeChangeRate(BigDecimal.valueOf(stockRisk), prevStockRisk) : null;
 
         List<DashboardMetricVO> metrics = new ArrayList<>();
         metrics.add(buildMetric(MetricKey.MONTH_SALES,
                 canSales ? QtyUtil.toDecimal(monthSales) : null,
                 monthSalesChangeRate,
-                canSales ? DashboardPrevValueCache.computeStatus(monthSalesChangeRate, MetricKey.MONTH_SALES.getDirection()) : MetricStatus.NEUTRAL));
+                canSales ? PrevValueCache.computeStatus(monthSalesChangeRate, MetricKey.MONTH_SALES.getDirection()) : MetricStatus.NEUTRAL));
         metrics.add(buildMetric(MetricKey.MONTH_GROSS_PROFIT,
                 canSales && canPurchase ? QtyUtil.toDecimal(monthGross) : null,
                 monthGrossChangeRate,
-                canSales && canPurchase ? DashboardPrevValueCache.computeStatus(monthGrossChangeRate, MetricKey.MONTH_GROSS_PROFIT.getDirection()) : MetricStatus.NEUTRAL));
+                canSales && canPurchase ? PrevValueCache.computeStatus(monthGrossChangeRate, MetricKey.MONTH_GROSS_PROFIT.getDirection()) : MetricStatus.NEUTRAL));
         metrics.add(buildMetric(MetricKey.PENDING_ORDERS,
                 canViewPending ? BigDecimal.valueOf(pendingOrder) : null,
                 pendingOrderChangeRate,
-                canViewPending ? DashboardPrevValueCache.computeStatus(pendingOrderChangeRate, MetricKey.PENDING_ORDERS.getDirection()) : MetricStatus.NEUTRAL));
+                canViewPending ? PrevValueCache.computeStatus(pendingOrderChangeRate, MetricKey.PENDING_ORDERS.getDirection()) : MetricStatus.NEUTRAL));
         metrics.add(buildMetric(MetricKey.STOCK_RISK_SKU,
                 canWarehouse ? BigDecimal.valueOf(stockRisk) : null,
                 stockRiskChangeRate,
-                canWarehouse ? DashboardPrevValueCache.computeStatus(stockRiskChangeRate, MetricKey.STOCK_RISK_SKU.getDirection()) : MetricStatus.NEUTRAL));
+                canWarehouse ? PrevValueCache.computeStatus(stockRiskChangeRate, MetricKey.STOCK_RISK_SKU.getDirection()) : MetricStatus.NEUTRAL));
         return metrics;
     }
 
@@ -191,7 +199,7 @@ public class DashboardMetricsLoader {
      * 解析月快照值：优先 Redis 缓存；miss 时用 supplier 实时聚合并回填缓存。
      */
     private BigDecimal resolveMonthlySnapshot(YearMonth prevMonth,
-                                              DashboardPrevValueCache.MonthlySnapshotType type,
+                                              PrevValueCache.MonthlySnapshotType type,
                                               Supplier<BigDecimal> fallback) {
         if (fallback == null) {
             return BigDecimal.ZERO;
@@ -256,15 +264,22 @@ public class DashboardMetricsLoader {
                                                 boolean canWarehouse) {
         long total = 0L;
         if (canPurchase) {
-            total += snapshot.pendingPurchase();
+            total += snapshot.pendingPurchaseOrderApproval() + snapshot.pendingPurchaseReturnApproval();
         }
         if (canSales) {
-            total += snapshot.pendingSales();
+            total += snapshot.pendingSalesOrderApproval() + snapshot.pendingSalesReturnApproval();
         }
         if (canWarehouse) {
-            total += snapshot.pendingInbound() + snapshot.pendingOutbound();
+            total += snapshot.pendingInboundConfirmation() + snapshot.pendingOutboundConfirmation();
         }
         return total;
+    }
+    /** 退货单待审批与销售、采购订单待审批使用相同业务权限口径。 */
+    private long countPendingReturns(ReturnType returnType) {
+        return returnOrderMapper.selectCount(new LambdaQueryWrapper<ReturnOrder>()
+                .eq(ReturnOrder::getReturnType, returnType.name())
+                .eq(ReturnOrder::getStatus, ReturnStatus.SUBMITTED.name())
+                .eq(ReturnOrder::getDeleted, 0));
     }
     /** 构建指标VO */
     private static DashboardMetricVO buildMetric(MetricKey key, BigDecimal value,

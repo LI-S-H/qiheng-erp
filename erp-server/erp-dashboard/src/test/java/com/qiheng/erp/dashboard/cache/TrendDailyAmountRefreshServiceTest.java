@@ -17,11 +17,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class DashboardTrendDailyAmountRefreshServiceTest {
+class TrendDailyAmountRefreshServiceTest {
 
     @Test
     void shouldQueryOneContinuousRangeAndFillEveryMissingDate() throws InterruptedException {
-        DashboardTrendDailyAmountCache cache = mock(DashboardTrendDailyAmountCache.class);
+        TrendDailyAmountCache cache = mock(TrendDailyAmountCache.class);
         DashboardTrendDailyAmountQuery query = mock(DashboardTrendDailyAmountQuery.class);
         RedissonClient redissonClient = mock(RedissonClient.class);
         RLock lock = mock(RLock.class);
@@ -33,10 +33,10 @@ class DashboardTrendDailyAmountRefreshServiceTest {
         LocalDate last = LocalDate.of(2026, 8, 3);
         List<LocalDate> allDates = first.datesUntil(last.plusDays(1)).toList();
         when(cache.get(eq(DashboardTrendMetric.SALES), any()))
-                .thenReturn(new DashboardTrendDailyAmountCache.GetResult(Map.of(), allDates))
-                .thenReturn(new DashboardTrendDailyAmountCache.GetResult(Map.of(), allDates));
+                .thenReturn(new TrendDailyAmountCache.GetResult(Map.of(), allDates))
+                .thenReturn(new TrendDailyAmountCache.GetResult(Map.of(), allDates));
         when(query.query(DashboardTrendMetric.SALES, first, last)).thenReturn(Map.of(first, 100L, last, 300L));
-        DashboardTrendDailyAmountRefreshService service = new DashboardTrendDailyAmountRefreshService(cache, query, redissonClient);
+        TrendDailyAmountRefreshService service = new TrendDailyAmountRefreshService(cache, query, redissonClient);
 
         Map<LocalDate, Long> result = service.resolve(DashboardTrendMetric.SALES, first, last);
 
@@ -51,14 +51,14 @@ class DashboardTrendDailyAmountRefreshServiceTest {
 
     @Test
     void shouldInvalidateOnlyAfterDailyLockIsAcquired() {
-        DashboardTrendDailyAmountCache cache = mock(DashboardTrendDailyAmountCache.class);
+        TrendDailyAmountCache cache = mock(TrendDailyAmountCache.class);
         DashboardTrendDailyAmountQuery query = mock(DashboardTrendDailyAmountQuery.class);
         RedissonClient redissonClient = mock(RedissonClient.class);
         RLock lock = mock(RLock.class);
         when(redissonClient.getLock(any(String.class))).thenReturn(lock);
         when(lock.isHeldByCurrentThread()).thenReturn(true);
         LocalDate businessDate = LocalDate.of(2026, 9, 2);
-        DashboardTrendDailyAmountRefreshService service = new DashboardTrendDailyAmountRefreshService(cache, query, redissonClient);
+        TrendDailyAmountRefreshService service = new TrendDailyAmountRefreshService(cache, query, redissonClient);
 
         service.invalidate(DashboardTrendMetric.SALES, businessDate);
 
@@ -69,20 +69,24 @@ class DashboardTrendDailyAmountRefreshServiceTest {
 
     @Test
     void shouldForceRefreshEveryMetricForFinalization() {
-        DashboardTrendDailyAmountCache cache = mock(DashboardTrendDailyAmountCache.class);
+        TrendDailyAmountCache cache = mock(TrendDailyAmountCache.class);
         DashboardTrendDailyAmountQuery query = mock(DashboardTrendDailyAmountQuery.class);
         RedissonClient redissonClient = mock(RedissonClient.class);
-        RLock lock = mock(RLock.class);
-        when(redissonClient.getLock(any(String.class))).thenReturn(lock);
-        when(lock.isHeldByCurrentThread()).thenReturn(true);
+        RLock singleLock = mock(RLock.class);
+        RLock multiLock = mock(RLock.class);
+        when(redissonClient.getLock(any(String.class))).thenReturn(singleLock);
+        when(redissonClient.getMultiLock(any(RLock[].class))).thenReturn(multiLock);
+        when(multiLock.isHeldByCurrentThread()).thenReturn(true);
         LocalDate businessDate = LocalDate.of(2026, 9, 2);
         for (DashboardTrendMetric metric : DashboardTrendMetric.values()) {
             when(query.query(metric, businessDate, businessDate)).thenReturn(Map.of(businessDate, (long) metric.ordinal()));
         }
-        DashboardTrendDailyAmountRefreshService service = new DashboardTrendDailyAmountRefreshService(cache, query, redissonClient);
+        TrendDailyAmountRefreshService service = new TrendDailyAmountRefreshService(cache, query, redissonClient);
 
         service.refreshDay(businessDate);
 
+        verify(multiLock).lock();
+        verify(multiLock).unlock();
         for (DashboardTrendMetric metric : DashboardTrendMetric.values()) {
             verify(query).query(metric, businessDate, businessDate);
             verify(cache).put(metric, Map.of(businessDate, (long) metric.ordinal()));

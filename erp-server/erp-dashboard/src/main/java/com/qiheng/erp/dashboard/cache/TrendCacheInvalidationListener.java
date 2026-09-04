@@ -9,9 +9,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
 /** 仅在业务事务提交成功后失效对应日期；事务回滚不会污染趋势缓存。 */
 @Component
 @RequiredArgsConstructor
-public class DashboardTrendCacheInvalidationListener {
+public class TrendCacheInvalidationListener {
 
-    private final DashboardTrendDailyAmountRefreshService trendDailyAmountRefreshService;
+    private final TrendDailyAmountRefreshService trendDailyAmountRefreshService;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void invalidate(DashboardTrendInvalidatedEvent event) {

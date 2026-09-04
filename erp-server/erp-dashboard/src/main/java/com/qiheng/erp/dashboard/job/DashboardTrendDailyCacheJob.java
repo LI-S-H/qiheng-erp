@@ -1,7 +1,7 @@
 package com.qiheng.erp.dashboard.job;
 
 import com.qiheng.erp.common.annotation.DistributedLock;
-import com.qiheng.erp.dashboard.cache.DashboardTrendDailyAmountRefreshService;
+import com.qiheng.erp.dashboard.cache.TrendDailyAmountRefreshService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -20,10 +20,9 @@ import java.time.LocalDate;
 @Slf4j
 public class DashboardTrendDailyCacheJob {
 
-    private static final String WARMUP_LOCK_KEY = "'dashboard:job:trend-daily-warmup'";
     private static final String FINALIZE_LOCK_KEY = "'dashboard:job:trend-daily-finalize'";
 
-    private final DashboardTrendDailyAmountRefreshService trendDailyAmountRefreshService;
+    private final TrendDailyAmountRefreshService trendDailyAmountRefreshService;
 
 
     /** 日终校准昨天数据，将临近午夜的最后业务变更纳入最终值。 */

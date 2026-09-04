@@ -2,7 +2,7 @@ package com.qiheng.erp.dashboard.loader;
 
 import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
 import com.qiheng.erp.common.util.QtyUtil;
-import com.qiheng.erp.dashboard.cache.DashboardTrendDailyAmountRefreshService;
+import com.qiheng.erp.dashboard.cache.TrendDailyAmountRefreshService;
 import com.qiheng.erp.dashboard.domain.vo.DashboardTrendPointVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.security.domain.dto.LoginUser;
@@ -31,7 +31,7 @@ public class DashboardTrendLoader {
     private static final int TREND_DAYS = 30;
 
     private final DashboardPermissionGuard permissionGuard;
-    private final DashboardTrendDailyAmountRefreshService trendDailyAmountRefreshService;
+    private final TrendDailyAmountRefreshService trendDailyAmountRefreshService;
 
     /** 加载近 30 天经营趋势。 */
     public List<DashboardTrendPointVO> load(LoginUser user) {

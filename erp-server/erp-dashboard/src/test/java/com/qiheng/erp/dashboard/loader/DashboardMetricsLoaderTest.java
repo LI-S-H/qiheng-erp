@@ -2,7 +2,7 @@ package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 
-import com.qiheng.erp.dashboard.cache.DashboardPrevValueCache;
+import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
 import com.qiheng.erp.dashboard.domain.vo.DashboardMetricVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
@@ -10,6 +10,7 @@ import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
+import com.qiheng.erp.returnorder.mapper.ReturnOrderMapper;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
 import com.qiheng.erp.warehouse.mapper.OutboundBillMapper;
@@ -34,8 +35,9 @@ class DashboardMetricsLoaderTest {
         PurchaseOrderMapper purchaseOrderMapper = mock(PurchaseOrderMapper.class);
         InboundBillMapper inboundBillMapper = mock(InboundBillMapper.class);
         OutboundBillMapper outboundBillMapper = mock(OutboundBillMapper.class);
+        ReturnOrderMapper returnOrderMapper = mock(ReturnOrderMapper.class);
         DashboardStockAlertLoader stockAlertLoader = mock(DashboardStockAlertLoader.class);
-        DashboardPrevValueCache prevValueCache = mock(DashboardPrevValueCache.class);
+        PrevValueCache prevValueCache = mock(PrevValueCache.class);
         LoginUser user = new LoginUser();
 
         when(permissionGuard.canViewSales(user)).thenReturn(true);
@@ -44,10 +46,11 @@ class DashboardMetricsLoaderTest {
         when(salesOrderMapper.selectObjs(ArgumentMatchers.<com.baomidou.mybatisplus.core.conditions.Wrapper<SalesOrder>>any())).thenReturn(List.of((Object) 10_000L));
         when(purchaseOrderMapper.selectObjs(ArgumentMatchers.<com.baomidou.mybatisplus.core.conditions.Wrapper<PurchaseOrder>>any())).thenReturn(List.of((Object) 4_000L));
         when(stockAlertLoader.countRiskSkus()).thenReturn(0);
+        when(returnOrderMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
 
         List<DashboardMetricVO> metrics = new DashboardMetricsLoader(
                 permissionGuard, salesOrderMapper, purchaseOrderMapper, inboundBillMapper,
-                outboundBillMapper, stockAlertLoader, prevValueCache).load(user);
+                outboundBillMapper, returnOrderMapper, stockAlertLoader, prevValueCache).load(user);
 
         assertThat(metrics.getFirst().getValue()).isEqualByComparingTo("100");
         assertThat(metrics.get(1).getValue()).isEqualByComparingTo("60");
@@ -61,8 +64,9 @@ class DashboardMetricsLoaderTest {
         PurchaseOrderMapper purchaseOrderMapper = mock(PurchaseOrderMapper.class);
         InboundBillMapper inboundBillMapper = mock(InboundBillMapper.class);
         OutboundBillMapper outboundBillMapper = mock(OutboundBillMapper.class);
+        ReturnOrderMapper returnOrderMapper = mock(ReturnOrderMapper.class);
         DashboardStockAlertLoader stockAlertLoader = mock(DashboardStockAlertLoader.class);
-        DashboardPrevValueCache prevValueCache = mock(DashboardPrevValueCache.class);
+        PrevValueCache prevValueCache = mock(PrevValueCache.class);
         LoginUser user = new LoginUser();
 
         when(permissionGuard.canViewSales(user)).thenReturn(false);
@@ -73,15 +77,16 @@ class DashboardMetricsLoaderTest {
         when(inboundBillMapper.selectCount(any())).thenReturn(3L);
         when(outboundBillMapper.selectCount(any())).thenReturn(2L);
         when(stockAlertLoader.countRiskSkus()).thenReturn(0);
-        when(prevValueCache.getPendingOrderSnapshot(any())).thenReturn(new PendingOrderSnapshot(2, 7, 3, 1));
+        when(returnOrderMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        when(prevValueCache.getPendingOrderSnapshot(any())).thenReturn(new PendingOrderSnapshot(2, 1, 7, 0, 3, 1));
 
         List<DashboardMetricVO> metrics = new DashboardMetricsLoader(
                 permissionGuard, salesOrderMapper, purchaseOrderMapper, inboundBillMapper,
-                outboundBillMapper, stockAlertLoader, prevValueCache).load(user);
+                outboundBillMapper, returnOrderMapper, stockAlertLoader, prevValueCache).load(user);
 
         DashboardMetricVO pendingMetric = metrics.get(2);
-        assertThat(pendingMetric.getValue()).isEqualByComparingTo("9");
-        assertThat(pendingMetric.getChangeRate()).isEqualByComparingTo("50.00");
+        assertThat(pendingMetric.getValue()).isEqualByComparingTo("10");
+        assertThat(pendingMetric.getChangeRate()).isEqualByComparingTo("42.86");
         assertThat(pendingMetric.getCompareText()).isEqualTo("较昨日");
         assertThat(pendingMetric.getStatus().name()).isEqualTo("RISK");
     }

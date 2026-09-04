@@ -1,6 +1,6 @@
 package com.qiheng.erp.dashboard.job;
 
-import com.qiheng.erp.dashboard.cache.DashboardTrendDailyAmountRefreshService;
+import com.qiheng.erp.dashboard.cache.TrendDailyAmountRefreshService;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -12,7 +12,7 @@ class DashboardTrendDailyCacheJobTest {
 
     @Test
     void shouldFinalizeYesterday() {
-        DashboardTrendDailyAmountRefreshService refreshService = mock(DashboardTrendDailyAmountRefreshService.class);
+        TrendDailyAmountRefreshService refreshService = mock(TrendDailyAmountRefreshService.class);
         DashboardTrendDailyCacheJob job = new DashboardTrendDailyCacheJob(refreshService);
         job.finalizeYesterday();
 

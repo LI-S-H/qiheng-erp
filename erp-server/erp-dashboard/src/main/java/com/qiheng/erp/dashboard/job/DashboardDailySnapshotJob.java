@@ -2,7 +2,7 @@ package com.qiheng.erp.dashboard.job;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
-import com.qiheng.erp.dashboard.cache.DashboardPrevValueCache;
+import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
 import com.qiheng.erp.dashboard.loader.DashboardStockAlertLoader;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
@@ -11,6 +11,10 @@ import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
+import com.qiheng.erp.returnorder.mapper.ReturnOrderMapper;
+import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
+import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
 import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBill;
 import com.qiheng.erp.warehouse.domain.stockbill.enums.StockBillStatus;
@@ -48,12 +52,13 @@ public class DashboardDailySnapshotJob {
     /** Redisson 分布式锁 key（SpEL 字符串字面量语法），多实例部署时只允许一个实例执行 */
     private static final String LOCK_KEY = "'dashboard:job:daily-snapshot'";
 
-    private final DashboardPrevValueCache prevValueCache;
+    private final PrevValueCache prevValueCache;
     private final DashboardStockAlertLoader stockAlertLoader;
     private final PurchaseOrderMapper purchaseOrderMapper;
     private final SalesOrderMapper salesOrderMapper;
     private final InboundBillMapper inboundBillMapper;
     private final OutboundBillMapper outboundBillMapper;
+    private final ReturnOrderMapper returnOrderMapper;
 
     /**
      * 每日 23:55 执行快照
@@ -75,7 +80,7 @@ public class DashboardDailySnapshotJob {
         boolean stockOk = retryStep("库存风险SKU数", today, () -> {
             long stockRisk = stockAlertLoader.countRiskSkus();
             prevValueCache.putDailySnapshot(today,
-                    DashboardPrevValueCache.DailySnapshotType.STOCK_RISK_COUNT,
+                    PrevValueCache.DailySnapshotType.STOCK_RISK_COUNT,
                     BigDecimal.valueOf(stockRisk));
             return stockRisk;
         });
@@ -114,13 +119,17 @@ public class DashboardDailySnapshotJob {
     /** 全公司口径待处理订单分项：待审采购、待审销售、待确认入库、待确认出库。 */
     private PendingOrderSnapshot snapshotPendingOrders() {
         // 待审采购订单数
-        long pendingPurchase = purchaseOrderMapper.selectCount(
+        long pendingPurchaseOrder = purchaseOrderMapper.selectCount(
                 new LambdaQueryWrapper<PurchaseOrder>()
                         .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.SUBMITTED.name()));
+        // 待审采购退货订单数
+        long pendingPurchaseReturn = countPendingReturns(ReturnType.PURCHASE_RETURN);
         // 待审销售订单数
-        long pendingSales = salesOrderMapper.selectCount(
+        long pendingSalesOrder = salesOrderMapper.selectCount(
                 new LambdaQueryWrapper<SalesOrder>()
                         .eq(SalesOrder::getStatus, SalesOrderStatus.SUBMITTED.name()));
+        // 待审销售退货订单数
+        long pendingSalesReturn = countPendingReturns(ReturnType.SALES_RETURN);
         // 待确认入库单数
         long pendingInbound = inboundBillMapper.selectCount(
                 new LambdaQueryWrapper<InboundBill>()
@@ -129,6 +138,12 @@ public class DashboardDailySnapshotJob {
         long pendingOutbound = outboundBillMapper.selectCount(
                 new LambdaQueryWrapper<OutboundBill>()
                         .eq(OutboundBill::getStatus, StockBillStatus.PENDING_CONFIRM.name()));
-        return new PendingOrderSnapshot(pendingPurchase, pendingSales, pendingInbound, pendingOutbound);
+        return new PendingOrderSnapshot(pendingPurchaseOrder, pendingPurchaseReturn, pendingSalesOrder, pendingSalesReturn, pendingInbound, pendingOutbound);
     }
-}
+
+    /** 退货审核待办与销售、采购待审订单分别快照，读取时再按权限组合。 */
+    private long countPendingReturns(ReturnType returnType) {
+        return returnOrderMapper.selectCount(new LambdaQueryWrapper<ReturnOrder>()
+                .eq(ReturnOrder::getReturnType, returnType.name())
+                .eq(ReturnOrder::getStatus, ReturnStatus.SUBMITTED.name()));
+    }}

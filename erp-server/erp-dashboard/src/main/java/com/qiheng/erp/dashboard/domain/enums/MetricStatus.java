@@ -7,8 +7,8 @@ import java.util.Locale;
 /**
  * 指标风险色语义枚举。
  *
- * <p>与 OpenAPI {@code DashboardMetric.status} 和 {@code DashboardTodoEvidenceMetric.tone} 字段保持一致。
- * 序列化时输出小写字符串（good / watch / risk / neutral），前端零改动。</p>
+ * <p>与 OpenAPI {@code DashboardMetric.status}保持一致。
+ * 序列化时输出小写字符串（good / watch / risk / neutral），供经营指标展示使用。</p>
  */
 public enum MetricStatus {
 

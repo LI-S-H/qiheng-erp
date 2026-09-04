@@ -1,7 +1,7 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
-import com.qiheng.erp.dashboard.cache.DashboardTrendDailyAmountRefreshService;
+import com.qiheng.erp.dashboard.cache.TrendDailyAmountRefreshService;
 import com.qiheng.erp.dashboard.domain.vo.DashboardTrendPointVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.security.domain.dto.LoginUser;
@@ -59,7 +59,7 @@ class DashboardTrendLoaderTest {
 
     private static class Fixture {
         private final DashboardPermissionGuard permissionGuard = mock(DashboardPermissionGuard.class);
-        private final DashboardTrendDailyAmountRefreshService refreshService = mock(DashboardTrendDailyAmountRefreshService.class);
+        private final TrendDailyAmountRefreshService refreshService = mock(TrendDailyAmountRefreshService.class);
         private final LoginUser user = new LoginUser();
 
         private Fixture() {

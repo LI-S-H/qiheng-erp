@@ -4,6 +4,10 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendInvalidatedEvent;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
+import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent;
+import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent.RankItemInput;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
@@ -23,6 +27,12 @@ import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderDetailVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderItemVo;
 import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderVo;
+import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderReturnOverviewVo;
+import com.qiheng.erp.sales.domain.salesorder.vo.SalesOrderReturnItemOverviewVo;
+import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.domain.port.ReturnSourceOrderApprovalSummary;
+import com.qiheng.erp.returnorder.domain.port.ReturnSourceItemApprovalSummary;
+import com.qiheng.erp.returnorder.domain.port.ReturnOrderApprovalSummaryProvider;
 import com.qiheng.erp.sales.mapper.CustomerMapper;
 import com.qiheng.erp.sales.mapper.SalesOrderItemMapper;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
@@ -48,6 +58,7 @@ import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -99,6 +110,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private IOutboundBillItemService outboundBillItemService;
     @Autowired
     private WarehouseStockReservationSupport warehouseStockReservationSupport;
+    @Autowired
+    private ReturnOrderApprovalSummaryProvider returnOrderApprovalSummaryProvider;
+    @Autowired
+    private ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 销售订单分页查询（逻辑删除过滤按全局配置自动追加）
@@ -116,8 +131,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 .eq(StrUtil.isNotBlank(dto.getStatus()), SalesOrder::getStatus, dto.getStatus())
                 .orderByDesc(SalesOrder::getCreateTime);
         Page<SalesOrder> result = salesOrderMapper.selectPage(dto.toPage(), wrapper);
+        List<SalesOrderVo> records = result.getRecords().stream().map(this::toVo).toList();
+        attachReturnOverviews(records, loadOrderItemsByOrderId(records), false);
         return PageResult.of(
-                result.getRecords().stream().map(this::toVo).toList(),
+                records,
                 (int) result.getTotal(),
                 (int) result.getCurrent(),
                 (int) result.getSize()
@@ -142,9 +159,72 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         SalesOrderDetailVo detail = new SalesOrderDetailVo();
         BeanUtil.copyProperties(toVo(order), detail);
         detail.setItems(items.stream().map(this::toItemVo).toList());
+        attachReturnOverviews(List.of(detail), Map.of(salesOrderId, items), true);
         return detail;
     }
 
+    /** 批量读取当前页订单明细，避免退货概览在列表中产生 N+1 查询。 */
+    private Map<Long, List<SalesOrderItem>> loadOrderItemsByOrderId(List<SalesOrderVo> orders) {
+        List<Long> orderIds = orders.stream().map(SalesOrderVo::getSalesOrderId).toList();
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        return salesOrderItemMapper.selectList(new LambdaQueryWrapper<SalesOrderItem>()
+                        .in(SalesOrderItem::getSalesOrderId, orderIds))
+                .stream().collect(Collectors.groupingBy(SalesOrderItem::getSalesOrderId));
+    }
+
+    /**
+     * 组装退货模块提供的审批事实，并在销售模块内判断订单是否全量履约、全量退货。
+     * 退货模块不反向读取销售订单，避免跨模块循环依赖。
+     */
+    private void attachReturnOverviews(List<SalesOrderVo> orders,
+                                       Map<Long, List<SalesOrderItem>> itemsByOrderId,
+                                       boolean includeItems) {
+        if (orders.isEmpty()) {
+            return;
+        }
+        Map<Long, ReturnSourceOrderApprovalSummary> summaries = returnOrderApprovalSummaryProvider.summarize(
+                ReturnType.SALES_RETURN, orders.stream().map(SalesOrderVo::getSalesOrderId).toList());
+        for (SalesOrderVo order : orders) {
+            ReturnSourceOrderApprovalSummary summary = summaries.get(order.getSalesOrderId());
+            if (summary == null) {
+                continue;
+            }
+            List<SalesOrderItem> sourceItems = itemsByOrderId.getOrDefault(order.getSalesOrderId(), List.of());
+            boolean hasApprovedReturn = false;
+            boolean fullyReturned = !sourceItems.isEmpty();
+            List<SalesOrderReturnItemOverviewVo> itemOverviews = new ArrayList<>();
+            for (SalesOrderItem item : sourceItems) {
+                ReturnSourceItemApprovalSummary itemSummary = summary.itemSummaries().get(item.getId());
+                long approvedQty = itemSummary == null ? 0L : itemSummary.approvedReturnQty();
+                long orderedQty = item.getQuantity() == null ? 0L : item.getQuantity();
+                long fulfilledQty = item.getOutboundQty() == null ? 0L : item.getOutboundQty();
+                hasApprovedReturn |= approvedQty > 0;
+                fullyReturned &= fulfilledQty >= orderedQty && approvedQty >= orderedQty;
+                if (includeItems) {
+                    SalesOrderReturnItemOverviewVo itemOverview = new SalesOrderReturnItemOverviewVo();
+                    itemOverview.setSalesOrderItemId(item.getId());
+                    itemOverview.setOrderedQty(QtyUtil.toDecimal(orderedQty));
+                    itemOverview.setFulfilledQty(QtyUtil.toDecimal(fulfilledQty));
+                    itemOverview.setApprovedReturnQty(QtyUtil.toDecimal(approvedQty));
+                    itemOverview.setApprovedReturnAmount(QtyUtil.toDecimal(
+                            itemSummary == null ? 0L : itemSummary.approvedReturnAmount()));
+                    itemOverviews.add(itemOverview);
+                }
+            }
+            SalesOrderReturnOverviewVo overview = new SalesOrderReturnOverviewVo();
+            overview.setHasReturnOrder(summary.returnOrderCount() > 0);
+            overview.setCoverage(!hasApprovedReturn ? "NONE" : fullyReturned ? "FULL" : "PARTIAL");
+            overview.setApprovedReturnAmount(QtyUtil.toDecimal(summary.approvedReturnAmount()));
+            overview.setReturnOrderCount(summary.returnOrderCount());
+            overview.setEffectiveReturnOrderCount(summary.effectiveReturnOrderCount());
+            if (includeItems) {
+                overview.setItems(itemOverviews);
+            }
+            order.setReturnOverview(overview);
+        }
+    }
     /**
      * 新增销售订单草稿（后端生成销售单号、写入客户/仓库/产品快照、数量×100 持久化、重算订单总金额）
      * @param dto 草稿新增请求 DTO
@@ -342,13 +422,12 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         }
         // 4. 更新主表：状态 APPROVED + 审核人/时间（乐观锁校验，先拿审核权再生成出库单）
         LoginUser loginUser = UserContext.requireCurrentUser();
-        LocalDateTime now = LocalDateTime.now();
         SalesOrder update = new SalesOrder();
         update.setId(salesOrderId);
         update.setStatus(SalesOrderStatus.APPROVED.name());
         update.setApprovedById(loginUser.getUserId());
         update.setApprovedByName(loginUser.getRealName());
-        update.setApprovedAt(now);
+        update.setApprovedAt(LocalDateTime.now());
         update.setVersion(version);
         int rows = salesOrderMapper.updateById(update);
         if (rows == 0) {
@@ -358,6 +437,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         // 5. 生成 SALES_OUT 待确认出库单（主表已 APPROVED，审核权已拿到）
         log.info("审核销售订单[{}]，生成待确认出库单", order.getSalesNo());
         generateSalesOutboundBill(order, items);
+        applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                DashboardTrendMetric.SALES, update.getApprovedAt().toLocalDate()));
+        applicationEventPublisher.publishEvent(new TopProductRankAdjustEvent(
+                update.getApprovedAt().toLocalDate(), 1, toRankItems(items)));
     }
 
     /**
@@ -491,6 +574,12 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
                     "数据已发生变化，请刷新后重试");
+        }
+        if (SalesOrderStatus.APPROVED.name().equals(currentStatus) && order.getApprovedAt() != null) {
+            applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                    DashboardTrendMetric.SALES, order.getApprovedAt().toLocalDate()));
+            applicationEventPublisher.publishEvent(new TopProductRankAdjustEvent(
+                    order.getApprovedAt().toLocalDate(), -1, toRankItems(items)));
         }
         // 9. 释放锁定库存（SUBMITTED / APPROVED 分支，主表已 CANCELLED，取消权已拿到）
         if (needReleaseStock) {
@@ -1001,5 +1090,19 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (!allDone) {
             generateSalesOutboundBill(order, allItems);
         }
+    }
+
+    /** 把销售明细转换为 TOP 商品排行事件的输入项，避免在事件 payload 里跨模块引用实体 */
+    private static List<RankItemInput> toRankItems(List<SalesOrderItem> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        List<RankItemInput> inputs = new java.util.ArrayList<>(items.size());
+        for (SalesOrderItem item : items) {
+            inputs.add(new RankItemInput(item.getProductId(),
+                    item.getTotalAmount() == null ? 0L : item.getTotalAmount(),
+                    item.getQuantity() == null ? 0L : item.getQuantity()));
+        }
+        return inputs;
     }
 }

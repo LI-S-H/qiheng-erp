@@ -725,5 +725,5 @@ export function getStockBillDetail(direction: StockBillDirection, stockBillId: s
     const detail = mockBills.find(item => item.workBillId === stockBillId);
     return detail ? Promise.resolve(normalizeStockBillDetail(detail)) : Promise.reject(new Error('入库单或出库单不存在'));
   }
-  return getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId)).then(normalizeStockBillDetail);
+  return getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId), undefined, { skipPageLoading: true }).then(normalizeStockBillDetail);
 }

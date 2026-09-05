@@ -46,7 +46,60 @@ runSmoke({
       }
     }
 
+    async function assertTrendValuesAreReadable(label) {
+      const scroll = page.locator('.dashboard-trend-values-scroll');
+      const layout = await scroll.evaluate(element => ({
+        horizontalOverflow: element.scrollWidth - element.clientWidth,
+        stickyPosition: getComputedStyle(element.querySelector('.dashboard-trend-values__label')).position,
+      }));
+      if (layout.horizontalOverflow <= 2) {
+        throw new Error(`${label}经营趋势数值明细应在列宽不足时提供横向滚动`);
+      }
+      if (layout.stickyPosition !== 'sticky') {
+        throw new Error(`${label}经营趋势数值明细的指标列未固定`);
+      }
+
+      const heads = await page.locator('.dashboard-trend-values__head').evaluateAll(nodes =>
+        nodes.slice(1).map(node => {
+          const rect = node.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, text: node.textContent || '' };
+        }),
+      );
+      for (let index = 1; index < heads.length; index += 1) {
+        if (heads[index].left < heads[index - 1].right - 1) {
+          throw new Error(`${label}数值明细日期重叠：${heads[index - 1].text} / ${heads[index].text}`);
+        }
+      }
+    }
+
     await page.getByRole('heading', { name: '工作台' }).waitFor();
+    const pageLoading = page.locator('[data-page-loading]');
+    await pageLoading.waitFor({ state: 'visible' });
+    await page.waitForFunction(() => {
+      const element = document.querySelector('[data-page-loading]');
+      return element && getComputedStyle(element).opacity === '1';
+    });
+    const loadingMask = await pageLoading.evaluate(element => ({
+      background: getComputedStyle(element).backgroundColor,
+      opacity: getComputedStyle(element).opacity,
+      zIndex: getComputedStyle(element).zIndex,
+      before: getComputedStyle(element, '::before').content,
+      after: getComputedStyle(element, '::after').content,
+    }));
+    if (loadingMask.background === 'rgba(0, 0, 0, 0)'
+      || loadingMask.opacity !== '1'
+      || loadingMask.zIndex !== '50'
+      || loadingMask.before !== 'none'
+      || loadingMask.after !== 'none') {
+      throw new Error(`全局页面加载器必须使用单层不透明中性背景：${JSON.stringify(loadingMask)}`);
+    }
+    const dashboardSkeleton = page.locator('[data-dashboard-skeleton]');
+    await dashboardSkeleton.waitFor({ state: 'visible' });
+    if (await dashboardSkeleton.locator('.dashboard-panel').count() !== 6
+      || await dashboardSkeleton.locator('.dashboard-skeleton__todo').count() !== 5) {
+      throw new Error('工作台首次加载未保留完整的指标、待办与经营区块骨架');
+    }
+    await dashboardSkeleton.waitFor({ state: 'hidden' });
     await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
     await page.getByText('今日销售额').waitFor();
     const trendSummary = page.locator('[data-dashboard-trend-summary]');
@@ -58,11 +111,46 @@ runSmoke({
       throw new Error('当前趋势周期没有通过 aria-pressed 标记');
     }
     await page.getByRole('img', { name: '近 7 日经营趋势' }).waitFor();
-    if ((await page.locator('.dashboard-grid-lines line').count()) !== 5) {
-      throw new Error('经营趋势应展示 5 条横向网格线');
+    const gridLineCount = await page.locator('.dashboard-grid-lines line:not([data-dashboard-trend-zero-axis])').count();
+    if (gridLineCount < 1 || gridLineCount > 5) {
+      throw new Error(`经营趋势网格线应按数据极差保持 1-5 条粗粒度分度线，实际为 ${gridLineCount}`);
+    }
+    if ((await page.locator('[data-dashboard-trend-zero-axis]').count()) !== 1) {
+      throw new Error('经营趋势必须始终展示唯一的零轴');
     }
     if ((await page.locator('.dashboard-trend-points circle').count()) < 21) {
       throw new Error('经营趋势应为每个日期和指标标记折线点');
+    }
+    const lossPoint = page.locator('circle.dashboard-trend--margin.is-negative');
+    await lossPoint.waitFor();
+    const lossLayout = await page.locator('.dashboard-trend-chart').evaluate(chart => {
+      const lossPoint = chart.querySelector('circle.dashboard-trend--margin.is-negative');
+      const zeroAxis = chart.querySelector('[data-dashboard-trend-zero-axis]');
+      const axisLabels = Array.from(chart.querySelectorAll('.dashboard-trend-axis text')).map(node => node.textContent || '');
+      return {
+        lossPointY: Number(lossPoint?.getAttribute('cy')),
+        zeroAxisY: Number(zeroAxis?.getAttribute('y1')),
+        hasNegativeAxisLabel: axisLabels.some(text => text.startsWith('-')),
+        hasZeroAxisLabel: axisLabels.includes('0'),
+        hasAxisUnit: axisLabels.some(text => text.startsWith('金额（')),
+      };
+    });
+    if (!lossLayout.hasNegativeAxisLabel || !lossLayout.hasZeroAxisLabel || !lossLayout.hasAxisUnit || lossLayout.lossPointY <= lossLayout.zeroAxisY) {
+      throw new Error(`经营趋势的负值、零轴或金额单位展示异常：${JSON.stringify(lossLayout)}`);
+    }
+    const negativeTrendValue = page.locator('.dashboard-trend-values__value.is-negative');
+    if ((await negativeTrendValue.innerText()) !== '-9.2万') {
+      throw new Error(`经营趋势明细未正确展示负毛利：${await negativeTrendValue.innerText()}`);
+    }
+    if ((await page.locator('.dashboard-trend-values__value.is-positive').count()) < 1) {
+      throw new Error('经营趋势明细的正数未按绿色语义样式展示');
+    }
+    await lossPoint.hover();
+    const tooltip = page.locator('[data-dashboard-trend-tooltip]');
+    await tooltip.waitFor({ state: 'visible' });
+    const tooltipText = await tooltip.innerText();
+    if (!tooltipText.includes('销售额') || !tooltipText.includes('采购额') || !tooltipText.includes('毛利额') || !tooltipText.includes('-¥92,100')) {
+      throw new Error(`经营趋势点位悬停信息不完整：${tooltipText}`);
     }
     const trend7Labels = await getVisibleTrendLabels(7);
     assertTrendLabelsNotOverlap(trend7Labels, '7天');
@@ -75,15 +163,17 @@ runSmoke({
       throw new Error('趋势周期切换后的 aria-pressed 状态错误');
     }
     const trend15Labels = await getVisibleTrendLabels(8);
+    await assertTrendValuesAreReadable('15天');
     assertTrendLabelsNotOverlap(trend15Labels, '15天');
     await page.getByRole('button', { name: '30天' }).click();
     await page.locator('.dashboard-trend-chart.is-transitioning').waitFor();
     await page.getByText('近 30 日销售、采购和毛利变化').waitFor();
-    const trend30Labels = await getVisibleTrendLabels(15);
+    const trend30Labels = await getVisibleTrendLabels(8);
+    await assertTrendValuesAreReadable('30天');
     assertTrendLabelsNotOverlap(trend30Labels, '30天');
     assertTrendLabelsEvenlySpaced(trend30Labels, '30天');
-    if (!(trend7Labels.length < trend15Labels.length && trend15Labels.length < trend30Labels.length)) {
-      throw new Error(`经营趋势 x 轴标签数量应随天数递增，实际为 7天=${trend7Labels.length}, 15天=${trend15Labels.length}, 30天=${trend30Labels.length}`);
+    if (trend7Labels.length !== 7 || trend15Labels.length !== 8 || trend30Labels.length !== 8) {
+      throw new Error(`经营趋势 x 轴标签数量错误，实际为 7天=${trend7Labels.length}, 15天=${trend15Labels.length}, 30天=${trend30Labels.length}`);
     }
     await page.getByRole('button', { name: '7天' }).click();
     await page.getByText('业务待办').waitFor();
@@ -100,20 +190,17 @@ runSmoke({
       throw new Error('订单流转不应再展示详情按钮');
     }
     await page.getByRole('row').filter({ hasText: 'USB-C扩展坞' }).waitFor();
-    await page.getByRole('button', { name: '查看详情库存预警' }).click();
-    const stockDialog = page.getByRole('dialog', { name: '库存预警详情' });
-    await stockDialog.getByText('USB-C扩展坞').waitFor();
-    const stockHorizontalOverflow = await stockDialog.locator('.dashboard-detail-scroll').evaluate(element => element.scrollWidth - element.clientWidth);
-    if (stockHorizontalOverflow > 2) throw new Error('库存预警详情不应出现横向滚动');
-    await page.keyboard.press('Escape');
-    await stockDialog.waitFor({ state: 'hidden' });
+    if (await page.locator('button[aria-label="查看详情库存预警"]').count()) {
+      throw new Error('库存预警不应再提供详情弹窗入口');
+    }
+    if (await page.getByRole('dialog', { name: '库存预警详情' }).count()) {
+      throw new Error('库存预警详情弹窗不应在首屏渲染');
+    }
 
     const refreshButton = page.locator('.dashboard-heading-actions [data-slot="button"]');
     await refreshButton.click();
-    await page.locator('[data-list-loading]').waitFor({ state: 'visible', timeout: 1000 });
     await page.locator('[data-dashboard-refresh-status]').getByText('正在同步经营数据...', { exact: true }).waitFor();
     if (!(await refreshButton.isDisabled())) throw new Error('工作台刷新期间按钮未禁用');
-    await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 });
     await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
 
     await page.getByRole('button', { name: /销售单待审核/ }).click();
@@ -133,9 +220,27 @@ runSmoke({
 
     await page.getByRole('button', { name: '查看详情销售商品排行' }).click();
     const productDialog = page.getByRole('dialog', { name: '销售商品排行详情' });
-    await productDialog.getByText('热敏标签纸').waitFor();
+    const productMatrix = productDialog.locator('.dashboard-rank-matrix__table--products');
+    await productMatrix.waitFor();
+    await productMatrix.getByText('商品编码 / 商品名称', { exact: true }).waitFor();
+    if ((await productMatrix.locator('.dashboard-rank-matrix__rank').count()) < 6) {
+      throw new Error('销售商品详情应使用可滚动的排名矩阵');
+    }
+    if (!(await productMatrix.locator('.dashboard-rank-matrix__rank').first().evaluate(element => element.textContent?.trim() === '01'))) {
+      throw new Error('销售商品排名徽章应保留可读取的数字');
+    }
     await page.keyboard.press('Escape');
     await productDialog.waitFor({ state: 'hidden' });
+
+    await page.getByRole('button', { name: '查看详情供应商履约' }).click();
+    const supplierDialog = page.getByRole('dialog', { name: '供应商履约详情' });
+    const supplierMatrix = supplierDialog.locator('.dashboard-rank-matrix__table--suppliers');
+    await supplierMatrix.waitFor();
+    await supplierMatrix.getByText('交付评分', { exact: true }).waitFor();
+    await supplierMatrix.getByText('质量评分', { exact: true }).waitFor();
+    await supplierMatrix.getByText('准时率', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await supplierDialog.waitFor({ state: 'hidden' });
 
     await page.getByRole('button', { name: '查看详情业务待办' }).click();
     const todoDialog = page.getByRole('dialog', { name: '业务待办详情' });
@@ -228,13 +333,8 @@ runSmoke({
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
 
     await page.getByRole('button', { name: '刷新', exact: true }).click();
-    const loadingOverlay = page.locator('[data-list-loading]');
-    await loadingOverlay.waitFor({ state: 'visible', timeout: 1000 });
-    const spinnerAnimation = await loadingOverlay.locator('.page-loading-spinner').evaluate(
-      element => getComputedStyle(element).animationName,
-    );
-    if (spinnerAnimation !== 'none') throw new Error(`减少动态效果模式下加载图标仍在旋转：${spinnerAnimation}`);
-    await loadingOverlay.waitFor({ state: 'hidden', timeout: 5000 });
+    await page.locator('[data-dashboard-refresh-status]').getByText('正在同步经营数据...', { exact: true }).waitFor();
+    await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     if (overflow > 1) throw new Error(`1280px 工作台发生横向溢出：${overflow}`);

@@ -4,20 +4,23 @@
  */
 export const MAX_SAFE_MONEY = 90_000_000_000_000;
 const MONEY_PATTERN = /^\d+(?:\.\d{1,2})?$/;
+const SIGNED_MONEY_PATTERN = /^-?\d+(?:\.\d{1,2})?$/;
 
-export function normalizeMoneyNumber(value: unknown, fieldName: string, nullable = false, allowMockNumber = false): number | null {
+export function normalizeMoneyNumber(value: unknown, fieldName: string, nullable = false, allowMockNumber = false, allowNegative = false): number | null {
   if (value === null || value === undefined || value === '') {
     if (nullable) return null;
     throw new Error(`接口字段 ${fieldName} 必须为金额字符串`);
   }
-  if (allowMockNumber && typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_SAFE_MONEY) {
+  if (allowMockNumber && typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_SAFE_MONEY && (allowNegative || value >= 0)) {
     return value;
   }
-  if (typeof value !== 'string' || !MONEY_PATTERN.test(value)) {
-    throw new Error(`接口字段 ${fieldName} 必须为最多两位小数的非负金额字符串`);
+  const moneyPattern = allowNegative ? SIGNED_MONEY_PATTERN : MONEY_PATTERN;
+  if (typeof value !== 'string' || !moneyPattern.test(value)) {
+    const rule = allowNegative ? '带正负号、最多两位小数的金额字符串' : '最多两位小数的非负金额字符串';
+    throw new Error(`接口字段 ${fieldName} 必须为${rule}`);
   }
   const normalized = Number(value);
-  if (!Number.isFinite(normalized) || normalized > MAX_SAFE_MONEY) {
+  if (!Number.isFinite(normalized) || Math.abs(normalized) > MAX_SAFE_MONEY) {
     throw new Error(`接口字段 ${fieldName} 超出前端安全金额范围`);
   }
   return normalized;

@@ -108,7 +108,7 @@ class ReturnOrderServiceImplSourceItemsTest {
 
     private void stubSource(Long sourceOrderId, Long sourceItemId, Long fulfilledQty) {
         ReturnSourceOrder sourceOrder = new ReturnSourceOrder(sourceOrderId, "SRC-" + sourceOrderId,
-                301L, "PARTY-301", "往来单位", 501L, "主仓");
+                301L, "PARTY-301", "往来单位", 501L, "主仓", null);
         ReturnSourceItem sourceItem = new ReturnSourceItem(sourceItemId, 101L, "P-101", "测试产品",
                 "件", 2, fulfilledQty, 1_234L);
         when(sourceProvider.getSourceOrder(sourceOrderId)).thenReturn(sourceOrder);

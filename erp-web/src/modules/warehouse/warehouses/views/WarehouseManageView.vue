@@ -7,7 +7,6 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
@@ -333,7 +332,6 @@ function handleBatchDelete() {
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">仓库列表</strong><span class="text-xs" :class="selectedIds.size ? 'text-primary' : 'text-muted-foreground'">已选 {{ selectedIds.size }} 项</span></div>
         <div class="table-toolbar__actions">
@@ -352,8 +350,7 @@ function handleBatchDelete() {
             <TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>仓库编码</TableHead><TableHead>仓库名称</TableHead><TableHead>联系人</TableHead><TableHead>联系电话</TableHead><TableHead>仓库地址</TableHead><TableHead>状态</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center">操作</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading && warehouses.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="warehouses.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+            <TableRow v-if="warehouses.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
             <TableRow v-for="row in warehouses" v-else :key="row.warehouseId">
               <TableCell><Checkbox :model-value="selectedIds.has(row.warehouseId)" @update:model-value="toggleSelect(row.warehouseId, $event)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium">{{ row.warehouseCode }}</code></TableCell>

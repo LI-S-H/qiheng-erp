@@ -2,18 +2,40 @@ import { getResult } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
 import { normalizeMoneyNumber } from '@/shared/utils/money';
 import type {
+  DashboardAccessState,
   DashboardMetric,
+  DashboardOverviewAccess,
+  DashboardSectionAccess,
   DashboardNotificationPopover,
   DashboardOrderStage,
+  DashboardOrderStagePeriod,
+  DashboardOrderStagePermissions,
   DashboardOverview,
   DashboardStockAlert,
   DashboardSupplierPerformance,
   DashboardTodoItem,
   DashboardTopProduct,
+  DashboardTrendPermissions,
   DashboardTrendPoint,
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
+
+function formatMockDateTime(value: Date) {
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return [value.getFullYear(), pad(value.getMonth() + 1), pad(value.getDate())].join('-') + ' 00:00:00';
+}
+
+function currentMockOrderStagePeriod(): DashboardOrderStagePeriod {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return {
+    type: 'CURRENT_CALENDAR_MONTH',
+    startAt: formatMockDateTime(monthStart),
+    endAtExclusive: formatMockDateTime(nextMonthStart),
+  };
+}
 
 const defaultTodoLabels: Record<string, string> = {
   PURCHASE: '采购',
@@ -28,11 +50,24 @@ const defaultTodoLabels: Record<string, string> = {
 
 const mockOverview: DashboardOverview = {
   refreshedAt: '2026-06-30 09:30:00',
+  access: {
+    metrics: {
+      MONTH_SALES: { state: 'ALLOWED' },
+      MONTH_GROSS_PROFIT: { state: 'ALLOWED' },
+      PENDING_ORDERS: { state: 'ALLOWED' },
+      STOCK_RISK_SKU: { state: 'ALLOWED' },
+    },
+    todos: { state: 'ALLOWED' },
+    stockAlerts: { state: 'ALLOWED' },
+    orderStages: { state: 'ALLOWED' },
+    topProducts: { state: 'ALLOWED' },
+    supplierPerformance: { state: 'ALLOWED' },
+  },
   metrics: [
-    { label: '今日销售额', value: 286430, unit: '元', changeRate: 12.8, compareText: '较昨日', status: 'good' },
-    { label: '本月毛利额', value: 842600, unit: '元', changeRate: 6.4, compareText: '较上月同期', status: 'good' },
-    { label: '待处理订单', value: 7, unit: '单', changeRate: -8.1, compareText: '较昨日', status: 'watch' },
-    { label: '库存风险 SKU', value: 11, unit: '个', changeRate: 18.6, compareText: '较昨日', status: 'risk' },
+    { key: 'MONTH_SALES', label: '本月销售额', value: 286430, unit: '元', changeRate: 12.8, compareText: '较上月', status: 'good' },
+    { key: 'MONTH_GROSS_PROFIT', label: '本月毛利额', value: -842600, unit: '元', changeRate: 6.4, compareText: '较上月', status: 'good' },
+    { key: 'PENDING_ORDERS', label: '待处理订单', value: 7, unit: '单', changeRate: -8.1, compareText: '较昨日', status: 'good' },
+    { key: 'STOCK_RISK_SKU', label: '库存风险 SKU', value: 11, unit: '个', changeRate: 18.6, compareText: '较上月', status: 'risk' },
   ],
   trend: [
     { date: '06-01', salesAmount: 186200, purchaseAmount: 112400, grossMarginAmount: 54200 },
@@ -64,48 +99,45 @@ const mockOverview: DashboardOverview = {
     { date: '06-27', salesAmount: 269200, purchaseAmount: 158600, grossMarginAmount: 86200 },
     { date: '06-28', salesAmount: 252700, purchaseAmount: 141300, grossMarginAmount: 80100 },
     { date: '06-29', salesAmount: 276900, purchaseAmount: 167800, grossMarginAmount: 88400 },
-    { date: '06-30', salesAmount: 286430, purchaseAmount: 172600, grossMarginAmount: 92100 },
+    { date: '06-30', salesAmount: 286430, purchaseAmount: 378530, grossMarginAmount: -92100 },
   ],
   todos: [
-    { todoId: 'todo-system-exceptions', businessType: 'SYSTEM_EXCEPTION', businessLabel: '系统', title: '系统异常', description: '当前有 4 条系统异常记录需要关注，主要来自 AI/MCP 工具调用、消息队列死信、第三方回调和定时任务失败。', count: 4, priority: 'HIGH', sortWeight: 10, sourceMode: 'PERSISTED', completionMode: 'TRACKED', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: 'system_exception', occurredAt: '2026-07-01 09:20:00', resolveHint: null, evidence: [
-      { itemId: 'AI-MCP-20260701-001', primaryText: 'AI-MCP-20260701-001', secondaryText: 'AI 模块调用库存预测 MCP 工具超时，未生成补货建议，等待后台重试或检查工具连接。', metrics: [{ label: '类型', value: 'MCP超时', tone: 'risk' }, { label: '来源', value: 'AI助手', tone: 'neutral' }, { label: '时间', value: '09:18', tone: 'watch' }] },
-      { itemId: 'DLQ-ORDER-STOCK-00023', primaryText: 'DLQ-ORDER-STOCK-00023', secondaryText: '订单审核后生成出库任务的消息进入死信队列，需由后台消费补偿后恢复流程。', metrics: [{ label: '类型', value: '死信队列', tone: 'risk' }, { label: '来源', value: '消息队列', tone: 'neutral' }, { label: '时间', value: '09:05', tone: 'watch' }] },
-      { itemId: 'EXT-CALLBACK-20260701-006', primaryText: 'EXT-CALLBACK-20260701-006', secondaryText: '第三方物流回调连续超时，发货状态暂未同步，后台会按回调幂等键重试。', metrics: [{ label: '类型', value: '回调超时', tone: 'watch' }, { label: '来源', value: '物流接口', tone: 'neutral' }, { label: '时间', value: '08:42', tone: 'neutral' }] },
-      { itemId: 'JOB-DASHBOARD-SNAPSHOT', primaryText: 'JOB-DASHBOARD-SNAPSHOT', secondaryText: '经营快照定时任务执行失败，本次趋势缓存沿用上一批次数据，等待下一次调度或人工重跑。', metrics: [{ label: '类型', value: '任务失败', tone: 'watch' }, { label: '来源', value: '定时任务', tone: 'neutral' }, { label: '时间', value: '07:30', tone: 'neutral' }] },
-    ], route: '/dashboard' },
-    { todoId: 'todo-purchase-approve', businessType: 'PURCHASE', businessLabel: '采购', title: '采购单待审核', description: '还有 2 张采购单需要审核，处理后会自动完成待办。', count: 2, priority: 'HIGH', sortWeight: 20, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往采购订单完成审核，审核通过或驳回后该待办自动更新。', evidence: [
-      { itemId: 'po-202607004', primaryText: 'PO202607004', secondaryText: '谷仓食品批发 · 每日坚果混合装补货，待采购负责人审核', metrics: [{ label: '金额', value: '￥0.11万', tone: 'neutral' }, { label: '品项', value: '1', tone: 'neutral' }, { label: '等待', value: '3小时', tone: 'watch' }] },
-      { itemId: 'po-202607005', primaryText: 'PO202607005', secondaryText: '华东饮品供应链 · 饮品与咖啡补货，待确认采购价格', metrics: [{ label: '金额', value: '￥0.08万', tone: 'neutral' }, { label: '品项', value: '2', tone: 'neutral' }, { label: '等待', value: '2小时', tone: 'neutral' }] },
-    ], route: '/purchase/orders' },
-    { todoId: 'todo-sales-approve', businessType: 'SALES', businessLabel: '销售', title: '销售单待审核', description: '还有 2 张销售单需要审核，处理后会自动完成待办。', count: 2, priority: 'HIGH', sortWeight: 21, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往销售订单完成审核，审核通过后进入库存锁定和发货准备。', evidence: [
-      { itemId: 'so-202607004', primaryText: 'SO202607004', secondaryText: '杭州蓝湖办公采购 · 速溶黑咖啡订单，审核前需复核客户信用', metrics: [{ label: '金额', value: '￥0.07万', tone: 'watch' }, { label: '品项', value: '1', tone: 'neutral' }, { label: '等待', value: '1小时', tone: 'neutral' }] },
-      { itemId: 'so-202607005', primaryText: 'SO202607005', secondaryText: '南京星火校园超市 · A4复印纸补货，待销售主管审核放行', metrics: [{ label: '金额', value: '￥0.1万', tone: 'neutral' }, { label: '品项', value: '1', tone: 'neutral' }, { label: '等待', value: '45分钟', tone: 'neutral' }] },
-    ], route: '/sales/orders' },
-    { todoId: 'todo-stock-risk-review', businessType: 'INVENTORY', businessLabel: '库存', title: '库存异常待复核', description: '还有 11 个 SKU 可用库存低于安全线或已无可用库存，需要复核补货或调拨。', count: 11, priority: 'HIGH', sortWeight: 30, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往库存余额查看低库存 SKU，补货计划生成或库存恢复后自动更新。', evidence: [
-      { itemId: 'stock-P000043-W008', primaryText: 'USB-C扩展坞（P000043）', secondaryText: '南京备货仓 · 停用产品仅保留历史库存追溯，不生成补货建议', metrics: [{ label: '可用', value: '0 个', tone: 'risk' }, { label: '安全线', value: '4 个', tone: 'neutral' }, { label: '建议补货', value: '不适用', tone: 'neutral' }] },
-      { itemId: 'stock-P000027-W002', primaryText: '热敏标签纸（P000027）', secondaryText: '华南中心仓 · 当前无可用库存，需补货或调拨', metrics: [{ label: '可用', value: '0 卷', tone: 'risk' }, { label: '安全线', value: '40 卷', tone: 'neutral' }, { label: '建议补货', value: '40 卷', tone: 'risk' }] },
-    ], route: '/warehouse/stocks' },
-    { todoId: 'todo-inbound', businessType: 'WAREHOUSE', businessLabel: '仓储', title: '待确认入库', description: '还有 2 张入库单等待仓库确认。', count: 2, priority: 'MEDIUM', sortWeight: 50, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往入库单完成确认，确认入库后该待办自动更新。', evidence: [
-      { itemId: 'ib-202606130006', primaryText: 'IB202606130006', secondaryText: '关联 PO202606002 · 华北中心仓，等待仓库确认入库', metrics: [{ label: '品项', value: '2', tone: 'neutral' }, { label: '预计到货', value: '今日', tone: 'watch' }, { label: '等待', value: '2小时', tone: 'watch' }] },
-      { itemId: 'ib-202606120009', primaryText: 'IB202606120009', secondaryText: '关联 PO202606003 · 武汉中转仓，待收货质检', metrics: [{ label: '品项', value: '1', tone: 'neutral' }, { label: '预计到货', value: '今日', tone: 'neutral' }, { label: '等待', value: '1小时', tone: 'neutral' }] },
-    ], route: '/warehouse/inbound-bills' },
-    { todoId: 'todo-outbound', businessType: 'WAREHOUSE', businessLabel: '仓储', title: '待确认出库', description: '还有 1 张出库单等待发货确认。', count: 1, priority: 'MEDIUM', sortWeight: 51, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往出库单完成确认，确认出库后该待办自动更新。', evidence: [
-      { itemId: 'ob-202606100015', primaryText: 'OB202606100015', secondaryText: '关联 SO202606004 · 广州天河门店，待拣货复核', metrics: [{ label: '品项', value: '1', tone: 'neutral' }, { label: '计划发货', value: '今日', tone: 'watch' }, { label: '等待', value: '1小时', tone: 'neutral' }] },
-    ], route: '/warehouse/outbound-bills' },
-    { todoId: 'todo-credit-review', businessType: 'SALES', businessLabel: '销售', title: '客户信用待复核', description: '有 2 个客户的应收或授信占用触发风险提醒，需要确认是否继续放行订单。', count: 2, priority: 'MEDIUM', sortWeight: 61, sourceMode: 'AGGREGATED', completionMode: 'AUTO', status: 'PENDING', errorCode: null, errorMessage: null, sourceNo: null, occurredAt: null, resolveHint: '前往客户或销售订单核对应收、逾期和授信占用，复核完成后自动更新。', evidence: [
-      { itemId: 'credit-C002', primaryText: '杭州蓝湖办公采购（C002）', secondaryText: 'SO202607004 · 授信占用偏高', metrics: [{ label: '授信额度', value: '￥9.0万', tone: 'neutral' }, { label: '已占用', value: '￥8.7万', tone: 'watch' }, { label: '逾期', value: '0天', tone: 'neutral' }] },
-      { itemId: 'credit-C003', primaryText: '南京星火校园超市（C003）', secondaryText: 'SO202607005 · 账期客户', metrics: [{ label: '授信额度', value: '￥12.0万', tone: 'neutral' }, { label: '已占用', value: '￥11.6万', tone: 'watch' }, { label: '逾期', value: '3天', tone: 'watch' }] },
-    ], route: '/sales/customers' },
-  ],
-  stockAlerts: [
-    { stockId: '1940000000000000013', productId: '1920000000000000043', productCode: 'P000043', productName: 'USB-C扩展坞', warehouseId: '1930000000000000008', warehouseName: '南京备货仓', unitName: '个', availableQty: 0, safetyStockQty: 4, suggestedPurchaseQty: 0, severity: 'HIGH', latestOutboundAt: '2026-06-13 11:55:00' },
-    { stockId: '1940000000000000005', productId: '1920000000000000027', productCode: 'P000027', productName: '热敏标签纸', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', unitName: '卷', availableQty: 0, safetyStockQty: 40, suggestedPurchaseQty: 40, severity: 'HIGH', latestOutboundAt: '2026-06-14 08:40:00' },
-    { stockId: '1940000000000000012', productId: '1920000000000000044', productCode: 'P000044', productName: '无线办公鼠标', warehouseId: '1930000000000000007', warehouseName: '杭州电商仓', unitName: '个', availableQty: 0, safetyStockQty: 8, suggestedPurchaseQty: 0, severity: 'HIGH', latestOutboundAt: '2026-06-13 13:10:00' },
-    { stockId: '1931000000000000002', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', unitName: '盒', availableQty: 7, safetyStockQty: 8, suggestedPurchaseQty: 12, severity: 'MEDIUM', latestOutboundAt: '2026-07-01 10:05:00' },
-    { stockId: '1940000000000000004', productId: '1920000000000000026', productCode: 'P000026', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', unitName: '箱', availableQty: 10, safetyStockQty: 15, suggestedPurchaseQty: 20, severity: 'MEDIUM', latestOutboundAt: '2026-06-14 08:45:00' },
-    { stockId: '1940000000000000006', productId: '1920000000000000033', productCode: 'P000033', productName: '浓缩洗衣液', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', unitName: '瓶', availableQty: 9, safetyStockQty: 10, suggestedPurchaseQty: 15, severity: 'MEDIUM', latestOutboundAt: '2026-06-13 17:25:00' },
-    { stockId: '1940000000000000008', productId: '1920000000000000037', productCode: 'P000037', productName: '加厚垃圾袋', warehouseId: '1930000000000000004', warehouseName: '西南中心仓', unitName: '卷', availableQty: 20, safetyStockQty: 25, suggestedPurchaseQty: 30, severity: 'MEDIUM', latestOutboundAt: '2026-06-13 16:45:00' },
-    { stockId: '1940000000000000010', productId: '1920000000000000038', productCode: 'P000038', productName: '无痕粘钩', warehouseId: '1930000000000000005', warehouseName: '武汉中转仓', unitName: '卡', availableQty: 10, safetyStockQty: 15, suggestedPurchaseQty: 20, severity: 'MEDIUM', latestOutboundAt: '2026-06-13 15:18:00' },
+    { todoId: 'todo-system-exception', businessType: 'SYSTEM', businessLabel: '系统', title: '系统异常待处理', description: '当前有 2 条系统异常记录需要关注。', count: 2, priority: 'HIGH', sortWeight: 10, completionMode: 'TRACKED', resolveHint: null, detail: { model: 'SYSTEM_EXCEPTION', items: [
+      { id: 'AI-MCP-20260701-001', exceptionNo: 'AI-MCP-20260701-001', summary: '库存预测工具调用超时，未生成补货建议。', exceptionType: 'MCP超时', sourceModule: 'AI助手', occurredAt: '2026-07-01 09:18:00', severity: 'HIGH' },
+      { id: 'DLQ-ORDER-STOCK-00023', exceptionNo: 'DLQ-ORDER-STOCK-00023', summary: '订单审核后的出库任务进入死信队列。', exceptionType: '死信队列', sourceModule: '消息队列', occurredAt: '2026-07-01 09:05:00', severity: 'MEDIUM' },
+    ] } },
+    { todoId: 'todo-purchase-return-approve', businessType: 'PURCHASE', businessLabel: '采购', title: '采购退货待审核', description: '还有 1 张采购退货单需要审核。', count: 1, priority: 'HIGH', sortWeight: 20, completionMode: 'AUTO', resolveHint: '前往采购退货单完成审核，审核通过后将生成对应出库工作单。', detail: { model: 'PURCHASE_RETURN_APPROVAL', items: [
+      { documentNo: 'PR202607002', sourceDocumentNo: 'PO202606001', counterpartyName: '华东饮品供应链', amountFen: 1865600, waitHours: 52, waitLevel: 'WARNING', documentStatus: 'SUBMITTED' },
+    ] } },
+    { todoId: 'todo-purchase-approve', businessType: 'PURCHASE', businessLabel: '采购', title: '采购单待审核', description: '还有 2 张采购单需要审核。', count: 2, priority: 'HIGH', sortWeight: 21, completionMode: 'AUTO', resolveHint: '前往采购订单完成审核，审核通过或驳回后该待办自动更新。', detail: { model: 'PURCHASE_ORDER_APPROVAL', items: [
+      { documentNo: 'PO202607004', sourceDocumentNo: null, counterpartyName: '谷仓食品批发', amountFen: 10800, waitHours: 27, waitLevel: 'WARNING', documentStatus: 'SUBMITTED' },
+      { documentNo: 'PO202607005', sourceDocumentNo: null, counterpartyName: '华东饮品供应链', amountFen: 8600, waitHours: 3, waitLevel: 'NORMAL', documentStatus: 'SUBMITTED' },
+    ] } },
+    { todoId: 'todo-sales-return-approve', businessType: 'SALES', businessLabel: '销售', title: '销售退货待审核', description: '还有 1 张销售退货单需要审核。', count: 1, priority: 'HIGH', sortWeight: 22, completionMode: 'AUTO', resolveHint: '前往销售退货单完成审核，审核通过后将生成对应入库工作单。', detail: { model: 'SALES_RETURN_APPROVAL', items: [
+      { documentNo: 'SR202607002', sourceDocumentNo: 'SO202606001', counterpartyName: '上海星河便利店', amountFen: 1234000, waitHours: 76, waitLevel: 'OVERDUE', documentStatus: 'SUBMITTED' },
+    ] } },
+    { todoId: 'todo-sales-approve', businessType: 'SALES', businessLabel: '销售', title: '销售单待审核', description: '还有 2 张销售单需要审核。', count: 2, priority: 'HIGH', sortWeight: 23, completionMode: 'AUTO', resolveHint: '前往销售订单完成审核，审核通过后进入库存锁定和发货准备。', detail: { model: 'SALES_ORDER_APPROVAL', items: [
+      { documentNo: 'SO202607004', sourceDocumentNo: null, counterpartyName: '杭州蓝湖办公采购', amountFen: 7000, waitHours: 18, waitLevel: 'NORMAL', documentStatus: 'SUBMITTED' },
+    ] } },
+    { todoId: 'todo-stock-risk-review', businessType: 'INVENTORY', businessLabel: '库存', title: '库存异常待复核', description: '还有 2 个 SKU 可用库存低于安全线。', count: 2, priority: 'HIGH', sortWeight: 30, completionMode: 'AUTO', resolveHint: '前往库存余额查看低库存 SKU，补货计划生成或库存恢复后自动更新。', detail: { model: 'STOCK_RISK_REVIEW', items: [
+      { id: 'stock-P000043-W008', productCode: 'P000043', productName: 'USB-C扩展坞', warehouseName: '南京备货仓', unitName: '个', availableQty: 0, safetyStockQty: 4, suggestedPurchaseQty: 0, severity: 'HIGH' },
+      { id: 'stock-P000027-W002', productCode: 'P000027', productName: '热敏标签纸', warehouseName: '华南中心仓', unitName: '卷', availableQty: 0, safetyStockQty: 40, suggestedPurchaseQty: 40, severity: 'HIGH' },
+    ] } },
+    { todoId: 'todo-inbound', businessType: 'WAREHOUSE', businessLabel: '仓储', title: '待确认入库', description: '还有 2 张入库单等待仓库确认。', count: 2, priority: 'MEDIUM', sortWeight: 50, completionMode: 'AUTO', resolveHint: '前往入库单完成确认，确认入库后该待办自动更新。', detail: { model: 'INBOUND_CONFIRM', items: [
+      { documentNo: 'IN202606130006', sourceDocumentNo: 'SR202606002', counterpartyName: '华北中心仓', amountFen: null, waitHours: 2, waitLevel: 'NORMAL', documentStatus: 'PENDING_CONFIRM' },
+    ] } },
+    { todoId: 'todo-outbound', businessType: 'WAREHOUSE', businessLabel: '仓储', title: '待确认出库', description: '还有 1 张出库单等待发货确认。', count: 1, priority: 'MEDIUM', sortWeight: 51, completionMode: 'AUTO', resolveHint: '前往出库单完成确认，确认出库后该待办自动更新。', detail: { model: 'OUTBOUND_CONFIRM', items: [
+      { documentNo: 'OUT202606100015', sourceDocumentNo: 'PR202606004', counterpartyName: '广州天河门店', amountFen: null, waitHours: 1, waitLevel: 'NORMAL', documentStatus: 'PENDING_CONFIRM' },
+    ] } },
+  ],  stockAlerts: [
+    { stockId: '1940000000000000013', productId: '1920000000000000043', productCode: 'P000043', productName: 'USB-C扩展坞', warehouseId: '1930000000000000008', warehouseName: '南京备货仓', unitName: '个', availableQty: 0, safetyStockQty: 4, suggestedPurchaseQty: 0, severity: 'NO_AVAILABLE', latestOutboundAt: '2026-06-13 11:55:00' },
+    { stockId: '1940000000000000005', productId: '1920000000000000027', productCode: 'P000027', productName: '热敏标签纸', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', unitName: '卷', availableQty: 0, safetyStockQty: 40, suggestedPurchaseQty: 40, severity: 'OUT_OF_STOCK', latestOutboundAt: '2026-06-14 08:40:00' },
+    { stockId: '1940000000000000012', productId: '1920000000000000044', productCode: 'P000044', productName: '无线办公鼠标', warehouseId: '1930000000000000007', warehouseName: '杭州电商仓', unitName: '个', availableQty: 0, safetyStockQty: 8, suggestedPurchaseQty: 0, severity: 'NO_AVAILABLE', latestOutboundAt: '2026-06-13 13:10:00' },
+    { stockId: '1931000000000000002', productId: '1920000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', warehouseId: '1930000000000000001', warehouseName: '华东中心仓', unitName: '盒', availableQty: 7, safetyStockQty: 8, suggestedPurchaseQty: 12, severity: 'LOW_STOCK', latestOutboundAt: '2026-07-01 10:05:00' },
+    { stockId: '1940000000000000004', productId: '1920000000000000026', productCode: 'P000026', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: '华南中心仓', unitName: '箱', availableQty: 10, safetyStockQty: 15, suggestedPurchaseQty: 20, severity: 'LOW_STOCK', latestOutboundAt: '2026-06-14 08:45:00' },
+    { stockId: '1940000000000000006', productId: '1920000000000000033', productCode: 'P000033', productName: '浓缩洗衣液', warehouseId: '1930000000000000003', warehouseName: '华北中心仓', unitName: '瓶', availableQty: 9, safetyStockQty: 10, suggestedPurchaseQty: 15, severity: 'LOW_STOCK', latestOutboundAt: '2026-06-13 17:25:00' },
+    { stockId: '1940000000000000008', productId: '1920000000000000037', productCode: 'P000037', productName: '加厚垃圾袋', warehouseId: '1930000000000000004', warehouseName: '西南中心仓', unitName: '卷', availableQty: 20, safetyStockQty: 25, suggestedPurchaseQty: 30, severity: 'LOW_STOCK', latestOutboundAt: '2026-06-13 16:45:00' },
+    { stockId: '1940000000000000010', productId: '1920000000000000038', productCode: 'P000038', productName: '无痕粘钩', warehouseId: '1930000000000000005', warehouseName: '武汉中转仓', unitName: '卡', availableQty: 10, safetyStockQty: 15, suggestedPurchaseQty: 20, severity: 'LOW_STOCK', latestOutboundAt: '2026-06-13 15:18:00' },
   ],
   orderStages: [
     { stage: '草稿', purchaseCount: 1, salesCount: 1 },
@@ -113,7 +145,9 @@ const mockOverview: DashboardOverview = {
     { stage: '已审核', purchaseCount: 3, salesCount: 2 },
     { stage: '部分出入库', purchaseCount: 1, salesCount: 1 },
     { stage: '已完成', purchaseCount: 2, salesCount: 4 },
+    { stage: '已取消', purchaseCount: 0, salesCount: 0 },
   ],
+  orderStagePeriod: currentMockOrderStagePeriod(),
   topProducts: [
     { productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', salesAmount: 126800, salesQty: 360, availableQty: 122 },
     { productId: '1920000000000000026', productCode: 'P000026', productName: 'A4复印纸', salesAmount: 98400, salesQty: 220, availableQty: 24 },
@@ -134,11 +168,17 @@ const mockOverview: DashboardOverview = {
   ],
 };
 
+const dashboardMetricKeys = ['MONTH_SALES', 'MONTH_GROSS_PROFIT', 'PENDING_ORDERS', 'STOCK_RISK_SKU'] as const;
+
 function normalizeMetric(item: DashboardMetric): DashboardMetric {
+  if (!dashboardMetricKeys.includes(item.key)) {
+    throw new Error(`dashboard metric key is invalid: ${String(item.key)}`);
+  }
   return {
     ...item,
-    value: normalizeFiniteNumber(item.value, 'value'),
-    changeRate: normalizeFiniteNumber(item.changeRate, 'changeRate'),
+    value: item.value == null ? null : normalizeFiniteNumber(item.value, 'value'),
+    changeRate: item.changeRate == null ? null : normalizeFiniteNumber(item.changeRate, 'changeRate'),
+    compareText: item.compareText == null ? null : String(item.compareText),
   };
 }
 
@@ -147,17 +187,14 @@ function normalizeTrendPoint(item: DashboardTrendPoint): DashboardTrendPoint {
     ...item,
     salesAmount: normalizeMoneyNumber(item.salesAmount, 'salesAmount', false, useMockApi)!,
     purchaseAmount: normalizeMoneyNumber(item.purchaseAmount, 'purchaseAmount', false, useMockApi)!,
-    grossMarginAmount: normalizeMoneyNumber(item.grossMarginAmount, 'grossMarginAmount', false, useMockApi)!,
+    grossMarginAmount: normalizeMoneyNumber(item.grossMarginAmount, 'grossMarginAmount', false, useMockApi, true)!,
   };
 }
 
 function normalizeTodo(item: DashboardTodoItem): DashboardTodoItem {
   const businessType = String(item.businessType || 'SYSTEM');
-  const sourceMode = item.sourceMode === 'PERSISTED' ? 'PERSISTED' : 'AGGREGATED';
+  const priority = item.priority === 'HIGH' || item.priority === 'LOW' ? item.priority : 'MEDIUM';
   const completionMode = item.completionMode === 'TRACKED' ? 'TRACKED' : 'AUTO';
-  const status = item.status === 'DONE' || item.status === 'IGNORED' ? item.status : 'PENDING';
-  const priorityFallback = item.priority === 'HIGH' ? 100 : item.priority === 'MEDIUM' ? 200 : 300;
-  const sourceFallback = completionMode === 'TRACKED' ? 0 : 20;
   return {
     ...item,
     todoId: normalizeStringId(item.todoId, 'todoId'),
@@ -166,34 +203,76 @@ function normalizeTodo(item: DashboardTodoItem): DashboardTodoItem {
     title: String(item.title || ''),
     description: String(item.description || ''),
     count: normalizeFiniteNumber(item.count, 'count'),
-    sortWeight: normalizeFiniteNumber(item.sortWeight ?? priorityFallback + sourceFallback, 'sortWeight'),
-    sourceMode,
+    priority,
+    sortWeight: normalizeFiniteNumber(item.sortWeight, 'sortWeight'),
     completionMode,
-    status,
-    errorCode: item.errorCode ? String(item.errorCode) : null,
-    errorMessage: item.errorMessage ? String(item.errorMessage) : null,
-    sourceNo: normalizeNullableStringId(item.sourceNo, 'sourceNo'),
-    occurredAt: normalizeNullableStringId(item.occurredAt, 'occurredAt'),
     resolveHint: item.resolveHint ? String(item.resolveHint) : null,
-    evidence: Array.isArray(item.evidence)
-      ? item.evidence.map(evidence => ({
-        itemId: normalizeStringId(evidence.itemId, 'itemId'),
-        primaryText: String(evidence.primaryText || ''),
-        secondaryText: String(evidence.secondaryText || ''),
-        metrics: Array.isArray(evidence.metrics)
-          ? evidence.metrics.map(metric => ({
-            label: String(metric.label || ''),
-            value: String(metric.value || ''),
-            tone: metric.tone === 'risk' || metric.tone === 'watch' ? metric.tone : 'neutral',
-          }))
-          : [],
-      }))
-      : [],
-    route: String(item.route || '/dashboard'),
+    detail: normalizeTodoDetail(item.detail),
   };
 }
 
+function normalizeTodoDetail(value: unknown): DashboardTodoItem['detail'] {
+  const raw = value as { model?: unknown; items?: unknown } | null;
+  if (!raw || !Array.isArray(raw.items)) throw new Error('dashboard todo detail is required');
+  const items = raw.items as unknown[];
+  const documentModels = ['PURCHASE_ORDER_APPROVAL', 'SALES_ORDER_APPROVAL', 'PURCHASE_RETURN_APPROVAL', 'SALES_RETURN_APPROVAL', 'INBOUND_CONFIRM', 'OUTBOUND_CONFIRM'] as const;
+  if (documentModels.includes(raw.model as typeof documentModels[number])) {
+    return {
+      model: raw.model as typeof documentModels[number],
+      items: items.map(item => {
+        const detailItem = normalizeTodoDetailItem(item);
+        return {
+          documentNo: normalizeStringId(detailItem.documentNo, 'detail.items.documentNo'),
+          sourceDocumentNo: normalizeNullableStringId(detailItem.sourceDocumentNo, 'detail.items.sourceDocumentNo'),
+          counterpartyName: detailItem.counterpartyName == null ? null : String(detailItem.counterpartyName),
+          amountFen: detailItem.amountFen == null ? null : normalizeFiniteNumber(detailItem.amountFen, 'detail.items.amountFen'),
+          waitHours: detailItem.waitHours == null ? null : normalizeFiniteNumber(detailItem.waitHours, 'detail.items.waitHours'),
+          waitLevel: detailItem.waitLevel === 'NORMAL' || detailItem.waitLevel === 'WARNING' || detailItem.waitLevel === 'OVERDUE' ? detailItem.waitLevel : null,
+          documentStatus: String(detailItem.documentStatus || ''),
+        };
+      }),
+    };
+  }
+  if (raw.model === 'STOCK_RISK_REVIEW') {
+    return {
+      model: 'STOCK_RISK_REVIEW',
+      items: items.map(item => {
+        const detailItem = normalizeTodoDetailItem(item);
+        return {
+          id: normalizeStringId(detailItem.id, 'detail.items.id'), productCode: String(detailItem.productCode || ''), productName: String(detailItem.productName || ''),
+          warehouseName: String(detailItem.warehouseName || ''), unitName: String(detailItem.unitName || ''),
+          availableQty: normalizeFiniteNumber(detailItem.availableQty, 'detail.items.availableQty'), safetyStockQty: normalizeFiniteNumber(detailItem.safetyStockQty, 'detail.items.safetyStockQty'),
+          suggestedPurchaseQty: normalizeFiniteNumber(detailItem.suggestedPurchaseQty, 'detail.items.suggestedPurchaseQty'), severity: detailItem.severity === 'MEDIUM' ? 'MEDIUM' : 'HIGH',
+        };
+      }),
+    };
+  }
+  if (raw.model === 'SYSTEM_EXCEPTION') {
+    return {
+      model: 'SYSTEM_EXCEPTION',
+      items: items.map(item => {
+        const detailItem = normalizeTodoDetailItem(item);
+        return {
+          id: normalizeStringId(detailItem.id, 'detail.items.id'), exceptionNo: normalizeStringId(detailItem.exceptionNo, 'detail.items.exceptionNo'),
+          summary: String(detailItem.summary || ''), exceptionType: String(detailItem.exceptionType || ''), sourceModule: String(detailItem.sourceModule || ''),
+          occurredAt: normalizeNullableStringId(detailItem.occurredAt, 'detail.items.occurredAt'), severity: detailItem.severity === 'HIGH' || detailItem.severity === 'LOW' ? detailItem.severity : 'MEDIUM',
+        };
+      }),
+    };
+  }
+  throw new Error(`dashboard todo detail model is invalid: ${String(raw.model)}`);
+}
+
+function normalizeTodoDetailItem(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('dashboard todo detail item is invalid');
+  }
+  return value as Record<string, unknown>;
+}
 function normalizeStockAlert(item: DashboardStockAlert): DashboardStockAlert {
+  if (item.severity !== 'OUT_OF_STOCK' && item.severity !== 'NO_AVAILABLE' && item.severity !== 'LOW_STOCK') {
+    throw new Error(`dashboard stock alert severity is invalid: ${String(item.severity)}`);
+  }
   return {
     ...item,
     stockId: normalizeStringId(item.stockId, 'stockId'),
@@ -211,6 +290,18 @@ function normalizeOrderStage(item: DashboardOrderStage): DashboardOrderStage {
     ...item,
     purchaseCount: normalizeFiniteNumber(item.purchaseCount, 'purchaseCount'),
     salesCount: normalizeFiniteNumber(item.salesCount, 'salesCount'),
+  };
+}
+
+function normalizeOrderStagePeriod(value: unknown): DashboardOrderStagePeriod {
+  const raw = value as Partial<DashboardOrderStagePeriod> | null;
+  if (raw?.type !== 'CURRENT_CALENDAR_MONTH' || typeof raw.startAt !== 'string' || typeof raw.endAtExclusive !== 'string') {
+    throw new Error('dashboard orderStagePeriod is invalid');
+  }
+  return {
+    type: raw.type,
+    startAt: raw.startAt,
+    endAtExclusive: raw.endAtExclusive,
   };
 }
 
@@ -234,14 +325,66 @@ function normalizeSupplierPerformance(item: DashboardSupplierPerformance): Dashb
   };
 }
 
+function normalizeTrendPermissions(value: unknown): DashboardTrendPermissions {
+  const raw = (value ?? null) as Partial<DashboardTrendPermissions> | null;
+  // 旧版本接口不返回该字段时回退为全 true，向后兼容
+  return {
+    canViewSales: typeof raw?.canViewSales === 'boolean' ? raw.canViewSales : true,
+    canViewPurchase: typeof raw?.canViewPurchase === 'boolean' ? raw.canViewPurchase : true,
+    canViewGross: typeof raw?.canViewGross === 'boolean' ? raw.canViewGross : true,
+  };
+}
+
+function normalizeOrderStagePermissions(value: unknown): DashboardOrderStagePermissions {
+  const raw = (value ?? null) as Partial<DashboardOrderStagePermissions> | null;
+  return {
+    canViewPurchase: typeof raw?.canViewPurchase === 'boolean' ? raw.canViewPurchase : true,
+    canViewSales: typeof raw?.canViewSales === 'boolean' ? raw.canViewSales : true,
+  };
+}
+
+function normalizeSectionAccess(value: unknown, field: string): DashboardSectionAccess {
+  const raw = value as Partial<DashboardSectionAccess> | null;
+  const state = raw?.state;
+  if (state !== 'ALLOWED' && state !== 'EMPTY' && state !== 'DENIED') {
+    throw new Error(`dashboard access.${field}.state is invalid`);
+  }
+  return {
+    state: state as DashboardAccessState,
+  };
+}
+
+function normalizeOverviewAccess(value: unknown): DashboardOverviewAccess {
+  const raw = value as Partial<DashboardOverviewAccess> | null;
+  if (!raw || !raw.metrics) {
+    throw new Error('dashboard access is required');
+  }
+  return {
+    metrics: {
+      MONTH_SALES: normalizeSectionAccess(raw.metrics.MONTH_SALES, 'metrics.MONTH_SALES'),
+      MONTH_GROSS_PROFIT: normalizeSectionAccess(raw.metrics.MONTH_GROSS_PROFIT, 'metrics.MONTH_GROSS_PROFIT'),
+      PENDING_ORDERS: normalizeSectionAccess(raw.metrics.PENDING_ORDERS, 'metrics.PENDING_ORDERS'),
+      STOCK_RISK_SKU: normalizeSectionAccess(raw.metrics.STOCK_RISK_SKU, 'metrics.STOCK_RISK_SKU'),
+    },
+    todos: normalizeSectionAccess(raw.todos, 'todos'),
+    stockAlerts: normalizeSectionAccess(raw.stockAlerts, 'stockAlerts'),
+    orderStages: normalizeSectionAccess(raw.orderStages, 'orderStages'),
+    topProducts: normalizeSectionAccess(raw.topProducts, 'topProducts'),
+    supplierPerformance: normalizeSectionAccess(raw.supplierPerformance, 'supplierPerformance'),
+  };
+}
 function normalizeOverview(data: DashboardOverview): DashboardOverview {
   return {
     refreshedAt: String(data.refreshedAt),
+    access: normalizeOverviewAccess(data.access),
     metrics: data.metrics.map(normalizeMetric),
     trend: data.trend.map(normalizeTrendPoint),
+    trendPermissions: normalizeTrendPermissions(data.trendPermissions),
     todos: data.todos.map(normalizeTodo),
     stockAlerts: data.stockAlerts.map(normalizeStockAlert),
     orderStages: data.orderStages.map(normalizeOrderStage),
+    orderStagePeriod: normalizeOrderStagePeriod(data.orderStagePeriod),
+    orderStagePermissions: normalizeOrderStagePermissions(data.orderStagePermissions),
     topProducts: data.topProducts.map(normalizeTopProduct),
     supplierPerformance: data.supplierPerformance.map(normalizeSupplierPerformance),
   };
@@ -270,7 +413,6 @@ export async function getDashboardNotifications() {
   if (useMockApi) {
     await new Promise(resolve => window.setTimeout(resolve, 180));
     const pendingItems = mockOverview.todos
-      .filter(item => item.status === 'PENDING')
       .sort((left, right) => left.sortWeight - right.sortWeight);
     return normalizeNotificationPopover({
       refreshedAt: mockOverview.refreshedAt,
@@ -283,5 +425,8 @@ export async function getDashboardNotifications() {
     });
   }
 
-  return getResult<DashboardNotificationPopover>('/dashboard/notifications').then(normalizeNotificationPopover);
+  return getResult<DashboardNotificationPopover>('/dashboard/notifications', undefined, {
+    skipPageLoading: true,
+    suppressErrorToast: true,
+  }).then(normalizeNotificationPopover);
 }

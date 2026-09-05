@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -38,7 +39,8 @@ public class ReturnOrderBaseDto {
     private String handlingType;
 
     @NotBlank(message = "退货原因编码不能为空")
-    @Schema(description = "退货原因编码")
+    @Pattern(regexp = "QUALITY_ISSUE|DAMAGED|WRONG_ITEM|QUANTITY_ERROR|SPEC_MISMATCH|NO_LONGER_NEEDED|OTHER", message = "退货原因编码不合法")
+    @Schema(description = "退货原因编码", allowableValues = {"QUALITY_ISSUE", "DAMAGED", "WRONG_ITEM", "QUANTITY_ERROR", "SPEC_MISMATCH", "NO_LONGER_NEEDED", "OTHER"})
     private String reasonCode;
 
     @NotBlank(message = "退货原因不能为空")

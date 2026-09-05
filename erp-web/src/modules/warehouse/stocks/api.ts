@@ -149,6 +149,10 @@ function matchesInventoryHealth(item: WarehouseStockListItem, health: WarehouseS
   return item.stockQty === 0;
 }
 
+function matchesRiskOnly(item: WarehouseStockListItem, riskOnly: WarehouseStockQuery['riskOnly']) {
+  // 与工作台风险 SKU 一致：仅可用库存严格低于安全库存。
+  return !riskOnly || item.availableQty < item.safetyStockQty;
+}
 function matchesReservationState(item: WarehouseStockListItem, state: WarehouseStockQuery['reservationState']) {
   if (!state || state === 'all') return true;
   if (state === 'UNLOCKED') return item.lockedQty === 0;
@@ -190,7 +194,7 @@ function filterStocks(params: WarehouseStockQuery): WarehouseStockPage {
 
 export function listWarehouseStocks(params: WarehouseStockQuery) {
   if (useMockApi) return Promise.resolve(filterStocks(params));
-  const { warehouseId, productCode, productName, inventoryHealth, reservationState, ...rest } = params;
+  const { warehouseId, productCode, productName, inventoryHealth, reservationState, riskOnly, ...rest } = params;
   return getResult<WarehouseStockPage>('/warehouse/stocks', {
     ...rest,
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
@@ -198,5 +202,6 @@ export function listWarehouseStocks(params: WarehouseStockQuery) {
     ...(productName?.trim() ? { productName: productName.trim() } : {}),
     ...(inventoryHealth && inventoryHealth !== 'all' ? { inventoryHealth } : {}),
     ...(reservationState && reservationState !== 'all' ? { reservationState } : {}),
+    ...(riskOnly ? { riskOnly: true } : {}),
   }).then(normalizeStockPage);
 }

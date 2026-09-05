@@ -4,6 +4,7 @@ import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } f
 import { normalizeMoneyNumber } from '@/shared/utils/money';
 import { getPurchaseOrderDetail, listEnabledWarehouseOptions, listPurchaseOrders, searchSupplierOptions } from '../api';
 import type { PurchaseOrderDetail } from '../types';
+import { normalizeReturnReasonCode } from '@/modules/returns/types';
 import type {
   ReturnHandlingType,
   ReturnOrderApprovePayload,
@@ -101,7 +102,7 @@ function normalizeReturn(row: ReturnOrderListItem): ReturnOrderListItem {
     warehouseName: String(row.warehouseName),
     expectedExecutionDate: row.expectedExecutionDate ? String(row.expectedExecutionDate) : null,
     handlingType: assertEnum(row.handlingType, handlingTypes, 'handlingType'),
-    reasonCode: assertEnum(row.reasonCode, reasonCodes, 'reasonCode'),
+    reasonCode: normalizeReturnReasonCode(row.reasonCode),
     returnReason: String(row.returnReason || ''),
     totalAmount: normalizeMoneyNumber(row.totalAmount, 'totalAmount', false, useMockApi)!,
     status: assertEnum(row.status, returnStatuses, 'status'),
@@ -371,7 +372,7 @@ export async function listPurchaseReturns(query: ReturnOrderQuery): Promise<Retu
 
 export async function getPurchaseReturnDetail(returnOrderId: string): Promise<ReturnOrderDetail> {
   normalizeStringId(returnOrderId, 'returnOrderId');
-  if (!useMockApi) return normalizeReturnDetail(await getResult<ReturnOrderDetail>(`${RETURN_API}/${returnOrderId}`));
+  if (!useMockApi) return normalizeReturnDetail(await getResult<ReturnOrderDetail>(`${RETURN_API}/${returnOrderId}`, undefined, { skipPageLoading: true }));
   const rows = await ensureMockReturns();
   const row = rows.find(item => item.returnOrderId === returnOrderId);
   if (!row) throw new Error('采购退回单不存在');

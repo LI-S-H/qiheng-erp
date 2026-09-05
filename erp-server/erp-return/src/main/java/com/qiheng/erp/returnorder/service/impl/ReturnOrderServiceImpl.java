@@ -6,6 +6,10 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendInvalidatedEvent;
+import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
+import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent;
+import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent.RankItemInput;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
@@ -26,6 +30,7 @@ import com.qiheng.erp.returnorder.domain.dto.ReturnOrderPageDto;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrderItem;
 import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
+import com.qiheng.erp.returnorder.domain.enums.ReturnReasonCode;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderItemVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderVo;
@@ -57,15 +62,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -109,6 +118,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     private WarehouseStockReservationSupport warehouseStockReservationSupport;
     @Autowired
     private SourceOperationLockSupport sourceOperationLockSupport;
+    @Autowired
+    private ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 分页查询退货单主信息。
@@ -249,7 +260,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                 .setWarehouseName(ctx.sourceOrder.warehouseName())
                 .setExpectedExecutionDate(dto.getExpectedExecutionDate())
                 .setHandlingType(dto.getHandlingType())
-                .setReasonCode(dto.getReasonCode())
+                .setReasonCode(ReturnReasonCode.normalizeStoredCode(dto.getReasonCode()))
                 .setReturnReason(dto.getReturnReason())
                 .setTotalAmount(QtyUtil.toStored(built.totalAmount))
                 .setStatus(ReturnStatus.DRAFT.name())
@@ -305,7 +316,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         update.setWarehouseName(ctx.sourceOrder.warehouseName());
         update.setExpectedExecutionDate(dto.getExpectedExecutionDate());
         update.setHandlingType(dto.getHandlingType());
-        update.setReasonCode(dto.getReasonCode());
+        update.setReasonCode(ReturnReasonCode.normalizeStoredCode(dto.getReasonCode()));
         update.setReturnReason(dto.getReturnReason());
         update.setTotalAmount(QtyUtil.toStored(built.totalAmount));
         update.setRemark(dto.getRemark());
@@ -491,6 +502,18 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         } else {
             generateSalesReturnInbound(existing, approvedItems, approvedQtyMap);
         }
+        applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                returnType == ReturnType.PURCHASE_RETURN
+                        ? DashboardTrendMetric.PURCHASE_RETURN
+                        : DashboardTrendMetric.SALES_RETURN,
+                update.getApprovedAt().toLocalDate()));
+        // 仅销售退货参与 TOP 商品排行扣减：客户退回等于"卖出去的减少"；采购退货是退给供应商，与净销售无关
+        // businessDate 必须用原销售单的 approvedAt，决定监听器是否在 30 天窗口内处理
+        if (returnType == ReturnType.SALES_RETURN) {
+            LocalDate salesApprovedDay = loadSalesApprovedDay(existing);
+            applicationEventPublisher.publishEvent(new TopProductRankAdjustEvent(
+                    salesApprovedDay, -1, toRankItems(approvedItems, approvedQtyMap)));
+        }
     }
 
     /**
@@ -531,7 +554,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         }
         List<OutboundBill> purchaseReturnBills;
         List<InboundBill> salesReturnBills;
-        List<ReturnOrderItem> items;
+        List<ReturnOrderItem> items = Collections.emptyList();
         // 4. APPROVED 状态：校验无已处理事实 → 取消工作单 → 释放库存（加锁顺序：工作单→库存→来源单）
         if (ReturnStatus.APPROVED.name().equals(status)) {
             // 4.1 校验退货明细无已处理事实
@@ -560,6 +583,19 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         int rows = returnOrderMapper.updateById(update);
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已被他人修改，请刷新后重试");
+        }
+        if (ReturnStatus.APPROVED.name().equals(status) && existing.getApprovedAt() != null) {
+            applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                    parseType(existing.getReturnType()) == ReturnType.PURCHASE_RETURN
+                            ? DashboardTrendMetric.PURCHASE_RETURN
+                            : DashboardTrendMetric.SALES_RETURN,
+                    existing.getApprovedAt().toLocalDate()));
+            // 仅销售退货取消回到排行（与审核相反方向，加分）；businessDate 用原销售单
+            if (parseType(existing.getReturnType()) == ReturnType.SALES_RETURN) {
+                LocalDate salesApprovedDay = loadSalesApprovedDay(existing);
+                applicationEventPublisher.publishEvent(new TopProductRankAdjustEvent(
+                        salesApprovedDay, 1, toRankItems(items, null)));
+            }
         }
     }
 
@@ -1175,6 +1211,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         BeanUtil.copyProperties(entity, vo, "id");
         vo.setReturnOrderId(entity.getId());
         vo.setTotalAmount(QtyUtil.toDecimal(entity.getTotalAmount()));
+        vo.setReasonCode(ReturnReasonCode.normalizeStoredCode(entity.getReasonCode()));
         return vo;
     }
 
@@ -1414,5 +1451,58 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                 }
             }
         });
+    }
+
+    /**
+     * 退货明细 → 排行调整输入项。
+     * 金额按审批数量与单价的 100 倍存储值换算。
+     * approvedQtyMap 不为空时按 map 取审核数量（approve 路径），否则取 item.approvedQty（cancel 路径）。
+     */
+    private static List<RankItemInput> toRankItems(List<ReturnOrderItem> items,
+                                                    Map<Long, Long> approvedQtyMap) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        List<RankItemInput> inputs = new java.util.ArrayList<>(items.size());
+        for (ReturnOrderItem item : items) {
+            long qty = approvedQtyMap == null
+                    ? (item.getApprovedQty() == null ? 0L : item.getApprovedQty())
+                    : approvedQtyMap.getOrDefault(item.getId(), 0L);
+            if (qty <= 0) {
+                continue;
+            }
+            long unitPrice = item.getUnitPrice() == null ? 0L : item.getUnitPrice();
+            inputs.add(new RankItemInput(item.getProductId(), QtyUtil.toStored(QtyUtil.toDecimal(qty)
+                    .multiply(QtyUtil.toDecimal(unitPrice))), qty));
+        }
+        return inputs;
+    }
+
+    /**
+     * 取原销售/采购单的 approvedDay：TOP 商品排行按 30 天滑动窗口统计"原单过审"为准，
+     * 退货单自己的 approved_at 不能作为口径依据。通过 ReturnSourceProvider 抽象拿，
+     * 避免 erp-return 直接依赖 erp-sales/erp-purchase。
+     */
+    private LocalDate loadSalesApprovedDay(ReturnOrder order) {
+        if (order == null || order.getSourceOrderId() == null) {
+            return null;
+        }
+        try {
+            ReturnSourceOrder source = findSourceOrder(order);
+            return source == null ? null : source.approvedDay();
+        } catch (BizException ex) {
+            return null;
+        }
+    }
+
+    /** 按退货方向选择对应 Provider 并读取原单（避免直接依赖 erp-sales / erp-purchase） */
+    private ReturnSourceOrder findSourceOrder(ReturnOrder order) {
+        ReturnType returnType = parseType(order.getReturnType());
+        for (ReturnSourceProvider provider : sourceProviders) {
+            if (provider.supportsType() == returnType) {
+                return provider.getSourceOrder(order.getSourceOrderId());
+            }
+        }
+        return null;
     }
 }

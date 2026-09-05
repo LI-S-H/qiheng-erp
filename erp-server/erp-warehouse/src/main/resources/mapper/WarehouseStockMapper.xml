@@ -16,4 +16,40 @@
         FOR UPDATE
     </select>
 
+    <sql id="riskStockCondition">
+        LEFT JOIN product p ON ws.product_id = p.id AND p.deleted = 0
+        WHERE p.id IS NOT NULL
+          AND (
+              (ws.stock_qty - ws.locked_qty) &lt;= 0
+              OR (p.safety_stock_qty &gt; 0 AND (ws.stock_qty - ws.locked_qty) &lt;= p.safety_stock_qty)
+          )
+    </sql>
+
+    <select id="selectRiskStocks"
+            resultType="com.qiheng.erp.warehouse.domain.warehousestock.vo.RiskStockVo">
+        SELECT ws.id              AS stock_id,
+               ws.warehouse_id    AS warehouse_id,
+               ws.warehouse_name  AS warehouse_name,
+               ws.product_id      AS product_id,
+               ws.product_code    AS product_code,
+               ws.product_name    AS product_name,
+               ws.unit_name       AS unit_name,
+               ws.stock_qty       AS stock_qty,
+               ws.locked_qty      AS locked_qty,
+               p.safety_stock_qty AS safety_stock_qty,
+               p.status           AS product_status,
+               ws.update_time     AS update_time
+        FROM warehouse_stock ws
+        <include refid="riskStockCondition"/>
+        ORDER BY (p.safety_stock_qty - (ws.stock_qty - ws.locked_qty)) DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countRiskStocks"
+            resultType="long">
+        SELECT COUNT(*)
+        FROM warehouse_stock ws
+        <include refid="riskStockCondition"/>
+    </select>
+
 </mapper>

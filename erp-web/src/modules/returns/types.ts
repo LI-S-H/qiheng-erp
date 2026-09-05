@@ -10,6 +10,28 @@ export type ReturnReasonCode =
   | 'SPEC_MISMATCH'
   | 'NO_LONGER_NEEDED'
   | 'OTHER';
+
+const returnReasonCodes: readonly ReturnReasonCode[] = [
+  'QUALITY_ISSUE',
+  'DAMAGED',
+  'WRONG_ITEM',
+  'QUANTITY_ERROR',
+  'SPEC_MISMATCH',
+  'NO_LONGER_NEEDED',
+  'OTHER',
+];
+
+/**
+ * 兼容历史退货单中已经写入的 QUALITY；对外展示与编辑统一使用已发布的 QUALITY_ISSUE。
+ * 其他未知值仍按契约报错，避免静默掩盖新的后端数据问题。
+ */
+export function normalizeReturnReasonCode(value: unknown): ReturnReasonCode {
+  const normalized = value === 'QUALITY' ? 'QUALITY_ISSUE' : value;
+  if (typeof normalized !== 'string' || !returnReasonCodes.includes(normalized as ReturnReasonCode)) {
+    throw new Error('接口字段 reasonCode 枚举值无效');
+  }
+  return normalized as ReturnReasonCode;
+}
 export type ReturnOrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'PARTIAL_EXECUTED' | 'COMPLETED' | 'CANCELLED';
 
 export interface ReturnOrderListItem {

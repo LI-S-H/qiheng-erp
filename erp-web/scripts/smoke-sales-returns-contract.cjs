@@ -32,7 +32,7 @@ function item(returnOrderId, returnOrderItemId) {
   };
 }
 
-function detail(id, no, status) {
+function detail(id, no, status, reasonCode = 'QUALITY_ISSUE') {
   return {
     returnOrderId: id,
     returnNo: no,
@@ -46,7 +46,7 @@ function detail(id, no, status) {
     warehouseName: '南京备货仓',
     expectedExecutionDate: '2026-07-30',
     handlingType: 'REFUND',
-    reasonCode: 'QUALITY_ISSUE',
+    reasonCode,
     returnReason: '客户反馈异常',
     totalAmount: '96.00',
     status,
@@ -66,7 +66,8 @@ function detail(id, no, status) {
 }
 
 const records = [
-  detail('301', 'SR202607901', 'DRAFT'),
+  // 模拟历史库中仍存在的旧值，验证前端不会因此阻断整个退货页面。
+  detail('301', 'SR202607901', 'DRAFT', 'QUALITY'),
   detail('302', 'SR202607902', 'SUBMITTED'),
   detail('303', 'SR202607903', 'APPROVED'),
 ];
@@ -158,8 +159,27 @@ runSmoke({
     const partyOptions = page.locator('[data-remote-search-select-content]').last();
     await partyOptions.locator('input').fill('C001');
     await partyOptions.getByText('C001 华东商贸有限公司', { exact: true }).click();
+    const queryStartedAt = Date.now();
     await page.getByRole('button', { name: '查询', exact: true }).click();
-    await page.locator('[data-list-loading]').waitFor({ state: 'hidden' });
+    const pageLoading = page.locator('[data-page-loading]');
+    await pageLoading.waitFor({ state: 'visible' });
+    const loadingStyle = await pageLoading.evaluate(element => {
+      const style = getComputedStyle(element);
+      return {
+        backgroundColor: style.backgroundColor,
+        zIndex: style.zIndex,
+        beforeContent: getComputedStyle(element, '::before').content,
+        afterContent: getComputedStyle(element, '::after').content,
+      };
+    });
+    if (loadingStyle.backgroundColor === 'rgba(0, 0, 0, 0)' || loadingStyle.zIndex !== '50'
+      || loadingStyle.beforeContent !== 'none' || loadingStyle.afterContent !== 'none') {
+      throw new Error('销售退货全局加载遮罩必须以不透明中性蒙层完整覆盖页面内容');
+    }
+    await pageLoading.waitFor({ state: 'hidden' });
+    if (Date.now() - queryStartedAt < 240) {
+      throw new Error('销售退货全局加载遮罩未保持预期的最短展示时长');
+    }
 
     await openRowDetail(page, 'SR202607901');
     await page.getByRole('dialog', { name: '销售退货详情' }).getByRole('button', { name: '编辑', exact: true }).click();

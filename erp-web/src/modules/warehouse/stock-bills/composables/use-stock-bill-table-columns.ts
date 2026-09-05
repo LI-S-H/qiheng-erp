@@ -29,7 +29,7 @@ interface StockBillListColumnDefinition {
 const STORAGE_VERSION = 1;
 const STORAGE_PREFIX = 'erp.warehouse.stock-bills.table-columns';
 export const stockBillListColumns: readonly StockBillListColumnDefinition[] = [
-  { key: 'billNo', label: '单号与展开', width: 220, required: true },
+  { key: 'billNo', label: '单号与展开', width: 320, required: true },
   { key: 'billType', label: '类型', width: 140, required: true },
   { key: 'entryMode', label: '录入方式', width: 120, required: false },
   { key: 'sourceType', label: '来源类型', width: 130, required: false },

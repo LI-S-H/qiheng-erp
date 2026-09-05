@@ -356,7 +356,7 @@ async function assertTreeCollapseStability(page, {
 
 async function clickQueryAndAssertLoading(page, screenshotPath) {
   await page.getByRole('button', { name: '查询', exact: true }).click();
-  const overlay = page.locator('[data-list-loading]');
+  const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
   const busyButton = page.getByRole('button', { name: '查询中', exact: true });
   if (!(await busyButton.isDisabled())) throw new Error('查询进行中按钮未禁用');
@@ -368,7 +368,7 @@ async function clickQueryAndAssertLoading(page, screenshotPath) {
       spinnerAnimation: spinner ? getComputedStyle(spinner).animationName : '',
     };
   });
-  if (state.position !== 'absolute' || state.pointerEvents !== 'auto' || state.spinnerAnimation !== 'page-loading-spin') {
+  if (state.position !== 'fixed' || state.pointerEvents !== 'auto' || state.spinnerAnimation !== 'page-loading-spin') {
     throw new Error(`查询加载反馈样式异常：${JSON.stringify(state)}`);
   }
   if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -378,7 +378,7 @@ async function clickQueryAndAssertLoading(page, screenshotPath) {
 async function clickPaginationAndAssertLoading(page, label) {
   const pagination = page.locator('[data-table-pagination]');
   await pagination.getByText(label, { exact: true }).click();
-  const overlay = page.locator('[data-list-loading]');
+  const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
   if ((await pagination.getAttribute('aria-busy')) !== 'true') {
     throw new Error(`分页切换期间未进入忙碌状态：${label}`);
@@ -391,7 +391,7 @@ async function clickPaginationAndAssertLoading(page, label) {
 async function clickRefreshAndAssertLoading(page, screenshotPath) {
   const refreshButton = page.getByRole('button', { name: '刷新', exact: true });
   await refreshButton.click();
-  const overlay = page.locator('[data-list-loading]');
+  const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
   if (!(await refreshButton.isDisabled())) throw new Error('刷新进行中按钮未禁用');
   if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -401,7 +401,7 @@ async function clickRefreshAndAssertLoading(page, screenshotPath) {
 async function clickResetAndAssertLoading(page, screenshotPath) {
   const resetButton = page.getByRole('button', { name: '重置', exact: true });
   await resetButton.click();
-  const overlay = page.locator('[data-list-loading]');
+  const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
   if (!(await resetButton.isDisabled())) throw new Error('重置查询进行中按钮未禁用');
   if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -482,10 +482,21 @@ async function assertSharedListChrome(page, { summaryLabel, filterLabel }) {
     metricCount: element.querySelectorAll('.summary-item').length,
     definitionCount: element.querySelectorAll('dt').length,
     valueCount: element.querySelectorAll('dd').length,
-    shadow: getComputedStyle(element).boxShadow,
+    containerShadow: getComputedStyle(element).boxShadow,
+    containerBorder: getComputedStyle(element).borderTopWidth,
+    cards: [...element.querySelectorAll('.list-summary-strip__item')].map(item => ({
+      tone: item.getAttribute('data-tone'),
+      shadow: getComputedStyle(item).boxShadow,
+      border: getComputedStyle(item).borderTopWidth,
+      radius: getComputedStyle(item).borderRadius,
+      accent: getComputedStyle(item, '::after').backgroundColor,
+    })),
   }));
   if (summaryState.metricCount !== 4 || summaryState.definitionCount !== 4
-    || summaryState.valueCount !== 4 || summaryState.shadow === 'none') {
+    || summaryState.valueCount !== 4 || summaryState.containerShadow !== 'none'
+    || summaryState.containerBorder !== '0px' || summaryState.cards.length !== 4
+    || summaryState.cards.some(card => card.shadow === 'none' || card.border === '0px' || card.radius !== '10px')
+    || new Set(summaryState.cards.map(card => card.accent)).size < 3) {
     throw new Error(`列表页汇总组件结构或层级异常：${JSON.stringify(summaryState)}`);
   }
   if (await filter.getAttribute('data-list-filter-panel') === null) {

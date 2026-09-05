@@ -3,6 +3,7 @@ import { useAuthStore } from '@/modules/auth/stores/authStore';
 import LoginView from '@/modules/auth/views/LoginView.vue';
 import MainLayout from '@/layouts/MainLayout.vue';
 import NotFoundView from '@/modules/system/views/NotFoundView.vue';
+import { beginPageLoading } from '@/shared/utils/page-loading';
 
 const DashboardView = () => import('@/modules/dashboard/views/DashboardView.vue');
 const UserManageView = () => import('@/modules/system/users/views/UserManageView.vue');
@@ -234,7 +235,19 @@ export const router = createRouter({
   routes,
 });
 
-router.beforeEach(async to => {
+let routeLoading: { fullPath: string; finish: () => void } | undefined;
+
+function finishRouteLoading() {
+  routeLoading?.finish();
+  routeLoading = undefined;
+}
+
+router.beforeEach(async (to, from) => {
+  if (to.fullPath !== from.fullPath) {
+    finishRouteLoading();
+    routeLoading = { fullPath: to.fullPath, finish: beginPageLoading() };
+  }
+
   const authStore = useAuthStore();
 
   if (!to.meta.public && authStore.token && !authStore.initialized) {
@@ -259,4 +272,17 @@ router.beforeEach(async to => {
   document.title = `${String(to.meta.title || '管理系统')} - 启衡 ERP`;
 
   return true;
+});
+
+router.afterEach(to => {
+  const current = routeLoading;
+  if (!current || current.fullPath !== to.fullPath) return;
+
+  window.setTimeout(() => {
+    if (routeLoading === current) finishRouteLoading();
+  }, 0);
+});
+
+router.onError(() => {
+  finishRouteLoading();
 });

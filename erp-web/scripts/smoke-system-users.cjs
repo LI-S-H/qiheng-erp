@@ -190,8 +190,8 @@ runSmoke({
       throw new Error('未查询的角色草稿不应提前显示为已生效条件');
     }
     await activeFilters.getByRole('button', { name: '移除筛选条件：状态：停用' }).click();
-    await page.locator('[data-list-loading]').waitFor({ state: 'visible', timeout: 1000 });
-    await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 });
+    await page.locator('[data-page-loading]').waitFor({ state: 'visible', timeout: 1000 });
+    await page.locator('[data-page-loading]').waitFor({ state: 'hidden', timeout: 5000 });
     await tableRow(page, 'purchase01').waitFor();
     await tableRow(page, 'sales_stop').waitFor();
     await activeFilters.getByText('已生效 1 个条件', { exact: true }).waitFor();
@@ -371,7 +371,7 @@ runSmoke({
     await page.getByRole('heading', { name: '用户管理' }).waitFor();
     await page.getByPlaceholder('请输入登录账号').fill('admin');
     await page.getByRole('button', { name: '查询', exact: true }).click();
-    await page.locator('[data-list-loading]').waitFor({ state: 'hidden', timeout: 5000 });
+    await page.locator('[data-page-loading]').waitFor({ state: 'hidden', timeout: 5000 });
     await page.locator('[data-active-user-filters]').getByText('账号：admin', { exact: true }).waitFor();
 
     const adminRow = tableRow(page, 'admin');

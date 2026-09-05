@@ -75,6 +75,7 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
 
         // 库存健康状态过滤（派生条件，需在 SQL 层面用原始100倍值比较）
         applyInventoryHealth(wrapper, dto.getInventoryHealth());
+        applyRiskOnly(wrapper, Boolean.TRUE.equals(dto.getRiskOnly()));
 
         // 占用状态过滤（派生条件，需在 SQL 层面用原始100倍值比较）
         applyReservationState(wrapper, dto.getReservationState());
@@ -125,11 +126,20 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
                     wrapper.apply("t.stock_qty = 0");
         }
     }
+    /**
+     * 应用工作台风险库存预设；口径与 DashboardStockAlertLoader 保持一致。
+     */
+    private void applyRiskOnly(MPJLambdaWrapper<WarehouseStock> wrapper, boolean riskOnly) {
+        if (riskOnly) {
+            wrapper.apply("(t.stock_qty - t.locked_qty) <= 0"
+                    + " OR (t1.safety_stock_qty > 0 AND (t.stock_qty - t.locked_qty) <= t1.safety_stock_qty)");
+        }
+    }
 
     /**
-     * 应用占用状态过滤条件
+     * 应用库存占用状态过滤条件
      * @param wrapper MPJ查询包装器
-     * @param state 占用状态枚举
+     * @param state 库存占用状态枚举
      */
     private void applyReservationState(MPJLambdaWrapper<WarehouseStock> wrapper, ReservationState state) {
         if (state == null) {

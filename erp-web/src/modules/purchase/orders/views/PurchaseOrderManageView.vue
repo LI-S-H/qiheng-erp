@@ -11,9 +11,9 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
+import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
@@ -613,14 +613,17 @@ async function submitForm() {
 
 async function openDetail(row: PurchaseOrderListItem, actionMode: 'view' | 'submit' | 'approve' = 'view') {
   if (detailLoading.value) return;
+  detailRow.value = null;
+  detailDialogOpen.value = true;
   detailLoading.value = true;
   try {
     detailRow.value = await getPurchaseOrderDetail(row.purchaseOrderId);
     detailActionMode.value = actionMode === 'view'
       ? (row.status === 'DRAFT' ? 'submit' : row.status === 'SUBMITTED' ? 'approve' : 'view')
       : actionMode;
-    detailDialogOpen.value = true;
+
   } catch (error) {
+    detailDialogOpen.value = false;
     toast.warning(getApiErrorMessage(error) || '采购订单详情加载失败');
   } finally {
     detailLoading.value = false;
@@ -748,6 +751,14 @@ function timelineMeta(event: PurchaseOrderTimelineEvent) {
   return map[event];
 }
 
+function returnCoverageMeta(coverage: string) {
+  return {
+    NONE: { label: '待审批退货', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+    PARTIAL: { label: '部分退货', className: 'border-sky-200 bg-sky-50 text-sky-700' },
+    FULL: { label: '已全量退货', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  }[coverage] || { label: '退货处理中', className: 'border-muted bg-muted text-muted-foreground' };
+}
+
 function formatMoney(value: number) {
   return `￥${value.toFixed(2)}`;
 }
@@ -780,20 +791,18 @@ onMounted(() => {
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">采购订单列表</strong><span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；审核动作只生成待确认入库单，实际入库由仓库确认本次数量</span></div>
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增采购单</Button></div>
       </div>
 
-      <Table class="business-data-table min-w-[1107px] table-fixed" scroll-label="采购订单列表">
-          <colgroup><col class="w-[130px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
+      <Table class="business-data-table min-w-[1247px] table-fixed" scroll-label="采购订单列表">
+          <colgroup><col class="w-[270px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
           <TableHeader><TableRow><TableHead data-purchase-no-column>采购单号</TableHead><TableHead>供应商</TableHead><TableHead>入库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计到货</TableHead><TableHead>创建人</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-purchase-actions-column>操作</TableHead></TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading && orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无采购订单</TableCell></TableRow>
+            <TableRow v-if="orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无采购订单</TableCell></TableRow>
             <TableRow v-for="row in orders" v-else :key="row.purchaseOrderId" class="group">
-              <TableCell data-purchase-no-column><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.purchaseNo }}</code></TableCell>
+              <TableCell data-purchase-no-column><OrderNumberLink :value="row.purchaseNo" label="采购单号" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.supplierCode }}</code><div class="mt-1 truncate font-medium">{{ row.supplierName }}</div></TableCell>
               <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
               <TableCell class="text-center"><div class="flex flex-col items-center gap-1"><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge><span class="text-[11px] text-muted-foreground">{{ statusHint(row.status) }}</span></div></TableCell>
@@ -856,6 +865,7 @@ onMounted(() => {
       <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" data-order-workbench class="purchase-order-workbench flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl">
         <DialogHeader class="sr-only"><DialogTitle>采购单详情</DialogTitle><DialogDescription>先查看单据状态和入库进度，再核对明细与审批信息。</DialogDescription></DialogHeader>
         <DialogScrollArea content-class="px-5 py-5 pr-6">
+          <div v-if="detailLoading && !detailRow" class="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
           <div v-if="detailRow" class="space-y-5">
             <BusinessDetailHero eyebrow="采购订单" :title="detailRow.purchaseNo" :subtitle="`${detailRow.supplierCode} · ${detailRow.supplierName} · ${detailRow.warehouseName}`" :status-label="statusMeta(detailRow.status).label" :status-class="statusMeta(detailRow.status).className" :metric-columns="3" variant="canvas">
               <template #metrics>
@@ -884,6 +894,13 @@ onMounted(() => {
               /></section>
             </BusinessDetailWorkbenchCard>
 
+            <BusinessDetailWorkbenchCard v-if="detailRow.returnOverview && detailRow.returnOverview.hasReturnOrder">
+              <section class="purchase-workbench-record__section">
+                <div class="mb-4 flex items-start justify-between gap-3"><div><h3 class="text-sm font-semibold">退货概览</h3><p class="mt-1 text-xs text-muted-foreground">退货不改变采购单主状态；金额仅统计已审批通过的退货事实。</p></div><Badge variant="outline" :class="returnCoverageMeta(detailRow.returnOverview.coverage).className">{{ returnCoverageMeta(detailRow.returnOverview.coverage).label }}</Badge></div>
+                <dl class="purchase-workbench-info__facts"><div class="purchase-workbench-info__fact"><dt>关联退货单</dt><dd><strong>{{ detailRow.returnOverview.returnOrderCount }} 张</strong></dd></div><div class="purchase-workbench-info__fact"><dt>已审批退货单</dt><dd><strong>{{ detailRow.returnOverview.effectiveReturnOrderCount }} 张</strong></dd></div><div class="purchase-workbench-info__fact"><dt>已审批退货额</dt><dd><strong class="text-rose-700">{{ formatMoney(detailRow.returnOverview.approvedReturnAmount) }}</strong></dd></div><div class="purchase-workbench-info__fact"><dt>退货覆盖度</dt><dd><strong>{{ returnCoverageMeta(detailRow.returnOverview.coverage).label }}</strong></dd></div></dl>
+                <div v-if="detailRow.returnOverview.items?.length" class="mt-4"><div class="mb-2 flex items-end justify-between gap-3"><div><h4 class="text-sm font-semibold">明细退货覆盖</h4><p class="mt-1 text-xs text-muted-foreground">按来源采购明细核对入库与已审批退货数量。</p></div><span class="shrink-0 text-xs text-muted-foreground">共 {{ detailRow.returnOverview.items.length }} 项</span></div><ScrollArea class="w-full purchase-order-line-scroll detail-table-floating" aria-label="采购订单退货明细"><Table class="min-w-[840px] table-fixed"><colgroup><col class="w-[250px]" /><col class="w-[130px]" /><col class="w-[130px]" /><col class="w-[130px]" /><col class="w-[150px]" /></colgroup><TableHeader><TableRow><TableHead>来源商品</TableHead><TableHead class="text-center">订单数量</TableHead><TableHead class="text-center">已入库</TableHead><TableHead class="text-center">已审批退货</TableHead><TableHead class="text-right">已审批退货额</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="item in detailRow.returnOverview.items" :key="item.purchaseOrderItemId"><TableCell class="truncate" :title="detailRow.items.find(orderItem => orderItem.purchaseOrderItemId === item.purchaseOrderItemId)?.productName || item.purchaseOrderItemId">{{ detailRow.items.find(orderItem => orderItem.purchaseOrderItemId === item.purchaseOrderItemId)?.productName || '订单明细' }}</TableCell><TableCell class="text-center tabular-nums">{{ item.orderedQty }}</TableCell><TableCell class="text-center tabular-nums">{{ item.fulfilledQty }}</TableCell><TableCell class="text-center font-medium tabular-nums text-rose-700">{{ item.approvedReturnQty }}</TableCell><TableCell class="text-right font-medium tabular-nums text-rose-700">{{ formatMoney(item.approvedReturnAmount) }}</TableCell></TableRow></TableBody></Table></ScrollArea></div>
+              </section>
+            </BusinessDetailWorkbenchCard>
             <BusinessDetailWorkbenchCard>
               <section class="purchase-workbench-record__section purchase-workbench-info" aria-labelledby="purchase-workbench-info-title"><h3 id="purchase-workbench-info-title" class="purchase-workbench-info__title">业务信息</h3><dl class="purchase-workbench-info__facts"><div class="purchase-workbench-info__fact"><dt>供应商</dt><dd><strong>{{ detailRow.supplierName }}</strong><small>{{ detailRow.supplierCode }}</small></dd></div><div class="purchase-workbench-info__fact"><dt>订单日期</dt><dd>{{ detailRow.createTime }}</dd></div><div class="purchase-workbench-info__fact"><dt>采购单号</dt><dd><code>{{ detailRow.purchaseNo }}</code></dd></div><div class="purchase-workbench-info__fact"><dt>预计到货</dt><dd>{{ detailRow.expectedArrivalDate || '未设置' }}</dd></div><div class="purchase-workbench-info__fact"><dt>入库仓库</dt><dd>{{ detailRow.warehouseName }}</dd></div><div class="purchase-workbench-info__fact"><dt>制单人</dt><dd>{{ detailRow.createdByName || '系统' }}</dd></div><div class="purchase-workbench-info__fact"><dt>提交人</dt><dd>{{ detailRow.submittedByName || '未提交' }}</dd></div><div class="purchase-workbench-info__fact"><dt>审核人</dt><dd>{{ detailRow.approvedByName || '未审核' }}</dd></div><div class="purchase-workbench-info__fact purchase-workbench-info__fact--note"><dt>备注</dt><dd>{{ detailRow.remark || '未填写' }}</dd></div></dl></section>
 

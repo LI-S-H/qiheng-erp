@@ -14,7 +14,7 @@ import {
   Loader2,
   ChevronRight,
 } from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import logoUrl from '@/assets/brand/qiheng-logo.svg';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
@@ -32,12 +32,16 @@ import CollapseReveal from '@/components/common/CollapseReveal.vue';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { getDashboardNotifications } from '@/modules/dashboard/api';
 import type { DashboardNotificationPopover, DashboardTodoItem } from '@/modules/dashboard/types';
+import { resolveTodoNavigation } from '@/modules/dashboard/todo-navigation';
+import { isPageLoading } from '@/shared/utils/page-loading';
 
 interface MenuItem {
   index: string;
   title: string;
   icon: unknown;
   permission?: string;
+  anyPermissions?: string[];
+  anyRoleCodes?: string[];
   children?: Array<Omit<MenuItem, 'icon' | 'children'> & { icon?: unknown }>;
 }
 
@@ -48,15 +52,12 @@ const authStore = useAuthStore();
 const activeMenu = computed(() => route.path);
 const openedMenus = reactive(new Set<string>());
 const logoutConfirmOpen = ref(false);
-const pageLoading = ref(false);
 const notificationOpen = ref(false);
 const userMenuOpen = ref(false);
 const notificationLoading = ref(false);
 const notificationError = ref('');
 const notificationData = ref<DashboardNotificationPopover | null>(null);
 let notificationLoadedAt = 0;
-let pageLoadingTimer: number | undefined;
-let pageLoadingFrame: number | undefined;
 
 const menus: MenuItem[] = [
   { index: '/dashboard', title: '工作台', icon: Home },
@@ -121,7 +122,8 @@ const menus: MenuItem[] = [
     index: '/ai',
     title: '智能助手',
     icon: MessageCircle,
-    permission: 'ai:query:stock',
+    anyPermissions: ['ai:query:stock', 'ai:query:sales', 'ai:query:purchase'],
+    anyRoleCodes: ['SALES_STAFF', 'PURCHASE_STAFF'],
     children: [
       { index: '/ai/assistant', title: '智能经营助手' },
       { index: '/ai/tasks', title: '经营任务中心', icon: CalendarClock },
@@ -131,6 +133,8 @@ const menus: MenuItem[] = [
 
 const visibleMenus = computed(() => {
   return menus.filter(item => {
+    if (item.anyPermissions?.length && item.anyPermissions.some(permission => authStore.hasPermission(permission))) return true;
+    if (item.anyRoleCodes?.length && item.anyRoleCodes.some(roleCode => authStore.user?.roleCodes.includes(roleCode))) return true;
     if (!item.permission) return true;
     return authStore.hasPermission(item.permission);
   });
@@ -205,7 +209,7 @@ function handleUserMenuOpen(open: boolean) {
 
 function handleNotificationItem(item: DashboardTodoItem) {
   notificationOpen.value = false;
-  void router.push(item.completionMode === 'TRACKED' ? '/dashboard' : item.route || '/dashboard');
+  void router.push(resolveTodoNavigation(item) || '/dashboard');
 }
 
 function openWorkbench() {
@@ -216,20 +220,6 @@ function openWorkbench() {
 function openCurrentParent(path: string) {
   const parent = visibleMenus.value.find(item => item.children?.some(child => child.index === path));
   if (parent) openedMenus.add(parent.index);
-}
-
-function showPageLoading() {
-  pageLoading.value = true;
-  window.clearTimeout(pageLoadingTimer);
-  if (pageLoadingFrame !== undefined) window.cancelAnimationFrame(pageLoadingFrame);
-
-  nextTick(() => {
-    pageLoadingFrame = window.requestAnimationFrame(() => {
-      pageLoadingTimer = window.setTimeout(() => {
-        pageLoading.value = false;
-      }, 220);
-    });
-  });
 }
 
 function handleLogout() {
@@ -244,21 +234,12 @@ async function confirmLogout() {
 
 watch(
   () => route.path,
-  (path, previousPath) => {
+  path => {
     openCurrentParent(path);
-    if (previousPath !== undefined && previousPath !== path) showPageLoading();
   },
   { immediate: true },
 );
 
-onMounted(() => {
-  void loadNotifications();
-});
-
-onBeforeUnmount(() => {
-  window.clearTimeout(pageLoadingTimer);
-  if (pageLoadingFrame !== undefined) window.cancelAnimationFrame(pageLoadingFrame);
-});
 </script>
 
 <template>
@@ -410,12 +391,10 @@ onBeforeUnmount(() => {
       <!-- Page content -->
       <main class="relative flex-1 overflow-auto bg-background">
         <RouterView v-slot="{ Component, route: viewRoute }">
-          <Transition name="page-view" mode="out-in">
-            <component :is="Component" :key="viewRoute.fullPath" />
-          </Transition>
+          <component :is="Component" :key="viewRoute.fullPath" />
         </RouterView>
         <Transition name="page-loading">
-          <div v-if="pageLoading" class="page-loading-mask" data-page-loading aria-live="polite" aria-label="页面加载中">
+          <div v-if="isPageLoading" class="page-loading-mask" data-page-loading aria-live="polite" aria-label="页面加载中">
             <div class="page-loading-indicator">
               <span class="page-loading-spinner" aria-hidden="true" />
               页面加载中

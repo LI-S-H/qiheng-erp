@@ -12,6 +12,7 @@ import type {
   PurchaseOrderListItem,
   PurchaseOrderPage,
   PurchaseOrderQuery,
+  PurchaseOrderReturnOverview,
   PurchaseOrderStatus,
   SupplierBatchIdsPayload,
   SupplierBatchStatusPayload,
@@ -357,6 +358,26 @@ function buildFulfillmentSummary(items: PurchaseOrderItem[]) {
   };
 }
 
+function normalizeReturnOverview(overview: PurchaseOrderReturnOverview): PurchaseOrderReturnOverview {
+  if (!['NONE', 'PARTIAL', 'FULL'].includes(overview.coverage)) {
+    throw new Error('returnOverview.coverage 必须是 NONE、PARTIAL 或 FULL');
+  }
+  return {
+    ...overview,
+    approvedReturnAmount: normalizeMoneyNumber(overview.approvedReturnAmount, 'returnOverview.approvedReturnAmount', false, useMockApi)!,
+    returnOrderCount: normalizeFiniteNumber(overview.returnOrderCount, 'returnOverview.returnOrderCount'),
+    effectiveReturnOrderCount: normalizeFiniteNumber(overview.effectiveReturnOrderCount, 'returnOverview.effectiveReturnOrderCount'),
+    items: overview.items?.map((item) => ({
+      ...item,
+      purchaseOrderItemId: normalizeStringId(item.purchaseOrderItemId, 'returnOverview.items.purchaseOrderItemId'),
+      orderedQty: normalizeFiniteNumber(item.orderedQty, 'returnOverview.items.orderedQty'),
+      fulfilledQty: normalizeFiniteNumber(item.fulfilledQty, 'returnOverview.items.fulfilledQty'),
+      approvedReturnQty: normalizeFiniteNumber(item.approvedReturnQty, 'returnOverview.items.approvedReturnQty'),
+      approvedReturnAmount: normalizeMoneyNumber(item.approvedReturnAmount, 'returnOverview.items.approvedReturnAmount', false, useMockApi)!,
+    })),
+  };
+}
+
 function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
   return {
     ...item,
@@ -369,6 +390,7 @@ function normalizeOrder(item: PurchaseOrderListItem): PurchaseOrderListItem {
     submittedByName: String(item.submittedByName || ''),
     approvedById: normalizeNullableStringId(item.approvedById, 'approvedById'),
     version: normalizeFiniteNumber(item.version, 'version'),
+    returnOverview: item.returnOverview ? normalizeReturnOverview(item.returnOverview) : undefined,
   };
 }
 
@@ -698,7 +720,7 @@ export function getPurchaseOrderDetail(purchaseOrderId: string) {
     const order = mockOrders.find(item => item.purchaseOrderId === purchaseOrderId);
     return order ? Promise.resolve(normalizeOrderDetail(order)) : Promise.reject(new Error('采购订单不存在'));
   }
-  return getResult<PurchaseOrderDetail>(`/purchase/orders/${purchaseOrderId}`).then(normalizeOrderDetail);
+  return getResult<PurchaseOrderDetail>(`/purchase/orders/${purchaseOrderId}`, undefined, { skipPageLoading: true }).then(normalizeOrderDetail);
 }
 
 export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {

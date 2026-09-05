@@ -63,7 +63,8 @@ public class PurchaseReturnSourceProvider implements ReturnSourceProvider {
                                 .orderByDesc(PurchaseOrder::getCreateTime))
                 .getRecords().stream()
                 .map(order -> new ReturnSourceOrder(order.getId(), order.getPurchaseNo(), order.getSupplierId(),
-                        order.getSupplierCode(), order.getSupplierName(), order.getWarehouseId(), order.getWarehouseName())).toList();
+                        order.getSupplierCode(), order.getSupplierName(), order.getWarehouseId(), order.getWarehouseName(),
+                        order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate())).toList();
     }
 
     /** 根据主键读取采购订单并转换为退货来源快照。 */
@@ -74,7 +75,8 @@ public class PurchaseReturnSourceProvider implements ReturnSourceProvider {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "采购订单不存在");
         }
         return new ReturnSourceOrder(order.getId(), order.getPurchaseNo(), order.getSupplierId(), order.getSupplierCode(),
-                order.getSupplierName(), order.getWarehouseId(), order.getWarehouseName());
+                order.getSupplierName(), order.getWarehouseId(), order.getWarehouseName(),
+                order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate());
     }
 
     /**

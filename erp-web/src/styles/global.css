@@ -405,6 +405,19 @@ a {
   margin-right: auto;
   margin-left: auto;
 }
+/* 独立展示的业务编码按普通表格文字呈现；编码加名称的复合单元格保留原有两行层级。 */
+[data-slot="table-cell"] > code:only-child {
+  display: inline;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #172033 !important;
+  font-family: inherit;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
 
 .erp-data-table [data-slot="table-head"] .text-left,
 .erp-data-table [data-slot="table-head"] .text-right,
@@ -449,41 +462,42 @@ a {
   min-width: 0;
 }
 
-.page-view-enter-active,
-.page-view-leave-active {
-  transition:
-    opacity var(--motion-duration-fast) ease,
-    transform var(--motion-duration-fast) ease;
+.page-loading-enter-active {
+  transition: none;
 }
 
-.page-view-enter-from {
-  opacity: 0;
-  transform: translateY(4px);
-}
-
-.page-view-leave-to {
-  opacity: 0;
-  transform: translateY(-2px);
-}
-
-.page-loading-enter-active,
 .page-loading-leave-active {
-  transition: opacity var(--motion-duration-fast) ease;
+  /* 新页面已准备好后，留出可感知的淡入时间，而不是瞬间露出。 */
+  transition: opacity 360ms ease-in-out;
 }
 
-.page-loading-enter-from,
+.page-loading-enter-from {
+  opacity: 1;
+}
+
 .page-loading-leave-to {
   opacity: 0;
 }
 
 .page-loading-mask {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
+  position: fixed;
+  top: var(--app-shell-header-height);
+  right: 0;
+  bottom: 0;
+  left: var(--app-shell-sidebar-width);
+  /* 必须高于出入库表的 sticky 单号列、操作列和表头（最高为 40）。 */
+  z-index: 50;
   display: grid;
+  overflow: hidden;
   place-items: center;
-  background: color-mix(in srgb, var(--background) 82%, transparent);
-  backdrop-filter: blur(1.5px);
+  isolation: isolate;
+  /* 过渡期间完全遮住业务内容，避免旧页与新页同时被半透明洗白。 */
+  background: color-mix(in srgb, var(--background) 97%, #f8fafc);
+}
+
+.page-loading-indicator {
+  position: relative;
+  z-index: 1;
 }
 
 .page-loading-indicator {

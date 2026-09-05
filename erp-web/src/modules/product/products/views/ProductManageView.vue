@@ -16,7 +16,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
-import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
@@ -455,7 +454,6 @@ function formatQty(value: number) {
     </ListFilterPanel>
 
     <div class="data-panel relative">
-      <ListLoadingOverlay :visible="queryBusy" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">产品列表</strong><span class="text-xs" :class="selectedIds.size ? 'text-primary' : 'text-muted-foreground'">已选 {{ selectedIds.size }} 项</span></div>
         <div class="table-toolbar__actions">
@@ -473,8 +471,7 @@ function formatQty(value: number) {
             <TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead data-product-code-column>产品编码</TableHead><TableHead>产品名称</TableHead><TableHead>分类</TableHead><TableHead>品牌 / 规格</TableHead><TableHead>单位</TableHead><TableHead>参考价格</TableHead><TableHead>安全库存</TableHead><TableHead>状态</TableHead><TableHead class="text-center">操作</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            <TableRow v-if="loading"><TableCell :colspan="PRODUCT_TABLE_COLUMN_COUNT" class="h-28 text-center text-muted-foreground">正在加载...</TableCell></TableRow>
-            <TableRow v-else-if="products.length === 0"><TableCell :colspan="PRODUCT_TABLE_COLUMN_COUNT" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+            <TableRow v-if="products.length === 0"><TableCell :colspan="PRODUCT_TABLE_COLUMN_COUNT" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
             <TableRow v-for="row in products" v-else :key="row.productId" class="group">
               <TableCell><Checkbox :model-value="selectedIds.has(row.productId)" @update:model-value="toggleSelect(row.productId, $event)" /></TableCell>
               <TableCell data-product-code-column><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium">{{ row.productCode }}</code></TableCell>

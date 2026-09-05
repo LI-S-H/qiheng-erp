@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qiheng.erp.common.event.dashboard.DashboardTrendInvalidatedEvent;
 import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
+import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent;
+import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent.RankItemInput;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
@@ -420,13 +422,12 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         }
         // 4. 更新主表：状态 APPROVED + 审核人/时间（乐观锁校验，先拿审核权再生成出库单）
         LoginUser loginUser = UserContext.requireCurrentUser();
-        LocalDateTime now = LocalDateTime.now();
         SalesOrder update = new SalesOrder();
         update.setId(salesOrderId);
         update.setStatus(SalesOrderStatus.APPROVED.name());
         update.setApprovedById(loginUser.getUserId());
         update.setApprovedByName(loginUser.getRealName());
-        update.setApprovedAt(now);
+        update.setApprovedAt(LocalDateTime.now());
         update.setVersion(version);
         int rows = salesOrderMapper.updateById(update);
         if (rows == 0) {
@@ -437,7 +438,9 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         log.info("审核销售订单[{}]，生成待确认出库单", order.getSalesNo());
         generateSalesOutboundBill(order, items);
         applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
-                DashboardTrendMetric.SALES, now.toLocalDate()));
+                DashboardTrendMetric.SALES, update.getApprovedAt().toLocalDate()));
+        applicationEventPublisher.publishEvent(new TopProductRankAdjustEvent(
+                update.getApprovedAt().toLocalDate(), 1, toRankItems(items)));
     }
 
     /**
@@ -572,11 +575,13 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
                     "数据已发生变化，请刷新后重试");
         }
-        // 9. 释放锁定库存（SUBMITTED / APPROVED 分支，主表已 CANCELLED，取消权已拿到）
         if (SalesOrderStatus.APPROVED.name().equals(currentStatus) && order.getApprovedAt() != null) {
             applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
                     DashboardTrendMetric.SALES, order.getApprovedAt().toLocalDate()));
+            applicationEventPublisher.publishEvent(new TopProductRankAdjustEvent(
+                    order.getApprovedAt().toLocalDate(), -1, toRankItems(items)));
         }
+        // 9. 释放锁定库存（SUBMITTED / APPROVED 分支，主表已 CANCELLED，取消权已拿到）
         if (needReleaseStock) {
             // 9.1 批量更新库存余额（@Version 乐观锁，任一失败即抛错，整个事务回滚）
             if (!warehouseStockService.updateBatchById(List.copyOf(lockedStocks.values()))) {
@@ -1085,5 +1090,19 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (!allDone) {
             generateSalesOutboundBill(order, allItems);
         }
+    }
+
+    /** 把销售明细转换为 TOP 商品排行事件的输入项，避免在事件 payload 里跨模块引用实体 */
+    private static List<RankItemInput> toRankItems(List<SalesOrderItem> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        List<RankItemInput> inputs = new java.util.ArrayList<>(items.size());
+        for (SalesOrderItem item : items) {
+            inputs.add(new RankItemInput(item.getProductId(),
+                    item.getTotalAmount() == null ? 0L : item.getTotalAmount(),
+                    item.getQuantity() == null ? 0L : item.getQuantity()));
+        }
+        return inputs;
     }
 }

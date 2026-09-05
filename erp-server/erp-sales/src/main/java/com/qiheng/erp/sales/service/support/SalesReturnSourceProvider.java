@@ -100,6 +100,7 @@ public class SalesReturnSourceProvider implements ReturnSourceProvider {
     /** 销售订单实体转退货来源订单快照。 */
     private ReturnSourceOrder toSourceOrder(SalesOrder order) {
         return new ReturnSourceOrder(order.getId(), order.getSalesNo(), order.getCustomerId(),
-                order.getCustomerCode(), order.getCustomerName(), order.getWarehouseId(), order.getWarehouseName());
+                order.getCustomerCode(), order.getCustomerName(), order.getWarehouseId(), order.getWarehouseName(),
+                order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate());
     }
 }

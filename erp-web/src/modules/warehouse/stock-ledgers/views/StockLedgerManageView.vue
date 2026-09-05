@@ -120,7 +120,7 @@ function mergeWarehouseOptions(options: Array<{ value: string; label: string }>)
 }
 
 async function fetchWarehouseSearchOptions(keyword: string) {
-  const page = await listWarehouses({ pageNum: 1, pageSize: 10, ...warehouseKeywordQuery(keyword) });
+  const page = await listWarehouses({ pageNum: 1, pageSize: 10, ...warehouseKeywordQuery(keyword) }, { skipPageLoading: true });
   const options = page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
   mergeWarehouseOptions(options);
   return options;
@@ -260,8 +260,8 @@ onMounted(() => {
 
       <ScrollArea class="w-full">
         <div class="stock-ledger-table-scroll">
-        <Table class="min-w-[1505px] table-fixed">
-          <colgroup><col class="w-[320px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[130px]" /><col class="w-[175px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[170px]" /><col class="w-[170px]" /></colgroup>
+        <Table class="min-w-[1455px] table-fixed">
+          <colgroup><col class="w-[270px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[130px]" /><col class="w-[175px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[170px]" /><col class="w-[170px]" /></colgroup>
           <TableHeader><TableRow><TableHead class="stock-ledger-key-column sticky left-0 z-20 border-r border-border/60 bg-muted" data-table-sticky-edge="start">流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>录入方式</TableHead><TableHead>来源业务类型</TableHead><TableHead>来源业务单号</TableHead><TableHead>仓库</TableHead><TableHead>确认人</TableHead><TableHead>确认时间</TableHead><TableHead>创建时间</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无符合条件的库存流水</TableCell></TableRow>

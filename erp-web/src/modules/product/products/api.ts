@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios';
 import { getResult, postResult, http } from '@/api/http';
 import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
@@ -142,7 +143,7 @@ function filterProducts(params: ProductQuery): PageResult<ProductListItem> {
   };
 }
 
-export function listProducts(params: ProductQuery) {
+export function listProducts(params: ProductQuery, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) return Promise.resolve(normalizeProductPage(filterProducts(params)));
   const { status, categoryId, productCode, productName, brandName, barcode, ...rest } = params;
   return getResult<PageResult<ProductListItem>>('/products', {
@@ -153,7 +154,7 @@ export function listProducts(params: ProductQuery) {
     ...(barcode?.trim() ? { barcode: barcode.trim() } : {}),
     ...(categoryId && categoryId !== 'all' ? { categoryId } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  }).then(normalizeProductPage);
+  }, requestConfig).then(normalizeProductPage);
 }
 
 export function createProduct(payload: ProductFormPayload) {

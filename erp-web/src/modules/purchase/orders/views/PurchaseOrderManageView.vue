@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import { useRoute, useRouter } from 'vue-router';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
@@ -125,6 +126,9 @@ const supplierProducts = ref<SupplierProductListItem[]>([]);
 let requestSequence = 0;
 let lineSequence = 1;
 
+const route = useRoute();
+const router = useRouter();
+
 const query = reactive<PurchaseOrderQuery>({
   purchaseNo: '',
   supplierId: 'all',
@@ -158,6 +162,8 @@ const selectableProductTotal = ref<number | null>(null);
 const selectedProductCount = computed(() => new Set(draftItems.value.map(item => item.productId).filter(Boolean)).size);
 const canAddLine = computed(() => Boolean(form.supplierId)
   && (selectableProductTotal.value === null || selectedProductCount.value < selectableProductTotal.value));
+const addProductGuideActive = ref(false);
+let addProductGuideTimer: number | null = null;
 const activeSupplierProducts = computed(() => supplierProducts.value.filter(item => item.status === 1));
 const selectedSupplierLabel = computed(() => supplierOptions.value.find(item => item.value === form.supplierId)?.label || (editingOrder.value?.supplierId === form.supplierId ? `${editingOrder.value.supplierCode} ${editingOrder.value.supplierName}` : ''));
 const selectedWarehouseLabel = computed(() => warehouseOptions.value.find(item => item.value === form.warehouseId)?.label || (editingOrder.value?.warehouseId === form.warehouseId ? editingOrder.value.warehouseName : ''));
@@ -364,7 +370,7 @@ const {
 
 function resetForm() {
   Object.assign(form, { supplierId: '', warehouseId: '', expectedArrivalDate: '', remark: '', items: [] });
-  draftItems.value = [newDraftItem()];
+  draftItems.value = [];
   selectableProductTotal.value = null;
   editingOrder.value = null;
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
@@ -416,7 +422,7 @@ async function openEditDialog(row: PurchaseOrderListItem) {
       remark: item.remark,
       unitName: item.unitName,
     }))
-    : [newDraftItem()];
+    : [];
   void refreshSelectableProductTotal();
   createDialogOpen.value = true;
 }
@@ -438,11 +444,20 @@ function newDraftItem(): DraftItem {
 
 function addLine() {
   if (!canAddLine.value) return;
+  addProductGuideActive.value = false;
   draftItems.value = [...draftItems.value, newDraftItem()];
 }
 
+function activateAddProductGuide() {
+  addProductGuideActive.value = true;
+  if (addProductGuideTimer !== null) window.clearTimeout(addProductGuideTimer);
+  addProductGuideTimer = window.setTimeout(() => {
+    addProductGuideActive.value = false;
+    addProductGuideTimer = null;
+  }, 1400);
+}
+
 function removeLine(rowId: string) {
-  if (draftItems.value.length === 1) return;
   draftItems.value = draftItems.value.filter(item => item.rowId !== rowId);
 }
 
@@ -502,9 +517,9 @@ function handleSupplierChange(value: string | number) {
   const newSupplierId = String(value);
   const supplierChanged = form.supplierId && form.supplierId !== newSupplierId;
   form.supplierId = newSupplierId;
-  // 切换供应商后旧明细的产品不属于新供应商，清空明细（保留一行空行）
+  // 切换供应商后旧明细不再适用，回到空明细引导状态。
   if (supplierChanged && draftItems.value.some(line => line.productId)) {
-    draftItems.value = [newDraftItem()];
+    draftItems.value = [];
   }
   void refreshSelectableProductTotal();
 }
@@ -556,6 +571,7 @@ function validateForm() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
   if (!form.supplierId) formErrors.supplierId = '请选择供应商';
   if (!form.warehouseId) formErrors.warehouseId = '请选择入库仓库';
+  if (draftItems.value.length === 0) formErrors.items = '请添加至少一个产品';
   if (dialogMode.value === 'edit' && editingOrder.value?.status === 'SUBMITTED' && !form.expectedArrivalDate) formErrors.expectedArrivalDate = '已提交采购单必须维护预计到货日期';
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   draftItems.value.forEach((item, index) => {
@@ -763,7 +779,22 @@ function formatMoney(value: number) {
   return `￥${value.toFixed(2)}`;
 }
 
+function applyDashboardStatusPreset() {
+  const status = route.query.status;
+  if (typeof status !== 'string' || !statusOptions.some(option => option.value === status)) return;
+  query.status = status as PurchaseOrderStatus;
+  query.pageNum = 1;
+}
+
+function resetFilters() {
+  if (Object.keys(route.query).length > 0) {
+    void router.replace({ path: route.path });
+    return;
+  }
+  handleReset();
+}
 onMounted(() => {
+  applyDashboardStatusPreset();
   loadOptions();
   fetchOrders();
 });
@@ -786,7 +817,7 @@ onMounted(() => {
         <div class="space-y-1" data-filter-size="wide"><Label class="text-xs">入库仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="queryWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">订单状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
       <template #actions>
-        <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" />
+        <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="resetFilters" />
       </template>
     </ListFilterPanel>
 
@@ -796,8 +827,8 @@ onMounted(() => {
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增采购单</Button></div>
       </div>
 
-      <Table class="business-data-table min-w-[1247px] table-fixed" scroll-label="采购订单列表">
-          <colgroup><col class="w-[270px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
+      <Table class="business-data-table min-w-[1197px] table-fixed" scroll-label="采购订单列表">
+          <colgroup><col class="w-[220px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
           <TableHeader><TableRow><TableHead data-purchase-no-column>采购单号</TableHead><TableHead>供应商</TableHead><TableHead>入库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计到货</TableHead><TableHead>创建人</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-purchase-actions-column>操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无采购订单</TableCell></TableRow>
@@ -835,20 +866,29 @@ onMounted(() => {
             <div class="space-y-1"><Label>备注</Label><Textarea v-model="form.remark" rows="2" /><p v-if="formErrors.remark" class="text-xs text-destructive">{{ formErrors.remark }}</p></div>
 
             <div class="rounded-md border border-border">
-              <div class="flex min-h-11 items-center justify-between gap-3 border-b border-border px-3"><div><strong class="text-sm">采购明细</strong><span class="ml-2 text-xs text-muted-foreground">选择供货产品后填写数量和采购价，草稿阶段可继续调整</span></div><div class="flex shrink-0 items-center gap-3"><span class="text-xs text-muted-foreground">已选 {{ selectedProductCount }} 项</span><Button size="sm" variant="outline" type="button" :disabled="!canAddLine" @click="addLine">添加产品</Button></div></div>
+              <div class="flex min-h-11 items-center justify-between gap-3 border-b border-border px-3"><div><strong class="text-sm">采购明细</strong><span class="ml-2 text-xs text-muted-foreground">选择供货产品后填写数量和采购价，草稿阶段可继续调整</span></div><div class="flex shrink-0 items-center gap-3"><span class="text-xs text-muted-foreground">已选 {{ selectedProductCount }} 项</span><Button size="sm" variant="outline" type="button" :class="{ 'animate-pulse ring-2 ring-primary/30 ring-offset-2': addProductGuideActive }" :disabled="!canAddLine" @click="addLine">添加产品</Button></div></div>
               <ScrollArea class="w-full">
                 <Table class="order-line-table min-w-[920px] table-fixed" data-purchase-form-items>
                   <colgroup><col class="w-[250px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[90px]" /><col class="w-[115px]" /><col class="w-[150px]" /><col class="w-[75px]" /></colgroup>
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">采购价</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead class="text-right">小计</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    <TableRow v-for="(line, index) in draftItems" :key="line.rowId">
+                    <TableRow v-if="draftItems.length === 0">
+                      <TableCell colspan="7" class="h-28 p-0">
+                        <button type="button" class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-sm text-center outline-none transition-colors hover:bg-muted/40 focus-visible:bg-muted/50" @click="activateAddProductGuide">
+                          <span class="text-sm font-medium text-foreground">请添加产品</span>
+                          <span class="text-xs text-muted-foreground">{{ form.supplierId ? '点击右上角“添加产品”开始录入' : '请先选择供应商，再添加产品' }}</span>
+                          <span v-if="formErrors.items" class="text-xs text-destructive">{{ formErrors.items }}</span>
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow v-for="(line, index) in draftItems" v-else :key="line.rowId">
                       <TableCell class="align-top"><RemoteSearchSelect :model-value="line.productId" :selected-label="selectedProductLabel(line.productId)" :fetch-options="keyword => fetchPurchaseProductSearchOptions(keyword, line.rowId)" :disabled="!form.supplierId" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line)" class="min-w-0 text-right" /><span v-if="line.unitName" class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error text-center">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="price-input pl-8 text-center" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
                       <TableCell class="text-center tabular-nums">{{ Number(line.selectedSupplierScore || 0).toFixed(1) }}</TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0)) }}</TableCell>
                       <TableCell class="align-top"><Input v-model="line.remark" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>
-                      <TableCell class="align-top text-center"><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="draftItems.length === 1" @click="removeLine(line.rowId)">删除</Button></TableCell>
+                      <TableCell class="align-top text-center"><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="removeLine(line.rowId)">删除</Button></TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>

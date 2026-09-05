@@ -24,13 +24,13 @@ let mockRoles: SystemRoleListItem[] = [
   },
   {
     roleId: '1900000000000001002', roleCode: 'PURCHASE_STAFF', roleName: '采购员',
-    permissionCodes: ['product:query', 'warehouse:query', 'supplier:query', 'supplier:create', 'purchase:query', 'purchase:create', 'purchase:manage'],
+    permissionCodes: ['product:query', 'warehouse:query', 'supplier:query', 'supplier:create', 'purchase:query', 'purchase:create', 'purchase:manage', 'ai:query:purchase'],
     status: 1, remark: '负责供应商维护和采购订单操作',
     userCount: 2, createTime: '2026-06-05 20:35:00', updateTime: '2026-07-16 10:00:00',
   },
   {
     roleId: '1900000000000001003', roleCode: 'SALES_STAFF', roleName: '销售员',
-    permissionCodes: ['product:query', 'warehouse:query', 'customer:query', 'customer:create', 'sales:query', 'sales:create', 'sales:manage'],
+    permissionCodes: ['product:query', 'warehouse:query', 'customer:query', 'customer:create', 'sales:query', 'sales:create', 'sales:manage', 'ai:query:sales'],
     status: 1, remark: '负责客户维护和销售订单操作',
     userCount: 2, createTime: '2026-06-05 20:36:00', updateTime: '2026-07-16 10:00:00',
   },

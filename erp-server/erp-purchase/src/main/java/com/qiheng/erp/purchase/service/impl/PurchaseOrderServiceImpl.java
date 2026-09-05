@@ -512,14 +512,13 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         revalidateOrderBusiness(order);
         // 获取当前登录用户
         LoginUser loginUser = UserContext.requireCurrentUser();
-        LocalDateTime now = LocalDateTime.now();
         // 更新采购订单状态为已审核
         PurchaseOrder update = new PurchaseOrder();
         update.setId(purchaseOrderId);
         update.setStatus(PurchaseOrderStatus.APPROVED.name());
         update.setApprovedById(loginUser.getUserId());
         update.setApprovedByName(loginUser.getRealName());
-        update.setApprovedAt(now);
+        update.setApprovedAt(LocalDateTime.now());
 
         update.setVersion(version);
         int rows = purchaseOrderMapper.updateById(update);
@@ -527,9 +526,9 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已发生变化，请刷新后重试");
         }
         // 生成 PURCHASE_IN 待确认入库单
-        applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
-                DashboardTrendMetric.PURCHASE, now.toLocalDate()));
         generatePurchaseInboundBill(order);
+        applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
+                DashboardTrendMetric.PURCHASE, update.getApprovedAt().toLocalDate()));
     }
 
     /**

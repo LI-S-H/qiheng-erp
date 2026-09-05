@@ -2,16 +2,20 @@ package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.dashboard.domain.entity.SystemException;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoEvidenceMetricVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoEvidenceVO;
+import com.qiheng.erp.dashboard.domain.enums.DashboardTodoDetailModel;
+import com.qiheng.erp.dashboard.domain.enums.DashboardTodoType;
+import com.qiheng.erp.dashboard.domain.enums.SystemExceptionSeverity;
+import com.qiheng.erp.dashboard.domain.enums.SystemExceptionStatus;
 import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
+import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoSystemExceptionDetailVO;
+import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoSystemExceptionItemVO;
 import com.qiheng.erp.dashboard.mapper.SystemExceptionMapper;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,8 +23,8 @@ import java.util.Optional;
  * 工作台系统异常聚合器。
  *
  * <p>读取 {@code system_exception} 表中 {@code status='PENDING'} 的全部记录，
- * 聚合为一条 {@code SYSTEM_EXCEPTION} 待办（{@code sourceMode=PERSISTED}，
- * {@code completionMode=TRACKED}），evidence 最多取 5 条具体异常详情。</p>
+ * 聚合为一条 {@code SYSTEM_EXCEPTION} 待办（{@code detail.model=SYSTEM_EXCEPTION}，
+ * {@code completionMode=TRACKED}），detail 最多展示 5 条具体异常详情。</p>
  *
  * <p>OPENAPI 描述：主卡只显示总数和最高优先级；异常状态由后台重试/补偿/异常中心更新，
  * 工作台只提供"查看详情"，不展示"完成处理"按钮。</p>
@@ -29,17 +33,13 @@ import java.util.Optional;
  * @since 2026-08-15
  */
 @Component
+@RequiredArgsConstructor
+@Slf4j
 public class DashboardSystemExceptionLoader {
 
-    private static final int EVIDENCE_LIMIT = 5;
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
+    private static final int DETAIL_ITEM_LIMIT = 5;
 
     private final SystemExceptionMapper systemExceptionMapper;
-
-    @Autowired
-    public DashboardSystemExceptionLoader(SystemExceptionMapper systemExceptionMapper) {
-        this.systemExceptionMapper = systemExceptionMapper;
-    }
 
     /**
      * 按权限加载系统异常聚合待办
@@ -54,27 +54,40 @@ public class DashboardSystemExceptionLoader {
         if (!canView) {
             return Optional.empty();
         }
-        return Optional.of(load());
+        DashboardTodoItemVO todo = load();
+        return todo.getCount() > 0 ? Optional.of(todo) : Optional.empty();
     }
 
     /**
      * 无条件加载系统异常聚合待办
      *
-     * @return 单条 SYSTEM_EXCEPTION 待办；无 PENDING 异常时返回 description 为"当前无系统异常"的占位项
+     * @return 单条 SYSTEM_EXCEPTION 待办；无 PENDING 异常时由 {@link #loadIfAllowed(boolean)} 过滤
      */
     public DashboardTodoItemVO load() {
-        List<SystemException> pending = systemExceptionMapper.selectList(
+        // 1. 统计 PENDING 异常数量
+        Long countObj = systemExceptionMapper.selectCount(
                 new LambdaQueryWrapper<SystemException>()
-                        .eq(SystemException::getStatus, "PENDING")
-                        .orderByAsc(SystemException::getOccurredAt));
-        int count = pending.size();
-        String priority = pending.stream().anyMatch(e -> "HIGH".equals(e.getSeverity())) ? "HIGH" : "MEDIUM";
-
+                        .eq(SystemException::getStatus, SystemExceptionStatus.PENDING.name()));
+        int count = countObj == null ? 0 : countObj.intValue();
+        // 2. 统计 PENDING 根据发生时间升序，取前 DETAIL_ITEM_LIMIT 条
+        List<SystemException> topPending = systemExceptionMapper.selectList(
+                new LambdaQueryWrapper<SystemException>()
+                        .eq(SystemException::getStatus, SystemExceptionStatus.PENDING.name())
+                        .orderByAsc(SystemException::getOccurredAt)
+                        .last("LIMIT " + DETAIL_ITEM_LIMIT));
+        // 3. 计算最高优先级
+        String priority = topPending.stream()
+                .map(SystemException::getSeverity)
+                .map(this::priorityForSeverity)
+                .min(Comparator.comparingInt(DashboardSystemExceptionLoader::priorityRank))
+                .orElse("LOW");
+        // 4. 组装待办项
+        DashboardTodoType type = DashboardTodoType.SYSTEM_EXCEPTION;
         DashboardTodoItemVO todo = new DashboardTodoItemVO();
-        todo.setTodoId("todo-system-exceptions");
-        todo.setBusinessType("SYSTEM_EXCEPTION");
-        todo.setBusinessLabel("系统");
-        todo.setTitle("系统异常");
+        todo.setTodoId(type.getTodoId());
+        todo.setBusinessType(type.getBusinessType());
+        todo.setBusinessLabel(type.getBusinessLabel());
+        todo.setTitle(type.getTitle());
         if (count == 0) {
             todo.setDescription("当前无系统异常，AI/MCP、消息队列、第三方回调、定时任务均运行正常。");
         } else {
@@ -83,46 +96,59 @@ public class DashboardSystemExceptionLoader {
                     count));
         }
         todo.setCount(count);
-        todo.setPriority(count > 0 ? priority : "LOW");
-        todo.setSortWeight(10);
-        todo.setSourceMode("PERSISTED");
-        todo.setCompletionMode("TRACKED");
-        todo.setStatus("PENDING");
-        todo.setErrorCode(null);
-        todo.setErrorMessage(null);
-        todo.setSourceNo("system_exception");
-        todo.setOccurredAt(pending.isEmpty() ? null : pending.get(0).getOccurredAt());
+        todo.setPriority(priority);
+        todo.setSortWeight(type.getSortWeight());
+        todo.setCompletionMode(type.getCompletionMode());
         todo.setResolveHint(null);
-        todo.setRoute("/dashboard");
-        todo.setEvidence(toEvidenceList(pending, EVIDENCE_LIMIT));
+        DashboardTodoSystemExceptionDetailVO detail = new DashboardTodoSystemExceptionDetailVO();
+        detail.setModel(DashboardTodoDetailModel.SYSTEM_EXCEPTION);
+        detail.setItems(toDetailItems(topPending));
+        todo.setDetail(detail);
         return todo;
     }
 
-    private List<DashboardTodoEvidenceVO> toEvidenceList(List<SystemException> exceptions, int limit) {
-        List<DashboardTodoEvidenceVO> result = new ArrayList<>();
-        for (int i = 0; i < exceptions.size() && result.size() < limit; i++) {
-            SystemException ex = exceptions.get(i);
-            DashboardTodoEvidenceVO ev = new DashboardTodoEvidenceVO();
-            ev.setItemId(ex.getExceptionNo());
-            ev.setPrimaryText(ex.getExceptionNo());
-            ev.setSecondaryText(ex.getDetailSummary());
-            ev.setMetrics(List.of(
-                    metric("类型", friendlyType(ex.getExceptionType()), "HIGH".equals(ex.getSeverity()) ? "risk" : "watch"),
-                    metric("来源", friendlyModule(ex.getSourceModule()), "neutral"),
-                    metric("时间", formatTime(ex.getOccurredAt()), "neutral")));
-            result.add(ev);
+    private List<DashboardTodoSystemExceptionItemVO> toDetailItems(List<SystemException> exceptions) {
+        List<DashboardTodoSystemExceptionItemVO> result = new ArrayList<>(exceptions.size());
+        for (SystemException exception : exceptions) {
+            DashboardTodoSystemExceptionItemVO item = new DashboardTodoSystemExceptionItemVO();
+            item.setId(exception.getExceptionNo());
+            item.setExceptionNo(exception.getExceptionNo());
+            item.setSummary(exception.getDetailSummary());
+            item.setExceptionType(friendlyType(exception.getExceptionType()));
+            item.setSourceModule(friendlyModule(exception.getSourceModule()));
+            item.setOccurredAt(exception.getOccurredAt());
+            item.setSeverity(priorityForSeverity(exception.getSeverity()));
+            result.add(item);
         }
         return result;
     }
 
-    private static DashboardTodoEvidenceMetricVO metric(String label, String value, String tone) {
-        DashboardTodoEvidenceMetricVO m = new DashboardTodoEvidenceMetricVO();
-        m.setLabel(label);
-        m.setValue(value);
-        m.setTone(tone);
-        return m;
+    /**
+     * 转换系统异常严重级别为待办优先级
+     */
+    private String priorityForSeverity(String severity) {
+        if (SystemExceptionSeverity.HIGH.name().equals(severity)) return SystemExceptionSeverity.HIGH.name();
+        if (SystemExceptionSeverity.MEDIUM.name().equals(severity)) return SystemExceptionSeverity.MEDIUM.name();
+        if (severity != null) {
+            log.warn("未知的系统异常严重级别: {}, 降级为 LOW", severity);
+        }
+        return SystemExceptionSeverity.LOW.name();
     }
 
+    /**
+     * 计算待办优先级的排序权重
+     */
+    private static int priorityRank(String priority) {
+        return switch (priority) {
+            case "HIGH" -> 0;
+            case "MEDIUM" -> 1;
+            default -> 2;
+        };
+    }
+
+    /**
+     * 转换系统异常类型为待办显示名称
+     */
     private static String friendlyType(String exceptionType) {
         if (exceptionType == null) {
             return "未知";
@@ -137,6 +163,9 @@ public class DashboardSystemExceptionLoader {
         };
     }
 
+    /**
+     * 转换系统异常来源模块为待办显示名称
+     */
     private static String friendlyModule(String sourceModule) {
         if (sourceModule == null) {
             return "未知";
@@ -150,10 +179,4 @@ public class DashboardSystemExceptionLoader {
         };
     }
 
-    private static String formatTime(LocalDateTime when) {
-        if (when == null) {
-            return "-";
-        }
-        return when.format(TIME_FORMATTER);
-    }
 }

@@ -3,7 +3,7 @@ package com.qiheng.erp.dashboard.domain.enums;
 /**
  * 工作台风险色语义。
  *
- * <p>与 OpenAPI {@code DashboardMetric.status} 和 {@code DashboardTodoEvidenceMetric.tone} 字段保持一致。</p>
+ * <p>与 OpenAPI {@code DashboardMetric.status}保持一致。</p>
  */
 public enum DashboardSeverity {
 

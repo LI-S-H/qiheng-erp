@@ -1,16 +1,23 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.qiheng.erp.common.util.QtyUtil;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoStatus;
+import com.qiheng.erp.dashboard.domain.enums.DashboardTodoDetailModel;
+import com.qiheng.erp.dashboard.domain.enums.DashboardTodoType;
+import com.qiheng.erp.dashboard.domain.enums.DashboardTodoWaitLevel;
 import com.qiheng.erp.dashboard.domain.vo.DashboardStockAlertVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoEvidenceMetricVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoEvidenceVO;
 import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
+import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDocumentDetailVO;
+import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDocumentItemVO;
+import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoStockRiskDetailVO;
+import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoStockRiskItemVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.domain.purchaseorder.enums.PurchaseOrderStatus;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
+import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
+import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
+import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.mapper.ReturnOrderMapper;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;
 import com.qiheng.erp.sales.domain.salesorder.enums.SalesOrderStatus;
 import com.qiheng.erp.sales.mapper.SalesOrderMapper;
@@ -19,326 +26,265 @@ import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.outbound.entity.OutboundBill;
 import com.qiheng.erp.warehouse.mapper.InboundBillMapper;
 import com.qiheng.erp.warehouse.mapper.OutboundBillMapper;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * 工作台业务待办聚合器。
  *
- * <p>按业务状态动态聚合 5 类业务待办，每类提供独立公共方法并按当前用户权限裁剪：
- * <ul>
- *   <li>{@link #loadPurchaseTodos(LoginUser)} 采购单待审核（依赖 purchase:manage）</li>
- *   <li>{@link #loadSalesTodos(LoginUser)} 销售单待审核（依赖 sales:manage）</li>
- *   <li>{@link #loadInboundTodos(LoginUser)} 待确认入库（依赖 warehouse:manage）</li>
- *   <li>{@link #loadOutboundTodos(LoginUser)} 待确认出库（依赖 warehouse:manage）</li>
- *   <li>{@link #loadStockRiskTodos(LoginUser)} 库存异常复核（依赖 warehouse:query）</li>
- * </ul>
+ * <p>按业务状态动态聚合采购、销售、仓储和库存待办，并按当前用户权限裁剪。
+ * 每类待办只返回有限条代表性业务事实，详情由 {@code detail.model} 决定字段与卡片布局，
+ * 不能把供应商、客户、等待时长等事实拼接进通用文本字段。</p>
  *
- * <p>每类待办最多返回 2 条代表性单据作为 {@code evidence}；调用方负责排序合并。
- * 系统异常待办不在本类聚合，由 {@link DashboardSystemExceptionLoader} 单独加载。</p>
- *
- * <p>业务完成后（如订单审核通过、单据确认完成）业务状态自动变化，
- * 下一次工作台刷新待办自动消失。</p>
+ * <p>业务完成后对应状态变化，下一次工作台刷新会自动移除待办；系统异常由
+ * {@link DashboardSystemExceptionLoader} 单独加载。</p>
  *
  * @author Li
  * @since 2026-08-15
  */
 @Component
+@RequiredArgsConstructor
 public class DashboardTodoAggregator {
 
-    private static final int EVIDENCE_LIMIT = 2;
+    private static final int DETAIL_ITEM_LIMIT = 2;
 
     private final DashboardPermissionGuard permissionGuard;
     private final PurchaseOrderMapper purchaseOrderMapper;
     private final SalesOrderMapper salesOrderMapper;
+    private final ReturnOrderMapper returnOrderMapper;
     private final InboundBillMapper inboundBillMapper;
     private final OutboundBillMapper outboundBillMapper;
     private final DashboardStockAlertLoader stockAlertLoader;
 
-    @Autowired
-    public DashboardTodoAggregator(DashboardPermissionGuard permissionGuard,
-                                   PurchaseOrderMapper purchaseOrderMapper,
-                                   SalesOrderMapper salesOrderMapper,
-                                   InboundBillMapper inboundBillMapper,
-                                   OutboundBillMapper outboundBillMapper,
-                                   DashboardStockAlertLoader stockAlertLoader) {
-        this.permissionGuard = permissionGuard;
-        this.purchaseOrderMapper = purchaseOrderMapper;
-        this.salesOrderMapper = salesOrderMapper;
-        this.inboundBillMapper = inboundBillMapper;
-        this.outboundBillMapper = outboundBillMapper;
-        this.stockAlertLoader = stockAlertLoader;
-    }
-
-    /**
-     * 加载采购单待审核待办
-     * @param user 当前登录用户
-     * @return 待办列表；无 purchase:manage 权限时返回空列表
-     */
+    /** 加载采购单待审核待办。 */
     public List<DashboardTodoItemVO> loadPurchaseTodos(LoginUser user) {
-        if (!permissionGuard.canManagePurchase(user)) {
+        if (!permissionGuard.canManagePurchase(user))
             return Collections.emptyList();
-        }
-        List<PurchaseOrder> orders = purchaseOrderMapper.selectList(
-                new LambdaQueryWrapper<PurchaseOrder>()
-                        .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.SUBMITTED.name())
-                        .orderByDesc(PurchaseOrder::getSubmittedAt)
-                        .last("LIMIT " + (EVIDENCE_LIMIT + 1)));
-        if (orders.isEmpty()) {
+        long count = purchaseOrderMapper.selectCount(new LambdaQueryWrapper<PurchaseOrder>()
+                .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.SUBMITTED.name()));
+        if (count == 0)
             return Collections.emptyList();
-        }
-        DashboardTodoItemVO todo = newTodo(
-                "todo-purchase-approve", "PURCHASE", "采购",
-                "采购单待审核", "还有 %d 张采购单需要审核，处理后会自动完成待办。",
-                orders.size(), "HIGH", 20, "/purchase/orders",
-                "前往采购订单完成审核，审核通过或驳回后该待办自动更新。");
-        todo.setEvidence(toEvidenceList(orders, this::purchaseEvidence, EVIDENCE_LIMIT));
+        List<PurchaseOrder> orders = purchaseOrderMapper.selectList(new LambdaQueryWrapper<PurchaseOrder>()
+                .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.SUBMITTED.name())
+                .orderByAsc(PurchaseOrder::getSubmittedAt)
+                .last("LIMIT " + DETAIL_ITEM_LIMIT));
+        DashboardTodoItemVO todo = newTodo(DashboardTodoType.PURCHASE_APPROVE, toTodoCount(count));
+        todo.setDetail(documentDetail(DashboardTodoDetailModel.PURCHASE_ORDER_APPROVAL, toDocumentItems(orders, this::purchaseDocument)));
         return List.of(todo);
     }
 
-    /**
-     * 加载销售单待审核待办
-     * @param user 当前登录用户
-     * @return 待办列表；无 sales:manage 权限时返回空列表
-     */
+    /** 加载销售单待审核待办。 */
     public List<DashboardTodoItemVO> loadSalesTodos(LoginUser user) {
-        if (!permissionGuard.canManageSales(user)) {
+        if (!permissionGuard.canManageSales(user))
             return Collections.emptyList();
-        }
-        List<SalesOrder> orders = salesOrderMapper.selectList(
-                new LambdaQueryWrapper<SalesOrder>()
-                        .eq(SalesOrder::getStatus, SalesOrderStatus.SUBMITTED.name())
-                        .orderByDesc(SalesOrder::getSubmittedAt)
-                        .last("LIMIT " + (EVIDENCE_LIMIT + 1)));
-        if (orders.isEmpty()) {
+        long count = salesOrderMapper.selectCount(new LambdaQueryWrapper<SalesOrder>()
+                .eq(SalesOrder::getStatus, SalesOrderStatus.SUBMITTED.name()));
+        if (count == 0)
             return Collections.emptyList();
-        }
-        DashboardTodoItemVO todo = newTodo(
-                "todo-sales-approve", "SALES", "销售",
-                "销售单待审核", "还有 %d 张销售单需要审核，处理后会自动完成待办。",
-                orders.size(), "HIGH", 21, "/sales/orders",
-                "前往销售订单完成审核，审核通过后进入库存锁定和发货准备。");
-        todo.setEvidence(toEvidenceList(orders, this::salesEvidence, EVIDENCE_LIMIT));
+        List<SalesOrder> orders = salesOrderMapper.selectList(new LambdaQueryWrapper<SalesOrder>()
+                .eq(SalesOrder::getStatus, SalesOrderStatus.SUBMITTED.name())
+                .orderByAsc(SalesOrder::getSubmittedAt)
+                .last("LIMIT " + DETAIL_ITEM_LIMIT));
+        DashboardTodoItemVO todo = newTodo(DashboardTodoType.SALES_APPROVE, toTodoCount(count));
+        todo.setDetail(documentDetail(DashboardTodoDetailModel.SALES_ORDER_APPROVAL, toDocumentItems(orders, this::salesDocument)));
         return List.of(todo);
     }
 
-    /**
-     * 加载待确认入库待办
-     * @param user 当前登录用户
-     * @return 待办列表；无 warehouse:manage 权限时返回空列表
-     */
+    /** 加载待确认入库待办。 */
     public List<DashboardTodoItemVO> loadInboundTodos(LoginUser user) {
-        if (!permissionGuard.canManageWarehouse(user)) {
+        if (!permissionGuard.canManageWarehouse(user))
             return Collections.emptyList();
-        }
-        List<InboundBill> bills = inboundBillMapper.selectList(
-                new LambdaQueryWrapper<InboundBill>()
-                        .eq(InboundBill::getStatus, "PENDING_CONFIRM")
-                        .eq(InboundBill::getInboundType, "PURCHASE_IN")
-                        .orderByDesc(InboundBill::getCreateTime)
-                        .last("LIMIT " + (EVIDENCE_LIMIT + 1)));
-        if (bills.isEmpty()) {
+        long count = inboundBillMapper.selectCount(new LambdaQueryWrapper<InboundBill>().eq(InboundBill::getStatus, "PENDING_CONFIRM"));
+        if (count == 0)
             return Collections.emptyList();
-        }
-        DashboardTodoItemVO todo = newTodo(
-                "todo-inbound", "WAREHOUSE", "仓储",
-                "待确认入库", "还有 %d 张入库单等待仓库确认。",
-                bills.size(), "MEDIUM", 50, "/warehouse/inbound-bills",
-                "前往入库单完成确认，确认入库后该待办自动更新。");
-        todo.setEvidence(toInboundEvidence(bills, EVIDENCE_LIMIT));
+        List<InboundBill> bills = inboundBillMapper.selectList(new LambdaQueryWrapper<InboundBill>()
+                .eq(InboundBill::getStatus, "PENDING_CONFIRM").orderByAsc(InboundBill::getCreateTime).last("LIMIT " + DETAIL_ITEM_LIMIT));
+        DashboardTodoItemVO todo = newTodo(DashboardTodoType.INBOUND_PENDING, toTodoCount(count));
+        todo.setDetail(documentDetail(DashboardTodoDetailModel.INBOUND_CONFIRM, toDocumentItems(bills, this::inboundDocument)));
         return List.of(todo);
     }
 
-    /**
-     * 加载待确认出库待办
-     * @param user 当前登录用户
-     * @return 待办列表；无 warehouse:manage 权限时返回空列表
-     */
+    /** 加载待确认出库待办。 */
     public List<DashboardTodoItemVO> loadOutboundTodos(LoginUser user) {
-        if (!permissionGuard.canManageWarehouse(user)) {
+        if (!permissionGuard.canManageWarehouse(user))
             return Collections.emptyList();
-        }
-        List<OutboundBill> bills = outboundBillMapper.selectList(
-                new LambdaQueryWrapper<OutboundBill>()
-                        .eq(OutboundBill::getStatus, "PENDING_CONFIRM")
-                        .eq(OutboundBill::getOutboundType, "SALES_OUT")
-                        .orderByDesc(OutboundBill::getCreateTime)
-                        .last("LIMIT " + (EVIDENCE_LIMIT + 1)));
-        if (bills.isEmpty()) {
+        long count = outboundBillMapper.selectCount(new LambdaQueryWrapper<OutboundBill>().eq(OutboundBill::getStatus, "PENDING_CONFIRM"));
+        if (count == 0)
             return Collections.emptyList();
-        }
-        DashboardTodoItemVO todo = newTodo(
-                "todo-outbound", "WAREHOUSE", "仓储",
-                "待确认出库", "还有 %d 张出库单等待发货确认。",
-                bills.size(), "MEDIUM", 51, "/warehouse/outbound-bills",
-                "前往出库单完成确认，确认出库后该待办自动更新。");
-        todo.setEvidence(toOutboundEvidence(bills, EVIDENCE_LIMIT));
+        List<OutboundBill> bills = outboundBillMapper.selectList(new LambdaQueryWrapper<OutboundBill>()
+                .eq(OutboundBill::getStatus, "PENDING_CONFIRM").orderByAsc(OutboundBill::getCreateTime).last("LIMIT " + DETAIL_ITEM_LIMIT));
+        DashboardTodoItemVO todo = newTodo(DashboardTodoType.OUTBOUND_PENDING, toTodoCount(count));
+        todo.setDetail(documentDetail(DashboardTodoDetailModel.OUTBOUND_CONFIRM, toDocumentItems(bills, this::outboundDocument)));
         return List.of(todo);
     }
 
-    /**
-     * 加载库存异常复核待办
-     * @param user 当前登录用户
-     * @return 待办列表；无 warehouse:query 权限时返回空列表
-     */
+    /** 加载库存异常复核待办。 */
     public List<DashboardTodoItemVO> loadStockRiskTodos(LoginUser user) {
-        if (!permissionGuard.canViewWarehouse(user)) {
+        if (!permissionGuard.canViewWarehouse(user))
             return Collections.emptyList();
-        }
         List<DashboardStockAlertVO> alerts = stockAlertLoader.load();
-        int count = alerts.size();
-        if (count == 0) {
+        if (alerts.isEmpty())
             return Collections.emptyList();
-        }
-        DashboardTodoItemVO todo = newTodo(
-                "todo-stock-risk-review", "INVENTORY", "库存",
-                "库存异常待复核", "还有 %d 个 SKU 可用库存低于安全线或已无可用库存，需要复核补货或调拨。",
-                count, count > 0 ? "HIGH" : "LOW", 30, "/warehouse/stocks",
-                "前往库存余额查看低库存 SKU，补货计划生成或库存恢复后自动更新。");
-        List<DashboardTodoEvidenceVO> evidences = new ArrayList<>();
-        for (DashboardStockAlertVO alert : alerts) {
-            if (evidences.size() >= EVIDENCE_LIMIT) {
-                break;
-            }
-            DashboardTodoEvidenceVO ev = new DashboardTodoEvidenceVO();
-            ev.setItemId(String.valueOf(alert.getStockId()));
-            ev.setPrimaryText(alert.getProductName() + "（" + alert.getProductCode() + "）");
-            ev.setSecondaryText(alert.getWarehouseName() + " · 当前可用库存 " + alert.getAvailableQty() + alert.getUnitName());
-            ev.setMetrics(List.of(
-                    stockMetric("可用", alert.getAvailableQty() + " " + alert.getUnitName(), "HIGH".equals(alert.getSeverity()) ? "risk" : "watch"),
-                    stockMetric("安全线", alert.getSafetyStockQty() + " " + alert.getUnitName(), "neutral"),
-                    stockMetric("建议补货", alert.getSuggestedPurchaseQty().compareTo(BigDecimal.ZERO) > 0 ? alert.getSuggestedPurchaseQty() + " " + alert.getUnitName() : "不适用", "neutral")
-            ));
-            evidences.add(ev);
-        }
-        todo.setEvidence(evidences);
+        DashboardTodoItemVO todo = newTodo(DashboardTodoType.STOCK_RISK_REVIEW, alerts.size());
+        DashboardTodoStockRiskDetailVO detail = new DashboardTodoStockRiskDetailVO();
+        detail.setModel(DashboardTodoDetailModel.STOCK_RISK_REVIEW);
+        detail.setItems(toStockRiskItems(alerts));
+        todo.setDetail(detail);
         return List.of(todo);
     }
 
-    private DashboardTodoEvidenceVO purchaseEvidence(PurchaseOrder order) {
-        DashboardTodoEvidenceVO ev = new DashboardTodoEvidenceVO();
-        ev.setItemId(order.getPurchaseNo());
-        ev.setPrimaryText(order.getPurchaseNo());
-        ev.setSecondaryText(order.getSupplierName() + " · " + (order.getExpectedArrivalDate() == null ? "待确认" : order.getExpectedArrivalDate().toString()));
-        ev.setMetrics(List.of(
-                stockMetric("金额", "￥" + toYuan(order.getTotalAmount()) + "万", "neutral"),
-                stockMetric("等待", formatWait(order.getSubmittedAt()), "watch")));
-        return ev;
+    /** 加载采购退货待审核待办。 */
+    public List<DashboardTodoItemVO> loadPurchaseReturnTodos(LoginUser user) {
+        if (!permissionGuard.canManagePurchase(user))
+            return Collections.emptyList();
+        return loadReturnTodos(ReturnType.PURCHASE_RETURN, DashboardTodoType.PURCHASE_RETURN_APPROVE, DashboardTodoDetailModel.PURCHASE_RETURN_APPROVAL);
     }
 
-    private DashboardTodoEvidenceVO salesEvidence(SalesOrder order) {
-        DashboardTodoEvidenceVO ev = new DashboardTodoEvidenceVO();
-        ev.setItemId(order.getSalesNo());
-        ev.setPrimaryText(order.getSalesNo());
-        ev.setSecondaryText(order.getCustomerName() + " · 待销售主管审核");
-        ev.setMetrics(List.of(
-                stockMetric("金额", "￥" + toYuan(order.getTotalAmount()) + "万", "neutral"),
-                stockMetric("等待", formatWait(order.getSubmittedAt()), "watch")));
-        return ev;
+    /** 加载销售退货待审核待办。 */
+    public List<DashboardTodoItemVO> loadSalesReturnTodos(LoginUser user) {
+        if (!permissionGuard.canManageSales(user)) return Collections.emptyList();
+        return loadReturnTodos(ReturnType.SALES_RETURN, DashboardTodoType.SALES_RETURN_APPROVE, DashboardTodoDetailModel.SALES_RETURN_APPROVAL);
     }
 
-    private <T> List<DashboardTodoEvidenceVO> toEvidenceList(List<T> orders,
-                                                              java.util.function.Function<T, DashboardTodoEvidenceVO> mapper,
-                                                              int limit) {
-        List<DashboardTodoEvidenceVO> result = new ArrayList<>();
-        for (int i = 0; i < orders.size() && result.size() < limit; i++) {
-            result.add(mapper.apply(orders.get(i)));
+    /** 加载退货待审核待办。 */
+    private List<DashboardTodoItemVO> loadReturnTodos(ReturnType returnType, DashboardTodoType todoType, DashboardTodoDetailModel detailModel) {
+        long count = returnOrderMapper.selectCount(new LambdaQueryWrapper<ReturnOrder>()
+                .eq(ReturnOrder::getReturnType, returnType.name()).eq(ReturnOrder::getStatus, ReturnStatus.SUBMITTED.name()));
+        if (count == 0)
+            return Collections.emptyList();
+        List<ReturnOrder> orders = returnOrderMapper.selectList(new LambdaQueryWrapper<ReturnOrder>()
+                .eq(ReturnOrder::getReturnType, returnType.name()).eq(ReturnOrder::getStatus, ReturnStatus.SUBMITTED.name())
+                .orderByAsc(ReturnOrder::getSubmittedAt).last("LIMIT " + DETAIL_ITEM_LIMIT));
+        DashboardTodoItemVO todo = newTodo(todoType, toTodoCount(count));
+        todo.setPriority(priorityForWait(orders.isEmpty() ? null : orders.getFirst().getSubmittedAt()));
+        todo.setDetail(documentDetail(detailModel, toDocumentItems(orders, this::returnDocument)));
+        return List.of(todo);
+    }
+
+    /** 加载采购待审核待办。 */
+    private DashboardTodoDocumentItemVO purchaseDocument(PurchaseOrder order) {
+        return documentItem(order.getPurchaseNo(), null, order.getSupplierName(), order.getTotalAmount(), order.getSubmittedAt(), order.getStatus());
+    }
+
+    /** 加载销售待审核待办。 */
+    private DashboardTodoDocumentItemVO salesDocument(SalesOrder order) {
+        return documentItem(order.getSalesNo(), null, order.getCustomerName(), order.getTotalAmount(), order.getSubmittedAt(), order.getStatus());
+    }
+
+    /** 加载退货待审核待办。 */
+    private DashboardTodoDocumentItemVO returnDocument(ReturnOrder order) {
+        return documentItem(order.getReturnNo(), order.getSourceOrderNo(), order.getPartyName(), order.getTotalAmount(), order.getSubmittedAt(), order.getStatus());
+    }
+
+    /** 加载入库待审核待办。 */
+    private DashboardTodoDocumentItemVO inboundDocument(InboundBill bill) {
+        return documentItem(bill.getInboundNo(), bill.getSourceNo(), bill.getWarehouseName(), null, bill.getCreateTime(), bill.getStatus());
+    }
+
+    /** 加载出库待审核待办。 */
+    private DashboardTodoDocumentItemVO outboundDocument(OutboundBill bill) {
+        return documentItem(bill.getOutboundNo(), bill.getSourceNo(), bill.getWarehouseName(), null, bill.getCreateTime(), bill.getStatus());
+    }
+
+    /** 加载待审核待办。 */
+    private DashboardTodoDocumentItemVO documentItem(String documentNo, String sourceDocumentNo, String counterpartyName, Long amountFen, LocalDateTime pendingSince, String documentStatus) {
+        DashboardTodoDocumentItemVO item = new DashboardTodoDocumentItemVO();
+        item.setDocumentNo(documentNo);
+        item.setSourceDocumentNo(sourceDocumentNo);
+        item.setCounterpartyName(counterpartyName);
+        item.setAmountFen(amountFen);
+        item.setWaitHours(waitHours(pendingSince));
+        item.setWaitLevel(waitLevel(pendingSince));
+        item.setDocumentStatus(documentStatus);
+        return item;
+    }
+
+    /** 加载待审核待办详情。 */
+    private DashboardTodoDocumentDetailVO documentDetail(DashboardTodoDetailModel model, List<DashboardTodoDocumentItemVO> items) {
+        DashboardTodoDocumentDetailVO detail = new DashboardTodoDocumentDetailVO();
+        detail.setModel(model);
+        detail.setItems(items);
+        return detail;
+    }
+
+    /** 加载库存危险详情。 */
+    private List<DashboardTodoStockRiskItemVO> toStockRiskItems(List<DashboardStockAlertVO> alerts) {
+        List<DashboardTodoStockRiskItemVO> items = new ArrayList<>();
+        for (DashboardStockAlertVO alert : alerts) {
+            if (items.size() >= DETAIL_ITEM_LIMIT) break;
+            DashboardTodoStockRiskItemVO item = new DashboardTodoStockRiskItemVO();
+            item.setId(String.valueOf(alert.getStockId()));
+            item.setProductCode(alert.getProductCode());
+            item.setProductName(alert.getProductName());
+            item.setWarehouseName(alert.getWarehouseName());
+            item.setUnitName(alert.getUnitName());
+            item.setAvailableQty(alert.getAvailableQty());
+            item.setSafetyStockQty(alert.getSafetyStockQty());
+            item.setSuggestedPurchaseQty(alert.getSuggestedPurchaseQty());
+            item.setSeverity(alert.getSeverity());
+            items.add(item);
         }
-        return result;
+        return items;
     }
 
-    private List<DashboardTodoEvidenceVO> toInboundEvidence(List<InboundBill> bills, int limit) {
-        List<DashboardTodoEvidenceVO> result = new ArrayList<>();
-        for (int i = 0; i < bills.size() && result.size() < limit; i++) {
-            InboundBill bill = bills.get(i);
-            DashboardTodoEvidenceVO ev = new DashboardTodoEvidenceVO();
-            ev.setItemId(bill.getInboundNo());
-            ev.setPrimaryText(bill.getInboundNo());
-            ev.setSecondaryText("关联 " + bill.getSourceNo() + " · " + bill.getWarehouseName());
-            ev.setMetrics(List.of(
-                    stockMetric("来源", bill.getSourceNo(), "neutral"),
-                    stockMetric("等待", formatWait(bill.getCreateTime()), "watch")));
-            result.add(ev);
+    /** 构建待审核待办列表。 */
+    private <T> List<DashboardTodoDocumentItemVO> toDocumentItems(List<T> source, Function<T, DashboardTodoDocumentItemVO> mapper) {
+        List<DashboardTodoDocumentItemVO> items = new ArrayList<>();
+        for (T item : source) {
+            if (items.size() >= DETAIL_ITEM_LIMIT) break;
+            items.add(mapper.apply(item));
         }
-        return result;
+        return items;
     }
 
-    private List<DashboardTodoEvidenceVO> toOutboundEvidence(List<OutboundBill> bills, int limit) {
-        List<DashboardTodoEvidenceVO> result = new ArrayList<>();
-        for (int i = 0; i < bills.size() && result.size() < limit; i++) {
-            OutboundBill bill = bills.get(i);
-            DashboardTodoEvidenceVO ev = new DashboardTodoEvidenceVO();
-            ev.setItemId(bill.getOutboundNo());
-            ev.setPrimaryText(bill.getOutboundNo());
-            ev.setSecondaryText("关联 " + bill.getSourceNo() + " · " + bill.getWarehouseName());
-            ev.setMetrics(List.of(
-                    stockMetric("来源", bill.getSourceNo(), "neutral"),
-                    stockMetric("等待", formatWait(bill.getCreateTime()), "watch")));
-            result.add(ev);
-        }
-        return result;
-    }
-
-    private DashboardTodoItemVO newTodo(String todoId, String businessType, String businessLabel,
-                                        String title, String descriptionTemplate, int count,
-                                        String priority, int sortWeight, String route, String resolveHint) {
+    /** 构建待办项。 */
+    private DashboardTodoItemVO newTodo(DashboardTodoType type, int count) {
         DashboardTodoItemVO todo = new DashboardTodoItemVO();
-        todo.setTodoId(todoId);
-        todo.setBusinessType(businessType);
-        todo.setBusinessLabel(businessLabel);
-        todo.setTitle(title);
-        todo.setDescription(String.format(descriptionTemplate, count));
+        todo.setTodoId(type.getTodoId());
+        todo.setBusinessType(type.getBusinessType());
+        todo.setBusinessLabel(type.getBusinessLabel());
+        todo.setTitle(type.getTitle());
+        todo.setDescription(String.format(type.getDescriptionTemplate(), count));
         todo.setCount(count);
-        todo.setPriority(count > 0 ? priority : "LOW");
-        todo.setSortWeight(sortWeight);
-        todo.setSourceMode("AGGREGATED");
-        todo.setCompletionMode("AUTO");
-        todo.setStatus(DashboardTodoStatus.PENDING.getCode());
-        todo.setErrorCode(null);
-        todo.setErrorMessage(null);
-        todo.setSourceNo(null);
-        todo.setOccurredAt(null);
-        todo.setResolveHint(resolveHint);
-        todo.setRoute(route);
+        todo.setPriority(count > 0 ? type.getPriority() : "LOW");
+        todo.setSortWeight(type.getSortWeight());
+        todo.setCompletionMode(type == DashboardTodoType.SYSTEM_EXCEPTION ? "TRACKED" : "AUTO");
+        todo.setResolveHint(type.getResolveHint());
         return todo;
     }
 
-    private static DashboardTodoEvidenceMetricVO stockMetric(String label, String value, String tone) {
-        DashboardTodoEvidenceMetricVO m = new DashboardTodoEvidenceMetricVO();
-        m.setLabel(label);
-        m.setValue(value);
-        m.setTone(tone);
-        return m;
+    /** 转换待办数量，防止极端数据导致 int 溢出。 */
+    private static int toTodoCount(long count) {
+        return count > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) count;
     }
 
-    /** 数据库 ×100 转业务万元字符串（保留 2 位） */
-    private static String toYuan(Long stored) {
-        if (stored == null) {
-            return "0.00";
-        }
-        return QtyUtil.toDecimal(stored).toPlainString();
+    /** 等待时长分级：超过三天为 HIGH，超过一天为 MEDIUM，其余为 LOW。 */
+    private static String priorityForWait(LocalDateTime pendingSince) {
+        return switch (waitLevel(pendingSince)) {
+            case OVERDUE -> "HIGH";
+            case WARNING -> "MEDIUM";
+            default -> "LOW";
+        };
     }
 
-    private static String formatWait(LocalDateTime since) {
-        if (since == null) {
-            return "未知";
-        }
-        Duration duration = Duration.between(since, LocalDateTime.now());
-        long hours = duration.toHours();
-        if (hours < 1) {
-            long minutes = Math.max(duration.toMinutes(), 1);
-            return minutes + "分钟";
-        }
-        if (hours < 24) {
-            return hours + "小时";
-        }
-        return (hours / 24) + "天";
+    /** 等待时长分级：超过三天为 OVERDUE，超过一天为 WARNING，其余为 NORMAL。 */
+    private static DashboardTodoWaitLevel waitLevel(LocalDateTime pendingSince) {
+        long hours = waitHours(pendingSince);
+        if (hours >= 72) return DashboardTodoWaitLevel.OVERDUE;
+        if (hours >= 24) return DashboardTodoWaitLevel.WARNING;
+        return DashboardTodoWaitLevel.NORMAL;
+    }
+
+    /** 计算待办待处理时间（小时）。 */
+    private static long waitHours(LocalDateTime pendingSince) {
+        if (pendingSince == null) return 0L;
+        return Math.max(Duration.between(pendingSince, LocalDateTime.now()).toHours(), 0L);
     }
 }

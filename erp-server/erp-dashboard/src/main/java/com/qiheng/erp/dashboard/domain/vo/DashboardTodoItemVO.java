@@ -1,12 +1,9 @@
 package com.qiheng.erp.dashboard.domain.vo;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
+import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDetailVO;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * <p>
@@ -47,34 +44,15 @@ public class DashboardTodoItemVO {
     @Schema(description = "排序权重，数值越小越靠前")
     private Integer sortWeight;
 
-    @Schema(description = "待办来源方式", allowableValues = {"AGGREGATED", "PERSISTED"})
-    private String sourceMode;
 
     @Schema(description = "完成方式", allowableValues = {"AUTO", "TRACKED"})
     private String completionMode;
 
-    @Schema(description = "待办状态", allowableValues = {"PENDING", "DONE", "IGNORED"})
-    private String status;
-
-    @Schema(description = "异常类待办错误码；非异常待办返回 null")
-    private String errorCode;
-
-    @Schema(description = "异常类待办错误信息")
-    private String errorMessage;
-
-    @Schema(description = "来源业务单号或外部事件编号")
-    private String sourceNo;
-
-    @Schema(description = "待办发生时间或最后触发时间")
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private LocalDateTime occurredAt;
 
     @Schema(description = "处理建议")
     private String resolveHint;
 
-    @Schema(description = "代表性单据摘要证据列表")
-    private List<DashboardTodoEvidenceVO> evidence = new ArrayList<>();
 
-    @Schema(description = "点击待办跳转的业务路由")
-    private String route;
+    @Schema(description = "按模型组织的待办详情", requiredMode = Schema.RequiredMode.REQUIRED)
+    private DashboardTodoDetailVO detail;
 }

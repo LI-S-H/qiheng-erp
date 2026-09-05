@@ -1,7 +1,6 @@
 package com.qiheng.erp.dashboard.service.impl;
 
 import com.qiheng.erp.dashboard.domain.enums.DashboardSeverity;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoStatus;
 import com.qiheng.erp.dashboard.domain.vo.DashboardNotificationPopoverVO;
 import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
 import com.qiheng.erp.dashboard.service.IDashboardNotificationService;
@@ -45,10 +44,7 @@ public class DashboardNotificationServiceImpl implements IDashboardNotificationS
     public DashboardNotificationPopoverVO popover() {
         LoginUser user = UserContext.getCurrentUser();
         List<DashboardTodoItemVO> allTodos = todoService.loadTodos(user);
-        String pendingCode = DashboardTodoStatus.PENDING.getCode();
-
         List<DashboardTodoItemVO> pendingTodos = allTodos.stream()
-                .filter(t -> pendingCode.equals(t.getStatus()))
                 .sorted(Comparator
                         .comparingInt(DashboardTodoItemVO::getSortWeight)
                         .thenComparingInt(t -> priorityWeight(t.getPriority())))

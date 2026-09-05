@@ -19,7 +19,7 @@ public interface IDashboardNotificationService {
      *
      * @return 前 8 条待办及总数统计；待办按 {@code sortWeight} 升序、
      *         {@code priority} 升序、{@code completionMode} 处理方式、
-     *         {@code occurredAt} 倒序兜底
+     *         标题升序兜底
      */
     DashboardNotificationPopoverVO popover();
 }

@@ -42,6 +42,8 @@ public class DashboardTodoServiceImpl implements IDashboardTodoService {
         List<DashboardTodoItemVO> todos = new ArrayList<>();
         todos.addAll(todoAggregator.loadPurchaseTodos(user));
         todos.addAll(todoAggregator.loadSalesTodos(user));
+        todos.addAll(todoAggregator.loadPurchaseReturnTodos(user));
+        todos.addAll(todoAggregator.loadSalesReturnTodos(user));
         todos.addAll(todoAggregator.loadInboundTodos(user));
         todos.addAll(todoAggregator.loadOutboundTodos(user));
         todos.addAll(todoAggregator.loadStockRiskTodos(user));

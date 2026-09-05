@@ -2,6 +2,7 @@ package com.qiheng.erp.warehouse.mapper;
 
 import com.github.yulichang.base.MPJBaseMapper;
 import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
+import com.qiheng.erp.warehouse.domain.warehousestock.vo.RiskStockVo;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
@@ -19,4 +20,10 @@ public interface WarehouseStockMapper extends MPJBaseMapper<WarehouseStock> {
     /** 按固定产品顺序锁定同一仓库的库存余额，避免多产品操作互相等待。 */
     List<WarehouseStock> selectByWarehouseAndProductIdsForUpdate(@Param("warehouseId") Long warehouseId,
                                                                   @Param("productIds") List<Long> productIds);
+
+    /** 查询库存风险 SKU，按缺口降序，最多 limit 条。 */
+    List<RiskStockVo> selectRiskStocks(@Param("limit") int limit);
+
+    /** 统计库存风险 SKU 数量。 */
+    long countRiskStocks();
 }

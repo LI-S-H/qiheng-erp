@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import { useRoute, useRouter } from 'vue-router';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
@@ -34,6 +35,8 @@ const emptySummary = (): WarehouseStockSummary => ({
   lockedCount: 0,
 });
 
+const route = useRoute();
+const router = useRouter();
 const loading = ref(false);
 const queryPending = ref(false);
 const requestSequence = ref(0);
@@ -46,6 +49,7 @@ const query = reactive<WarehouseStockQuery>({
   productName: '',
   inventoryHealth: 'all',
   reservationState: 'all',
+  riskOnly: false,
   pageNum: 1,
   pageSize: 10,
 });
@@ -93,7 +97,7 @@ async function fetchWarehouseSearchOptions(keyword: string) {
     pageNum: 1,
     pageSize: 10,
     ...warehouseKeywordQuery(keyword),
-  });
+  }, { skipPageLoading: true });
   const options = page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
   mergeWarehouseOptions(options);
   return options;
@@ -139,10 +143,22 @@ const {
   pending: queryPending,
   load: fetchStocks,
   resetFilters: () => {
-    Object.assign(query, { warehouseId: 'all', productCode: '', productName: '', inventoryHealth: 'all', reservationState: 'all' });
+    Object.assign(query, { warehouseId: 'all', productCode: '', productName: '', inventoryHealth: 'all', reservationState: 'all', riskOnly: false });
   },
 });
 
+function applyDashboardRiskPreset() {
+  query.riskOnly = route.query.riskOnly === 'true' || route.query.riskOnly === '1';
+  query.pageNum = 1;
+}
+
+function resetFilters() {
+  if (Object.keys(route.query).length > 0) {
+    void router.replace({ path: route.path });
+    return;
+  }
+  handleReset();
+}
 function formatQty(value: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 4 }).format(value);
 }
@@ -196,8 +212,9 @@ onMounted(() => {
         <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">库存健康</Label><AnchoredSelect v-model="query.inventoryHealth" :options="inventoryHealthOptions" placeholder="全部健康状态" /></div>
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">占用情况</Label><AnchoredSelect v-model="query.reservationState" :options="reservationStateOptions" placeholder="全部占用情况" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">风险范围</Label><Button size="sm" :variant="query.riskOnly ? 'default' : 'outline'" class="w-full" @click="query.riskOnly = !query.riskOnly">仅风险库存</Button></div>
       <template #actions>
-        <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" />
+        <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="resetFilters" />
       </template>
     </ListFilterPanel>
 

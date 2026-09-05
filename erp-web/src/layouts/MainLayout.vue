@@ -32,6 +32,7 @@ import CollapseReveal from '@/components/common/CollapseReveal.vue';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { getDashboardNotifications } from '@/modules/dashboard/api';
 import type { DashboardNotificationPopover, DashboardTodoItem } from '@/modules/dashboard/types';
+import { resolveTodoNavigation } from '@/modules/dashboard/todo-navigation';
 import { isPageLoading } from '@/shared/utils/page-loading';
 
 interface MenuItem {
@@ -39,6 +40,8 @@ interface MenuItem {
   title: string;
   icon: unknown;
   permission?: string;
+  anyPermissions?: string[];
+  anyRoleCodes?: string[];
   children?: Array<Omit<MenuItem, 'icon' | 'children'> & { icon?: unknown }>;
 }
 
@@ -119,7 +122,8 @@ const menus: MenuItem[] = [
     index: '/ai',
     title: '智能助手',
     icon: MessageCircle,
-    permission: 'ai:query:stock',
+    anyPermissions: ['ai:query:stock', 'ai:query:sales', 'ai:query:purchase'],
+    anyRoleCodes: ['SALES_STAFF', 'PURCHASE_STAFF'],
     children: [
       { index: '/ai/assistant', title: '智能经营助手' },
       { index: '/ai/tasks', title: '经营任务中心', icon: CalendarClock },
@@ -129,6 +133,8 @@ const menus: MenuItem[] = [
 
 const visibleMenus = computed(() => {
   return menus.filter(item => {
+    if (item.anyPermissions?.length && item.anyPermissions.some(permission => authStore.hasPermission(permission))) return true;
+    if (item.anyRoleCodes?.length && item.anyRoleCodes.some(roleCode => authStore.user?.roleCodes.includes(roleCode))) return true;
     if (!item.permission) return true;
     return authStore.hasPermission(item.permission);
   });
@@ -203,7 +209,7 @@ function handleUserMenuOpen(open: boolean) {
 
 function handleNotificationItem(item: DashboardTodoItem) {
   notificationOpen.value = false;
-  void router.push(item.completionMode === 'TRACKED' ? '/dashboard' : item.route || '/dashboard');
+  void router.push(resolveTodoNavigation(item) || '/dashboard');
 }
 
 function openWorkbench() {

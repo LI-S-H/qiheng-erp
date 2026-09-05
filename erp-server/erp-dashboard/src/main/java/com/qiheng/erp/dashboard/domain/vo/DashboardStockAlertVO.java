@@ -56,7 +56,7 @@ public class DashboardStockAlertVO {
     @Schema(description = "建议补货数量；停用产品为 0，按 100 倍存储值还原为业务小数")
     private BigDecimal suggestedPurchaseQty;
 
-    @Schema(description = "严重程度", allowableValues = {"HIGH", "MEDIUM"})
+    @Schema(description = "库存健康状态，与仓库模块 InventoryHealth 口径一致", allowableValues = {"OUT_OF_STOCK", "NO_AVAILABLE", "LOW_STOCK"})
     private String severity;
 
     @Schema(description = "最近一次出库时间；从未出库时为 null")

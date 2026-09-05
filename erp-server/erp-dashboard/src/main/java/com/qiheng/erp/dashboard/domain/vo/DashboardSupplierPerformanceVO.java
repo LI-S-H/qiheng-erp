@@ -31,11 +31,20 @@ public class DashboardSupplierPerformanceVO {
     @Schema(description = "供应商名称")
     private String supplierName;
 
+    @Schema(description = "综合评分（百分制，保留 1 位小数）")
+    private BigDecimal overallScore;
+
     @Schema(description = "交付评分（百分制，保留 1 位小数）")
     private BigDecimal deliveryScore;
 
     @Schema(description = "质量评分（百分制，保留 1 位小数）")
     private BigDecimal qualityScore;
+
+    @Schema(description = "价格评分（百分制，保留 1 位小数）")
+    private BigDecimal priceScore;
+
+    @Schema(description = "服务评分（百分制，保留 1 位小数）")
+    private BigDecimal serviceScore;
 
     @Schema(description = "准时交付率（百分制，保留 1 位小数）")
     private BigDecimal onTimeRate;

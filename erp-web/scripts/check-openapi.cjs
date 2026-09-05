@@ -940,6 +940,7 @@ for (const [tableName, columnName] of bigintMoneyColumns) {
 if (!allSql.includes('交易金额统一为 BIGINT（按“元 × 100”的分值存储）')) {
   throw new Error('缺少交易金额 BIGINT 的可重复执行迁移脚本');
 }
+const signedMoneySchemas = new Set(['DashboardTrendPoint']);
 for (const schemaName of [
   'AiWorkbenchLine', 'DashboardTrendPoint', 'DashboardTopProduct', 'PurchaseSupplierProduct',
   'PurchaseOrder', 'PurchaseOrderItem', 'ReturnOrder', 'ReturnOrderItem', 'SalesCustomer',
@@ -949,7 +950,10 @@ for (const schemaName of [
   const nextSchemaMatch = /\n    [A-Za-z][A-Za-z0-9]+:\n/.exec(source.slice(schemaStart + 1));
   const schemaEnd = nextSchemaMatch ? schemaStart + 1 + nextSchemaMatch.index : source.length;
   const schema = schemaStart >= 0 ? source.slice(schemaStart, schemaEnd) : '';
-  if (!schema.includes('type: string') || !schema.includes("pattern: '^\\d+(\\.\\d{1,2})?$'")) {
+  const moneyPattern = signedMoneySchemas.has(schemaName)
+    ? "pattern: '^-?\\d+(\\.\\d{1,2})?$'"
+    : "pattern: '^\\d+(\\.\\d{1,2})?$'";
+  if (!schema.includes('type: string') || !schema.includes(moneyPattern)) {
     throw new Error(`金额 API 必须采用元字符串契约：${schemaName}`);
   }
 }

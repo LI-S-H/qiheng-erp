@@ -41,6 +41,7 @@ export interface WarehouseStockQuery {
   productName?: string;
   inventoryHealth?: InventoryHealth | 'all';
   reservationState?: ReservationState | 'all';
+  riskOnly?: boolean;
   pageNum: number;
   pageSize: number;
 }

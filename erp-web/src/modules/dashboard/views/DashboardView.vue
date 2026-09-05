@@ -19,30 +19,33 @@ import {
   Truck,
 } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
-import DashboardAccessPanel from '@/components/dashboard/DashboardAccessPanel.vue';
+import DashboardEmptyPanel from '@/components/dashboard/DashboardEmptyPanel.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { getDashboardOverview } from '../api';
+import { resolveTodoNavigation } from '../todo-navigation';
 import type {
   DashboardMetric,
-  DashboardSectionAccess,
   DashboardOrderStagePermissions,
   DashboardOverview,
+  DashboardStockAlert,
   DashboardTodoItem,
+  DashboardTodoDocumentItem,
+  DashboardTodoStockRiskItem,
+  DashboardTodoSystemExceptionItem,
   DashboardTrendPermissions,
   DashboardTrendPoint,
 } from '../types';
 
-type DetailType = 'todos' | 'products' | 'suppliers' | 'stockAlerts';
+type DetailType = 'todos' | 'products' | 'suppliers';
 
 const router = useRouter();
 const loading = ref(false);
 const overview = ref<DashboardOverview | null>(null);
-const loadError = ref('');
 const activeDetail = ref<DetailType | null>(null);
 const expandedTodoId = ref<string | null>(null);
 const selectedTodoDetailId = ref<string | null>(null);
@@ -88,28 +91,18 @@ const canViewAnyTrend = computed(() => {
   return perm.canViewSales || perm.canViewPurchase;
 });
 
-const deniedAccess: DashboardSectionAccess = { state: 'DENIED' };
-const todosAccess = computed(() => overview.value?.access.todos ?? deniedAccess);
-const orderStagesAccess = computed(() => overview.value?.access.orderStages ?? deniedAccess);
-const topProductsAccess = computed(() => overview.value?.access.topProducts ?? deniedAccess);
-const supplierPerformanceAccess = computed(() => overview.value?.access.supplierPerformance ?? deniedAccess);
-const stockAlertsAccess = computed(() => overview.value?.access.stockAlerts ?? deniedAccess);
+const canViewAnyOrderStage = computed(() => {
+  const perm = orderStagePermissions.value;
+  return perm.canViewPurchase || perm.canViewSales;
+});
 
-function metricAccess(metric: DashboardMetric): DashboardSectionAccess {
-  return overview.value?.access.metrics[metric.key] ?? deniedAccess;
-}
+const orderStagePeriodDescription = computed(() => {
+  const period = overview.value?.orderStagePeriod;
+  return period?.type === 'CURRENT_CALENDAR_MONTH'
+    ? '当月新建单据按当前状态分布'
+    : '当前统计期间新建单据按当前状态分布';
+});
 
-function canOpenDetail(type: DetailType) {
-  if (!overview.value) return false;
-  if (type === 'todos') return todosAccess.value.state !== 'DENIED' && overview.value.todos.length > 0;
-  if (type === 'products') return topProductsAccess.value.state !== 'DENIED' && overview.value.topProducts.length > 0;
-  if (type === 'suppliers') return supplierPerformanceAccess.value.state !== 'DENIED' && overview.value.supplierPerformance.length > 0;
-  return stockAlertsAccess.value.state !== 'DENIED' && overview.value.stockAlerts.length > 0;
-}
-
-function panelIsUnavailable(access: DashboardSectionAccess) {
-  return access.state === 'DENIED' || access.state === 'EMPTY';
-}
 const visibleTrendSeries = computed(() => {
   const perm = trendPermissions.value;
   return trendSeries.filter(series => {
@@ -271,25 +264,35 @@ const maxTopProductAmount = computed(() => Math.max(...(overview.value?.topProdu
 const sortedTodos = computed(() => {
   const priorityRank: Record<DashboardTodoItem['priority'], number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
   return [...(overview.value?.todos || [])].sort((left, right) => {
-    const weightDiff = left.sortWeight - right.sortWeight;
-    if (weightDiff !== 0) return weightDiff;
-
     const priorityDiff = priorityRank[left.priority] - priorityRank[right.priority];
     if (priorityDiff !== 0) return priorityDiff;
-
-    if (left.completionMode !== right.completionMode) return left.completionMode === 'TRACKED' ? -1 : 1;
+    const weightDiff = left.sortWeight - right.sortWeight;
+    if (weightDiff !== 0) return weightDiff;
     return left.title.localeCompare(right.title, 'zh-CN');
   });
 });
+
+const todoGroups = computed(() => {
+  const definitions = [
+    { key: 'PURCHASE', title: '采购类', types: ['PURCHASE'] },
+    { key: 'SALES', title: '销售类', types: ['SALES'] },
+    { key: 'WAREHOUSE', title: '仓储/库存类', types: ['WAREHOUSE', 'INVENTORY'] },
+    { key: 'SYSTEM', title: '系统类', types: ['SYSTEM', 'SYSTEM_EXCEPTION'] },
+  ];
+  const grouped = definitions.map(group => ({ ...group, todos: sortedTodos.value.filter(todo => group.types.includes(todo.businessType)) }));
+  const knownTypes = new Set(definitions.flatMap(group => group.types));
+  const others = sortedTodos.value.filter(todo => !knownTypes.has(todo.businessType));
+  return others.length ? [...grouped, { key: 'OTHER', title: '其他', types: [], todos: others }] : grouped;
+});
+
 const selectedDetailTodo = computed(() => sortedTodos.value.find(todo => todo.todoId === selectedTodoDetailId.value) || null);
-const detailTodos = computed(() => (selectedDetailTodo.value ? [selectedDetailTodo.value] : sortedTodos.value));
 const visibleTodos = computed(() => sortedTodos.value.slice(0, 8));
 const visibleTopProducts = computed(() => overview.value?.topProducts.slice(0, 5) || []);
 const visibleSupplierPerformance = computed(() => overview.value?.supplierPerformance.slice(0, 5) || []);
+const detailDialogHeight = 'min(680px, calc(100dvh - 5rem))';
 const detailDialogWidth = computed(() => {
-  if (activeDetail.value === 'todos') return 'min(740px, calc(100vw - 2rem))';
-  if (activeDetail.value === 'stockAlerts') return 'min(780px, calc(100vw - 2rem))';
-  return 'min(920px, calc(100vw - 2rem))';
+  if (activeDetail.value === 'todos') return 'min(1240px, calc(100vw - var(--app-shell-sidebar-width) - 2rem))';
+  return 'min(1120px, calc(100vw - var(--app-shell-sidebar-width) - 2rem))';
 });
 
 const detailTitle = computed(() => {
@@ -299,7 +302,6 @@ const detailTitle = computed(() => {
     todos: '业务待办详情',
     products: '销售商品排行详情',
     suppliers: '供应商履约详情',
-    stockAlerts: '库存预警详情',
   };
   return activeDetail.value ? titles[activeDetail.value] : '';
 });
@@ -313,7 +315,6 @@ const detailDescription = computed(() => {
     todos: '展示当前用户可见的全部工作台待办。单据状态类待办随业务完成自动消失，系统异常来自数据库记录表，工作台只展示详情与处理建议。',
     products: '展示近 30 日销售额完整排行，主页面默认显示前 5 名。',
     suppliers: '展示核心供应商履约完整排行，主页面默认显示前 5 名。',
-    stockAlerts: '展示全部库存风险 SKU，主页面与详情使用同一批预警数据。',
   };
   return activeDetail.value ? descriptions[activeDetail.value] : '';
 });
@@ -321,12 +322,10 @@ const detailDescription = computed(() => {
 async function loadOverview() {
   if (loading.value) return;
   loading.value = true;
-  loadError.value = '';
   try {
     overview.value = await getDashboardOverview();
   } catch (error) {
-    loadError.value = getApiErrorMessage(error) || '工作台数据加载失败';
-    toast.warning(loadError.value);
+    toast.warning(getApiErrorMessage(error) || '工作台数据加载失败');
   } finally {
     loading.value = false;
   }
@@ -365,6 +364,11 @@ function valueTone(value: number) {
   if (value > 0) return 'is-positive';
   if (value < 0) return 'is-negative';
   return 'is-neutral';
+}
+
+function metricBarWidth(value: number) {
+  if (!Number.isFinite(value)) return '0%';
+  return `${Math.min(100, Math.max(0, value))}%`;
 }
 
 function showTrendTooltip(event: MouseEvent | FocusEvent, point: DashboardTrendPoint) {
@@ -418,7 +422,7 @@ function formatNumber(value: number) {
 }
 
 function metricDisplay(metric: DashboardMetric) {
-  if (metric.value == null) return '无权限';
+  if (metric.value === null) return '无权限';
   return metric.unit === '元' ? formatCurrency(metric.value) : `${formatNumber(metric.value)}${metric.unit}`;
 }
 
@@ -429,16 +433,27 @@ function metricTone(metric: DashboardMetric) {
     risk: 'text-rose-700 bg-rose-50 border-rose-200',
     neutral: 'text-slate-600 bg-slate-50 border-slate-200',
   };
-  return tones[metricCardStatus(metric)];
+  return tones[metric.status];
 }
 
-function metricCardStatus(metric: DashboardMetric): DashboardMetric['status'] {
-  // 这两项分别表示待处理和风险，固定语义色，避免服务端状态回传异常时同色。
-  if (metric.key === 'PENDING_ORDERS') return 'watch';
-  if (metric.key === 'STOCK_RISK_SKU') return 'risk';
-  return metric.status;
+function metricCardTone(metric: DashboardMetric) {
+  const tones: Record<DashboardMetric['key'], 'info' | 'good' | 'watch' | 'risk'> = {
+    MONTH_SALES: 'info',
+    MONTH_GROSS_PROFIT: 'good',
+    PENDING_ORDERS: 'watch',
+    STOCK_RISK_SKU: 'risk',
+  };
+  return tones[metric.key];
 }
+const STOCK_ALERT_HEALTH: Record<DashboardStockAlert['severity'], { label: string; className: string }> = {
+  OUT_OF_STOCK: { label: '零库存', className: 'border-rose-200 bg-rose-50 text-rose-700' },
+  NO_AVAILABLE: { label: '无可用库存', className: 'border-rose-200 bg-rose-50 text-rose-700' },
+  LOW_STOCK: { label: '低库存', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+};
 
+function stockAlertHealth(severity: DashboardStockAlert['severity']) {
+  return STOCK_ALERT_HEALTH[severity];
+}
 function todoIcon(todo: DashboardTodoItem) {
   const icons: Record<string, typeof ShoppingCart> = {
     PURCHASE: ShoppingCart,
@@ -479,39 +494,73 @@ function businessLabel(todo: DashboardTodoItem) {
   return todo.businessLabel || labels[todo.businessType] || todo.businessType || '其他';
 }
 
-function statusText(status: DashboardTodoItem['status']) {
-  if (status === 'DONE') return '已完成';
-  if (status === 'IGNORED') return '已忽略';
-  return '待处理';
+function isSystemException(todo: DashboardTodoItem) {
+  return todo.detail.model === 'SYSTEM_EXCEPTION';
 }
 
 function isTrackedTodo(todo: DashboardTodoItem) {
-  return todo.completionMode === 'TRACKED' || todo.businessType === 'SYSTEM_EXCEPTION';
+  return todo.completionMode === 'TRACKED';
 }
 
-function todoSourceLabel(todo: DashboardTodoItem) {
-  return isTrackedTodo(todo) ? '记录来源' : '来源单号';
+function isDocumentDetail(todo: DashboardTodoItem) {
+  return todo.detail.model === 'PURCHASE_ORDER_APPROVAL'
+    || todo.detail.model === 'SALES_ORDER_APPROVAL'
+    || todo.detail.model === 'PURCHASE_RETURN_APPROVAL'
+    || todo.detail.model === 'SALES_RETURN_APPROVAL'
+    || todo.detail.model === 'INBOUND_CONFIRM'
+    || todo.detail.model === 'OUTBOUND_CONFIRM';
 }
 
-function todoSourceText(todo: DashboardTodoItem) {
-  return isTrackedTodo(todo) ? (todo.sourceNo || 'system_exception') : (todo.sourceNo || '-');
+function documentItems(todo: DashboardTodoItem): DashboardTodoDocumentItem[] {
+  return isDocumentDetail(todo) ? todo.detail.items as DashboardTodoDocumentItem[] : [];
 }
 
-function todoOccurredAtLabel(todo: DashboardTodoItem) {
-  return isTrackedTodo(todo) ? '最近发生' : '发生时间';
+function stockRiskItems(todo: DashboardTodoItem): DashboardTodoStockRiskItem[] {
+  return todo.detail.model === 'STOCK_RISK_REVIEW' ? todo.detail.items as DashboardTodoStockRiskItem[] : [];
 }
 
-function todoEvidenceToneClass(tone: 'neutral' | 'watch' | 'risk') {
-  if (tone === 'risk') return 'text-rose-700';
-  if (tone === 'watch') return 'text-amber-700';
+function systemExceptionItems(todo: DashboardTodoItem): DashboardTodoSystemExceptionItem[] {
+  return todo.detail.model === 'SYSTEM_EXCEPTION' ? todo.detail.items as DashboardTodoSystemExceptionItem[] : [];
+}
+
+function documentLabels(todo: DashboardTodoItem) {
+  switch (todo.detail.model) {
+    case 'PURCHASE_RETURN_APPROVAL': return { document: '退货单号', source: '原采购单号', counterparty: '供应商' };
+    case 'SALES_RETURN_APPROVAL': return { document: '退货单号', source: '原销售单号', counterparty: '客户' };
+    case 'PURCHASE_ORDER_APPROVAL': return { document: '采购单号', source: '', counterparty: '供应商' };
+    case 'SALES_ORDER_APPROVAL': return { document: '销售单号', source: '', counterparty: '客户' };
+    case 'INBOUND_CONFIRM': return { document: '入库单号', source: '来源单号', counterparty: '入库仓库' };
+    case 'OUTBOUND_CONFIRM': return { document: '出库单号', source: '来源单号', counterparty: '出库仓库' };
+    default: return { document: '单据号', source: '来源单号', counterparty: '业务对象' };
+  }
+}
+
+function todoDocumentStatusText(status: string) {
+  const labels: Record<string, string> = { SUBMITTED: '待审核', PENDING_CONFIRM: '待确认' };
+  return labels[status] || status || '-';
+}
+
+function formatTodoAmount(amountFen: number | null) {
+  return amountFen == null ? '-' : formatDetailedCurrency(amountFen / 100);
+}
+
+function formatTodoWait(waitHours: number | null) {
+  if (waitHours == null) return '-';
+  if (waitHours < 24) return `${waitHours}小时`;
+  const days = Math.floor(waitHours / 24);
+  const hours = waitHours % 24;
+  return hours > 0 ? `${days}天${hours}小时` : `${days}天`;
+}
+
+function todoWaitClass(level: 'NORMAL' | 'WARNING' | 'OVERDUE' | null) {
+  if (level === 'OVERDUE') return 'text-rose-700';
+  if (level === 'WARNING') return 'text-amber-700';
   return 'text-slate-800';
 }
-
 function openDetail(type: DetailType, todoId?: string) {
-  if (!canOpenDetail(type)) return;
   activeDetail.value = type;
-  selectedTodoDetailId.value = type === 'todos' ? todoId || null : null;
-  expandedTodoId.value = type === 'todos' && todoId ? todoId : null;
+  selectedTodoDetailId.value = type === 'todos' ? todoId || sortedTodos.value[0]?.todoId || null : null;
+  expandedTodoId.value = null;
 }
 
 function setDetailDialogOpen(open: boolean) {
@@ -526,8 +575,10 @@ function toggleTodoEvidence(todo: DashboardTodoItem) {
 }
 
 function goToTodoRoute(todo: DashboardTodoItem) {
+  const target = resolveTodoNavigation(todo);
+  if (!target) return;
   activeDetail.value = null;
-  router.push(todo.route || '/dashboard');
+  void router.push(target);
 }
 
 onMounted(loadOverview);
@@ -546,7 +597,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="dashboard-heading-actions">
         <span data-dashboard-refresh-status aria-live="polite">
-          {{ loading ? '正在同步经营数据...' : (overview ? `更新于 ${overview.refreshedAt}` : '加载失败，请重试') }}
+          {{ loading ? '正在同步经营数据...' : (overview ? `更新于 ${overview.refreshedAt}` : '等待加载经营数据') }}
         </span>
         <Button size="sm" variant="outline" :disabled="loading" @click="loadOverview">
           <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': loading }" aria-hidden="true" />
@@ -561,21 +612,27 @@ onBeforeUnmount(() => {
         <div class="summary-strip dashboard-metrics">
           <div
             v-for="metric in overview.metrics"
-            :key="metric.key"
-            :class="['summary-item', 'dashboard-metric', `dashboard-metric--${metricCardStatus(metric)}`]"
+            :key="metric.label"
+            :class="['summary-item', 'dashboard-metric', `dashboard-metric--${metricCardTone(metric)}`]"
           >
             <div class="dashboard-metric__head">
               <span>{{ metric.label }}</span>
               <i aria-hidden="true" />
             </div>
-            <strong>{{ metricAccess(metric).state === 'DENIED' ? '无权限' : metricDisplay(metric) }}</strong>
-            <div v-if="metricAccess(metric).state !== 'DENIED'" class="mt-2 flex items-center gap-2">
-              <Badge v-if="metric.changeRate !== null" variant="outline" :class="metricTone(metric)">
+            <strong>{{ metricDisplay(metric) }}</strong>
+            <div v-if="metric.changeRate !== null" class="mt-2 flex items-center gap-2">
+              <Badge variant="outline" :class="metricTone(metric)">
                 <ArrowUpRight v-if="metric.changeRate >= 0" class="mr-1 h-3 w-3" />
                 <ArrowDownRight v-else class="mr-1 h-3 w-3" />
                 {{ Math.abs(metric.changeRate).toFixed(1) }}%
               </Badge>
-              <small v-if="metric.compareText" class="text-xs text-muted-foreground">{{ metric.compareText }}</small>
+              <small class="text-xs text-muted-foreground">{{ metric.compareText }}</small>
+            </div>
+            <div v-else-if="metric.value !== null" class="mt-2 flex items-center gap-2">
+              <Badge variant="outline" class="border-slate-200 bg-slate-50 text-slate-600">
+                <Clock3 class="mr-1 h-3 w-3" />
+                暂无可比基线
+              </Badge>
             </div>
           </div>
         </div>
@@ -607,8 +664,12 @@ onBeforeUnmount(() => {
               </div>
             </CardHeader>
             <CardContent>
-              <div v-if="!canViewAnyTrend" class="dashboard-trend-empty" data-dashboard-trend-empty>
-                <DashboardAccessPanel state="DENIED" />
+              <div v-if="!canViewAnyTrend" data-dashboard-trend-empty>
+                <DashboardEmptyPanel
+                  title="暂无经营趋势数据"
+                  description="需要销售或采购模块的查询权限才能查看趋势曲线。"
+                  :required-permissions="['sales:query', 'purchase:query']"
+                />
               </div>
               <template v-else>
               <div
@@ -727,36 +788,35 @@ onBeforeUnmount(() => {
                 </CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">按交付影响排序</p>
               </div>
-              <Button v-if="canOpenDetail('todos')" size="sm" variant="outline" aria-label="查看详情业务待办" @click="openDetail('todos')">
+              <Button size="sm" variant="outline" aria-label="查看详情业务待办" @click="openDetail('todos')">
                 详情
                 <ChevronRight class="ml-1 h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent class="dashboard-todos-list">
-              <DashboardAccessPanel v-if="panelIsUnavailable(todosAccess)" :state="todosAccess.state" />
-              <template v-else>
-                <button
-                  v-for="todo in visibleTodos"
-                  :key="todo.todoId"
-                  type="button"
-                  class="dashboard-todo"
-                  :aria-label="`${todo.title}，${todo.count}项，${priorityText(todo.priority)}，查看详情`"
-                  @click="openDetail('todos', todo.todoId)"
-                >
-                  <span class="dashboard-todo__icon" aria-hidden="true">
-                    <component :is="todoIcon(todo)" class="h-4 w-4" />
+            <CardContent class="dashboard-todos-list space-y-2">
+              <button
+                v-for="todo in visibleTodos"
+                :key="todo.todoId"
+                type="button"
+                class="dashboard-todo"
+                :aria-label="`${todo.title}，${todo.count}项，${priorityText(todo.priority)}，查看详情`"
+                @click="openDetail('todos', todo.todoId)"
+              >
+                <span class="dashboard-todo__icon">
+                  <component :is="todoIcon(todo)" class="h-4 w-4" />
+                </span>
+                <span class="min-w-0 flex-1 text-left">
+                  <span class="flex items-center gap-2">
+                    <strong class="truncate">{{ todo.title }}</strong>
+                    <Badge variant="outline" :class="priorityClass(todo.priority)">{{ priorityText(todo.priority) }}</Badge>
                   </span>
-                  <span class="dashboard-todo__body">
-                    <span class="dashboard-todo__title-row">
-                      <strong>{{ todo.title }}</strong>
-                      <span :class="['dashboard-todo__priority', `dashboard-todo__priority--${todo.priority.toLowerCase()}`]">{{ priorityText(todo.priority) }}</span>
-                    </span>
-                    <small class="dashboard-todo__description">{{ todo.description }}</small>
-                  </span>
-                  <strong class="dashboard-todo__count" aria-hidden="true">{{ todo.count }}</strong>
-                  <ChevronRight class="dashboard-todo__chevron h-4 w-4" aria-hidden="true" />
-                </button>
-              </template>
+                  <small>{{ todo.description }}</small>
+                </span>
+                <span class="dashboard-todo__end" aria-hidden="true">
+                  <span class="dashboard-todo__count">{{ todo.count }}</span>
+                  <ChevronRight class="size-4 text-muted-foreground" />
+                </span>
+              </button>
             </CardContent>
           </Card>
         </div>
@@ -765,18 +825,39 @@ onBeforeUnmount(() => {
           <Card class="dashboard-panel">
             <CardHeader class="dashboard-panel__header">
               <div>
-                <CardTitle class="flex items-center gap-2 text-base"><Route class="h-4 w-4 text-primary" />订单流转</CardTitle>
-                <p class="mt-1 text-xs text-muted-foreground">采购与销售单据状态分布</p>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Route class="h-4 w-4 text-primary" />
+                  本月订单流转
+                </CardTitle>
+                <p class="mt-1 text-xs text-muted-foreground">{{ orderStagePeriodDescription }}</p>
               </div>
             </CardHeader>
             <CardContent class="space-y-3">
-              <DashboardAccessPanel v-if="panelIsUnavailable(orderStagesAccess)" :state="orderStagesAccess.state" />
+              <div class="dashboard-stage-legend">
+                <span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />采购单</span>
+                <span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />销售单</span>
+              </div>
+              <div v-if="!canViewAnyOrderStage" data-dashboard-order-empty>
+                <DashboardEmptyPanel
+                  title="暂无订单流转数据"
+                  description="需要采购或销售模块的查询权限才能查看订单阶段分布。"
+                  :required-permissions="['purchase:query', 'sales:query']"
+                />
+              </div>
               <template v-else>
-                <div class="dashboard-stage-legend"><span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />采购单</span><span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />销售单</span></div>
-                <div v-for="stage in overview.orderStages" :key="stage.stage" class="dashboard-stage">
-                  <div class="flex items-center justify-between text-xs"><span class="font-medium text-slate-700">{{ stage.stage }}</span><span class="dashboard-stage__counts"><span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />{{ stage.purchaseCount }}</span><span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />{{ stage.salesCount }}</span></span></div>
-                  <div class="dashboard-stage__bars"><span v-if="orderStagePermissions.canViewPurchase" class="bg-amber-500" :style="{ width: `${(stage.purchaseCount / maxStageCount) * 100}%` }" /><span v-if="orderStagePermissions.canViewSales" class="bg-blue-600" :style="{ width: `${(stage.salesCount / maxStageCount) * 100}%` }" /></div>
+              <div v-for="stage in overview.orderStages" :key="stage.stage" class="dashboard-stage">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-medium text-slate-700">{{ stage.stage }}</span>
+                  <span class="dashboard-stage__counts">
+                    <span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />{{ stage.purchaseCount }}</span>
+                    <span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />{{ stage.salesCount }}</span>
+                  </span>
                 </div>
+                <div class="dashboard-stage__bars">
+                  <span v-if="orderStagePermissions.canViewPurchase" class="bg-amber-500" :style="{ width: `${(stage.purchaseCount / maxStageCount) * 100}%` }" />
+                  <span v-if="orderStagePermissions.canViewSales" class="bg-blue-600" :style="{ width: `${(stage.salesCount / maxStageCount) * 100}%` }" />
+                </div>
+              </div>
               </template>
             </CardContent>
           </Card>
@@ -784,28 +865,56 @@ onBeforeUnmount(() => {
           <Card class="dashboard-panel">
             <CardHeader class="dashboard-panel__header">
               <div>
-                <CardTitle class="flex items-center gap-2 text-base"><PackageSearch class="h-4 w-4 text-primary" />销售商品排行</CardTitle>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <PackageSearch class="h-4 w-4 text-primary" />
+                  销售商品排行
+                </CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">按近 30 日销售额排序</p>
               </div>
-              <Button v-if="canOpenDetail('products')" size="sm" variant="outline" aria-label="查看详情销售商品排行" @click="openDetail('products')">详情 <ChevronRight class="ml-1 h-4 w-4" /></Button>
+              <Button size="sm" variant="outline" aria-label="查看详情销售商品排行" @click="openDetail('products')">
+                详情
+                <ChevronRight class="ml-1 h-4 w-4" />
+              </Button>
             </CardHeader>
             <CardContent class="space-y-2.5">
-              <DashboardAccessPanel v-if="panelIsUnavailable(topProductsAccess)" :state="topProductsAccess.state" />
-              <template v-else><div v-for="product in visibleTopProducts" :key="product.productId" class="dashboard-rank"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><strong class="block truncate text-[13px]">{{ product.productName }}</strong><small class="text-xs text-muted-foreground">{{ product.productCode }} · {{ formatNumber(product.salesQty) }} 件</small></div><span class="shrink-0 text-[13px] font-semibold tabular-nums">{{ formatCurrency(product.salesAmount) }}</span></div><div class="dashboard-rank__bar"><span :style="{ width: `${(product.salesAmount / maxTopProductAmount) * 100}%` }" /></div></div></template>
+              <div v-for="product in visibleTopProducts" :key="product.productId" class="dashboard-rank">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="min-w-0">
+                    <strong class="block truncate text-[13px]">{{ product.productName }}</strong>
+                    <small class="text-xs text-muted-foreground">{{ product.productCode }} · {{ formatNumber(product.salesQty) }} 件</small>
+                  </div>
+                  <span class="shrink-0 text-[13px] font-semibold tabular-nums">{{ formatCurrency(product.salesAmount) }}</span>
+                </div>
+                <div class="dashboard-rank__bar"><span :style="{ width: `${(product.salesAmount / maxTopProductAmount) * 100}%` }" /></div>
+              </div>
             </CardContent>
           </Card>
 
           <Card class="dashboard-panel">
             <CardHeader class="dashboard-panel__header">
               <div>
-                <CardTitle class="flex items-center gap-2 text-base"><Truck class="h-4 w-4 text-primary" />供应商履约</CardTitle>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Truck class="h-4 w-4 text-primary" />
+                  供应商履约
+                </CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">核心供应商交付与质量表现</p>
               </div>
-              <Button v-if="canOpenDetail('suppliers')" size="sm" variant="outline" aria-label="查看详情供应商履约" @click="openDetail('suppliers')">详情 <ChevronRight class="ml-1 h-4 w-4" /></Button>
+              <Button size="sm" variant="outline" aria-label="查看详情供应商履约" @click="openDetail('suppliers')">
+                详情
+                <ChevronRight class="ml-1 h-4 w-4" />
+              </Button>
             </CardHeader>
             <CardContent class="space-y-2.5">
-              <DashboardAccessPanel v-if="panelIsUnavailable(supplierPerformanceAccess)" :state="supplierPerformanceAccess.state" />
-              <template v-else><div v-for="supplier in visibleSupplierPerformance" :key="supplier.supplierId" class="dashboard-supplier"><div class="min-w-0"><strong class="block truncate text-[13px]">{{ supplier.supplierName }}</strong><small class="text-xs text-muted-foreground">{{ supplier.supplierCode }} · 准时率 {{ supplier.onTimeRate.toFixed(1) }}%</small></div><div class="dashboard-supplier__scores"><span>交付 {{ supplier.deliveryScore.toFixed(1) }}</span><span>质量 {{ supplier.qualityScore.toFixed(1) }}</span></div></div></template>
+              <div v-for="supplier in visibleSupplierPerformance" :key="supplier.supplierId" class="dashboard-supplier">
+                <div class="min-w-0">
+                  <strong class="block truncate text-[13px]">{{ supplier.supplierName }}</strong>
+                  <small class="text-xs text-muted-foreground">{{ supplier.supplierCode }} · 准时率 {{ supplier.onTimeRate.toFixed(1) }}%</small>
+                </div>
+                <div class="dashboard-supplier__scores">
+                  <span>交付 {{ supplier.deliveryScore.toFixed(1) }}</span>
+                  <span>质量 {{ supplier.qualityScore.toFixed(1) }}</span>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -813,14 +922,58 @@ onBeforeUnmount(() => {
         <Card class="dashboard-panel">
           <CardHeader class="dashboard-panel__header">
             <div>
-              <CardTitle class="flex items-center gap-2 text-base"><AlertTriangle class="h-4 w-4 text-amber-600" />库存预警</CardTitle>
+              <CardTitle class="flex items-center gap-2 text-base">
+                <AlertTriangle class="h-4 w-4 text-amber-600" />
+                库存预警
+              </CardTitle>
               <p class="mt-1 text-xs text-muted-foreground">优先补足高销量、低可用库存的 SKU</p>
             </div>
-            <Button v-if="canOpenDetail('stockAlerts')" size="sm" variant="outline" aria-label="查看详情库存预警" @click="openDetail('stockAlerts')">详情 <ChevronRight class="ml-1 h-4 w-4" /></Button>
           </CardHeader>
           <CardContent>
-            <DashboardAccessPanel v-if="panelIsUnavailable(stockAlertsAccess)" :state="stockAlertsAccess.state" />
-            <div v-else class="dashboard-table-scroll"><Table class="business-data-table min-w-[980px] table-fixed"><TableHeader><TableRow><TableHead>产品</TableHead><TableHead>仓库</TableHead><TableHead>可用库存</TableHead><TableHead>安全库存</TableHead><TableHead>建议补货</TableHead><TableHead>风险等级</TableHead><TableHead>最近出库</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="alert in overview.stockAlerts" :key="alert.stockId"><TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ alert.productCode }}</code><span class="max-w-full truncate font-medium" :title="alert.productName">{{ alert.productName }}</span></div></TableCell><TableCell>{{ alert.warehouseName }}</TableCell><TableCell class="font-semibold text-rose-700 tabular-nums">{{ formatNumber(alert.availableQty) }} {{ alert.unitName }}</TableCell><TableCell class="tabular-nums">{{ formatNumber(alert.safetyStockQty) }} {{ alert.unitName }}</TableCell><TableCell class="font-medium tabular-nums">{{ formatNumber(alert.suggestedPurchaseQty) }} {{ alert.unitName }}</TableCell><TableCell><Badge variant="outline" :class="alert.severity === 'HIGH' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'">{{ alert.severity === 'HIGH' ? '高风险' : '需关注' }}</Badge></TableCell><TableCell class="text-xs text-muted-foreground">{{ alert.latestOutboundAt || '-' }}</TableCell></TableRow></TableBody></Table></div>
+            <div class="dashboard-table-scroll">
+              <Table class="business-data-table min-w-[980px] table-fixed">
+                <colgroup>
+                  <col class="w-[220px]" />
+                  <col class="w-[170px]" />
+                  <col class="w-[110px]" />
+                  <col class="w-[110px]" />
+                  <col class="w-[110px]" />
+                  <col class="w-[120px]" />
+                  <col class="w-[140px]" />
+                </colgroup>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>产品</TableHead>
+                    <TableHead>仓库</TableHead>
+                    <TableHead>可用库存</TableHead>
+                    <TableHead>安全库存</TableHead>
+                    <TableHead>建议补货</TableHead>
+                    <TableHead>库存状态</TableHead>
+                    <TableHead>最近出库</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow v-for="alert in overview.stockAlerts" :key="alert.stockId">
+                    <TableCell>
+                      <div class="flex flex-col items-center gap-1 text-center">
+                        <code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ alert.productCode }}</code>
+                        <span class="max-w-full truncate font-medium" :title="alert.productName">{{ alert.productName }}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>{{ alert.warehouseName }}</TableCell>
+                    <TableCell class="font-semibold text-rose-700 tabular-nums">{{ formatNumber(alert.availableQty) }} {{ alert.unitName }}</TableCell>
+                    <TableCell class="tabular-nums">{{ formatNumber(alert.safetyStockQty) }} {{ alert.unitName }}</TableCell>
+                    <TableCell class="font-medium tabular-nums">{{ formatNumber(alert.suggestedPurchaseQty) }} {{ alert.unitName }}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" :class="stockAlertHealth(alert.severity).className">
+                        {{ stockAlertHealth(alert.severity).label }}
+                      </Badge>
+                    </TableCell>
+                    <TableCell class="text-xs text-muted-foreground">{{ alert.latestOutboundAt || '-' }}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
@@ -832,8 +985,10 @@ onBeforeUnmount(() => {
 
         <Dialog :open="activeDetail !== null" @update:open="setDetailDialogOpen">
           <DialogContent
+            placement="app-content"
             class="dashboard-detail-dialog !max-w-none !gap-4 !overflow-hidden !bg-white !p-0"
-            :style="{ width: detailDialogWidth, maxWidth: detailDialogWidth }"
+            :class="['products', 'suppliers'].includes(activeDetail ?? '') ? 'dashboard-detail-dialog--ranking' : ''"
+            :style="{ width: detailDialogWidth, maxWidth: detailDialogWidth, height: detailDialogHeight, maxHeight: detailDialogHeight, gridTemplateRows: ['products', 'suppliers'].includes(activeDetail ?? '') ? 'max-content minmax(0, 1fr)' : undefined, alignContent: ['products', 'suppliers'].includes(activeDetail ?? '') ? 'start' : undefined }"
           >
             <DialogHeader class="dashboard-detail-hero">
               <div class="min-w-0">
@@ -841,156 +996,228 @@ onBeforeUnmount(() => {
                 <DialogDescription class="mt-2 leading-6">{{ detailDescription }}</DialogDescription>
               </div>
             </DialogHeader>
-            <div v-if="activeDetail === 'todos'" class="dashboard-detail-scroll dashboard-detail-list">
-              <div v-for="todo in detailTodos" :key="todo.todoId" class="dashboard-detail-todo" :class="{ 'dashboard-detail-todo--system': isTrackedTodo(todo) }">
-                <span class="dashboard-todo__icon">
-                  <component :is="todoIcon(todo)" class="h-4 w-4" />
-                </span>
-                <div class="dashboard-detail-todo__body">
-                  <div class="dashboard-detail-row-title">
-                    <strong>{{ todo.title }}</strong>
-                    <Badge variant="outline" :class="priorityClass(todo.priority)">{{ priorityText(todo.priority) }}</Badge>
-                    <Badge variant="outline" class="border-slate-200 bg-slate-50 text-slate-600">{{ businessLabel(todo) }}</Badge>
-                    <Badge v-if="isTrackedTodo(todo)" variant="outline" class="border-slate-200 bg-slate-50 text-slate-700">
-                      数据库记录
-                    </Badge>
-                  </div>
-                  <p>{{ todo.description }}</p>
-                  <div v-if="isTrackedTodo(todo)" class="dashboard-detail-todo__meta">
-                    <span><small>状态</small><strong>{{ statusText(todo.status) }}</strong></span>
-                    <span><small>{{ todoSourceLabel(todo) }}</small><strong>{{ todoSourceText(todo) }}</strong></span>
-                    <span><small>{{ todoOccurredAtLabel(todo) }}</small><strong>{{ todo.occurredAt || '-' }}</strong></span>
-                  </div>
-                  <div v-else class="dashboard-detail-todo__summary">
-                    <span><small>待处理数量</small><strong>{{ todo.count }}</strong></span>
-                    <span><small>完成方式</small><strong>处理对应业务后自动完成</strong></span>
-                  </div>
-                  <div
-                    v-if="todo.evidence.length > 0"
-                    class="dashboard-detail-evidence-collapse"
-                    :class="{ 'is-open': expandedTodoId === todo.todoId }"
-                    :aria-hidden="expandedTodoId !== todo.todoId"
+            <div v-if="activeDetail === 'todos'" class="dashboard-todo-workbench">
+              <aside class="dashboard-todo-workbench__list" aria-label="业务待办列表">
+                <div class="dashboard-todo-workbench__list-head">
+                  <span>待办清单</span>
+                  <Badge variant="outline" class="border-slate-200 bg-slate-50 text-slate-600">{{ sortedTodos.length }} 项</Badge>
+                </div>
+                <section v-for="group in todoGroups" v-show="group.todos.length" :key="group.key" class="dashboard-todo-workbench__group">
+                  <div class="dashboard-todo-workbench__group-title">{{ group.title }}</div>
+                  <button
+                    v-for="todo in group.todos"
+                    :key="todo.todoId"
+                    type="button"
+                    class="dashboard-todo-workbench__item"
+                    :class="{ 'is-active': selectedDetailTodo?.todoId === todo.todoId }"
+                    :aria-current="selectedDetailTodo?.todoId === todo.todoId ? 'true' : undefined"
+                    @click="selectedTodoDetailId = todo.todoId"
                   >
-                    <div class="dashboard-detail-evidence-collapse__inner">
-                      <div class="dashboard-detail-evidence">
-                        <div v-for="item in todo.evidence" :key="item.itemId" class="dashboard-detail-evidence__row">
-                          <div class="min-w-0">
-                            <strong>{{ item.primaryText }}</strong>
-                            <small>{{ item.secondaryText }}</small>
-                          </div>
-                          <div class="dashboard-detail-evidence__metrics">
-                            <span v-for="metric in item.metrics" :key="`${item.itemId}-${metric.label}`">
-                              <small>{{ metric.label }}</small>
-                              <strong :class="todoEvidenceToneClass(metric.tone)">{{ metric.value }}</strong>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                    <component :is="todoIcon(todo)" class="dashboard-todo-workbench__icon" />
+                    <span class="min-w-0 flex-1 text-left">
+                      <span class="dashboard-todo-workbench__item-title"><strong>{{ todo.title }}</strong><Badge variant="outline" :class="priorityClass(todo.priority)">{{ priorityText(todo.priority) }}</Badge></span>
+                      <small>{{ todo.description }}</small>
+                    </span>
+                    <span class="dashboard-todo-workbench__count">{{ todo.count }}</span><ChevronRight class="h-4 w-4 shrink-0 text-slate-400" />
+                  </button>
+                </section>
+              </aside>
+
+              <Transition name="dashboard-todo-detail" mode="out-in">
+                <section v-if="selectedDetailTodo" :key="selectedDetailTodo.todoId" class="dashboard-todo-workbench__detail">
+                  <DialogScrollArea class="dashboard-todo-workbench__detail-scroll" content-class="dashboard-todo-workbench__detail-scroll-content">
+                <div class="dashboard-todo-workbench__detail-head">
+                  <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" class="border-slate-200 bg-slate-50 text-slate-600">{{ businessLabel(selectedDetailTodo) }}</Badge>
+                      <Badge variant="outline" :class="priorityClass(selectedDetailTodo.priority)">{{ priorityText(selectedDetailTodo.priority) }}</Badge>
+                      <Badge v-if="isTrackedTodo(selectedDetailTodo)" variant="outline" class="border-slate-200 bg-slate-50 text-slate-700">数据库记录</Badge>
                     </div>
+                    <h3>{{ selectedDetailTodo.title }}</h3>
+                    <p>{{ selectedDetailTodo.description }}</p>
                   </div>
-                  <div v-if="todo.errorMessage || todo.resolveHint" class="dashboard-detail-todo__error">
-                    <code v-if="todo.errorCode">{{ todo.errorCode }}</code>
-                    <p v-if="todo.errorMessage">{{ todo.errorMessage }}</p>
-                    <small v-if="todo.resolveHint">处理建议：{{ todo.resolveHint }}</small>
+                  <div class="dashboard-todo-workbench__total">
+                    <small>待处理</small>
+                    <strong>{{ selectedDetailTodo.count }}</strong>
                   </div>
                 </div>
-                <div class="dashboard-detail-action">
-                  <span class="dashboard-detail-count">{{ todo.count }}</span>
-                  <Button v-if="todo.evidence.length > 0" size="sm" variant="outline" @click="toggleTodoEvidence(todo)">
-                    {{ expandedTodoId === todo.todoId ? '收起详情' : '查看详情' }}
-                  </Button>
+
+                <section v-if="isSystemException(selectedDetailTodo)" class="dashboard-system-events" aria-label="系统异常记录">
+                  <p class="dashboard-todo-workbench__annotation">异常记录示例（最多展示 5 条），请在异常中心完成后续处置。</p>
+                  <article v-for="item in systemExceptionItems(selectedDetailTodo)" :key="item.id" class="dashboard-system-event-card">
+                    <div class="dashboard-system-event-card__head"><strong>{{ item.exceptionNo }}</strong><Badge variant="outline" :class="priorityClass(item.severity)">{{ priorityText(item.severity) }}</Badge></div>
+                    <p class="dashboard-system-event-card__message">{{ item.summary || '暂无异常摘要' }}</p>
+                    <dl class="dashboard-system-event-card__meta"><div><dt>异常类型</dt><dd>{{ item.exceptionType }}</dd></div><div><dt>来源模块</dt><dd>{{ item.sourceModule }}</dd></div><div><dt>发生时间</dt><dd>{{ item.occurredAt || '-' }}</dd></div></dl>
+                  </article>
+                </section>
+
+                <section v-else-if="isDocumentDetail(selectedDetailTodo)" class="dashboard-todo-workbench__evidence">
+                  <p class="dashboard-todo-workbench__annotation">以下展示部分待处理单据，完整清单可通过“前往完成”查看。</p>
+                  <article v-for="item in documentItems(selectedDetailTodo)" :key="item.documentNo" class="dashboard-todo-evidence-card">
+                    <header><small>{{ documentLabels(selectedDetailTodo).document }}</small><strong class="dashboard-todo-evidence-card__number">{{ item.documentNo }}</strong></header>
+                    <dl class="dashboard-todo-evidence-card__facts">
+                      <div v-if="documentLabels(selectedDetailTodo).source && item.sourceDocumentNo"><dt>{{ documentLabels(selectedDetailTodo).source }}</dt><dd>{{ item.sourceDocumentNo }}</dd></div>
+                      <div><dt>{{ documentLabels(selectedDetailTodo).counterparty }}</dt><dd>{{ item.counterpartyName || '-' }}</dd></div>
+                      <div v-if="item.amountFen !== null"><dt>金额</dt><dd class="dashboard-todo-evidence-card__amount">{{ formatTodoAmount(item.amountFen) }}</dd></div>
+                      <div><dt>等待时长</dt><dd :class="todoWaitClass(item.waitLevel)">{{ formatTodoWait(item.waitHours) }}</dd></div>
+                      <div><dt>状态</dt><dd><Badge variant="outline" class="dashboard-todo-evidence-card__status">{{ todoDocumentStatusText(item.documentStatus) }}</Badge></dd></div>
+                    </dl>
+                  </article>
+                </section>
+
+                <section v-else-if="selectedDetailTodo.detail.model === 'STOCK_RISK_REVIEW'" class="dashboard-todo-workbench__evidence">
+                  <p class="dashboard-todo-workbench__annotation">以下展示部分库存风险 SKU，请结合可用库存和建议补货量优先处理。</p>
+                  <article v-for="item in stockRiskItems(selectedDetailTodo)" :key="item.id" class="dashboard-todo-evidence-card">
+                    <header><small>风险 SKU</small><strong class="dashboard-todo-evidence-card__number">{{ item.productName }}（{{ item.productCode }}）</strong></header>
+                    <dl class="dashboard-todo-evidence-card__facts"><div><dt>仓库</dt><dd>{{ item.warehouseName }}</dd></div><div><dt>可用库存</dt><dd class="text-rose-700">{{ formatNumber(item.availableQty) }} {{ item.unitName }}</dd></div><div><dt>安全库存</dt><dd>{{ formatNumber(item.safetyStockQty) }} {{ item.unitName }}</dd></div><div><dt>建议补货</dt><dd>{{ formatNumber(item.suggestedPurchaseQty) }} {{ item.unitName }}</dd></div></dl>
+                  </article>
+                </section>
+                <div v-if="!isSystemException(selectedDetailTodo) && selectedDetailTodo.resolveHint" class="dashboard-todo-workbench__hint">
+                  <p>{{ selectedDetailTodo.resolveHint }}</p>
+                </div>
+
+                <div class="dashboard-todo-workbench__actions">
                   <Button
-                    v-if="!isTrackedTodo(todo)"
+                    v-if="resolveTodoNavigation(selectedDetailTodo)"
                     size="sm"
-                    variant="outline"
-                    @click="goToTodoRoute(todo)"
+                    @click="goToTodoRoute(selectedDetailTodo)"
                   >
                     前往完成
+                    <ChevronRight class="ml-1 h-4 w-4" />
                   </Button>
+                  <span v-else class="text-xs text-muted-foreground">该事项仅支持查看处理建议</span>
+                </div>
+                  </DialogScrollArea>
+                </section>
+                <div v-else key="empty" class="dashboard-todo-workbench__empty">暂无可查看的待办详情</div>
+              </Transition>
+            </div>
+            <div v-else-if="activeDetail === 'products'" class="dashboard-detail-scroll dashboard-rank-matrix">
+              <div class="dashboard-rank-matrix__viewport">
+                <div class="dashboard-rank-matrix__table dashboard-rank-matrix__table--products" role="table" aria-label="销售商品排行明细">
+                  <div class="dashboard-rank-matrix__header" role="row">
+                    <span role="columnheader">排名</span>
+                    <span role="columnheader">商品编码 / 商品名称</span>
+                    <span role="columnheader">净销售额</span>
+                    <span role="columnheader">净销量</span>
+                    <span role="columnheader">可用库存</span>
+                  </div>
+                  <div v-for="(product, index) in overview.topProducts" :key="product.productId" class="dashboard-rank-matrix__row" role="row">
+                    <span class="dashboard-rank-matrix__rank" :class="{ 'is-top': index < 3 }" role="cell">{{ String(index + 1).padStart(2, '0') }}</span>
+                    <span class="dashboard-rank-matrix__identity" role="cell">
+                      <strong>{{ product.productCode }}</strong>
+                      <small :title="product.productName">{{ product.productName }}</small>
+                    </span>
+                    <span class="dashboard-rank-matrix__sales" role="cell">
+                      <i><b :style="{ width: (product.salesAmount / maxTopProductAmount) * 100 + '%' }" /></i>
+                      <strong>{{ formatDetailedCurrency(product.salesAmount) }}</strong>
+                    </span>
+                    <span class="dashboard-rank-matrix__number" role="cell">{{ formatNumber(product.salesQty) }}</span>
+                    <span class="dashboard-rank-matrix__number" role="cell">{{ formatNumber(product.availableQty) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div v-else-if="activeDetail === 'products'" class="dashboard-detail-scroll dashboard-detail-list">
-              <div v-for="(product, index) in overview.topProducts" :key="product.productId" class="dashboard-detail-rank">
-                <div class="dashboard-detail-rank__index" :class="{ 'is-top': index < 3 }">TOP {{ index + 1 }}</div>
-                <div class="dashboard-detail-rank__body">
-                  <div class="dashboard-detail-row-title">
-                    <strong>{{ product.productName }}</strong>
-                    <code>{{ product.productCode }}</code>
+            <div v-else-if="activeDetail === 'suppliers'" class="dashboard-detail-scroll dashboard-rank-matrix">
+              <div class="dashboard-rank-matrix__viewport">
+                <div class="dashboard-rank-matrix__table dashboard-rank-matrix__table--suppliers" role="table" aria-label="供应商履约明细">
+                  <div class="dashboard-rank-matrix__header" role="row">
+                    <span role="columnheader">排名</span>
+                    <span role="columnheader">供应商编码 / 供应商名称</span>
+                    <span role="columnheader">交付评分</span>
+                    <span role="columnheader">质量评分</span>
+                    <span role="columnheader">准时率</span>
                   </div>
-                  <div class="dashboard-detail-rank__bar">
-                    <span :style="{ width: `${(product.salesAmount / maxTopProductAmount) * 100}%` }" />
+                  <div v-for="(supplier, index) in overview.supplierPerformance" :key="supplier.supplierId" class="dashboard-rank-matrix__row" role="row">
+                    <span class="dashboard-rank-matrix__rank" :class="{ 'is-top': index < 3 }" role="cell">{{ String(index + 1).padStart(2, '0') }}</span>
+                    <span class="dashboard-rank-matrix__identity" role="cell">
+                      <strong>{{ supplier.supplierCode }}</strong>
+                      <small :title="supplier.supplierName">{{ supplier.supplierName }}</small>
+                    </span>
+                    <span class="dashboard-rank-matrix__score" role="cell">
+                      <strong>{{ supplier.deliveryScore.toFixed(1) }}</strong>
+                      <i><b :style="{ width: metricBarWidth(supplier.deliveryScore) }" /></i>
+                    </span>
+                    <span class="dashboard-rank-matrix__score" role="cell">
+                      <strong>{{ supplier.qualityScore.toFixed(1) }}</strong>
+                      <i><b :style="{ width: metricBarWidth(supplier.qualityScore) }" /></i>
+                    </span>
+                    <span class="dashboard-rank-matrix__score" role="cell">
+                      <strong>{{ supplier.onTimeRate.toFixed(1) }}%</strong>
+                      <i><b :style="{ width: metricBarWidth(supplier.onTimeRate) }" /></i>
+                    </span>
                   </div>
-                </div>
-                <div class="dashboard-detail-metrics">
-                  <span><small>销售额</small><strong>{{ formatCurrency(product.salesAmount) }}</strong></span>
-                  <span><small>销量</small><strong>{{ formatNumber(product.salesQty) }}</strong></span>
-                  <span><small>可用库存</small><strong>{{ formatNumber(product.availableQty) }}</strong></span>
                 </div>
               </div>
             </div>
 
-            <div v-else-if="activeDetail === 'suppliers'" class="dashboard-detail-scroll dashboard-detail-list">
-              <div v-for="(supplier, index) in overview.supplierPerformance" :key="supplier.supplierId" class="dashboard-detail-rank dashboard-detail-rank--supplier">
-                <div class="dashboard-detail-rank__index" :class="{ 'is-top': index < 3 }">TOP {{ index + 1 }}</div>
-                <div class="dashboard-detail-rank__body">
-                  <div class="dashboard-detail-row-title">
-                    <strong>{{ supplier.supplierName }}</strong>
-                    <code>{{ supplier.supplierCode }}</code>
-                  </div>
-                  <small>准时率 {{ supplier.onTimeRate.toFixed(1) }}%</small>
-                </div>
-                <div class="dashboard-detail-metrics">
-                  <span><small>交付</small><strong>{{ supplier.deliveryScore.toFixed(1) }}</strong></span>
-                  <span><small>质量</small><strong>{{ supplier.qualityScore.toFixed(1) }}</strong></span>
-                  <span><small>准时率</small><strong>{{ supplier.onTimeRate.toFixed(1) }}%</strong></span>
-                </div>
-              </div>
-            </div>
-
-            <div v-else-if="activeDetail === 'stockAlerts'" class="dashboard-detail-scroll dashboard-detail-list dashboard-detail-list--stock">
-              <div v-for="alert in overview.stockAlerts" :key="alert.stockId" class="dashboard-detail-stock">
-                <div class="dashboard-detail-stock__head">
-                  <div class="dashboard-detail-row-title">
-                    <strong>{{ alert.productName }}</strong>
-                    <code>{{ alert.productCode }}</code>
-                  </div>
-                  <Badge variant="outline" :class="alert.severity === 'HIGH' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'">
-                    {{ alert.severity === 'HIGH' ? '高风险' : '需关注' }}
-                  </Badge>
-                </div>
-                <p>{{ alert.warehouseName }} · 最近出库 {{ alert.latestOutboundAt || '-' }}</p>
-                <div class="dashboard-detail-stock__metrics">
-                  <span><small>可用库存</small><strong>{{ formatNumber(alert.availableQty) }} {{ alert.unitName }}</strong></span>
-                  <span><small>安全库存</small><strong>{{ formatNumber(alert.safetyStockQty) }} {{ alert.unitName }}</strong></span>
-                  <span><small>建议补货</small><strong>{{ formatNumber(alert.suggestedPurchaseQty) }} {{ alert.unitName }}</strong></span>
-                </div>
-              </div>
-            </div>
           </DialogContent>
         </Dialog>
 
       </div>
-      <div v-else-if="loadError" class="dashboard-load-error" role="alert">
-        <strong>工作台数据加载失败</strong>
-        <p>{{ loadError }}</p>
-        <Button size="sm" variant="outline" @click="loadOverview">重新加载</Button>
-      </div>
       <div v-else class="dashboard-skeleton space-y-4" :aria-busy="loading" data-dashboard-skeleton>
         <div class="summary-strip dashboard-metrics">
-          <div v-for="index in 4" :key="index" class="summary-item">
+          <div v-for="index in 4" :key="index" class="summary-item dashboard-metric">
             <span class="dashboard-skeleton__line dashboard-skeleton__line--label" />
-            <span class="dashboard-skeleton__line dashboard-skeleton__line--value" />
+            <strong class="dashboard-skeleton__line dashboard-skeleton__line--value" />
             <span class="dashboard-skeleton__line dashboard-skeleton__line--meta" />
           </div>
         </div>
+
         <div class="dashboard-grid">
-          <Card class="dashboard-panel"><CardHeader class="dashboard-panel__header"><CardTitle class="text-base">经营趋势</CardTitle></CardHeader><CardContent class="dashboard-skeleton__trend"><span class="dashboard-skeleton__line dashboard-skeleton__line--wide" /><span class="dashboard-skeleton__chart" /><span class="dashboard-skeleton__line dashboard-skeleton__line--wide" /></CardContent></Card>
-          <Card class="dashboard-panel"><CardHeader class="dashboard-panel__header"><CardTitle class="text-base">业务待办</CardTitle></CardHeader><CardContent class="dashboard-skeleton__todos"><span v-for="index in 5" :key="index" class="dashboard-skeleton__todo" /></CardContent></Card>
+          <Card class="dashboard-panel dashboard-panel--trend">
+            <CardHeader class="dashboard-panel__header">
+              <div>
+                <CardTitle class="flex items-center gap-2 text-base"><BarChart3 class="h-4 w-4 text-primary" />经营趋势</CardTitle>
+                <p class="mt-1 text-xs text-muted-foreground">正在准备经营数据</p>
+              </div>
+            </CardHeader>
+            <CardContent class="dashboard-skeleton__trend">
+              <span class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
+              <span class="dashboard-skeleton__chart" />
+              <span class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
+            </CardContent>
+          </Card>
+
+          <Card class="dashboard-panel dashboard-panel--todos">
+            <CardHeader class="dashboard-panel__header">
+              <div>
+                <CardTitle class="flex items-center gap-2 text-base"><Clock3 class="h-4 w-4 text-primary" />业务待办</CardTitle>
+                <p class="mt-1 text-xs text-muted-foreground">正在整理待处理事项</p>
+              </div>
+            </CardHeader>
+            <CardContent class="dashboard-skeleton__todos">
+              <span v-for="index in 5" :key="index" class="dashboard-skeleton__todo" />
+            </CardContent>
+          </Card>
         </div>
-        <div class="dashboard-grid dashboard-grid--three"><Card v-for="index in 3" :key="index" class="dashboard-panel"><CardContent class="dashboard-skeleton__compact-panel"><span class="dashboard-skeleton__line dashboard-skeleton__line--wide" /></CardContent></Card></div>
-        <Card class="dashboard-panel"><CardContent class="dashboard-skeleton__table"><span v-for="index in 5" :key="index" class="dashboard-skeleton__line dashboard-skeleton__line--wide" /></CardContent></Card>
+
+        <div class="dashboard-grid dashboard-grid--three">
+          <Card v-for="title in ['订单流转', '销售商品排行', '供应商履约']" :key="title" class="dashboard-panel dashboard-skeleton__compact-panel">
+            <CardHeader class="dashboard-panel__header">
+              <div>
+                <CardTitle class="text-base">{{ title }}</CardTitle>
+                <p class="mt-1 text-xs text-muted-foreground">正在加载</p>
+              </div>
+            </CardHeader>
+            <CardContent class="dashboard-skeleton__rows">
+              <span v-for="index in 4" :key="index" class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card class="dashboard-panel">
+          <CardHeader class="dashboard-panel__header">
+            <div>
+              <CardTitle class="flex items-center gap-2 text-base"><AlertTriangle class="h-4 w-4 text-amber-600" />库存预警</CardTitle>
+              <p class="mt-1 text-xs text-muted-foreground">正在汇总库存风险</p>
+            </div>
+          </CardHeader>
+          <CardContent class="dashboard-skeleton__table">
+            <span v-for="index in 5" :key="index" class="dashboard-skeleton__line dashboard-skeleton__line--wide" />
+          </CardContent>
+        </Card>
       </div>
     </div>
   </section>
@@ -1038,6 +1265,7 @@ onBeforeUnmount(() => {
   content: '';
 }
 
+.dashboard-metric--info::before { background: #2563eb; }
 .dashboard-metric--good::before { background: #059669; }
 .dashboard-metric--watch::before { background: #d97706; }
 .dashboard-metric--risk::before { background: #e11d48; }
@@ -1067,6 +1295,7 @@ onBeforeUnmount(() => {
   background: #94a3b8;
 }
 
+.dashboard-metric--info .dashboard-metric__head > i { background: #2563eb; }
 .dashboard-metric--good .dashboard-metric__head > i { background: #059669; }
 .dashboard-metric--watch .dashboard-metric__head > i { background: #d97706; }
 .dashboard-metric--risk .dashboard-metric__head > i { background: #e11d48; }
@@ -1134,31 +1363,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1;
   flex-direction: column;
-}
-
-.dashboard-load-error {
-  display: grid;
-  min-height: 280px;
-  place-items: center;
-  align-content: center;
-  gap: 10px;
-  border: 1px dashed var(--border);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--muted) 26%, white);
-  color: var(--muted-foreground);
-  text-align: center;
-}
-
-.dashboard-load-error strong {
-  color: var(--foreground);
-  font-size: 15px;
-}
-
-.dashboard-load-error p {
-  max-width: 520px;
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
 }
 
 .dashboard-skeleton {
@@ -1240,16 +1444,6 @@ onBeforeUnmount(() => {
   padding-inline: 10px;
 }
 
-.dashboard-trend-empty {
-  display: flex;
-  min-height: 344px;
-  align-items: stretch;
-}
-
-.dashboard-trend-empty :deep(.dashboard-access-panel) {
-  width: 100%;
-  min-height: 344px;
-}
 .dashboard-trend-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1623,109 +1817,76 @@ circle.dashboard-trend--margin.is-negative {
   }
 }
 
+.dashboard-todo {
+  display: flex;
+  width: 100%;
+  min-height: 60px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--muted) 28%, transparent);
+  padding: 9px 12px;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
 .dashboard-todos-list {
-  display: grid !important;
-  align-content: start;
+  justify-content: space-between;
   gap: 10px;
   padding-top: 0;
   padding-bottom: 12px;
 }
 
-.dashboard-todo {
-  display: flex;
-  min-height: 72px;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 2px);
-  background: white;
-  padding: 12px 14px;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 160ms ease, box-shadow 160ms ease;
-}
+.dashboard-todos-list > * + * { margin-top: 0; }
 
 .dashboard-todo:hover {
-  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
-  box-shadow: 0 4px 12px rgb(15 23 42 / 7%);
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
+  box-shadow: 0 10px 24px rgb(15 23 42 / 7%);
+  transform: translateY(-1px);
 }
 
-.dashboard-todo:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ring) 72%, transparent);
-  outline-offset: 2px;
+.dashboard-todo small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-todo__icon {
   display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--border));
-  border-radius: 10px;
-  background: #f5f9ff;
-  color: var(--primary);
-}
-
-.dashboard-todo__body {
-  display: grid;
-  min-width: 0;
-  flex: 1;
-  gap: 4px;
-}
-
-.dashboard-todo__title-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.dashboard-todo__title-row strong {
-  overflow: hidden;
-  color: #172033;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dashboard-todo__priority {
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 1px 7px;
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.dashboard-todo__priority--high { background: #fff1f2; color: #e11d48; }
-.dashboard-todo__priority--medium { background: #fffbeb; color: #d97706; }
-.dashboard-todo__priority--low { background: #f1f5f9; color: #64748b; }
-
-.dashboard-todo__description {
-  overflow: hidden;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  place-items: center;
+  border-radius: 8px;
+  background: white;
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .dashboard-todo__count {
-  flex: 0 0 auto;
+  min-width: 30px;
   color: #172033;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1;
-  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.dashboard-todo__chevron {
+.dashboard-todo__end {
+  display: inline-flex;
   flex: 0 0 auto;
-  color: var(--muted-foreground);
+  align-items: center;
+  gap: 4px;
 }
+
 .dashboard-stage__bars {
   display: grid;
   gap: 5px;
@@ -2381,7 +2542,6 @@ circle.dashboard-trend--margin.is-negative {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-
   .dashboard-panel__header {
     flex-direction: column;
   }
@@ -2461,5 +2621,418 @@ circle.dashboard-trend--margin.is-negative {
   .dashboard-skeleton__todo {
     animation: none;
   }
+}
+
+.dashboard-todo-workbench {
+  display: grid;
+  grid-template-columns: minmax(242px, 28%) minmax(0, 1fr);
+  min-height: 470px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.dashboard-todo-workbench__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  padding: 12px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 48%, var(--card));
+}
+
+.dashboard-todo-workbench__list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 9px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard-todo-workbench__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 70px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  transition: border-color var(--motion-duration-fast) ease, background-color var(--motion-duration-fast) ease, box-shadow var(--motion-duration-fast) ease;
+}
+
+.dashboard-todo-workbench__item:hover {
+  border-color: color-mix(in srgb, var(--primary) 20%, var(--border));
+  background: var(--card);
+}
+
+.dashboard-todo-workbench__item.is-active {
+  border-color: color-mix(in srgb, var(--primary) 36%, var(--border));
+  background: var(--card);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+}
+
+.dashboard-todo-workbench__icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.dashboard-todo-workbench__item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dashboard-todo-workbench__item-title strong,
+.dashboard-todo-workbench__item small,
+.dashboard-todo-workbench__evidence-row strong,
+.dashboard-todo-workbench__evidence-row small {
+  overflow: hidden;
+  display: block;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-todo-workbench__item-title strong { font-size: 13px; }
+.dashboard-todo-workbench__item small { margin-top: 3px; color: var(--muted-foreground); font-size: 12px; }
+.dashboard-todo-workbench__count { min-width: 18px; color: var(--foreground); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.dashboard-todo-workbench__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: auto;
+  padding: 24px;
+}
+
+.dashboard-todo-workbench__detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 17px;
+}
+
+.dashboard-todo-workbench__detail-head h3 { margin: 11px 0 5px; font-size: 18px; line-height: 1.35; }
+.dashboard-todo-workbench__detail-head p { margin: 0; color: var(--muted-foreground); font-size: 13px; line-height: 1.65; }
+.dashboard-todo-workbench__total { min-width: 74px; padding: 9px 12px; border-radius: 8px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); text-align: right; }
+.dashboard-todo-workbench__total small, .dashboard-todo-workbench__facts small, .dashboard-todo-workbench__evidence-metrics small { display: block; color: var(--muted-foreground); font-size: 12px; }
+.dashboard-todo-workbench__total strong { display: block; margin-top: 2px; color: var(--primary); font-size: 23px; font-variant-numeric: tabular-nums; }
+
+.dashboard-todo-workbench__facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-todo-workbench__facts > span { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--muted) 38%, var(--card)); }
+.dashboard-todo-workbench__facts strong { display: block; overflow: hidden; margin-top: 4px; color: var(--foreground); text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.dashboard-todo-workbench__section-title { margin-bottom: 8px; color: var(--foreground); font-size: 13px; font-weight: 600; }
+.dashboard-todo-workbench__evidence { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.dashboard-todo-workbench__evidence-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.dashboard-todo-workbench__evidence-row:first-of-type { padding-top: 0; border-top: 0; }
+.dashboard-todo-workbench__evidence-row small { margin-top: 3px; color: var(--muted-foreground); font-size: 12px; }
+.dashboard-todo-workbench__evidence-metrics { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+.dashboard-todo-workbench__evidence-metrics > span { min-width: 58px; text-align: right; }
+.dashboard-todo-workbench__evidence-metrics strong { display: block; margin-top: 2px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.dashboard-todo-workbench__hint { padding: 11px 13px; border-left: 3px solid #94a3b8; border-radius: 0 7px 7px 0; background: color-mix(in srgb, var(--muted) 42%, var(--card)); color: var(--muted-foreground); font-size: 13px; line-height: 1.6; }
+.dashboard-todo-workbench__hint p { margin: 0; }
+.dashboard-todo-workbench__hint p + p { margin-top: 3px; }
+.dashboard-todo-workbench__hint code { margin-right: 7px; color: var(--foreground); }
+.dashboard-todo-workbench__actions { display: flex; align-items: center; justify-content: flex-end; min-height: 32px; margin-top: auto; }
+.dashboard-todo-workbench__empty { display: grid; min-height: 320px; place-items: center; color: var(--muted-foreground); }
+
+@media (max-width: 720px) {
+  .dashboard-todo-workbench { grid-template-columns: 1fr; }
+  .dashboard-todo-workbench__list { max-height: 255px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .dashboard-todo-workbench__detail { padding: 17px; }
+  .dashboard-todo-workbench__facts { grid-template-columns: 1fr; }
+  .dashboard-todo-workbench__evidence-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .dashboard-todo-workbench__evidence-metrics { justify-content: flex-start; }
+  .dashboard-todo-workbench__evidence-metrics > span { text-align: left; }
+}
+.dashboard-detail-dialog { height: min(680px, calc(100dvh - 5rem)); max-height: min(680px, calc(100dvh - 5rem)); grid-template-rows: auto minmax(0, 1fr); }
+.dashboard-detail-dialog--ranking { grid-template-rows: max-content minmax(0, 1fr); align-content: start; }
+.dashboard-todo-workbench { min-height: 0; height: 100%; }
+.dashboard-todo-workbench__list, .dashboard-todo-workbench__detail { min-height: 0; }
+.dashboard-todo-workbench__detail { overflow: auto; scrollbar-gutter: stable; }
+.dashboard-todo-workbench__total { display: grid; min-width: 88px; min-height: 76px; place-content: center; padding: 10px 14px; text-align: center; }
+.dashboard-todo-workbench__total small { line-height: 1.25; }
+.dashboard-todo-workbench__total strong { margin-top: 5px; line-height: 1; }
+.dashboard-todo-detail-enter-active, .dashboard-todo-detail-leave-active { transition: opacity 180ms ease, transform 180ms ease; }
+.dashboard-todo-detail-enter-from { opacity: 0; transform: translateX(8px); }
+.dashboard-todo-detail-leave-to { opacity: 0; transform: translateX(-4px); }
+.dashboard-todos-list { gap: 7px; justify-content: flex-start; padding-bottom: 8px; }
+.dashboard-todo { min-height: 54px; padding: 8px 10px; }
+@media (max-width: 720px) { .dashboard-detail-dialog { height: min(720px, calc(100dvh - 2rem)); } }
+.dashboard-todo-evidence-card { border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); border-radius: 9px; background: var(--card); box-shadow: 0 1px 4px rgb(15 23 42 / 4%); }
+.dashboard-todo-evidence-card + .dashboard-todo-evidence-card { margin-top: 12px; }
+.dashboard-todo-evidence-card__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 4px 0; }
+.dashboard-todo-evidence-card__column { display: grid; gap: 22px; min-width: 0; padding: 15px 18px; }
+.dashboard-todo-evidence-card__column + .dashboard-todo-evidence-card__column { border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent); }
+.dashboard-todo-evidence-card__column small { display: block; margin-bottom: 6px; color: #94a3b8; font-size: 12px; }
+.dashboard-todo-evidence-card__column strong { display: block; overflow: hidden; color: #1e293b; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dashboard-todo-evidence-card__number { color: #2563eb !important; font-size: 17px !important; letter-spacing: .01em; }
+.dashboard-todo-evidence-card__secondary { color: #475569 !important; font-weight: 500 !important; }
+.dashboard-todo-evidence-card__amount { color: #0f172a !important; font-size: 16px !important; }
+.dashboard-todo-evidence-card__wait { color: #ea580c !important; }
+.dashboard-todo-evidence-card__status { border-color: #fed7aa; background: #fff7ed; color: #c2410c; font-size: 12px; }
+@media (max-width: 1320px) {
+  .dashboard-todo-evidence-card__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-todo-evidence-card__column + .dashboard-todo-evidence-card__column { border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent); }
+  .dashboard-todo-evidence-card__column:last-child { grid-column: 1 / -1; border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent); border-left: 0; }
+}
+.dashboard-detail-dialog > .dashboard-todo-workbench { min-height: 0; height: 100%; overflow: hidden; }
+.dashboard-detail-dialog .dashboard-todo-workbench__detail { min-height: 0; overflow: hidden; }
+.dashboard-todo-workbench__detail-scroll { height: 100%; min-height: 0; }
+.dashboard-todo-workbench__detail-scroll-content { display: grid; min-height: 100%; gap: 18px; padding-right: 14px; }
+
+/* 系统异常展示事件信息，与普通单据证据卡保持独立的视觉与字段结构。 */
+.dashboard-system-event-card { display: grid; gap: 12px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 9px; background: var(--card); box-shadow: 0 1px 4px rgb(15 23 42 / 5%); }
+.dashboard-system-event-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.dashboard-system-event-card__head small, .dashboard-system-event-card__message small, .dashboard-system-event-card__hint small, .dashboard-system-event-card__meta dt { color: var(--text-secondary, #64748b); font-size: 12px; line-height: 18px; }
+.dashboard-system-event-card__head strong { display: block; margin: 0; color: #2563eb; font-size: 17px; line-height: 24px; }
+.dashboard-system-event-card__meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 2px 0 0; }
+.dashboard-system-event-card__meta > div { min-width: 0; padding: 0; border-radius: 0; background: transparent; }
+.dashboard-system-event-card__meta dd { margin: 4px 0 0; color: #334155; font-size: 13px; font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
+.dashboard-system-event-card__message p, .dashboard-system-event-card__hint p { margin: 4px 0 0; color: #475569; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dashboard-system-event-card__hint { background: #fffbeb; }
+@media (max-width: 720px) { .dashboard-system-event-card__meta { grid-template-columns: 1fr; } }
+.dashboard-todo-workbench__group + .dashboard-todo-workbench__group { margin-top: 16px; }
+.dashboard-todo-workbench__group-title { margin: 0 0 7px 2px; color: #64748b; font-size: 12px; font-weight: 600; }
+.dashboard-todo-workbench__annotation { margin: 0 0 10px; color: #64748b; font-size: 12px; line-height: 18px; }
+.dashboard-todo-evidence-card { padding: 16px 18px; }
+.dashboard-todo-evidence-card header { display: grid; gap: 5px; }
+.dashboard-todo-evidence-card header p { margin: 0; color: #64748b; font-size: 13px; line-height: 20px; }
+.dashboard-todo-evidence-card__facts, .dashboard-system-event-card__meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; }
+.dashboard-todo-evidence-card__facts div, .dashboard-system-event-card__meta div { min-width: 0; }
+.dashboard-todo-evidence-card__facts dt, .dashboard-system-event-card__meta dt { color: #94a3b8; font-size: 12px; }
+.dashboard-todo-evidence-card__facts dd, .dashboard-system-event-card__meta dd { margin: 4px 0 0; overflow-wrap: anywhere; color: #334155; font-size: 13px; font-weight: 600; }
+.dashboard-system-events { display: grid; gap: 12px; }
+.dashboard-system-event-card { gap: 12px; }
+.dashboard-system-event-card__head strong { margin: 0; font-size: 16px; }
+.dashboard-system-event-card__message { min-width: 0; margin: 0; padding: 0; border-radius: 0; background: transparent; color: #64748b; font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .dashboard-todo-evidence-card__facts, .dashboard-system-event-card__meta { grid-template-columns: 1fr; } }
+
+.dashboard-rank-matrix {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  padding: 0;
+  scrollbar-gutter: stable;
+}
+
+.dashboard-rank-matrix__viewport {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
+  scrollbar-gutter: stable;
+}
+
+.dashboard-rank-matrix__table {
+  min-width: 920px;
+  --dashboard-rank-columns: 68px minmax(230px, 1.35fr) minmax(255px, 1.45fr) minmax(118px, .62fr) minmax(118px, .62fr);
+}
+
+.dashboard-rank-matrix__table--suppliers {
+  --dashboard-rank-columns: 68px minmax(250px, 1.45fr) repeat(3, minmax(150px, .86fr));
+}
+
+.dashboard-rank-matrix__header {
+  min-height: 46px;
+  border-bottom: 1px solid #d9e1ec;
+  background: #f8fafc;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.dashboard-rank-matrix__header > span {
+  padding: 0 16px;
+}
+
+.dashboard-rank-matrix__row {
+  min-height: 64px;
+  border-bottom: 1px solid #edf1f6;
+  background: #fff;
+}
+
+.dashboard-rank-matrix__row:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-rank-matrix__row > span {
+  padding: 9px 16px;
+}
+
+.dashboard-rank-matrix__table--suppliers .dashboard-rank-matrix__header > span:not(:first-child),
+.dashboard-rank-matrix__table--suppliers .dashboard-rank-matrix__row > span:not(:first-child) {
+  border-left: 1px solid #edf1f6;
+}
+
+.dashboard-rank-matrix__rank {
+  display: flex;
+  width: 32px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 7px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.dashboard-rank-matrix__rank.is-top {
+  box-shadow: 0 2px 6px rgb(37 99 235 / 18%);
+}
+
+.dashboard-rank-matrix__identity,
+.dashboard-rank-matrix__score {
+  gap: 3px;
+}
+
+.dashboard-rank-matrix__identity strong {
+  line-height: 18px;
+}
+
+.dashboard-rank-matrix__identity small {
+  color: #172033;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.dashboard-rank-matrix__sales {
+  display: grid;
+  grid-template-columns: minmax(86px, 1fr) max-content;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.dashboard-rank-matrix__sales strong,
+.dashboard-rank-matrix__score strong,
+.dashboard-rank-matrix__number {
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.dashboard-rank-matrix__sales i,
+.dashboard-rank-matrix__score i {
+  background: #e5eaf1;
+}
+
+.dashboard-rank-matrix__sales b,
+.dashboard-rank-matrix__score b {
+  background: #1d6ff2;
+}
+
+@media (max-width: 768px) {
+  .dashboard-rank-matrix__table {
+    min-width: 860px;
+  }
+}
+
+.dashboard-rank-matrix__header,
+.dashboard-rank-matrix__row {
+  display: grid;
+  grid-template-columns: var(--dashboard-rank-columns);
+}
+
+.dashboard-rank-matrix__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  align-items: center;
+}
+
+.dashboard-rank-matrix__row {
+  align-items: center;
+  transition: background-color 160ms ease;
+}
+
+.dashboard-rank-matrix__row:hover {
+  background: #f8fbff;
+}
+
+.dashboard-rank-matrix__rank {
+  justify-self: center;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-rank-matrix__rank.is-top {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.dashboard-rank-matrix__identity,
+.dashboard-rank-matrix__sales,
+.dashboard-rank-matrix__score {
+  display: grid;
+}
+
+.dashboard-rank-matrix__identity strong,
+.dashboard-rank-matrix__identity small,
+.dashboard-rank-matrix__sales strong,
+.dashboard-rank-matrix__score strong,
+.dashboard-rank-matrix__number {
+  overflow: hidden;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-rank-matrix__identity strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.dashboard-rank-matrix__sales strong,
+.dashboard-rank-matrix__score strong,
+.dashboard-rank-matrix__number {
+  font-size: 13px;
+}
+
+.dashboard-rank-matrix__number {
+  align-self: center;
+  text-align: right;
+}
+
+.dashboard-rank-matrix__sales i,
+.dashboard-rank-matrix__score i {
+  display: block;
+  overflow: hidden;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.dashboard-rank-matrix__sales b,
+.dashboard-rank-matrix__score b {
+  display: block;
+  min-width: 6px;
+  height: 100%;
+  border-radius: inherit;
+}
+
+
+.dashboard-detail-dialog > .dashboard-rank-matrix {
+  align-self: start;
 }
 </style>

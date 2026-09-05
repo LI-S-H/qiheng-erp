@@ -1,140 +1,99 @@
 package com.qiheng.erp.dashboard.loader;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.domain.vo.DashboardStockAlertVO;
-import com.qiheng.erp.product.domain.entity.Product;
-import com.qiheng.erp.product.mapper.ProductMapper;
-import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;
+import com.qiheng.erp.warehouse.domain.common.enums.InventoryHealth;
+import com.qiheng.erp.warehouse.domain.warehousestock.vo.RiskStockVo;
 import com.qiheng.erp.warehouse.mapper.WarehouseStockMapper;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 工作台库存风险 SKU 聚合器。
  *
  * <p>判定规则：{@code available_qty = warehouse_stock.stock_qty - warehouse_stock.locked_qty}，<br>
- * 若 {@code available_qty < product.safety_stock_qty} 则视为风险 SKU。<br>
- * available_qty = 0 时严重度为 HIGH；否则为 MEDIUM。<br>
+ * severity 与仓库模块 {@link InventoryHealth} 口径一致：<br>
+ * - {@code stock_qty = 0} → OUT_OF_STOCK（无库存）<br>
+ * - {@code available_qty = 0 且 stock_qty > 0} → NO_AVAILABLE（全锁定）<br>
+ * - {@code 0 < available_qty <= safety_stock_qty} → LOW_STOCK（低库存）<br>
  * 建议补货量 = {@code safety_stock_qty * 2 - available_qty}，产品停用时为 0。</p>
  *
- * <p>按 {@code available_qty / safety_stock_qty} 升序展示，最缺货的优先展示，最多 20 条。</p>
+ * <p>SQL 层 JOIN + 过滤 + 排序 + LIMIT，避免全表扫描；按缺口降序展示，最多 20 条。</p>
  *
  * @author Li
  * @since 2026-08-15
  */
 @Component
+@RequiredArgsConstructor
 public class DashboardStockAlertLoader {
 
     private static final int TOP_LIMIT = 20;
 
     private final WarehouseStockMapper warehouseStockMapper;
-    private final ProductMapper productMapper;
-
-    @Autowired
-    public DashboardStockAlertLoader(WarehouseStockMapper warehouseStockMapper,
-                                     ProductMapper productMapper) {
-        this.warehouseStockMapper = warehouseStockMapper;
-        this.productMapper = productMapper;
-    }
 
     /**
-     * 加载库存风险 SKU
+     * 加载库存风险 SKU（最多 TOP_LIMIT 条，SQL 层排序截断）
      *
      * @return 风险 SKU VO 列表
      */
     public List<DashboardStockAlertVO> load() {
-        return collectAlerts(buildAlerts());
+        List<RiskStockVo> rows = warehouseStockMapper.selectRiskStocks(TOP_LIMIT);
+        return rows.stream().map(this::toVO).toList();
     }
 
     /**
-     * 真实计算 available_qty 小于 safety_stock_qty 的 SKU 数量。
-     * 不返回明细，仅供指标卡使用，避免重复加载明细 VO。
+     * 统计库存风险 SKU 数量（SQL 层 COUNT，不加载明细）
      *
      * @return 风险 SKU 数量
      */
     public int countRiskSkus() {
-        return buildAlerts().size();
+        return (int) warehouseStockMapper.countRiskStocks();
+    }
+
+    private DashboardStockAlertVO toVO(RiskStockVo row) {
+        BigDecimal stockQty = nullToZero(QtyUtil.toDecimal(row.getStockQty()));
+        BigDecimal lockedQty = nullToZero(QtyUtil.toDecimal(row.getLockedQty()));
+        BigDecimal availableQty = stockQty.subtract(lockedQty);
+        BigDecimal safetyQty = nullToZero(QtyUtil.toDecimal(row.getSafetyStockQty()));
+
+        boolean productActive = row.getProductStatus() != null && row.getProductStatus() == 1;
+        BigDecimal suggested = productActive
+                ? safetyQty.multiply(BigDecimal.valueOf(2L)).subtract(availableQty).max(BigDecimal.ZERO)
+                : BigDecimal.ZERO;
+
+        DashboardStockAlertVO vo = new DashboardStockAlertVO();
+        vo.setStockId(row.getStockId());
+        vo.setProductId(row.getProductId());
+        vo.setProductCode(row.getProductCode());
+        vo.setProductName(row.getProductName());
+        vo.setWarehouseId(row.getWarehouseId());
+        vo.setWarehouseName(row.getWarehouseName());
+        vo.setUnitName(row.getUnitName());
+        vo.setAvailableQty(availableQty);
+        vo.setSafetyStockQty(safetyQty);
+        vo.setSuggestedPurchaseQty(suggested);
+        vo.setSeverity(resolveHealth(availableQty, stockQty).name());
+        vo.setLatestOutboundAt(row.getUpdateTime());
+        return vo;
     }
 
     /**
-     * 解析 stock + product 数据并组装明细，按 available/safety 不达标过滤
+     * 根据可用库存和当前库存派生库存健康状态，与仓库模块 {@link InventoryHealth} 口径一致。
      */
-    private List<DashboardStockAlertVO> buildAlerts() {
-        List<WarehouseStock> stocks = warehouseStockMapper.selectList(null);
-        if (stocks.isEmpty()) {
-            return new ArrayList<>();
+    private static InventoryHealth resolveHealth(BigDecimal availableQty, BigDecimal stockQty) {
+        if (stockQty.signum() == 0) {
+            return InventoryHealth.OUT_OF_STOCK;
         }
-        Map<Long, Product> productById = productMapper.selectList(
-                new LambdaQueryWrapper<Product>().eq(Product::getDeleted, 0)).stream()
-                .collect(Collectors.toMap(Product::getId, p -> p));
-
-        List<DashboardStockAlertVO> alerts = new ArrayList<>();
-        for (WarehouseStock stock : stocks) {
-            Product product = productById.get(stock.getProductId());
-            if (product == null) {
-                continue;
-            }
-            BigDecimal stockQty = toQty(stock.getStockQty());
-            BigDecimal lockedQty = toQty(stock.getLockedQty());
-            BigDecimal availableQty = stockQty.subtract(lockedQty);
-            BigDecimal safetyQty = toQty(product.getSafetyStockQty());
-            if (availableQty.compareTo(safetyQty) >= 0) {
-                continue;
-            }
-            boolean productActive = product.getStatus() != null && product.getStatus() == 1;
-            BigDecimal suggested = productActive
-                    ? safetyQty.multiply(BigDecimal.valueOf(2L)).subtract(availableQty).max(BigDecimal.ZERO)
-                    : BigDecimal.ZERO;
-
-            DashboardStockAlertVO vo = new DashboardStockAlertVO();
-            vo.setStockId(stock.getId());
-            vo.setProductId(stock.getProductId());
-            vo.setProductCode(stock.getProductCode());
-            vo.setProductName(stock.getProductName());
-            vo.setWarehouseId(stock.getWarehouseId());
-            vo.setWarehouseName(stock.getWarehouseName());
-            vo.setUnitName(stock.getUnitName());
-            vo.setAvailableQty(availableQty);
-            vo.setSafetyStockQty(safetyQty);
-            vo.setSuggestedPurchaseQty(suggested);
-            vo.setSeverity(availableQty.signum() <= 0 ? "HIGH" : "MEDIUM");
-            vo.setLatestOutboundAt(stock.getUpdateTime());
-            alerts.add(vo);
+        if (availableQty.signum() == 0) {
+            return InventoryHealth.NO_AVAILABLE;
         }
-        return alerts;
+        return InventoryHealth.LOW_STOCK;
     }
 
-    /** 排序 + 截断 TOP_LIMIT */
-    private List<DashboardStockAlertVO> collectAlerts(List<DashboardStockAlertVO> alerts) {
-        alerts.sort(Comparator.comparing((DashboardStockAlertVO vo) ->
-                vo.getSafetyStockQty() == null ? BigDecimal.ZERO : vo.getSafetyStockQty().subtract(vo.getAvailableQty())).reversed());
-        if (alerts.size() > TOP_LIMIT) {
-            return alerts.subList(0, TOP_LIMIT);
-        }
-        return alerts;
-    }
-
-    /** 数据库 ×100 存储值转业务小数；null 视为 0 */
-    private static BigDecimal toQty(Long stored) {
-        if (stored == null) {
-            return BigDecimal.ZERO;
-        }
-        return QtyUtil.toDecimal(stored);
-    }
-
-    /** 数据库 ×100 存储值(BigDecimal 形式)转业务小数；null 视为 0 */
-    private static BigDecimal toQty(BigDecimal stored) {
-        if (stored == null) {
-            return BigDecimal.ZERO;
-        }
-        return QtyUtil.toDecimal(stored);
+    private static BigDecimal nullToZero(BigDecimal val) {
+        return val != null ? val : BigDecimal.ZERO;
     }
 }

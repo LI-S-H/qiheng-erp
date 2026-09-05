@@ -190,13 +190,12 @@ runSmoke({
       throw new Error('订单流转不应再展示详情按钮');
     }
     await page.getByRole('row').filter({ hasText: 'USB-C扩展坞' }).waitFor();
-    await page.getByRole('button', { name: '查看详情库存预警' }).click();
-    const stockDialog = page.getByRole('dialog', { name: '库存预警详情' });
-    await stockDialog.getByText('USB-C扩展坞').waitFor();
-    const stockHorizontalOverflow = await stockDialog.locator('.dashboard-detail-scroll').evaluate(element => element.scrollWidth - element.clientWidth);
-    if (stockHorizontalOverflow > 2) throw new Error('库存预警详情不应出现横向滚动');
-    await page.keyboard.press('Escape');
-    await stockDialog.waitFor({ state: 'hidden' });
+    if (await page.locator('button[aria-label="查看详情库存预警"]').count()) {
+      throw new Error('库存预警不应再提供详情弹窗入口');
+    }
+    if (await page.getByRole('dialog', { name: '库存预警详情' }).count()) {
+      throw new Error('库存预警详情弹窗不应在首屏渲染');
+    }
 
     const refreshButton = page.locator('.dashboard-heading-actions [data-slot="button"]');
     await refreshButton.click();
@@ -221,9 +220,27 @@ runSmoke({
 
     await page.getByRole('button', { name: '查看详情销售商品排行' }).click();
     const productDialog = page.getByRole('dialog', { name: '销售商品排行详情' });
-    await productDialog.getByText('热敏标签纸').waitFor();
+    const productMatrix = productDialog.locator('.dashboard-rank-matrix__table--products');
+    await productMatrix.waitFor();
+    await productMatrix.getByText('商品编码 / 商品名称', { exact: true }).waitFor();
+    if ((await productMatrix.locator('.dashboard-rank-matrix__rank').count()) < 6) {
+      throw new Error('销售商品详情应使用可滚动的排名矩阵');
+    }
+    if (!(await productMatrix.locator('.dashboard-rank-matrix__rank').first().evaluate(element => element.textContent?.trim() === '01'))) {
+      throw new Error('销售商品排名徽章应保留可读取的数字');
+    }
     await page.keyboard.press('Escape');
     await productDialog.waitFor({ state: 'hidden' });
+
+    await page.getByRole('button', { name: '查看详情供应商履约' }).click();
+    const supplierDialog = page.getByRole('dialog', { name: '供应商履约详情' });
+    const supplierMatrix = supplierDialog.locator('.dashboard-rank-matrix__table--suppliers');
+    await supplierMatrix.waitFor();
+    await supplierMatrix.getByText('交付评分', { exact: true }).waitFor();
+    await supplierMatrix.getByText('质量评分', { exact: true }).waitFor();
+    await supplierMatrix.getByText('准时率', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await supplierDialog.waitFor({ state: 'hidden' });
 
     await page.getByRole('button', { name: '查看详情业务待办' }).click();
     const todoDialog = page.getByRole('dialog', { name: '业务待办详情' });

@@ -90,200 +90,39 @@ paths:
                       count: 12
                       priority: HIGH
                       sortWeight: 21
-                      sourceMode: AGGREGATED
                       completionMode: AUTO
-                      status: PENDING
-                      errorCode: null
-                      errorMessage: null
-                      sourceNo: null
-                      occurredAt: null
                       resolveHint: 前往销售订单完成审核，审核通过后进入库存锁定和发货准备。
-                      evidence: []
-                      route: /sales/orders
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-
-  /dashboard/overview:
-    get:
-      tags: [Dashboard]
-      summary: 获取工作台经营概览
-      description: |
-        返回当前登录用户可见范围内的经营概览数据，用于工作台首屏展示销售、采购、库存、待办和履约风险。
-        后端应按当前用户权限裁剪模块数据：没有采购、销售、仓储等查询权限时，首屏指标的数值和对比字段显式返回 null，业务面板的数组可为空，并由 access 状态明确区分无权限与暂无数据。
-        金额指标来自可执行聚合查询；库存风险来自 `warehouse_stock`、产品安全库存和锁定库存的查询时派生结果；待办分为三类：采购/销售/出入库/库存风险等状态类待办按业务状态动态聚合，业务完成后自动消失；价格偏离、客户信用等复核类待办展示证据并跳转对应业务页面；系统异常统一来自数据库异常记录表，聚合为一条 `SYSTEM_EXCEPTION` 待办并展示具体异常详情，不在工作台直接完成。
-        本接口为工作台汇总接口，不接收含义不明的 `keyword`，不要求前端自行并发调用多个业务列表接口后拼装经营指标。
-        `todos`、`topProducts`、`supplierPerformance`、`stockAlerts` 返回完整工作台明细数组；前端主页面只截取摘要展示，点击对应“详情”按钮时在同页弹窗展示同一数组的完整内容，不额外请求详情接口。经营趋势和订单流转只在主卡展示，不提供详情弹窗。
-        当前前端展示规则：经营趋势接口返回近 30 天数据，前端提供 7 天、15 天、30 天切换并在同一卡片内展示，切换只改变前端截取范围和图表过渡效果，不新增请求；业务待办主卡展示前 8 条，订单流转展示全部阶段，销售商品排行主卡展示前 5 名，供应商履约主卡展示前 5 名；详情弹窗展示接口返回的完整明细记录，其中库存预警详情使用窄幅列表卡片承载完整字段，避免横向滚动。
-        `todos` 是可扩展事件流，不限于采购、销售、仓储和系统四类。普通业务待办使用 `completionMode=AUTO`，可通过 `evidence[]` 展开少量代表性单据摘要并跳转对应业务页面；系统异常使用 `completionMode=TRACKED`，只展示数据库异常记录详情，不展示“完成处理”按钮。
-        待办排序由后端完成并返回 `sortWeight`，前端只做兜底排序。推荐顺序：先按 `sortWeight` 升序，再按 `priority`（HIGH > MEDIUM > LOW），同优先级下人工异常任务优先于普通业务聚合，最后按发生时间倒序。异常/人工修复类待办不能广播给普通员工，只返回给具备处理权限、被指派用户、被指派角色或被指派部门范围内的人员；普通业务聚合待办按模块权限返回。
-        工作台只展示复核证据，不在本接口提供产品、仓库、客户、供应商选择器。若待办详情或跳转页面需要选择产品、仓库、客户、供应商，应复用各模块已有分页查询和共享选择组件，例如 `/products`、`/warehouses`、`/sales/customers`、`/purchase/suppliers`，禁止在工作台接口固定返回大量下拉选项。
-        后端建议至少返回：业务待办 20 条以内、销售商品排行 10 条以内、供应商履约 10 条以内、库存预警 20 条以内，避免工作台接口过重；超出范围时应按业务优先级、异常严重程度、影响金额或发生时间排序后截断。若异常待办未来明显超过工作台承载范围，应新增独立异常/任务中心分页接口，工作台只展示高优先级摘要。
-        系统异常统一聚合为一条 `businessType=SYSTEM_EXCEPTION`、`completionMode=TRACKED` 的工作台待办，主卡只显示总数和最高优先级；具体异常记录通过 `evidence[]` 展示，例如 AI/MCP 工具调用失败、消息队列死信、第三方回调失败、定时任务失败和数据补偿失败。此类数据来自数据库异常记录表，工作台只提供“查看详情”，不展示“完成处理”；异常状态由后台重试、补偿任务或异常中心更新。
-
-        本期接口返回的字段全部按当前用户权限裁剪：
-        - `metrics` 4 项通过 `access.metrics` 分别表达状态；`DENIED` 时 `value`、`changeRate`、`compareText` 显式返回 `null`，不得以 0 代替无权限
-        - `trend` 与 `trendPermissions` 配合使用；当 `canViewSales == false && canViewPurchase == false` 时 `trend` 返回空数组，前端应整卡降级为"暂无访问权限"提示，不渲染图表
-        - `orderStages` 与 `orderStagePermissions` 配合使用；两边都不可见时 `orderStages` 返回空数组，前端应整卡降级
-        - `todos` 按模块粒度裁剪：采购类依赖 `purchase:manage`、销售类依赖 `sales:manage`、出入库类依赖 `warehouse:manage`、库存复核依赖 `warehouse:query`、系统异常依赖 `dashboard:exception:query`；业务类完成后自动消失
-        - 系统异常待办（`businessType=SYSTEM_EXCEPTION`、来源 `system_exception` 表）只返回给具备 `dashboard:exception:query` 的用户，避免 AI 死信、MQ 死信等信息泄漏
-        - 本期按业务 query / manage 模块裁剪；按"指派用户 / 指派角色 / 指派部门"细化待办范围裁剪待异常中心模块补充
-      operationId: dashboardOverview
-      security:
-        - SaTokenAuth: []
-      responses:
-        "200":
-          description: 查询成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/DashboardOverview' }
-              example:
-                code: 0
-                message: success
-                data:
-                  refreshedAt: "2026-06-30 09:30:00"
-                  metrics:
-                    - key: MONTH_SALES
-                      label: 本月销售额
-                      value: 286430
-                      unit: 元
-                      changeRate: 12.8
-                      compareText: 较上月
-                      status: good
-                    - key: STOCK_RISK_SKU
-                      label: 库存风险 SKU
-                      value: 16
-                      unit: 个
-                      changeRate: -18.2
-                      compareText: 较上月
-                      status: warning
-                  access:
-                    metrics:
-                      MONTH_SALES: { state: ALLOWED}
-                      MONTH_GROSS_PROFIT: { state: DENIED}
-                      PENDING_ORDERS: { state: ALLOWED}
-                      STOCK_RISK_SKU: { state: DENIED}
-                    todos: { state: ALLOWED}
-                    stockAlerts: { state: DENIED}
-                    orderStages: { state: ALLOWED}
-                    topProducts: { state: ALLOWED}
-                    supplierPerformance: { state: DENIED}
-                  trend:
-                    - date: "06-30"
-                      salesAmount: 286430
-                      purchaseAmount: 378530
-                      grossMarginAmount: -92100
-                  todos:
-                    - todoId: todo-sales-approve
-                      businessType: SALES
-                      businessLabel: 销售
-                      title: 销售单待审核
-                      description: 还有 12 张销售单需要审核，处理后会自动完成待办。
-                      count: 12
-                      priority: HIGH
-                      sortWeight: 21
-                      sourceMode: AGGREGATED
-                      completionMode: AUTO
-                      status: PENDING
-                      errorCode: null
-                      errorMessage: null
-                      sourceNo: null
-                      occurredAt: null
-                      resolveHint: 前往销售订单完成审核，审核通过后进入库存锁定和发货准备。
-                      evidence:
-                        - itemId: so-20260630033
-                          primaryText: SO20260630033
-                          secondaryText: 华北连锁零售 · 授信占用偏高，审核前需复核客户信用
-                          metrics:
-                            - label: 金额
-                              value: ￥18.9万
-                              tone: watch
-                            - label: 品项
-                              value: "8"
-                              tone: neutral
-                            - label: 等待
-                              value: 1小时
-                              tone: neutral
-                      route: /sales/orders
-                    - todoId: todo-system-exceptions
-                      businessType: SYSTEM_EXCEPTION
+                      detail:
+                        model: SALES_ORDER_APPROVAL
+                        items:
+                          - id: SO20260630033
+                            documentNo: SO20260630033
+                            sourceDocumentNo: null
+                            counterpartyName: 华北连锁零售
+                            amountFen: 890000
+                            waitHours: 1
+                            waitLevel: NORMAL
+                            documentStatus: SUBMITTED
+                    - todoId: todo-system-exception
+                      businessType: SYSTEM
                       businessLabel: 系统
-                      title: 系统异常
-                      description: 当前有 4 条系统异常记录需要关注，主要来自 AI/MCP 工具调用、消息队列死信、第三方回调和定时任务失败。
-                      count: 4
+                      title: 系统异常待处理
+                      description: 当前有 2 条系统异常记录需要关注。
+                      count: 2
                       priority: HIGH
                       sortWeight: 10
-                      sourceMode: PERSISTED
                       completionMode: TRACKED
-                      status: PENDING
-                      errorCode: null
-                      errorMessage: null
-                      sourceNo: system_exception
-                      occurredAt: "2026-07-01 09:20:00"
                       resolveHint: null
-                      evidence:
-                        - itemId: AI-MCP-20260701-001
-                          primaryText: AI-MCP-20260701-001
-                          secondaryText: AI 模块调用库存预测 MCP 工具超时，未生成补货建议，等待后台重试或检查工具连接。
-                          metrics:
-                            - label: 类型
-                              value: MCP超时
-                              tone: risk
-                            - label: 来源
-                              value: AI助手
-                              tone: neutral
-                            - label: 时间
-                              value: "09:18"
-                              tone: watch
-                        - itemId: DLQ-ORDER-STOCK-00023
-                          primaryText: DLQ-ORDER-STOCK-00023
-                          secondaryText: 订单审核后生成出库任务的消息进入死信队列，需由后台消费补偿后恢复流程。
-                          metrics:
-                            - label: 类型
-                              value: 死信队列
-                              tone: risk
-                            - label: 来源
-                              value: 消息队列
-                              tone: neutral
-                            - label: 时间
-                              value: "09:05"
-                              tone: watch
-                      route: /dashboard
-                    - todoId: todo-price-review
-                      businessType: PURCHASE
-                      businessLabel: 采购
-                      title: 采购价偏离参考价
-                      description: 有 3 个产品最近采购价高于产品参考采购价，需要确认是临时涨价还是需要调整参考价。
-                      count: 3
-                      priority: MEDIUM
-                      sortWeight: 60
-                      sourceMode: AGGREGATED
-                      completionMode: AUTO
-                      status: PENDING
-                      errorCode: null
-                      errorMessage: null
-                      sourceNo: null
-                      occurredAt: null
-                      resolveHint: 前往采购订单核对供应商报价；如确认为长期价格变化，再维护产品参考采购价。
-                      evidence:
-                        - itemId: price-P000013
-                          primaryText: USB-C扩展坞（P000013）
-                          secondaryText: 拓联数码配件 · PO20260630021
-                          metrics:
-                            - label: 参考采购价
-                              value: ￥186.00
-                              tone: neutral
-                            - label: 最近采购价
-                              value: ￥218.00
-                              tone: risk
-                            - label: 偏离
-                              value: +17.2%
-                              tone: risk
-                      route: /purchase/orders
+                      detail:
+                        model: SYSTEM_EXCEPTION
+                        items:
+                          - id: AI-MCP-20260701-001
+                            exceptionNo: AI-MCP-20260701-001
+                            summary: AI 模块调用库存预测工具超时，未生成补货建议。
+                            exceptionType: MCP超时
+                            sourceModule: AI助手
+                            occurredAt: "2026-07-01 09:18:00"
+                            severity: HIGH
                   stockAlerts:
                     - stockId: "1939000000000000003"
                       productId: "1920000000000000013"
@@ -295,12 +134,31 @@ paths:
                       availableQty: 0
                       safetyStockQty: 12
                       suggestedPurchaseQty: 24
-                      severity: HIGH
+                      severity: NO_AVAILABLE
                       latestOutboundAt: "2026-06-30 10:05:00"
                   orderStages:
+                    - stage: 草稿
+                      purchaseCount: 2
+                      salesCount: 3
                     - stage: 待审核
                       purchaseCount: 7
                       salesCount: 12
+                    - stage: 已审核
+                      purchaseCount: 4
+                      salesCount: 5
+                    - stage: 部分出入库
+                      purchaseCount: 1
+                      salesCount: 2
+                    - stage: 已完成
+                      purchaseCount: 8
+                      salesCount: 9
+                    - stage: 已取消
+                      purchaseCount: 0
+                      salesCount: 1
+                  orderStagePeriod:
+                    type: CURRENT_CALENDAR_MONTH
+                    startAt: "2026-07-01 00:00:00"
+                    endAtExclusive: "2026-08-01 00:00:00"
                   topProducts:
                     - productId: "1920000000000000001"
                       productCode: P000001
@@ -3407,6 +3265,10 @@ paths:
             type: string
             enum: [NORMAL, LOW_STOCK, NO_AVAILABLE, OUT_OF_STOCK]
           description: 库存健康，由可用库存、当前库存和产品安全库存派生
+        - name: riskOnly
+          in: query
+          schema: { type: boolean }
+          description: 是否仅返回风险库存；true 时返回零库存、无可用库存或可用库存小于等于安全库存的记录，并与 inventoryHealth 按 AND 组合
         - name: reservationState
           in: query
           schema:
@@ -5055,7 +4917,6 @@ components:
         selectedSupplierScore: { type: number, minimum: 0, maximum: 100, nullable: true }
         targetWarehouseId: { type: string, nullable: true }
         targetWarehouseName: { type: string, nullable: true }
-        sourceNo: { type: string, nullable: true }
 
     AiWorkbenchSection:
       type: object
@@ -5312,7 +5173,7 @@ components:
 
     DashboardOverview:
       type: object
-      required: [refreshedAt, metrics, trend, todos, stockAlerts, orderStages, topProducts, supplierPerformance, access]
+      required: [refreshedAt, metrics, trend, todos, stockAlerts, orderStages, orderStagePeriod, topProducts, supplierPerformance, access]
       properties:
         refreshedAt:
           type: string
@@ -5350,14 +5211,18 @@ components:
           items: { $ref: '#/components/schemas/DashboardTodoItem' }
         stockAlerts:
           type: array
-          description: 库存风险 SKU 完整数组，来自 `warehouse_stock` 可用库存和产品安全库存的派生判断；主页面表格和详情弹窗使用同一数组
+          description: 库存风险 SKU 完整数组，来自 `warehouse_stock` 可用库存和产品安全库存的派生判断；工作台主页表格展示该数组
           items: { $ref: '#/components/schemas/DashboardStockAlert' }
         orderStages:
           type: array
           description: |
-            采购单和销售单状态分布；完全无权时返回空数组，前端应整卡降级。
-            前端仅在工作台主卡展示全部阶段，不提供订单流转详情弹窗。
+            仅统计 orderStagePeriod 所定义的本自然月内新建的采购单和销售单，按其当前状态聚合。
+            完全无权时返回空数组，前端应整卡降级；仅在工作台主卡展示全部阶段，不提供详情弹窗。
           items: { $ref: '#/components/schemas/DashboardOrderStage' }
+        orderStagePeriod:
+          allOf:
+            - $ref: '#/components/schemas/DashboardOrderStagePeriod'
+          description: 订单流转实际统计期间；前端按 type 显示“当月”口径，startAt/endAtExclusive 用于接口对账。
         orderStagePermissions:
           allOf:
             - $ref: '#/components/schemas/DashboardOrderStagePermissions'
@@ -5416,6 +5281,15 @@ components:
           type: boolean
           description: 是否可见毛利曲线；同时需要 `sales:query` 与 `purchase:query` 才为 true
 
+    DashboardOrderStagePeriod:
+      type: object
+      required: [type, startAt, endAtExclusive]
+      description: 订单流转实际统计期间，采用左闭右开边界。
+      properties:
+        type: { type: string, enum: [CURRENT_CALENDAR_MONTH], description: 当前自然月 }
+        startAt: { type: string, format: date-time, description: 统计起始时间（含） }
+        endAtExclusive: { type: string, format: date-time, description: 统计结束时间（不含） }
+
     DashboardOrderStagePermissions:
       type: object
       description: |
@@ -5465,62 +5339,129 @@ components:
           description: |
             指标趋势语义，仅用于数值下方的环比徽标：good 绿色、watch 琥珀色、risk 红色、neutral 灰色。
             正向指标（销售额、毛利额）上升为改善；反向指标（待处理订单、库存风险 SKU）下降为改善。
-            变化幅度按指标方向折算后，绝对值大于等于 5% 时为 good 或 risk，0 为 neutral，其余非零为 watch；changeRate 为 null 时返回 neutral，前端不显示徽标。
+            变化幅度按指标方向折算后，绝对值大于等于 5% 时为 good 或 risk，0 为 neutral，其余非零为 watch；changeRate 为 null 时返回 neutral，前端不显示方向和百分比徽标，但可展示“暂无可比基线”的中性提示。
     DashboardTrendPoint:
       type: object
       required: [date, salesAmount, purchaseAmount, grossMarginAmount]
       properties:
         date: { type: string, description: 趋势日期标签，建议使用 `MM-DD` }
-        salesAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 销售额聚合金额字符串；对应销售订单已审核或已出库口径 }
-        purchaseAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 采购额聚合金额字符串；对应采购订单已审核或已入库口径 }
-        grossMarginAmount: { type: string, pattern: '^-?\d+(\.\d{1,2})?$', description: 毛利额字符串；销售额减可追溯采购成本，允许负值 }
+        salesAmount: { type: string, pattern: '^-?\d+(\.\d{1,2})?$', description: 净销售额聚合金额字符串；已审核销售订单金额减去按退货审批日期归属的已审批销售退货金额，允许为负数 }
+        purchaseAmount: { type: string, pattern: '^-?\d+(\.\d{1,2})?$', description: 净采购额聚合金额字符串；已审核采购订单金额减去按退货审批日期归属的已审批采购退货金额，允许为负数 }
+        grossMarginAmount: { type: string, pattern: '^-?\d+(\.\d{1,2})?$', description: 毛利额字符串；净销售额减净采购额，允许负值 }
 
     DashboardTodoItem:
       type: object
-      required: [todoId, businessType, businessLabel, title, description, count, priority, sortWeight, sourceMode, completionMode, status, errorCode, errorMessage, sourceNo, occurredAt, resolveHint, evidence, route]
+      required: [todoId, businessType, businessLabel, title, description, count, priority, sortWeight, completionMode, resolveHint, detail]
       properties:
         todoId: { type: string, description: 待办项稳定标识 }
-        businessType: { type: string, description: 待办所属业务域或事件源编码；不要用固定枚举限制扩展，建议使用大写下划线编码，例如 `PURCHASE`、`SALES`、`WAREHOUSE`、`INVENTORY`、`EXCEPTION`、`AI`、`INTEGRATION` }
-        businessLabel: { type: string, description: 待办类型展示标签，由后端按事件源返回，例如 `采购`、`销售`、`仓储`、`库存`、`异常`、`智能`；前端优先展示该字段，避免新增事件类型时必须发版 }
-        title: { type: string, description: 待办标题；应能在工作台主卡中直接表达处理事项 }
-        description: { type: string, description: 待办业务影响说明；详情弹窗会完整展示，主卡可能按宽度截断 }
+        businessType: { type: string, description: 待办所属业务域或事件源编码，例如 `PURCHASE`、`SALES`、`WAREHOUSE`、`INVENTORY`、`SYSTEM` }
+        businessLabel: { type: string, description: 待办类型展示标签 }
+        title: { type: string, description: 待办标题 }
+        description: { type: string, description: 待办业务影响说明 }
         count: { type: integer, minimum: 0, description: 待处理数量 }
-        priority: { type: string, enum: [HIGH, MEDIUM, LOW], description: 优先级 }
-        sortWeight: { type: integer, minimum: 0, description: 排序权重，数值越小越靠前；由后端综合优先级、异常严重程度、影响范围、是否人工处理和发生时间计算，前端只做兜底排序 }
-        sourceMode: { type: string, enum: [AGGREGATED, PERSISTED], description: 待办来源方式；`AGGREGATED` 表示由业务状态、价格偏离、信用风险或库存风险实时聚合，`PERSISTED` 表示待办或系统异常已持久化到业务任务表或 `system_exception` 表 }
-        completionMode: { type: string, enum: [AUTO, TRACKED], description: 完成方式；`AUTO` 由前端展示“前往完成”，处理对应业务后自动消失；`TRACKED` 表示来自系统异常记录表，工作台只展示详情，不提供完成按钮，状态由后台重试、补偿任务或后续异常中心更新 }
-        status: { type: string, enum: [PENDING, DONE, IGNORED], description: 待办状态；工作台通常只返回 `PENDING`，详情弹窗按该字段展示处理状态 }
-        errorCode: { type: string, nullable: true, description: 异常类待办错误码；非异常待办返回 `null` }
-        errorMessage: { type: string, nullable: true, description: 异常类待办错误信息；用于详情弹窗展示，不再要求前端跳转后台页面才能看到原因 }
-        sourceNo: { type: string, nullable: true, description: 来源业务单号或外部事件编号；异常/人工修复类待办必须返回，聚合类业务单待办通常返回 `null`，避免大量单据号挤占弹窗 }
-        occurredAt: { type: string, nullable: true, description: 待办发生时间或最后触发时间；异常/人工修复类建议返回，聚合类业务单待办可返回 `null` }
-        resolveHint: { type: string, nullable: true, description: 处理建议；自动完成类说明完成条件，手动完成类说明人工修复步骤 }
-        evidence:
-          type: array
-          description: 业务查看详情或复核证据列表；普通单据待办可返回 1-3 条代表性来源单据摘要，帮助用户判断是哪张单和什么问题；采购价偏离、客户信用、库存风险等需要判断依据的待办必须返回产品/客户/SKU 及关键指标；异常手动待办若错误信息已经足够明确可返回空数组
-          items: { $ref: '#/components/schemas/DashboardTodoEvidence' }
-        route: { type: string, description: 前端内部业务路由，例如 `/purchase/orders`；`completionMode=AUTO` 的“前往完成”按钮使用该路由跳转 }
+        priority: { type: string, enum: [HIGH, MEDIUM, LOW], description: 待办优先级 }
+        sortWeight: { type: integer, minimum: 0, description: 同一优先级内的排序权重，数值越小越靠前 }
+        completionMode: { type: string, enum: [AUTO, TRACKED], description: "AUTO 表示可前往对应业务列表处理；TRACKED 表示仅查看异常详情，由异常中心处理" }
+        resolveHint: { type: string, nullable: true, description: 处理建议；普通业务待办说明完成条件，系统异常可为 null }
+        detail:
+          description: 详情由 `model` 判别。前端必须按对应模型的固定字段布局展示，不得依赖拼接文本或通用键值指标。
+          oneOf:
+            - $ref: '#/components/schemas/DashboardPurchaseOrderApprovalDetail'
+            - $ref: '#/components/schemas/DashboardSalesOrderApprovalDetail'
+            - $ref: '#/components/schemas/DashboardPurchaseReturnApprovalDetail'
+            - $ref: '#/components/schemas/DashboardSalesReturnApprovalDetail'
+            - $ref: '#/components/schemas/DashboardInboundConfirmDetail'
+            - $ref: '#/components/schemas/DashboardOutboundConfirmDetail'
+            - $ref: '#/components/schemas/DashboardStockRiskReviewDetail'
+            - $ref: '#/components/schemas/DashboardSystemExceptionDetail'
 
-    DashboardTodoEvidence:
+    DashboardPurchaseOrderApprovalDetail:
       type: object
-      required: [itemId, primaryText, secondaryText, metrics]
+      required: [model, items]
       properties:
-        itemId: { type: string, description: 证据行稳定标识，例如产品 ID、客户 ID 或来源单据号 }
-        primaryText: { type: string, description: 证据主文本，例如来源单号、产品名称和编码、客户名称和编码 }
-        secondaryText: { type: string, description: 证据辅助文本，例如供应商与采购单号、销售单号与客户类型、仓库与问题摘要 }
-        metrics:
-          type: array
-          description: 单据摘要或复核指标，前端以紧凑指标格展示
-          items: { $ref: '#/components/schemas/DashboardTodoEvidenceMetric' }
-
-    DashboardTodoEvidenceMetric:
+        model: { type: string, enum: [PURCHASE_ORDER_APPROVAL] }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardTodoDocumentItem' } }
+    DashboardSalesOrderApprovalDetail:
       type: object
-      required: [label, value, tone]
+      required: [model, items]
       properties:
-        label: { type: string, description: 指标名称，例如 `金额`、`品项`、`等待`、`参考采购价`、`最近采购价`、`授信额度`、`已占用` }
-        value: { type: string, description: 已格式化展示值；金额、百分比和天数由后端按工作台口径返回 }
-        tone: { type: string, enum: [neutral, watch, risk], description: 指标风险色语义 }
+        model: { type: string, enum: [SALES_ORDER_APPROVAL] }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardTodoDocumentItem' } }
+    DashboardPurchaseReturnApprovalDetail:
+      type: object
+      required: [model, items]
+      properties:
+        model: { type: string, enum: [PURCHASE_RETURN_APPROVAL] }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardTodoDocumentItem' } }
+    DashboardSalesReturnApprovalDetail:
+      type: object
+      required: [model, items]
+      properties:
+        model: { type: string, enum: [SALES_RETURN_APPROVAL] }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardTodoDocumentItem' } }
+    DashboardInboundConfirmDetail:
+      type: object
+      required: [model, items]
+      properties:
+        model: { type: string, enum: [INBOUND_CONFIRM] }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardTodoDocumentItem' } }
+    DashboardOutboundConfirmDetail:
+      type: object
+      required: [model, items]
+      properties:
+        model: { type: string, enum: [OUTBOUND_CONFIRM] }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardTodoDocumentItem' } }
 
+    DashboardTodoDocumentItem:
+      type: object
+      required: [documentNo, documentStatus]
+      properties:
+
+        documentNo: { type: string, description: 当前业务单号；采购退货/销售退货分别为 PR/SR 单号 }
+        sourceDocumentNo: { type: string, nullable: true, description: 来源业务单号；采购退货为原采购单号，销售退货为原销售单号，出入库为来源单号 }
+        counterpartyName: { type: string, nullable: true, description: 往来方或仓库名称；标签由 detail.model 固定 }
+        amountFen: { type: integer, format: int64, nullable: true, description: 金额存储值，单位为分；前端按金额格式化，不接受后端拼接货币文案 }
+        waitHours: { type: integer, format: int64, nullable: true, minimum: 0, description: 从提交或创建至当前的等待时长，单位为小时 }
+        waitLevel: { type: string, nullable: true, enum: [NORMAL, WARNING, OVERDUE], description: 等待分级：小于 24 小时、24 至 72 小时、72 小时及以上 }
+        documentStatus: { type: string, description: 当前单据业务状态；这是单据事实，不是聚合待办状态 }
+
+    DashboardStockRiskReviewDetail:
+      type: object
+      required: [model, items]
+      properties:
+        model: { type: string, enum: [STOCK_RISK_REVIEW] }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardTodoStockRiskItem' } }
+    DashboardTodoStockRiskItem:
+      type: object
+      required: [id, productCode, productName, warehouseName, unitName, availableQty, safetyStockQty, suggestedPurchaseQty, severity]
+      properties:
+        id: { type: string }
+        productCode: { type: string }
+        productName: { type: string }
+        warehouseName: { type: string }
+        unitName: { type: string }
+        availableQty: { type: number, format: double }
+        safetyStockQty: { type: number, format: double }
+        suggestedPurchaseQty: { type: number, format: double }
+        severity: { type: string, enum: [HIGH, MEDIUM] }
+
+    DashboardSystemExceptionDetail:
+      type: object
+      required: [model, items]
+      properties:
+        model: { type: string, enum: [SYSTEM_EXCEPTION] }
+        items: { type: array, items: { $ref: '#/components/schemas/DashboardTodoSystemExceptionItem' } }
+    DashboardTodoSystemExceptionItem:
+      type: object
+      required: [id, exceptionNo, summary, exceptionType, sourceModule, occurredAt, severity]
+      properties:
+        id: { type: string }
+        exceptionNo: { type: string, description: 系统异常编号 }
+        summary: { type: string, description: 异常摘要 }
+        exceptionType: { type: string, description: 面向用户的异常类型 }
+        sourceModule: { type: string, description: 面向用户的来源模块 }
+        occurredAt: { type: string, nullable: true, description: 异常发生时间 }
+        severity: { type: string, enum: [HIGH, MEDIUM, LOW] }
     DashboardStockAlert:
       type: object
       required: [stockId, productId, productCode, productName, warehouseId, warehouseName, unitName, availableQty, safetyStockQty, suggestedPurchaseQty, severity, latestOutboundAt]
@@ -5535,7 +5476,10 @@ components:
         availableQty: { type: number, format: double, minimum: 0, description: 可用库存，按 `stock_qty - locked_qty` 派生 }
         safetyStockQty: { type: number, format: double, minimum: 0, description: 产品安全库存 }
         suggestedPurchaseQty: { type: number, format: double, minimum: 0, description: 建议补货数量，由安全库存、在途采购和近期销售速度派生 }
-        severity: { type: string, enum: [HIGH, MEDIUM], description: 库存风险等级 }
+        severity:
+          type: string
+          enum: [OUT_OF_STOCK, NO_AVAILABLE, LOW_STOCK]
+          description: 库存健康状态；OUT_OF_STOCK 表示 stock_qty=0（零库存），NO_AVAILABLE 表示 stock_qty>0 且 available_qty=0（无可用库存），LOW_STOCK 表示 0<available_qty<=safety_stock_qty（低库存）。
         latestOutboundAt: { type: string, nullable: true, description: 最近出库时间；无出库记录返回 `null` }
 
     DashboardOrderStage:
@@ -5543,8 +5487,8 @@ components:
       required: [stage, purchaseCount, salesCount]
       properties:
         stage: { type: string, description: 状态展示名称，例如 `待审核`、`已审核`、`已完成` }
-        purchaseCount: { type: integer, minimum: 0, description: 采购订单数量 }
-        salesCount: { type: integer, minimum: 0, description: 销售订单数量 }
+        purchaseCount: { type: integer, minimum: 0, description: 本自然月新建的采购订单数量 }
+        salesCount: { type: integer, minimum: 0, description: 本自然月新建的销售订单数量 }
 
     DashboardTopProduct:
       type: object
@@ -7222,7 +7166,6 @@ components:
       required: [billType, warehouseId, sourcePartyId, sourcePartyName, manualReason, items]
       properties:
         billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 手工补录或库存调整类型 }
-        sourceNo: { type: string, maxLength: 64, description: 来源业务单号；人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交，不支持手动输入。调整类型由后端生成调整单号 }
         sourceId: { type: string, nullable: true, description: 来源单据 ID；人工补录可不传，传入时必须与非空 sourceNo 成对提交；调整类型不传 }
         warehouseId: { type: string, description: 启用状态的仓库 ID }
         sourcePartyId: { type: string, minLength: 1, description: 来源对象 ID；采购入库/采购退货出库为供应商 ID，销售出库/销售退货为客户 ID，调整入库/出库为来源仓库 ID。必填，由前端下拉选择 }
@@ -7256,7 +7199,6 @@ components:
         version: { type: integer, minimum: 0, description: 当前入库单或出库单工作单版本，用于乐观锁。 }
         warehouseId: { type: string, description: 仓库 ID；仅 `DRAFT` 状态允许修改，`PENDING_CONFIRM` 必须保持原值 }
         sourceId: { type: string, nullable: true, description: 仅人工补录的非调整 `DRAFT` 可修改来源单据 ID；与 sourceNo 成对提交，两个字段均为空字符串表示清除来源关联，两个字段均省略表示保持原值 }
-        sourceNo: { type: string, maxLength: 64, description: 仅人工补录的非调整 `DRAFT` 可修改原业务单号；必须从已有单据搜索选择并与 sourceId 成对提交，两个字段均为空字符串表示清除来源关联。调整单、系统生成单和 `PENDING_CONFIRM` 必须保持原值 }
         sourcePartyId: { type: string, description: 人工补录的非调整 `DRAFT` 可修改来源对象 ID；采购类为供应商 ID，销售类为客户 ID。调整入库/出库 `DRAFT` 可修改来源仓库 ID；系统生成单及 `PENDING_CONFIRM` 不得提交或修改 }
         sourcePartyName: { type: string, maxLength: 200, description: 与 sourcePartyId 同时提交的来源对象名称快照；人工补录非调整单与调整入库/出库的 `DRAFT` 可修改 }
         manualReason: { type: string, maxLength: 500, description: 手工补录或调整草稿必填；系统生成单据保持原值 }
@@ -7341,7 +7283,6 @@ components:
         billNo: { type: string, maxLength: 64, description: 入库单号或出库单号 }
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 原业务来源类型 }
         sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输；人工补录可未关联来源，此时为 null }
-        sourceNo: { type: string, maxLength: 64, description: 原业务来源单号快照；人工补录可为空字符串，调整单由后端生成调整单号 }
         sourcePartyId: { type: string, nullable: true, description: 来源对象 ID，BIGINT 按字符串传输；采购入库为供应商 ID，销售退货为客户 ID，库存调整为受影响仓库 ID；人工调整或历史未关联数据时为 null }
         sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；采购相关单据表示供应商，销售相关单据表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示发生调整的来源仓库名称快照，前端统一显示在“来源对象”列，调整单详情和编辑态标注为“来源仓库”；历史未关联数据时为空字符串 }
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 前端显示为系统生成、人工补录和人工调整 }
@@ -7424,7 +7365,6 @@ components:
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 对应 `stock_bill.entry_mode`，确认时从工作单复制的历史快照 }
         sourceType: { type: string, readOnly: true, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 由 billType 派生：采购入库、销售出库、采购退货出库、销售退货入库、调整入出库分别对应采购订单、销售订单、采购退货单、销售退货单、库存调整单；不对应 stock_bill 持久化字段 }
         sourceId: { type: string, nullable: true, description: 原业务单据 ID }
-        sourceNo: { type: string, maxLength: 64, description: 原业务单号或调整单号 }
         warehouseId: { type: string }
         warehouseName: { type: string, maxLength: 100 }
         itemCount: { type: integer, minimum: 0 }

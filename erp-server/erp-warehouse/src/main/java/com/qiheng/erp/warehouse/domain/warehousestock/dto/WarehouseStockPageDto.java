@@ -34,6 +34,9 @@ public class WarehouseStockPageDto extends PageQuery {
     )
     private InventoryHealth inventoryHealth;
 
+    @Schema(description = "是否仅返回风险库存；零库存、无可用库存或可用库存小于等于安全库存时命中，并与 inventoryHealth 按 AND 组合")
+    private Boolean riskOnly;
+
     @Schema(
             description = "库存占用状态",
             allowableValues = {

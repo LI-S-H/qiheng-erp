@@ -39,8 +39,11 @@ public class DashboardOverviewVO {
     @Schema(description = "库存风险 SKU 完整数组")
     private List<DashboardStockAlertVO> stockAlerts = new ArrayList<>();
 
-    @Schema(description = "采购单和销售单状态分布")
+    @Schema(description = "本自然月新建的采购单和销售单当前状态分布")
     private List<DashboardOrderStageVO> orderStages = new ArrayList<>();
+
+    @Schema(description = "订单流转统计期间；明确返回本次查询的自然月起止边界")
+    private DashboardOrderStagePeriodVO orderStagePeriod;
 
     @Schema(description = "近 30 日销售商品排行完整数组，按 salesAmount 降序返回")
     private List<DashboardTopProductVO> topProducts = new ArrayList<>();

@@ -1,6 +1,8 @@
 package com.qiheng.erp.dashboard.service.impl;
 
 import com.qiheng.erp.dashboard.domain.enums.DashboardAccessState;
+import com.qiheng.erp.dashboard.domain.enums.MetricKey;
+import com.qiheng.erp.dashboard.domain.model.DashboardOrderStageSnapshot;
 import com.qiheng.erp.dashboard.domain.vo.DashboardOrderStagePermissionsVO;
 import com.qiheng.erp.dashboard.domain.vo.DashboardOrderStageVO;
 import com.qiheng.erp.dashboard.domain.vo.DashboardOverviewAccessVO;
@@ -81,11 +83,11 @@ public class DashboardOverviewServiceImpl implements IDashboardOverviewService {
         vo.setMetrics(metricsLoader.load(user));
 
         DashboardOverviewAccessVO access = new DashboardOverviewAccessVO();
-        access.getMetrics().put("MONTH_SALES", access(canViewSales, true));
-        access.getMetrics().put("MONTH_GROSS_PROFIT", access(canViewSales && canViewPurchase, true));
+        access.getMetrics().put(MetricKey.MONTH_SALES.name(), access(canViewSales, true));
+        access.getMetrics().put(MetricKey.MONTH_GROSS_PROFIT.name(), access(canViewSales && canViewPurchase, true));
         boolean canViewPending = canViewSales || canViewPurchase || canViewWarehouse;
-        access.getMetrics().put("PENDING_ORDERS", access(canViewPending, true));
-        access.getMetrics().put("STOCK_RISK_SKU", access(canViewWarehouse, true));
+        access.getMetrics().put(MetricKey.PENDING_ORDERS.name(), access(canViewPending, true));
+        access.getMetrics().put(MetricKey.STOCK_RISK_SKU.name(), access(canViewWarehouse, true));
 
         // 经营趋势维持现有契约与展示，不纳入本次统一面板改造。
         DashboardTrendPermissionsVO trendPerm = new DashboardTrendPermissionsVO();
@@ -114,8 +116,10 @@ public class DashboardOverviewServiceImpl implements IDashboardOverviewService {
         orderPerm.setCanViewPurchase(canViewPurchase);
         orderPerm.setCanViewSales(canViewSales);
         vo.setOrderStagePermissions(orderPerm);
+        DashboardOrderStageSnapshot orderStageSnapshot = orderStageLoader.load(user);
+        vo.setOrderStagePeriod(orderStageSnapshot.period());
         if (canViewPurchase || canViewSales) {
-            vo.setOrderStages(orderStageLoader.load(user));
+            vo.setOrderStages(orderStageSnapshot.stages());
         } else {
             vo.setOrderStages(List.of());
         }

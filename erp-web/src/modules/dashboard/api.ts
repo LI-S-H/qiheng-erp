@@ -8,6 +8,7 @@ import type {
   DashboardSectionAccess,
   DashboardNotificationPopover,
   DashboardOrderStage,
+  DashboardOrderStagePeriod,
   DashboardOrderStagePermissions,
   DashboardOverview,
   DashboardStockAlert,
@@ -19,6 +20,22 @@ import type {
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
+
+function formatMockDateTime(value: Date) {
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return [value.getFullYear(), pad(value.getMonth() + 1), pad(value.getDate())].join('-') + ' 00:00:00';
+}
+
+function currentMockOrderStagePeriod(): DashboardOrderStagePeriod {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return {
+    type: 'CURRENT_CALENDAR_MONTH',
+    startAt: formatMockDateTime(monthStart),
+    endAtExclusive: formatMockDateTime(nextMonthStart),
+  };
+}
 
 const defaultTodoLabels: Record<string, string> = {
   PURCHASE: '采购',
@@ -131,7 +148,9 @@ const mockOverview: DashboardOverview = {
     { stage: '已审核', purchaseCount: 3, salesCount: 2 },
     { stage: '部分出入库', purchaseCount: 1, salesCount: 1 },
     { stage: '已完成', purchaseCount: 2, salesCount: 4 },
+    { stage: '已取消', purchaseCount: 0, salesCount: 0 },
   ],
+  orderStagePeriod: currentMockOrderStagePeriod(),
   topProducts: [
     { productId: '1920000000000000001', productCode: 'P000001', productName: '经典原味苏打水', salesAmount: 126800, salesQty: 360, availableQty: 122 },
     { productId: '1920000000000000026', productCode: 'P000026', productName: 'A4复印纸', salesAmount: 98400, salesQty: 220, availableQty: 24 },
@@ -238,6 +257,18 @@ function normalizeOrderStage(item: DashboardOrderStage): DashboardOrderStage {
   };
 }
 
+function normalizeOrderStagePeriod(value: unknown): DashboardOrderStagePeriod {
+  const raw = value as Partial<DashboardOrderStagePeriod> | null;
+  if (raw?.type !== 'CURRENT_CALENDAR_MONTH' || typeof raw.startAt !== 'string' || typeof raw.endAtExclusive !== 'string') {
+    throw new Error('dashboard orderStagePeriod is invalid');
+  }
+  return {
+    type: raw.type,
+    startAt: raw.startAt,
+    endAtExclusive: raw.endAtExclusive,
+  };
+}
+
 function normalizeTopProduct(item: DashboardTopProduct): DashboardTopProduct {
   return {
     ...item,
@@ -316,6 +347,7 @@ function normalizeOverview(data: DashboardOverview): DashboardOverview {
     todos: data.todos.map(normalizeTodo),
     stockAlerts: data.stockAlerts.map(normalizeStockAlert),
     orderStages: data.orderStages.map(normalizeOrderStage),
+    orderStagePeriod: normalizeOrderStagePeriod(data.orderStagePeriod),
     orderStagePermissions: normalizeOrderStagePermissions(data.orderStagePermissions),
     topProducts: data.topProducts.map(normalizeTopProduct),
     supplierPerformance: data.supplierPerformance.map(normalizeSupplierPerformance),

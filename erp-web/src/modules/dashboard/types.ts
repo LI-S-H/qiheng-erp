@@ -85,6 +85,12 @@ export interface DashboardOrderStage {
   salesCount: number;
 }
 
+export interface DashboardOrderStagePeriod {
+  type: 'CURRENT_CALENDAR_MONTH';
+  startAt: string;
+  endAtExclusive: string;
+}
+
 export interface DashboardTopProduct {
   productId: string;
   productCode: string;
@@ -111,15 +117,14 @@ export interface DashboardOverview {
   todos: DashboardTodoItem[];
   stockAlerts: DashboardStockAlert[];
   orderStages: DashboardOrderStage[];
+  orderStagePeriod: DashboardOrderStagePeriod;
   orderStagePermissions?: DashboardOrderStagePermissions | null;
   topProducts: DashboardTopProduct[];
   supplierPerformance: DashboardSupplierPerformance[];
   access: DashboardOverviewAccess;
 }
 
-/**
- * 经营趋势可见维度标记。旧版本接口不返回该字段时，前端回退到全 true。
- */
+/** 经营趋势可见维度标记。旧版本接口不返回该字段时，前端回退为全 true。 */
 export interface DashboardTrendPermissions {
   canViewSales: boolean;
   canViewPurchase: boolean;

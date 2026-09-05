@@ -256,7 +256,7 @@ async function fetchProductOptions(keyword: string): Promise<RemoteSearchOption[
     pageNum: 1,
     pageSize: 10,
     ...productKeywordQuery(keyword),
-  });
+  }, { skipPageLoading: true });
   return page.records.map(item => ({
     value: item.productId,
     label: `${item.productCode} ${item.productName}（${item.unitName}）`,
@@ -269,7 +269,7 @@ async function fetchWarehouseOptions(keyword: string): Promise<RemoteSearchOptio
     pageNum: 1,
     pageSize: 10,
     ...warehouseKeywordQuery(keyword),
-  });
+  }, { skipPageLoading: true });
   return page.records.map(item => ({
     value: item.warehouseId,
     label: `${item.warehouseCode} ${item.warehouseName}`,

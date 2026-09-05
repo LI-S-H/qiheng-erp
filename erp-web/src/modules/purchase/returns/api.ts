@@ -538,7 +538,7 @@ export async function searchPurchaseReturnSourceOrders(keyword = ''): Promise<Re
       returnType: 'PURCHASE_RETURN',
       sourceOrderNo: sourceOrderNo || undefined,
       pageSize: 10,
-    });
+    }, { skipPageLoading: true });
     return rows.map(normalizeSourceOrder);
   }
   const details = await getEligiblePurchaseDetails();
@@ -563,7 +563,7 @@ export async function searchPurchaseReturnSourceOrders(keyword = ''): Promise<Re
 
 export async function listPurchaseReturnSourceItems(sourceOrderId: string): Promise<ReturnableSourceOrderItem[]> {
   if (useMockApi) return mockSourceItems(sourceOrderId);
-  const items = await getResult<ReturnableSourceOrderItem[]>(`${RETURN_API}/source-orders/${sourceOrderId}/items`, { returnType: 'PURCHASE_RETURN' });
+  const items = await getResult<ReturnableSourceOrderItem[]>(`${RETURN_API}/source-orders/${sourceOrderId}/items`, { returnType: 'PURCHASE_RETURN' }, { skipPageLoading: true });
   return items.map(normalizeSourceItem);
 }
 

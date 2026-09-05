@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios';
 import { getResult, http, postResult } from '@/api/http';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeStringId } from '@/shared/utils/api-normalizers';
 import type {
@@ -106,7 +107,7 @@ function generateMockWarehouseCode() {
   return warehouseCode;
 }
 
-export function listWarehouses(params: WarehouseQuery) {
+export function listWarehouses(params: WarehouseQuery, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) return Promise.resolve(normalizeWarehousePage(filterWarehouses(params)));
   const { warehouseCode, warehouseName, contactName, contactPhone, status, ...rest } = params;
   return getResult<WarehousePage>('/warehouse/warehouses', {
@@ -116,7 +117,7 @@ export function listWarehouses(params: WarehouseQuery) {
     ...(contactName?.trim() ? { contactName: contactName.trim() } : {}),
     ...(contactPhone?.trim() ? { contactPhone: contactPhone.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  }).then(normalizeWarehousePage);
+  }, requestConfig).then(normalizeWarehousePage);
 }
 
 export function createWarehouse(payload: WarehouseCreatePayload) {

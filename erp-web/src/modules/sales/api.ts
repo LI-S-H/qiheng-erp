@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios';
 import { getResult, http, postResult } from '@/api/http';
 import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
@@ -23,6 +24,7 @@ import type {
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
+const remoteOptionRequestConfig = { skipPageLoading: true } as const;
 
 const customerSeed = [
   ['C001', '上海林间便利连锁', '秦夏', '021-7728-2001', '上海市浦东新区张江镇', 180000, 1, true],
@@ -331,7 +333,7 @@ function filterOrders(params: SalesOrderQuery): SalesOrderPage {
   return { records, total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize };
 }
 
-export function listCustomers(params: CustomerQuery) {
+export function listCustomers(params: CustomerQuery, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) return Promise.resolve(normalizePage(filterCustomers(params), normalizeCustomer));
   const { customerCode, customerName, contactName, status, ...rest } = params;
   return getResult<PageResult<CustomerListItem>>('/sales/customers', {
@@ -340,7 +342,7 @@ export function listCustomers(params: CustomerQuery) {
     ...(customerName?.trim() ? { customerName: customerName.trim() } : {}),
     ...(contactName?.trim() ? { contactName: contactName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  }).then(page => normalizePage(page, normalizeCustomer));
+  }, requestConfig).then(page => normalizePage(page, normalizeCustomer));
 }
 
 export async function searchCustomerOptions(keyword = '', pageSize = 10): Promise<CustomerOption[]> {
@@ -349,7 +351,7 @@ export async function searchCustomerOptions(keyword = '', pageSize = 10): Promis
     pageSize,
     status: 1,
     ...keywordField(keyword, 'customerCode', 'customerName'),
-  });
+  }, remoteOptionRequestConfig);
   return page.records.map(item => ({
     customerId: item.customerId,
     customerCode: item.customerCode,
@@ -445,7 +447,7 @@ export function batchDeleteCustomers(payload: CustomerBatchIdsPayload) {
   return postResult<null, CustomerBatchIdsPayload>('/sales/customers/batch/delete', payload);
 }
 
-export function listSalesOrders(params: SalesOrderQuery) {
+export function listSalesOrders(params: SalesOrderQuery, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) {
     const page = filterOrders(params);
     return Promise.resolve(normalizePage(page, normalizeOrder));
@@ -457,7 +459,7 @@ export function listSalesOrders(params: SalesOrderQuery) {
     ...(customerId && customerId !== 'all' ? { customerId } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(status && status !== 'all' ? { status } : {}),
-  }).then(page => normalizePage(page, normalizeOrder));
+  }, requestConfig).then(page => normalizePage(page, normalizeOrder));
 }
 
 export function getSalesOrderDetail(salesOrderId: string) {
@@ -601,7 +603,7 @@ export async function listEnabledSalesProductOptions(keyword = '', pageSize = 10
     pageSize,
     status: 1,
     ...keywordField(keyword, 'productCode', 'productName'),
-  });
+  }, remoteOptionRequestConfig);
   return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}`, product: item }));
 }
 
@@ -617,6 +619,6 @@ export async function listEnabledSalesWarehouseOptions(keyword = '', pageSize = 
     pageSize,
     status: 1,
     ...keywordField(keyword, 'warehouseCode', 'warehouseName'),
-  });
+  }, remoteOptionRequestConfig);
   return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}`, warehouse: item }));
 }

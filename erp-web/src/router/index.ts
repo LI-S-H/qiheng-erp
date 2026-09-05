@@ -243,7 +243,7 @@ function finishRouteLoading() {
 }
 
 router.beforeEach(async (to, from) => {
-  if (to.fullPath !== from.fullPath) {
+  if (to.path !== from.path) {
     finishRouteLoading();
     routeLoading = { fullPath: to.fullPath, finish: beginPageLoading() };
   }

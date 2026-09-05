@@ -538,7 +538,7 @@ export async function searchSalesReturnSourceOrders(keyword = ''): Promise<Retur
       returnType: 'SALES_RETURN',
       sourceOrderNo: sourceOrderNo || undefined,
       pageSize: 10,
-    });
+    }, { skipPageLoading: true });
     return rows.map(normalizeSourceOrder);
   }
   const details = await getEligibleSalesDetails();
@@ -563,7 +563,7 @@ export async function searchSalesReturnSourceOrders(keyword = ''): Promise<Retur
 
 export async function listSalesReturnSourceItems(sourceOrderId: string): Promise<ReturnableSourceOrderItem[]> {
   if (useMockApi) return mockSourceItems(sourceOrderId);
-  const items = await getResult<ReturnableSourceOrderItem[]>(`${RETURN_API}/source-orders/${sourceOrderId}/items`, { returnType: 'SALES_RETURN' });
+  const items = await getResult<ReturnableSourceOrderItem[]>(`${RETURN_API}/source-orders/${sourceOrderId}/items`, { returnType: 'SALES_RETURN' }, { skipPageLoading: true });
   return items.map(normalizeSourceItem);
 }
 

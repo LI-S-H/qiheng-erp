@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { Columns3, RotateCcw } from 'lucide-vue-next';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
@@ -95,6 +95,7 @@ interface DraftFormItem extends StockBillDraftItemPayload {
 }
 
 const route = useRoute();
+const router = useRouter();
 const authStore = useAuthStore();
 const emptySummary = (): StockBillSummary => ({ sourceGeneratedCount: 0, pendingCount: 0, confirmedCount: 0, cancelledCount: 0 });
 
@@ -390,7 +391,7 @@ const selectedSourceOrderLabel = computed(() => sourceOrderOptions.value.find(it
 
 async function fetchSourceOrderSearchOptions(keyword: string) {
   if (formBillType.value === 'PURCHASE_IN') {
-    const page = await listPurchaseOrders({ purchaseNo: keyword.trim() || undefined, status: 'APPROVED', pageNum: 1, pageSize: 10 });
+    const page = await listPurchaseOrders({ purchaseNo: keyword.trim() || undefined, status: 'APPROVED', pageNum: 1, pageSize: 10 }, { skipPageLoading: true });
     const options = page.records.map(item => ({
       value: item.purchaseNo,
       label: `${item.purchaseNo}（${item.supplierName}）`,
@@ -410,7 +411,7 @@ async function fetchSourceOrderSearchOptions(keyword: string) {
     return options;
   }
   if (formBillType.value === 'SALES_OUT') {
-    const page = await listSalesOrders({ salesNo: keyword.trim() || undefined, status: 'APPROVED', pageNum: 1, pageSize: 10 });
+    const page = await listSalesOrders({ salesNo: keyword.trim() || undefined, status: 'APPROVED', pageNum: 1, pageSize: 10 }, { skipPageLoading: true });
     const options = page.records.map(item => ({
       value: item.salesNo,
       label: `${item.salesNo}（${item.customerName}）`,
@@ -756,7 +757,7 @@ async function fetchWarehouseSearchOptions(keyword: string) {
     pageNum: 1,
     pageSize: 10,
     ...warehouseKeywordQuery(keyword),
-  });
+  }, { skipPageLoading: true });
   mergeWarehouses(page.records);
   return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
 }
@@ -767,7 +768,7 @@ async function fetchFormWarehouseSearchOptions(keyword: string) {
     pageNum: 1,
     pageSize: 10,
     ...warehouseKeywordQuery(keyword),
-  });
+  }, { skipPageLoading: true });
   mergeWarehouses(page.records);
   return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}` }));
 }
@@ -778,7 +779,7 @@ async function fetchProductSearchOptions(keyword: string, currentItemKey?: strin
     pageNum: 1,
     pageSize: 10,
     ...productKeywordQuery(keyword),
-  });
+  }, { skipPageLoading: true });
   mergeProducts(page.records);
   const selectedProductIds = new Set(form.items
     .filter(item => item.key !== currentItemKey)
@@ -849,6 +850,20 @@ const {
   },
 });
 
+function applyDashboardStatusPreset() {
+  const status = route.query.status;
+  if (typeof status !== 'string' || !statusOptions.some(option => option.value === status)) return;
+  query.status = status as StockBillStatus;
+  query.pageNum = 1;
+}
+
+function resetFilters() {
+  if (Object.keys(route.query).length > 0) {
+    void router.replace({ path: route.path });
+    return;
+  }
+  handleReset();
+}
 async function openDetail(row: StockBillListItem) {
   detailVisible.value = true;
   detailLoading.value = true;
@@ -1337,7 +1352,7 @@ onMounted(async () => {
           <AnchoredSelect v-model="query.status" :options="statusOptions" />
         </div>
       <template #actions>
-          <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" />
+          <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="resetFilters" />
       </template>
     </ListFilterPanel>
 

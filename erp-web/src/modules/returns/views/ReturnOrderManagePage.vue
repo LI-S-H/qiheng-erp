@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import { useRoute, useRouter } from 'vue-router';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
@@ -129,6 +130,9 @@ const warehouseOptions = ref<ReturnSelectOption[]>([{ value: 'all', label: '全�
 const sourceOrderOptions = ref<ReturnSelectOption[]>([]);
 const sourceOrderCache = new Map<string, ReturnableSourceOrder>();
 const formErrors = reactive<Record<string, string>>({});
+const route = useRoute();
+const router = useRouter();
+
 let requestSequence = 0;
 let draftLineSequence = 1;
 
@@ -263,6 +267,20 @@ const { handleSearch, handleReset, handlePageChange, handlePageSizeChange, refre
   },
 });
 
+function applyDashboardStatusPreset() {
+  const status = route.query.status;
+  if (typeof status !== 'string' || !statusOptions.value.some(option => option.value === status)) return;
+  query.status = status as ReturnOrderStatus;
+  query.pageNum = 1;
+}
+
+function resetFilters() {
+  if (Object.keys(route.query).length > 0) {
+    void router.replace({ path: route.path });
+    return;
+  }
+  handleReset();
+}
 function clearFormErrors() {
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
@@ -829,6 +847,7 @@ function reasonLabel(value: ReturnReasonCode) {
 }
 
 onMounted(() => {
+  applyDashboardStatusPreset();
   if (!canQuery.value) {
     toast.error(`缺少 ${props.config.permissions.query} 权限`);
     return;
@@ -854,7 +873,7 @@ onMounted(() => {
       <div class="space-y-1" data-filter-size="wide"><Label>{{ config.partyLabel }}</Label><RemoteSearchSelect v-model="query.partyId" :selected-label="queryPartyLabel" :fetch-options="fetchPartyOptions" :placeholder="config.partyAllLabel" :search-placeholder="config.partySearchPlaceholder" clearable clear-value="all" :clear-label="config.partyAllLabel" /></div>
       <div class="space-y-1" data-filter-size="wide"><Label>{{ config.warehouseLabel }}</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="queryWarehouseLabel" :fetch-options="fetchWarehouseOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
       <div class="space-y-1" data-filter-size="compact"><Label>退回状态</Label><AnchoredSelect v-model="query.status" :options="statusOptions" /></div>
-      <template #actions><ListFilterActions :busy="queryBusy" :disabled="!canQuery" @query="handleSearch" @reset="handleReset" /></template>
+      <template #actions><ListFilterActions :busy="queryBusy" :disabled="!canQuery" @query="handleSearch" @reset="resetFilters" /></template>
     </ListFilterPanel>
 
     <div class="data-panel relative">
@@ -863,8 +882,8 @@ onMounted(() => {
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy || !canQuery" @click="refreshList">刷新</Button><Button v-if="canCreate" size="sm" @click="openCreateDialog">{{ config.createButtonLabel }}</Button></div>
       </div>
 
-      <Table class="business-data-table min-w-[1430px] table-fixed" :scroll-label="config.listTitle" data-return-order-table>
-        <colgroup><col class="w-[270px]" /><col class="w-[270px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
+      <Table class="business-data-table min-w-[1330px] table-fixed" :scroll-label="config.listTitle" data-return-order-table>
+        <colgroup><col class="w-[220px]" /><col class="w-[220px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
         <TableHeader><TableRow><TableHead data-return-no-column>退回单号</TableHead><TableHead>{{ config.sourceOrderLabel }}号</TableHead><TableHead>{{ config.partyLabel }}</TableHead><TableHead>{{ config.warehouseLabel }}</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">退回金额</TableHead><TableHead class="text-center">预计执行</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-return-actions-column>操作</TableHead></TableRow></TableHeader>
         <TableBody>
           <TableRow v-if="rows.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">{{ config.emptyText }}</TableCell></TableRow>
@@ -917,7 +936,6 @@ onMounted(() => {
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">{{ config.fulfilledQuantityLabel }}</TableHead><TableHead class="text-right">其他退货已占</TableHead><TableHead class="text-right">剩余可退</TableHead><TableHead class="text-right">申请数量</TableHead><TableHead class="text-right">原单价</TableHead><TableHead class="text-right">预计金额</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-if="!form.sourceOrderId"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">请先选择{{ config.sourceOrderLabel }}</TableCell></TableRow>
-                    <TableRow v-if="draftLines.length === 0"><TableCell colspan="9" class="h-24 text-center text-muted-foreground">该订单暂无剩余可退明细</TableCell></TableRow>
                     <TableRow v-for="(line, index) in draftLines" v-else :key="line.rowId" :data-source-item-id="line.sourceOrderItemId">
                       <TableCell class="align-top"><RemoteSearchSelect :model-value="line.sourceOrderItemId" :selected-label="selectedProductLabel(line)" :fetch-options="keyword => fetchReturnProductOptions(keyword, line.rowId)" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectReturnProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
                       <TableCell class="text-right tabular-nums">{{ line.sourceOrderItemId ? `${formatQuantity(line.sourceFulfilledQty, line.quantityPrecision)} ${line.unitName}` : '-' }}</TableCell>

@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios';
 import { getResult, http, postResult } from '@/api/http';
 import type { PageResult } from '@/shared/types/api';
 import { normalizeBinaryStatus, normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
@@ -28,6 +29,7 @@ import type {
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
+const remoteOptionRequestConfig = { skipPageLoading: true } as const;
 
 const supplierSeed = [
   ['S001', '华东饮品供应链', '陆明', '021-6628-1001', '上海市嘉定区安亭镇', '月结30天', 92.6, 94.2, 96.1, 88.4, 91.5, 3.8, 96.5, 98.2, 1, true],
@@ -474,7 +476,7 @@ function filterOrders(params: PurchaseOrderQuery): PurchaseOrderPage {
   return { records, total: filtered.length, pageNum: params.pageNum, pageSize: params.pageSize };
 }
 
-export function listSuppliers(params: SupplierQuery) {
+export function listSuppliers(params: SupplierQuery, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) return Promise.resolve(normalizePage(filterSuppliers(params), normalizeSupplier));
   const { supplierCode, supplierName, contactName, status, ...rest } = params;
   return getResult<PageResult<SupplierListItem>>('/purchase/suppliers', {
@@ -483,7 +485,7 @@ export function listSuppliers(params: SupplierQuery) {
     ...(supplierName?.trim() ? { supplierName: supplierName.trim() } : {}),
     ...(contactName?.trim() ? { contactName: contactName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  }).then(page => normalizePage(page, normalizeSupplier));
+  }, requestConfig).then(page => normalizePage(page, normalizeSupplier));
 }
 
 export async function searchSupplierOptions(keyword = '', pageSize = 10): Promise<SupplierOption[]> {
@@ -492,7 +494,7 @@ export async function searchSupplierOptions(keyword = '', pageSize = 10): Promis
     pageSize,
     status: 1,
     ...keywordField(keyword, 'supplierCode', 'supplierName'),
-  });
+  }, remoteOptionRequestConfig);
   return page.records.map(item => ({
     supplierId: item.supplierId,
     supplierCode: item.supplierCode,
@@ -700,7 +702,7 @@ export function batchDeleteSupplierProducts(payload: SupplierProductBatchIdsPayl
   return postResult<null, SupplierProductBatchIdsPayload>('/purchase/supplier-products/batch/delete', payload);
 }
 
-export function listPurchaseOrders(params: PurchaseOrderQuery) {
+export function listPurchaseOrders(params: PurchaseOrderQuery, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) {
     const page = filterOrders(params);
     return Promise.resolve(normalizePage(page, normalizeOrder));
@@ -712,7 +714,7 @@ export function listPurchaseOrders(params: PurchaseOrderQuery) {
     ...(supplierId && supplierId !== 'all' ? { supplierId } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(status && status !== 'all' ? { status } : {}),
-  }).then(page => normalizePage(page, normalizeOrder));
+  }, requestConfig).then(page => normalizePage(page, normalizeOrder));
 }
 
 export function getPurchaseOrderDetail(purchaseOrderId: string) {
@@ -910,7 +912,7 @@ export async function listEnabledProductOptions(keyword = '', pageSize = 10) {
     pageSize,
     status: 1,
     ...keywordField(keyword, 'productCode', 'productName'),
-  });
+  }, remoteOptionRequestConfig);
   return page.records.map(item => ({ value: item.productId, label: `${item.productCode} ${item.productName}`, product: item }));
 }
 
@@ -927,6 +929,6 @@ export async function listEnabledWarehouseOptions(keyword = '', pageSize = 10) {
     pageSize,
     status: 1,
     ...keywordField(keyword, 'warehouseCode', 'warehouseName'),
-  });
+  }, remoteOptionRequestConfig);
   return page.records.map(item => ({ value: item.warehouseId, label: `${item.warehouseCode} ${item.warehouseName}`, warehouse: item }));
 }

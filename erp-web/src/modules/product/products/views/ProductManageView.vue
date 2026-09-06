@@ -22,6 +22,7 @@ import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
+import { formatQtyByPrecision, matchesQuantityPrecision, quantityStepFor } from '@/shared/utils/qty';
 import { listProductCategories } from '../../categories/api';
 import type { ProductCategoryListItem } from '../../categories/types';
 import {
@@ -93,11 +94,8 @@ const quantityPrecisionOptions = [0, 1, 2].map(value => ({
   value,
   label: value === 0 ? '0 位（仅整数）' : `${value} 位小数`,
 }));
-const quantityStep = computed(() => 10 ** -form.quantityPrecision);
+const quantityStep = computed(() => quantityStepFor(form.quantityPrecision));
 
-function matchesQuantityPrecision(value: number, precision: number) {
-  return Math.abs(value * 10 ** precision - Math.round(value * 10 ** precision)) < 1e-8;
-}
 const categoryCount = computed(() => new Set(products.value.map(item => item.categoryId).filter(Boolean)).size);
 const summaryItems = computed(() => [
   { key: 'enabled', label: '本页启用', value: enabledCount.value, tone: 'positive' as const },
@@ -425,9 +423,6 @@ function formatMoney(value: number) {
   return `¥${value.toFixed(2)}`;
 }
 
-function formatQty(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
-}
 </script>
 
 <template>
@@ -480,7 +475,7 @@ function formatQty(value: number) {
               <TableCell><div class="flex min-w-0 flex-col"><span class="truncate" :title="row.brandName || '无品牌'">{{ row.brandName || '无品牌' }}</span><span class="truncate text-xs text-muted-foreground" :title="row.specification || '无规格'">{{ row.specification || '无规格' }}</span></div></TableCell>
               <TableCell>{{ row.unitName }}</TableCell>
               <TableCell><div class="flex flex-col whitespace-nowrap text-xs"><span>采 {{ formatMoney(row.referencePurchasePrice) }}</span><span class="text-muted-foreground">销 {{ formatMoney(row.referenceSalePrice) }}</span></div></TableCell>
-              <TableCell>{{ formatQty(row.safetyStockQty) }}</TableCell>
+              <TableCell>{{ formatQtyByPrecision(row.safetyStockQty, row.quantityPrecision) }}</TableCell>
               <TableCell><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
               <TableCell class="text-center"><div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><RowActionsMenu :actions="getRowActions(row)" :disabled="actionSubmitting" :label="`更多 ${row.productCode} 操作`" @select="handleRowAction(row, $event)" /></div></TableCell>
             </TableRow>

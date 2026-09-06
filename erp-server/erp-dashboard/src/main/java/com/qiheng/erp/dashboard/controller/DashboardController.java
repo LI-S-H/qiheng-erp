@@ -4,10 +4,12 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.dashboard.domain.vo.DashboardNotificationPopoverVO;
 import com.qiheng.erp.dashboard.domain.vo.DashboardOverviewVO;
+import com.qiheng.erp.dashboard.domain.vo.DashboardInventoryStatusVO;
 import com.qiheng.erp.dashboard.job.DashboardDailySnapshotJob;
 import com.qiheng.erp.dashboard.job.DashboardMonthlySnapshotJob;
 import com.qiheng.erp.dashboard.service.IDashboardNotificationService;
 import com.qiheng.erp.dashboard.service.IDashboardOverviewService;
+import com.qiheng.erp.dashboard.loader.DashboardInventoryStatusLoader;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -35,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class DashboardController {
     // 工作台经营概览服务
     private final IDashboardOverviewService overviewService;
+    private final DashboardInventoryStatusLoader inventoryStatusLoader;
     // 顶栏通知服务
     private final IDashboardNotificationService notificationService;
     // 日快照任务（手动触发用）
@@ -56,6 +60,13 @@ public class DashboardController {
         StpUtil.checkPermission("dashboard:overview:query");
         log.info("加载工作台经营概览");
         return Result.ok(overviewService.overview());
+    }
+
+    @GetMapping("/inventory-status")
+    @Operation(summary = "Get dashboard inventory status")
+    public Result<DashboardInventoryStatusVO> inventoryStatus(@RequestParam(required = false) Long warehouseId) {
+        StpUtil.checkPermission("dashboard:overview:query");
+        return Result.ok(inventoryStatusLoader.load(warehouseId));
     }
 
     /**

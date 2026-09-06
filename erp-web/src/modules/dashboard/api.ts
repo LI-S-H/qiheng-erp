@@ -1,9 +1,12 @@
 import { getResult } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
 import { normalizeMoneyNumber } from '@/shared/utils/money';
+import { assertQuantityPrecision } from '@/shared/utils/qty';
 import type {
   DashboardAccessState,
   DashboardMetric,
+  DashboardInventoryStatus,
+  DashboardInventoryRiskPreviewItem,
   DashboardOverviewAccess,
   DashboardSectionAccess,
   DashboardNotificationPopover,
@@ -169,6 +172,23 @@ const mockOverview: DashboardOverview = {
 };
 
 const dashboardMetricKeys = ['MONTH_SALES', 'MONTH_GROSS_PROFIT', 'PENDING_ORDERS', 'STOCK_RISK_SKU'] as const;
+const mockInventoryStatus: DashboardInventoryStatus = {
+  distribution: [
+    { status: 'NORMAL', recordCount: 13 },
+    { status: 'LOW_STOCK', recordCount: 7 },
+    { status: 'NO_AVAILABLE', recordCount: 2 },
+    { status: 'OUT_OF_STOCK', recordCount: 0 },
+  ],
+  riskPreview: {
+    items: [
+      { stockId: '1940000000000000013', productCode: 'P000043', productName: 'USB-C扩展坞', warehouseName: '南京备货仓', unitName: '个', quantityPrecision: 0, availableQty: 0, safetyStockQty: 4, severity: 'NO_AVAILABLE' },
+      { stockId: '1940000000000000005', productCode: 'P000027', productName: '热敏标签纸', warehouseName: '华南中心仓', unitName: '卷', quantityPrecision: 0, availableQty: 0, safetyStockQty: 40, severity: 'OUT_OF_STOCK' },
+      { stockId: '1931000000000000002', productCode: 'P000002', productName: '速溶黑咖啡', warehouseName: '华东中心仓', unitName: '盒', quantityPrecision: 0, availableQty: 7, safetyStockQty: 8, severity: 'LOW_STOCK' },
+    ],
+    hasMore: false,
+  },
+  access: { state: 'ALLOWED' },
+};
 
 function normalizeMetric(item: DashboardMetric): DashboardMetric {
   if (!dashboardMetricKeys.includes(item.key)) {
@@ -195,6 +215,11 @@ function normalizeTodo(item: DashboardTodoItem): DashboardTodoItem {
   const businessType = String(item.businessType || 'SYSTEM');
   const priority = item.priority === 'HIGH' || item.priority === 'LOW' ? item.priority : 'MEDIUM';
   const completionMode = item.completionMode === 'TRACKED' ? 'TRACKED' : 'AUTO';
+  const detail = normalizeTodoDetail(item.detail);
+  if (detail === null) {
+    // 服务端 detail 是正式必填字段；兼容旧实例时保留待办主信息，避免一条脏数据拖垮工作台。
+    console.warn('[dashboard] todo detail is unavailable', { todoId: item.todoId });
+  }
   return {
     ...item,
     todoId: normalizeStringId(item.todoId, 'todoId'),
@@ -207,13 +232,13 @@ function normalizeTodo(item: DashboardTodoItem): DashboardTodoItem {
     sortWeight: normalizeFiniteNumber(item.sortWeight, 'sortWeight'),
     completionMode,
     resolveHint: item.resolveHint ? String(item.resolveHint) : null,
-    detail: normalizeTodoDetail(item.detail),
+    detail,
   };
 }
 
 function normalizeTodoDetail(value: unknown): DashboardTodoItem['detail'] {
   const raw = value as { model?: unknown; items?: unknown } | null;
-  if (!raw || !Array.isArray(raw.items)) throw new Error('dashboard todo detail is required');
+  if (!raw || !Array.isArray(raw.items)) return null;
   const items = raw.items as unknown[];
   const documentModels = ['PURCHASE_ORDER_APPROVAL', 'SALES_ORDER_APPROVAL', 'PURCHASE_RETURN_APPROVAL', 'SALES_RETURN_APPROVAL', 'INBOUND_CONFIRM', 'OUTBOUND_CONFIRM'] as const;
   if (documentModels.includes(raw.model as typeof documentModels[number])) {
@@ -260,7 +285,7 @@ function normalizeTodoDetail(value: unknown): DashboardTodoItem['detail'] {
       }),
     };
   }
-  throw new Error(`dashboard todo detail model is invalid: ${String(raw.model)}`);
+  return null;
 }
 
 function normalizeTodoDetailItem(value: unknown): Record<string, unknown> {
@@ -429,4 +454,59 @@ export async function getDashboardNotifications() {
     skipPageLoading: true,
     suppressErrorToast: true,
   }).then(normalizeNotificationPopover);
+}
+
+function normalizeInventoryRiskPreviewItem(item: DashboardInventoryRiskPreviewItem): DashboardInventoryRiskPreviewItem {
+  if (item.severity !== 'OUT_OF_STOCK' && item.severity !== 'NO_AVAILABLE' && item.severity !== 'LOW_STOCK') {
+    throw new Error(`inventory risk preview severity is invalid: ${String(item.severity)}`);
+  }
+  return {
+    ...item,
+    stockId: normalizeStringId(item.stockId, 'riskPreview.items.stockId'),
+    quantityPrecision: assertQuantityPrecision(item.quantityPrecision, 'riskPreview.items.quantityPrecision'),
+    availableQty: normalizeFiniteNumber(item.availableQty, 'riskPreview.items.availableQty'),
+    safetyStockQty: normalizeFiniteNumber(item.safetyStockQty, 'riskPreview.items.safetyStockQty'),
+  };
+}
+
+function normalizeInventoryStatus(data: DashboardInventoryStatus): DashboardInventoryStatus {
+  const statuses = ['NORMAL', 'LOW_STOCK', 'NO_AVAILABLE', 'OUT_OF_STOCK'] as const;
+  const access = normalizeSectionAccess(data.access, 'inventoryStatus');
+  // 无仓储权限时后端刻意不返回分布和风险明细，前端不能把它误判为接口损坏。
+  if (access.state === 'DENIED') {
+    return {
+      distribution: [],
+      riskPreview: { items: [], hasMore: false },
+      access,
+    };
+  }
+  if (!Array.isArray(data.distribution) || data.distribution.length !== statuses.length) throw new Error('inventory distribution is invalid');
+  const distribution = new Map<typeof statuses[number], number>();
+  for (const item of data.distribution) {
+    if (!statuses.includes(item.status)) throw new Error('inventory distribution status is invalid');
+    const recordCount = normalizeFiniteNumber(item.recordCount, 'distribution.recordCount');
+    if (!Number.isInteger(recordCount) || recordCount < 0 || distribution.has(item.status)) throw new Error('inventory distribution recordCount is invalid');
+    distribution.set(item.status, recordCount);
+  }
+  if (!data.riskPreview || !Array.isArray(data.riskPreview.items) || data.riskPreview.items.length > 5) throw new Error('inventory risk preview is invalid');
+  return {
+    distribution: statuses.map(status => ({ status, recordCount: distribution.get(status) ?? 0 })),
+    riskPreview: {
+      items: data.riskPreview.items.map(normalizeInventoryRiskPreviewItem),
+      hasMore: Boolean(data.riskPreview.hasMore),
+    },
+    access,
+  };
+}
+
+export async function getDashboardInventoryStatus(warehouseId?: string) {
+  if (useMockApi) {
+    await new Promise(resolve => window.setTimeout(resolve, 120));
+    return normalizeInventoryStatus(mockInventoryStatus);
+  }
+
+  return getResult<DashboardInventoryStatus>('/dashboard/inventory-status', warehouseId ? { warehouseId } : undefined, {
+    skipPageLoading: true,
+    suppressErrorToast: true,
+  }).then(normalizeInventoryStatus);
 }

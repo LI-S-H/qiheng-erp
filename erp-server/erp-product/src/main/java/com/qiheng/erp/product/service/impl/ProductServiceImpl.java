@@ -11,9 +11,11 @@ import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.util.CodeNoDefinition;
 import com.qiheng.erp.common.util.CodeNoGenerator;
+import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
+import com.qiheng.erp.product.domain.dto.ProductSaveDto;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.domain.entity.ProductCategory;
 import com.qiheng.erp.product.domain.vo.ProductVo;
@@ -129,17 +131,15 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     /**
      * 产品新增
-     * @param product 产品实体
+     * @param dto 产品新增请求
      * @return 产品VO
      */
     @Override
     @DistributedLock(key ="'product:category:global'",waitTime = 5,leaseTime = 10,timeUnit = TimeUnit.SECONDS)
-    public ProductVo add(Product product) {
+    public ProductVo add(ProductSaveDto dto) {
+        Product product = toEntity(dto, null);
         product.setProductCode(codeNoGenerator.nextNo(PRODUCT_CODE, () -> productMapper.findMaxProductCodeSequence(
                 PRODUCT_CODE.prefix(), PRODUCT_CODE.prefix().length(), PRODUCT_CODE.width())));
-        if (product.getSafetyStockQty() != null) {
-            product.setSafetyStockQty(BigDecimal.valueOf(QtyUtil.toStored(product.getSafetyStockQty())));
-        }
         // 校验分类是否存在且状态正常
         ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
         if (category == null || category.getStatus() != 1) {
@@ -147,6 +147,42 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         }
         productMapper.insert(product);
         return getDetailById(product.getId());
+    }
+
+    /**
+     * 请求转实体：ID 类字段按字符串解析，安全库存按 100 倍整数落库。
+     */
+    private Product toEntity(ProductSaveDto dto, Long productId) {
+        validateSafetyStockPrecision(dto);
+        Product product = new Product();
+        product.setId(productId);
+        product.setProductName(dto.getProductName());
+        product.setCategoryId(IdUtil.parseOptionalLongId(dto.getCategoryId(), "产品分类ID"));
+        product.setBrandName(dto.getBrandName());
+        product.setUnitName(dto.getUnitName());
+        product.setQuantityPrecision(dto.getQuantityPrecision());
+        product.setSpecification(dto.getSpecification());
+        product.setBarcode(dto.getBarcode());
+        product.setReferencePurchasePrice(dto.getReferencePurchasePrice());
+        product.setReferenceSalePrice(dto.getReferenceSalePrice());
+        product.setSafetyStockQty(QtyUtil.toStored(dto.getSafetyStockQty()));
+        product.setStatus(dto.getStatus());
+        product.setRemark(dto.getRemark());
+        return product;
+    }
+
+    /**
+     * 安全库存的小数位不得超过同一请求声明的数量精度，避免落库时被静默四舍五入。
+     */
+    private void validateSafetyStockPrecision(ProductSaveDto dto) {
+        BigDecimal safetyStockQty = dto.getSafetyStockQty();
+        if (safetyStockQty == null || dto.getQuantityPrecision() == null) {
+            return;
+        }
+        if (safetyStockQty.stripTrailingZeros().scale() > dto.getQuantityPrecision()) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                    "安全库存数量最多保留 " + dto.getQuantityPrecision() + " 位小数");
+        }
     }
 
     /**
@@ -254,13 +290,15 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     /**
      * 更新产品
-     * @param product 产品实体
+     * @param productId 产品ID
+     * @param dto 产品更新请求
      * @return 产品VO
      */
     @DistributedLock(key = "'product:category:global'")
     @Override
-    public ProductVo update(Product product) {
-        product.setProductCode(null);
+    public ProductVo update(Long productId, ProductSaveDto dto) {
+        // 产品编码由后端生成且创建后不可修改，转换时不写入该字段。
+        Product product = toEntity(dto, productId);
         if (product.getCategoryId() != null) {
             // 产品与分类写操作共用同一把锁，校验分类状态后不会被并发分类停用穿透。
             ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
@@ -270,10 +308,6 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
             if (category.getStatus() == 0) {
                 throw new BizException(ErrorCode.CATEGORY_DISABLED);
             }
-        }
-
-        if (product.getSafetyStockQty() != null) {
-            product.setSafetyStockQty(BigDecimal.valueOf(QtyUtil.toStored(product.getSafetyStockQty())));
         }
         productMapper.updateById(product);
         return getDetailById(product.getId());

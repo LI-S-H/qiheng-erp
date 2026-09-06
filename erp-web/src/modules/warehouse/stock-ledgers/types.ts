@@ -38,6 +38,7 @@ export interface StockLedgerItem {
   productCode: string;
   productName: string;
   unitName: string;
+  quantityPrecision: number;
   beforeQty: number;
   qualifiedQty: number;
   defectiveQty: number;

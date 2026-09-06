@@ -88,6 +88,7 @@ public class StockBillItemServiceImpl extends ServiceImpl<StockBillItemMapper, S
         vo.setProductCode(item.getProductCode());
         vo.setProductName(item.getProductName());
         vo.setUnitName(item.getUnitName());
+        vo.setQuantityPrecision(item.getQuantityPrecision());
         vo.setBeforeQty(convertQuantity(item.getBeforeQty()));
         vo.setChangeQty(convertQuantity(item.getChangeQty()));
         vo.setAfterQty(convertQuantity(item.getAfterQty()));

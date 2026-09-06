@@ -17,6 +17,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { formatQtyByPrecision } from '@/shared/utils/qty';
 import { listWarehouses } from '../../warehouses/api';
 import { listWarehouseStocks } from '../api';
 import type {
@@ -149,18 +150,37 @@ const {
 
 function applyDashboardRiskPreset() {
   query.riskOnly = route.query.riskOnly === 'true' || route.query.riskOnly === '1';
+  const warehouseId = Array.isArray(route.query.warehouseId) ? route.query.warehouseId[0] : route.query.warehouseId;
+  if (warehouseId) query.warehouseId = warehouseId;
   query.pageNum = 1;
 }
 
-function resetFilters() {
-  if (Object.keys(route.query).length > 0) {
-    void router.replace({ path: route.path });
-    return;
+function toggleRiskOnly() {
+  const enabled = !query.riskOnly;
+  if (enabled) {
+    // 快捷查询是独占预设，避免与未适配的普通筛选条件叠加。
+    Object.assign(query, {
+      warehouseId: 'all',
+      productCode: '',
+      productName: '',
+      inventoryHealth: 'all',
+      reservationState: 'all',
+      riskOnly: true,
+      pageNum: 1,
+    });
+  } else {
+    query.riskOnly = false;
+    query.pageNum = 1;
   }
+  // 快捷查询本身就是一次查询，不需要用户再点击“查询”。
+  void fetchStocks();
+}
+function resetFilters() {
+  if (Object.keys(route.query).length > 0) void router.replace({ path: route.path });
   handleReset();
 }
-function formatQty(value: number) {
-  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 4 }).format(value);
+function formatQty(value: number, row: WarehouseStockListItem) {
+  return formatQtyByPrecision(value, row.quantityPrecision);
 }
 
 function stockHealth(row: WarehouseStockListItem) {
@@ -190,6 +210,7 @@ function stockRowClass(row: WarehouseStockListItem) {
 }
 
 onMounted(() => {
+  applyDashboardRiskPreset();
   loadWarehouseOptions();
   fetchStocks();
 });
@@ -207,12 +228,12 @@ onMounted(() => {
     <ListSummaryStrip :items="summaryItems" aria-label="库存数据汇总" />
 
     <ListFilterPanel layout="content" aria-label="库存筛选">
-        <div class="space-y-1" data-filter-size="wide"><Label class="text-xs">仓库</Label><RemoteSearchSelect v-model="query.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
-        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品编码</Label><Input v-model="query.productCode" placeholder="如 P000001" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品名称</Label><Input v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
-        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">库存健康</Label><AnchoredSelect v-model="query.inventoryHealth" :options="inventoryHealthOptions" placeholder="全部健康状态" /></div>
-        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">占用情况</Label><AnchoredSelect v-model="query.reservationState" :options="reservationStateOptions" placeholder="全部占用情况" /></div>
-        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">风险范围</Label><Button size="sm" :variant="query.riskOnly ? 'default' : 'outline'" class="w-full" @click="query.riskOnly = !query.riskOnly">仅风险库存</Button></div>
+        <div class="space-y-1" data-filter-size="wide"><Label class="text-xs">仓库</Label><RemoteSearchSelect :disabled="query.riskOnly || queryBusy" v-model="query.warehouseId" :selected-label="selectedWarehouseLabel" :fetch-options="fetchWarehouseSearchOptions" placeholder="全部仓库" search-placeholder="输入仓库编码或名称" clearable clear-value="all" clear-label="全部仓库" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品编码</Label><Input :disabled="query.riskOnly || queryBusy" v-model="query.productCode" placeholder="如 P000001" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品名称</Label><Input :disabled="query.riskOnly || queryBusy" v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">库存健康</Label><AnchoredSelect :disabled="query.riskOnly || queryBusy" v-model="query.inventoryHealth" :options="inventoryHealthOptions" placeholder="全部健康状态" /></div>
+        <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">占用情况</Label><AnchoredSelect :disabled="query.riskOnly || queryBusy" v-model="query.reservationState" :options="reservationStateOptions" placeholder="全部占用情况" /></div>
+        <div class="stock-risk-shortcut space-y-1" data-filter-size="compact"><Label class="text-xs">{{ '\u98ce\u9669\u9884\u8bbe' }}</Label><Tooltip><TooltipTrigger as-child><Button size="sm" :variant="query.riskOnly ? 'default' : 'outline'" class="w-full" :disabled="queryBusy" :aria-label="'\u67e5\u770b\u98ce\u9669\u5e93\u5b58'" @click="toggleRiskOnly">{{ '\u67e5\u770b\u98ce\u9669\u5e93\u5b58' }}</Button></TooltipTrigger><TooltipContent>{{ '\u542f\u7528\u540e\u4ec5\u663e\u793a\u7f3a\u8d27\u3001\u65e0\u53ef\u7528\u5e93\u5b58\u6216\u4f4e\u4e8e\u5b89\u5168\u5e93\u5b58\u7684\u8bb0\u5f55' }}</TooltipContent></Tooltip></div>
       <template #actions>
         <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="resetFilters" />
       </template>
@@ -236,10 +257,10 @@ onMounted(() => {
               <TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.warehouseCode }}</code><span class="max-w-full truncate font-medium" :title="row.warehouseName">{{ row.warehouseName }}</span></div></TableCell>
               <TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.productCode }}</code><span class="max-w-full truncate font-medium" :title="row.productName">{{ row.productName }}</span></div></TableCell>
               <TableCell class="text-center">{{ row.unitName }}</TableCell>
-              <TableCell class="text-right font-medium tabular-nums">{{ formatQty(row.stockQty) }}</TableCell>
-              <TableCell class="text-right tabular-nums" :class="row.lockedQty > 0 ? 'text-blue-700' : 'text-muted-foreground'">{{ formatQty(row.lockedQty) }}</TableCell>
-              <TableCell class="text-right font-semibold tabular-nums" :class="row.availableQty === 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatQty(row.availableQty) }}</TableCell>
-              <TableCell class="text-right tabular-nums text-muted-foreground">{{ formatQty(row.safetyStockQty) }}</TableCell>
+              <TableCell class="text-right font-medium tabular-nums">{{ formatQty(row.stockQty, row) }}</TableCell>
+              <TableCell class="text-right tabular-nums" :class="row.lockedQty > 0 ? 'text-blue-700' : 'text-muted-foreground'">{{ formatQty(row.lockedQty, row) }}</TableCell>
+              <TableCell class="text-right font-semibold tabular-nums" :class="row.availableQty === 0 ? 'text-rose-700' : 'text-emerald-700'">{{ formatQty(row.availableQty, row) }}</TableCell>
+              <TableCell class="text-right tabular-nums text-muted-foreground">{{ formatQty(row.safetyStockQty, row) }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="stockHealth(row).className">{{ stockHealth(row).label }}</Badge></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="reservationState(row).className">{{ reservationState(row).label }}</Badge></TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
@@ -306,4 +327,13 @@ onMounted(() => {
   box-shadow: inset 4px 0 #f43f5e;
 }
 
+.stock-risk-shortcut {
+  flex: 0 0 118px !important;
+  max-width: 118px !important;
+}
+
+.stock-risk-shortcut :deep([data-slot='button']) {
+  min-width: 0;
+  padding-inline: 10px;
+}
 </style>

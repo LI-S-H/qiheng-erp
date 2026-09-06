@@ -10,6 +10,7 @@ export interface WarehouseStockListItem {
   productCode: string;
   productName: string;
   unitName: string;
+  quantityPrecision: number;
   stockQty: number;
   lockedQty: number;
   availableQty: number;

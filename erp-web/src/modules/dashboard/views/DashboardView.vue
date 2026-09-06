@@ -20,6 +20,7 @@ import {
 } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
 import DashboardEmptyPanel from '@/components/dashboard/DashboardEmptyPanel.vue';
+import DashboardInventoryStatusPanel from '../components/DashboardInventoryStatusPanel.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -495,7 +496,7 @@ function businessLabel(todo: DashboardTodoItem) {
 }
 
 function isSystemException(todo: DashboardTodoItem) {
-  return todo.detail.model === 'SYSTEM_EXCEPTION';
+  return todo.detail?.model === 'SYSTEM_EXCEPTION';
 }
 
 function isTrackedTodo(todo: DashboardTodoItem) {
@@ -503,28 +504,31 @@ function isTrackedTodo(todo: DashboardTodoItem) {
 }
 
 function isDocumentDetail(todo: DashboardTodoItem) {
-  return todo.detail.model === 'PURCHASE_ORDER_APPROVAL'
-    || todo.detail.model === 'SALES_ORDER_APPROVAL'
-    || todo.detail.model === 'PURCHASE_RETURN_APPROVAL'
-    || todo.detail.model === 'SALES_RETURN_APPROVAL'
-    || todo.detail.model === 'INBOUND_CONFIRM'
-    || todo.detail.model === 'OUTBOUND_CONFIRM';
+  return todo.detail?.model === 'PURCHASE_ORDER_APPROVAL'
+    || todo.detail?.model === 'SALES_ORDER_APPROVAL'
+    || todo.detail?.model === 'PURCHASE_RETURN_APPROVAL'
+    || todo.detail?.model === 'SALES_RETURN_APPROVAL'
+    || todo.detail?.model === 'INBOUND_CONFIRM'
+    || todo.detail?.model === 'OUTBOUND_CONFIRM';
 }
 
 function documentItems(todo: DashboardTodoItem): DashboardTodoDocumentItem[] {
-  return isDocumentDetail(todo) ? todo.detail.items as DashboardTodoDocumentItem[] : [];
+  const detail = todo.detail;
+  return detail && isDocumentDetail(todo) ? detail.items as DashboardTodoDocumentItem[] : [];
 }
 
 function stockRiskItems(todo: DashboardTodoItem): DashboardTodoStockRiskItem[] {
-  return todo.detail.model === 'STOCK_RISK_REVIEW' ? todo.detail.items as DashboardTodoStockRiskItem[] : [];
+  const detail = todo.detail;
+  return detail?.model === 'STOCK_RISK_REVIEW' ? detail.items as DashboardTodoStockRiskItem[] : [];
 }
 
 function systemExceptionItems(todo: DashboardTodoItem): DashboardTodoSystemExceptionItem[] {
-  return todo.detail.model === 'SYSTEM_EXCEPTION' ? todo.detail.items as DashboardTodoSystemExceptionItem[] : [];
+  const detail = todo.detail;
+  return detail?.model === 'SYSTEM_EXCEPTION' ? detail.items as DashboardTodoSystemExceptionItem[] : [];
 }
 
 function documentLabels(todo: DashboardTodoItem) {
-  switch (todo.detail.model) {
+  switch (todo.detail?.model) {
     case 'PURCHASE_RETURN_APPROVAL': return { document: '退货单号', source: '原采购单号', counterparty: '供应商' };
     case 'SALES_RETURN_APPROVAL': return { document: '退货单号', source: '原销售单号', counterparty: '客户' };
     case 'PURCHASE_ORDER_APPROVAL': return { document: '采购单号', source: '', counterparty: '供应商' };
@@ -919,63 +923,7 @@ onBeforeUnmount(() => {
           </Card>
         </div>
 
-        <Card class="dashboard-panel">
-          <CardHeader class="dashboard-panel__header">
-            <div>
-              <CardTitle class="flex items-center gap-2 text-base">
-                <AlertTriangle class="h-4 w-4 text-amber-600" />
-                库存预警
-              </CardTitle>
-              <p class="mt-1 text-xs text-muted-foreground">优先补足高销量、低可用库存的 SKU</p>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div class="dashboard-table-scroll">
-              <Table class="business-data-table min-w-[980px] table-fixed">
-                <colgroup>
-                  <col class="w-[220px]" />
-                  <col class="w-[170px]" />
-                  <col class="w-[110px]" />
-                  <col class="w-[110px]" />
-                  <col class="w-[110px]" />
-                  <col class="w-[120px]" />
-                  <col class="w-[140px]" />
-                </colgroup>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>产品</TableHead>
-                    <TableHead>仓库</TableHead>
-                    <TableHead>可用库存</TableHead>
-                    <TableHead>安全库存</TableHead>
-                    <TableHead>建议补货</TableHead>
-                    <TableHead>库存状态</TableHead>
-                    <TableHead>最近出库</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow v-for="alert in overview.stockAlerts" :key="alert.stockId">
-                    <TableCell>
-                      <div class="flex flex-col items-center gap-1 text-center">
-                        <code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ alert.productCode }}</code>
-                        <span class="max-w-full truncate font-medium" :title="alert.productName">{{ alert.productName }}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{{ alert.warehouseName }}</TableCell>
-                    <TableCell class="font-semibold text-rose-700 tabular-nums">{{ formatNumber(alert.availableQty) }} {{ alert.unitName }}</TableCell>
-                    <TableCell class="tabular-nums">{{ formatNumber(alert.safetyStockQty) }} {{ alert.unitName }}</TableCell>
-                    <TableCell class="font-medium tabular-nums">{{ formatNumber(alert.suggestedPurchaseQty) }} {{ alert.unitName }}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" :class="stockAlertHealth(alert.severity).className">
-                        {{ stockAlertHealth(alert.severity).label }}
-                      </Badge>
-                    </TableCell>
-                    <TableCell class="text-xs text-muted-foreground">{{ alert.latestOutboundAt || '-' }}</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        <DashboardInventoryStatusPanel />
 
         <div class="dashboard-footer">
           <span>数据刷新时间：{{ overview.refreshedAt }}</span>
@@ -1065,13 +1013,14 @@ onBeforeUnmount(() => {
                   </article>
                 </section>
 
-                <section v-else-if="selectedDetailTodo.detail.model === 'STOCK_RISK_REVIEW'" class="dashboard-todo-workbench__evidence">
+                <section v-else-if="selectedDetailTodo.detail?.model === 'STOCK_RISK_REVIEW'" class="dashboard-todo-workbench__evidence">
                   <p class="dashboard-todo-workbench__annotation">以下展示部分库存风险 SKU，请结合可用库存和建议补货量优先处理。</p>
                   <article v-for="item in stockRiskItems(selectedDetailTodo)" :key="item.id" class="dashboard-todo-evidence-card">
                     <header><small>风险 SKU</small><strong class="dashboard-todo-evidence-card__number">{{ item.productName }}（{{ item.productCode }}）</strong></header>
                     <dl class="dashboard-todo-evidence-card__facts"><div><dt>仓库</dt><dd>{{ item.warehouseName }}</dd></div><div><dt>可用库存</dt><dd class="text-rose-700">{{ formatNumber(item.availableQty) }} {{ item.unitName }}</dd></div><div><dt>安全库存</dt><dd>{{ formatNumber(item.safetyStockQty) }} {{ item.unitName }}</dd></div><div><dt>建议补货</dt><dd>{{ formatNumber(item.suggestedPurchaseQty) }} {{ item.unitName }}</dd></div></dl>
                   </article>
                 </section>
+
                 <div v-if="!isSystemException(selectedDetailTodo) && selectedDetailTodo.resolveHint" class="dashboard-todo-workbench__hint">
                   <p>{{ selectedDetailTodo.resolveHint }}</p>
                 </div>

@@ -162,7 +162,7 @@ public class DashboardMetricsLoader {
                 sumVisiblePendingOrders(prevPendingSnapshot, canPurchase, canSales, canWarehouse));
         BigDecimal prevStockRisk = canWarehouse
                 ? prevValueCache.getDailySnapshot(yesterday, PrevValueCache.DailySnapshotType.STOCK_RISK_COUNT)
-                : BigDecimal.ZERO;
+                : null;
 
         // 5. 构建固定顺序的指标。无权限时数值和对比字段必须为 null，不能伪装为 0。
 
@@ -196,13 +196,13 @@ public class DashboardMetricsLoader {
     }
 
     /**
-     * 解析月快照值：优先 Redis 缓存；miss 时用 supplier 实时聚合并回填缓存。
+     * 解析月快照值：优先 Redis 缓存；miss 时用 supplier 实时聚合并回填缓存。无权限或聚合失败返回 null 表示无可比基线。
      */
     private BigDecimal resolveMonthlySnapshot(YearMonth prevMonth,
                                               PrevValueCache.MonthlySnapshotType type,
                                               Supplier<BigDecimal> fallback) {
         if (fallback == null) {
-            return BigDecimal.ZERO;
+            return null;
         }
         // 1. 优先 Redis 缓存
         BigDecimal cached = prevValueCache.getMonthlySnapshot(prevMonth, type);

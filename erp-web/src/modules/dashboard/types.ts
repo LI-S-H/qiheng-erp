@@ -86,7 +86,11 @@ export interface DashboardTodoItem {
   sortWeight: number;
   completionMode: 'AUTO' | 'TRACKED';
   resolveHint: string | null;
-  detail: DashboardTodoDetail;
+  /**
+   * 正式接口契约要求提供详情；旧服务或灰度实例缺失时前端仅降级详情区，
+   * 不让单条待办阻断整个工作台。
+   */
+  detail: DashboardTodoDetail | null;
 }
 
 export interface DashboardStockAlert {
@@ -104,6 +108,24 @@ export interface DashboardStockAlert {
   latestOutboundAt: string | null;
 }
 
+
+export interface DashboardInventoryRiskPreviewItem {
+  stockId: string;
+  productCode: string;
+  productName: string;
+  warehouseName: string;
+  unitName: string;
+  quantityPrecision: number;
+  availableQty: number;
+  safetyStockQty: number;
+  severity: 'OUT_OF_STOCK' | 'NO_AVAILABLE' | 'LOW_STOCK';
+}
+
+export interface DashboardInventoryStatus {
+  distribution: Array<{ status: 'NORMAL' | 'LOW_STOCK' | 'NO_AVAILABLE' | 'OUT_OF_STOCK'; recordCount: number }>;
+  riskPreview: { items: DashboardInventoryRiskPreviewItem[]; hasMore: boolean };
+  access: DashboardSectionAccess;
+}
 export interface DashboardOrderStage {
   stage: string;
   purchaseCount: number;

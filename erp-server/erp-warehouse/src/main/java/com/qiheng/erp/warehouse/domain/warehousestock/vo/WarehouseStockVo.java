@@ -35,6 +35,9 @@ public class WarehouseStockVo {
     @Schema(description = "单位名称")
     private String unitName;
 
+    @Schema(description = "数量小数位：0-2，取自产品档案，用于前端按产品精度渲染数量")
+    private Integer quantityPrecision;
+
     @Schema(description = "当前库存")
     private BigDecimal stockQty;
 

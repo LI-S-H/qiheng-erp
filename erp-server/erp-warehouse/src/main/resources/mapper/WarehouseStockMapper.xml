@@ -25,6 +25,7 @@
           )
     </sql>
 
+    <!-- 加载风险库存列表 -->
     <select id="selectRiskStocks"
             resultType="com.qiheng.erp.warehouse.domain.warehousestock.vo.RiskStockVo">
         SELECT ws.id              AS stock_id,
@@ -41,10 +42,35 @@
                ws.update_time     AS update_time
         FROM warehouse_stock ws
         <include refid="riskStockCondition"/>
+        <if test="warehouseId != null">
+            AND ws.warehouse_id = #{warehouseId}
+        </if>
         ORDER BY (p.safety_stock_qty - (ws.stock_qty - ws.locked_qty)) DESC
         LIMIT #{limit}
     </select>
 
+    <!-- 加载库存风险预览 -->
+    <select id="selectInventoryRiskPreview"
+            resultType="com.qiheng.erp.warehouse.domain.warehousestock.vo.InventoryRiskPreviewVo">
+        SELECT ws.id              AS stock_id,
+               ws.warehouse_name  AS warehouse_name,
+               ws.product_code     AS product_code,
+               ws.product_name     AS product_name,
+               ws.unit_name        AS unit_name,
+               p.quantity_precision AS quantity_precision,
+               ws.stock_qty        AS stock_qty,
+               ws.locked_qty       AS locked_qty,
+               p.safety_stock_qty  AS safety_stock_qty
+        FROM warehouse_stock ws
+        <include refid="riskStockCondition"/>
+        <if test="warehouseId != null">
+            AND ws.warehouse_id = #{warehouseId}
+        </if>
+        ORDER BY (p.safety_stock_qty - (ws.stock_qty - ws.locked_qty)) DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 统计风险库存数量 -->
     <select id="countRiskStocks"
             resultType="long">
         SELECT COUNT(*)
@@ -52,4 +78,23 @@
         <include refid="riskStockCondition"/>
     </select>
 
+    <!-- 加载库存状态分布 -->
+    <select id="selectInventoryHealthDistribution"
+            resultType="com.qiheng.erp.warehouse.domain.warehousestock.vo.InventoryHealthDistributionVo">
+        SELECT CASE
+                   WHEN ws.stock_qty = 0 THEN 'OUT_OF_STOCK'
+                   WHEN ws.stock_qty - ws.locked_qty &lt;= 0 THEN 'NO_AVAILABLE'
+                   WHEN p.safety_stock_qty &gt; 0 AND ws.stock_qty - ws.locked_qty &lt;= p.safety_stock_qty THEN 'LOW_STOCK'
+                   ELSE 'NORMAL'
+               END AS inventory_health,
+               COUNT(*) AS stock_record_count
+        FROM warehouse_stock ws
+        INNER JOIN product p ON p.id = ws.product_id AND p.deleted = 0
+        <where>
+            <if test="warehouseId != null">
+                ws.warehouse_id = #{warehouseId}
+            </if>
+        </where>
+        GROUP BY inventory_health
+    </select>
 </mapper>

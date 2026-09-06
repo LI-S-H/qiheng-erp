@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
+import { formatQtyByPrecision } from '@/shared/utils/qty';
 import {
   createPurchaseOrder,
   getEnabledSupplierProductTotal,
@@ -841,7 +842,7 @@ onMounted(() => {
               <TableCell class="text-center text-sm">{{ row.expectedArrivalDate || '未设置' }}</TableCell>
               <TableCell class="whitespace-nowrap" :title="row.createdByName || '系统'">{{ row.createdByName || '系统' }}</TableCell>
               <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-center" data-purchase-actions-column><Button variant="ghost" size="sm" :class="hasOrderActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="detailLoading || actionSubmitting" @click="openDetail(row)">{{ detailLoading ? '加载中' : hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
+              <TableCell class="text-center" data-purchase-actions-column><Button variant="ghost" size="sm" :class="hasOrderActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
             </TableRow>
           </TableBody>
       </Table>
@@ -953,8 +954,8 @@ onMounted(() => {
                   <TableBody>
                     <TableRow v-for="item in detailRow.items" :key="item.purchaseOrderItemId">
                       <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell>
-                      <TableCell class="text-center tabular-nums">{{ item.quantity }} {{ item.unitName }}</TableCell>
-                      <TableCell class="text-center tabular-nums">{{ item.inboundQty }} {{ item.unitName }}</TableCell>
+                      <TableCell class="text-center tabular-nums">{{ formatQtyByPrecision(item.quantity, item.quantityPrecision) }} {{ item.unitName }}</TableCell>
+                      <TableCell class="text-center tabular-nums">{{ formatQtyByPrecision(item.inboundQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell>
                       <TableCell class="text-center font-medium tabular-nums" :class="item.quantity > item.inboundQty ? 'text-amber-700' : 'text-emerald-700'">{{ Math.max(0, item.quantity - item.inboundQty) }} {{ item.unitName }}</TableCell>
                       <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell>
                       <TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell>

@@ -62,6 +62,7 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
                 .select(WarehouseStock::getProductCode)
                 .select(WarehouseStock::getProductName)
                 .select(WarehouseStock::getUnitName)
+                .selectAs(Product::getQuantityPrecision, WarehouseStockVo::getQuantityPrecision)
                 .select(WarehouseStock::getStockQty)
                 .select(WarehouseStock::getLockedQty)
                 .selectAs(Product::getSafetyStockQty, WarehouseStockVo::getSafetyStockQty)

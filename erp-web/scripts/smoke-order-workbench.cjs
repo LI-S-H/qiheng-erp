@@ -54,6 +54,10 @@ async function runCase(item) {
         throw new Error(`${item.row} 仍显示三点行操作菜单`);
       }
       await actionButton.click();
+      await page.waitForTimeout(20);
+      if ((await actionButton.innerText()).trim() !== '处理') {
+        throw new Error(`${item.row} 打开详情时，背景列表操作按钮不应切换为加载状态`);
+      }
       const dialog = page.getByRole('dialog', { name: item.dialog });
       await dialog.waitFor();
       const workbench = page.locator('[data-order-workbench]');

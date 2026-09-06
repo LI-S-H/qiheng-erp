@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
+import com.qiheng.erp.product.domain.dto.ProductSaveDto;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.domain.entity.ProductCategory;
 import com.qiheng.erp.product.mapper.ProductCategoryMapper;
@@ -88,11 +89,11 @@ class ProductCategoryServiceImplTest {
         assertSharedLock(ProductCategoryServiceImpl.class.getMethod("updateBatchStatus", List.class, Integer.class));
         assertSharedLock(ProductCategoryServiceImpl.class.getMethod("removeBatch", List.class));
         assertSharedLock(ProductCategoryServiceImpl.class.getMethod("update", ProductCategory.class));
-        assertSharedLock(ProductServiceImpl.class.getMethod("add", Product.class));
+        assertSharedLock(ProductServiceImpl.class.getMethod("add", ProductSaveDto.class));
         assertSharedLock(ProductServiceImpl.class.getMethod("updateBatchStatus", ProductBatchStatusDto.class));
         assertSharedLock(ProductServiceImpl.class.getMethod("updateStatus", Long.class, Integer.class));
         assertSharedLock(ProductServiceImpl.class.getMethod("deleteBatch", List.class));
-        assertSharedLock(ProductServiceImpl.class.getMethod("update", Product.class));
+        assertSharedLock(ProductServiceImpl.class.getMethod("update", Long.class, ProductSaveDto.class));
     }
 
     private ProductCategoryServiceImpl newService() {

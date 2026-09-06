@@ -896,7 +896,7 @@ onMounted(() => {
             <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.totalAmount) }}</TableCell>
             <TableCell class="text-center">{{ row.expectedExecutionDate || '未设置' }}</TableCell>
             <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-            <TableCell class="text-center" data-return-actions-column><Button variant="ghost" size="sm" :class="hasReturnActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="detailLoading || actionSubmitting" @click="openDetail(row)">{{ detailLoading ? '加载中' : hasReturnActions(row) ? '处理' : '查看' }}</Button></TableCell>
+            <TableCell class="text-center" data-return-actions-column><Button variant="ghost" size="sm" :class="hasReturnActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasReturnActions(row) ? '处理' : '查看' }}</Button></TableCell>
           </TableRow>
         </TableBody>
       </Table>

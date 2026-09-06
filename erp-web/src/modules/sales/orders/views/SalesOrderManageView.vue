@@ -29,6 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
+import { formatQtyByPrecision } from '@/shared/utils/qty';
 import {
   createSalesOrder,
   getEnabledSalesProductTotal,
@@ -632,9 +633,7 @@ function salesTimelineItems(row: SalesOrderDetail): BusinessDetailTimelineItem[]
   return items;
 }
 
-function formatQty(value: number) {
-  return Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 3 });
-}
+
 
 function lockedInventoryText(row: SalesOrderListItem | SalesOrderDetail) {
   if (!('items' in row)) {
@@ -646,7 +645,9 @@ function lockedInventoryText(row: SalesOrderListItem | SalesOrderDetail) {
   const lockedQty = lockedItems.reduce((sum, item) => sum + Number(item.lockedQty || 0), 0);
   if (lockedQty > 0) {
     const units = [...new Set(lockedItems.map(item => item.unitName).filter(Boolean))];
-    return units.length === 1 ? `${formatQty(lockedQty)} ${units[0]}` : `已锁定 ${lockedItems.length} 项`;
+    // 跨明细求和取最大精度，避免同单位下混入称重类产品时丢掉小数。
+    const precision = Math.max(0, ...lockedItems.map(item => Number(item.quantityPrecision) || 0));
+    return units.length === 1 ? `${formatQtyByPrecision(lockedQty, precision)} ${units[0]}` : `已锁定 ${lockedItems.length} 项`;
   }
   if (row.status === 'CANCELLED') return '已释放';
   if (row.status === 'OUTBOUND_DONE') return '已出库';
@@ -727,7 +728,7 @@ onMounted(() => {
               <TableCell class="text-center text-sm">{{ row.expectedDeliveryDate || '未设置' }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ lockedInventoryText(row) }}</TableCell>
               <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-center" data-sales-actions-column><Button variant="ghost" size="sm" :class="hasOrderActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="detailLoading || actionSubmitting" @click="openDetail(row)">{{ detailLoading ? '加载中' : hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
+              <TableCell class="text-center" data-sales-actions-column><Button variant="ghost" size="sm" :class="hasOrderActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
             </TableRow>
           </TableBody>
       </Table>
@@ -841,8 +842,8 @@ onMounted(() => {
                   <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">销售数量</TableHead><TableHead class="text-center">已锁定</TableHead><TableHead class="text-center">已出库</TableHead><TableHead class="text-center">待出库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
                   <TableBody><TableRow v-for="item in detailRow.items" :key="item.salesOrderItemId">
                     <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell>
-                    <TableCell class="text-center tabular-nums">{{ item.quantity }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ item.lockedQty }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ item.outboundQty }} {{ item.unitName }}</TableCell>
-                    <TableCell class="text-center font-medium tabular-nums" :class="Number(item.quantity) > Number(item.outboundQty) ? 'text-amber-700' : 'text-emerald-700'">{{ Math.max(0, Number(item.quantity) - Number(item.outboundQty)) }} {{ item.unitName }}</TableCell>
+                    <TableCell class="text-center tabular-nums">{{ formatQtyByPrecision(item.quantity, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatQtyByPrecision(item.lockedQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatQtyByPrecision(item.outboundQty, item.quantityPrecision) }} {{ item.unitName }}</TableCell>
+                    <TableCell class="text-center font-medium tabular-nums" :class="Number(item.quantity) > Number(item.outboundQty) ? 'text-amber-700' : 'text-emerald-700'">{{ formatQtyByPrecision(Math.max(0, Number(item.quantity) - Number(item.outboundQty)), item.quantityPrecision) }} {{ item.unitName }}</TableCell>
                     <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell><TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell><TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell>
                   </TableRow></TableBody>
                 </Table>

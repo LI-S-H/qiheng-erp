@@ -42,15 +42,12 @@ public class AuthServiceImpl implements AuthService {
         if (loginUser == null) {
             throw new BizException(ErrorCode.USER_PASSWORD_ERROR);
         }
-
         // 2. 校验密码
         if (!passwordUtil.matches(request.getPassword(), loginUser.getPasswordHash())) {
             throw new BizException(ErrorCode.USER_PASSWORD_ERROR);
         }
-
         // 3. Sa-Token 登录
         StpUtil.login(loginUser.getUserId());
-
         // 4. 更新最近登录时间
         LocalDateTime now = LocalDateTime.now();
         SysUser update = new SysUser();
@@ -58,10 +55,8 @@ public class AuthServiceImpl implements AuthService {
         update.setLastLoginAt(now);
         sysUserMapper.updateById(update);
         loginUser.setLastLoginAt(now);
-
         // 5. 存入 Session
         UserContext.setCurrentUser(loginUser);
-
         // 5. 返回响应
         LoginResponse response = new LoginResponse();
         // 5.1. 设置 token
@@ -70,7 +65,6 @@ public class AuthServiceImpl implements AuthService {
         response.setTokenName(StpUtil.getTokenName());
         // 5.3. 设置用户信息
         response.setUser(loginUser);
-
         return response;
     }
 

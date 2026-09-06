@@ -36,6 +36,9 @@ public class StockBillDetailsVo extends StockBillListItemVo {
         @Schema(description = "单位")
         private String unitName;
 
+        @Schema(description = "数量小数位：0-2，确认入出库时固化的产品精度快照，用于前端按产品精度渲染数量")
+        private Integer quantityPrecision;
+
         @Schema(description = "操作前数量")
         private Double beforeQty;
 

@@ -20,6 +20,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { formatQtyByPrecision } from '@/shared/utils/qty';
 import { listWarehouses } from '../../warehouses/api';
 import { getStockLedgerDetail, listStockLedgers } from '../api';
 import { getStockLedgerSourceType } from '../types';
@@ -176,12 +177,12 @@ function expandedItems(row: StockLedgerListItem) {
   return expandedDetails[row.stockLedgerId]?.items || [];
 }
 
-function formatQty(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+function formatQty(value: number, item: StockLedgerItem) {
+  return formatQtyByPrecision(value, item.quantityPrecision);
 }
 
 function qualityQty(item: StockLedgerItem, billType: StockLedgerBillType, field: 'qualifiedQty' | 'defectiveQty') {
-  return qualityBillTypes.has(billType) ? formatQty(item[field]) : '-';
+  return qualityBillTypes.has(billType) ? formatQty(item[field], item) : '-';
 }
 
 async function toggleRowDetail(row: StockLedgerListItem) {
@@ -286,7 +287,7 @@ onMounted(() => {
                         <div v-else-if="detailLoadErrors[row.stockLedgerId]" class="stock-ledger-detail-message flex-col gap-2 text-destructive" :data-stock-ledger-detail-error-id="row.stockLedgerId"><span>{{ detailLoadErrors[row.stockLedgerId] }}</span><Button size="sm" variant="outline" @click="retryRowDetail(row)">重试</Button></div>
                         <div v-else-if="expandedItems(row).length === 0" class="stock-ledger-detail-message text-muted-foreground" :data-stock-ledger-detail-empty-id="row.stockLedgerId">暂无变动明细</div>
                         <WarehouseDetailTableFrame v-else class="stock-ledger-detail-card" max-width="1024px">
-                          <Table class="!w-[1020px] min-w-[1020px] table-fixed"><colgroup><col class="w-[104px]" /><col class="w-[180px]" /><col class="w-[56px]" /><col class="w-[104px]" /><col class="w-[104px]" /><col class="w-[104px]" /><col class="w-[116px]" /><col class="w-[104px]" /><col class="w-[148px]" /></colgroup><TableHeader><TableRow><TableHead class="text-center">产品编码</TableHead><TableHead class="text-center">产品名称</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-center">变动前</TableHead><TableHead class="text-center">合格数量</TableHead><TableHead class="text-center">不合格数量</TableHead><TableHead class="text-center">变动数量</TableHead><TableHead class="text-center">变动后</TableHead><TableHead class="text-center">备注</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="item in expandedItems(row)" :key="item.stockLedgerItemId" :data-stock-ledger-expanded-item-id="item.stockLedgerItemId"><TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell><TableCell class="truncate text-center font-medium" :title="item.productName">{{ item.productName }}</TableCell><TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatQty(item.beforeQty) }}</TableCell><TableCell class="text-center tabular-nums" data-stock-ledger-quality="qualified">{{ qualityQty(item, row.billType, 'qualifiedQty') }}</TableCell><TableCell class="text-center tabular-nums" data-stock-ledger-quality="defective">{{ qualityQty(item, row.billType, 'defectiveQty') }}</TableCell><TableCell class="text-center font-medium tabular-nums" :class="item.changeQty > 0 ? 'text-emerald-700' : 'text-rose-700'">{{ item.changeQty > 0 ? '+' : '' }}{{ formatQty(item.changeQty) }}</TableCell><TableCell class="text-center font-medium tabular-nums">{{ formatQty(item.afterQty) }}</TableCell><TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell></TableRow></TableBody></Table>
+                          <Table class="!w-[1020px] min-w-[1020px] table-fixed"><colgroup><col class="w-[104px]" /><col class="w-[180px]" /><col class="w-[56px]" /><col class="w-[104px]" /><col class="w-[104px]" /><col class="w-[104px]" /><col class="w-[116px]" /><col class="w-[104px]" /><col class="w-[148px]" /></colgroup><TableHeader><TableRow><TableHead class="text-center">产品编码</TableHead><TableHead class="text-center">产品名称</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-center">变动前</TableHead><TableHead class="text-center">合格数量</TableHead><TableHead class="text-center">不合格数量</TableHead><TableHead class="text-center">变动数量</TableHead><TableHead class="text-center">变动后</TableHead><TableHead class="text-center">备注</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="item in expandedItems(row)" :key="item.stockLedgerItemId" :data-stock-ledger-expanded-item-id="item.stockLedgerItemId"><TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell><TableCell class="truncate text-center font-medium" :title="item.productName">{{ item.productName }}</TableCell><TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatQty(item.beforeQty, item) }}</TableCell><TableCell class="text-center tabular-nums" data-stock-ledger-quality="qualified">{{ qualityQty(item, row.billType, 'qualifiedQty') }}</TableCell><TableCell class="text-center tabular-nums" data-stock-ledger-quality="defective">{{ qualityQty(item, row.billType, 'defectiveQty') }}</TableCell><TableCell class="text-center font-medium tabular-nums" :class="item.changeQty > 0 ? 'text-emerald-700' : 'text-rose-700'">{{ item.changeQty > 0 ? '+' : '' }}{{ formatQty(item.changeQty, item) }}</TableCell><TableCell class="text-center font-medium tabular-nums">{{ formatQty(item.afterQty, item) }}</TableCell><TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell></TableRow></TableBody></Table>
                         </WarehouseDetailTableFrame>
                       </div>
                     </CollapsibleContent>

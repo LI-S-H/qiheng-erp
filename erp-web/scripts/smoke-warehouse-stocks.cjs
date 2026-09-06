@@ -35,7 +35,7 @@ runSmoke({
         .map(field => Number(field.getBoundingClientRect().width.toFixed(1))),
       overflow: element.scrollWidth - element.clientWidth,
     }));
-    if (desktopFilterState.layout !== 'content' || desktopFilterState.widths.join(',') !== '280,220,220,168,168'
+    if (desktopFilterState.layout !== 'content' || desktopFilterState.widths.join(',') !== '280,220,220,168,168,118'
       || desktopFilterState.overflow > 1) {
       throw new Error(`库存筛选桌面内容宽度异常：${JSON.stringify(desktopFilterState)}`);
     }
@@ -157,7 +157,7 @@ runSmoke({
         actionsReachable: Boolean(actions && actions.getBoundingClientRect().right <= element.getBoundingClientRect().right + 1),
       };
     });
-    if (mediumFilterState.widths.join(',') !== '280,220,220,168,168'
+    if (mediumFilterState.widths.join(',') !== '280,220,220,168,168,118'
       || mediumFilterState.overflow > 1 || !mediumFilterState.actionsReachable) {
       throw new Error(`库存筛选中等视口布局异常：${JSON.stringify(mediumFilterState)}`);
     }

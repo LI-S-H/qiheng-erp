@@ -10,5 +10,4 @@ import java.time.LocalDate;
 public record DashboardTrendInvalidatedEvent(
         DashboardTrendMetric metric,
         LocalDate businessDate
-) {
-}
+) { }

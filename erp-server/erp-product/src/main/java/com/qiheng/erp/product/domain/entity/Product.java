@@ -87,7 +87,7 @@ public class Product implements Serializable {
     @Schema(description = "安全库存数量，按100倍整数存储，例如12.50存1250")
     @TableField("safety_stock_qty")
     @NotNull(message = "安全库存数量不能为空")
-    private BigDecimal safetyStockQty;
+    private Long safetyStockQty;
 
     @Schema(description = "状态：1启用，0禁用")
     @TableField("status")

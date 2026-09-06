@@ -176,6 +176,32 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
 
+  /dashboard/inventory-status:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard inventory status
+      description: Returns one bucket per inventory-health state and at most five risk previews. Omit warehouseId for all warehouses. Every count and preview row represents one warehouse-product inventory record; inventory is never aggregated across warehouses. When access.state is DENIED both distribution and riskPreview.items are empty arrays - zero-count placeholders are never returned, so callers must branch on access.state instead of reading counts.
+      operationId: dashboardInventoryStatus
+      security: [{ SaTokenAuth: [] }]
+      parameters:
+        - name: warehouseId
+          in: query
+          required: false
+          description: Warehouse ID. Omit for all warehouses.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Query success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/DashboardInventoryStatus' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
   /ai/assistant/overview:
     get:
       tags: [AIAssistant]
@@ -3306,7 +3332,7 @@ paths:
         入库单承接采购入库、销售退货入库和调整入库；采购订单审核后生成 `PENDING_CONFIRM` 入库单，但不直接改变库存。
         系统生成的待确认入库单初始本次入库量为 0 或空业务值，由仓库人员在确认前按实物到货数量填写；确认后剩余未入库由后端按采购数量、累计已入库和本次入库量计算。
         入库列表的“来源对象”列按单据类型显示供应商、客户或调整单的来源仓库；库存调整不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库、本次入库量和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
-        新建的人工补录单必须关联已选择的系统来源，非调整类型的 `sourceId` 与 `sourceNo` 均非空；人工调整和历史迁移数据的 `sourceId`、`sourcePartyId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照，并将缺少来源关联的历史记录标识为“未关联来源”。
+        人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交；人工调整和历史迁移数据的 `sourceId`、`sourcePartyId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照，并将缺少来源关联的历史记录标识为“未关联来源”。
         本接口需要 `warehouse:query` 权限。
       operationId: inboundBillPage
       security:
@@ -3400,7 +3426,7 @@ paths:
         出库单承接销售出库、采购退货出库和调整出库；销售订单审核后生成 `PENDING_CONFIRM` 出库单，但不直接扣减库存。
         系统生成的待确认出库单初始本次出库量为 0 或空业务值，由仓库人员在确认前按实物发货数量填写；确认后剩余未出库由后端按销售数量、累计已出库和本次出库量计算。
         出库列表的“来源对象”列按单据类型显示客户、供应商或调整单的来源仓库；库存调整不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库、本次出库量和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
-        新建的人工补录单必须关联已选择的系统来源，非调整类型的 `sourceId` 与 `sourceNo` 均非空；人工调整和历史迁移数据的 `sourceId`、`sourcePartyId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照，并将缺少来源关联的历史记录标识为“未关联来源”。
+        人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交；人工调整和历史迁移数据的 `sourceId`、`sourcePartyId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照，并将缺少来源关联的历史记录标识为“未关联来源”。
         本接口需要 `warehouse:query` 权限。
       operationId: outboundBillPage
       security:
@@ -5171,6 +5197,48 @@ components:
           description: 当前用户可见且状态为 `PENDING` 的前 8 条待办，已按后端权重排序
           items: { $ref: '#/components/schemas/DashboardTodoItem' }
 
+    DashboardInventoryStatus:
+      type: object
+      required: [distribution, riskPreview, access]
+      properties:
+        distribution:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: One bucket per inventory-health state, empty when access.state is DENIED. Every count is a warehouse-product inventory record count, not a distinct product count.
+          items:
+            type: object
+            required: [status, recordCount]
+            properties:
+              status: { type: string, enum: [NORMAL, LOW_STOCK, NO_AVAILABLE, OUT_OF_STOCK] }
+              recordCount: { type: integer, format: int64, minimum: 0 }
+        riskPreview:
+          type: object
+          required: [items, hasMore]
+          properties:
+            items:
+              type: array
+              maxItems: 5
+              items: { $ref: '#/components/schemas/DashboardInventoryRiskPreviewItem' }
+            hasMore: { type: boolean, description: True when the filtered result has more than the returned five records. }
+        access: { $ref: '#/components/schemas/DashboardSectionAccess' }
+
+    DashboardInventoryRiskPreviewItem:
+      type: object
+      required: [stockId, productCode, productName, warehouseName, unitName, quantityPrecision, availableQty, safetyStockQty, severity]
+      properties:
+        stockId: { type: string, description: Corresponding warehouse_stock.id; BIGINT is serialized as a string. }
+        productCode: { type: string, maxLength: 64 }
+        productName: { type: string, maxLength: 200 }
+        warehouseName: { type: string, maxLength: 100 }
+        unitName: { type: string, maxLength: 32 }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 取自 product.quantity_precision；前端按此固定展示可用库存和安全库存的小数位 }
+        availableQty: { type: number, format: double, minimum: 0, description: Derived from stock_qty - locked_qty. }
+        safetyStockQty: { type: number, format: double, minimum: 0 }
+        severity:
+          type: string
+          enum: [OUT_OF_STOCK, NO_AVAILABLE, LOW_STOCK]
+          description: OUT_OF_STOCK means stock_qty=0; NO_AVAILABLE means stock_qty>0 and available_qty<=0; LOW_STOCK means 0<available_qty<=safety_stock_qty.
     DashboardOverview:
       type: object
       required: [refreshedAt, metrics, trend, todos, stockAlerts, orderStages, orderStagePeriod, topProducts, supplierPerformance, access]
@@ -7387,7 +7455,7 @@ components:
     StockLedgerItem:
       type: object
       description: 库存流水明细，只记录本次变动及变动前后库存，不包含工作单的计划、累计处理和待处理字段。
-      required: [stockLedgerItemId, stockLedgerId, productId, productCode, productName, unitName, beforeQty, qualifiedQty, defectiveQty, changeQty, afterQty]
+      required: [stockLedgerItemId, stockLedgerId, productId, productCode, productName, unitName, quantityPrecision, beforeQty, qualifiedQty, defectiveQty, changeQty, afterQty]
       properties:
         stockLedgerItemId: { type: string, description: 对应 `stock_bill_item.id` }
         stockLedgerId: { type: string, description: 对应 `stock_bill_item.bill_id` }
@@ -7395,6 +7463,7 @@ components:
         productCode: { type: string, maxLength: 64 }
         productName: { type: string, maxLength: 200 }
         unitName: { type: string, maxLength: 32 }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 对应 `stock_bill_item.quantity_precision`，确认入出库时固化的产品精度快照；页面必须按该位数固定渲染流水数量 }
         beforeQty: { type: number, format: double, minimum: 0, multipleOf: 0.01 }
         qualifiedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 合格数量；采购入库、销售退货入库、采购退货出库按实际记录返回，销售出库和调整入/出库返回 0 }
         defectiveQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 不合格数量；采购入库、销售退货入库、采购退货出库按实际记录返回，销售出库和调整入/出库返回 0 }
@@ -7404,7 +7473,7 @@ components:
 
     WarehouseStock:
       type: object
-      required: [stockId, warehouseId, warehouseCode, warehouseName, productId, productCode, productName, unitName, stockQty, lockedQty, availableQty, safetyStockQty, version, updateTime]
+      required: [stockId, warehouseId, warehouseCode, warehouseName, productId, productCode, productName, unitName, quantityPrecision, stockQty, lockedQty, availableQty, safetyStockQty, version, updateTime]
       properties:
         stockId:
           type: string
@@ -7420,6 +7489,7 @@ components:
         productCode: { type: string, maxLength: 64, description: 对应 `warehouse_stock.product_code` }
         productName: { type: string, maxLength: 200, description: 对应 `warehouse_stock.product_name` }
         unitName: { type: string, maxLength: 32, description: 对应 `warehouse_stock.unit_name` }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 取自 `product.quantity_precision`；页面必须按该位数固定渲染库存、锁定、可用与安全库存数量 }
         stockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 当前库存业务真实值；数据库 `warehouse_stock.stock_qty` 按 100 倍整数存储 }
         lockedQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 锁定库存业务真实值；数据库 `warehouse_stock.locked_qty` 按 100 倍整数存储 }
         availableQty: { type: number, format: double, minimum: 0, description: 服务层计算 `stock_qty - locked_qty` }

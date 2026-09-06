@@ -40,8 +40,7 @@ public class DashboardStockAlertLoader {
      * @return 风险 SKU VO 列表
      */
     public List<DashboardStockAlertVO> load() {
-        List<RiskStockVo> rows = warehouseStockMapper.selectRiskStocks(TOP_LIMIT);
-        return rows.stream().map(this::toVO).toList();
+        return load(null, TOP_LIMIT);
     }
 
     /**
@@ -53,7 +52,11 @@ public class DashboardStockAlertLoader {
         return (int) warehouseStockMapper.countRiskStocks();
     }
 
-    private DashboardStockAlertVO toVO(RiskStockVo row) {
+    List<DashboardStockAlertVO> load(Long warehouseId, int limit) {
+        return warehouseStockMapper.selectRiskStocks(warehouseId, limit).stream().map(this::toVO).toList();
+    }
+
+    DashboardStockAlertVO toVO(RiskStockVo row) {
         BigDecimal stockQty = nullToZero(QtyUtil.toDecimal(row.getStockQty()));
         BigDecimal lockedQty = nullToZero(QtyUtil.toDecimal(row.getLockedQty()));
         BigDecimal availableQty = stockQty.subtract(lockedQty);

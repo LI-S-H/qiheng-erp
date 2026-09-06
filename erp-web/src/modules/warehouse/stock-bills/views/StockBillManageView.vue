@@ -39,6 +39,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { formatQtyByPrecision } from '@/shared/utils/qty';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
@@ -641,29 +642,34 @@ function planQtyLabel(billType: StockBillType) {
   return '计划数量';
 }
 
-function formatQty(value: number | null | undefined) {
+function formatQty(value: number | null | undefined, precision: unknown) {
+  return formatQtyByPrecision(value, precision);
+}
+
+/** 单据级合计跨多个产品，没有统一精度可用，按最多两位小数展示。 */
+function formatAggregateQty(value: number | null | undefined) {
   if (value === null || value === undefined) return '-';
   return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2);
 }
 
-function formatChangeQty(value: number) {
+function formatChangeQty(value: number, precision: unknown) {
   if (value === 0) return '0';
-  return `${value > 0 ? '+' : ''}${formatQty(value)}`;
+  return `${value > 0 ? '+' : ''}${formatQty(value, precision)}`;
 }
 
 function billTotalQuantityText(row: StockBillListItem) {
-  if (row.totalCurrentQty !== null && row.quantityUnitName) return `${formatQty(row.totalCurrentQty)} ${row.quantityUnitName}`.trim();
+  if (row.totalCurrentQty !== null && row.quantityUnitName) return `${formatAggregateQty(row.totalCurrentQty)} ${row.quantityUnitName}`.trim();
   if (row.itemCount > 0) return `${row.itemCount} 条商品`;
   return '-';
 }
 
 function itemQuantityText(item: StockBillItem) {
-  const quantity = formatQty(item.currentQty);
+  const quantity = formatQty(item.currentQty, item.quantityPrecision);
   return quantity === '-' ? '-' : `${quantity} ${item.unitName}`.trim();
 }
 
 function remainingQtyText(item: StockBillItem) {
-  const quantity = formatQty(item.pendingQty);
+  const quantity = formatQty(item.pendingQty, item.quantityPrecision);
   return quantity === '-' ? '-' : `${quantity} ${item.unitName}`.trim();
 }
 
@@ -673,7 +679,7 @@ function isQualityBillType(billType: StockBillType) {
 
 function qualityQtyText(item: StockBillItem, billType: StockBillType, field: 'qualifiedQty' | 'defectiveQty') {
   if (!isQualityBillType(billType)) return '-';
-  return formatQty(item[field]);
+  return formatQty(item[field], item.quantityPrecision);
 }
 
 function expandedItems(row: StockBillListItem) {
@@ -1037,7 +1043,7 @@ function handleQuantityChange(item: DraftFormItem, index: number) {
 function remainingAfterText(item: DraftFormItem) {
   const snapshot = detailItemFor(item);
   if (snapshot?.planQty === null || snapshot?.planQty === undefined || snapshot.processedQty === null || snapshot.processedQty === undefined) return '-';
-  return formatQty(Math.max(0, snapshot.planQty - snapshot.processedQty - (Number(item.currentQty) || 0)));
+  return formatQty(Math.max(0, snapshot.planQty - snapshot.processedQty - (Number(item.currentQty) || 0)), snapshot.quantityPrecision);
 }
 
 function itemPendingQty(item: DraftFormItem): number | null {
@@ -1229,7 +1235,7 @@ function getConfirmValidationError(row: StockBillDetail) {
     if (!Number.isFinite(item.currentQty) || item.currentQty <= 0) return `产品 ${item.productCode} 请先填写${currentLabel}`;
     if (row.entryMode === 'SOURCE_GENERATED' && item.planQty !== null && item.processedQty !== null) {
       const remainingBefore = Math.max(0, item.planQty - item.processedQty);
-      if (item.currentQty > remainingBefore) return `产品 ${item.productCode} 的${currentLabel}不能超过剩余数量 ${formatQty(remainingBefore)}`;
+      if (item.currentQty > remainingBefore) return `产品 ${item.productCode} 的${currentLabel}不能超过剩余数量 ${formatQty(remainingBefore, item.quantityPrecision)}`;
     }
     if (isQualityBillType(row.billType)) {
       if (!Number.isFinite(item.qualifiedQty) || !Number.isFinite(item.defectiveQty) || item.qualifiedQty < 0 || item.defectiveQty < 0) return `产品 ${item.productCode} 的合格数量和不合格数量不能小于 0`;
@@ -1476,7 +1482,7 @@ onMounted(async () => {
                   <TableCell v-if="isListColumnVisible('responsible')" class="truncate" :title="row.responsibleByName">{{ row.responsibleByName }}</TableCell>
                   <TableCell v-if="isListColumnVisible('createTime')" class="whitespace-nowrap text-muted-foreground">{{ row.createTime }}</TableCell>
                   <TableCell class="stock-bill-actions-column sticky right-0 z-20 whitespace-nowrap border-l border-border/60 bg-background text-center group-hover:bg-muted/50" data-table-sticky-edge="end">
-                    <Button size="sm" variant="ghost" :class="hasStockBillActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting || detailLoading" @click="openDetail(row)">{{ detailLoading ? '加载中' : hasStockBillActions(row) ? '处理' : '查看' }}</Button>
+                    <Button size="sm" variant="ghost" :class="hasStockBillActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasStockBillActions(row) ? '处理' : '查看' }}</Button>
                   </TableCell>
                 </TableRow>
                 <TableRow class="stock-bill-detail-host-row bg-background" :data-stock-bill-detail-host-id="row.workBillId">
@@ -1648,8 +1654,8 @@ onMounted(async () => {
                         </div>
                         <p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p>
                       </TableCell>
-                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty)} ${itemUnitName(item)}` : (item.planQty != null ? `${formatQty(item.planQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
-                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.processedQty)} ${itemUnitName(item)}` : (item.processedQty != null ? `${formatQty(item.processedQty)} ${itemUnitName(item)}` : '-') }}</TableCell>
+                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.planQty, detailItemFor(item)?.quantityPrecision)} ${itemUnitName(item)}` : (item.planQty != null ? `${formatQty(item.planQty, item.quantityPrecision)} ${itemUnitName(item)}` : '-') }}</TableCell>
+                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${formatQty(detailItemFor(item)?.processedQty, detailItemFor(item)?.quantityPrecision)} ${itemUnitName(item)}` : (item.processedQty != null ? `${formatQty(item.processedQty, item.quantityPrecision)} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top">
                         <div class="stock-bill-form-quantity-control">
                           <Tooltip>
@@ -1662,7 +1668,7 @@ onMounted(async () => {
                         </div>
                         <p v-if="formErrors[`items.${index}.quantity`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.quantity`] }}</p>
                       </TableCell>
-                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : (itemPendingQty(item) != null ? `${formatQty(itemPendingQty(item))} ${itemUnitName(item)}` : '-') }}</TableCell>
+                      <TableCell class="align-top text-right text-muted-foreground tabular-nums">{{ detailItemFor(item) ? `${remainingAfterText(item)} ${itemUnitName(item)}` : (itemPendingQty(item) != null ? `${formatQty(itemPendingQty(item), item.quantityPrecision)} ${itemUnitName(item)}` : '-') }}</TableCell>
                       <TableCell class="align-top">
                         <Input v-if="qualityFieldsVisible" v-model.number="item.qualifiedQty" type="number" min="0" :step="itemQuantityStep(item)" />
                         <span v-else class="text-muted-foreground">-</span>
@@ -1731,10 +1737,10 @@ onMounted(async () => {
                       <TableRow v-for="item in detail.items" :key="item.workBillItemId" :data-stock-bill-item-id="item.workBillItemId">
                         <TableCell><div class="flex flex-col items-center gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><span class="max-w-[150px] truncate text-center font-medium" :title="item.productName">{{ item.productName }}</span></div></TableCell>
                         <TableCell class="text-center">{{ item.unitName }}</TableCell>
-                        <TableCell class="text-right tabular-nums">{{ formatQty(item.planQty) }}</TableCell>
-                        <TableCell class="text-right tabular-nums">{{ formatQty(item.processedQty) }}</TableCell>
-                        <TableCell class="text-right font-medium tabular-nums">{{ formatQty(item.currentQty) }}</TableCell>
-                        <TableCell class="text-right tabular-nums">{{ formatQty(item.pendingQty) }}</TableCell>
+                        <TableCell class="text-right tabular-nums">{{ formatQty(item.planQty, item.quantityPrecision) }}</TableCell>
+                        <TableCell class="text-right tabular-nums">{{ formatQty(item.processedQty, item.quantityPrecision) }}</TableCell>
+                        <TableCell class="text-right font-medium tabular-nums">{{ formatQty(item.currentQty, item.quantityPrecision) }}</TableCell>
+                        <TableCell class="text-right tabular-nums">{{ formatQty(item.pendingQty, item.quantityPrecision) }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ qualityQtyText(item, detail.billType, 'qualifiedQty') }}</TableCell>
                         <TableCell class="text-right tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(detail.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, detail.billType, 'defectiveQty') }}</TableCell>
                         <TableCell><OverflowTooltip :text="item.remark" fallback="-" class="block text-xs text-muted-foreground" /></TableCell>

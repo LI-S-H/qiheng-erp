@@ -7,7 +7,10 @@ package com.qiheng.erp.dashboard.domain.enums;
  * 当前账号可查看口径的数据，不得以 0 或空数组猜测权限。</p>
  */
 public enum DashboardAccessState {
+    // 允许访问
     ALLOWED,
+    // 暂无数据
     EMPTY,
+    // 拒绝访问
     DENIED
 }

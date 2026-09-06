@@ -3,6 +3,7 @@ package com.qiheng.erp.product.service;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
+import com.qiheng.erp.product.domain.dto.ProductSaveDto;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.domain.vo.ProductVo;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -28,10 +29,10 @@ public interface IProductService extends IService<Product> {
 
     /**
      * 产品新增
-     * @param product 产品实体
+     * @param dto 产品新增请求
      * @return 产品VO
      */
-    ProductVo add(@Valid Product product);
+    ProductVo add(@Valid ProductSaveDto dto);
 
     /**
      * 产品详情查询
@@ -55,10 +56,11 @@ public interface IProductService extends IService<Product> {
 
     /**
      * 更新产品
-     * @param product 产品实体
+     * @param productId 产品ID
+     * @param dto 产品更新请求
      * @return 产品VO
      */
-    ProductVo update(Product product);
+    ProductVo update(Long productId, @Valid ProductSaveDto dto);
 
     /**
      * 批量删除产品

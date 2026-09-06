@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { toast } from 'vue-sonner';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import LoginView from '@/modules/auth/views/LoginView.vue';
 import MainLayout from '@/layouts/MainLayout.vue';
@@ -237,6 +238,9 @@ export const router = createRouter({
 
 let routeLoading: { fullPath: string; finish: () => void } | undefined;
 
+/** 动态导入失败在各浏览器的错误文案不同，统一按关键片段匹配。 */
+const CHUNK_LOAD_ERROR_PATTERN = /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/i;
+
 function finishRouteLoading() {
   routeLoading?.finish();
   routeLoading = undefined;
@@ -283,6 +287,11 @@ router.afterEach(to => {
   }, 0);
 });
 
-router.onError(() => {
+router.onError(error => {
   finishRouteLoading();
+
+  // 页面组件均为懒加载，dev 服务中断或发版后旧 chunk 被清理都会让跳转静默失败，必须显式告知用户。
+  if (CHUNK_LOAD_ERROR_PATTERN.test(error.message)) {
+    toast.error('页面资源加载失败，请刷新页面重试');
+  }
 });

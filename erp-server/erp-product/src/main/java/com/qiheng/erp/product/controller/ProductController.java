@@ -8,7 +8,7 @@ import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
-import com.qiheng.erp.product.domain.entity.Product;
+import com.qiheng.erp.product.domain.dto.ProductSaveDto;
 import com.qiheng.erp.product.domain.vo.ProductVo;
 import com.qiheng.erp.product.service.IProductService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -51,15 +51,15 @@ public class ProductController {
 
     /**
      * 产品新增
-     * @param product 产品实体
+     * @param dto 产品新增请求
      * @return 产品VO
      */
     @PostMapping
     @Operation(summary = "产品新增")
-    public Result<ProductVo> save(@Valid @RequestBody Product product) {
+    public Result<ProductVo> save(@Valid @RequestBody ProductSaveDto dto) {
         StpUtil.checkPermission("product:manage");
-        log.info("产品新增，参数: {}", product);
-        ProductVo vo = productService.add(product);
+        log.info("产品新增，参数: {}", dto);
+        ProductVo vo = productService.add(dto);
         return Result.ok(vo);
 
     }
@@ -143,16 +143,15 @@ public class ProductController {
     /**
      * 更新产品
      * @param productId 产品ID
-     * @param product 产品实体
+     * @param dto 产品更新请求
      * @return 产品VO
      */
     @PutMapping("/{productId}")
     @Operation(summary = "更新产品")
-    public Result<ProductVo> update(@PathVariable("productId") Long productId, @RequestBody Product product) {
+    public Result<ProductVo> update(@PathVariable("productId") Long productId, @Valid @RequestBody ProductSaveDto dto) {
         StpUtil.checkPermission("product:manage");
-        log.info("更新产品，参数: {}, {}", productId, product);
-        product.setId(productId);
-        ProductVo vo = productService.update(product);
+        log.info("更新产品，参数: {}, {}", productId, dto);
+        ProductVo vo = productService.update(productId, dto);
         return Result.ok(vo);
     }
 }

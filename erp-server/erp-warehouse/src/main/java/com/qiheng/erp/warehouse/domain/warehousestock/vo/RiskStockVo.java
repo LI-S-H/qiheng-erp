@@ -2,7 +2,6 @@ package com.qiheng.erp.warehouse.domain.warehousestock.vo;
 
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -22,7 +21,8 @@ public class RiskStockVo {
     private String unitName;
     private Long stockQty;
     private Long lockedQty;
-    private BigDecimal safetyStockQty;
+    /** 数据库原始安全库存值，按 100 倍整数存储。 */
+    private Long safetyStockQty;
     private Integer productStatus;
     private LocalDateTime updateTime;
 }

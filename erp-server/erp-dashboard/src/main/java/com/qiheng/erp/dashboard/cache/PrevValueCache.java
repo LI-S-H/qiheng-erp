@@ -2,8 +2,8 @@ package com.qiheng.erp.dashboard.cache;
 
 import com.qiheng.erp.common.util.RedisUtil;
 import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
-import com.qiheng.erp.dashboard.domain.enums.MetricDirection;
-import com.qiheng.erp.dashboard.domain.enums.MetricStatus;
+import com.qiheng.erp.dashboard.domain.metric.enums.MetricDirection;
+import com.qiheng.erp.dashboard.domain.metric.enums.MetricStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

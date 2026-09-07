@@ -1,9 +1,9 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.qiheng.erp.common.util.QtyUtil;
-import com.qiheng.erp.dashboard.domain.enums.DashboardAccessState;
-import com.qiheng.erp.dashboard.domain.vo.DashboardInventoryStatusVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardSectionAccessVO;
+import com.qiheng.erp.dashboard.domain.overview.enums.DashboardAccessState;
+import com.qiheng.erp.dashboard.domain.inventory.vo.DashboardInventoryStatusVO;
+import com.qiheng.erp.dashboard.domain.overview.vo.DashboardSectionAccessVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;

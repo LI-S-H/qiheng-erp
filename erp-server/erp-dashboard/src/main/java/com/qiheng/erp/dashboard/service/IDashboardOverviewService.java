@@ -1,6 +1,6 @@
 package com.qiheng.erp.dashboard.service;
 
-import com.qiheng.erp.dashboard.domain.vo.DashboardOverviewVO;
+import com.qiheng.erp.dashboard.domain.overview.vo.DashboardOverviewVO;
 
 /**
  * 工作台经营概览服务接口。

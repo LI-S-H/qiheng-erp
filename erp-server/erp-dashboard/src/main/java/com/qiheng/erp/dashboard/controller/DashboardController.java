@@ -2,12 +2,10 @@ package com.qiheng.erp.dashboard.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.common.result.Result;
-import com.qiheng.erp.dashboard.domain.vo.DashboardNotificationPopoverVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardOverviewVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardInventoryStatusVO;
+import com.qiheng.erp.dashboard.domain.overview.vo.DashboardOverviewVO;
+import com.qiheng.erp.dashboard.domain.inventory.vo.DashboardInventoryStatusVO;
 import com.qiheng.erp.dashboard.job.DashboardDailySnapshotJob;
 import com.qiheng.erp.dashboard.job.DashboardMonthlySnapshotJob;
-import com.qiheng.erp.dashboard.service.IDashboardNotificationService;
 import com.qiheng.erp.dashboard.service.IDashboardOverviewService;
 import com.qiheng.erp.dashboard.loader.DashboardInventoryStatusLoader;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,7 +23,9 @@ import org.springframework.web.bind.annotation.RestController;
  * 工作台控制器
  * </p>
  *
- * <p>对应 OpenAPI {@code Dashboard} 模块，提供工作台首屏经营概览和顶栏通知铃铛摘要。</p>
+ * <p>对应 OpenAPI {@code Dashboard} 模块，提供工作台首屏经营概览。
+ * 顶栏铃铛数据复用本模块的 {@code /overview} 响应，不再有独立的
+ * 通知接口，避免聚合查询重复执行。</p>
  *
  * @author Li
  * @since 2026-08-15
@@ -39,8 +39,6 @@ public class DashboardController {
     // 工作台经营概览服务
     private final IDashboardOverviewService overviewService;
     private final DashboardInventoryStatusLoader inventoryStatusLoader;
-    // 顶栏通知服务
-    private final IDashboardNotificationService notificationService;
     // 日快照任务（手动触发用）
     private final DashboardDailySnapshotJob dailySnapshotJob;
     // 月快照任务（手动触发用）
@@ -50,7 +48,8 @@ public class DashboardController {
      * 获取工作台经营概览
      *
      * <p>需要 {@code dashboard:overview:query} 权限；按当前用户的业务权限
-     * 裁剪指标、趋势、订单流转等子项，详见 OpenAPI 描述。</p>
+     * 裁剪指标、趋势、订单流转等子项，详见 OpenAPI 描述。响应中的
+     * {@code pendingCount} 与 {@code todos} 同步，供顶栏铃铛直接复用。</p>
      *
      * @return 当前用户可见范围内的工作台经营概览数据
      */
@@ -67,22 +66,6 @@ public class DashboardController {
     public Result<DashboardInventoryStatusVO> inventoryStatus(@RequestParam(required = false) Long warehouseId) {
         StpUtil.checkPermission("dashboard:overview:query");
         return Result.ok(inventoryStatusLoader.load(warehouseId));
-    }
-
-    /**
-     * 获取顶栏通知铃铛摘要
-     *
-     * <p>需要 {@code dashboard:notifications:query} 权限；为避免顶栏频繁
-     * 请求重型聚合，本接口只调 todoService，不再复用 overview。</p>
-     *
-     * @return 顶栏弹层数据：前 8 条待办和总待办数量
-     */
-    @GetMapping("/notifications")
-    @Operation(summary = "获取顶栏通知铃铛摘要")
-    public Result<DashboardNotificationPopoverVO> notifications() {
-        StpUtil.checkPermission("dashboard:notifications:query");
-        log.info("加载顶栏通知铃铛摘要");
-        return Result.ok(notificationService.popover());
     }
 
     /**

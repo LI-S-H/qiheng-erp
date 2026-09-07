@@ -1,14 +1,14 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.qiheng.erp.dashboard.domain.entity.SystemException;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoDetailModel;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoType;
-import com.qiheng.erp.dashboard.domain.enums.SystemExceptionSeverity;
-import com.qiheng.erp.dashboard.domain.enums.SystemExceptionStatus;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
-import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoSystemExceptionDetailVO;
-import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoSystemExceptionItemVO;
+import com.qiheng.erp.dashboard.domain.exception.entity.SystemException;
+import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoDetailModel;
+import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoType;
+import com.qiheng.erp.dashboard.domain.exception.enums.SystemExceptionSeverity;
+import com.qiheng.erp.dashboard.domain.exception.enums.SystemExceptionStatus;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoItemVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoSystemExceptionDetailVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoSystemExceptionItemVO;
 import com.qiheng.erp.dashboard.mapper.SystemExceptionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

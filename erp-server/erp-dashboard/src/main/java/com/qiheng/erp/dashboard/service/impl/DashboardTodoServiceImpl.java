@@ -1,6 +1,6 @@
 package com.qiheng.erp.dashboard.service.impl;
 
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoItemVO;
 import com.qiheng.erp.dashboard.loader.DashboardSystemExceptionLoader;
 import com.qiheng.erp.dashboard.loader.DashboardTodoAggregator;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;

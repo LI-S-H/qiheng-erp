@@ -1,10 +1,10 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.qiheng.erp.dashboard.domain.enums.DashboardOrderStagePeriodType;
-import com.qiheng.erp.dashboard.domain.model.DashboardOrderStageSnapshot;
-import com.qiheng.erp.dashboard.domain.vo.DashboardOrderStagePeriodVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardOrderStageVO;
+import com.qiheng.erp.dashboard.domain.orderstage.enums.DashboardOrderStagePeriodType;
+import com.qiheng.erp.dashboard.domain.orderstage.model.DashboardOrderStageSnapshot;
+import com.qiheng.erp.dashboard.domain.orderstage.vo.DashboardOrderStagePeriodVO;
+import com.qiheng.erp.dashboard.domain.orderstage.vo.DashboardOrderStageVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.domain.purchaseorder.enums.PurchaseOrderStatus;

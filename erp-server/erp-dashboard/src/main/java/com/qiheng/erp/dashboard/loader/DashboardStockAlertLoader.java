@@ -1,7 +1,7 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.qiheng.erp.common.util.QtyUtil;
-import com.qiheng.erp.dashboard.domain.vo.DashboardStockAlertVO;
+import com.qiheng.erp.dashboard.domain.inventory.vo.DashboardStockAlertVO;
 import com.qiheng.erp.warehouse.domain.common.enums.InventoryHealth;
 import com.qiheng.erp.warehouse.domain.warehousestock.vo.RiskStockVo;
 import com.qiheng.erp.warehouse.mapper.WarehouseStockMapper;

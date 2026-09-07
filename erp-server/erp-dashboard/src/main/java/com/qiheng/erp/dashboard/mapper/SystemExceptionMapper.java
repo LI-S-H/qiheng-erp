@@ -1,7 +1,7 @@
 package com.qiheng.erp.dashboard.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.qiheng.erp.dashboard.domain.entity.SystemException;
+import com.qiheng.erp.dashboard.domain.exception.entity.SystemException;
 import org.apache.ibatis.annotations.Select;
 
 /**

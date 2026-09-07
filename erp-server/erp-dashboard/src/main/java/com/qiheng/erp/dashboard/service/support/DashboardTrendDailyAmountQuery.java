@@ -3,7 +3,7 @@ package com.qiheng.erp.dashboard.service.support;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
 import com.qiheng.erp.common.util.QtyUtil;
-import com.qiheng.erp.dashboard.domain.enums.OrderMetricScope;
+import com.qiheng.erp.dashboard.domain.metric.enums.OrderMetricScope;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;

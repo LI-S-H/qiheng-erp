@@ -3,7 +3,7 @@ package com.qiheng.erp.dashboard.loader;
 import com.qiheng.erp.common.event.dashboard.DashboardTrendMetric;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.cache.TrendDailyAmountRefreshService;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTrendPointVO;
+import com.qiheng.erp.dashboard.domain.trend.vo.DashboardTrendPointVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import lombok.RequiredArgsConstructor;

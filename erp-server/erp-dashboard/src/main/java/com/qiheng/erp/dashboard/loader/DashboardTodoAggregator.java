@@ -1,15 +1,15 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoDetailModel;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoType;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoWaitLevel;
-import com.qiheng.erp.dashboard.domain.vo.DashboardStockAlertVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
-import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDocumentDetailVO;
-import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDocumentItemVO;
-import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoStockRiskDetailVO;
-import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoStockRiskItemVO;
+import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoDetailModel;
+import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoType;
+import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoWaitLevel;
+import com.qiheng.erp.dashboard.domain.inventory.vo.DashboardStockAlertVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoItemVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoDocumentDetailVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoDocumentItemVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoStockRiskDetailVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoStockRiskItemVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.domain.purchaseorder.enums.PurchaseOrderStatus;

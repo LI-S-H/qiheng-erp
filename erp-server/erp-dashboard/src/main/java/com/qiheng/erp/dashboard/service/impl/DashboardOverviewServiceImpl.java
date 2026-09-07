@@ -1,19 +1,19 @@
 package com.qiheng.erp.dashboard.service.impl;
 
-import com.qiheng.erp.dashboard.domain.enums.DashboardAccessState;
-import com.qiheng.erp.dashboard.domain.enums.MetricKey;
-import com.qiheng.erp.dashboard.domain.model.DashboardOrderStageSnapshot;
-import com.qiheng.erp.dashboard.domain.vo.DashboardOrderStagePermissionsVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardOrderStageVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardOverviewAccessVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardOverviewVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardSectionAccessVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardStockAlertVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardSupplierPerformanceVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTopProductVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTrendPermissionsVO;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTrendPointVO;
+import com.qiheng.erp.dashboard.domain.overview.enums.DashboardAccessState;
+import com.qiheng.erp.dashboard.domain.metric.enums.MetricKey;
+import com.qiheng.erp.dashboard.domain.orderstage.model.DashboardOrderStageSnapshot;
+import com.qiheng.erp.dashboard.domain.orderstage.vo.DashboardOrderStagePermissionsVO;
+import com.qiheng.erp.dashboard.domain.orderstage.vo.DashboardOrderStageVO;
+import com.qiheng.erp.dashboard.domain.overview.vo.DashboardOverviewAccessVO;
+import com.qiheng.erp.dashboard.domain.overview.vo.DashboardOverviewVO;
+import com.qiheng.erp.dashboard.domain.overview.vo.DashboardSectionAccessVO;
+import com.qiheng.erp.dashboard.domain.inventory.vo.DashboardStockAlertVO;
+import com.qiheng.erp.dashboard.domain.supplier.vo.DashboardSupplierPerformanceVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoItemVO;
+import com.qiheng.erp.dashboard.domain.topproduct.vo.DashboardTopProductVO;
+import com.qiheng.erp.dashboard.domain.trend.vo.DashboardTrendPermissionsVO;
+import com.qiheng.erp.dashboard.domain.trend.vo.DashboardTrendPointVO;
 import com.qiheng.erp.dashboard.loader.DashboardMetricsLoader;
 import com.qiheng.erp.dashboard.loader.DashboardOrderStageLoader;
 import com.qiheng.erp.dashboard.loader.DashboardStockAlertLoader;
@@ -77,18 +77,17 @@ public class DashboardOverviewServiceImpl implements IDashboardOverviewService {
         boolean canManagePurchase = permissionGuard.canManagePurchase(user);
         boolean canManageSales = permissionGuard.canManageSales(user);
         boolean canManageWarehouse = permissionGuard.canManageWarehouse(user);
-
+        // 指标加载器
         DashboardOverviewVO vo = new DashboardOverviewVO();
         vo.setRefreshedAt(LocalDateTime.now());
         vo.setMetrics(metricsLoader.load(user));
-
+        // 指标权限加载器
         DashboardOverviewAccessVO access = new DashboardOverviewAccessVO();
         access.getMetrics().put(MetricKey.MONTH_SALES.name(), access(canViewSales, true));
         access.getMetrics().put(MetricKey.MONTH_GROSS_PROFIT.name(), access(canViewSales && canViewPurchase, true));
         boolean canViewPending = canViewSales || canViewPurchase || canViewWarehouse;
         access.getMetrics().put(MetricKey.PENDING_ORDERS.name(), access(canViewPending, true));
         access.getMetrics().put(MetricKey.STOCK_RISK_SKU.name(), access(canViewWarehouse, true));
-
         // 经营趋势维持现有契约与展示，不纳入本次统一面板改造。
         DashboardTrendPermissionsVO trendPerm = new DashboardTrendPermissionsVO();
         trendPerm.setCanViewSales(canViewSales);
@@ -101,17 +100,22 @@ public class DashboardOverviewServiceImpl implements IDashboardOverviewService {
         } else {
             vo.setTrend(List.of());
         }
-
+        // 待办加载器
         List<DashboardTodoItemVO> todos = todoService.loadTodos(user);
         vo.setTodos(todos);
         // 待办展示权限必须与聚合器的处理权限保持一致，避免把“无权”误判为“暂无数据”。
         boolean canViewTodo = canManagePurchase || canManageSales || canManageWarehouse || canViewWarehouse || canViewException;
         access.setTodos(access(canViewTodo, !todos.isEmpty()));
-
+        // pendingCount 与 todos 同步累加，供顶栏铃铛徽标复用，避免通知接口重复查询。
+        vo.setPendingCount(todos.stream()
+                .filter(t -> t.getCount() != null)
+                .mapToInt(DashboardTodoItemVO::getCount)
+                .sum());
+        // 库存风险 SKU 加载器
         List<DashboardStockAlertVO> stockAlerts = canViewWarehouse ? stockAlertLoader.load() : List.of();
         vo.setStockAlerts(stockAlerts);
         access.setStockAlerts(access(canViewWarehouse, !stockAlerts.isEmpty()));
-
+        // 采购、销售订单流转阶段加载器
         DashboardOrderStagePermissionsVO orderPerm = new DashboardOrderStagePermissionsVO();
         orderPerm.setCanViewPurchase(canViewPurchase);
         orderPerm.setCanViewSales(canViewSales);
@@ -125,16 +129,15 @@ public class DashboardOverviewServiceImpl implements IDashboardOverviewService {
         }
         access.setOrderStages(access(canViewPurchase || canViewSales,
                 hasVisibleOrderStageData(vo.getOrderStages(), canViewPurchase, canViewSales)));
-
+        // 销售商品排行加载器
         List<DashboardTopProductVO> topProducts = canViewSales ? topProductLoader.load() : List.of();
         vo.setTopProducts(topProducts);
         access.setTopProducts(access(canViewSales, !topProducts.isEmpty()));
-
+        // 供应商绩效加载器
         List<DashboardSupplierPerformanceVO> supplierPerformance = canViewSupplier
                 ? supplierPerformanceLoader.load() : List.of();
         vo.setSupplierPerformance(supplierPerformance);
         access.setSupplierPerformance(access(canViewSupplier, !supplierPerformance.isEmpty()));
-
         vo.setAccess(access);
         return vo;
     }

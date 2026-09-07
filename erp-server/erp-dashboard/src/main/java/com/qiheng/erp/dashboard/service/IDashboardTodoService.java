@@ -1,6 +1,6 @@
 package com.qiheng.erp.dashboard.service;
 
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoItemVO;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 
 import java.util.List;

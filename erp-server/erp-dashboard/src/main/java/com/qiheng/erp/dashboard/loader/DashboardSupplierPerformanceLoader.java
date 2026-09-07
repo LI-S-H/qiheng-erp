@@ -2,7 +2,7 @@ package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qiheng.erp.common.util.QtyUtil;
-import com.qiheng.erp.dashboard.domain.vo.DashboardSupplierPerformanceVO;
+import com.qiheng.erp.dashboard.domain.supplier.vo.DashboardSupplierPerformanceVO;
 import com.qiheng.erp.purchase.domain.supplier.entity.Supplier;
 import com.qiheng.erp.purchase.mapper.SupplierMapper;
 import lombok.RequiredArgsConstructor;

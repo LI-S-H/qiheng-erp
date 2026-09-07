@@ -2,7 +2,7 @@ package com.qiheng.erp.dashboard.cache;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiheng.erp.common.util.QtyUtil;
-import com.qiheng.erp.dashboard.domain.enums.OrderMetricScope;
+import com.qiheng.erp.dashboard.domain.metric.enums.OrderMetricScope;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrderItem;
 import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
 import com.qiheng.erp.returnorder.domain.port.ReturnType;

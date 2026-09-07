@@ -3,7 +3,7 @@ package com.qiheng.erp.dashboard.job;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.dashboard.cache.PrevValueCache;
-import com.qiheng.erp.dashboard.domain.enums.OrderMetricScope;
+import com.qiheng.erp.dashboard.domain.metric.enums.OrderMetricScope;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.sales.domain.salesorder.entity.SalesOrder;

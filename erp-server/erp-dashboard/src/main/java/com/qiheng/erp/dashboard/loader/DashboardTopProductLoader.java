@@ -5,7 +5,7 @@ import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.cache.TopProductRankCache;
 import com.qiheng.erp.dashboard.cache.TopProductRankCache.RankEntry;
 import com.qiheng.erp.dashboard.cache.TopProductRankRefresher;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTopProductVO;
+import com.qiheng.erp.dashboard.domain.topproduct.vo.DashboardTopProductVO;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.warehouse.domain.warehousestock.entity.WarehouseStock;

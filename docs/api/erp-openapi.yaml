@@ -47,135 +47,6 @@ tags:
   - name: Return
     description: 统一退货管理 - 通过 returnType 区分采购退货和销售退货，统一处理申请、审核与仓库执行跟踪
 paths:
-  /dashboard/notifications:
-    get:
-      tags: [Dashboard]
-      summary: 获取顶栏通知铃铛摘要
-      description: |
-        返回当前登录用户在顶栏通知铃铛中可见的待处理摘要。该接口只承载待办数量和前 8 条待办，不返回经营趋势、订单流转、商品排行、供应商履约或完整库存预警，避免全局主布局频繁请求较重的 `/dashboard/overview`。
-        本接口只调用后端 todo 聚合服务，不再复用 `/dashboard/overview` 重型聚合，避免顶栏频繁点击触发不必要的销售、采购、库存和商品排行 SQL。系统异常条目由 `dashboard:exception:query` 权限独立控制，业务待办按 `purchase:manage` / `sales:manage` / `warehouse:manage` / `warehouse:query` 模块裁剪；本期不实现指派范围裁剪。
-        后端必须按当前用户的模块权限、处理权限、指派用户、指派角色和指派部门裁剪数据；无权模块的数量、标题、描述和证据均不得返回。普通业务事项按采购、销售、仓储等业务状态聚合，系统异常只返回给具备异常处理权限或被指派的用户范围。
-        本接口只返回 `status=PENDING` 的事项，并复用 `DashboardTodoItem`。`completionMode=AUTO` 的事项由对应业务状态变化自动完成；`TRACKED` 的系统异常只允许跳转查看详情。
-        `pendingCount` 表示权限裁剪和业务去重后的待处理业务事项总量，不是未读数；前端打开弹层不得清零。聚合待办按其 `count` 计入总量，后端必须避免同一业务事实被不同聚合项重复计数。`highPriorityCount` 使用相同口径统计 `priority=HIGH` 的事项总量。
-        `items` 最多返回排序后的前 8 条；排序先按 `sortWeight` 升序，再按 `priority`、处理模式和发生时间倒序兜底。完整待办仍通过 `/dashboard/overview` 在工作台查看。
-        当前阶段不设计已读、未读、归档、搜索、批量处理或站外推送，因此本接口不返回 read 状态，也没有写操作接口。
-      operationId: dashboardNotifications
-      security:
-        - SaTokenAuth: []
-      responses:
-        "200":
-          description: 查询成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/DashboardNotificationPopover' }
-              example:
-                code: 0
-                message: success
-                data:
-                  refreshedAt: "2026-07-10 10:30:00"
-                  pendingCount: 15
-                  highPriorityCount: 12
-                  hasMore: true
-                  items:
-                    - todoId: todo-sales-approve
-                      businessType: SALES
-                      businessLabel: 销售
-                      title: 销售单待审核
-                      description: 还有 12 张销售单需要审核，处理后会自动完成待办。
-                      count: 12
-                      priority: HIGH
-                      sortWeight: 21
-                      completionMode: AUTO
-                      resolveHint: 前往销售订单完成审核，审核通过后进入库存锁定和发货准备。
-                      detail:
-                        model: SALES_ORDER_APPROVAL
-                        items:
-                          - id: SO20260630033
-                            documentNo: SO20260630033
-                            sourceDocumentNo: null
-                            counterpartyName: 华北连锁零售
-                            amountFen: 890000
-                            waitHours: 1
-                            waitLevel: NORMAL
-                            documentStatus: SUBMITTED
-                    - todoId: todo-system-exception
-                      businessType: SYSTEM
-                      businessLabel: 系统
-                      title: 系统异常待处理
-                      description: 当前有 2 条系统异常记录需要关注。
-                      count: 2
-                      priority: HIGH
-                      sortWeight: 10
-                      completionMode: TRACKED
-                      resolveHint: null
-                      detail:
-                        model: SYSTEM_EXCEPTION
-                        items:
-                          - id: AI-MCP-20260701-001
-                            exceptionNo: AI-MCP-20260701-001
-                            summary: AI 模块调用库存预测工具超时，未生成补货建议。
-                            exceptionType: MCP超时
-                            sourceModule: AI助手
-                            occurredAt: "2026-07-01 09:18:00"
-                            severity: HIGH
-                  stockAlerts:
-                    - stockId: "1939000000000000003"
-                      productId: "1920000000000000013"
-                      productCode: P000013
-                      productName: USB-C扩展坞
-                      warehouseId: "1930000000000000008"
-                      warehouseName: 南京备货仓
-                      unitName: 个
-                      availableQty: 0
-                      safetyStockQty: 12
-                      suggestedPurchaseQty: 24
-                      severity: NO_AVAILABLE
-                      latestOutboundAt: "2026-06-30 10:05:00"
-                  orderStages:
-                    - stage: 草稿
-                      purchaseCount: 2
-                      salesCount: 3
-                    - stage: 待审核
-                      purchaseCount: 7
-                      salesCount: 12
-                    - stage: 已审核
-                      purchaseCount: 4
-                      salesCount: 5
-                    - stage: 部分出入库
-                      purchaseCount: 1
-                      salesCount: 2
-                    - stage: 已完成
-                      purchaseCount: 8
-                      salesCount: 9
-                    - stage: 已取消
-                      purchaseCount: 0
-                      salesCount: 1
-                  orderStagePeriod:
-                    type: CURRENT_CALENDAR_MONTH
-                    startAt: "2026-07-01 00:00:00"
-                    endAtExclusive: "2026-08-01 00:00:00"
-                  topProducts:
-                    - productId: "1920000000000000001"
-                      productCode: P000001
-                      productName: 经典原味苏打水
-                      salesAmount: 126800
-                      salesQty: 360
-                      availableQty: 18
-                  supplierPerformance:
-                    - supplierId: "1940000000000000001"
-                      supplierCode: S001
-                      supplierName: 华东饮品供应链
-                      deliveryScore: 94.2
-                      qualityScore: 96.1
-                      onTimeRate: 96.5
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-
   /dashboard/inventory-status:
     get:
       tags: [Dashboard]
@@ -5173,30 +5044,6 @@ components:
       enum: [CHAT_CARD, REPORT]
       description: 任务输出形态；页面报告用于任务中心完整阅读，对话卡片用于助手会话摘要
 
-    DashboardNotificationPopover:
-      type: object
-      required: [refreshedAt, pendingCount, highPriorityCount, hasMore, items]
-      properties:
-        refreshedAt:
-          type: string
-          description: 通知摘要生成时间，后端生成
-        pendingCount:
-          type: integer
-          minimum: 0
-          description: 当前用户权限范围内、业务去重后的待处理业务事项总量；聚合待办按 `count` 计入，不是未读数，也不等于 `items.length`
-        highPriorityCount:
-          type: integer
-          minimum: 0
-          description: 与 `pendingCount` 相同口径下 `priority=HIGH` 的待处理事项总量
-        hasMore:
-          type: boolean
-          description: 权限范围内排序后的待办是否超过弹层返回的前 8 条；为 `true` 时前端引导进入工作台查看全部
-        items:
-          type: array
-          maxItems: 8
-          description: 当前用户可见且状态为 `PENDING` 的前 8 条待办，已按后端权重排序
-          items: { $ref: '#/components/schemas/DashboardTodoItem' }
-
     DashboardInventoryStatus:
       type: object
       required: [distribution, riskPreview, access]
@@ -5241,11 +5088,17 @@ components:
           description: OUT_OF_STOCK means stock_qty=0; NO_AVAILABLE means stock_qty>0 and available_qty<=0; LOW_STOCK means 0<available_qty<=safety_stock_qty.
     DashboardOverview:
       type: object
-      required: [refreshedAt, metrics, trend, todos, stockAlerts, orderStages, orderStagePeriod, topProducts, supplierPerformance, access]
+      required: [refreshedAt, pendingCount, metrics, trend, todos, stockAlerts, orderStages, orderStagePeriod, topProducts, supplierPerformance, access]
       properties:
         refreshedAt:
           type: string
           description: 工作台数据刷新时间，后端生成
+        pendingCount:
+          type: integer
+          minimum: 0
+          description: |
+            权限裁剪和业务去重后的待处理事项总量，由后端基于 `todos` 聚合累加；
+            顶栏铃铛直接复用本字段显示徽标数字，不再调用独立通知接口。
         metrics:
           type: array
           description: 首屏经营指标，按当前用户权限裁剪；无权子项的 value、changeRate、compareText 显式返回 null，具体状态见 access.metrics

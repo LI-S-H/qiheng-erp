@@ -9,7 +9,6 @@ import type {
   DashboardInventoryRiskPreviewItem,
   DashboardOverviewAccess,
   DashboardSectionAccess,
-  DashboardNotificationPopover,
   DashboardOrderStage,
   DashboardOrderStagePeriod,
   DashboardOrderStagePermissions,
@@ -399,13 +398,20 @@ function normalizeOverviewAccess(value: unknown): DashboardOverviewAccess {
   };
 }
 function normalizeOverview(data: DashboardOverview): DashboardOverview {
+  const todos = data.todos.map(normalizeTodo);
+  // 后端已写入 pendingCount 时直接采用；mock 或旧服务缺失该字段时，前端按裁剪后的 todos 累加兜底。
+  const rawPendingCount = (data as { pendingCount?: unknown }).pendingCount;
+  const pendingCount = rawPendingCount === undefined || rawPendingCount === null
+    ? todos.reduce((sum, item) => sum + item.count, 0)
+    : normalizeFiniteNumber(rawPendingCount, 'pendingCount');
   return {
     refreshedAt: String(data.refreshedAt),
+    pendingCount,
     access: normalizeOverviewAccess(data.access),
     metrics: data.metrics.map(normalizeMetric),
     trend: data.trend.map(normalizeTrendPoint),
     trendPermissions: normalizeTrendPermissions(data.trendPermissions),
-    todos: data.todos.map(normalizeTodo),
+    todos,
     stockAlerts: data.stockAlerts.map(normalizeStockAlert),
     orderStages: data.orderStages.map(normalizeOrderStage),
     orderStagePeriod: normalizeOrderStagePeriod(data.orderStagePeriod),
@@ -422,38 +428,6 @@ export async function getDashboardOverview() {
   }
 
   return getResult<DashboardOverview>('/dashboard/overview').then(normalizeOverview);
-}
-
-function normalizeNotificationPopover(data: DashboardNotificationPopover): DashboardNotificationPopover {
-  return {
-    refreshedAt: String(data.refreshedAt || ''),
-    pendingCount: normalizeFiniteNumber(data.pendingCount, 'pendingCount'),
-    highPriorityCount: normalizeFiniteNumber(data.highPriorityCount, 'highPriorityCount'),
-    hasMore: Boolean(data.hasMore),
-    items: Array.isArray(data.items) ? data.items.slice(0, 8).map(normalizeTodo) : [],
-  };
-}
-
-export async function getDashboardNotifications() {
-  if (useMockApi) {
-    await new Promise(resolve => window.setTimeout(resolve, 180));
-    const pendingItems = mockOverview.todos
-      .sort((left, right) => left.sortWeight - right.sortWeight);
-    return normalizeNotificationPopover({
-      refreshedAt: mockOverview.refreshedAt,
-      pendingCount: pendingItems.reduce((total, item) => total + item.count, 0),
-      highPriorityCount: pendingItems
-        .filter(item => item.priority === 'HIGH')
-        .reduce((total, item) => total + item.count, 0),
-      hasMore: pendingItems.length > 8,
-      items: pendingItems.slice(0, 8),
-    });
-  }
-
-  return getResult<DashboardNotificationPopover>('/dashboard/notifications', undefined, {
-    skipPageLoading: true,
-    suppressErrorToast: true,
-  }).then(normalizeNotificationPopover);
 }
 
 function normalizeInventoryRiskPreviewItem(item: DashboardInventoryRiskPreviewItem): DashboardInventoryRiskPreviewItem {

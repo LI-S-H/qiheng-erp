@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router';
 import { toast } from 'vue-sonner';
 import {
   AlertTriangle,
@@ -27,8 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { getDashboardOverview } from '../api';
-import { resolveTodoNavigation } from '../todo-navigation';
+import { useDashboardOverviewStore } from '@/stores/dashboardOverviewStore';
 import type {
   DashboardMetric,
   DashboardOrderStagePermissions,
@@ -44,9 +43,11 @@ import type {
 
 type DetailType = 'todos' | 'products' | 'suppliers';
 
+const route = useRoute();
 const router = useRouter();
+const overviewStore = useDashboardOverviewStore();
 const loading = ref(false);
-const overview = ref<DashboardOverview | null>(null);
+const overview = computed<DashboardOverview | null>(() => overviewStore.overview);
 const activeDetail = ref<DetailType | null>(null);
 const expandedTodoId = ref<string | null>(null);
 const selectedTodoDetailId = ref<string | null>(null);
@@ -320,16 +321,27 @@ const detailDescription = computed(() => {
   return activeDetail.value ? descriptions[activeDetail.value] : '';
 });
 
-async function loadOverview() {
-  if (loading.value) return;
+async function bootstrapOverview() {
   loading.value = true;
   try {
-    overview.value = await getDashboardOverview();
+    await overviewStore.refresh(true);
+    openTodoFromRoute();
   } catch (error) {
     toast.warning(getApiErrorMessage(error) || '工作台数据加载失败');
   } finally {
     loading.value = false;
   }
+}
+
+function openTodoFromRoute() {
+  const todoId = typeof route.query.todoId === 'string' ? route.query.todoId : '';
+  if (!todoId || !overview.value) return;
+  if (!overview.value.todos.some(todo => todo.todoId === todoId)) {
+    toast.warning('该待办已处理、不可查看或不存在');
+    void router.replace({ query: { ...route.query, todoId: undefined } });
+    return;
+  }
+  openDetail('todos', todoId);
 }
 
 function formatCurrency(value: number) {
@@ -572,20 +584,44 @@ function setDetailDialogOpen(open: boolean) {
   activeDetail.value = null;
   selectedTodoDetailId.value = null;
   expandedTodoId.value = null;
+  if (route.query.todoId) {
+    void router.replace({ query: { ...route.query, todoId: undefined } });
+  }
 }
 
 function toggleTodoEvidence(todo: DashboardTodoItem) {
   expandedTodoId.value = expandedTodoId.value === todo.todoId ? null : todo.todoId;
 }
 
+// 工作台详情弹窗中"前往完成"按钮的受控导航映射。
+// 仅 AUTO 类型允许跳转到对应业务页面;铃铛不再使用该映射，统一进入 /dashboard。
+const TODO_NAVIGATION: Record<string, RouteLocationRaw> = {
+  'todo-purchase-approve': { path: '/purchase/orders', query: { status: 'SUBMITTED', from: 'dashboard' } },
+  'todo-sales-approve': { path: '/sales/orders', query: { status: 'SUBMITTED', from: 'dashboard' } },
+  'todo-purchase-return-approve': { path: '/purchase/returns', query: { status: 'SUBMITTED', from: 'dashboard' } },
+  'todo-sales-return-approve': { path: '/sales/returns', query: { status: 'SUBMITTED', from: 'dashboard' } },
+  'todo-inbound': { path: '/warehouse/inbound-bills', query: { status: 'PENDING_CONFIRM', from: 'dashboard' } },
+  'todo-outbound': { path: '/warehouse/outbound-bills', query: { status: 'PENDING_CONFIRM', from: 'dashboard' } },
+  'todo-stock-risk-review': { path: '/warehouse/stocks', query: { riskOnly: 'true', from: 'dashboard' } },
+};
+
 function goToTodoRoute(todo: DashboardTodoItem) {
-  const target = resolveTodoNavigation(todo);
-  if (!target) return;
+  if (todo.completionMode === 'TRACKED') return;
+  const target = TODO_NAVIGATION[todo.todoId] ?? { path: '/dashboard' };
   activeDetail.value = null;
   void router.push(target);
 }
 
-onMounted(loadOverview);
+let initialHandled = false;
+
+onMounted(async () => {
+  await bootstrapOverview();
+  initialHandled = true;
+});
+
+watch(() => route.query.todoId, () => {
+  if (initialHandled) openTodoFromRoute();
+}, { flush: 'post' });
 
 onBeforeUnmount(() => {
   if (trendAnimationTimer) window.clearTimeout(trendAnimationTimer);
@@ -603,7 +639,7 @@ onBeforeUnmount(() => {
         <span data-dashboard-refresh-status aria-live="polite">
           {{ loading ? '正在同步经营数据...' : (overview ? `更新于 ${overview.refreshedAt}` : '等待加载经营数据') }}
         </span>
-        <Button size="sm" variant="outline" :disabled="loading" @click="loadOverview">
+        <Button size="sm" variant="outline" :disabled="loading" @click="bootstrapOverview">
           <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': loading }" aria-hidden="true" />
           {{ loading ? '刷新中' : '刷新' }}
         </Button>
@@ -1027,7 +1063,7 @@ onBeforeUnmount(() => {
 
                 <div class="dashboard-todo-workbench__actions">
                   <Button
-                    v-if="resolveTodoNavigation(selectedDetailTodo)"
+                    v-if="selectedDetailTodo.completionMode === 'AUTO' && TODO_NAVIGATION[selectedDetailTodo.todoId]"
                     size="sm"
                     @click="goToTodoRoute(selectedDetailTodo)"
                   >

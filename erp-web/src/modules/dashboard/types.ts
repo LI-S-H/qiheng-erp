@@ -75,7 +75,7 @@ export type DashboardTodoDetail =
   | { model: 'STOCK_RISK_REVIEW'; items: DashboardTodoStockRiskItem[] }
   | { model: 'SYSTEM_EXCEPTION'; items: DashboardTodoSystemExceptionItem[] };
 
-export interface DashboardTodoItem {
+export interface DashboardTodoSummary {
   todoId: string;
   businessType: string;
   businessLabel: string;
@@ -83,6 +83,9 @@ export interface DashboardTodoItem {
   description: string;
   count: number;
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export interface DashboardTodoItem extends DashboardTodoSummary {
   sortWeight: number;
   completionMode: 'AUTO' | 'TRACKED';
   resolveHint: string | null;
@@ -158,6 +161,7 @@ export interface DashboardSupplierPerformance {
 
 export interface DashboardOverview {
   refreshedAt: string;
+  pendingCount?: number;
   metrics: DashboardMetric[];
   trend: DashboardTrendPoint[];
   trendPermissions?: DashboardTrendPermissions | null;
@@ -182,12 +186,4 @@ export interface DashboardTrendPermissions {
 export interface DashboardOrderStagePermissions {
   canViewPurchase: boolean;
   canViewSales: boolean;
-}
-
-export interface DashboardNotificationPopover {
-  refreshedAt: string;
-  pendingCount: number;
-  highPriorityCount: number;
-  hasMore: boolean;
-  items: DashboardTodoItem[];
 }

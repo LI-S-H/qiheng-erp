@@ -1,10 +1,10 @@
 package com.qiheng.erp.dashboard.loader;
 
-import com.qiheng.erp.dashboard.domain.entity.SystemException;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoDetailModel;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTodoItemVO;
-import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoSystemExceptionDetailVO;
-import com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoSystemExceptionItemVO;
+import com.qiheng.erp.dashboard.domain.exception.entity.SystemException;
+import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoDetailModel;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoItemVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoSystemExceptionDetailVO;
+import com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoSystemExceptionItemVO;
 import com.qiheng.erp.dashboard.mapper.SystemExceptionMapper;
 import org.junit.jupiter.api.Test;
 

@@ -1,8 +1,8 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoDetailModel;
-import com.qiheng.erp.dashboard.domain.enums.DashboardTodoWaitLevel;
+import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoDetailModel;
+import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoWaitLevel;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
@@ -43,8 +43,8 @@ class DashboardTodoAggregatorTest {
 
         assertThat(todo.getTodoId()).isEqualTo("todo-purchase-return-approve");
         assertThat(todo.getCount()).isEqualTo(4);
-        assertThat(todo.getDetail()).isInstanceOf(com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDocumentDetailVO.class);
-        var detail = (com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDocumentDetailVO) todo.getDetail();
+        assertThat(todo.getDetail()).isInstanceOf(com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoDocumentDetailVO.class);
+        var detail = (com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoDocumentDetailVO) todo.getDetail();
         assertThat(detail.getModel()).isEqualTo(DashboardTodoDetailModel.PURCHASE_RETURN_APPROVAL);
         assertThat(detail.getItems()).hasSize(2);
         assertThat(detail.getItems().get(0))
@@ -79,7 +79,7 @@ class DashboardTodoAggregatorTest {
         var todo = newAggregator(permissionGuard, mock(ReturnOrderMapper.class), inboundBillMapper, mock(OutboundBillMapper.class))
                 .loadInboundTodos(user).get(0);
 
-        var detail = (com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDocumentDetailVO) todo.getDetail();
+        var detail = (com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoDocumentDetailVO) todo.getDetail();
         assertThat(todo.getCount()).isEqualTo(7);
         assertThat(detail.getModel()).isEqualTo(DashboardTodoDetailModel.INBOUND_CONFIRM);
         assertThat(detail.getItems()).extracting(item -> item.getSourceDocumentNo(), item -> item.getCounterpartyName(), item -> item.getDocumentStatus())
@@ -100,7 +100,7 @@ class DashboardTodoAggregatorTest {
         var todo = newAggregator(permissionGuard, mock(ReturnOrderMapper.class), mock(InboundBillMapper.class), outboundBillMapper)
                 .loadOutboundTodos(user).get(0);
 
-        var detail = (com.qiheng.erp.dashboard.domain.vo.todo.DashboardTodoDocumentDetailVO) todo.getDetail();
+        var detail = (com.qiheng.erp.dashboard.domain.todo.vo.DashboardTodoDocumentDetailVO) todo.getDetail();
         assertThat(todo.getCount()).isEqualTo(5);
         assertThat(detail.getModel()).isEqualTo(DashboardTodoDetailModel.OUTBOUND_CONFIRM);
         assertThat(detail.getItems()).extracting(item -> item.getSourceDocumentNo(), item -> item.getCounterpartyName(), item -> item.getDocumentStatus())

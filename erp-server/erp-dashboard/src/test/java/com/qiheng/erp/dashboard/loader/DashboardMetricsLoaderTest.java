@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 
 import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
-import com.qiheng.erp.dashboard.domain.vo.DashboardMetricVO;
+import com.qiheng.erp.dashboard.domain.metric.vo.DashboardMetricVO;
 import com.qiheng.erp.dashboard.permission.DashboardPermissionGuard;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;

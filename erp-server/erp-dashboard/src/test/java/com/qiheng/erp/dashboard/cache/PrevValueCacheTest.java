@@ -1,7 +1,7 @@
 package com.qiheng.erp.dashboard.cache;
 
-import com.qiheng.erp.dashboard.domain.enums.MetricDirection;
-import com.qiheng.erp.dashboard.domain.enums.MetricStatus;
+import com.qiheng.erp.dashboard.domain.metric.enums.MetricDirection;
+import com.qiheng.erp.dashboard.domain.metric.enums.MetricStatus;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;

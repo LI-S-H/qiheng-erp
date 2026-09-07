@@ -1,7 +1,7 @@
 package com.qiheng.erp.dashboard.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.qiheng.erp.dashboard.domain.vo.DashboardTrendPointVO;
+import com.qiheng.erp.dashboard.domain.trend.vo.DashboardTrendPointVO;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;

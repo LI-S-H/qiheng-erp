@@ -48,6 +48,22 @@ runSmoke({
       || !ledgerColumnState.sourceTypeMuted) {
       throw new Error(`库存流水字段顺序、颜色或流水号列宽未与出入库单统一：${JSON.stringify(ledgerColumnState)}`);
     }
+    const sourceNo = firstRow.locator('[data-stock-ledger-source-no]');
+    await sourceNo.evaluate((element) => {
+      element.style.width = '36px';
+      element.style.maxWidth = '36px';
+    });
+    await sourceNo.hover();
+    const sourceNoText = await sourceNo.innerText();
+    await page.getByRole('tooltip').filter({ hasText: sourceNoText }).waitFor({ state: 'visible' });
+    const sourceNoClasses = await sourceNo.evaluate(element => element.className.split(/\s+/));
+    const missingSourceNoClasses = ['rounded', 'bg-muted', 'px-1.5', 'py-0.5', 'text-xs', 'font-medium']
+      .filter(className => !sourceNoClasses.includes(className));
+    if (await sourceNo.getAttribute('title') !== null
+      || await sourceNo.getAttribute('data-overflowing') !== 'true'
+      || missingSourceNoClasses.length > 0) {
+      throw new Error(`库存流水来源业务单号未与出入库单统一：${JSON.stringify({ missingSourceNoClasses })}`);
+    }
     if (await page.getByRole('button', { name: /新增|编辑|提交|确认|取消/ }).count()) {
       throw new Error('库存流水页面不应提供写操作入口');
     }

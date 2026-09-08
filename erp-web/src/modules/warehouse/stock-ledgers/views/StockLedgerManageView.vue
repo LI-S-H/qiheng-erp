@@ -272,7 +272,7 @@ onMounted(() => {
                 <TableCell class="text-center"><Badge variant="outline" :class="billTypeMap[row.billType].className">{{ billTypeMap[row.billType].label }}</Badge></TableCell>
                 <TableCell class="text-muted-foreground" data-stock-ledger-entry-mode>{{ entryModeOptions.find(item => item.value === row.entryMode)?.label || '-' }}</TableCell>
                 <TableCell class="text-muted-foreground" data-stock-ledger-source-type>{{ sourceTypeMap[getStockLedgerSourceType(row.billType)] }}</TableCell>
-                <TableCell><span class="block truncate" :title="row.sourceNo">{{ row.sourceNo || '-' }}</span></TableCell>
+                <TableCell><OverflowTooltip :text="row.sourceNo" fallback="-" class="block rounded bg-muted px-1.5 py-0.5 text-xs font-medium" data-stock-ledger-source-no /></TableCell>
                 <TableCell><span class="block truncate" :title="row.warehouseName">{{ row.warehouseName }}</span></TableCell>
                 <TableCell>{{ row.confirmedByName || '-' }}</TableCell>
                 <TableCell class="text-xs text-muted-foreground">{{ row.confirmedAt }}</TableCell>

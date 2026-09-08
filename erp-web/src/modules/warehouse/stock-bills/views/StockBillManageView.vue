@@ -274,7 +274,7 @@ const pageText = computed(() => ({
   formTitle: isInboundPage.value ? '入库单' : '出库单',
   confirmTitle: isInboundPage.value ? '确认入库' : '确认出库',
   emptyText: isInboundPage.value ? '暂无符合条件的入库单' : '暂无符合条件的出库单',
-  partyColumnLabel: '来源对象',
+  partyColumnLabel: '业务对象',
 }));
 
 const loading = ref(false);
@@ -1469,17 +1469,17 @@ onMounted(async () => {
                   <TableCell v-if="isListColumnVisible('entryMode')" class="text-muted-foreground">{{ entryModeMap[row.entryMode] }}</TableCell>
                   <TableCell v-if="isListColumnVisible('sourceType')" class="text-muted-foreground">{{ sourceTypeMap[row.sourceType] }}</TableCell>
                   <TableCell v-if="isListColumnVisible('sourceNo')">
-                    <code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.sourceNo || '-' }}</code>
+                    <OverflowTooltip :text="row.sourceNo" fallback="-" class="block rounded bg-muted px-1.5 py-0.5 text-xs font-medium" data-stock-bill-source-no />
                   </TableCell>
-                  <TableCell v-if="isListColumnVisible('party')" class="truncate" :title="sourcePartyDisplay(row)">
-                    <span class="text-sm">{{ sourcePartyDisplay(row) }}</span>
+                  <TableCell v-if="isListColumnVisible('party')">
+                    <OverflowTooltip :text="sourcePartyDisplay(row)" fallback="-" class="block text-sm" data-stock-bill-business-party />
                   </TableCell>
-                  <TableCell v-if="isListColumnVisible('warehouse')" class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
+                  <TableCell v-if="isListColumnVisible('warehouse')"><OverflowTooltip :text="row.warehouseName" fallback="-" class="block" data-stock-bill-warehouse /></TableCell>
                   <TableCell class="text-right font-medium tabular-nums">{{ billTotalQuantityText(row) }}</TableCell>
                   <TableCell class="text-center">
                     <Badge variant="outline" :class="statusMap[row.status].className">{{ statusMap[row.status].label }}</Badge>
                   </TableCell>
-                  <TableCell v-if="isListColumnVisible('responsible')" class="truncate" :title="row.responsibleByName">{{ row.responsibleByName }}</TableCell>
+                  <TableCell v-if="isListColumnVisible('responsible')"><OverflowTooltip :text="row.responsibleByName" fallback="-" class="block" data-stock-bill-responsible /></TableCell>
                   <TableCell v-if="isListColumnVisible('createTime')" class="whitespace-nowrap text-muted-foreground">{{ row.createTime }}</TableCell>
                   <TableCell class="stock-bill-actions-column sticky right-0 z-20 whitespace-nowrap border-l border-border/60 bg-background text-center group-hover:bg-muted/50" data-table-sticky-edge="end">
                     <Button size="sm" variant="ghost" :class="hasStockBillActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasStockBillActions(row) ? '处理' : '查看' }}</Button>
@@ -1520,7 +1520,7 @@ onMounted(async () => {
                                 <TableBody>
                                   <TableRow v-for="item in expandedItems(row)" :key="item.workBillItemId" :data-stock-bill-expanded-item-id="item.workBillItemId">
                                     <TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
-                                    <TableCell class="truncate text-center font-medium" :title="item.productName">{{ item.productName }}</TableCell>
+                                    <TableCell class="text-center"><OverflowTooltip :text="item.productName" fallback="-" class="block text-center font-medium" data-stock-bill-expanded-product /></TableCell>
                                     <TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell>
                                     <TableCell class="text-center font-medium tabular-nums">{{ itemQuantityText(item) }}</TableCell>
                                     <TableCell class="text-center tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
@@ -1648,7 +1648,7 @@ onMounted(async () => {
                           <RemoteSearchSelect v-if="structureEditable" :model-value="item.productId" :selected-label="productLabel(item)" :fetch-options="keyword => fetchProductSearchOptions(keyword, item.key)" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => handleProductChange(item, index, value)" />
                           <div v-else-if="item.productId" class="stock-bill-product-snapshot">
                             <code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ productDisplay(item).code }}</code>
-                            <span class="max-w-[190px] truncate text-center font-medium" :title="productDisplay(item).name">{{ productDisplay(item).name }}</span>
+                            <OverflowTooltip :text="productDisplay(item).name" fallback="-" class="block max-w-[190px] text-center font-medium" data-stock-bill-product-snapshot />
                             <small>{{ productDisplay(item).unitName }}</small>
                           </div>
                         </div>
@@ -1735,7 +1735,7 @@ onMounted(async () => {
                     <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">{{ planQtyLabel(detail.billType) }}</TableHead><TableHead class="text-right">{{ pageText.processedLabel }}</TableHead><TableHead class="text-right">{{ pageText.currentQtyLabel }}</TableHead><TableHead class="text-right">确认后{{ pageText.pendingQtyLabel }}</TableHead><TableHead class="text-right">合格数量</TableHead><TableHead class="text-right">不合格数量</TableHead><TableHead>备注</TableHead></TableRow></TableHeader>
                     <TableBody>
                       <TableRow v-for="item in detail.items" :key="item.workBillItemId" :data-stock-bill-item-id="item.workBillItemId">
-                        <TableCell><div class="flex flex-col items-center gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><span class="max-w-[150px] truncate text-center font-medium" :title="item.productName">{{ item.productName }}</span></div></TableCell>
+                        <TableCell><div class="flex flex-col items-center gap-1"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><OverflowTooltip :text="item.productName" fallback="-" class="block max-w-[150px] text-center font-medium" data-stock-bill-detail-product /></div></TableCell>
                         <TableCell class="text-center">{{ item.unitName }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.planQty, item.quantityPrecision) }}</TableCell>
                         <TableCell class="text-right tabular-nums">{{ formatQty(item.processedQty, item.quantityPrecision) }}</TableCell>

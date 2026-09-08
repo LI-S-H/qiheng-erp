@@ -3202,7 +3202,7 @@ paths:
         查询 `inbound_bill` 入库单主表，并按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要。
         入库单承接采购入库、销售退货入库和调整入库；采购订单审核后生成 `PENDING_CONFIRM` 入库单，但不直接改变库存。
         系统生成的待确认入库单初始本次入库量为 0 或空业务值，由仓库人员在确认前按实物到货数量填写；确认后剩余未入库由后端按采购数量、累计已入库和本次入库量计算。
-        入库列表的“来源对象”列按单据类型显示供应商、客户或调整单的来源仓库；库存调整不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库、本次入库量和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
+        入库列表的“业务对象”列按单据类型显示供应商、客户或调整单的来源仓库；库存调整不自动生成反向入库单或出库单；列表只显示入库量摘要和状态；采购数量、累计已入库、本次入库量和确认后剩余未入库通过详情接口返回，并可在前端展开行中按需展示。
         人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交；人工调整和历史迁移数据的 `sourceId`、`sourcePartyId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照，并将缺少来源关联的历史记录标识为“未关联来源”。
         本接口需要 `warehouse:query` 权限。
       operationId: inboundBillPage
@@ -3296,7 +3296,7 @@ paths:
         查询 `outbound_bill` 出库单主表，并按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要。
         出库单承接销售出库、采购退货出库和调整出库；销售订单审核后生成 `PENDING_CONFIRM` 出库单，但不直接扣减库存。
         系统生成的待确认出库单初始本次出库量为 0 或空业务值，由仓库人员在确认前按实物发货数量填写；确认后剩余未出库由后端按销售数量、累计已出库和本次出库量计算。
-        出库列表的“来源对象”列按单据类型显示客户、供应商或调整单的来源仓库；库存调整不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库、本次出库量和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
+        出库列表的“业务对象”列按单据类型显示客户、供应商或调整单的来源仓库；库存调整不自动生成反向入库单或出库单；列表只显示出库量摘要和状态；销售数量、累计已出库、本次出库量和确认后剩余未出库通过详情接口返回，并可在前端展开行中按需展示。
         人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交；人工调整和历史迁移数据的 `sourceId`、`sourcePartyId` 可能为 null。前端应优先展示 `sourceNo`、`sourcePartyName` 快照，并将缺少来源关联的历史记录标识为“未关联来源”。
         本接口需要 `warehouse:query` 权限。
       operationId: outboundBillPage
@@ -7205,7 +7205,7 @@ components:
         sourceType: { type: string, enum: [PURCHASE_ORDER, SALES_ORDER, PURCHASE_RETURN_ORDER, SALES_RETURN_ORDER, STOCK_ADJUST], description: 原业务来源类型 }
         sourceId: { type: string, nullable: true, description: 原业务来源单据 ID，BIGINT 按字符串传输；人工补录可未关联来源，此时为 null }
         sourcePartyId: { type: string, nullable: true, description: 来源对象 ID，BIGINT 按字符串传输；采购入库为供应商 ID，销售退货为客户 ID，库存调整为受影响仓库 ID；人工调整或历史未关联数据时为 null }
-        sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；采购相关单据表示供应商，销售相关单据表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示发生调整的来源仓库名称快照，前端统一显示在“来源对象”列，调整单详情和编辑态标注为“来源仓库”；历史未关联数据时为空字符串 }
+        sourcePartyName: { type: string, maxLength: 200, description: 来源对象名称快照；采购相关单据表示供应商，销售相关单据表示客户，`ADJUST_IN`、`ADJUST_OUT` 表示发生调整的来源仓库名称快照，前端统一显示在“业务对象”列，调整单详情和编辑态标注为“来源仓库”；历史未关联数据时为空字符串 }
         entryMode: { type: string, enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT], description: 前端显示为系统生成、人工补录和人工调整 }
         warehouseId: { type: string, description: 仓库 ID，BIGINT 按字符串传输 }
         warehouseName: { type: string, maxLength: 100, description: 仓库名称快照 }

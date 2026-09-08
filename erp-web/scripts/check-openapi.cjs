@@ -664,8 +664,8 @@ for (const fragment of [
 for (const fragment of [
   '按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要',
   '按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要',
-  '入库列表的“来源对象”列按单据类型显示供应商、客户或调整单的来源仓库',
-  '出库列表的“来源对象”列按单据类型显示客户、供应商或调整单的来源仓库',
+  '入库列表的“业务对象”列按单据类型显示供应商、客户或调整单的来源仓库',
+  '出库列表的“业务对象”列按单据类型显示客户、供应商或调整单的来源仓库',
   '调整单详情和编辑态标注为“来源仓库”',
   'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
   'enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]',
@@ -698,7 +698,7 @@ if (!stockBillViewSource.includes('新增入库单')
   || !stockBillViewSource.includes('新增出库单')
   || !stockBillViewSource.includes('手工补录')
   || !stockBillViewSource.includes('sourcePartyName')
-  || !stockBillViewSource.includes("partyColumnLabel: '来源对象'")
+  || !stockBillViewSource.includes("partyColumnLabel: '业务对象'")
   || !stockBillViewSource.includes("SOURCE_GENERATED: '系统生成'")
   || !stockBillViewSource.includes("return '来源仓库'")
   || !stockBillViewSource.includes('const sourcePartyFormDisplay = computed(() =>')

@@ -49,7 +49,7 @@ async function assertStockBillColumnPreferences(page) {
   if (columnMenuText.includes('固定关键列') || columnMenuText.includes('单号与展开')) {
     throw new Error(`字段选择菜单不应展示无作用的固定关键列：${columnMenuText}`);
   }
-  for (const optionalLabel of ['录入方式', '来源类型', '来源单号', '来源对象', '仓库', '负责人', '创建时间']) {
+  for (const optionalLabel of ['录入方式', '来源类型', '来源单号', '业务对象', '仓库', '负责人', '创建时间']) {
     const item = page.getByRole('menuitemcheckbox', { name: optionalLabel, exact: true });
     await item.waitFor();
     if (await item.isDisabled()) throw new Error(`可选字段“${optionalLabel}”不应被禁用`);
@@ -629,8 +629,22 @@ runSmoke({
     const initialInboundRow = tableRow(page, 'IB202606140001');
     const initialInboundItem = page.locator('[data-stock-bill-expanded-item-id]').filter({ hasText: '经典原味苏打水' });
     await assertDetailToggleMotion(page, initialInboundRow, initialInboundItem, path.resolve(__dirname, '..', 'docs', 'qa-screenshots', '2026-07-14-134409-stock-bill-collapse-stability', 'inbound-collapse-110ms.png'));
+    const businessParty = page.locator('[data-stock-bill-business-party]').first();
+    await businessParty.evaluate(element => {
+      element.style.width = '36px';
+      element.style.maxWidth = '36px';
+    });
+    await businessParty.hover();
+    const businessPartyText = await businessParty.innerText();
+    await page.getByRole('tooltip').filter({ hasText: businessPartyText }).waitFor({ state: 'visible' });
+    if (await businessParty.getAttribute('title') !== null || await businessParty.getAttribute('data-overflowing') !== 'true') {
+      throw new Error('业务对象长文本未使用统一 OverflowTooltip');
+    }
+    if (await page.locator('.stock-bill-list-table [title]').count()) {
+      throw new Error('列表截断文本不应使用浏览器原生 title');
+    }
     const inboundHeaderText = await outerHeaderText(page);
-    for (const expected of ['入库单号', '类型', '录入方式', '来源类型', '来源单号', '来源对象', '仓库', '入库量', '状态', '负责人', '创建时间', '操作']) {
+    for (const expected of ['入库单号', '类型', '录入方式', '来源类型', '来源单号', '业务对象', '仓库', '入库量', '状态', '负责人', '创建时间', '操作']) {
       if (!inboundHeaderText.includes(expected)) throw new Error(`入库单列表表头缺少独立列：${expected}`);
     }
     for (const forbidden of ['入库单号 / 商品', '类型 / 来源', '往来方', '供应商/客户', '来源对象 / 仓库', '状态 / 操作']) {
@@ -851,7 +865,7 @@ runSmoke({
     await assertFixedTableLayout(page, 12);
     await assertDistinctTypeBadges(page, ['销售出库', '采购退货出库', '调整出库']);
     const outboundHeaderText = await outerHeaderText(page);
-    for (const expected of ['出库单号', '类型', '录入方式', '来源类型', '来源单号', '来源对象', '仓库', '出库量', '状态', '负责人', '创建时间', '操作']) {
+    for (const expected of ['出库单号', '类型', '录入方式', '来源类型', '来源单号', '业务对象', '仓库', '出库量', '状态', '负责人', '创建时间', '操作']) {
       if (!outboundHeaderText.includes(expected)) throw new Error(`出库单列表表头缺少独立列：${expected}`);
     }
     for (const forbidden of ['出库单号 / 商品', '类型 / 来源', '往来方', '客户/供应商', '来源对象 / 仓库', '状态 / 操作']) {

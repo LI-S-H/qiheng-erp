@@ -34,7 +34,7 @@ export const stockBillListColumns: readonly StockBillListColumnDefinition[] = [
   { key: 'entryMode', label: '录入方式', width: 120, required: false },
   { key: 'sourceType', label: '来源类型', width: 130, required: false },
   { key: 'sourceNo', label: '来源单号', width: 170, required: false },
-  { key: 'party', label: '往来单位', width: 170, required: false },
+  { key: 'party', label: '业务对象', width: 170, required: false },
   { key: 'warehouse', label: '仓库', width: 150, required: false },
   { key: 'quantity', label: '数量', width: 120, required: true },
   { key: 'status', label: '状态', width: 110, required: true },

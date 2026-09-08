@@ -48,6 +48,10 @@ public class StockBillItemServiceImpl extends ServiceImpl<StockBillItemMapper, S
                 .orderByAsc(StockBillItem::getId)
                 .list();
 
+        return buildDetails(stockBill, items);
+    }
+
+    StockBillDetailsVo buildDetails(StockBill stockBill, List<StockBillItem> items) {
         StockBillType billType = StockBillType.valueOf(stockBill.getBillType());
 
         // 3. 组装 VO
@@ -70,6 +74,8 @@ public class StockBillItemServiceImpl extends ServiceImpl<StockBillItemMapper, S
         List<StockBillDetailsVo.StockBillDetailItemVo> detailItems = items.stream()
                 .map(this::convertToDetailItemVo)
                 .toList();
+        // 详情响应继承列表项字段，必须回填明细总数以满足 StockLedgerDetail 契约。
+        vo.setItemCount(detailItems.size());
         vo.setItems(detailItems);
 
         return vo;

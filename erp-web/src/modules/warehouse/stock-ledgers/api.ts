@@ -136,5 +136,9 @@ export function getStockLedgerDetail(stockLedgerId: string) {
     const item = stockLedgerSeed.find(candidate => candidate.stockLedgerId === stockLedgerId);
     return item ? Promise.resolve(normalizeStockLedgerDetail(item)) : Promise.reject(new Error('库存流水不存在'));
   }
-  return getResult<StockLedgerDetail>(`/warehouse/stock-bills/${stockLedgerId}`).then(normalizeStockLedgerDetail);
+  return getResult<StockLedgerDetail>(
+    `/warehouse/stock-bills/${stockLedgerId}`,
+    undefined,
+    { skipPageLoading: true },
+  ).then(normalizeStockLedgerDetail);
 }

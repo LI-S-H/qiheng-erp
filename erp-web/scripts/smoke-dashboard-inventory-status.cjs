@@ -60,6 +60,19 @@ runSmoke({
     if (await panel.getByText('12.5 kg', { exact: true }).count()) {
       throw new Error('精度为 2 的风险库存不应省略末尾小数位');
     }
+    for (const nameSelector of ['[data-dashboard-inventory-product-name]', '[data-dashboard-inventory-warehouse-name]']) {
+      const name = panel.locator(nameSelector);
+      await name.evaluate(element => {
+        element.style.width = '36px';
+        element.style.maxWidth = '36px';
+      });
+      await name.hover();
+      const text = await name.innerText();
+      await page.getByRole('tooltip').filter({ hasText: text }).waitFor({ state: 'visible' });
+      if (await name.getAttribute('title') !== null || await name.getAttribute('data-overflowing') !== 'true') {
+        throw new Error(`工作台库存长文本未使用统一 OverflowTooltip：${nameSelector}`);
+      }
+    }
   },
 }).then(() => runSmoke({
   route: '/dashboard',

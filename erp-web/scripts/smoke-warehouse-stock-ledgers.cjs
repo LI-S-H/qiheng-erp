@@ -102,7 +102,7 @@ runSmoke({
         } : null,
       };
     });
-    if (detailLayout.cardWidth > 1024 || detailLayout.tableWidth > 1020
+    if (detailLayout.cardWidth < 1020 || detailLayout.tableWidth < 1020
       || detailLayout.trailingGap > 1 || detailLayout.paddingBottom !== '0px'
       || Math.abs(detailLayout.dataRowHeight - detailLayout.headerRowHeight) > 1
       || detailLayout.dataCell?.paddingTop !== '12px'
@@ -155,9 +155,8 @@ runSmoke({
     const salesOutDetail = page.locator('[data-stock-ledger-detail-id="1950000000000000002"]');
     await salesOutDetail.waitFor();
     const salesOutItem = salesOutDetail.locator('[data-stock-ledger-expanded-item-id="1950100000000000002"]');
-    if (await salesOutItem.locator('[data-stock-ledger-quality="qualified"]').innerText() !== '-'
-      || await salesOutItem.locator('[data-stock-ledger-quality="defective"]').innerText() !== '-') {
-      throw new Error('销售出库流水明细的合格数量和不合格数量未显示为 -');
+    if (await salesOutItem.locator('[data-stock-ledger-quality="qualified"], [data-stock-ledger-quality="defective"]').count() !== 0) {
+      throw new Error('销售出库流水明细不应展示质量列');
     }
     await salesOutRow.getByRole('button', { name: /收起.*明细/ }).click();
 

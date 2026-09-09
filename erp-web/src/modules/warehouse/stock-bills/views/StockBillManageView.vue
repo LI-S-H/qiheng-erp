@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Columns3, RotateCcw } from 'lucide-vue-next';
+import { ChevronRight, Columns3, RotateCcw } from 'lucide-vue-next';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
@@ -20,6 +20,7 @@ import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
+import WarehouseDetailMetrics, { type WarehouseDetailMetric } from '@/components/common/WarehouseDetailMetrics.vue';
 import WarehouseDetailTableFrame from '@/components/common/WarehouseDetailTableFrame.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { formatQtyByPrecision } from '@/shared/utils/qty';
+import { summarizeWarehouseDetailQuantities } from '@/shared/utils/warehouse-detail-summary';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import { listProducts } from '@/modules/product/products/api';
 import type { ProductListItem } from '@/modules/product/products/types';
@@ -682,6 +684,35 @@ function qualityQtyText(item: StockBillItem, billType: StockBillType, field: 'qu
   return formatQty(item[field], item.quantityPrecision);
 }
 
+function stockBillDetailMetric(
+  label: string,
+  items: StockBillItem[],
+  field: 'currentQty' | 'qualifiedQty' | 'defectiveQty' | 'pendingQty',
+  tone: WarehouseDetailMetric['tone'],
+  priority: WarehouseDetailMetric['priority'],
+): WarehouseDetailMetric {
+  const summary = summarizeWarehouseDetailQuantities(items.map(item => ({
+    value: item[field],
+    unitName: item.unitName,
+    quantityPrecision: item.quantityPrecision,
+  })));
+  return { label, value: summary.text, fullValue: summary.fullText, tone, priority };
+}
+
+function stockBillDetailMetrics(row: StockBillListItem): WarehouseDetailMetric[] {
+  const items = expandedItems(row);
+  const metrics: WarehouseDetailMetric[] = [
+    stockBillDetailMetric(pageText.value.listQtyLabel, items, 'currentQty', 'default', 'primary'),
+  ];
+  if (isQualityBillType(row.billType)) {
+    metrics.push(
+      stockBillDetailMetric('合格', items, 'qualifiedQty', 'positive', 'secondary'),
+      stockBillDetailMetric('不合格', items, 'defectiveQty', 'danger', 'secondary'),
+    );
+  }
+  metrics.push(stockBillDetailMetric(pageText.value.pendingQtyLabel, items, 'pendingQty', 'muted', 'tertiary'));
+  return metrics;
+}
 function expandedItems(row: StockBillListItem) {
   return expandedDetails[row.workBillId]?.items ?? [];
 }
@@ -1459,7 +1490,7 @@ onMounted(async () => {
                 <TableRow class="group bg-muted/25" :data-stock-bill-id="row.workBillId">
                   <TableCell class="stock-bill-key-column sticky left-0 z-20 border-r border-border/60 bg-background group-hover:bg-muted/50" data-table-sticky-edge="start">
                     <div class="flex items-center gap-2">
-                      <Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-bill-detail-${row.workBillId}`" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button>
+                      <Button size="sm" variant="ghost" class="h-7 shrink-0 gap-1 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-bill-detail-${row.workBillId}`" @click="toggleRowDetail(row)"><ChevronRight data-stock-bill-detail-toggle-icon class="size-3.5 transition-transform duration-200" :class="{ 'rotate-90': !isRowDetailCollapsed(row) }" aria-hidden="true" /><span>{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</span></Button>
                       <OrderNumberLink :value="row.billNo" :label="pageText.billNoLabel" />
                     </div>
                   </TableCell>
@@ -1493,43 +1524,44 @@ onMounted(async () => {
                           <div v-if="isRowDetailLoading(row)" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-loading-id="row.workBillId"><span class="page-loading-spinner mr-2 !size-3.5" />商品明细加载中...</div>
                           <div v-else-if="detailLoadErrors[row.workBillId]" class="stock-bill-detail-message text-destructive" :data-stock-bill-detail-error-id="row.workBillId">{{ detailLoadErrors[row.workBillId] }}</div>
                           <div v-else-if="expandedItems(row).length === 0" class="stock-bill-detail-message text-muted-foreground" :data-stock-bill-detail-empty-id="row.workBillId">暂无商品明细</div>
-                          <WarehouseDetailTableFrame v-else max-width="864px" class="stock-bill-detail-card">
-                              <Table class="!w-[860px] min-w-[860px] table-fixed">
-                                <colgroup>
-                                  <col class="w-[96px]" />
-                                  <col class="w-[200px]" />
-                                  <col class="w-[56px]" />
-                                  <col class="w-[92px]" />
-                                  <col class="w-[92px]" />
-                                  <col class="w-[92px]" />
-                                  <col class="w-[112px]" />
-                                  <col class="w-[120px]" />
-                                </colgroup>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead class="text-center">产品编码</TableHead>
-                                    <TableHead class="text-center">产品名称</TableHead>
-                                    <TableHead class="text-center">单位</TableHead>
-                                    <TableHead class="text-center">{{ pageText.listQtyLabel }}</TableHead>
-                                    <TableHead class="text-center">合格数量</TableHead>
-                                    <TableHead class="text-center">不合格数量</TableHead>
-                                    <TableHead class="text-center">{{ pageText.pendingQtyLabel }}</TableHead>
-                                    <TableHead class="text-center">备注</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  <TableRow v-for="item in expandedItems(row)" :key="item.workBillItemId" :data-stock-bill-expanded-item-id="item.workBillItemId">
-                                    <TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
-                                    <TableCell class="text-center"><OverflowTooltip :text="item.productName" fallback="-" class="block text-center font-medium" data-stock-bill-expanded-product /></TableCell>
-                                    <TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell>
-                                    <TableCell class="text-center font-medium tabular-nums">{{ itemQuantityText(item) }}</TableCell>
-                                    <TableCell class="text-center tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
-                                    <TableCell class="text-center tabular-nums" :class="item.defectiveQty > 0 && isQualityBillType(row.billType) ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
-                                    <TableCell class="text-center tabular-nums">{{ remainingQtyText(item) }}</TableCell>
-                                    <TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell>
-                                  </TableRow>
-                                </TableBody>
-                              </Table>
+                          <WarehouseDetailTableFrame v-else max-width="calc(100cqi - 32px)" title="商品明细" :item-count="expandedItems(row).length" item-count-label="项商品" class="stock-bill-detail-card">
+                            <template #metrics><WarehouseDetailMetrics :items="stockBillDetailMetrics(row)" /></template>
+                            <Table :class="isQualityBillType(row.billType) ? '!w-full min-w-[860px] table-fixed' : '!w-full min-w-[676px] table-fixed'">
+                              <colgroup>
+                                <col class="w-[96px]" />
+                                <col class="w-[200px]" />
+                                <col class="w-[56px]" />
+                                <col class="w-[92px]" />
+                                <col v-if="isQualityBillType(row.billType)" class="w-[92px]" />
+                                <col v-if="isQualityBillType(row.billType)" class="w-[92px]" />
+                                <col class="w-[112px]" />
+                                <col class="w-[120px]" />
+                              </colgroup>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead class="text-center">产品编码</TableHead>
+                                  <TableHead class="text-center">产品名称</TableHead>
+                                  <TableHead class="text-center">单位</TableHead>
+                                  <TableHead class="text-center">{{ pageText.listQtyLabel }}</TableHead>
+                                  <TableHead v-if="isQualityBillType(row.billType)" class="text-center">合格数量</TableHead>
+                                  <TableHead v-if="isQualityBillType(row.billType)" class="text-center">不合格数量</TableHead>
+                                  <TableHead class="text-center">{{ pageText.pendingQtyLabel }}</TableHead>
+                                  <TableHead class="text-center">备注</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                <TableRow v-for="item in expandedItems(row)" :key="item.workBillItemId" :data-stock-bill-expanded-item-id="item.workBillItemId">
+                                  <TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
+                                  <TableCell class="text-center"><OverflowTooltip :text="item.productName" fallback="-" class="block text-center font-medium" data-stock-bill-expanded-product /></TableCell>
+                                  <TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell>
+                                  <TableCell class="text-center font-medium tabular-nums">{{ itemQuantityText(item) }}</TableCell>
+                                  <TableCell v-if="isQualityBillType(row.billType)" class="text-center tabular-nums">{{ qualityQtyText(item, row.billType, 'qualifiedQty') }}</TableCell>
+                                  <TableCell v-if="isQualityBillType(row.billType)" class="text-center tabular-nums" :class="item.defectiveQty > 0 ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQtyText(item, row.billType, 'defectiveQty') }}</TableCell>
+                                  <TableCell class="text-center tabular-nums">{{ remainingQtyText(item) }}</TableCell>
+                                  <TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell>
+                                </TableRow>
+                              </TableBody>
+                            </Table>
                           </WarehouseDetailTableFrame>
                         </div>
                       </CollapsibleContent>
@@ -1860,10 +1892,6 @@ onMounted(async () => {
   position: sticky;
   left: 16px;
   z-index: 10;
-  /* 表格内容为 860px，外框仅预留 4px 边框，避免调整字段后右侧留下空白块。 */
-  width: min(864px, calc(100cqi - 32px));
-  border-left: 3px solid var(--primary);
-  background: color-mix(in srgb, var(--muted) 36%, white);
 }
 
 .stock-bill-detail-drawer {
@@ -2227,4 +2255,5 @@ onMounted(async () => {
     grid-column: auto;
   }
 }
+
 </style>

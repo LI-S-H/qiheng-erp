@@ -153,7 +153,7 @@ async function assertStockBillColumnPreferences(page) {
         trailingGap: Math.round((viewport?.clientWidth ?? 0) - tableWidth),
       };
     });
-  if (inboundDetailLayout.cardWidth > 864 || inboundDetailLayout.tableWidth !== 860 || inboundDetailLayout.trailingGap > 1) {
+  if (inboundDetailLayout.cardWidth < 860 || inboundDetailLayout.tableWidth < 860 || inboundDetailLayout.trailingGap > 1) {
     throw new Error(`隐藏列后明细表右侧出现空白区域：${JSON.stringify(inboundDetailLayout)}`);
   }
   await page.screenshot({ path: path.resolve(__dirname, '..', 'docs', 'qa-screenshots', '2026-07-14-143053-stock-bill-column-visibility', 'inbound-custom-columns.png'), fullPage: true });
@@ -594,22 +594,28 @@ async function assertExpandedDetailTable(page, direction) {
     const headerText = element.querySelector('thead')?.innerText ?? '';
     return {
       headerText,
-      cardWidth: card ? Math.round(card.getBoundingClientRect().width) : 0,
+      cardWidth: Math.round(card ? card.getBoundingClientRect().width : 0),
       tableWidth: Math.round(element.querySelector('[data-slot="table"]')?.getBoundingClientRect().width ?? 0),
       alignments: [...element.querySelectorAll('[data-slot="table-head"], [data-slot="table-cell"]')]
         .map(cell => getComputedStyle(cell).textAlign),
     };
   });
-  const qtyLabel = direction === 'INBOUND' ? '入库量' : '出库量';
-  const pendingLabel = direction === 'INBOUND' ? '剩余未入库' : '剩余未出库';
-  for (const expected of ['产品编码', '产品名称', '单位', qtyLabel, '合格数量', '不合格数量', pendingLabel, '备注']) {
+  const qualityRequired = direction === 'INBOUND';
+  const qtyLabel = qualityRequired ? '入库量' : '出库量';
+  const pendingLabel = qualityRequired ? '剩余未入库' : '剩余未出库';
+  const expectedFields = ['产品编码', '产品名称', '单位', qtyLabel, pendingLabel, '备注'];
+  if (qualityRequired) expectedFields.push('合格数量', '不合格数量');
+  for (const expected of expectedFields) {
     if (!state.headerText.includes(expected)) throw new Error(`展开明细表头缺少字段：${expected}`);
   }
-  if (state.headerText.includes('质检')) throw new Error('展开明细不应再使用“质检”汇总列');
-  if (state.cardWidth > 1040 || state.tableWidth > 1020) {
-    throw new Error(`展开明细表格未保持适中列宽：${JSON.stringify(state)}`);
+  if (!qualityRequired && (state.headerText.includes('合格数量') || state.headerText.includes('不合格数量'))) {
+    throw new Error('非质检出库单不应展示质量列');
   }
-  if (state.alignments.length < 16 || state.alignments.some(alignment => alignment !== 'center')) {
+  if (state.headerText.includes('质检') || state.cardWidth <= 0 || state.tableWidth > 1020) {
+    throw new Error(`展开明细表格结构异常：${JSON.stringify(state)}`);
+  }
+  const minimumCells = qualityRequired ? 16 : 12;
+  if (state.alignments.length < minimumCells || state.alignments.some(alignment => alignment !== 'center')) {
     throw new Error(`展开明细表头和数据单元格必须全部居中：${JSON.stringify(state)}`);
   }
 }

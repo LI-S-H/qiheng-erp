@@ -31,6 +31,8 @@
     "smoke:order-workbench": "node scripts/smoke-order-workbench.cjs",
     "smoke:warehouse-stock-ledgers": "node scripts/smoke-warehouse-stock-ledgers.cjs",
     "smoke:warehouse-stock-ledger-detail": "node scripts/smoke-warehouse-stock-ledger-detail.cjs",
+    "smoke:warehouse-detail-redesign": "node scripts/smoke-warehouse-detail-redesign.cjs",
+    "test:warehouse-detail-summary": "node scripts/test-warehouse-detail-summary.cjs",
     "smoke:dashboard": "node scripts/smoke-dashboard.cjs",
     "smoke:dashboard-inventory-status": "node scripts/smoke-dashboard-inventory-status.cjs",
     "smoke:ai": "node scripts/smoke-ai.cjs",

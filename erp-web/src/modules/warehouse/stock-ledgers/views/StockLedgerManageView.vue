@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { ChevronRight } from 'lucide-vue-next';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
@@ -11,6 +12,7 @@ import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
+import WarehouseDetailMetrics, { type WarehouseDetailMetric } from '@/components/common/WarehouseDetailMetrics.vue';
 import WarehouseDetailTableFrame from '@/components/common/WarehouseDetailTableFrame.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { formatQtyByPrecision } from '@/shared/utils/qty';
+import { summarizeWarehouseDetailQuantities } from '@/shared/utils/warehouse-detail-summary';
 import { listWarehouses } from '../../warehouses/api';
 import { getStockLedgerDetail, listStockLedgers } from '../api';
 import { getStockLedgerSourceType } from '../types';
@@ -173,6 +176,35 @@ function isRowDetailLoading(row: StockLedgerListItem) {
   return detailLoadingIds.value.has(row.stockLedgerId);
 }
 
+function stockLedgerDetailMetric(
+  label: string,
+  items: StockLedgerItem[],
+  field: 'changeQty' | 'qualifiedQty' | 'defectiveQty',
+  tone: WarehouseDetailMetric['tone'],
+  priority: WarehouseDetailMetric['priority'],
+  signed = false,
+): WarehouseDetailMetric {
+  const summary = summarizeWarehouseDetailQuantities(items.map(item => ({
+    value: item[field],
+    unitName: item.unitName,
+    quantityPrecision: item.quantityPrecision,
+  })), { signed });
+  return { label, value: summary.text, fullValue: summary.fullText, tone, priority };
+}
+
+function stockLedgerDetailMetrics(row: StockLedgerListItem): WarehouseDetailMetric[] {
+  const items = expandedItems(row);
+  const metrics: WarehouseDetailMetric[] = [
+    stockLedgerDetailMetric('变动', items, 'changeQty', 'default', 'primary', true),
+  ];
+  if (qualityBillTypes.has(row.billType)) {
+    metrics.push(
+      stockLedgerDetailMetric('合格', items, 'qualifiedQty', 'positive', 'secondary'),
+      stockLedgerDetailMetric('不合格', items, 'defectiveQty', 'danger', 'secondary'),
+    );
+  }
+  return metrics;
+}
 function expandedItems(row: StockLedgerListItem) {
   return expandedDetails[row.stockLedgerId]?.items || [];
 }
@@ -268,7 +300,7 @@ onMounted(() => {
             <TableRow v-if="records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无符合条件的库存流水</TableCell></TableRow>
             <template v-else v-for="row in records" :key="row.stockLedgerId">
               <TableRow class="group" :data-stock-ledger-id="row.stockLedgerId">
-                <TableCell class="stock-ledger-key-column sticky left-0 z-20 border-r border-border/60 bg-background group-hover:bg-muted/50" data-table-sticky-edge="start"><div class="flex items-center gap-2"><Button size="sm" variant="ghost" class="h-7 shrink-0 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-ledger-detail-${row.stockLedgerId}`" :aria-label="`${isRowDetailCollapsed(row) ? '展开' : '收起'} ${row.billNo} 的 ${row.itemCount} 条变动明细`" @click="toggleRowDetail(row)">{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</Button><OrderNumberLink :value="row.billNo" label="库存流水号" /></div></TableCell>
+                <TableCell class="stock-ledger-key-column sticky left-0 z-20 border-r border-border/60 bg-background group-hover:bg-muted/50" data-table-sticky-edge="start"><div class="flex items-center gap-2"><Button size="sm" variant="ghost" class="h-7 shrink-0 gap-1 px-2 text-xs text-primary hover:text-primary" :aria-expanded="!isRowDetailCollapsed(row)" :aria-controls="`stock-ledger-detail-${row.stockLedgerId}`" :aria-label="`${isRowDetailCollapsed(row) ? '展开' : '收起'} ${row.billNo} 的 ${row.itemCount} 条变动明细`" @click="toggleRowDetail(row)"><ChevronRight data-stock-ledger-detail-toggle-icon class="size-3.5 transition-transform duration-200" :class="{ 'rotate-90': !isRowDetailCollapsed(row) }" aria-hidden="true" /><span>{{ isRowDetailCollapsed(row) ? '展开明细' : '收起明细' }}</span></Button><OrderNumberLink :value="row.billNo" label="库存流水号" /></div></TableCell>
                 <TableCell class="text-center"><Badge variant="outline" :class="billTypeMap[row.billType].className">{{ billTypeMap[row.billType].label }}</Badge></TableCell>
                 <TableCell class="text-muted-foreground" data-stock-ledger-entry-mode>{{ entryModeOptions.find(item => item.value === row.entryMode)?.label || '-' }}</TableCell>
                 <TableCell class="text-muted-foreground" data-stock-ledger-source-type>{{ sourceTypeMap[getStockLedgerSourceType(row.billType)] }}</TableCell>
@@ -286,8 +318,47 @@ onMounted(() => {
                         <div v-if="isRowDetailLoading(row)" class="stock-ledger-detail-message text-muted-foreground" :data-stock-ledger-detail-loading-id="row.stockLedgerId"><span class="page-loading-spinner mr-2 !size-3.5" />变动明细加载中...</div>
                         <div v-else-if="detailLoadErrors[row.stockLedgerId]" class="stock-ledger-detail-message flex-col gap-2 text-destructive" :data-stock-ledger-detail-error-id="row.stockLedgerId"><span>{{ detailLoadErrors[row.stockLedgerId] }}</span><Button size="sm" variant="outline" @click="retryRowDetail(row)">重试</Button></div>
                         <div v-else-if="expandedItems(row).length === 0" class="stock-ledger-detail-message text-muted-foreground" :data-stock-ledger-detail-empty-id="row.stockLedgerId">暂无变动明细</div>
-                        <WarehouseDetailTableFrame v-else class="stock-ledger-detail-card" max-width="1024px">
-                          <Table class="!w-[1020px] min-w-[1020px] table-fixed"><colgroup><col class="w-[104px]" /><col class="w-[180px]" /><col class="w-[56px]" /><col class="w-[104px]" /><col class="w-[104px]" /><col class="w-[104px]" /><col class="w-[116px]" /><col class="w-[104px]" /><col class="w-[148px]" /></colgroup><TableHeader><TableRow><TableHead class="text-center">产品编码</TableHead><TableHead class="text-center">产品名称</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-center">变动前</TableHead><TableHead class="text-center">合格数量</TableHead><TableHead class="text-center">不合格数量</TableHead><TableHead class="text-center">变动数量</TableHead><TableHead class="text-center">变动后</TableHead><TableHead class="text-center">备注</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="item in expandedItems(row)" :key="item.stockLedgerItemId" :data-stock-ledger-expanded-item-id="item.stockLedgerItemId"><TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell><TableCell class="truncate text-center font-medium" :title="item.productName">{{ item.productName }}</TableCell><TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell><TableCell class="text-center tabular-nums">{{ formatQty(item.beforeQty, item) }}</TableCell><TableCell class="text-center tabular-nums" data-stock-ledger-quality="qualified">{{ qualityQty(item, row.billType, 'qualifiedQty') }}</TableCell><TableCell class="text-center tabular-nums" data-stock-ledger-quality="defective">{{ qualityQty(item, row.billType, 'defectiveQty') }}</TableCell><TableCell class="text-center font-medium tabular-nums" :class="item.changeQty > 0 ? 'text-emerald-700' : 'text-rose-700'">{{ item.changeQty > 0 ? '+' : '' }}{{ formatQty(item.changeQty, item) }}</TableCell><TableCell class="text-center font-medium tabular-nums">{{ formatQty(item.afterQty, item) }}</TableCell><TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell></TableRow></TableBody></Table>
+                        <WarehouseDetailTableFrame v-else class="stock-ledger-detail-card" max-width="calc(100cqi - 32px)" title="变动明细" :item-count="expandedItems(row).length" item-count-label="项商品">
+                          <template #metrics><WarehouseDetailMetrics :items="stockLedgerDetailMetrics(row)" /></template>
+                          <Table :class="qualityBillTypes.has(row.billType) ? '!w-full min-w-[1020px] table-fixed' : '!w-full min-w-[812px] table-fixed'">
+                            <colgroup>
+                              <col class="w-[104px]" />
+                              <col class="w-[180px]" />
+                              <col class="w-[56px]" />
+                              <col class="w-[104px]" />
+                              <col v-if="qualityBillTypes.has(row.billType)" class="w-[104px]" />
+                              <col v-if="qualityBillTypes.has(row.billType)" class="w-[104px]" />
+                              <col class="w-[116px]" />
+                              <col class="w-[104px]" />
+                              <col class="w-[148px]" />
+                            </colgroup>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead class="text-center">产品编码</TableHead>
+                                <TableHead class="text-center">产品名称</TableHead>
+                                <TableHead class="text-center">单位</TableHead>
+                                <TableHead class="text-center">变动前</TableHead>
+                                <TableHead v-if="qualityBillTypes.has(row.billType)" class="text-center">合格数量</TableHead>
+                                <TableHead v-if="qualityBillTypes.has(row.billType)" class="text-center">不合格数量</TableHead>
+                                <TableHead class="text-center">变动数量</TableHead>
+                                <TableHead class="text-center">变动后</TableHead>
+                                <TableHead class="text-center">备注</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              <TableRow v-for="item in expandedItems(row)" :key="item.stockLedgerItemId" :data-stock-ledger-expanded-item-id="item.stockLedgerItemId">
+                                <TableCell class="text-center"><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code></TableCell>
+                                <TableCell class="text-center"><OverflowTooltip :text="item.productName" fallback="-" class="block text-center font-medium" data-stock-ledger-expanded-product /></TableCell>
+                                <TableCell class="text-center text-muted-foreground">{{ item.unitName }}</TableCell>
+                                <TableCell class="text-center tabular-nums">{{ formatQty(item.beforeQty, item) }}</TableCell>
+                                <TableCell v-if="qualityBillTypes.has(row.billType)" class="text-center tabular-nums" data-stock-ledger-quality="qualified">{{ qualityQty(item, row.billType, 'qualifiedQty') }}</TableCell>
+                                <TableCell v-if="qualityBillTypes.has(row.billType)" class="text-center tabular-nums" data-stock-ledger-quality="defective" :class="item.defectiveQty > 0 ? 'font-medium text-rose-700' : 'text-muted-foreground'">{{ qualityQty(item, row.billType, 'defectiveQty') }}</TableCell>
+                                <TableCell class="text-center font-medium tabular-nums" :class="item.changeQty > 0 ? 'text-emerald-700' : item.changeQty < 0 ? 'text-rose-700' : 'text-muted-foreground'">{{ item.changeQty > 0 ? '+' : '' }}{{ formatQty(item.changeQty, item) }}</TableCell>
+                                <TableCell class="text-center font-medium tabular-nums">{{ formatQty(item.afterQty, item) }}</TableCell>
+                                <TableCell class="text-center"><OverflowTooltip :text="item.remark" fallback="-" class="block text-muted-foreground" /></TableCell>
+                              </TableRow>
+                            </TableBody>
+                          </Table>
                         </WarehouseDetailTableFrame>
                       </div>
                     </CollapsibleContent>
@@ -347,11 +418,8 @@ onMounted(() => {
 
 .stock-ledger-detail-card {
   position: sticky;
-  /* 与主表单元格内容对齐，保留左侧留白，避免卡片边框被滚动容器裁切。 */
   left: 16px;
   z-index: 10;
-  /* 表格内容宽度为 1020px，额外 4px 仅供左右边框，避免右侧出现空白条。 */
-  width: min(1024px, calc(100cqi - 32px));
 }
 
 @keyframes stock-ledger-collapsible-down {
@@ -363,4 +431,5 @@ onMounted(() => {
   from { height: var(--reka-collapsible-content-height); opacity: 1; }
   to { height: 0; opacity: 0; }
 }
+
 </style>

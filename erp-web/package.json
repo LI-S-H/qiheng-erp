@@ -34,6 +34,7 @@
     "smoke:warehouse-detail-redesign": "node scripts/smoke-warehouse-detail-redesign.cjs",
     "test:warehouse-detail-summary": "node scripts/test-warehouse-detail-summary.cjs",
     "smoke:dashboard": "node scripts/smoke-dashboard.cjs",
+    "smoke:dashboard-states": "node scripts/smoke-dashboard-states.cjs",
     "smoke:dashboard-inventory-status": "node scripts/smoke-dashboard-inventory-status.cjs",
     "smoke:ai": "node scripts/smoke-ai.cjs",
     "smoke:purchase": "node scripts/smoke-purchase.cjs",

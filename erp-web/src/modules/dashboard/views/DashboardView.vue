@@ -29,6 +29,7 @@ import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useDashboardOverviewStore } from '@/stores/dashboardOverviewStore';
 import type {
+  DashboardAccessState,
   DashboardMetric,
   DashboardOrderStagePermissions,
   DashboardOverview,
@@ -93,10 +94,21 @@ const canViewAnyTrend = computed(() => {
   return perm.canViewSales || perm.canViewPurchase;
 });
 
-const canViewAnyOrderStage = computed(() => {
-  const perm = orderStagePermissions.value;
-  return perm.canViewPurchase || perm.canViewSales;
+const trendAccessState = computed<DashboardAccessState>(() => {
+  if (!canViewAnyTrend.value) return 'DENIED';
+  return displayedTrend.value.length ? 'ALLOWED' : 'EMPTY';
 });
+
+// access 是后端完成权限裁剪后的唯一状态来源；维度权限只用于 ALLOWED 时决定图例与列的展示。
+const orderStagesAccessState = computed<DashboardAccessState>(() => overview.value?.access.orderStages.state ?? 'EMPTY');
+
+const todosAccessState = computed<DashboardAccessState>(() => overview.value?.access.todos.state ?? 'EMPTY');
+const topProductsAccessState = computed<DashboardAccessState>(() => overview.value?.access.topProducts.state ?? 'EMPTY');
+const supplierPerformanceAccessState = computed<DashboardAccessState>(() => overview.value?.access.supplierPerformance.state ?? 'EMPTY');
+
+function emptyPanelState(state: DashboardAccessState): 'EMPTY' | 'DENIED' {
+  return state === 'DENIED' ? 'DENIED' : 'EMPTY';
+}
 
 const orderStagePeriodDescription = computed(() => {
   const period = overview.value?.orderStagePeriod;
@@ -686,11 +698,12 @@ onBeforeUnmount(() => {
                   经营趋势
                 </CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">
-                  <template v-if="!canViewAnyTrend">需要销售或采购权限后查看</template>
+                  <template v-if="trendAccessState === 'DENIED'">需要销售或采购权限后查看</template>
+                  <template v-else-if="trendAccessState === 'EMPTY'">当前统计期间暂无趋势数据</template>
                   <template v-else>近 {{ selectedTrendDays }} 日按当前权限展示销售、采购和毛利变化</template>
                 </p>
               </div>
-              <div v-if="canViewAnyTrend" class="dashboard-range-switch" aria-label="经营趋势天数选择">
+              <div v-if="trendAccessState === 'ALLOWED'" class="dashboard-range-switch" aria-label="经营趋势天数选择">
                 <Button
                   v-for="option in trendDayOptions"
                   :key="option"
@@ -703,12 +716,14 @@ onBeforeUnmount(() => {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
-              <div v-if="!canViewAnyTrend" data-dashboard-trend-empty>
+            <CardContent :class="{ 'dashboard-panel__content--state': trendAccessState !== 'ALLOWED' }">
+              <div v-if="trendAccessState !== 'ALLOWED'" class="dashboard-panel__state" data-dashboard-trend-empty>
                 <DashboardEmptyPanel
-                  title="暂无经营趋势数据"
-                  description="需要销售或采购模块的查询权限才能查看趋势曲线。"
-                  :required-permissions="['sales:query', 'purchase:query']"
+                  :state="emptyPanelState(trendAccessState)"
+                  :title="trendAccessState === 'DENIED' ? '您暂无查看权限' : '暂无经营趋势数据'"
+                  :description="trendAccessState === 'DENIED' ? '需要销售或采购模块的查询权限才能查看趋势曲线。' : '当前统计期间没有可展示的经营趋势。'"
+                  cover
+                  layout="stacked"
                 />
               </div>
               <template v-else>
@@ -828,13 +843,23 @@ onBeforeUnmount(() => {
                 </CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">按交付影响排序</p>
               </div>
-              <Button size="sm" variant="outline" aria-label="查看详情业务待办" @click="openDetail('todos')">
+              <Button v-if="todosAccessState === 'ALLOWED'" size="sm" variant="outline" aria-label="查看详情业务待办" @click="openDetail('todos')">
                 详情
                 <ChevronRight class="ml-1 h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent class="dashboard-todos-list space-y-2">
+            <CardContent :class="todosAccessState === 'ALLOWED' ? 'dashboard-todos-list space-y-2' : 'dashboard-panel__content--state'">
+              <div v-if="todosAccessState !== 'ALLOWED'" class="dashboard-panel__state" data-dashboard-todos-state>
+                <DashboardEmptyPanel
+                  :state="emptyPanelState(todosAccessState)"
+                  :title="todosAccessState === 'DENIED' ? '您暂无查看权限' : '暂无任务待办'"
+                  :description="todosAccessState === 'DENIED' ? '您暂无查看业务待办的权限。' : '当前没有需要处理的任务。'"
+                  cover
+                  layout="stacked"
+                />
+              </div>
               <button
+                v-else
                 v-for="todo in visibleTodos"
                 :key="todo.todoId"
                 type="button"
@@ -872,16 +897,18 @@ onBeforeUnmount(() => {
                 <p class="mt-1 text-xs text-muted-foreground">{{ orderStagePeriodDescription }}</p>
               </div>
             </CardHeader>
-            <CardContent class="space-y-3">
-              <div class="dashboard-stage-legend">
+            <CardContent :class="orderStagesAccessState === 'ALLOWED' ? 'space-y-3' : 'dashboard-panel__content--state'">
+              <div v-if="orderStagesAccessState === 'ALLOWED'" class="dashboard-stage-legend">
                 <span v-if="orderStagePermissions.canViewPurchase"><i class="bg-amber-500" />采购单</span>
                 <span v-if="orderStagePermissions.canViewSales"><i class="bg-blue-600" />销售单</span>
               </div>
-              <div v-if="!canViewAnyOrderStage" data-dashboard-order-empty>
+              <div v-if="orderStagesAccessState !== 'ALLOWED'" class="dashboard-panel__state" data-dashboard-order-empty>
                 <DashboardEmptyPanel
-                  title="暂无订单流转数据"
-                  description="需要采购或销售模块的查询权限才能查看订单阶段分布。"
-                  :required-permissions="['purchase:query', 'sales:query']"
+                  :state="emptyPanelState(orderStagesAccessState)"
+                  :title="orderStagesAccessState === 'DENIED' ? '您暂无查看权限' : '暂无订单流转数据'"
+                  :description="orderStagesAccessState === 'DENIED' ? '需要采购或销售模块的查询权限才能查看订单阶段分布。' : '当前统计期间没有订单流转记录。'"
+                  cover
+                  layout="stacked"
                 />
               </div>
               <template v-else>
@@ -911,13 +938,22 @@ onBeforeUnmount(() => {
                 </CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">按近 30 日销售额排序</p>
               </div>
-              <Button size="sm" variant="outline" aria-label="查看详情销售商品排行" @click="openDetail('products')">
+              <Button v-if="topProductsAccessState === 'ALLOWED'" size="sm" variant="outline" aria-label="查看详情销售商品排行" @click="openDetail('products')">
                 详情
                 <ChevronRight class="ml-1 h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent class="space-y-2.5">
-              <div v-for="product in visibleTopProducts" :key="product.productId" class="dashboard-rank">
+            <CardContent :class="topProductsAccessState === 'ALLOWED' ? 'space-y-2.5' : 'dashboard-panel__content--state'">
+              <div v-if="topProductsAccessState !== 'ALLOWED'" class="dashboard-panel__state" data-dashboard-top-products-state>
+                <DashboardEmptyPanel
+                  :state="emptyPanelState(topProductsAccessState)"
+                  :title="topProductsAccessState === 'DENIED' ? '您暂无查看权限' : '暂无销售商品排行'"
+                  :description="topProductsAccessState === 'DENIED' ? '您暂无查看销售商品排行的权限。' : '当前统计期间没有销售商品数据。'"
+                  cover
+                  layout="stacked"
+                />
+              </div>
+              <div v-else v-for="product in visibleTopProducts" :key="product.productId" class="dashboard-rank">
                 <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0">
                     <strong class="block truncate text-[13px]">{{ product.productName }}</strong>
@@ -939,13 +975,22 @@ onBeforeUnmount(() => {
                 </CardTitle>
                 <p class="mt-1 text-xs text-muted-foreground">核心供应商交付与质量表现</p>
               </div>
-              <Button size="sm" variant="outline" aria-label="查看详情供应商履约" @click="openDetail('suppliers')">
+              <Button v-if="supplierPerformanceAccessState === 'ALLOWED'" size="sm" variant="outline" aria-label="查看详情供应商履约" @click="openDetail('suppliers')">
                 详情
                 <ChevronRight class="ml-1 h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent class="space-y-2.5">
-              <div v-for="supplier in visibleSupplierPerformance" :key="supplier.supplierId" class="dashboard-supplier">
+            <CardContent :class="supplierPerformanceAccessState === 'ALLOWED' ? 'space-y-2.5' : 'dashboard-panel__content--state'">
+              <div v-if="supplierPerformanceAccessState !== 'ALLOWED'" class="dashboard-panel__state" data-dashboard-supplier-performance-state>
+                <DashboardEmptyPanel
+                  :state="emptyPanelState(supplierPerformanceAccessState)"
+                  :title="supplierPerformanceAccessState === 'DENIED' ? '您暂无查看权限' : '暂无供应商履约数据'"
+                  :description="supplierPerformanceAccessState === 'DENIED' ? '您暂无查看供应商履约的权限。' : '当前统计期间没有供应商履约数据。'"
+                  cover
+                  layout="stacked"
+                />
+              </div>
+              <div v-else v-for="supplier in visibleSupplierPerformance" :key="supplier.supplierId" class="dashboard-supplier">
                 <div class="min-w-0">
                   <strong class="block truncate text-[13px]">{{ supplier.supplierName }}</strong>
                   <small class="text-xs text-muted-foreground">{{ supplier.supplierCode }} · 准时率 {{ supplier.onTimeRate.toFixed(1) }}%</small>
@@ -1410,6 +1455,27 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding-inline: 10px;
   white-space: nowrap;
+}
+
+.dashboard-panel__content--state {
+  display: flex;
+  min-height: 248px;
+  flex: 1;
+}
+
+.dashboard-panel__state {
+  display: flex;
+  width: 100%;
+  min-height: inherit;
+  flex: 1;
+}
+
+.dashboard-panel__state :deep(.dashboard-empty-panel) {
+  width: 100%;
+}
+
+.dashboard-panel--trend .dashboard-panel__content--state {
+  min-height: 332px;
 }
 
 .dashboard-range-switch {

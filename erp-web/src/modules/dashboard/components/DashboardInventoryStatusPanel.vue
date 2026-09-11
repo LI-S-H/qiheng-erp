@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { toast } from 'vue-sonner';
-import { AlertTriangle, ChevronRight, PieChart } from 'lucide-vue-next';
+import { ChevronRight, PieChart } from 'lucide-vue-next';
+import DashboardEmptyPanel from '@/components/dashboard/DashboardEmptyPanel.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
@@ -74,7 +75,9 @@ const donutStyle = computed(() => {
 const riskCount = computed(() => distribution.value.filter(item => item.status !== 'NORMAL').reduce((sum, item) => sum + item.recordCount, 0));
 const totalRecordCount = computed(() => distribution.value.reduce((sum, item) => sum + item.recordCount, 0));
 const previewItems = computed(() => status.value?.riskPreview.items ?? []);
-const canShow = computed(() => status.value?.access.state !== 'DENIED');
+const accessState = computed(() => status.value?.access.state ?? null);
+const isAllowed = computed(() => accessState.value === 'ALLOWED');
+const panelState = computed<'EMPTY' | 'DENIED'>(() => accessState.value === 'DENIED' ? 'DENIED' : 'EMPTY');
 
 function warehouseKeywordQuery(keyword: string) {
   const value = keyword.trim();
@@ -135,7 +138,7 @@ onBeforeUnmount(() => { requestSequence += 1; if (transitionTimer) window.clearT
     </header>
     <div class="inventory-status-panel__body">
       <p class="sr-only" aria-live="polite">{{ busy ? '' : `${TEXT.updated}${selectedWarehouseName}` }}</p>
-      <div v-if="canShow" :class="['inventory-status-panel__content', { 'inventory-status-panel__content--changing': transitioning }]">
+      <div v-if="isAllowed" :class="['inventory-status-panel__content', { 'inventory-status-panel__content--changing': transitioning }]">
         <section class="inventory-status-panel__chart" :aria-label="`${selectedWarehouseName}${TEXT.title}`">
           <div class="inventory-status-panel__donut" :style="donutStyle"><div><span>{{ TEXT.riskInventory }}</span><strong>{{ formatCount(riskCount) }}</strong><small>{{ TEXT.totalRecords.replace('{count}', formatCount(totalRecordCount)) }}</small></div></div>
           <ul class="inventory-status-panel__legend">
@@ -156,7 +159,15 @@ onBeforeUnmount(() => { requestSequence += 1; if (transitionTimer) window.clearT
           <div v-if="previewItems.length" class="inventory-status-panel__preview-footer"><small>{{ TEXT.sortHint }}</small><Button size="sm" variant="outline" class="inventory-status-panel__action" @click="openAllRisks">{{ TEXT.viewAll }}<ChevronRight class="ml-1 h-4 w-4" /></Button></div>
         </section>
       </div>
-      <div v-else class="inventory-status-panel__empty"><AlertTriangle class="h-4 w-4" />{{ TEXT.denied }}</div>
+      <div v-else-if="accessState" class="inventory-status-panel__state" data-dashboard-inventory-state>
+        <DashboardEmptyPanel
+          :state="panelState"
+          :title="accessState === 'DENIED' ? TEXT.denied : TEXT.empty"
+          :description="accessState === 'DENIED' ? '请联系管理员开通仓储查看权限。' : '当前统计范围内没有库存记录。'"
+          cover
+        />
+      </div>
+      <div v-else class="inventory-status-panel__loading-space" aria-hidden="true" />
     </div>
   </section>
 </template>
@@ -166,7 +177,7 @@ onBeforeUnmount(() => { requestSequence += 1; if (transitionTimer) window.clearT
 .inventory-status-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 88px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
 .inventory-status-panel__heading { min-width: 0; }.inventory-status-panel__title { display: flex; align-items: center; gap: 8px; }.inventory-status-panel__title h2 { margin: 0; font-size: 16px; font-weight: 650; line-height: 24px; }.inventory-status-panel__heading p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 18px; }
 .inventory-status-panel__filter { display: grid; flex: 0 0 252px; gap: 5px; }.inventory-status-panel__filter > span { color: var(--muted-foreground); font-size: 12px; font-weight: 500; }
-.inventory-status-panel__body { padding: 18px 20px 20px; }.inventory-status-panel__content { display: grid; grid-template-columns: minmax(340px, 380px) minmax(0, 1fr); gap: 0; transition: opacity 180ms var(--motion-ease-standard), transform 180ms var(--motion-ease-standard); }.inventory-status-panel__content--changing { opacity: .72; transform: translateY(2px); }
+.inventory-status-panel__body { padding: 18px 20px 20px; }.inventory-status-panel__content { display: grid; grid-template-columns: minmax(340px, 380px) minmax(0, 1fr); gap: 0; transition: opacity 180ms var(--motion-ease-standard), transform 180ms var(--motion-ease-standard); }.inventory-status-panel__content--changing { opacity: .72; transform: translateY(2px); }.inventory-status-panel__state, .inventory-status-panel__loading-space { min-height: 372px; }.inventory-status-panel__state { display: flex; }.inventory-status-panel__state :deep(.dashboard-empty-panel) { width: 100%; }
 .inventory-status-panel__chart { display: grid; grid-template-rows: 230px auto; align-content: center; justify-items: center; gap: 24px; min-height: 372px; padding: 14px 34px 14px 4px; }.inventory-status-panel__donut { display: grid; width: 230px; height: 230px; place-items: center; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 28%); transition: background 220ms var(--motion-ease-standard); }.inventory-status-panel__donut > div { display: grid; width: 156px; height: 156px; align-content: center; justify-items: center; border-radius: 50%; background: var(--card); text-align: center; }.inventory-status-panel__donut strong { order: 2; margin-top: 7px; font-size: 42px; font-variant-numeric: tabular-nums; line-height: 1; }.inventory-status-panel__donut span { order: 1; color: var(--foreground); font-size: 14px; font-weight: 600; line-height: 20px; }.inventory-status-panel__donut small { order: 3; margin-top: 10px; color: var(--muted-foreground); font-size: 12px; line-height: 17px; }
 .inventory-status-panel__legend { display: grid; grid-template-columns: repeat(2, max-content); justify-content: center; column-gap: 28px; row-gap: 13px; width: 100%; margin: 0; padding: 0; list-style: none; }.inventory-status-panel__legend li { display: grid; grid-template-columns: 8px max-content max-content; align-items: center; gap: 8px; min-width: 0; color: var(--muted-foreground); font-size: 13px; line-height: 20px; }.inventory-status-panel__legend i { width: 8px; height: 8px; border-radius: 50%; }.inventory-status-panel__legend span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.inventory-status-panel__legend strong { color: var(--foreground); font-weight: 650; font-variant-numeric: tabular-nums; }
 .inventory-status-panel__preview { display: flex; min-width: 0; min-height: 372px; flex-direction: column; padding: 13px 0 4px 34px; border-left: 1px solid color-mix(in srgb, var(--border) 90%, transparent); }.inventory-status-panel__preview-head { display: flex; align-items: center; min-height: 35px; margin-bottom: 10px; }.inventory-status-panel__preview-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }.inventory-status-panel__preview-head span { color: var(--foreground); font-size: 16px; font-weight: 650; line-height: 24px; }.inventory-status-panel__preview-title small { color: var(--muted-foreground); font-size: 12px; font-weight: 400; line-height: 17px; }.inventory-status-panel__table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; }.inventory-status-panel__table { width: 100%; min-width: 580px; border-collapse: collapse; table-layout: fixed; }.inventory-status-panel__table .product { width: 31%; }.inventory-status-panel__table .warehouse { width: 18%; }.inventory-status-panel__table .quantity { width: 14%; }.inventory-status-panel__table .state { width: 23%; }.inventory-status-panel__table .product-selected { width: 47%; }.inventory-status-panel__table th, .inventory-status-panel__table td { min-height: 48px; padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; font-size: 12px; line-height: 17px; }.inventory-status-panel__table th { height: 38px; background: color-mix(in srgb, var(--muted) 58%, var(--card)); color: var(--muted-foreground); font-weight: 600; }.inventory-status-panel__table tr:last-child td { border-bottom: 0; }.inventory-status-panel__product { display: grid; justify-items: center; gap: 4px; min-width: 0; }.inventory-status-panel__product code { max-width: 100%; overflow: hidden; border-radius: 4px; background: var(--muted); padding: 1px 4px; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }.inventory-status-panel__product-name { display: -webkit-box; overflow: hidden; max-width: 100%; -webkit-box-orient: vertical; -webkit-line-clamp: 2; word-break: break-word; font-weight: 500; }.inventory-status-panel__table td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.inventory-status-panel__table .is-risk { color: #be123c; font-weight: 650; font-variant-numeric: tabular-nums; }

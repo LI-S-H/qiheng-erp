@@ -2,6 +2,31 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.qiheng.erp.purchase.mapper.SupplierMapper">
 
+    <select id="selectSummary" resultType="com.qiheng.erp.purchase.domain.supplier.vo.SupplierSummaryVo">
+        <!-- 总数与汇总分始终以筛选范围为口径;启用数/就绪数在 status 收敛到单值时仅统计该子集内部,避免与 status=0 筛选语义冲突 -->
+        SELECT COUNT(*) AS totalCount,
+               COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS enabledCount,
+               COALESCE(SUM(CASE WHEN score_status = 'READY' THEN 1 ELSE 0 END), 0) AS readyCount,
+               AVG(CASE WHEN score_status = 'READY' THEN overall_score END) AS averageOverallScore
+        FROM supplier
+        <where>
+            deleted = 0
+            <if test="dto.supplierCode != null and dto.supplierCode != ''">AND supplier_code LIKE CONCAT('%', #{dto.supplierCode}, '%')</if>
+            <if test="dto.supplierName != null and dto.supplierName != ''">AND supplier_name LIKE CONCAT('%', #{dto.supplierName}, '%')</if>
+            <if test="dto.contactName != null and dto.contactName != ''">AND contact_name LIKE CONCAT('%', #{dto.contactName}, '%')</if>
+            <if test="dto.status != null">AND status = #{dto.status}</if>
+            <if test="dto.scoreStatus != null and dto.scoreStatus != ''">AND score_status = #{dto.scoreStatus}</if>
+            <if test="dto.overallScoreMin != null">AND overall_score >= #{dto.overallScoreMin} * 100</if>
+            <if test="dto.overallScoreMax != null">AND overall_score &lt;= #{dto.overallScoreMax} * 100</if>
+            <if test="dto.serviceScoreMin != null">AND service_score >= #{dto.serviceScoreMin} * 100</if>
+            <if test="dto.serviceScoreMax != null">AND service_score &lt;= #{dto.serviceScoreMax} * 100</if>
+            <if test="dto.scoreBasisAmountMin != null">AND score_basis_amount >= #{dto.scoreBasisAmountMin} * 100</if>
+            <if test="dto.scoreBasisAmountMax != null">AND score_basis_amount &lt;= #{dto.scoreBasisAmountMax} * 100</if>
+            <if test="dto.avgDeliveryDaysMin != null">AND avg_delivery_days >= #{dto.avgDeliveryDaysMin}</if>
+            <if test="dto.avgDeliveryDaysMax != null">AND avg_delivery_days &lt;= #{dto.avgDeliveryDaysMax}</if>
+        </where>
+    </select>
+
     <!-- 逻辑删除（带乐观锁 version 校验） -->
     <update id="deleteByIdWithVersion">
         UPDATE supplier

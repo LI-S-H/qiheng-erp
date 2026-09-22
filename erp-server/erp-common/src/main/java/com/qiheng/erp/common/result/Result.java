@@ -38,6 +38,21 @@ public class Result<T> implements Serializable {
         return result;
     }
 
+    /**
+     * 业务失败但需要携带失败明细,例如批量操作的部分失败。
+     *
+     * @param code 业务错误码
+     * @param message 业务提示
+     * @param data 失败明细,允许 null
+     */
+    public static <T> Result<T> fail(int code, String message, T data) {
+        Result<T> result = new Result<>();
+        result.setCode(code);
+        result.setMessage(message);
+        result.setData(data);
+        return result;
+    }
+
     public static <T> Result<T> fail(String message) {
         return fail(-1, message);
     }

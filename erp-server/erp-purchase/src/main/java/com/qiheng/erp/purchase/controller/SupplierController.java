@@ -16,7 +16,6 @@ import com.qiheng.erp.purchase.domain.supplier.dto.SupplierServiceScoreDto;
 import com.qiheng.erp.purchase.domain.supplierscore.dto.SupplierScoreChangeLogPageDto;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierBatchFailure;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierVo;
-import com.qiheng.erp.purchase.domain.supplier.vo.SupplierSummaryVo;
 import com.qiheng.erp.purchase.domain.supplierscore.vo.SupplierScoreChangeLogVo;
 import com.qiheng.erp.purchase.service.ISupplierScoreChangeLogService;
 import com.qiheng.erp.purchase.service.ISupplierService;
@@ -59,13 +58,6 @@ public class SupplierController {
         log.info("供应商分页查询，参数: {}", dto);
         PageResult<SupplierVo> page = supplierService.page(dto);
         return Result.ok(page);
-    }
-
-    @GetMapping("/summary")
-    @Operation(summary = "供应商列表筛选汇总")
-    public Result<SupplierSummaryVo> summary(@Valid SupplierPageDto dto) {
-        StpUtil.checkPermission("supplier:query");
-        return Result.ok(supplierService.summary(dto));
     }
 
     @GetMapping("/{supplierId}")
@@ -155,8 +147,11 @@ public class SupplierController {
 
     /**
      * 批量删除供应商
+     * <p>校验类失败(供货产品、采购订单、采购退货单)整批回滚 409;乐观锁/版本号类
+     * 失败单条跳过,作为业务级正常响应(data=SupplierBatchFailure[])。空数组=全部成功,
+     * 非空数组=部分失败,前端按 data 渲染失败明细。</p>
      * @param dto 批量删除请求DTO
-     * @return 有失败返回 fail 且 data 含失败明细,全部成功返回 ok
+     * @return 失败明细;空数组表示全部成功
      */
     @PostMapping("/batch/delete")
     @Operation(summary = "批量删除供应商")
@@ -164,19 +159,17 @@ public class SupplierController {
         StpUtil.checkPermission("purchase:create");
         log.info("批量删除供应商，参数: {}", dto);
         List<SupplierBatchFailure> failures = supplierService.batchDelete(dto);
-        if (failures.isEmpty()) {
-            return Result.ok(List.of());
+        if (!failures.isEmpty()) {
+            log.warn("批量删除供应商部分失败: {}", failures);
         }
-        log.warn("批量删除供应商部分失败: {}", failures);
-        return Result.fail(ErrorCode.OPERATION_FAILED.getCode(),
-                "部分供应商删除失败", failures);
+        return Result.ok(failures);
     }
 
     /**
      * 删除供应商，复用批量接口
      * @param supplierId 供应商ID
      * @param dto 请求体，包含 version 字段
-     * @return 有失败返回 fail,全部成功返回 ok
+     * @return 失败明细;空数组表示成功
      */
     @DeleteMapping("/{supplierId}")
     @Operation(summary = "删除供应商")
@@ -188,11 +181,9 @@ public class SupplierController {
         batchDto.setSupplierIds(List.of(String.valueOf(supplierId)));
         batchDto.setVersionBySupplierId(Map.of(String.valueOf(supplierId), dto.getVersion()));
         List<SupplierBatchFailure> failures = supplierService.batchDelete(batchDto);
-        if (failures.isEmpty()) {
-            return Result.ok(List.of());
+        if (!failures.isEmpty()) {
+            log.warn("删除供应商失败: {}", failures);
         }
-        log.warn("删除供应商失败: {}", failures);
-        return Result.fail(ErrorCode.OPERATION_FAILED.getCode(),
-                "供应商删除失败", failures);
+        return Result.ok(failures);
     }
 }

@@ -6,11 +6,14 @@ import com.qiheng.erp.purchase.domain.supplier.dto.SupplierBatchStatusDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierCreateDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierPageDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierUpdateDto;
+import com.qiheng.erp.purchase.domain.supplier.dto.SupplierServiceScoreDto;
 import com.qiheng.erp.purchase.domain.supplier.entity.Supplier;
+import com.qiheng.erp.purchase.domain.supplier.vo.SupplierBatchFailure;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierVo;
+import com.qiheng.erp.purchase.domain.supplier.vo.SupplierSummaryVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 
-import java.util.Map;
+import java.util.List;
 
 /**
  * <p>
@@ -29,6 +32,10 @@ public interface ISupplierService extends IService<Supplier> {
      */
     PageResult<SupplierVo> page(SupplierPageDto dto);
 
+    SupplierSummaryVo summary(SupplierPageDto dto);
+
+    SupplierVo detail(Long supplierId);
+
     /**
      * 新增供应商
      * @param dto 新增供应商请求DTO
@@ -44,6 +51,9 @@ public interface ISupplierService extends IService<Supplier> {
      */
     SupplierVo update(Long supplierId, SupplierUpdateDto dto);
 
+    /** 人工调整服务分；初始建档不调用本方法。 */
+    SupplierVo updateServiceScore(Long supplierId, SupplierServiceScoreDto dto);
+
     /**
      * 批量修改供应商状态
      * @param dto 批量状态更新请求DTO
@@ -53,7 +63,7 @@ public interface ISupplierService extends IService<Supplier> {
     /**
      * 批量删除供应商（逻辑删除，最佳努力模式）
      * @param dto 批量删除请求DTO
-     * @return 失败的供应商信息；空 map 表示全部成功
+     * @return 失败明细；空列表表示全部成功
      */
-    Map<String, String> batchDelete(SupplierBatchDeleteDto dto);
+    List<SupplierBatchFailure> batchDelete(SupplierBatchDeleteDto dto);
 }

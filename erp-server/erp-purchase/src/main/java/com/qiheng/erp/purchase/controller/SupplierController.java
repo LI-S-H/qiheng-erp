@@ -8,10 +8,17 @@ import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierBatchDeleteDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierBatchStatusDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierCreateDto;
+import com.qiheng.erp.purchase.domain.supplier.dto.SupplierDeleteDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierPageDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierStatusDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierUpdateDto;
+import com.qiheng.erp.purchase.domain.supplier.dto.SupplierServiceScoreDto;
+import com.qiheng.erp.purchase.domain.supplierscore.dto.SupplierScoreChangeLogPageDto;
+import com.qiheng.erp.purchase.domain.supplier.vo.SupplierBatchFailure;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierVo;
+import com.qiheng.erp.purchase.domain.supplier.vo.SupplierSummaryVo;
+import com.qiheng.erp.purchase.domain.supplierscore.vo.SupplierScoreChangeLogVo;
+import com.qiheng.erp.purchase.service.ISupplierScoreChangeLogService;
 import com.qiheng.erp.purchase.service.ISupplierService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -37,6 +44,9 @@ public class SupplierController {
     @Autowired
     private ISupplierService supplierService;
 
+    @Autowired
+    private ISupplierScoreChangeLogService supplierScoreChangeLogService;
+
     /**
      * 供应商分页查询
      * @param dto 分页查询参数DTO
@@ -49,6 +59,28 @@ public class SupplierController {
         log.info("供应商分页查询，参数: {}", dto);
         PageResult<SupplierVo> page = supplierService.page(dto);
         return Result.ok(page);
+    }
+
+    @GetMapping("/summary")
+    @Operation(summary = "供应商列表筛选汇总")
+    public Result<SupplierSummaryVo> summary(@Valid SupplierPageDto dto) {
+        StpUtil.checkPermission("supplier:query");
+        return Result.ok(supplierService.summary(dto));
+    }
+
+    @GetMapping("/{supplierId}")
+    @Operation(summary = "获取供应商详情")
+    public Result<SupplierVo> detail(@PathVariable Long supplierId) {
+        StpUtil.checkPermission("supplier:query");
+        return Result.ok(supplierService.detail(supplierId));
+    }
+
+    @GetMapping("/{supplierId}/score-change-logs")
+    @Operation(summary = "分页查询供应商评分变更记录")
+    public Result<PageResult<SupplierScoreChangeLogVo>> pageScoreChangeLogs(@PathVariable Long supplierId,
+                                                                              @Valid SupplierScoreChangeLogPageDto dto) {
+        StpUtil.checkPermission("supplier:query");
+        return Result.ok(supplierScoreChangeLogService.pageScoreChangeLogsBySupplier(supplierId, dto));
     }
 
     /**
@@ -78,6 +110,14 @@ public class SupplierController {
         log.info("编辑供应商，参数: supplierId={}, dto={}", supplierId, dto);
         SupplierVo vo = supplierService.update(supplierId, dto);
         return Result.ok(vo);
+    }
+
+    @PutMapping("/{supplierId}/service-score")
+    @Operation(summary = "调整供应商服务分")
+    public Result<SupplierVo> updateServiceScore(@PathVariable Long supplierId,
+                                                  @Valid @RequestBody SupplierServiceScoreDto dto) {
+        StpUtil.checkPermission("supplier:manage");
+        return Result.ok(supplierService.updateServiceScore(supplierId, dto));
     }
 
     /**
@@ -116,46 +156,43 @@ public class SupplierController {
     /**
      * 批量删除供应商
      * @param dto 批量删除请求DTO
-     * @return 有失败返回 fail（含失败详情），全部成功返回 ok
+     * @return 有失败返回 fail 且 data 含失败明细,全部成功返回 ok
      */
     @PostMapping("/batch/delete")
     @Operation(summary = "批量删除供应商")
-    public Result<Void> batchDelete(@Valid @RequestBody SupplierBatchDeleteDto dto) {
+    public Result<List<SupplierBatchFailure>> batchDelete(@Valid @RequestBody SupplierBatchDeleteDto dto) {
         StpUtil.checkPermission("purchase:create");
         log.info("批量删除供应商，参数: {}", dto);
-        Map<String, String> failures = supplierService.batchDelete(dto);
+        List<SupplierBatchFailure> failures = supplierService.batchDelete(dto);
         if (failures.isEmpty()) {
-            return Result.ok();
+            return Result.ok(List.of());
         }
         log.warn("批量删除供应商部分失败: {}", failures);
         return Result.fail(ErrorCode.OPERATION_FAILED.getCode(),
-                "部分供应商删除失败: " + failures);
+                "部分供应商删除失败", failures);
     }
 
     /**
      * 删除供应商，复用批量接口
      * @param supplierId 供应商ID
-     * @param body 请求体，包含 version 字段
-     * @return 有失败返回 fail，全部成功返回 ok
+     * @param dto 请求体，包含 version 字段
+     * @return 有失败返回 fail,全部成功返回 ok
      */
     @DeleteMapping("/{supplierId}")
     @Operation(summary = "删除供应商")
-    public Result<Void> delete(@PathVariable Long supplierId, @RequestBody Map<String, Object> body) {
+    public Result<List<SupplierBatchFailure>> delete(@PathVariable Long supplierId,
+                                                     @Valid @RequestBody SupplierDeleteDto dto) {
         StpUtil.checkPermission("purchase:create");
-        Integer version = (Integer) body.get("version");
-        if (version == null) {
-            return Result.fail(ErrorCode.PARAM_ERROR.getCode(), "版本号不能为空");
-        }
-        log.info("删除供应商，参数: supplierId={}, version={}", supplierId, version);
+        log.info("删除供应商，参数: supplierId={}, version={}", supplierId, dto.getVersion());
         SupplierBatchDeleteDto batchDto = new SupplierBatchDeleteDto();
         batchDto.setSupplierIds(List.of(String.valueOf(supplierId)));
-        batchDto.setVersionBySupplierId(Map.of(String.valueOf(supplierId), version));
-        Map<String, String> failures = supplierService.batchDelete(batchDto);
+        batchDto.setVersionBySupplierId(Map.of(String.valueOf(supplierId), dto.getVersion()));
+        List<SupplierBatchFailure> failures = supplierService.batchDelete(batchDto);
         if (failures.isEmpty()) {
-            return Result.ok();
+            return Result.ok(List.of());
         }
         log.warn("删除供应商失败: {}", failures);
         return Result.fail(ErrorCode.OPERATION_FAILED.getCode(),
-                "供应商删除失败: " + failures);
+                "供应商删除失败", failures);
     }
 }

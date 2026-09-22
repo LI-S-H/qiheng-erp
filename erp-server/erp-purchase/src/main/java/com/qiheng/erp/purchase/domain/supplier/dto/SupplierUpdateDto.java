@@ -1,107 +1,51 @@
 package com.qiheng.erp.purchase.domain.supplier.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-import java.math.BigDecimal;
-
-/**
- * <p>
- * 编辑供应商请求 DTO
- * </p>
- *
- * @author Li
- * @since 2026-07-30
- */
+/** 基础资料编辑请求，不含任何评分字段。 */
 @Data
 @Schema(description = "编辑供应商请求")
 public class SupplierUpdateDto {
 
-    @NotNull(message = "版本号不能为空")
-    @Min(value = 0, message = "版本号不能小于0")
-    @Schema(description = "乐观锁版本号")
+    @Schema(description = "当前供应商版本号，用于乐观锁校验")
+    @NotNull
+    @DecimalMin("0")
     private Integer version;
 
-    @NotBlank(message = "供应商名称不能为空")
-    @Size(max = 200, message = "供应商名称最长200个字符")
-    @Schema(description = "供应商名称")
+    @Schema(description = "供应商名称，1-200 字符")
+    @NotBlank
+    @Size(max = 200)
     private String supplierName;
 
-    @NotBlank(message = "联系人不能为空")
-    @Size(max = 100, message = "联系人最长100个字符")
-    @Schema(description = "联系人")
+    @Schema(description = "联系人；选填，未维护时服务端以空字符串保存并返回")
+    @Size(max = 100)
     private String contactName;
 
-    @NotBlank(message = "联系电话不能为空")
-    @Size(max = 32, message = "联系电话最长32个字符")
-    @Schema(description = "联系电话")
+    @Schema(description = "联系电话；选填，未维护时服务端以空字符串保存并返回")
+    @Size(max = 32)
     private String contactPhone;
 
-    @NotBlank(message = "地址不能为空")
-    @Size(max = 255, message = "地址最长255个字符")
-    @Schema(description = "地址")
+    @Schema(description = "地址；选填，未维护时服务端以空字符串保存并返回")
+    @Size(max = 255)
     private String address;
 
-    @NotBlank(message = "付款条件不能为空")
-    @Size(max = 100, message = "付款条件最长100个字符")
-    @Schema(description = "付款条件")
+    @Schema(description = "付款条件；选填，未维护时服务端以空字符串保存并返回")
+    @Size(max = 100)
     private String paymentTerms;
 
-    @NotNull(message = "综合评分不能为空")
-    @DecimalMin(value = "0", message = "综合评分最小为0")
-    @DecimalMax(value = "100", message = "综合评分最大为100")
-    @Schema(description = "综合评分，0-100 业务值")
-    private BigDecimal overallScore;
-
-    @NotNull(message = "交付评分不能为空")
-    @DecimalMin(value = "0", message = "交付评分最小为0")
-    @DecimalMax(value = "100", message = "交付评分最大为100")
-    @Schema(description = "交付评分，0-100 业务值")
-    private BigDecimal deliveryScore;
-
-    @NotNull(message = "质量评分不能为空")
-    @DecimalMin(value = "0", message = "质量评分最小为0")
-    @DecimalMax(value = "100", message = "质量评分最大为100")
-    @Schema(description = "质量评分，0-100 业务值")
-    private BigDecimal qualityScore;
-
-    @NotNull(message = "价格评分不能为空")
-    @DecimalMin(value = "0", message = "价格评分最小为0")
-    @DecimalMax(value = "100", message = "价格评分最大为100")
-    @Schema(description = "价格评分，0-100 业务值")
-    private BigDecimal priceScore;
-
-    @NotNull(message = "服务评分不能为空")
-    @DecimalMin(value = "0", message = "服务评分最小为0")
-    @DecimalMax(value = "100", message = "服务评分最大为100")
-    @Schema(description = "服务评分，0-100 业务值")
-    private BigDecimal serviceScore;
-
-    @NotNull(message = "平均交付天数不能为空")
-    @DecimalMin(value = "0", message = "平均交付天数最小为0")
-    @Schema(description = "平均交付天数")
-    private BigDecimal avgDeliveryDays;
-
-    @NotNull(message = "准时交付率不能为空")
-    @DecimalMin(value = "0", message = "准时交付率最小为0")
-    @DecimalMax(value = "100", message = "准时交付率最大为100")
-    @Schema(description = "准时交付率，0-100 业务值")
-    private BigDecimal onTimeRate;
-
-    @NotNull(message = "到货合格率不能为空")
-    @DecimalMin(value = "0", message = "到货合格率最小为0")
-    @DecimalMax(value = "100", message = "到货合格率最大为100")
-    @Schema(description = "到货合格率，0-100 业务值")
-    private BigDecimal qualifiedRate;
-
-    @NotNull(message = "状态不能为空")
-    @Min(value = 0, message = "状态值不合法")
-    @Max(value = 1, message = "状态值不合法")
-    @Schema(description = "状态：1启用，0禁用")
+    @Schema(description = "状态：1 启用，0 停用")
+    @NotNull
+    @DecimalMin("0")
+    @DecimalMax("1")
     private Integer status;
 
-    @Size(max = 500, message = "备注最长500个字符")
     @Schema(description = "备注")
+    @Size(max = 500)
     private String remark;
 }

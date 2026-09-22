@@ -1,5 +1,6 @@
 package com.qiheng.erp.purchase.domain.supplier.vo;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -12,9 +13,12 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "供应商批量操作失败明细")
 public class SupplierBatchFailure {
-    /** 失败的供应商 ID。 */
+
+    @Schema(description = "失败的供应商 ID")
     private String supplierId;
-    /** 失败原因。 */
+
+    @Schema(description = "失败原因")
     private String reason;
 }

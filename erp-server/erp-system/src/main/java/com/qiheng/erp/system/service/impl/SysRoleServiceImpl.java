@@ -178,16 +178,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
     @Transactional(rollbackFor = Exception.class)
     public void deleteByIds(List<String> list) {
         List<Long> ids = IdUtil.parseRequiredLongIds(list, "角色ID");
-        //先查出受影响的用户ID，删除后需要刷新这些用户的Session
-        List<Long> userIds = sysUserRoleMapper.selectList(
-                new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getRoleId, ids))
-                .stream().map(SysUserRole::getUserId).distinct().toList();
-        //删除角色
-        sysRoleMapper.deleteByIds(list);
-        //删除角色与用户的关联关系
-        sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getRoleId, ids));
-        //刷新受影响用户的Session，使其权限快照实时生效
-        sessionManager.refreshUserSession(userIds);
+        assertRolesNotInUse(ids);
+        sysRoleMapper.deleteByIds(ids);
         redisUtil.delete(CACHE_KEY);
     }
 
@@ -196,19 +188,24 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
      * @param roleId 角色ID
      */
     @Override
+    @DistributedLock(key = "'sys:role:lock:global'")
     @Transactional(rollbackFor = Exception.class)
     public void deleteById(Long roleId) {
-        //查出受影响的用户ID，用于后续刷新Session
-        List<Long> userIds = sysUserRoleMapper.selectList(
-                new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getRoleId, roleId))
-                .stream().map(SysUserRole::getUserId).distinct().toList();
-        //删除角色
+        assertRolesNotInUse(List.of(roleId));
         sysRoleMapper.deleteById(roleId);
-        //删除角色与用户的关联关系
-        sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getRoleId, roleId));
-        //刷新受影响用户的Session，使其权限快照实时生效
-        sessionManager.refreshUserSession(userIds);
         redisUtil.delete(CACHE_KEY);
+    }
+
+    /**
+     * 删除角色不能隐式剥夺用户角色。批量场景任一角色仍被使用即整体拒绝，保证请求原子性。
+     */
+    private void assertRolesNotInUse(List<Long> roleIds) {
+        Long bindingCount = sysUserRoleMapper.selectCount(
+                new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getRoleId, roleIds));
+        if (bindingCount != null && bindingCount > 0) {
+            throw new com.qiheng.erp.common.exception.BizException(
+                    com.qiheng.erp.common.exception.ErrorCode.ROLE_IN_USE);
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.qiheng.erp.security.context;
 
+import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.stp.StpUtil;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 
@@ -30,7 +31,7 @@ public class UserContext {
     public static LoginUser requireCurrentUser() {
         LoginUser user = getCurrentUser();
         if (user == null) {
-            throw new cn.dev33.satoken.exception.NotLoginException("未登录或登录已过期", null, "not-login");
+            throw new NotLoginException("未登录或登录已过期", null, "not-login");
         }
         return user;
     }

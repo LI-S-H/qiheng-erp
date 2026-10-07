@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { getApiErrorMessage } from '@/api/http';
 import { toast } from 'vue-sonner';
-import { Eye } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,6 +31,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
+import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
@@ -68,6 +69,7 @@ const permissionDialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingRoleId = ref('');
 const permissionPreviewRole = ref<SystemRoleListItem | null>(null);
+const previewActiveGroup = ref('');
 const permissionEditingRole = ref<SystemRoleListItem | null>(null);
 
 const query = reactive<SystemRoleQuery>({
@@ -157,6 +159,19 @@ function getPermissionGroupsForRole(row: SystemRoleListItem | null) {
     .map(g => ({ group: g.group, codes: g.codes.filter(item => selectedCodes.has(item.code)) }))
     .filter(g => g.codes.length > 0);
 }
+
+const permissionPreviewGroups = computed(() => getPermissionGroupsForRole(permissionPreviewRole.value));
+const activePermissionPreviewGroup = computed(() => (
+  permissionPreviewGroups.value.find(group => group.group === previewActiveGroup.value)
+  ?? permissionPreviewGroups.value[0]
+  ?? null
+));
+
+const permissionPreviewCount = computed(() => {
+  const role = permissionPreviewRole.value;
+  if (!role) return 0;
+  return hasAllPermissions(role) ? allPermissionCodes.value.length : role.permissionCodes.length;
+});
 
 const debouncedSearch = useDebounceFn(() => {
   query.pageNum = 1;
@@ -279,6 +294,40 @@ function handleBatchDelete() {
   );
 }
 
+function handleRoleAction(row: SystemRoleListItem, action: string) {
+  if (action === 'view-permissions') {
+    openPermissionPreview(row);
+    return;
+  }
+  if (action === 'permissions') {
+    openPermissionDialog(row);
+    return;
+  }
+  if (action === 'delete') {
+    handleSingleDelete(row);
+  }
+}
+
+function handleSingleDelete(row: SystemRoleListItem) {
+  if (row.userCount > 0) {
+    toast.warning('该角色已绑定用户，请先解绑后再删除');
+    return;
+  }
+  showConfirm(
+    '删除角色',
+    `确认删除角色“${row.roleName}”吗？删除后不可恢复。`,
+    '删除',
+    'destructive',
+    async () => {
+      try {
+        await deleteSystemRole(row.roleId);
+        toast.success('角色已删除');
+        fetchRoles();
+      } catch {}
+    },
+  );
+}
+
 function resetRoleForm() {
   editingRoleId.value = '';
   roleForm.roleCode = ''; roleForm.roleName = '';
@@ -355,6 +404,7 @@ function openPermissionDialog(row: SystemRoleListItem) {
 
 function openPermissionPreview(row: SystemRoleListItem) {
   permissionPreviewRole.value = row;
+  previewActiveGroup.value = getPermissionGroupsForRole(row)[0]?.group ?? '';
   permissionPreviewVisible.value = true;
 }
 
@@ -480,8 +530,8 @@ function togglePermForm(code: string, checked: boolean) {
             <TooltipContent>{{ selectedIds.size === 0 ? '请先选择角色' : '停用已选角色' }}</TooltipContent>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="destructive" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchDelete">删除</Button></span></TooltipTrigger>
-            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择角色' : '删除已选角色' }}</TooltipContent>
+            <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="destructive" :disabled="selectedIds.size === 0 || actionSubmitting" @click="handleBatchDelete">批量删除</Button></span></TooltipTrigger>
+            <TooltipContent>{{ selectedIds.size === 0 ? '请先选择角色' : '批量删除已选角色' }}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger>
@@ -528,19 +578,16 @@ function togglePermForm(code: string, checked: boolean) {
                 <Checkbox :model-value="selectedIds.has(row.roleId)" @update:model-value="toggleSelectRow(row.roleId)" />
               </TableCell>
               <TableCell>
-                <div class="flex flex-col">
-                  <strong class="text-sm">{{ row.roleName }}</strong>
-                  <span class="text-xs text-muted-foreground">{{ row.roleCode }}</span>
+                <div class="flex min-w-0 flex-col">
+                  <OverflowTooltip :text="row.roleName" class="block max-w-[200px] text-sm font-semibold" />
+                  <OverflowTooltip :text="row.roleCode" class="block max-w-[200px] text-xs text-muted-foreground" />
                 </div>
               </TableCell>
               <TableCell class="text-center">
-                <div class="flex items-center justify-center gap-2">
+                <div class="flex items-center justify-center">
                   <Badge variant="outline" class="min-w-[102px] justify-center border-blue-200 bg-blue-50 font-semibold text-blue-700">
                     {{ getPermissionSummary(row) }}
                   </Badge>
-                  <Button variant="link" size="sm" class="h-7 p-0" :disabled="actionSubmitting" @click="openPermissionPreview(row)">
-                    <Eye class="mr-1 h-3.5 w-3.5" />查看明细
-                  </Button>
                 </div>
               </TableCell>
               <TableCell class="text-center">
@@ -558,7 +605,7 @@ function togglePermForm(code: string, checked: boolean) {
                 </Badge>
               </TableCell>
               <TableCell>
-                <span class="text-xs text-muted-foreground">{{ row.remark || '未填写' }}</span>
+                <OverflowTooltip :text="row.remark" fallback="未填写" class="block max-w-[210px] text-xs text-muted-foreground" />
               </TableCell>
               <TableCell>
                 <div class="flex flex-col text-xs">
@@ -569,7 +616,17 @@ function togglePermForm(code: string, checked: boolean) {
               <TableCell class="text-center">
                 <div class="flex items-center justify-center gap-1">
                   <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
-                  <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openPermissionDialog(row)">权限配置</Button>
+                  <RowActionsMenu
+                    trigger-text="更多"
+                    :disabled="actionSubmitting"
+                    :label="`更多 ${row.roleName} 操作`"
+                    :actions="[
+                      { key: 'view-permissions', label: '查看权限' },
+                      { key: 'permissions', label: '权限配置' },
+                      { key: 'delete', label: '删除角色', variant: 'destructive', separated: true },
+                    ]"
+                    @select="handleRoleAction(row, $event)"
+                  />
                 </div>
               </TableCell>
             </TableRow>
@@ -656,41 +713,60 @@ function togglePermForm(code: string, checked: boolean) {
 
     <!-- Permission Preview Dialog -->
     <Dialog v-model:open="permissionPreviewVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[680px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[640px]">
+      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[520px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[640px]">
         <DialogHeader>
-          <DialogTitle>权限码明细</DialogTitle>
-          <DialogDescription>查看角色的权限码详情</DialogDescription>
+          <DialogTitle>{{ permissionPreviewRole?.roleName }} 的权限</DialogTitle>
+          <DialogDescription>
+            {{ permissionPreviewRole?.roleCode }} · 已配置 {{ permissionPreviewCount }} 项
+          </DialogDescription>
         </DialogHeader>
-        <div v-if="permissionPreviewRole" class="flex min-h-0 flex-1 flex-col gap-4">
-          <div class="flex items-center justify-between pb-3 border-b border-border">
-            <div>
-              <strong class="text-sm">{{ permissionPreviewRole.roleName }}</strong>
-              <span class="block text-xs text-muted-foreground mt-0.5">{{ permissionPreviewRole.roleCode }}</span>
+        <div v-if="permissionPreviewRole" class="flex min-h-0 flex-1 gap-6">
+          <aside data-permission-preview-sidebar class="flex w-[155px] shrink-0 flex-col rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
+            <p class="px-2 pb-2 text-xs font-medium text-slate-500">按模块浏览</p>
+            <div class="min-h-0 flex-1 space-y-1 overflow-y-auto">
+              <button
+                v-for="group in permissionPreviewGroups"
+                :key="group.group"
+                type="button"
+                class="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left text-sm transition-colors"
+                :class="previewActiveGroup === group.group
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'"
+                @click="previewActiveGroup = group.group"
+              >
+                <OverflowTooltip :text="group.group" class="min-w-0 flex-1 truncate font-medium" />
+                <span class="shrink-0 text-xs tabular-nums" :class="previewActiveGroup === group.group ? 'text-primary-foreground/90' : 'text-slate-500'">
+                  {{ group.codes.length }}
+                </span>
+              </button>
             </div>
-            <Badge variant="outline" class="min-w-[102px] justify-center border-blue-200 bg-blue-50 font-semibold text-blue-700">
-              {{ getPermissionSummary(permissionPreviewRole) }}
-            </Badge>
-          </div>
+          </aside>
 
-          <Alert v-if="hasAllPermissions(permissionPreviewRole)">
-            <AlertDescription>
-              该角色使用全部权限通配符，后端会按系统全部权限码处理
-            </AlertDescription>
-          </Alert>
-
-          <DialogScrollArea>
-            <div class="space-y-3">
-              <div v-for="group in getPermissionGroupsForRole(permissionPreviewRole)" :key="group.group" class="p-3 bg-muted/30 border border-border rounded-lg">
-                <div class="text-xs font-bold mb-2">{{ group.group }}</div>
-                <div class="grid grid-cols-2 gap-2">
-                  <div v-for="item in group.codes" :key="item.code" class="flex flex-col p-2 bg-primary/5 border border-primary/20 rounded-md">
-                    <span class="text-xs font-semibold">{{ item.label }}</span>
-                    <small class="text-[11px] text-muted-foreground font-mono mt-0.5">{{ item.code }}</small>
+          <section data-permission-preview-content class="flex min-w-0 flex-1 flex-col">
+            <template v-if="activePermissionPreviewGroup">
+              <div class="border-b border-slate-200 pb-3">
+                <OverflowTooltip :text="activePermissionPreviewGroup.group" class="block truncate text-sm font-semibold text-slate-800" />
+                <p class="mt-1 text-xs text-muted-foreground">
+                  {{ activePermissionPreviewGroup.codes.length }} 项已授予权限
+                </p>
+              </div>
+              <DialogScrollArea class="mt-3">
+                <div class="space-y-2.5 pr-1">
+                  <div
+                    v-for="item in activePermissionPreviewGroup.codes"
+                    :key="item.code"
+                    class="rounded-lg border border-slate-200 bg-slate-50/65 px-4 py-3"
+                  >
+                    <OverflowTooltip :text="item.label" class="block truncate text-sm font-medium text-slate-800" />
+                    <OverflowTooltip :text="item.code" class="mt-1 block truncate font-mono text-xs text-slate-500" />
                   </div>
                 </div>
-              </div>
+              </DialogScrollArea>
+            </template>
+            <div v-else class="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+              暂无已配置权限
             </div>
-          </DialogScrollArea>
+          </section>
         </div>
         <DialogFooter>
           <Button variant="outline" @click="permissionPreviewVisible = false">关闭</Button>

@@ -82,16 +82,24 @@ runSmoke({
     await page.getByRole('dialog', { name: '编辑角色' }).waitFor();
     await page.keyboard.press('Escape');
 
-    await adminRow.getByRole('button', { name: '权限配置' }).click();
+    const moreTrigger = adminRow.getByRole('button', { name: '更多 SUPER_ADMIN 操作' });
+    await moreTrigger.click();
+    const moreMenu = page.locator('[role="menu"][data-state="open"]');
+    await moreMenu.getByRole('menuitem', { name: '权限配置', exact: true }).click();
     await page.getByRole('dialog', { name: '权限配置' }).waitFor();
     await page.keyboard.press('Escape');
 
-    await adminRow.getByRole('button', { name: /查看明细/ }).click();
+    await moreTrigger.click();
+    await page.locator('[role="menu"][data-state="open"]').getByRole('menuitem', { name: '查看权限', exact: true }).click();
     const previewDialog = page.getByRole('dialog', { name: '权限码明细' });
     await previewDialog.waitFor();
     await page.getByText('该角色使用全部权限通配符').waitFor();
     await page.getByRole('button', { name: '关闭', exact: true }).click();
     await previewDialog.waitFor({ state: 'hidden' });
+
+    await moreTrigger.click();
+    await page.locator('[role="menu"][data-state="open"]').getByRole('menuitem', { name: '删除角色', exact: true }).click();
+    await page.getByText('该角色已绑定用户，请先解绑后再删除').waitFor();
 
     await adminRow.getByRole('checkbox').click();
     await page.getByText('已选 1 项').waitFor();

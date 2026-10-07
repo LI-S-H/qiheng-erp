@@ -6,6 +6,7 @@ import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
+import com.qiheng.erp.system.domain.dto.SysRoleBatchDeleteDto;
 import com.qiheng.erp.system.domain.dto.SysRoleBatchStatusDto;
 import com.qiheng.erp.system.domain.dto.SysRolePageDto;
 import com.qiheng.erp.system.domain.entity.SysRole;
@@ -121,19 +122,15 @@ public class SysRoleController {
     /**
      * 批量删除角色
      *
-     * @param roleIds 角色ID列表
+     * @param dto 批量删除请求
      * @return void
      */
     @PostMapping("/batch/delete")
     @Operation(summary = "批量删除角色")
-    public Result<Void> batchDelete(@RequestBody Map<String, List<String>> roleIds) {
+    public Result<Void> batchDelete(@Valid @RequestBody SysRoleBatchDeleteDto dto) {
         StpUtil.checkPermission("system:role:manage");
-        List<String> list = roleIds.get("roleIds");
-        if (list.isEmpty()) {
-            throw new BizException(ErrorCode.PARAM_ERROR);
-        }
-        log.info("批量删除角色，参数: {}", list);
-        sysRoleService.deleteByIds(list);
+        log.info("批量删除角色，参数: {}", dto.getRoleIds());
+        sysRoleService.deleteByIds(dto.getRoleIds());
         return Result.ok();
     }
 

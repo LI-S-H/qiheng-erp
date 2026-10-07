@@ -1,855 +1,1825 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
-const projectRoot = path.resolve(__dirname, '..', '..');
-const readProjectFile = (...segments) => fs.readFileSync(path.join(projectRoot, ...segments), 'utf8');
+const projectRoot = path.resolve(__dirname, "..", "..");
+const readProjectFile = (...segments) =>
+  fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 
-const source = readProjectFile('docs', 'api', 'erp-openapi.yaml');
-const pageDesign = readProjectFile('docs', 'frontend-page-design.md');
-const databaseOverview = readProjectFile('docs', 'database', 'mvp-database-design-overview.md');
-const permissionSchema = readProjectFile('docs', 'database', 'mvp-system-permission-schema.md');
-const projectPlan = readProjectFile('docs', 'erp-project-plan.md');
-const productRequirement = readProjectFile('docs', 'product', 'PRD.md');
-const databaseSql = readProjectFile('docs', 'database', 'sql', '001_mvp_system_permission.sql');
-const productSql = readProjectFile('docs', 'database', 'sql', '002_mvp_product.sql');
-const authStoreSource = readProjectFile('erp-web', 'src', 'modules', 'auth', 'stores', 'authStore.ts');
-const httpSource = readProjectFile('erp-web', 'src', 'api', 'http.ts');
-const pageLoadingSource = readProjectFile('erp-web', 'src', 'shared', 'utils', 'page-loading.ts');
-const storageSource = readProjectFile('erp-web', 'src', 'shared', 'constants', 'storage.ts');
-const frontendDevelopmentGuide = readProjectFile('docs', 'frontend-development-guide.md');
-const agentInstructions = readProjectFile('AGENTS.md');
-const frontendPreflightSource = readProjectFile('erp-web', 'scripts', 'frontend-preflight.cjs');
-const frontendPreflightCheckSource = readProjectFile('erp-web', 'scripts', 'check-frontend-preflight.cjs');
-const preCommitHook = readProjectFile('.githooks', 'pre-commit');
-const productApiSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'api.ts');
-const productTypeSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'types.ts');
-const productViewSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'products', 'views', 'ProductManageView.vue');
-const warehouseSql = readProjectFile('docs', 'database', 'sql', '003_mvp_warehouse.sql');
-const warehouseSchema = readProjectFile('docs', 'database', 'mvp-warehouse-schema.md');
-const returnSchema = readProjectFile('docs', 'database', 'mvp-return-schema.md');
-const returnTypeSource = readProjectFile('erp-web', 'src', 'modules', 'returns', 'types.ts');
-const returnViewSource = readProjectFile('erp-web', 'src', 'modules', 'returns', 'views', 'ReturnOrderManagePage.vue');
-const purchaseReturnApiSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'returns', 'api.ts');
-const purchaseReturnViewSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'returns', 'views', 'PurchaseReturnManageView.vue');
-const salesReturnApiSource = readProjectFile('erp-web', 'src', 'modules', 'sales', 'returns', 'api.ts');
-const salesReturnViewSource = readProjectFile('erp-web', 'src', 'modules', 'sales', 'returns', 'views', 'SalesReturnManageView.vue');
-const warehouseApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'api.ts');
-const warehouseTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'types.ts');
-const warehouseViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'views', 'WarehouseManageView.vue');
-const warehouseStockApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'api.ts');
-const warehouseStockTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'types.ts');
-const warehouseStockViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stocks', 'views', 'WarehouseStockManageView.vue');
-const stockBillApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'api.ts');
-const stockBillTypeSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'types.ts');
-const stockBillViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-bills', 'views', 'StockBillManageView.vue');
-const stockLedgerViewSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'stock-ledgers', 'views', 'StockLedgerManageView.vue');
-const aiApiSource = readProjectFile('erp-web', 'src', 'modules', 'ai', 'api.ts');
-const aiViewSource = readProjectFile('erp-web', 'src', 'modules', 'ai', 'views', 'AiAssistantView.vue');
-const purchaseApiSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'api.ts');
-const purchaseTypeSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'types.ts');
-const purchaseOrderViewSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'orders', 'views', 'PurchaseOrderManageView.vue');
+const source = readProjectFile("docs", "api", "erp-openapi.yaml");
+const pageDesign = readProjectFile("docs", "frontend-page-design.md");
+const databaseOverview = readProjectFile(
+  "docs",
+  "database",
+  "mvp-database-design-overview.md",
+);
+const permissionSchema = readProjectFile(
+  "docs",
+  "database",
+  "mvp-system-permission-schema.md",
+);
+const projectPlan = readProjectFile("docs", "erp-project-plan.md");
+const productRequirement = readProjectFile("docs", "product", "PRD.md");
+const databaseSql = readProjectFile(
+  "docs",
+  "database",
+  "sql",
+  "001_mvp_system_permission.sql",
+);
+const productSql = readProjectFile(
+  "docs",
+  "database",
+  "sql",
+  "002_mvp_product.sql",
+);
+const purchaseSql = readProjectFile(
+  "docs",
+  "database",
+  "sql",
+  "004_mvp_purchase.sql",
+);
+const authStoreSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "auth",
+  "stores",
+  "authStore.ts",
+);
+const httpSource = readProjectFile("erp-web", "src", "api", "http.ts");
+const pageLoadingSource = readProjectFile(
+  "erp-web",
+  "src",
+  "shared",
+  "utils",
+  "page-loading.ts",
+);
+const storageSource = readProjectFile(
+  "erp-web",
+  "src",
+  "shared",
+  "constants",
+  "storage.ts",
+);
+const frontendDevelopmentGuide = readProjectFile(
+  "docs",
+  "frontend-development-guide.md",
+);
+const agentInstructions = readProjectFile("AGENTS.md");
+const frontendPreflightSource = readProjectFile(
+  "erp-web",
+  "scripts",
+  "frontend-preflight.cjs",
+);
+const frontendPreflightCheckSource = readProjectFile(
+  "erp-web",
+  "scripts",
+  "check-frontend-preflight.cjs",
+);
+const preCommitHook = readProjectFile(".githooks", "pre-commit");
+const productApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "product",
+  "products",
+  "api.ts",
+);
+const productTypeSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "product",
+  "products",
+  "types.ts",
+);
+const productViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "product",
+  "products",
+  "views",
+  "ProductManageView.vue",
+);
+const warehouseSql = readProjectFile(
+  "docs",
+  "database",
+  "sql",
+  "003_mvp_warehouse.sql",
+);
+const warehouseSchema = readProjectFile(
+  "docs",
+  "database",
+  "mvp-warehouse-schema.md",
+);
+const returnSchema = readProjectFile(
+  "docs",
+  "database",
+  "mvp-return-schema.md",
+);
+const returnTypeSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "returns",
+  "types.ts",
+);
+const returnViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "returns",
+  "views",
+  "ReturnOrderManagePage.vue",
+);
+const purchaseReturnApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "purchase",
+  "returns",
+  "api.ts",
+);
+const purchaseReturnViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "purchase",
+  "returns",
+  "views",
+  "PurchaseReturnManageView.vue",
+);
+const salesReturnApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "sales",
+  "returns",
+  "api.ts",
+);
+const salesReturnViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "sales",
+  "returns",
+  "views",
+  "SalesReturnManageView.vue",
+);
+const warehouseApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "warehouses",
+  "api.ts",
+);
+const warehouseTypeSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "warehouses",
+  "types.ts",
+);
+const warehouseViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "warehouses",
+  "views",
+  "WarehouseManageView.vue",
+);
+const warehouseStockApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "stocks",
+  "api.ts",
+);
+const warehouseStockTypeSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "stocks",
+  "types.ts",
+);
+const warehouseStockViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "stocks",
+  "views",
+  "WarehouseStockManageView.vue",
+);
+const stockBillApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "stock-bills",
+  "api.ts",
+);
+const stockBillTypeSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "stock-bills",
+  "types.ts",
+);
+const stockBillViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "stock-bills",
+  "views",
+  "StockBillManageView.vue",
+);
+const stockLedgerViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "warehouse",
+  "stock-ledgers",
+  "views",
+  "StockLedgerManageView.vue",
+);
+const aiApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "ai",
+  "api.ts",
+);
+const aiViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "ai",
+  "views",
+  "AiAssistantView.vue",
+);
+const purchaseApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "purchase",
+  "api.ts",
+);
+const purchaseTypeSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "purchase",
+  "types.ts",
+);
+const purchaseOrderViewSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "purchase",
+  "orders",
+  "views",
+  "PurchaseOrderManageView.vue",
+);
 
-const routerSource = readProjectFile('erp-web', 'src', 'router', 'index.ts');
-const listRefreshSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-list-refresh.ts');
-const pagedQuerySource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-paged-query.ts');
+const routerSource = readProjectFile("erp-web", "src", "router", "index.ts");
+const listRefreshSource = readProjectFile(
+  "erp-web",
+  "src",
+  "shared",
+  "composables",
+  "use-list-refresh.ts",
+);
+const pagedQuerySource = readProjectFile(
+  "erp-web",
+  "src",
+  "shared",
+  "composables",
+  "use-paged-query.ts",
+);
 const listViewSources = [
-  readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'views', 'UserManageView.vue'),
-  readProjectFile('erp-web', 'src', 'modules', 'system', 'roles', 'views', 'RoleManageView.vue'),
-  readProjectFile('erp-web', 'src', 'modules', 'system', 'depts', 'views', 'DeptManageView.vue'),
-  readProjectFile('erp-web', 'src', 'modules', 'system', 'permissions', 'views', 'PermissionManageView.vue'),
-  readProjectFile('erp-web', 'src', 'modules', 'product', 'categories', 'views', 'ProductCategoryManageView.vue'),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "system",
+    "users",
+    "views",
+    "UserManageView.vue",
+  ),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "system",
+    "roles",
+    "views",
+    "RoleManageView.vue",
+  ),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "system",
+    "depts",
+    "views",
+    "DeptManageView.vue",
+  ),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "system",
+    "permissions",
+    "views",
+    "PermissionManageView.vue",
+  ),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "product",
+    "categories",
+    "views",
+    "ProductCategoryManageView.vue",
+  ),
   productViewSource,
   warehouseViewSource,
   warehouseStockViewSource,
   stockBillViewSource,
-  readProjectFile('erp-web', 'src', 'modules', 'purchase', 'suppliers', 'views', 'SupplierManageView.vue'),
-  readProjectFile('erp-web', 'src', 'modules', 'purchase', 'supplier-products', 'views', 'SupplierProductManageView.vue'),
-  readProjectFile('erp-web', 'src', 'modules', 'purchase', 'orders', 'views', 'PurchaseOrderManageView.vue'),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "purchase",
+    "suppliers",
+    "views",
+    "SupplierManageView.vue",
+  ),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "purchase",
+    "supplier-products",
+    "views",
+    "SupplierProductManageView.vue",
+  ),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "purchase",
+    "orders",
+    "views",
+    "PurchaseOrderManageView.vue",
+  ),
   returnViewSource,
-  readProjectFile('erp-web', 'src', 'modules', 'sales', 'customers', 'views', 'CustomerManageView.vue'),
-  readProjectFile('erp-web', 'src', 'modules', 'sales', 'orders', 'views', 'SalesOrderManageView.vue'),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "sales",
+    "customers",
+    "views",
+    "CustomerManageView.vue",
+  ),
+  readProjectFile(
+    "erp-web",
+    "src",
+    "modules",
+    "sales",
+    "orders",
+    "views",
+    "SalesOrderManageView.vue",
+  ),
 ];
-const anchoredSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'AnchoredSelect.vue');
-const treeSelectSource = readProjectFile('erp-web', 'src', 'components', 'common', 'TreeSelect.vue');
-const exclusiveDropdownSource = readProjectFile('erp-web', 'src', 'shared', 'composables', 'use-exclusive-dropdown.ts');
-const categoryApiSource = readProjectFile('erp-web', 'src', 'modules', 'product', 'categories', 'api.ts');
-const apiNormalizerSource = readProjectFile('erp-web', 'src', 'shared', 'utils', 'api-normalizers.ts');
-const userApiSource = readProjectFile('erp-web', 'src', 'modules', 'system', 'users', 'api.ts');
-const roleApiSource = readProjectFile('erp-web', 'src', 'modules', 'system', 'roles', 'api.ts');
-const deptApiSource = readProjectFile('erp-web', 'src', 'modules', 'system', 'depts', 'api.ts');
-const sqlDirectory = path.join(projectRoot, 'docs', 'database', 'sql');
-const allSql = fs.readdirSync(sqlDirectory)
-  .filter(fileName => fileName.endsWith('.sql'))
-  .map(fileName => fs.readFileSync(path.join(sqlDirectory, fileName), 'utf8'))
-  .join('\n');
+const anchoredSelectSource = readProjectFile(
+  "erp-web",
+  "src",
+  "components",
+  "common",
+  "AnchoredSelect.vue",
+);
+const treeSelectSource = readProjectFile(
+  "erp-web",
+  "src",
+  "components",
+  "common",
+  "TreeSelect.vue",
+);
+const exclusiveDropdownSource = readProjectFile(
+  "erp-web",
+  "src",
+  "shared",
+  "composables",
+  "use-exclusive-dropdown.ts",
+);
+const categoryApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "product",
+  "categories",
+  "api.ts",
+);
+const apiNormalizerSource = readProjectFile(
+  "erp-web",
+  "src",
+  "shared",
+  "utils",
+  "api-normalizers.ts",
+);
+const userApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "system",
+  "users",
+  "api.ts",
+);
+const roleApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "system",
+  "roles",
+  "api.ts",
+);
+const deptApiSource = readProjectFile(
+  "erp-web",
+  "src",
+  "modules",
+  "system",
+  "depts",
+  "api.ts",
+);
+const sqlDirectory = path.join(projectRoot, "docs", "database", "sql");
+const allSql = fs
+  .readdirSync(sqlDirectory)
+  .filter((fileName) => fileName.endsWith(".sql"))
+  .map((fileName) => fs.readFileSync(path.join(sqlDirectory, fileName), "utf8"))
+  .join("\n");
 
 const requiredPaths = [
-  '/auth/login:',
-  '/auth/me:',
-  '/ai/assistant/conversations/{conversationId}/messages:',
-  '/system/users:',
-  '/system/roles:',
-  '/system/depts:',
-  '/system/depts/batch/status:',
-  '/system/permissions:',
-  '/system/permissions/{permissionId}:',
-  '/system/permissions/batch/status:',
-  '/system/permissions/options:',
-  '/products:',
-  '/products/batch/status:',
-  '/products/batch/delete:',
-  '/products/{productId}:',
-  '/products/{productId}/status:',
-  '/product/categories:',
-  '/product/categories/batch/status:',
-  '/product/categories/batch/delete:',
-  '/product/categories/{categoryId}:',
-  '/product/categories/{categoryId}/status:',
-  '/warehouse/warehouses:',
-  '/warehouse/warehouses/batch/status:',
-  '/warehouse/warehouses/batch/delete:',
-  '/warehouse/warehouses/{warehouseId}:',
-  '/warehouse/warehouses/{warehouseId}/status:',
-  '/warehouse/stocks:',
-  '/warehouse/inbound-bills:',
-  '/warehouse/outbound-bills:',
-  '/warehouse/stock-bills:',
-  '/warehouse/inbound-bills/{inboundBillId}:',
-  '/warehouse/inbound-bills/{inboundBillId}/submit:',
-  '/warehouse/inbound-bills/{inboundBillId}/confirm:',
-  '/warehouse/inbound-bills/{inboundBillId}/cancel:',
-  '/warehouse/outbound-bills/{outboundBillId}:',
-  '/warehouse/outbound-bills/{outboundBillId}/submit:',
-  '/warehouse/outbound-bills/{outboundBillId}/confirm:',
-  '/warehouse/outbound-bills/{outboundBillId}/cancel:',
-  '/returns:',
-  '/returns/source-orders:',
-  '/returns/source-orders/{sourceOrderId}/items:',
-  '/returns/{returnOrderId}:',
-  '/returns/{returnOrderId}/submit:',
-  '/returns/{returnOrderId}/approve:',
-  '/returns/{returnOrderId}/cancel:',
+  "/auth/login:",
+  "/auth/me:",
+  "/ai/assistant/conversations/{conversationId}/messages:",
+  "/system/users:",
+  "/system/roles:",
+  "/system/depts:",
+  "/system/depts/batch/status:",
+  "/system/permissions:",
+  "/system/permissions/{permissionId}:",
+  "/system/permissions/batch/status:",
+  "/system/permissions/options:",
+  "/products:",
+  "/products/batch/status:",
+  "/products/batch/delete:",
+  "/products/{productId}:",
+  "/products/{productId}/status:",
+  "/product/categories:",
+  "/product/categories/batch/status:",
+  "/product/categories/batch/delete:",
+  "/product/categories/{categoryId}:",
+  "/product/categories/{categoryId}/status:",
+  "/warehouse/warehouses:",
+  "/warehouse/warehouses/batch/status:",
+  "/warehouse/warehouses/batch/delete:",
+  "/warehouse/warehouses/{warehouseId}:",
+  "/warehouse/warehouses/{warehouseId}/status:",
+  "/warehouse/stocks:",
+  "/warehouse/inbound-bills:",
+  "/warehouse/outbound-bills:",
+  "/warehouse/stock-bills:",
+  "/warehouse/inbound-bills/{inboundBillId}:",
+  "/warehouse/inbound-bills/{inboundBillId}/submit:",
+  "/warehouse/inbound-bills/{inboundBillId}/confirm:",
+  "/warehouse/inbound-bills/{inboundBillId}/cancel:",
+  "/warehouse/outbound-bills/{outboundBillId}:",
+  "/warehouse/outbound-bills/{outboundBillId}/submit:",
+  "/warehouse/outbound-bills/{outboundBillId}/confirm:",
+  "/warehouse/outbound-bills/{outboundBillId}/cancel:",
+  "/purchase/suppliers/{supplierId}/service-score:",
+  "/purchase/supplier-products/{supplierProductId}/quote:",
+  "/returns:",
+  "/returns/source-orders:",
+  "/returns/source-orders/{sourceOrderId}/items:",
+  "/returns/{returnOrderId}:",
+  "/returns/{returnOrderId}/submit:",
+  "/returns/{returnOrderId}/approve:",
+  "/returns/{returnOrderId}/cancel:",
 ];
 
 for (const requiredPath of requiredPaths) {
-  if (!source.includes(`  ${requiredPath}`)) throw new Error(`OpenAPI 缺少路径：${requiredPath}`);
+  if (!source.includes(`  ${requiredPath}`))
+    throw new Error(`OpenAPI 缺少路径：${requiredPath}`);
 }
 
-const definitions = new Set([...source.matchAll(/^    ([A-Za-z0-9_]+):\s*$/gm)].map(match => match[1]));
-const references = [...source.matchAll(/#\/components\/(?:schemas|parameters|responses)\/([A-Za-z0-9_]+)/g)].map(match => match[1]);
-const missing = [...new Set(references.filter(name => !definitions.has(name)))];
-if (missing.length > 0) throw new Error(`OpenAPI 存在断开的 $ref：${missing.join(', ')}`);
+const definitions = new Set(
+  [...source.matchAll(/^    ([A-Za-z0-9_]+):\s*$/gm)].map((match) => match[1]),
+);
+const references = [
+  ...source.matchAll(
+    /#\/components\/(?:schemas|parameters|responses)\/([A-Za-z0-9_]+)/g,
+  ),
+].map((match) => match[1]);
+const missing = [
+  ...new Set(references.filter((name) => !definitions.has(name))),
+];
+if (missing.length > 0)
+  throw new Error(`OpenAPI 存在断开的 $ref：${missing.join(", ")}`);
 
-if (source.includes('deptName: 总部')) throw new Error('OpenAPI 仍残留“总部”部门口径');
-if (!source.includes('扁平列表') || !source.includes('parentId')) throw new Error('部门接口未明确扁平列表套约');
-if (!source.includes('product_category` 未删除数据的扁平数组') || !source.includes('productCount')) {
-  throw new Error('产品分类接口未明确扁平列表和产品数量聚合契约');
+if (source.includes("deptName: 总部"))
+  throw new Error("OpenAPI 仍残留“总部”部门口径");
+if (!source.includes("扁平列表") || !source.includes("parentId"))
+  throw new Error("部门接口未明确扁平列表套约");
+if (
+  !source.includes("product_category` 未删除数据的扁平数组") ||
+  !source.includes("productCount")
+) {
+  throw new Error("产品分类接口未明确扁平列表和产品数量聚合契约");
 }
 if (/\n\s*- name: keyword\s*$/m.test(source)) {
-  throw new Error('OpenAPI 列表查询不得使用未声明匹配边界的 keyword 参数');
+  throw new Error("OpenAPI 列表查询不得使用未声明匹配边界的 keyword 参数");
 }
-const returnListStart = source.indexOf('  /returns:');
-const returnSourceOrdersStart = source.indexOf('  /returns/source-orders:', returnListStart);
-const returnListContract = source.slice(returnListStart, returnSourceOrdersStart);
-if (returnListStart < 0 || returnSourceOrdersStart < 0
-  || !returnListContract.includes('\n    get:') || !returnListContract.includes('\n    post:')) {
-  throw new Error('统一退货列表必须同时提供 GET 查询和 POST 创建接口');
+const returnListStart = source.indexOf("  /returns:");
+const returnSourceOrdersStart = source.indexOf(
+  "  /returns/source-orders:",
+  returnListStart,
+);
+const returnListContract = source.slice(
+  returnListStart,
+  returnSourceOrdersStart,
+);
+if (
+  returnListStart < 0 ||
+  returnSourceOrdersStart < 0 ||
+  !returnListContract.includes("\n    get:") ||
+  !returnListContract.includes("\n    post:")
+) {
+  throw new Error("统一退货列表必须同时提供 GET 查询和 POST 创建接口");
 }
-for (const parameterName of ['returnType', 'returnNo', 'sourceOrderNo', 'partyId', 'warehouseId', 'status', 'pageNum', 'pageSize']) {
+for (const parameterName of [
+  "returnType",
+  "returnNo",
+  "sourceOrderNo",
+  "partyId",
+  "warehouseId",
+  "status",
+  "pageNum",
+  "pageSize",
+]) {
   if (!returnListContract.includes(`- name: ${parameterName}`)) {
     throw new Error(`统一退货列表缺少独立查询参数：${parameterName}`);
   }
 }
-if (returnListContract.includes('- name: keyword')) {
-  throw new Error('统一退货列表不得使用含义不明的 keyword 参数');
+if (returnListContract.includes("- name: keyword")) {
+  throw new Error("统一退货列表不得使用含义不明的 keyword 参数");
 }
-for (const legacyPath of ['/purchase/returns', '/sales/returns']) {
-  if (source.includes(`  ${legacyPath}:`)) throw new Error(`OpenAPI 不得保留重复退货路径：${legacyPath}`);
-}
-for (const fragment of [
-  'availableReturnQty',
-  'sourceFulfilledQty - occupiedQty',
-  'returnType: { type: string, enum: [PURCHASE_RETURN]',
-  'source_type=PURCHASE_RETURN_ORDER',
-  'entry_mode=SOURCE_GENERATED',
-  'return:query',
-  'purchase:create',
-  'purchase:manage',
-]) {
-  if (!source.includes(fragment)) throw new Error(`采购退回 OpenAPI 缺少关键契约：${fragment}`);
+for (const legacyPath of ["/purchase/returns", "/sales/returns"]) {
+  if (source.includes(`  ${legacyPath}:`))
+    throw new Error(`OpenAPI 不得保留重复退货路径：${legacyPath}`);
 }
 for (const fragment of [
-  '`return_order`',
-  '`return_order_item`',
-  '草稿不占用数量',
-  '采购退货审核通过时，来源服务必须通过仓储库存预占能力',
-  '采购退货确认时必须同时校验 `stock_qty` 和对应的 `locked_qty`',
+  "availableReturnQty",
+  "sourceFulfilledQty - occupiedQty",
+  "returnType: { type: string, enum: [PURCHASE_RETURN]",
+  "source_type=PURCHASE_RETURN_ORDER",
+  "entry_mode=SOURCE_GENERATED",
+  "return:query",
+  "purchase:create",
+  "purchase:manage",
 ]) {
-  if (!returnSchema.includes(fragment)) throw new Error(`退货数据库设计缺少权威规则：${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`采购退回 OpenAPI 缺少关键契约：${fragment}`);
 }
-const purchaseReturnCreateStart = source.indexOf('    PurchaseReturnOrderCreateRequest:');
-const purchaseReturnUpdateStart = source.indexOf('    ReturnOrderUpdateRequest:', purchaseReturnCreateStart);
-const purchaseReturnCreateSchema = source.slice(purchaseReturnCreateStart, purchaseReturnUpdateStart);
-if (purchaseReturnCreateStart < 0 || purchaseReturnUpdateStart < 0
-  || !purchaseReturnCreateSchema.includes('enum: [PURCHASE_RETURN]')) {
-  throw new Error('采购退回创建请求必须由 adapter 固定提交 PURCHASE_RETURN');
+for (const fragment of [
+  "`return_order`",
+  "`return_order_item`",
+  "草稿不占用数量",
+  "采购退货审核通过时，来源服务必须通过仓储库存预占能力",
+  "采购退货确认时必须同时校验 `stock_qty` 和对应的 `locked_qty`",
+]) {
+  if (!returnSchema.includes(fragment))
+    throw new Error(`退货数据库设计缺少权威规则：${fragment}`);
 }
-const purchaseReturnUpdateEnd = source.indexOf('    ReturnOrderDraftItemRequest:', purchaseReturnUpdateStart);
-const purchaseReturnUpdateSchema = source.slice(purchaseReturnUpdateStart, purchaseReturnUpdateEnd);
-if (purchaseReturnUpdateStart < 0 || purchaseReturnUpdateEnd < 0 || /\n\s+returnType:/.test(purchaseReturnUpdateSchema)) {
-  throw new Error('采购退回类型创建后不可修改，更新 DTO 不得包含 returnType');
+const purchaseReturnCreateStart = source.indexOf(
+  "    PurchaseReturnOrderCreateRequest:",
+);
+const purchaseReturnUpdateStart = source.indexOf(
+  "    ReturnOrderUpdateRequest:",
+  purchaseReturnCreateStart,
+);
+const purchaseReturnCreateSchema = source.slice(
+  purchaseReturnCreateStart,
+  purchaseReturnUpdateStart,
+);
+if (
+  purchaseReturnCreateStart < 0 ||
+  purchaseReturnUpdateStart < 0 ||
+  !purchaseReturnCreateSchema.includes("enum: [PURCHASE_RETURN]")
+) {
+  throw new Error("采购退回创建请求必须由 adapter 固定提交 PURCHASE_RETURN");
 }
-const returnDraftItemStart = source.indexOf('    ReturnOrderDraftItemRequest:');
-const returnDraftItemEnd = source.indexOf('    ReturnOrderApproveRequest:', returnDraftItemStart);
-const returnDraftItemSchema = source.slice(returnDraftItemStart, returnDraftItemEnd);
-if (returnDraftItemStart < 0 || returnDraftItemEnd < 0 || /\n\s+returnOrderItemId:/.test(returnDraftItemSchema)) {
-  throw new Error('退货草稿明细 DTO 只允许来源明细 ID、申请数量和备注，不得提交后端生成的 returnOrderItemId');
+const purchaseReturnUpdateEnd = source.indexOf(
+  "    ReturnOrderDraftItemRequest:",
+  purchaseReturnUpdateStart,
+);
+const purchaseReturnUpdateSchema = source.slice(
+  purchaseReturnUpdateStart,
+  purchaseReturnUpdateEnd,
+);
+if (
+  purchaseReturnUpdateStart < 0 ||
+  purchaseReturnUpdateEnd < 0 ||
+  /\n\s+returnType:/.test(purchaseReturnUpdateSchema)
+) {
+  throw new Error("采购退回类型创建后不可修改，更新 DTO 不得包含 returnType");
+}
+const returnDraftItemStart = source.indexOf("    ReturnOrderDraftItemRequest:");
+const returnDraftItemEnd = source.indexOf(
+  "    ReturnOrderApproveRequest:",
+  returnDraftItemStart,
+);
+const returnDraftItemSchema = source.slice(
+  returnDraftItemStart,
+  returnDraftItemEnd,
+);
+if (
+  returnDraftItemStart < 0 ||
+  returnDraftItemEnd < 0 ||
+  /\n\s+returnOrderItemId:/.test(returnDraftItemSchema)
+) {
+  throw new Error(
+    "退货草稿明细 DTO 只允许来源明细 ID、申请数量和备注，不得提交后端生成的 returnOrderItemId",
+  );
 }
 for (const [schemaName, schemaText] of [
-  ['采购退回创建请求', purchaseReturnCreateSchema],
-  ['采购退回更新请求', purchaseReturnUpdateSchema],
+  ["采购退回创建请求", purchaseReturnCreateSchema],
+  ["采购退回更新请求", purchaseReturnUpdateSchema],
 ]) {
   for (const readOnlyField of [
-    'sourceOrderNo', 'partyId', 'partyCode', 'partyName', 'warehouseName', 'productId', 'productCode',
-    'productName', 'unitName', 'quantityPrecision', 'sourceFulfilledQty', 'occupiedQty', 'availableReturnQty',
-    'unitPrice', 'totalAmount', 'status', 'statusReason', 'createdById', 'submittedAt', 'approvedById',
-    'approvedQty', 'processedQty', 'createTime', 'updateTime',
+    "sourceOrderNo",
+    "partyId",
+    "partyCode",
+    "partyName",
+    "warehouseName",
+    "productId",
+    "productCode",
+    "productName",
+    "unitName",
+    "quantityPrecision",
+    "sourceFulfilledQty",
+    "occupiedQty",
+    "availableReturnQty",
+    "unitPrice",
+    "totalAmount",
+    "status",
+    "statusReason",
+    "createdById",
+    "submittedAt",
+    "approvedById",
+    "approvedQty",
+    "processedQty",
+    "createTime",
+    "updateTime",
   ]) {
     if (new RegExp(`\\n\\s+${readOnlyField}:`).test(schemaText)) {
       throw new Error(`${schemaName}不得提交只读字段：${readOnlyField}`);
     }
   }
 }
-const purchaseReturnDetailPathStart = source.indexOf('  /returns/{returnOrderId}:');
-const purchaseReturnSubmitPathStart = source.indexOf('  /returns/{returnOrderId}/submit:', purchaseReturnDetailPathStart);
-const purchaseReturnDetailPath = source.slice(purchaseReturnDetailPathStart, purchaseReturnSubmitPathStart);
-for (const method of ['get:', 'put:', 'delete:']) {
-  if (!purchaseReturnDetailPath.includes(`    ${method}`)) throw new Error(`采购退回详情资源缺少 ${method}`);
+const purchaseReturnDetailPathStart = source.indexOf(
+  "  /returns/{returnOrderId}:",
+);
+const purchaseReturnSubmitPathStart = source.indexOf(
+  "  /returns/{returnOrderId}/submit:",
+  purchaseReturnDetailPathStart,
+);
+const purchaseReturnDetailPath = source.slice(
+  purchaseReturnDetailPathStart,
+  purchaseReturnSubmitPathStart,
+);
+for (const method of ["get:", "put:", "delete:"]) {
+  if (!purchaseReturnDetailPath.includes(`    ${method}`))
+    throw new Error(`采购退回详情资源缺少 ${method}`);
 }
-for (const action of ['submit', 'approve', 'cancel']) {
+for (const action of ["submit", "approve", "cancel"]) {
   const actionStart = source.indexOf(`  /returns/{returnOrderId}/${action}:`);
-  const nextPath = source.indexOf('\n  /', actionStart + 4);
-  const actionContract = source.slice(actionStart, nextPath < 0 ? source.length : nextPath);
-  if (actionStart < 0 || !actionContract.includes('\n    post:') || !actionContract.includes('requestBody:')) {
+  const nextPath = source.indexOf("\n  /", actionStart + 4);
+  const actionContract = source.slice(
+    actionStart,
+    nextPath < 0 ? source.length : nextPath,
+  );
+  if (
+    actionStart < 0 ||
+    !actionContract.includes("\n    post:") ||
+    !actionContract.includes("requestBody:")
+  ) {
     throw new Error(`采购退回 ${action} 动作缺少 POST 或请求体契约`);
   }
 }
 for (const fragment of [
   "const RETURN_API = '/returns'",
-  'getResult<ReturnOrderPage>(RETURN_API, params)',
-  'postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request)',
-  'http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload)',
-  'http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })',
-  '`${RETURN_API}/${returnOrderId}/submit`',
-  '`${RETURN_API}/${returnOrderId}/approve`',
-  '`${RETURN_API}/${returnOrderId}/cancel`',
-  'getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`',
-  '`${RETURN_API}/source-orders/${sourceOrderId}/items`',
+  "getResult<ReturnOrderPage>(RETURN_API, params)",
+  "postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request)",
+  "http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload)",
+  "http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })",
+  "`${RETURN_API}/${returnOrderId}/submit`",
+  "`${RETURN_API}/${returnOrderId}/approve`",
+  "`${RETURN_API}/${returnOrderId}/cancel`",
+  "getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`",
+  "`${RETURN_API}/source-orders/${sourceOrderId}/items`",
   "returnType: 'PURCHASE_RETURN'",
   "partyId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined",
 ]) {
-  if (!purchaseReturnApiSource.includes(fragment)) throw new Error(`采购退回前端适配层缺少接口契约：${fragment}`);
-}
-for (const fragment of ['normalizeReturnDetail', 'normalizeReturnItem', 'normalizeSourceItem', 'availableReturnQty']) {
-  if (!purchaseReturnApiSource.includes(fragment)) throw new Error(`采购退回前端适配层缺少响应规范化或服务端可退量字段：${fragment}`);
+  if (!purchaseReturnApiSource.includes(fragment))
+    throw new Error(`采购退回前端适配层缺少接口契约：${fragment}`);
 }
 for (const fragment of [
-  'ListFilterPanel', 'ListFilterActions', 'ListSummaryStrip', 'DataTablePagination',
-  'RemoteSearchSelect', 'AnchoredSelect', 'OrderDatePicker', 'ConfirmDialog', 'PromptDialog',
-  'usePagedQuery', 'props.config.service', 'availableReturnQty', 'businessLabel', 'hasReturnActions', 'openDetailEdit', '处理',
+  "normalizeReturnDetail",
+  "normalizeReturnItem",
+  "normalizeSourceItem",
+  "availableReturnQty",
 ]) {
-  if (!returnViewSource.includes(fragment)) throw new Error(`通用退货页面未复用标准组件或缺少关键实现：${fragment}`);
+  if (!purchaseReturnApiSource.includes(fragment))
+    throw new Error(
+      `采购退回前端适配层缺少响应规范化或服务端可退量字段：${fragment}`,
+    );
 }
 for (const fragment of [
-  "returnType: 'PURCHASE_RETURN'", "query: 'return:query'", "create: 'purchase:create'", "manage: 'purchase:manage'",
-  'listReturns: listPurchaseReturns', 'createReturn: createPurchaseReturn', 'searchSourceOrders: searchPurchaseReturnSourceOrders',
+  "ListFilterPanel",
+  "ListFilterActions",
+  "ListSummaryStrip",
+  "DataTablePagination",
+  "RemoteSearchSelect",
+  "AnchoredSelect",
+  "OrderDatePicker",
+  "ConfirmDialog",
+  "PromptDialog",
+  "usePagedQuery",
+  "props.config.service",
+  "availableReturnQty",
+  "businessLabel",
+  "hasReturnActions",
+  "openDetailEdit",
+  "处理",
 ]) {
-  if (!purchaseReturnViewSource.includes(fragment)) throw new Error(`采购退回页面配置缺少适配或权限：${fragment}`);
+  if (!returnViewSource.includes(fragment))
+    throw new Error(`通用退货页面未复用标准组件或缺少关键实现：${fragment}`);
 }
-if (returnViewSource.includes("@/modules/purchase/") || returnViewSource.includes("@/modules/sales/")) {
-  throw new Error('通用退货页面不得反向依赖采购或销售模块');
+for (const fragment of [
+  "returnType: 'PURCHASE_RETURN'",
+  "query: 'return:query'",
+  "create: 'purchase:create'",
+  "manage: 'purchase:manage'",
+  "listReturns: listPurchaseReturns",
+  "createReturn: createPurchaseReturn",
+  "searchSourceOrders: searchPurchaseReturnSourceOrders",
+]) {
+  if (!purchaseReturnViewSource.includes(fragment))
+    throw new Error(`采购退回页面配置缺少适配或权限：${fragment}`);
 }
-for (const readonlyField of ['returnOrderItemId', 'sourceOrderNo', 'partyId', 'partyName', 'warehouseName', 'availableReturnQty', 'approvedQty', 'processedQty']) {
-  const formPayloadStart = returnTypeSource.indexOf('export interface ReturnOrderFormPayload');
-  const createRequestStart = returnTypeSource.indexOf('export interface ReturnOrderCreateRequest', formPayloadStart);
-  const formPayloadSource = returnTypeSource.slice(formPayloadStart, createRequestStart);
+if (
+  returnViewSource.includes("@/modules/purchase/") ||
+  returnViewSource.includes("@/modules/sales/")
+) {
+  throw new Error("通用退货页面不得反向依赖采购或销售模块");
+}
+for (const readonlyField of [
+  "returnOrderItemId",
+  "sourceOrderNo",
+  "partyId",
+  "partyName",
+  "warehouseName",
+  "availableReturnQty",
+  "approvedQty",
+  "processedQty",
+]) {
+  const formPayloadStart = returnTypeSource.indexOf(
+    "export interface ReturnOrderFormPayload",
+  );
+  const createRequestStart = returnTypeSource.indexOf(
+    "export interface ReturnOrderCreateRequest",
+    formPayloadStart,
+  );
+  const formPayloadSource = returnTypeSource.slice(
+    formPayloadStart,
+    createRequestStart,
+  );
   if (new RegExp(`\\n\\s+${readonlyField}[?:]:`).test(formPayloadSource)) {
     throw new Error(`采购退回前端表单 DTO 不得包含只读字段：${readonlyField}`);
   }
 }
-for (const fragment of ['normalizeQuantityPrecision', 'normalizeQuantity(item.sourceFulfilledQty', 'normalizeQuantity(item.availableReturnQty']) {
-  if (!purchaseReturnApiSource.includes(fragment)) throw new Error(`采购退回数量精度边界缺少显式校验：${fragment}`);
+for (const fragment of [
+  "normalizeQuantityPrecision",
+  "normalizeQuantity(item.sourceFulfilledQty",
+  "normalizeQuantity(item.availableReturnQty",
+]) {
+  if (!purchaseReturnApiSource.includes(fragment))
+    throw new Error(`采购退回数量精度边界缺少显式校验：${fragment}`);
 }
-if (!purchaseReturnApiSource.includes("normalizeQuantity(draft.requestedQty, sourceItem.quantityPrecision, 'requestedQty')")
-  || purchaseReturnApiSource.includes('Number.isInteger(draft.requestedQty * factor)')) {
-  throw new Error('采购退回 Mock 数量精度校验必须使用浮点容差，不得直接依赖乘法后的 Number.isInteger');
+if (
+  !purchaseReturnApiSource.includes(
+    "normalizeQuantity(draft.requestedQty, sourceItem.quantityPrecision, 'requestedQty')",
+  ) ||
+  purchaseReturnApiSource.includes(
+    "Number.isInteger(draft.requestedQty * factor)",
+  )
+) {
+  throw new Error(
+    "采购退回 Mock 数量精度校验必须使用浮点容差，不得直接依赖乘法后的 Number.isInteger",
+  );
 }
-if (purchaseReturnApiSource.includes('Math.min(2, Math.max(0, item.quantityPrecision))')) {
-  throw new Error('采购退回来源数量精度不得静默夹到 0～2');
+if (
+  purchaseReturnApiSource.includes(
+    "Math.min(2, Math.max(0, item.quantityPrecision))",
+  )
+) {
+  throw new Error("采购退回来源数量精度不得静默夹到 0～2");
 }
-if (!purchaseReturnApiSource.includes('function nextMockReturnItemId()')
-  || purchaseReturnApiSource.includes('`${returnOrderId}1${String(index + 1)')) {
-  throw new Error('采购退回 Mock 明细必须使用独立 19 位 ID，不得在 19 位主键后继续拼接');
+if (
+  !purchaseReturnApiSource.includes("function nextMockReturnItemId()") ||
+  purchaseReturnApiSource.includes("`${returnOrderId}1${String(index + 1)")
+) {
+  throw new Error(
+    "采购退回 Mock 明细必须使用独立 19 位 ID，不得在 19 位主键后继续拼接",
+  );
 }
 for (const fragment of [
-  'sales_order_item.outbound_qty',
-  'returnType: { type: string, enum: [SALES_RETURN]',
-  'source_type=SALES_RETURN_ORDER',
-  'inbound_type=SALES_RETURN',
-  'sales:create',
-  'sales:manage',
+  "sales_order_item.outbound_qty",
+  "returnType: { type: string, enum: [SALES_RETURN]",
+  "source_type=SALES_RETURN_ORDER",
+  "inbound_type=SALES_RETURN",
+  "sales:create",
+  "sales:manage",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`销售退货 OpenAPI 缺少关键契约：${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`销售退货 OpenAPI 缺少关键契约：${fragment}`);
 }
-const salesReturnCreateStart = source.indexOf('    SalesReturnOrderCreateRequest:');
-const salesReturnCreateEnd = source.indexOf('    ReturnOrderUpdateRequest:', salesReturnCreateStart);
-const salesReturnCreateSchema = source.slice(salesReturnCreateStart, salesReturnCreateEnd);
-if (salesReturnCreateStart < 0 || salesReturnCreateEnd < 0 || !salesReturnCreateSchema.includes('enum: [SALES_RETURN]')) {
-  throw new Error('销售退货创建请求必须由 adapter 固定提交 SALES_RETURN');
+const salesReturnCreateStart = source.indexOf(
+  "    SalesReturnOrderCreateRequest:",
+);
+const salesReturnCreateEnd = source.indexOf(
+  "    ReturnOrderUpdateRequest:",
+  salesReturnCreateStart,
+);
+const salesReturnCreateSchema = source.slice(
+  salesReturnCreateStart,
+  salesReturnCreateEnd,
+);
+if (
+  salesReturnCreateStart < 0 ||
+  salesReturnCreateEnd < 0 ||
+  !salesReturnCreateSchema.includes("enum: [SALES_RETURN]")
+) {
+  throw new Error("销售退货创建请求必须由 adapter 固定提交 SALES_RETURN");
 }
 for (const readOnlyField of [
-  'sourceOrderNo', 'partyId', 'partyCode', 'partyName', 'warehouseName', 'productId', 'productCode',
-  'productName', 'unitName', 'quantityPrecision', 'sourceFulfilledQty', 'occupiedQty', 'availableReturnQty',
-  'unitPrice', 'totalAmount', 'status', 'statusReason', 'createdById', 'submittedAt', 'approvedById',
-  'approvedQty', 'processedQty', 'createTime', 'updateTime',
+  "sourceOrderNo",
+  "partyId",
+  "partyCode",
+  "partyName",
+  "warehouseName",
+  "productId",
+  "productCode",
+  "productName",
+  "unitName",
+  "quantityPrecision",
+  "sourceFulfilledQty",
+  "occupiedQty",
+  "availableReturnQty",
+  "unitPrice",
+  "totalAmount",
+  "status",
+  "statusReason",
+  "createdById",
+  "submittedAt",
+  "approvedById",
+  "approvedQty",
+  "processedQty",
+  "createTime",
+  "updateTime",
 ]) {
   if (new RegExp(`\\n\\s+${readOnlyField}:`).test(salesReturnCreateSchema)) {
     throw new Error(`销售退货创建请求不得提交只读字段：${readOnlyField}`);
   }
 }
-const salesReturnDetailPathStart = source.indexOf('  /returns/{returnOrderId}:');
-const salesReturnSubmitPathStart = source.indexOf('  /returns/{returnOrderId}/submit:', salesReturnDetailPathStart);
-const salesReturnDetailPath = source.slice(salesReturnDetailPathStart, salesReturnSubmitPathStart);
-for (const method of ['get:', 'put:', 'delete:']) {
-  if (!salesReturnDetailPath.includes(`    ${method}`)) throw new Error(`销售退货详情资源缺少 ${method}`);
+const salesReturnDetailPathStart = source.indexOf(
+  "  /returns/{returnOrderId}:",
+);
+const salesReturnSubmitPathStart = source.indexOf(
+  "  /returns/{returnOrderId}/submit:",
+  salesReturnDetailPathStart,
+);
+const salesReturnDetailPath = source.slice(
+  salesReturnDetailPathStart,
+  salesReturnSubmitPathStart,
+);
+for (const method of ["get:", "put:", "delete:"]) {
+  if (!salesReturnDetailPath.includes(`    ${method}`))
+    throw new Error(`销售退货详情资源缺少 ${method}`);
 }
-for (const action of ['submit', 'approve', 'cancel']) {
+for (const action of ["submit", "approve", "cancel"]) {
   const actionStart = source.indexOf(`  /returns/{returnOrderId}/${action}:`);
-  const nextPath = source.indexOf('\n  /', actionStart + 4);
-  const actionContract = source.slice(actionStart, nextPath < 0 ? source.length : nextPath);
-  if (actionStart < 0 || !actionContract.includes('\n    post:') || !actionContract.includes('requestBody:')) {
+  const nextPath = source.indexOf("\n  /", actionStart + 4);
+  const actionContract = source.slice(
+    actionStart,
+    nextPath < 0 ? source.length : nextPath,
+  );
+  if (
+    actionStart < 0 ||
+    !actionContract.includes("\n    post:") ||
+    !actionContract.includes("requestBody:")
+  ) {
     throw new Error(`销售退货 ${action} 动作缺少 POST 或请求体契约`);
   }
 }
 for (const fragment of [
   "const RETURN_API = '/returns'",
-  'getResult<ReturnOrderPage>(RETURN_API, params)',
-  'postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request)',
-  'http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload)',
-  'http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })',
-  '`${RETURN_API}/${returnOrderId}/submit`',
-  '`${RETURN_API}/${returnOrderId}/approve`',
-  '`${RETURN_API}/${returnOrderId}/cancel`',
-  'getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`',
-  '`${RETURN_API}/source-orders/${sourceOrderId}/items`',
+  "getResult<ReturnOrderPage>(RETURN_API, params)",
+  "postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request)",
+  "http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload)",
+  "http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })",
+  "`${RETURN_API}/${returnOrderId}/submit`",
+  "`${RETURN_API}/${returnOrderId}/approve`",
+  "`${RETURN_API}/${returnOrderId}/cancel`",
+  "getResult<ReturnableSourceOrder[]>(`${RETURN_API}/source-orders`",
+  "`${RETURN_API}/source-orders/${sourceOrderId}/items`",
   "returnType: 'SALES_RETURN'",
   "partyId: query.partyId && query.partyId !== 'all' ? query.partyId : undefined",
-  'item.outboundQty',
+  "item.outboundQty",
 ]) {
-  if (!salesReturnApiSource.includes(fragment)) throw new Error(`销售退货前端适配层缺少接口契约：${fragment}`);
-}
-for (const fragment of ['normalizeReturnDetail', 'normalizeReturnItem', 'normalizeSourceItem', 'availableReturnQty', 'normalizeQuantityPrecision']) {
-  if (!salesReturnApiSource.includes(fragment)) throw new Error(`销售退货前端适配层缺少响应规范化或数量边界：${fragment}`);
-}
-if (!salesReturnApiSource.includes("normalizeQuantity(draft.requestedQty, sourceItem.quantityPrecision, 'requestedQty')")
-  || salesReturnApiSource.includes('Number.isInteger(draft.requestedQty * factor)')
-  || salesReturnApiSource.includes('Math.min(2, Math.max(0, item.quantityPrecision))')) {
-  throw new Error('销售退货数量精度必须显式校验并使用浮点容差，不得静默截断或夹取');
-}
-if (!salesReturnApiSource.includes('function nextMockReturnItemId()')
-  || salesReturnApiSource.includes('`${returnOrderId}1${String(index + 1)')) {
-  throw new Error('销售退货 Mock 明细必须使用独立 19 位 ID，不得在 19 位主键后继续拼接');
-}
-if (source.includes('原采购明细单价快照')) {
-  throw new Error('共享退货来源明细单价描述不得残留采购专属语义');
+  if (!salesReturnApiSource.includes(fragment))
+    throw new Error(`销售退货前端适配层缺少接口契约：${fragment}`);
 }
 for (const fragment of [
-  "returnType: 'SALES_RETURN'", "query: 'return:query'", "create: 'sales:create'", "manage: 'sales:manage'",
-  "returnNoPlaceholder: '如 SR202607001'", "fulfilledQuantityLabel: '已出库'", 'listReturns: listSalesReturns', 'createReturn: createSalesReturn',
-  'searchSourceOrders: searchSalesReturnSourceOrders',
+  "normalizeReturnDetail",
+  "normalizeReturnItem",
+  "normalizeSourceItem",
+  "availableReturnQty",
+  "normalizeQuantityPrecision",
 ]) {
-  if (!salesReturnViewSource.includes(fragment)) throw new Error(`销售退货页面配置缺少适配、权限或履约文案：${fragment}`);
+  if (!salesReturnApiSource.includes(fragment))
+    throw new Error(`销售退货前端适配层缺少响应规范化或数量边界：${fragment}`);
 }
-if (!routerSource.includes("path: 'sales/returns'") || !readProjectFile('erp-web', 'src', 'layouts', 'MainLayout.vue').includes("index: '/sales/returns'")) {
-  throw new Error('销售退货缺少路由或导航入口');
+if (
+  !salesReturnApiSource.includes(
+    "normalizeQuantity(draft.requestedQty, sourceItem.quantityPrecision, 'requestedQty')",
+  ) ||
+  salesReturnApiSource.includes(
+    "Number.isInteger(draft.requestedQty * factor)",
+  ) ||
+  salesReturnApiSource.includes(
+    "Math.min(2, Math.max(0, item.quantityPrecision))",
+  )
+) {
+  throw new Error(
+    "销售退货数量精度必须显式校验并使用浮点容差，不得静默截断或夹取",
+  );
+}
+if (
+  !salesReturnApiSource.includes("function nextMockReturnItemId()") ||
+  salesReturnApiSource.includes("`${returnOrderId}1${String(index + 1)")
+) {
+  throw new Error(
+    "销售退货 Mock 明细必须使用独立 19 位 ID，不得在 19 位主键后继续拼接",
+  );
+}
+if (source.includes("原采购明细单价快照")) {
+  throw new Error("共享退货来源明细单价描述不得残留采购专属语义");
 }
 for (const fragment of [
-  '查询范围包含当前分类及其全部后代分类',
-  'productCode',
-  'productName',
-  'brandName',
-  'barcode',
+  "returnType: 'SALES_RETURN'",
+  "query: 'return:query'",
+  "create: 'sales:create'",
+  "manage: 'sales:manage'",
+  "returnNoPlaceholder: '如 SR202607001'",
+  "fulfilledQuantityLabel: '已出库'",
+  "listReturns: listSalesReturns",
+  "createReturn: createSalesReturn",
+  "searchSourceOrders: searchSalesReturnSourceOrders",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少字段级查询或分类后代查询契约：${fragment}`);
+  if (!salesReturnViewSource.includes(fragment))
+    throw new Error(`销售退货页面配置缺少适配、权限或履约文案：${fragment}`);
 }
-for (const fragment of ['# 前端开发规范', '一个筛选控件必须对应一个明确的查询参数', '禁止为了减少筛选框使用含义不明的 `keyword`', '历史问题清单']) {
-  if (!frontendDevelopmentGuide.includes(fragment)) throw new Error(`前端开发规范缺少强制规则：${fragment}`);
+if (
+  !routerSource.includes("path: 'sales/returns'") ||
+  !readProjectFile("erp-web", "src", "layouts", "MainLayout.vue").includes(
+    "index: '/sales/returns'",
+  )
+) {
+  throw new Error("销售退货缺少路由或导航入口");
 }
-for (const fragment of ['非用户输入字段不得渲染为可编辑控件', '同一页面同一时刻只能打开一个下拉弹层', '人民币显示 `￥`', '业务状态不能使用普通下拉任意修改']) {
-  if (!frontendDevelopmentGuide.includes(fragment)) throw new Error(`前端开发规范缺少表单字段或下拉交互规则：${fragment}`);
+for (const fragment of [
+  "查询范围包含当前分类及其全部后代分类",
+  "productCode",
+  "productName",
+  "brandName",
+  "barcode",
+]) {
+  if (!source.includes(fragment))
+    throw new Error(`OpenAPI 缺少字段级查询或分类后代查询契约：${fragment}`);
 }
-for (const fragment of ['前端开发强制前置流程', 'npm run preflight:frontend -- <scope>', '禁止使用 `--no-verify`']) {
-  if (!agentInstructions.includes(fragment)) throw new Error(`AGENTS.md 缺少前端开发门禁规则：${fragment}`);
+for (const fragment of [
+  "# 前端开发规范",
+  "一个筛选控件必须对应一个明确的查询参数",
+  "禁止为了减少筛选框使用含义不明的 `keyword`",
+  "历史问题清单",
+]) {
+  if (!frontendDevelopmentGuide.includes(fragment))
+    throw new Error(`前端开发规范缺少强制规则：${fragment}`);
 }
-if (!frontendPreflightSource.includes('FRONTEND_PREFLIGHT_OK')
-  || !frontendPreflightCheckSource.includes('FRONTEND_PREFLIGHT_REQUIRED')
-  || !preCommitHook.includes('check-frontend-preflight.cjs')) {
-  throw new Error('前端开发预检脚本或 Git pre-commit 门禁不完整');
+for (const fragment of [
+  "非用户输入字段不得渲染为可编辑控件",
+  "同一页面同一时刻只能打开一个下拉弹层",
+  "人民币显示 `￥`",
+  "业务状态不能使用普通下拉任意修改",
+]) {
+  if (!frontendDevelopmentGuide.includes(fragment))
+    throw new Error(`前端开发规范缺少表单字段或下拉交互规则：${fragment}`);
 }
-for (const fragment of ['normalizeBinaryStatus', 'normalizeFiniteNumber', 'normalizeStringId']) {
-  if (!apiNormalizerSource.includes(fragment) || !productApiSource.includes(fragment)) {
+for (const fragment of [
+  "前端开发强制前置流程",
+  "npm run preflight:frontend -- <scope>",
+  "禁止使用 `--no-verify`",
+]) {
+  if (!agentInstructions.includes(fragment))
+    throw new Error(`AGENTS.md 缺少前端开发门禁规则：${fragment}`);
+}
+if (
+  !frontendPreflightSource.includes("FRONTEND_PREFLIGHT_OK") ||
+  !frontendPreflightCheckSource.includes("FRONTEND_PREFLIGHT_REQUIRED") ||
+  !preCommitHook.includes("check-frontend-preflight.cjs")
+) {
+  throw new Error("前端开发预检脚本或 Git pre-commit 门禁不完整");
+}
+for (const fragment of [
+  "normalizeBinaryStatus",
+  "normalizeFiniteNumber",
+  "normalizeStringId",
+]) {
+  if (
+    !apiNormalizerSource.includes(fragment) ||
+    !productApiSource.includes(fragment)
+  ) {
     throw new Error(`产品 API 缺少响应字段转换：${fragment}`);
   }
 }
-if (!categoryApiSource.includes('normalizeCategory') || !categoryApiSource.includes('getMockProductCategoryScope')) {
-  throw new Error('产品分类 API 缺少下拉响应转换或父子分类范围计算');
+if (
+  !categoryApiSource.includes("normalizeCategory") ||
+  !categoryApiSource.includes("getMockProductCategoryScope")
+) {
+  throw new Error("产品分类 API 缺少下拉响应转换或父子分类范围计算");
 }
-if (!roleApiSource.includes('normalizeRoleOption') || !deptApiSource.includes('normalizeDeptOption')) {
-  throw new Error('用户筛选下拉的角色和部门选项缺少响应类型转换');
+if (
+  !roleApiSource.includes("normalizeRoleOption") ||
+  !deptApiSource.includes("normalizeDeptOption")
+) {
+  throw new Error("用户筛选下拉的角色和部门选项缺少响应类型转换");
 }
 for (const fragment of [
-  '级联停用全部下级分类，并停用当前分类和全部下级分类直接关联的未删除产品',
-  '员工账号不自动停用',
-  '存在下级部门或已绑定用户时返回 409',
+  "级联停用全部下级分类，并停用当前分类和全部下级分类直接关联的未删除产品",
+  "员工账号不自动停用",
+  "存在下级部门或已绑定用户时返回 409",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少层级停用或删除保护契约：${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`OpenAPI 缺少层级停用或删除保护契约：${fragment}`);
 }
-for (const fragment of ['前端只展示通用风险说明', '不能作为是否允许操作的最终依据', '编辑表单内修改状态和列表批量启停']) {
-  if (!readProjectFile('docs', 'frontend-style-guide.md').includes(fragment)) {
+for (const fragment of [
+  "前端只展示通用风险说明",
+  "不能作为是否允许操作的最终依据",
+  "编辑表单内修改状态和列表批量启停",
+]) {
+  if (!readProjectFile("docs", "frontend-style-guide.md").includes(fragment)) {
     throw new Error(`前端规范缺少层级操作风险规则：${fragment}`);
   }
 }
-if (/Element Plus/i.test(pageDesign)) throw new Error('前端设计文档仍残留 Element Plus 技术选型');
-if (!storageSource.includes('AUTH_TOKEN_NAME_STORAGE_KEY')
-  || !authStoreSource.includes('loginResult.tokenName')
-  || !httpSource.includes("config.headers.set(tokenName, token)")) {
-  throw new Error('Sa-Token 前端鉴权必须保存登录响应 tokenName，并用它动态设置请求头');
+if (/Element Plus/i.test(pageDesign))
+  throw new Error("前端设计文档仍残留 Element Plus 技术选型");
+if (
+  !storageSource.includes("AUTH_TOKEN_NAME_STORAGE_KEY") ||
+  !authStoreSource.includes("loginResult.tokenName") ||
+  !httpSource.includes("config.headers.set(tokenName, token)")
+) {
+  throw new Error(
+    "Sa-Token 前端鉴权必须保存登录响应 tokenName，并用它动态设置请求头",
+  );
 }
 
 const requiredContractFragments = [
   "pattern: '^[A-Za-z][A-Za-z0-9_]{2,63}$'",
-  'minItems: 1',
-  'minLength: 1',
-  '#/components/responses/Conflict',
+  "minItems: 1",
+  "minLength: 1",
+  "#/components/responses/Conflict",
 ];
 for (const fragment of requiredContractFragments) {
-  if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少必填或唯一性约束：${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`OpenAPI 缺少必填或唯一性约束：${fragment}`);
 }
 
 if (!databaseSql.includes("dept_id BIGINT NOT NULL COMMENT '所属部门ID'")) {
-  throw new Error('数据库 DDL 与用户所属部门必填套约不一致');
+  throw new Error("数据库 DDL 与用户所属部门必填套约不一致");
 }
-if (!databaseSql.includes('CREATE TABLE IF NOT EXISTS sys_permission')
-  || !databaseSql.includes('UNIQUE KEY uk_sys_permission_code')
-  || !databaseSql.includes('KEY idx_sys_permission_module_action (module_code, action_type)')
-  || !databaseSql.includes('KEY idx_sys_permission_deleted_status_sort (deleted, status, sort_order)')) {
-  throw new Error('数据库 DDL 缺少权限目录表、唯一索引或列表查询索引');
+if (
+  !databaseSql.includes("CREATE TABLE IF NOT EXISTS sys_permission") ||
+  !databaseSql.includes("UNIQUE KEY uk_sys_permission_code") ||
+  !databaseSql.includes(
+    "KEY idx_sys_permission_module_action (module_code, action_type)",
+  ) ||
+  !databaseSql.includes(
+    "KEY idx_sys_permission_deleted_status_sort (deleted, status, sort_order)",
+  )
+) {
+  throw new Error("数据库 DDL 缺少权限目录表、唯一索引或列表查询索引");
 }
 if (!source.includes("pattern: '^[a-z][a-z0-9]*(?::[a-z][a-z0-9]*){1,3}$'")) {
-  throw new Error('OpenAPI 缺少权限码格式约束');
+  throw new Error("OpenAPI 缺少权限码格式约束");
 }
-if (source.includes('moduleName:')) {
-  throw new Error('OpenAPI 不应要求后端返回数据库中不存在的权限模块名称字段');
+if (source.includes("moduleName:")) {
+  throw new Error("OpenAPI 不应要求后端返回数据库中不存在的权限模块名称字段");
 }
 
-const categorySchemaStart = source.indexOf('    ProductCategory:');
-const categorySchemaEnd = source.indexOf('    ProductCategoryCreateRequest:', categorySchemaStart);
+const categorySchemaStart = source.indexOf("    ProductCategory:");
+const categorySchemaEnd = source.indexOf(
+  "    ProductCategoryCreateRequest:",
+  categorySchemaStart,
+);
 const categorySchema = source.slice(categorySchemaStart, categorySchemaEnd);
-if (categorySchemaStart < 0 || categorySchemaEnd < 0 || categorySchema.includes('children:')
-  || categorySchema.includes('parentName:') || categorySchema.includes('categoryPath:')) {
-  throw new Error('产品分类返回结构不应包含前端可计算的树节点、上级名称或层级路径');
+if (
+  categorySchemaStart < 0 ||
+  categorySchemaEnd < 0 ||
+  categorySchema.includes("children:") ||
+  categorySchema.includes("parentName:") ||
+  categorySchema.includes("categoryPath:")
+) {
+  throw new Error(
+    "产品分类返回结构不应包含前端可计算的树节点、上级名称或层级路径",
+  );
 }
-const productTableStart = productSql.indexOf('CREATE TABLE IF NOT EXISTS product (');
-const productTableEnd = productSql.indexOf(') ENGINE=', productTableStart);
+const productTableStart = productSql.indexOf(
+  "CREATE TABLE IF NOT EXISTS product (",
+);
+const productTableEnd = productSql.indexOf(") ENGINE=", productTableStart);
 const productTableDdl = productSql.slice(productTableStart, productTableEnd);
-if (productTableStart < 0 || productTableEnd < 0 || /\bcategory_name\b/i.test(productTableDdl)) {
-  throw new Error('product 主数据表不应冗余 category_name，分类名称应按 category_id 关联查询');
+if (
+  productTableStart < 0 ||
+  productTableEnd < 0 ||
+  /\bcategory_name\b/i.test(productTableDdl)
+) {
+  throw new Error(
+    "product 主数据表不应冗余 category_name，分类名称应按 category_id 关联查询",
+  );
 }
 
-const productSchemaStart = source.indexOf('    Product:');
-const productSchemaEnd = source.indexOf('    ProductFormRequest:', productSchemaStart);
+const productSchemaStart = source.indexOf("    Product:");
+const productSchemaEnd = source.indexOf(
+  "    ProductFormRequest:",
+  productSchemaStart,
+);
 const productSchema = source.slice(productSchemaStart, productSchemaEnd);
-if (productSchemaStart < 0 || productSchemaEnd < 0 || !productSchema.includes('categoryName:')
-  || !productSchema.includes('nullable: true') || !productSchema.includes('readOnly: true')
-  || productSchema.includes('categoryPath:')) {
-  throw new Error('产品档案必须只返回可关联查询的分类名称，不能要求后端拼接分类层级路径');
+if (
+  productSchemaStart < 0 ||
+  productSchemaEnd < 0 ||
+  !productSchema.includes("categoryName:") ||
+  !productSchema.includes("nullable: true") ||
+  !productSchema.includes("readOnly: true") ||
+  productSchema.includes("categoryPath:")
+) {
+  throw new Error(
+    "产品档案必须只返回可关联查询的分类名称，不能要求后端拼接分类层级路径",
+  );
 }
-if (!productSchema.includes('未分类时返回 `null`')) {
-  throw new Error('产品档案未分类时必须明确返回 categoryName: null，不能要求后端拼装空字符串');
+if (!productSchema.includes("未分类时返回 `null`")) {
+  throw new Error(
+    "产品档案未分类时必须明确返回 categoryName: null，不能要求后端拼装空字符串",
+  );
 }
-const productFormStart = source.indexOf('    ProductFormRequest:');
-const productFormEnd = source.indexOf('    ProductStatusRequest:', productFormStart);
+const productFormStart = source.indexOf("    ProductFormRequest:");
+const productFormEnd = source.indexOf(
+  "    ProductStatusRequest:",
+  productFormStart,
+);
 const productFormSchema = source.slice(productFormStart, productFormEnd);
-if (productFormStart < 0 || productFormEnd < 0 || productFormSchema.includes('productCode:')) {
-  throw new Error('产品创建和编辑请求不得接收由后端生成的 productCode');
+if (
+  productFormStart < 0 ||
+  productFormEnd < 0 ||
+  productFormSchema.includes("productCode:")
+) {
+  throw new Error("产品创建和编辑请求不得接收由后端生成的 productCode");
 }
-if (!source.includes('产品编码由后端统一生成') || !source.includes('产品编码创建后不可修改')) {
-  throw new Error('OpenAPI 未明确产品编码的后端生成和不可修改规则');
+if (
+  !source.includes("产品编码由后端统一生成") ||
+  !source.includes("产品编码创建后不可修改")
+) {
+  throw new Error("OpenAPI 未明确产品编码的后端生成和不可修改规则");
 }
-const productFormTypeStart = productTypeSource.indexOf('export interface ProductFormPayload');
-const productFormTypeEnd = productTypeSource.indexOf('export interface ProductBatchIdsPayload', productFormTypeStart);
-const productFormType = productTypeSource.slice(productFormTypeStart, productFormTypeEnd);
-if (productFormTypeStart < 0 || productFormTypeEnd < 0 || productFormType.includes('productCode')) {
-  throw new Error('前端产品提交 DTO 不得包含由后端生成的 productCode');
+const productFormTypeStart = productTypeSource.indexOf(
+  "export interface ProductFormPayload",
+);
+const productFormTypeEnd = productTypeSource.indexOf(
+  "export interface ProductBatchIdsPayload",
+  productFormTypeStart,
+);
+const productFormType = productTypeSource.slice(
+  productFormTypeStart,
+  productFormTypeEnd,
+);
+if (
+  productFormTypeStart < 0 ||
+  productFormTypeEnd < 0 ||
+  productFormType.includes("productCode")
+) {
+  throw new Error("前端产品提交 DTO 不得包含由后端生成的 productCode");
 }
-if (!productApiSource.includes('generateMockProductCode()')
-  || !productViewSource.includes('data-product-code-display')
-  || !productViewSource.includes('data-currency-prefix')) {
-  throw new Error('产品编码系统生成展示或金额货币前缀实现不完整');
-}
-for (const fragment of ['warehouseCode', 'warehouseName', 'contactName', 'contactPhone', '多个有效条件按 AND 组合']) {
-  if (!source.includes(fragment)) throw new Error(`仓库管理 OpenAPI 缺少字段级查询契约：${fragment}`);
-}
-const warehouseSchemaStart = source.indexOf('    Warehouse:');
-const warehouseSchemaEnd = source.indexOf('    WarehouseCreateRequest:', warehouseSchemaStart);
-const warehouseResponseSchema = source.slice(warehouseSchemaStart, warehouseSchemaEnd);
-if (warehouseSchemaStart < 0 || warehouseSchemaEnd < 0 || !warehouseResponseSchema.includes('warehouseCode:')
-  || !warehouseResponseSchema.includes('readOnly: true')) {
-  throw new Error('仓库返回结构必须包含创建后只读的仓库编码');
-}
-const warehouseUpdateStart = source.indexOf('    WarehouseUpdateRequest:');
-const warehouseUpdateEnd = source.indexOf('    WarehouseStatusRequest:', warehouseUpdateStart);
-const warehouseUpdateSchema = source.slice(warehouseUpdateStart, warehouseUpdateEnd);
-if (warehouseUpdateStart < 0 || warehouseUpdateEnd < 0 || warehouseUpdateSchema.includes('warehouseCode:')) {
-  throw new Error('仓库编辑请求不得包含创建后不可修改的 warehouseCode');
-}
-const warehouseCreateStart = source.indexOf('    WarehouseCreateRequest:');
-const warehouseCreateEnd = source.indexOf('    WarehouseUpdateRequest:', warehouseCreateStart);
-const warehouseCreateSchema = source.slice(warehouseCreateStart, warehouseCreateEnd);
-const warehouseCreateRequired = warehouseCreateSchema.match(/required:\s*\[([^\]]*)\]/)?.[1] || '';
-if (warehouseCreateStart < 0 || warehouseCreateEnd < 0
-  || warehouseCreateSchema.includes('warehouseCode:')) {
-  throw new Error('仓库创建请求不得包含由后端生成的 warehouseCode');
-}
-if (warehouseCreateRequired.split(',').map(field => field.trim()).includes('remark')) {
-  throw new Error('仓库创建请求的 remark 为选填字段，不得列入 required');
-}
-const warehouseFormTypeStart = warehouseTypeSource.indexOf('export interface WarehouseFormPayload');
-const warehouseFormTypeEnd = warehouseTypeSource.indexOf('export type WarehouseCreatePayload', warehouseFormTypeStart);
-if (warehouseFormTypeStart < 0 || warehouseFormTypeEnd < 0
-  || warehouseTypeSource.slice(warehouseFormTypeStart, warehouseFormTypeEnd).includes('warehouseCode:')) {
-  throw new Error('前端仓库创建和编辑 DTO 不得包含 warehouseCode');
-}
-if (!warehouseTypeSource.includes("Omit<WarehouseFormPayload, 'remark'> & { remark?: string }")) {
-  throw new Error('前端仓库创建 DTO 必须将 remark 声明为选填字段');
-}
-for (const fragment of ['normalizeStringId', 'normalizeBinaryStatus', 'normalizeWarehousePage']) {
-  if (!warehouseApiSource.includes(fragment)) throw new Error(`仓库 API 缺少响应字段转换：${fragment}`);
-}
-for (const fragment of ['data-warehouse-code', '保存后由系统生成', 'warehouseDisableWarning', 'table-fixed']) {
-  if (!warehouseViewSource.includes(fragment)) throw new Error(`仓库管理页面缺少关键交互实现：${fragment}`);
-}
-if (!warehouseApiSource.includes('generateMockWarehouseCode()') || !source.includes('仓库编码由后端统一生成')) {
-  throw new Error('仓库编码的后端生成契约或 Mock 实现不完整');
+if (
+  !productApiSource.includes("generateMockProductCode()") ||
+  !productViewSource.includes("data-product-code-display") ||
+  !productViewSource.includes("data-currency-prefix")
+) {
+  throw new Error("产品编码系统生成展示或金额货币前缀实现不完整");
 }
 for (const fragment of [
-  'availableQty 必须等于 stockQty - lockedQty',
+  "warehouseCode",
+  "warehouseName",
+  "contactName",
+  "contactPhone",
+  "多个有效条件按 AND 组合",
+]) {
+  if (!source.includes(fragment))
+    throw new Error(`仓库管理 OpenAPI 缺少字段级查询契约：${fragment}`);
+}
+const warehouseSchemaStart = source.indexOf("    Warehouse:");
+const warehouseSchemaEnd = source.indexOf(
+  "    WarehouseCreateRequest:",
+  warehouseSchemaStart,
+);
+const warehouseResponseSchema = source.slice(
+  warehouseSchemaStart,
+  warehouseSchemaEnd,
+);
+if (
+  warehouseSchemaStart < 0 ||
+  warehouseSchemaEnd < 0 ||
+  !warehouseResponseSchema.includes("warehouseCode:") ||
+  !warehouseResponseSchema.includes("readOnly: true")
+) {
+  throw new Error("仓库返回结构必须包含创建后只读的仓库编码");
+}
+const warehouseUpdateStart = source.indexOf("    WarehouseUpdateRequest:");
+const warehouseUpdateEnd = source.indexOf(
+  "    WarehouseStatusRequest:",
+  warehouseUpdateStart,
+);
+const warehouseUpdateSchema = source.slice(
+  warehouseUpdateStart,
+  warehouseUpdateEnd,
+);
+if (
+  warehouseUpdateStart < 0 ||
+  warehouseUpdateEnd < 0 ||
+  warehouseUpdateSchema.includes("warehouseCode:")
+) {
+  throw new Error("仓库编辑请求不得包含创建后不可修改的 warehouseCode");
+}
+const warehouseCreateStart = source.indexOf("    WarehouseCreateRequest:");
+const warehouseCreateEnd = source.indexOf(
+  "    WarehouseUpdateRequest:",
+  warehouseCreateStart,
+);
+const warehouseCreateSchema = source.slice(
+  warehouseCreateStart,
+  warehouseCreateEnd,
+);
+const warehouseCreateRequired =
+  warehouseCreateSchema.match(/required:\s*\[([^\]]*)\]/)?.[1] || "";
+if (
+  warehouseCreateStart < 0 ||
+  warehouseCreateEnd < 0 ||
+  warehouseCreateSchema.includes("warehouseCode:")
+) {
+  throw new Error("仓库创建请求不得包含由后端生成的 warehouseCode");
+}
+if (
+  warehouseCreateRequired
+    .split(",")
+    .map((field) => field.trim())
+    .includes("remark")
+) {
+  throw new Error("仓库创建请求的 remark 为选填字段，不得列入 required");
+}
+const warehouseFormTypeStart = warehouseTypeSource.indexOf(
+  "export interface WarehouseFormPayload",
+);
+const warehouseFormTypeEnd = warehouseTypeSource.indexOf(
+  "export type WarehouseCreatePayload",
+  warehouseFormTypeStart,
+);
+if (
+  warehouseFormTypeStart < 0 ||
+  warehouseFormTypeEnd < 0 ||
+  warehouseTypeSource
+    .slice(warehouseFormTypeStart, warehouseFormTypeEnd)
+    .includes("warehouseCode:")
+) {
+  throw new Error("前端仓库创建和编辑 DTO 不得包含 warehouseCode");
+}
+if (
+  !warehouseTypeSource.includes(
+    "Omit<WarehouseFormPayload, 'remark'> & { remark?: string }",
+  )
+) {
+  throw new Error("前端仓库创建 DTO 必须将 remark 声明为选填字段");
+}
+for (const fragment of [
+  "normalizeStringId",
+  "normalizeBinaryStatus",
+  "normalizeWarehousePage",
+]) {
+  if (!warehouseApiSource.includes(fragment))
+    throw new Error(`仓库 API 缺少响应字段转换：${fragment}`);
+}
+for (const fragment of [
+  "data-warehouse-code",
+  "保存后由系统生成",
+  "warehouseDisableWarning",
+  "table-fixed",
+]) {
+  if (!warehouseViewSource.includes(fragment))
+    throw new Error(`仓库管理页面缺少关键交互实现：${fragment}`);
+}
+if (
+  !warehouseApiSource.includes("generateMockWarehouseCode()") ||
+  !source.includes("仓库编码由后端统一生成")
+) {
+  throw new Error("仓库编码的后端生成契约或 Mock 实现不完整");
+}
+for (const fragment of [
+  "availableQty 必须等于 stockQty - lockedQty",
   "health === 'LOW_STOCK'",
   "state === 'PARTIALLY_LOCKED'",
-  'inventoryHealth',
-  'reservationState',
-  'WarehouseStockSummary',
-  'warehouseCount',
-  'productCount',
-  'lowStockCount',
-  'noAvailableCount',
-  'lockedCount',
+  "inventoryHealth",
+  "reservationState",
+  "WarehouseStockSummary",
+  "warehouseCount",
+  "productCount",
+  "lowStockCount",
+  "noAvailableCount",
+  "lockedCount",
 ]) {
-  if (!warehouseStockApiSource.includes(fragment) && !warehouseStockTypeSource.includes(fragment)) {
+  if (
+    !warehouseStockApiSource.includes(fragment) &&
+    !warehouseStockTypeSource.includes(fragment)
+  ) {
     throw new Error(`库存管理前端契约缺少：${fragment}`);
   }
 }
 for (const fragment of [
-  'stock_qty - locked_qty',
-  '0 < available_qty <= safety_stock_qty',
-  '不同单位的库存数量不得跨产品汇总',
+  "stock_qty - locked_qty",
+  "0 < available_qty <= safety_stock_qty",
+  "不同单位的库存数量不得跨产品汇总",
   "enum: [NORMAL, LOW_STOCK, NO_AVAILABLE, OUT_OF_STOCK]",
   "enum: [UNLOCKED, PARTIALLY_LOCKED, FULLY_LOCKED]",
   "data: { $ref: '#/components/schemas/WarehouseStockPage' }",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`库存管理 OpenAPI 缺少：${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`库存管理 OpenAPI 缺少：${fragment}`);
 }
-if (!warehouseStockViewSource.includes('库存变更请通过出入库或库存调整业务完成')
-  || !warehouseStockViewSource.includes('<ListFilterPanel layout="content"')
-  || !warehouseStockViewSource.includes('data-filter-size="wide"')
-  || !warehouseStockViewSource.includes('库存健康')
-  || !warehouseStockViewSource.includes('占用情况')
-  || !pageDesign.includes('## 15. 仓库库存模块：库存管理')) {
-  throw new Error('库存管理页面边界、响应式布局或页面设计文档不完整');
+if (
+  !warehouseStockViewSource.includes(
+    "库存变更请通过出入库或库存调整业务完成",
+  ) ||
+  !warehouseStockViewSource.includes('<ListFilterPanel layout="content"') ||
+  !warehouseStockViewSource.includes('data-filter-size="wide"') ||
+  !warehouseStockViewSource.includes("库存健康") ||
+  !warehouseStockViewSource.includes("占用情况") ||
+  !pageDesign.includes("## 15. 仓库库存模块：库存管理")
+) {
+  throw new Error("库存管理页面边界、响应式布局或页面设计文档不完整");
 }
 for (const fragment of [
-  'StockBillType',
-  'StockBillStatus',
-  'StockBillDetail',
-  'StockBillSummary',
-  'normalizeNullableStringId',
-  'normalizeStockBillItem',
-  'StockBillEntryMode',
-  'listStockBills',
-  'getStockBillDetail',
-  'createStockBill',
-  'updateStockBill',
-  'submitStockBill',
-  'confirmStockBill',
-  'cancelStockBill',
+  "StockBillType",
+  "StockBillStatus",
+  "StockBillDetail",
+  "InboundBillDetail",
+  "expectedArrivalDate",
+  "StockBillSummary",
+  "normalizeNullableStringId",
+  "normalizeStockBillItem",
+  "StockBillEntryMode",
+  "listStockBills",
+  "getStockBillDetail",
+  "createStockBill",
+  "updateStockBill",
+  "submitStockBill",
+  "confirmStockBill",
+  "cancelStockBill",
 ]) {
-  if (!stockBillApiSource.includes(fragment) && !stockBillTypeSource.includes(fragment)) {
+  if (
+    !stockBillApiSource.includes(fragment) &&
+    !stockBillTypeSource.includes(fragment)
+  ) {
     throw new Error(`入库单/出库单前端契约缺少：${fragment}`);
   }
 }
-for (const summaryField of ['inboundCount', 'outboundCount']) {
-  if (stockBillApiSource.includes(summaryField) || stockBillTypeSource.includes(summaryField) || stockBillViewSource.includes(summaryField)) {
-    throw new Error(`Stock-bill frontend must not retain unused summary field: ${summaryField}`);
+for (const summaryField of ["inboundCount", "outboundCount"]) {
+  if (
+    stockBillApiSource.includes(summaryField) ||
+    stockBillTypeSource.includes(summaryField) ||
+    stockBillViewSource.includes(summaryField)
+  ) {
+    throw new Error(
+      `Stock-bill frontend must not retain unused summary field: ${summaryField}`,
+    );
   }
   if (source.includes(`${summaryField}: { type: integer`)) {
-    throw new Error(`Stock-bill OpenAPI must not retain unused summary field: ${summaryField}`);
+    throw new Error(
+      `Stock-bill OpenAPI must not retain unused summary field: ${summaryField}`,
+    );
   }
 }
 for (const fragment of [
-  'InboundBillCreateRequest:',
-  'OutboundBillCreateRequest:',
+  "InboundBillCreateRequest:",
+  "OutboundBillCreateRequest:",
   "schema: { $ref: '#/components/schemas/InboundBillCreateRequest' }",
   "schema: { $ref: '#/components/schemas/OutboundBillCreateRequest' }",
-  'enum: [PURCHASE_IN, SALES_RETURN, ADJUST_IN], description: 入库单类型',
-  'enum: [SALES_OUT, PURCHASE_RETURN, ADJUST_OUT], description: 出库单类型',
-  'required: [sourceGeneratedCount, pendingCount, confirmedCount, cancelledCount]',
+  "enum: [PURCHASE_IN, SALES_RETURN, ADJUST_IN], description: 入库单类型",
+  "enum: [SALES_OUT, PURCHASE_RETURN, ADJUST_OUT], description: 出库单类型",
+  "required: [sourceGeneratedCount, pendingCount, confirmedCount, cancelledCount]",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`Stock-bill contract fragment missing: ${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`Stock-bill contract fragment missing: ${fragment}`);
 }
-if (source.includes('/warehouse/work-bills/') || stockBillApiSource.includes('/warehouse/work-bills/') || pageDesign.includes('/warehouse/work-bills/') || productRequirement.includes('/warehouse/work-bills/')) {
-  throw new Error('入库单/出库单不得再使用无法区分数据表的共享 work-bills 路由');
+if (
+  source.includes("/warehouse/work-bills/") ||
+  stockBillApiSource.includes("/warehouse/work-bills/") ||
+  pageDesign.includes("/warehouse/work-bills/") ||
+  productRequirement.includes("/warehouse/work-bills/")
+) {
+  throw new Error(
+    "入库单/出库单不得再使用无法区分数据表的共享 work-bills 路由",
+  );
 }
-if (!stockBillApiSource.includes('function billCollectionEndpoint(direction: StockBillDirection)')
-  || !stockBillApiSource.includes('if (billDirection(payload.billType) !== direction)')
-  || !stockBillApiSource.includes('summary: normalizeSummary(page.summary)')
-  || !stockBillViewSource.includes('createStockBill(pageDirection.value, payload)')) {
-  throw new Error('Stock-bill frontend direction dispatch or summary mapping is incomplete');
+if (
+  !stockBillApiSource.includes(
+    "function billCollectionEndpoint(direction: StockBillDirection)",
+  ) ||
+  !stockBillApiSource.includes(
+    "if (billDirection(payload.billType) !== direction)",
+  ) ||
+  !stockBillApiSource.includes("summary: normalizeSummary(page.summary)") ||
+  !stockBillViewSource.includes("createStockBill(pageDirection.value, payload)")
+) {
+  throw new Error(
+    "Stock-bill frontend direction dispatch or summary mapping is incomplete",
+  );
 }
-if (stockBillViewSource.includes('来源生成') || stockLedgerViewSource.includes('来源生成')) {
-  throw new Error('仓库前端展示必须将 SOURCE_GENERATED 统一命名为“系统生成”');
+if (
+  stockBillViewSource.includes("来源生成") ||
+  stockLedgerViewSource.includes("来源生成")
+) {
+  throw new Error("仓库前端展示必须将 SOURCE_GENERATED 统一命名为“系统生成”");
 }
 for (const fragment of [
   "'/warehouse/inbound-bills'",
   "'/warehouse/outbound-bills'",
-  'function billResourceEndpoint(direction: StockBillDirection, stockBillId: string, action?:',
+  "function billResourceEndpoint(direction: StockBillDirection, stockBillId: string, action?:",
   "billResourceEndpoint(direction, stockBillId, 'submit')",
   "billResourceEndpoint(direction, stockBillId, 'confirm')",
   "billResourceEndpoint(direction, stockBillId, 'cancel')",
-  'http.put(billResourceEndpoint(direction, stockBillId), payload)',
-  'getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId), undefined, { skipPageLoading: true })',
-  'sourcePartyId: payload.sourcePartyId,',
-  'sourcePartyName: payload.sourcePartyName.trim(),',
+  "http.put(billResourceEndpoint(direction, stockBillId), payload)",
+  "getResult<StockBillDetail>(billResourceEndpoint(direction, stockBillId), undefined, { skipPageLoading: true })",
+  "sourcePartyId: payload.sourcePartyId,",
+  "sourcePartyName: payload.sourcePartyName.trim(),",
   "const adjustmentSourceWarehouseEditable = current.entryMode === 'MANUAL_ADJUSTMENT' && current.status === 'DRAFT'",
-  'sourcePartyId,',
+  "sourcePartyId,",
   "const supplementSourceEditable = isSupplement",
 ]) {
-  if (!stockBillApiSource.includes(fragment)) throw new Error(`入库单/出库单前端路由映射缺少：${fragment}`);
+  if (!stockBillApiSource.includes(fragment))
+    throw new Error(`入库单/出库单前端路由映射缺少：${fragment}`);
 }
 for (const fragment of [
-  'InboundBillId:',
-  'OutboundBillId:',
-  'operationId: inboundBillDetail',
-  'operationId: inboundBillUpdate',
-  'operationId: inboundBillSubmit',
-  'operationId: inboundBillConfirm',
-  'operationId: inboundBillCancel',
-  'operationId: outboundBillDetail',
-  'operationId: outboundBillUpdate',
-  'operationId: outboundBillSubmit',
-  'operationId: outboundBillConfirm',
-  'operationId: outboundBillCancel',
+  "InboundBillId:",
+  "OutboundBillId:",
+  "operationId: inboundBillDetail",
+  "operationId: inboundBillUpdate",
+  "operationId: inboundBillSubmit",
+  "operationId: inboundBillConfirm",
+  "operationId: inboundBillCancel",
+  "operationId: outboundBillDetail",
+  "operationId: outboundBillUpdate",
+  "operationId: outboundBillSubmit",
+  "operationId: outboundBillConfirm",
+  "operationId: outboundBillCancel",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`入库单/出库单 OpenAPI 路由映射缺少：${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`入库单/出库单 OpenAPI 路由映射缺少：${fragment}`);
 }
 for (const fragment of [
-  '按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要',
-  '按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要',
-  '入库列表的“业务对象”列按单据类型显示供应商、客户或调整单的来源仓库',
-  '出库列表的“业务对象”列按单据类型显示客户、供应商或调整单的来源仓库',
-  '调整单详情和编辑态标注为“来源仓库”',
-  'enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]',
-  'enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]',
-  'enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]',
-  'name: entryMode',
-  '对应 `inbound_bill.entry_mode`',
-  '对应 `outbound_bill.entry_mode`',
-  '人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交',
-  'responsibleById',
-  'sourcePartyName',
-  'quantitySummary',
-  'totalCurrentQty',
-  'planQty',
-  'processedQty',
-  'pendingQty',
-  'quantityPrecision',
+  "按 `inbound_bill_item.inbound_bill_id` 聚合返回明细条数和入库量摘要",
+  "按 `outbound_bill_item.outbound_bill_id` 聚合返回明细条数和出库量摘要",
+  "入库列表的“业务对象”列按单据类型显示供应商、客户或调整单的来源仓库",
+  "出库列表的“业务对象”列按单据类型显示客户、供应商或调整单的来源仓库",
+  "调整单详情和编辑态标注为“来源仓库”",
+  "enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT]",
+  "enum: [DRAFT, PENDING_CONFIRM, CONFIRMED, CANCELLED]",
+  "enum: [SOURCE_GENERATED, MANUAL_SUPPLEMENT, MANUAL_ADJUSTMENT]",
+  "name: entryMode",
+  "对应 `inbound_bill.entry_mode`",
+  "对应 `outbound_bill.entry_mode`",
+  "人工补录可不关联来源，关联时必须从已有单据搜索选择并与非空 sourceId 同时提交",
+  "responsibleById",
+  "sourcePartyName",
+  "quantitySummary",
+  "totalCurrentQty",
+  "planQty",
+  "processedQty",
+  "pendingQty",
+  "quantityPrecision",
   "schema: { $ref: '#/components/schemas/InboundBillCreateRequest' }",
   "schema: { $ref: '#/components/schemas/OutboundBillCreateRequest' }",
   "schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }",
-  '仅允许 `DRAFT -> PENDING_CONFIRM`',
-  '仅允许 `PENDING_CONFIRM -> CONFIRMED`',
-  '仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`',
+  "仅允许 `DRAFT -> PENDING_CONFIRM`",
+  "仅允许 `PENDING_CONFIRM -> CONFIRMED`",
+  "仅允许 `DRAFT/PENDING_CONFIRM -> CANCELLED`",
   "data: { $ref: '#/components/schemas/InboundBillPage' }",
   "data: { $ref: '#/components/schemas/OutboundBillPage' }",
+  "data: { $ref: '#/components/schemas/InboundBillDetail' }",
+  "InboundBillDetailSuccess",
+  "expectedArrivalDate: { type: string, format: date, nullable: true, readOnly: true",
   "data: { $ref: '#/components/schemas/StockBillDetail' }",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`入库单/出库单 OpenAPI 缺少：${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`入库单/出库单 OpenAPI 缺少：${fragment}`);
 }
-if (!stockBillViewSource.includes('新增入库单')
-  || !stockBillViewSource.includes('新增出库单')
-  || !stockBillViewSource.includes('手工补录')
-  || !stockBillViewSource.includes('sourcePartyName')
-  || !stockBillViewSource.includes("partyColumnLabel: '业务对象'")
-  || !stockBillViewSource.includes("SOURCE_GENERATED: '系统生成'")
-  || !stockBillViewSource.includes("return '来源仓库'")
-  || !stockBillViewSource.includes('const sourcePartyFormDisplay = computed(() =>')
-  || !stockBillViewSource.includes('const manualSupplementSourceEditable = computed(() =>')
-  || !stockBillViewSource.includes('const adjustmentSourceWarehouseEditable = computed(() =>')
-  || !stockBillViewSource.includes('placeholder="请选择来源单据"')
-  || !stockBillViewSource.includes('sourceId: form.sourceId')
-  || stockBillViewSource.includes('toggleSourceNoMode')
-  || !stockBillViewSource.includes('sourcePartyId: form.sourcePartyId')
-  || !stockBillViewSource.includes('sourcePartyName: selectedSourcePartyLabel.value')
-  || !stockBillViewSource.includes("if (adjustmentTypes.has(formBillType.value)) return selectedFormWarehouseLabel.value || '请选择调整仓库';")
-  || stockBillViewSource.includes("row.billType === 'ADJUST_IN' || row.billType === 'ADJUST_OUT') return '-'")
-  || !stockBillViewSource.includes('planQtyLabel')
-  || !stockBillViewSource.includes('pendingQtyLabel')
-  || !stockBillViewSource.includes('remainingAfterText')
-  || !stockBillViewSource.includes('qualifiedQty')
-  || !stockBillViewSource.includes('defectiveQty')
-  || !stockBillViewSource.includes('responsibleByName')
-  || !stockBillViewSource.includes('itemQuantityStep')
-  || !stockBillViewSource.includes('hasStockBillActions')
-  || !stockBillViewSource.includes('openDetailEdit')
-  || !stockBillViewSource.includes('handleConfirm(detail)')
-  || !stockBillViewSource.includes('handleSubmit(detail)')
-  || !stockBillViewSource.includes('@click="handleCancel(detail)"')
-  || !stockBillViewSource.includes('<ListFilterPanel layout="content"')
-  || !stockBillViewSource.includes('data-filter-size="compact"')
-  || !stockBillViewSource.includes('entryModeOptions')
-  || !stockBillViewSource.includes('listQtyLabel')
-  || !stockBillViewSource.includes('billTotalQuantityText')
-  || !stockBillViewSource.includes('data-stock-bill-expanded-item-id')
-  || !stockBillViewSource.includes('toggleRowDetail')
-  || !stockBillViewSource.includes('submitStockBill')
-  || !stockBillViewSource.includes('stock-bill-table-scroll')
-  || !stockBillViewSource.includes('stock-bill-form-table-scroll')
-  || !stockBillViewSource.includes('stock-workbench-info__facts')
-  || !stockBillViewSource.includes('<dt>作业单号</dt>')
-  || !stockBillViewSource.includes('本次入库数量')
-  || !stockBillViewSource.includes('本次出库数量')
-  || !pageDesign.includes('## 16. 仓库库存模块：入库单与出库单')
-  || !pageDesign.includes('DRAFT -> PENDING_CONFIRM')
-  || !warehouseSchema.includes('CONFIRMED` 后不允许任何修改或取消')
-  || !warehouseSchema.includes('100 倍整数存储')) {
-  throw new Error('入库单/出库单新增、编辑、状态流转、详情或页面设计文档不完整');
-}
-for (const fragment of ['入库单号 / 商品', '类型 / 来源', '往来方 / 仓库', '状态 / 操作']) {
-  if (stockBillViewSource.includes(fragment)) throw new Error(`入库单/出库单主表列不得混合字段：${fragment}`);
-}
-if (!stockBillViewSource.includes('entryModeOptions')
-  || !source.includes('创建调整入库或补录采购入库、销售退货入库草稿')
-  || !source.includes('创建调整出库或补录销售出库、采购退货出库草稿')
-  || !warehouseSchema.includes('库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`')) {
-  throw new Error('库存调整功能合并到入库单/出库单页面的契约或设计文档不完整');
-}
-const pagedQueryCallPattern = /usePagedQuery\(\{\s*query,\s*busy:\s*queryBusy,\s*pending:\s*queryPending,\s*load:\s*[A-Za-z_$][\w$]*,\s*resetFilters:\s*\(\)\s*=>\s*\{[\s\S]*?\},\s*\}\)/;
-const hasSharedListQuery = viewSource => viewSource.includes('useListRefresh(queryBusy, queryPending')
-  || pagedQueryCallPattern.test(viewSource);
-const hasResetLoading = viewSource => /function handleReset\(\) \{[\s\S]*?queryPending\.value = true;[\s\S]*?debouncedSearch\(\);[\s\S]*?\n\}/.test(viewSource)
-  || pagedQueryCallPattern.test(viewSource);
-
-if (!listRefreshSource.includes('useDebounceFn') || !listRefreshSource.includes('pending.value = true')
-  || !pagedQuerySource.includes('useDebounceFn') || !pagedQuerySource.includes('pending.value = true')
-  || !pagedQuerySource.includes('resetFilters()') || !pagedQuerySource.includes('useListRefresh(busy, pending, load, pageDelay)')
-  || listViewSources.some(viewSource => !hasSharedListQuery(viewSource))) {
-  throw new Error('已完成列表页未统一接入刷新防抖和即时加载状态');
-}
-if (listViewSources.some(viewSource => !hasResetLoading(viewSource))) {
-  throw new Error('已完成列表页未统一接入重置防抖和即时加载状态');
+const hasStockBillViewFragment = (fragment) =>
+  typeof fragment === "string"
+    ? stockBillViewSource.includes(fragment)
+    : fragment.test(stockBillViewSource);
+if (
+  !hasStockBillViewFragment("新增入库单") ||
+  !stockBillViewSource.includes("新增出库单") ||
+  !stockBillViewSource.includes("手工补录") ||
+  !stockBillViewSource.includes("sourcePartyName") ||
+  // 格式化工具会调整引号与换行；这里校验语义标识，不能把代码风格当成契约。
+  !hasStockBillViewFragment(/partyColumnLabel:\s*["']业务对象["']/) ||
+  !hasStockBillViewFragment(/SOURCE_GENERATED:\s*["']系统生成["']/) ||
+  !hasStockBillViewFragment(/return\s+["']来源仓库["']/) ||
+  !stockBillViewSource.includes("data-stock-bill-expected-arrival-date") ||
+  !stockBillViewSource.includes("data-stock-bill-detail-expected-arrival-date") ||
+  !stockBillViewSource.includes(
+    "const sourcePartyFormDisplay = computed(() =>",
+  ) ||
+  !hasStockBillViewFragment(
+    /const\s+manualSupplementSourceEditable\s*=\s*computed\(\s*\(\)\s*=>/,
+  ) ||
+  !hasStockBillViewFragment(
+    /const\s+adjustmentSourceWarehouseEditable\s*=\s*computed\(\s*\(\)\s*=>/,
+  ) ||
+  !stockBillViewSource.includes('placeholder="请选择来源单据"') ||
+  !stockBillViewSource.includes("sourceId: form.sourceId") ||
+  stockBillViewSource.includes("toggleSourceNoMode") ||
+  !stockBillViewSource.includes("sourcePartyId: form.sourcePartyId") ||
+  !stockBillViewSource.includes(
+    "sourcePartyName: selectedSourcePartyLabel.value",
+  ) ||
+  !hasStockBillViewFragment(
+    /if\s*\(\s*adjustmentTypes\.has\(formBillType\.value\)\s*\)\s*return\s+selectedFormWarehouseLabel\.value\s*\|\|\s*["']请选择调整仓库["'];/,
+  ) ||
+  stockBillViewSource.includes(
+    "row.billType === 'ADJUST_IN' || row.billType === 'ADJUST_OUT') return '-'",
+  ) ||
+  !stockBillViewSource.includes("planQtyLabel") ||
+  !stockBillViewSource.includes("pendingQtyLabel") ||
+  !stockBillViewSource.includes("remainingAfterText") ||
+  !stockBillViewSource.includes("qualifiedQty") ||
+  !stockBillViewSource.includes("defectiveQty") ||
+  !stockBillViewSource.includes("responsibleByName") ||
+  !stockBillViewSource.includes("itemQuantityStep") ||
+  !stockBillViewSource.includes("hasStockBillActions") ||
+  !stockBillViewSource.includes("openDetailEdit") ||
+  !stockBillViewSource.includes("handleConfirm(detail)") ||
+  !stockBillViewSource.includes("handleSubmit(detail)") ||
+  !stockBillViewSource.includes('@click="handleCancel(detail)"') ||
+  !stockBillViewSource.includes('<ListFilterPanel layout="content"') ||
+  !stockBillViewSource.includes('data-filter-size="compact"') ||
+  !stockBillViewSource.includes("entryModeOptions") ||
+  !stockBillViewSource.includes("listQtyLabel") ||
+  !stockBillViewSource.includes("billTotalQuantityText") ||
+  !stockBillViewSource.includes("data-stock-bill-expanded-item-id") ||
+  !stockBillViewSource.includes("toggleRowDetail") ||
+  !stockBillViewSource.includes("submitStockBill") ||
+  !stockBillViewSource.includes("stock-bill-table-scroll") ||
+  !stockBillViewSource.includes("stock-bill-form-table-scroll") ||
+  !stockBillViewSource.includes("stock-workbench-info__facts") ||
+  !stockBillViewSource.includes("<dt>作业单号</dt>") ||
+  !stockBillViewSource.includes("本次入库数量") ||
+  !stockBillViewSource.includes("本次出库数量") ||
+  !pageDesign.includes("## 16. 仓库库存模块：入库单与出库单") ||
+  !pageDesign.includes("DRAFT -> PENDING_CONFIRM") ||
+  !warehouseSchema.includes("CONFIRMED` 后不允许任何修改或取消") ||
+  !warehouseSchema.includes("100 倍整数存储")
+) {
+  throw new Error(
+    "入库单/出库单新增、编辑、状态流转、详情或页面设计文档不完整",
+  );
 }
 for (const fragment of [
-  '仓库编码创建后不可修改',
-  '同步 `warehouse_stock.warehouse_name`',
-  '存在任意 `warehouse_stock` 记录（包括数量为 0）、入库单、出库单或库存流水时返回 409',
+  "入库单号 / 商品",
+  "类型 / 来源",
+  "往来方 / 仓库",
+  "状态 / 操作",
+]) {
+  if (stockBillViewSource.includes(fragment))
+    throw new Error(`入库单/出库单主表列不得混合字段：${fragment}`);
+}
+if (
+  !stockBillViewSource.includes("entryModeOptions") ||
+  !source.includes("创建调整入库或补录采购入库、销售退货入库草稿") ||
+  !source.includes("创建调整出库或补录销售出库、采购退货出库草稿") ||
+  !warehouseSchema.includes("库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`")
+) {
+  throw new Error("库存调整功能合并到入库单/出库单页面的契约或设计文档不完整");
+}
+const pagedQueryCallPattern =
+  /usePagedQuery\(\{\s*query,\s*busy:\s*queryBusy,\s*pending:\s*queryPending,\s*load:\s*[A-Za-z_$][\w$]*,\s*resetFilters:\s*\(\)\s*=>\s*\{[\s\S]*?\},\s*\}\)/;
+const hasSharedListQuery = (viewSource) =>
+  viewSource.includes("useListRefresh(queryBusy, queryPending") ||
+  pagedQueryCallPattern.test(viewSource);
+const hasResetLoading = (viewSource) =>
+  /function handleReset\(\) \{[\s\S]*?queryPending\.value = true;[\s\S]*?debouncedSearch\(\);[\s\S]*?\n\}/.test(
+    viewSource,
+  ) || pagedQueryCallPattern.test(viewSource);
+
+if (
+  !listRefreshSource.includes("useDebounceFn") ||
+  !listRefreshSource.includes("pending.value = true") ||
+  !pagedQuerySource.includes("useDebounceFn") ||
+  !pagedQuerySource.includes("pending.value = true") ||
+  !pagedQuerySource.includes("resetFilters()") ||
+  !pagedQuerySource.includes(
+    "useListRefresh(busy, pending, load, pageDelay)",
+  ) ||
+  listViewSources.some((viewSource) => !hasSharedListQuery(viewSource))
+) {
+  throw new Error("已完成列表页未统一接入刷新防抖和即时加载状态");
+}
+if (listViewSources.some((viewSource) => !hasResetLoading(viewSource))) {
+  throw new Error("已完成列表页未统一接入重置防抖和即时加载状态");
+}
+for (const fragment of [
+  "仓库编码创建后不可修改",
+  "同步 `warehouse_stock.warehouse_name`",
+  "存在任意 `warehouse_stock` 记录（包括数量为 0）、入库单、出库单或库存流水时返回 409",
 ]) {
   if (!source.includes(fragment) && !warehouseSchema.includes(fragment)) {
     throw new Error(`仓库管理缺少后端业务边界：${fragment}`);
   }
 }
-if (!source.includes('存在任意 `warehouse_stock` 记录（包括数量为 0）、入库单、出库单或库存流水时返回 409')) {
-  throw new Error('仓库删除接口缺少 409 Conflict 引用保护契约');
+if (
+  !source.includes(
+    "存在任意 `warehouse_stock` 记录（包括数量为 0）、入库单、出库单或库存流水时返回 409",
+  )
+) {
+  throw new Error("仓库删除接口缺少 409 Conflict 引用保护契约");
 }
-if (!warehouseSql.includes('UNIQUE KEY uk_warehouse_code (warehouse_code)')) {
-  throw new Error('仓库表缺少仓库编码唯一索引');
+if (!warehouseSql.includes("UNIQUE KEY uk_warehouse_code (warehouse_code)")) {
+  throw new Error("仓库表缺少仓库编码唯一索引");
 }
-if (!exclusiveDropdownSource.includes("erp:dropdown-open")
-  || !anchoredSelectSource.includes('useExclusiveDropdown(open)')
-  || !treeSelectSource.includes('useExclusiveDropdown(isOpen)')) {
-  throw new Error('共享下拉组件未接入全局互斥机制');
+if (
+  !exclusiveDropdownSource.includes("erp:dropdown-open") ||
+  !anchoredSelectSource.includes("useExclusiveDropdown(open)") ||
+  !treeSelectSource.includes("useExclusiveDropdown(isOpen)")
+) {
+  throw new Error("共享下拉组件未接入全局互斥机制");
 }
 for (const fragment of [
-  '启用时后端必须校验产品所属分类仍为启用状态',
-  '仍存在未删除的供货关系，或已被库存、采购或销售业务数据引用时返回 409',
-  '任一产品仍存在未删除的供货关系，或已被库存、采购或销售业务数据引用时整批返回 409',
+  "启用时后端必须校验产品所属分类仍为启用状态",
+  "仍存在未删除的供货关系，或已被库存、采购或销售业务数据引用时返回 409",
+  "任一产品仍存在未删除的供货关系，或已被库存、采购或销售业务数据引用时整批返回 409",
 ]) {
-  if (!source.includes(fragment)) throw new Error(`OpenAPI 缺少产品档案业务约束：${fragment}`);
+  if (!source.includes(fragment))
+    throw new Error(`OpenAPI 缺少产品档案业务约束：${fragment}`);
 }
 
-const updateRequestStart = source.indexOf('    SystemPermissionUpdateRequest:');
-const updateRequestEnd = source.indexOf('    SystemPermissionStatusRequest:', updateRequestStart);
+const updateRequestStart = source.indexOf("    SystemPermissionUpdateRequest:");
+const updateRequestEnd = source.indexOf(
+  "    SystemPermissionStatusRequest:",
+  updateRequestStart,
+);
 const updateRequest = source.slice(updateRequestStart, updateRequestEnd);
-if (updateRequestStart < 0 || updateRequestEnd < 0 || updateRequest.includes('permissionCode:')) {
-  throw new Error('权限更新请求不得包含创建后不可修改的 permissionCode');
+if (
+  updateRequestStart < 0 ||
+  updateRequestEnd < 0 ||
+  updateRequest.includes("permissionCode:")
+) {
+  throw new Error("权限更新请求不得包含创建后不可修改的 permissionCode");
 }
 
-const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)].length;
-if (tableCount !== 30) throw new Error(`数据库设计文档声明 30 张表，当前 DDL 实际为 ${tableCount} 张`);
-if (!databaseOverview.includes('共设计并已落 DDL 30 张表') || !databaseOverview.includes('`sys_permission`')
-  || !returnSchema.includes('表：return_order（退货单主表）')
-  || !returnSchema.includes('表：return_order_item（退货单明细表）')) {
-  throw new Error('数据库总览必须同步 30 张已落 DDL 的表，并包含 sys_permission 与两张退货表');
+const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)]
+  .length;
+if (tableCount !== 31)
+  throw new Error(
+    `数据库设计文档声明 31 张表，当前 DDL 实际为 ${tableCount} 张`,
+  );
+if (
+  !databaseOverview.includes("共设计并已落 DDL 31 张表") ||
+  !databaseOverview.includes("`sys_permission`") ||
+  !databaseOverview.includes("`supplier_score_change_log`") ||
+  !returnSchema.includes("表：return_order（退货单主表）") ||
+  !returnSchema.includes("表：return_order_item（退货单明细表）")
+) {
+  throw new Error(
+    "数据库总览必须同步 31 张已落 DDL 的表，并包含 sys_permission、评分变化日志与两张退货表",
+  );
 }
 for (const [name, apiSource, typeSource, viewSource] of [
-  ['仓库列表', warehouseApiSource, warehouseTypeSource, warehouseViewSource],
-  ['库存余额', warehouseStockApiSource, warehouseStockTypeSource, warehouseStockViewSource],
+  ["仓库列表", warehouseApiSource, warehouseTypeSource, warehouseViewSource],
+  [
+    "库存余额",
+    warehouseStockApiSource,
+    warehouseStockTypeSource,
+    warehouseStockViewSource,
+  ],
 ]) {
-  if (!typeSource.includes('total: number | null') || !typeSource.includes('hasNext?: boolean')) {
+  if (
+    !typeSource.includes("total: number | null") ||
+    !typeSource.includes("hasNext?: boolean")
+  ) {
     throw new Error(`${name}前端类型未保留可空 total 和可选 hasNext`);
   }
-  if (!apiSource.includes("typeof page.hasNext === 'boolean'") || !apiSource.includes('page.total === null')) {
+  if (
+    !apiSource.includes("typeof page.hasNext === 'boolean'") ||
+    !apiSource.includes("page.total === null")
+  ) {
     throw new Error(`${name}接口适配层丢失 total/hasNext 契约字段`);
   }
-  if (!viewSource.includes('hasNext ??') || !viewSource.includes('records.length >=')) {
+  if (
+    !viewSource.includes("hasNext ??") ||
+    !viewSource.includes("records.length >=")
+  ) {
     throw new Error(`${name}页面未优先使用后端 hasNext`);
   }
 }
 const paginationContractCases = [
-  { name: '满页但后端确认无下一页', page: { records: Array(10), pageSize: 10, hasNext: false }, expected: false },
-  { name: '总数为空且后端确认有下一页', page: { records: Array(10), pageSize: 10, total: null, hasNext: true }, expected: true },
-  { name: '后端未返回 hasNext 时按满页降级', page: { records: Array(10), pageSize: 10 }, expected: true },
+  {
+    name: "满页但后端确认无下一页",
+    page: { records: Array(10), pageSize: 10, hasNext: false },
+    expected: false,
+  },
+  {
+    name: "总数为空且后端确认有下一页",
+    page: { records: Array(10), pageSize: 10, total: null, hasNext: true },
+    expected: true,
+  },
+  {
+    name: "后端未返回 hasNext 时按满页降级",
+    page: { records: Array(10), pageSize: 10 },
+    expected: true,
+  },
 ];
 for (const testCase of paginationContractCases) {
-  const actual = testCase.page.hasNext ?? testCase.page.records.length >= testCase.page.pageSize;
-  if (actual !== testCase.expected) throw new Error(`分页契约用例失败：${testCase.name}`);
+  const actual =
+    testCase.page.hasNext ??
+    testCase.page.records.length >= testCase.page.pageSize;
+  if (actual !== testCase.expected)
+    throw new Error(`分页契约用例失败：${testCase.name}`);
 }
 for (const forbidden of [
-  'buildWorkbenchFromMessage',
-  'createPurchaseOrder',
-  'createStockBill',
-  '1920000000000000007',
+  "buildWorkbenchFromMessage",
+  "createPurchaseOrder",
+  "createStockBill",
+  "1920000000000000007",
   "content.includes('采购')",
   "content.includes('调拨')",
 ]) {
-  if (aiViewSource.includes(forbidden)) throw new Error(`AI 生产组件仍包含前端业务数据推断：${forbidden}`);
+  if (aiViewSource.includes(forbidden))
+    throw new Error(`AI 生产组件仍包含前端业务数据推断：${forbidden}`);
 }
-if (!aiApiSource.includes("import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true'")) {
-  throw new Error('AI Mock 未受 DEV 环境边界保护');
+if (
+  !aiApiSource.includes(
+    "import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true'",
+  )
+) {
+  throw new Error("AI Mock 未受 DEV 环境边界保护");
 }
-if (!aiApiSource.includes('/ai/assistant/conversations/${conversationId}/messages')
-  || !aiApiSource.includes('signal')
-  || !aiViewSource.includes('historySequence')
-  || !aiViewSource.includes('message.workbench')) {
-  throw new Error('AI 非 Mock 历史请求、竞态保护或结构化工作框消费未完整接入');
+if (
+  !aiApiSource.includes(
+    "/ai/assistant/conversations/${conversationId}/messages",
+  ) ||
+  !aiApiSource.includes("signal") ||
+  !aiViewSource.includes("historySequence") ||
+  !aiViewSource.includes("message.workbench")
+) {
+  throw new Error("AI 非 Mock 历史请求、竞态保护或结构化工作框消费未完整接入");
 }
 
 const stalePermissionDescriptions = [
@@ -858,104 +1828,310 @@ const stalePermissionDescriptions = [
   /后续[^\n]*新增[^\n]*sys_permission/,
 ];
 
-const purchaseItemStart = source.indexOf('    PurchaseOrderItem:');
-const purchaseItemEnd = source.indexOf('    PurchaseOrderCreateRequest:', purchaseItemStart);
+const purchaseItemStart = source.indexOf("    PurchaseOrderItem:");
+const purchaseItemEnd = source.indexOf(
+  "    PurchaseOrderCreateRequest:",
+  purchaseItemStart,
+);
 const purchaseItemSchema = source.slice(purchaseItemStart, purchaseItemEnd);
-const purchaseDraftStart = source.indexOf('    PurchaseOrderDraftItemRequest:');
-const purchaseDraftEnd = source.indexOf('    ReturnOrderPage:', purchaseDraftStart);
+const purchaseDraftStart = source.indexOf("    PurchaseOrderDraftItemRequest:");
+const purchaseDraftEnd = source.indexOf(
+  "    ReturnOrderPage:",
+  purchaseDraftStart,
+);
 const purchaseDraftSchema = source.slice(purchaseDraftStart, purchaseDraftEnd);
-if (purchaseItemStart < 0 || purchaseItemEnd < 0 || purchaseDraftStart < 0 || purchaseDraftEnd < 0
-  || !purchaseItemSchema.includes('quantityPrecision:')
-  || !purchaseItemSchema.includes('100 倍 BIGINT 整数存储')
-  || !purchaseDraftSchema.includes('required: [supplierProductId, productId, quantityPrecision, quantity, unitPrice, selectedSupplierScore, remark]')
-  || !purchaseDraftSchema.includes('后端不得信任')) {
-  throw new Error('采购明细数量精度快照或 BIGINT 数量 OpenAPI 契约不完整');
+if (
+  purchaseItemStart < 0 ||
+  purchaseItemEnd < 0 ||
+  purchaseDraftStart < 0 ||
+  purchaseDraftEnd < 0 ||
+  !purchaseItemSchema.includes("quantityPrecision:") ||
+  !purchaseItemSchema.includes("100 倍 BIGINT 整数存储") ||
+  !purchaseItemSchema.includes("selectedSupplierScore:") ||
+  !purchaseItemSchema.includes(
+    "审核通过时由后端按当时供货关系推荐分写入的快照",
+  ) ||
+  !purchaseDraftSchema.includes(
+    "required: [supplierProductId, productId, quantityPrecision, quantity, unitPrice, remark]",
+  ) ||
+  purchaseDraftSchema.includes("selectedSupplierScore:") ||
+  !purchaseDraftSchema.includes("后端不得信任")
+) {
+  throw new Error(
+    "采购明细评分应由审核服务端快照，草稿请求不得提交评分，且数量精度契约必须完整",
+  );
 }
-if (returnViewSource.includes('ListLoadingOverlay')) {
-  throw new Error('通用退货页面不得保留表格局部加载遮罩');
+
+function schemaBlock(schemaName, nextSchemaName) {
+  const start = source.indexOf(`    ${schemaName}:`);
+  const end = source.indexOf(`    ${nextSchemaName}:`, start);
+  if (start < 0 || end < 0)
+    throw new Error(`OpenAPI 缺少评分契约模型：${schemaName}`);
+  return source.slice(start, end);
 }
-for (const fragment of ['beginPageLoading', 'isPageLoading', 'pendingCount', 'MIN_VISIBLE_DURATION']) {
-  if (!pageLoadingSource.includes(fragment)) throw new Error(`全局页面加载器缺少关键实现：${fragment}`);
+
+const supplierSchema = schemaBlock(
+  "PurchaseSupplier",
+  "PurchaseSupplierCreateRequest",
+);
+const supplierCreateSchema = schemaBlock(
+  "PurchaseSupplierCreateRequest",
+  "PurchaseSupplierUpdateRequest",
+);
+const supplierUpdateSchema = schemaBlock(
+  "PurchaseSupplierUpdateRequest",
+  "PurchaseSupplierServiceScoreRequest",
+);
+const serviceScoreSchema = schemaBlock(
+  "PurchaseSupplierServiceScoreRequest",
+  "PurchaseSupplierStatusRequest",
+);
+const supplierProductSchema = schemaBlock(
+  "PurchaseSupplierProduct",
+  "PurchaseSupplierProductCreateRequest",
+);
+const supplierProductCreateSchema = schemaBlock(
+  "PurchaseSupplierProductCreateRequest",
+  "PurchaseSupplierProductUpdateRequest",
+);
+const supplierProductUpdateSchema = schemaBlock(
+  "PurchaseSupplierProductUpdateRequest",
+  "PurchaseSupplierProductQuoteRequest",
+);
+const quoteSchema = schemaBlock(
+  "PurchaseSupplierProductQuoteRequest",
+  "PurchaseSupplierProductCandidate",
+);
+const cancelSchema = schemaBlock(
+  "PurchaseOrderCancelRequest",
+  "ReturnOrderPage",
+);
+const dashboardSupplierSchema = schemaBlock(
+  "DashboardSupplierPerformance",
+  "Result",
+);
+
+for (const legacyField of ["onTimeRate:", "qualifiedRate:"]) {
+  if (source.includes(legacyField))
+    throw new Error(`供应商评分契约不得保留旧字段：${legacyField}`);
 }
-if (!pageLoadingSource.includes('const MIN_VISIBLE_DURATION = 240')) {
-  throw new Error('全局页面加载器必须保持 240ms 的最短展示时长，避免本地请求过快导致闪烁');
+for (const requiredField of [
+  "overallScore:",
+  "deliveryScore:",
+  "qualityScore:",
+  "priceScore:",
+  "serviceScore:",
+  "serviceScoreReason:",
+  "avgDeliveryDays:",
+  "scoreBasisAmount:",
+  "scoreStatus:",
+  "nullable: true",
+]) {
+  if (!supplierSchema.includes(requiredField))
+    throw new Error(`供应商响应缺少评分字段或 NULL 语义：${requiredField}`);
 }
-if (!httpSource.includes('const PAGE_READ_TIMEOUT = 5_000') || !httpSource.includes("'页面加载超时，请重试'")) {
-  throw new Error('读取型页面请求必须在 5 秒后超时并反馈可重试提示');
+if (
+  !supplierCreateSchema.includes("serviceScore:") ||
+  !supplierCreateSchema.includes("serviceScoreReason:") ||
+  supplierCreateSchema.includes("overallScore:") ||
+  supplierCreateSchema.includes("deliveryScore:") ||
+  !serviceScoreSchema.includes("required: [version, serviceScore, reason]") ||
+  !serviceScoreSchema.includes("serviceScore:")
+) {
+  throw new Error("供应商初始服务分与专用服务分调整接口契约不完整");
 }
-if (!purchaseReturnApiSource.includes('normalizeReturnReasonCode(row.reasonCode)')
-  || !salesReturnApiSource.includes('normalizeReturnReasonCode(row.reasonCode)')) {
-  throw new Error('退货前端适配层必须兼容历史 QUALITY 原因码并统一为 QUALITY_ISSUE');
+for (const forbiddenField of [
+  "overallScore:",
+  "deliveryScore:",
+  "qualityScore:",
+  "priceScore:",
+  "serviceScore:",
+]) {
+  if (supplierUpdateSchema.includes(forbiddenField))
+    throw new Error(`供应商基础编辑不得提交评分字段：${forbiddenField}`);
+}
+if (
+  !supplierProductSchema.includes("quotedPurchasePrice:") ||
+  !supplierProductSchema.includes("quotedPriceReason:") ||
+  !supplierProductSchema.includes("qualityScore:") ||
+  !supplierProductSchema.includes("priceScore:") ||
+  !supplierProductSchema.includes("aiScore:") ||
+  supplierProductSchema.includes("deliveryScore:") ||
+  !supplierProductSchema.includes("scoreBasisAmount:") ||
+  !supplierProductSchema.includes("scoreStatus:")
+) {
+  throw new Error(
+    "供货关系响应必须使用报价、产品质量/价格/推荐分与评分状态，且不得保留产品交付分",
+  );
+}
+if (
+  !supplierProductCreateSchema.includes("quotedPurchasePrice:") ||
+  !supplierProductCreateSchema.includes("quoteValidUntil:") ||
+  !supplierProductCreateSchema.includes("quoteReason:") ||
+  supplierProductCreateSchema.includes("latestPurchasePrice:") ||
+  supplierProductCreateSchema.includes("qualityScore:") ||
+  supplierProductUpdateSchema.includes("supplierId:") ||
+  supplierProductUpdateSchema.includes("productId:") ||
+  supplierProductUpdateSchema.includes("quotedPurchasePrice:") ||
+  !quoteSchema.includes(
+    "required: [version, quotedPurchasePrice, quoteValidUntil, reason]",
+  )
+) {
+  throw new Error("供货关系创建、基础编辑与报价调整的字段边界不完整");
 }
 for (const fragment of [
-  'quantityPrecision: number;',
-  'function normalizeQuantityPrecision(value: unknown)',
-  'function resolveOrderQuantityPrecision(line:',
-  'resolveOrderQuantityPrecision(line, product.productId)',
+  "service_score_reason VARCHAR(500) NOT NULL DEFAULT",
+  "chk_supplier_service_score_reason",
+  "quoted_price_reason VARCHAR(500) NOT NULL DEFAULT",
+  "chk_supplier_product_quote",
 ]) {
-  if (!purchaseTypeSource.includes(fragment) && !purchaseApiSource.includes(fragment)) {
+  if (!purchaseSql.includes(fragment))
+    throw new Error(
+      `供应商评分原因字段或配对约束未同步到初始化 SQL：${fragment}`,
+    );
+}
+if (
+  !cancelSchema.includes(
+    "required: [version, cancelReason, cancelAffectsDeliveryScore]",
+  ) ||
+  !source.includes("PurchaseOrderCancelRequest") ||
+  !source.includes("fullyReceivedAt:") ||
+  !source.includes("cancelAffectsDeliveryScore:") ||
+  !source.includes("selectedSupplierScore` 快照")
+) {
+  throw new Error("采购取消责任、完全入库时间和审核评分/交期快照契约不完整");
+}
+if (
+  !dashboardSupplierSchema.includes("overallScore:") ||
+  !dashboardSupplierSchema.includes("scoreStatus:") ||
+  dashboardSupplierSchema.includes("onTimeRate:")
+) {
+  throw new Error("工作台供应商表现必须使用最终评分字段，不能依赖旧准时率");
+}
+if (returnViewSource.includes("ListLoadingOverlay")) {
+  throw new Error("通用退货页面不得保留表格局部加载遮罩");
+}
+for (const fragment of [
+  "beginPageLoading",
+  "isPageLoading",
+  "pendingCount",
+  "MIN_VISIBLE_DURATION",
+]) {
+  if (!pageLoadingSource.includes(fragment))
+    throw new Error(`全局页面加载器缺少关键实现：${fragment}`);
+}
+if (!pageLoadingSource.includes("const MIN_VISIBLE_DURATION = 240")) {
+  throw new Error(
+    "全局页面加载器必须保持 240ms 的最短展示时长，避免本地请求过快导致闪烁",
+  );
+}
+if (
+  !httpSource.includes("const PAGE_READ_TIMEOUT = 5_000") ||
+  !httpSource.includes("'页面加载超时，请重试'")
+) {
+  throw new Error("读取型页面请求必须在 5 秒后超时并反馈可重试提示");
+}
+if (
+  !purchaseReturnApiSource.includes(
+    "normalizeReturnReasonCode(row.reasonCode)",
+  ) ||
+  !salesReturnApiSource.includes("normalizeReturnReasonCode(row.reasonCode)")
+) {
+  throw new Error(
+    "退货前端适配层必须兼容历史 QUALITY 原因码并统一为 QUALITY_ISSUE",
+  );
+}
+for (const fragment of [
+  "quantityPrecision: number;",
+  "function normalizeQuantityPrecision(value: unknown)",
+  "function resolveOrderQuantityPrecision(line:",
+  "resolveOrderQuantityPrecision(line, product.productId)",
+]) {
+  if (
+    !purchaseTypeSource.includes(fragment) &&
+    !purchaseApiSource.includes(fragment)
+  ) {
     throw new Error(`采购明细数量精度 DTO 或 Mock 服务端复核缺少：${fragment}`);
   }
 }
 for (const fragment of [
-  'quantityPrecision: item.quantityPrecision',
-  'quantityPrecision: 0,',
-  'line.quantityPrecision = supplierProduct?.quantityPrecision ?? product?.quantityPrecision ?? 0;',
-  'if (productChanged) line.purchaseOrderItemId = null;',
-  'function getLineQuantityPrecision(line: DraftItem)',
-  'quantityPrecision: Number(item.quantityPrecision),',
+  "quantityPrecision: item.quantityPrecision",
+  "quantityPrecision: 0,",
+  "line.quantityPrecision = supplierProduct?.quantityPrecision ?? product?.quantityPrecision ?? 0;",
+  "if (productChanged) line.purchaseOrderItemId = null;",
+  "function getLineQuantityPrecision(line: DraftItem)",
+  "quantityPrecision: Number(item.quantityPrecision),",
   ':step="quantityStep(line)"',
 ]) {
   if (!purchaseOrderViewSource.includes(fragment)) {
-    throw new Error(`采购创建/编辑页面未完整回传或使用明细数量精度快照：${fragment}`);
+    throw new Error(
+      `采购创建/编辑页面未完整回传或使用明细数量精度快照：${fragment}`,
+    );
   }
 }
 for (const document of [databaseOverview, permissionSchema, projectPlan]) {
-  if (stalePermissionDescriptions.some(pattern => pattern.test(document))) {
-    throw new Error('项目文档仍残留权限目录表的旧设计口径');
+  if (stalePermissionDescriptions.some((pattern) => pattern.test(document))) {
+    throw new Error("项目文档仍残留权限目录表的旧设计口径");
   }
 }
 
 const bigintMoneyColumns = [
-  ['customer', 'credit_limit'],
-  ['supplier_product', 'latest_purchase_price'],
-  ['purchase_order', 'total_amount'],
-  ['purchase_order_item', 'unit_price'],
-  ['purchase_order_item', 'total_amount'],
-  ['sales_order', 'total_amount'],
-  ['sales_order_item', 'unit_price'],
-  ['sales_order_item', 'total_amount'],
-  ['return_order', 'total_amount'],
-  ['return_order_item', 'unit_price'],
-  ['return_order_item', 'total_amount'],
+  ["customer", "credit_limit"],
+  ["supplier_product", "latest_purchase_price"],
+  ["purchase_order", "total_amount"],
+  ["purchase_order_item", "unit_price"],
+  ["purchase_order_item", "total_amount"],
+  ["sales_order", "total_amount"],
+  ["sales_order_item", "unit_price"],
+  ["sales_order_item", "total_amount"],
+  ["return_order", "total_amount"],
+  ["return_order_item", "unit_price"],
+  ["return_order_item", "total_amount"],
 ];
 for (const [tableName, columnName] of bigintMoneyColumns) {
-  const createTableStart = allSql.search(new RegExp(`CREATE TABLE IF NOT EXISTS\\s+\\\`?${tableName}\\\`?`, 'i'));
-  const createTableEnd = allSql.indexOf(';', createTableStart);
-  const createTable = createTableStart >= 0 ? allSql.slice(createTableStart, createTableEnd) : '';
-  if (!new RegExp(`\\\`?${columnName}\\\`?\\s+BIGINT`, 'i').test(createTable)) {
+  const createTableStart = allSql.search(
+    new RegExp(`CREATE TABLE IF NOT EXISTS\\s+\\\`?${tableName}\\\`?`, "i"),
+  );
+  const createTableEnd = allSql.indexOf(";", createTableStart);
+  const createTable =
+    createTableStart >= 0 ? allSql.slice(createTableStart, createTableEnd) : "";
+  if (!new RegExp(`\\\`?${columnName}\\\`?\\s+BIGINT`, "i").test(createTable)) {
     throw new Error(`金额字段必须使用 BIGINT：${tableName}.${columnName}`);
   }
 }
-if (!allSql.includes('交易金额统一为 BIGINT（按“元 × 100”的分值存储）')) {
-  throw new Error('缺少交易金额 BIGINT 的可重复执行迁移脚本');
+if (!allSql.includes("交易金额统一为 BIGINT（按“元 × 100”的分值存储）")) {
+  throw new Error("缺少交易金额 BIGINT 的可重复执行迁移脚本");
 }
-const signedMoneySchemas = new Set(['DashboardTrendPoint']);
+const signedMoneySchemas = new Set(["DashboardTrendPoint"]);
 for (const schemaName of [
-  'AiWorkbenchLine', 'DashboardTrendPoint', 'DashboardTopProduct', 'PurchaseSupplierProduct',
-  'PurchaseOrder', 'PurchaseOrderItem', 'ReturnOrder', 'ReturnOrderItem', 'SalesCustomer',
-  'SalesOrder', 'SalesOrderItem',
+  "AiWorkbenchLine",
+  "DashboardTrendPoint",
+  "DashboardTopProduct",
+  "PurchaseSupplierProduct",
+  "PurchaseOrder",
+  "PurchaseOrderItem",
+  "ReturnOrder",
+  "ReturnOrderItem",
+  "SalesCustomer",
+  "SalesOrder",
+  "SalesOrderItem",
 ]) {
   const schemaStart = source.indexOf(`    ${schemaName}:`);
-  const nextSchemaMatch = /\n    [A-Za-z][A-Za-z0-9]+:\n/.exec(source.slice(schemaStart + 1));
-  const schemaEnd = nextSchemaMatch ? schemaStart + 1 + nextSchemaMatch.index : source.length;
-  const schema = schemaStart >= 0 ? source.slice(schemaStart, schemaEnd) : '';
+  const nextSchemaMatch = /\n    [A-Za-z][A-Za-z0-9]+:\n/.exec(
+    source.slice(schemaStart + 1),
+  );
+  const schemaEnd = nextSchemaMatch
+    ? schemaStart + 1 + nextSchemaMatch.index
+    : source.length;
+  const schema = schemaStart >= 0 ? source.slice(schemaStart, schemaEnd) : "";
   const moneyPattern = signedMoneySchemas.has(schemaName)
     ? "pattern: '^-?\\d+(\\.\\d{1,2})?$'"
     : "pattern: '^\\d+(\\.\\d{1,2})?$'";
-  if (!schema.includes('type: string') || !schema.includes(moneyPattern)) {
+  if (!schema.includes("type: string") || !schema.includes(moneyPattern)) {
     throw new Error(`金额 API 必须采用元字符串契约：${schemaName}`);
   }
 }
 
-console.log(`OPENAPI_OK: ${references.length} 个引用完整，30 张表已落 DDL，系统权限、退货、产品与仓库库存契约已对齐`);
+console.log(
+  `OPENAPI_OK: ${references.length} 个引用完整，31 张表已落 DDL，供应商评分、采购、工作台与基础契约已对齐`,
+);

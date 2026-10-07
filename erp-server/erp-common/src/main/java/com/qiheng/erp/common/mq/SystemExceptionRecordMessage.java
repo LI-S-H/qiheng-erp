@@ -26,6 +26,9 @@ public class SystemExceptionRecordMessage implements Serializable {
     /** 固定 msgType，便于后续扩展识别 */
     private String msgType = SystemExceptionConstants.MSG_TYPE;
 
+    /** 一次真实异常的雪花ID；字符串传输避免精度丢失，发送及消费重试必须沿用。 */
+    private String eventId;
+
     /** 异常类型，取值见 SystemExceptionConstants.TYPE_* */
     private String exceptionType;
 

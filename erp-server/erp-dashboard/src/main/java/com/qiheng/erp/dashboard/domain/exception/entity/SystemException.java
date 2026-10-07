@@ -36,6 +36,10 @@ public class SystemException implements Serializable {
     @TableId(value = "id", type = IdType.ASSIGN_ID)
     private Long id;
 
+    @Schema(description = "异常事件雪花ID，同一事件重投保持不变，不同于展示用异常编号")
+    @TableField("event_id")
+    private String eventId;
+
     @Schema(description = "稳定异常编号，例如 AI-MCP-20260701-001")
     @TableField("exception_no")
     private String exceptionNo;

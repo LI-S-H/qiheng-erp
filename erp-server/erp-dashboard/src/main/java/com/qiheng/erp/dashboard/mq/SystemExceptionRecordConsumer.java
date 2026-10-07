@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.sql.SQLException;
+import java.util.regex.Pattern;
 
 /**
  * 系统异常记录 Consumer，system_exception 表的唯一写入口。
@@ -47,11 +49,15 @@ public class SystemExceptionRecordConsumer implements RocketMQListener<SystemExc
     /** 业务时区：与 SupplierScoreScheduledJob 一致，避免部署环境 JVM 默认时区漂移导致 occurred_at 不一致 */
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
+    /** MySQL可能返回带表名前缀的索引名；必须完整匹配，不能把其他唯一键冲突吞掉。 */
+    private static final Pattern EVENT_ID_CONFLICT = Pattern.compile(
+            "for key ['`](?:[^'`]+\\.)?uk_system_exception_event_id['`]", Pattern.CASE_INSENSITIVE);
+
     private final SystemExceptionMapper systemExceptionMapper;
     private final BillNoGenerator billNoGenerator;
 
     /**
-     * 消费异常记录消息：必填校验、四字段弱幂等查重后入库。
+     * 消费异常记录消息：必填校验后直接入库，由事件ID唯一索引保证并发幂等。
      * 数据问题 ACK 跳过，数据库异常抛出供 MQ 重投。
      *
      * @param message 异常记录消息
@@ -60,6 +66,10 @@ public class SystemExceptionRecordConsumer implements RocketMQListener<SystemExc
     public void onMessage(SystemExceptionRecordMessage message) {
         // 1. null 与必填校验：error_message / detail_summary 为表上 NOT NULL 字段
         if (message == null || message.getExceptionType() == null
+                || message.getEventId() == null
+                || !message.getEventId().matches("[1-9][0-9]{0,18}")
+                || (message.getEventId().length() == 19
+                && message.getEventId().compareTo("9223372036854775807") > 0)
                 || message.getSourceModule() == null
                 || message.getErrorMessage() == null || message.getErrorMessage().isBlank()
                 || message.getDetailSummary() == null || message.getDetailSummary().isBlank()
@@ -71,8 +81,9 @@ public class SystemExceptionRecordConsumer implements RocketMQListener<SystemExc
         LocalDateTime occurredAt = LocalDateTime.ofInstant(
                 Instant.ofEpochMilli(message.getOccurredAt()), BUSINESS_ZONE).withNano(0);
         // 3. 生成异常编号并入库，status 固定 PENDING 由工作台待办消费；
-        //    幂等由唯一键 uk_system_exception_dedup(source_module, source_no, error_code, occurred_at) 强保证
+        //    幂等只按event_id判断，来源、错误码及秒级时间相同的不同事件仍分别入库。
         SystemException entity = new SystemException()
+                .setEventId(message.getEventId())
                 .setExceptionNo(billNoGenerator.nextNo(SystemExceptionConstants.EXCEPTION_NO_PREFIX,
                         systemExceptionMapper::findMaxExceptionNoSequence))
                 .setExceptionType(message.getExceptionType())
@@ -88,13 +99,21 @@ public class SystemExceptionRecordConsumer implements RocketMQListener<SystemExc
         try {
             systemExceptionMapper.insert(entity);
         } catch (DuplicateKeyException e) {
-            // 重复消息（MQ 重投等）：唯一键判重直接 ACK，不再新增记录；宁可少记不错记
-            log.info("系统异常消息重复，ACK 跳过 type={} sourceNo={}",
-                    message.getExceptionType(), message.getSourceNo());
-            return;
+            // 仅MySQL事件唯一键冲突可以ACK；编号冲突或无法识别的冲突继续抛出，供MQ重试。
+            for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+                if (cause instanceof SQLException sqlException && sqlException.getErrorCode() == 1062
+                        && "23000".equals(sqlException.getSQLState())
+                        && sqlException.getMessage() != null
+                        && EVENT_ID_CONFLICT.matcher(sqlException.getMessage()).find()) {
+                    log.info("系统异常事件重复，ACK 跳过 eventId={} type={} sourceNo={}",
+                            message.getEventId(), message.getExceptionType(), message.getSourceNo());
+                    return;
+                }
+            }
+            throw e;
         }
-        log.info("系统异常已入库 exceptionNo={} type={} sourceNo={}",
-                entity.getExceptionNo(), entity.getExceptionType(), entity.getSourceNo());
+        log.info("系统异常已入库 eventId={} exceptionNo={} type={} sourceNo={}",
+                entity.getEventId(), entity.getExceptionNo(), entity.getExceptionType(), entity.getSourceNo());
     }
 
     /** 严重级别归一化：HIGH/LOW 之外一律兜底 MEDIUM，避免脏值污染工作台优先级计算。 */

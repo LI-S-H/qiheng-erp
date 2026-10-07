@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDateTime;
+import java.sql.SQLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,6 +49,7 @@ class SystemExceptionRecordConsumerTest {
 
     private SystemExceptionRecordMessage validMessage() {
         SystemExceptionRecordMessage message = new SystemExceptionRecordMessage();
+        message.setEventId("123456789");
         message.setExceptionType(SystemExceptionConstants.TYPE_SYSTEM_ERROR);
         message.setSourceModule("SALES");
         message.setSourceNo("POST /sales/order");
@@ -68,6 +71,7 @@ class SystemExceptionRecordConsumerTest {
         verify(systemExceptionMapper).insert(captor.capture());
         SystemException saved = captor.getValue();
         assertThat(saved.getExceptionNo()).isEqualTo("SE2026100700001");
+        assertThat(saved.getEventId()).isEqualTo("123456789");
         assertThat(saved.getExceptionType()).isEqualTo("SYSTEM_ERROR");
         assertThat(saved.getSourceModule()).isEqualTo("SALES");
         assertThat(saved.getSeverity()).isEqualTo("HIGH");
@@ -96,11 +100,77 @@ class SystemExceptionRecordConsumerTest {
     void skipsDuplicatedMessageByUniqueKeyConflict() {
         when(billNoGenerator.nextNo(eq("SE"), any())).thenReturn("SE2026100700002");
         when(systemExceptionMapper.insert(any(SystemException.class)))
-                .thenThrow(new DuplicateKeyException("uk_system_exception_dedup 冲突"));
+                .thenThrow(new DuplicateKeyException("事件唯一键冲突", new SQLException(
+                        "Duplicate entry '123456789' for key 'system_exception.uk_system_exception_event_id'",
+                        "23000", 1062)));
 
         // 重复消息：唯一键冲突直接 ACK 跳过，不外抛（外抛会让 MQ 无意义重投）
         assertThatCode(() -> consumer.onMessage(validMessage())).doesNotThrowAnyException();
         verify(systemExceptionMapper).insert(any(SystemException.class));
+    }
+
+    @Test
+    void keepsDifferentEventsWithSameSourceErrorAndSecond() {
+        when(billNoGenerator.nextNo(eq("SE"), any())).thenReturn("SE2026100700005", "SE2026100700006");
+        SystemExceptionRecordMessage first = validMessage();
+        SystemExceptionRecordMessage second = validMessage();
+        second.setEventId("123456790");
+        consumer.onMessage(first);
+        consumer.onMessage(second);
+        ArgumentCaptor<SystemException> captor = ArgumentCaptor.forClass(SystemException.class);
+        verify(systemExceptionMapper, times(2)).insert(captor.capture());
+        assertThat(captor.getAllValues()).extracting(SystemException::getEventId)
+                .containsExactly("123456789", "123456790");
+        assertThat(captor.getAllValues()).extracting(SystemException::getOccurredAt)
+                .containsOnly(LocalDateTime.of(2024, 10, 4, 8, 0, 0));
+    }
+
+    @Test
+    void skipsMissingOrInvalidEventId() {
+        for (String invalid : new String[]{null, "", " ", "0", "-1", "01", "abc", "9223372036854775808"}) {
+            SystemExceptionRecordMessage message = validMessage();
+            message.setEventId(invalid);
+            consumer.onMessage(message);
+        }
+        verify(systemExceptionMapper, never()).insert(any(SystemException.class));
+        verify(billNoGenerator, never()).nextNo(any(), any());
+    }
+
+    @Test
+    void rethrowsOtherOrUnidentifiedUniqueKeyConflicts() {
+        when(billNoGenerator.nextNo(eq("SE"), any())).thenReturn("SE2026100700007");
+        for (String sqlMessage : new String[]{
+                "Duplicate entry 'SE1' for key 'uk_system_exception_no'",
+                "Duplicate entry '1' for key 'uk_system_exception_event_id_extra'",
+                "Duplicate entry mentioning uk_system_exception_event_id without exact key"}) {
+            DuplicateKeyException failure = new DuplicateKeyException("数据库唯一键冲突",
+                    new SQLException(sqlMessage, "23000", 1062));
+            when(systemExceptionMapper.insert(any(SystemException.class))).thenThrow(failure);
+            assertThatThrownBy(() -> consumer.onMessage(validMessage())).isSameAs(failure);
+        }
+    }
+
+    @Test
+    void rethrowsDuplicateExceptionWithoutMatchingSqlCause() {
+        when(billNoGenerator.nextNo(eq("SE"), any())).thenReturn("SE2026100700008");
+        DuplicateKeyException failure = new DuplicateKeyException("uk_system_exception_event_id");
+        when(systemExceptionMapper.insert(any(SystemException.class))).thenThrow(failure);
+        assertThatThrownBy(() -> consumer.onMessage(validMessage())).isSameAs(failure);
+    }
+
+    @Test
+    void acceptsUnqualifiedEventIndexButRejectsWrongSqlErrorCodeOrState() {
+        when(billNoGenerator.nextNo(eq("SE"), any())).thenReturn("SE2026100700009");
+        String sqlMessage = "Duplicate entry '123456789' for key 'uk_system_exception_event_id'";
+        when(systemExceptionMapper.insert(any(SystemException.class))).thenThrow(new DuplicateKeyException(
+                "重复事件", new SQLException(sqlMessage, "23000", 1062)));
+        assertThatCode(() -> consumer.onMessage(validMessage())).doesNotThrowAnyException();
+        for (SQLException sqlFailure : new SQLException[]{new SQLException(sqlMessage, "23000", 1213),
+                new SQLException(sqlMessage, "40001", 1062)}) {
+            DuplicateKeyException failure = new DuplicateKeyException("非事件唯一冲突", sqlFailure);
+            when(systemExceptionMapper.insert(any(SystemException.class))).thenThrow(failure);
+            assertThatThrownBy(() -> consumer.onMessage(validMessage())).isSameAs(failure);
+        }
     }
 
     @Test

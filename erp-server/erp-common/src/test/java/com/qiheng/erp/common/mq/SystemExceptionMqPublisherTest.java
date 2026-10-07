@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -68,6 +69,7 @@ class SystemExceptionMqPublisherTest {
     void publishSendsPayloadAsynchronouslyWithTagAndKeysHeader() {
         stubTemplateAvailable();
         SystemExceptionRecordMessage message = new SystemExceptionRecordMessage();
+        message.setEventId("123456789");
         message.setExceptionType(SystemExceptionConstants.TYPE_SYSTEM_ERROR);
         message.setSourceModule("SALES");
         message.setSourceNo("POST /sales/order");
@@ -85,7 +87,8 @@ class SystemExceptionMqPublisherTest {
         ArgumentCaptor<SendCallback> callbackCaptor = ArgumentCaptor.forClass(SendCallback.class);
         verify(template).asyncSend(anyString(), payloadCaptor.capture(), callbackCaptor.capture(), anyLong());
         Message<SystemExceptionRecordMessage> sent = payloadCaptor.getValue();
-        assertThat(sent.getHeaders().get(RocketMQHeaders.KEYS)).isEqualTo("POST /sales/order");
+        assertThat(message.getEventId()).matches("[1-9][0-9]{0,18}");
+        assertThat(sent.getHeaders().get(RocketMQHeaders.KEYS)).isEqualTo(message.getEventId());
         assertThat(sent.getPayload()).isSameAs(message);
         verify(template).asyncSend(
                 eq("erp-system-exception-record:SYSTEM_ERROR"),
@@ -99,6 +102,7 @@ class SystemExceptionMqPublisherTest {
     void publishSkipsSilentlyWhenTemplateMissing() {
         when(templateProvider.getIfAvailable()).thenReturn(null);
         SystemExceptionRecordMessage message = new SystemExceptionRecordMessage();
+        message.setEventId("123456789");
         message.setExceptionType(SystemExceptionConstants.TYPE_JOB_FAILED);
 
         assertThatCode(() -> publisher.publish(message)).doesNotThrowAnyException();
@@ -111,6 +115,7 @@ class SystemExceptionMqPublisherTest {
         doThrow(new RuntimeException("MQ 不可用")).when(template)
                 .asyncSend(anyString(), any(Message.class), any(SendCallback.class), anyLong());
         SystemExceptionRecordMessage message = new SystemExceptionRecordMessage();
+        message.setEventId("123456789");
         message.setExceptionType(SystemExceptionConstants.TYPE_JOB_FAILED);
         message.setSourceModule("SCHEDULER");
 
@@ -153,12 +158,12 @@ class SystemExceptionMqPublisherTest {
                     ArgumentCaptor.forClass(Message.class);
             verify(template).asyncSend(anyString(), captor.capture(), any(SendCallback.class), anyLong());
             SystemExceptionRecordMessage sent = captor.getValue().getPayload();
+            assertThat(sent.getEventId()).matches("[1-9][0-9]{0,18}");
             // servletPath 首段 sales 推断为 SALES，sourceNo 记录"方法 URI"
             assertThat(sent.getSourceModule()).isEqualTo("SALES");
             assertThat(sent.getSourceNo()).isEqualTo("POST /erp/sales/order");
             assertThat(sent.getSeverity()).isEqualTo(SystemExceptionConstants.SEVERITY_HIGH);
-            // errorCode 取异常类简单名：让唯一键 (source_module, source_no, error_code, occurred_at)
-            // 能区分同一来源同一秒内的不同异常（如 NPE vs SQL），而非全部归为 "99999" 漏掉一条
+            // 异常类型用于排查，事件标识用于幂等，两者不混用。
             assertThat(sent.getErrorCode()).isEqualTo("RuntimeException");
             assertThat(sent.getExceptionType()).isEqualTo(SystemExceptionConstants.TYPE_SYSTEM_ERROR);
             assertThat(sent.getErrorMessage()).isNotBlank();
@@ -186,8 +191,69 @@ class SystemExceptionMqPublisherTest {
         assertThat(sent.getErrorMessage()).isEqualTo("java.lang.RuntimeException");
     }
 
+    @Test
+    void publishPreservesEventIdAcrossResends() {
+        stubTemplateAvailable();
+        SystemExceptionRecordMessage message = validJobMessage();
+        publisher.publish(message);
+        String eventId = message.getEventId();
+        publisher.publish(message);
+        assertThat(message.getEventId()).isEqualTo(eventId);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Message<SystemExceptionRecordMessage>> captor = ArgumentCaptor.forClass(Message.class);
+        verify(template, times(2)).asyncSend(anyString(), captor.capture(), any(SendCallback.class), anyLong());
+        assertThat(captor.getAllValues()).allSatisfy(sent ->
+                assertThat(sent.getHeaders().get(RocketMQHeaders.KEYS)).isEqualTo(eventId));
+    }
+
+    @Test
+    void publishPreservesProvidedEventId() {
+        stubTemplateAvailable();
+        SystemExceptionRecordMessage message = validJobMessage();
+        message.setEventId("123456789");
+        publisher.publish(message);
+        assertThat(message.getEventId()).isEqualTo("123456789");
+    }
+
+    @Test
+    void publishSkipsMissingEventIdWithoutGeneratingOne() {
+        stubTemplateAvailable();
+        SystemExceptionRecordMessage message = validJobMessage();
+        message.setEventId(null);
+        publisher.publish(message);
+        assertThat(message.getEventId()).isNull();
+        verify(template, never()).asyncSend(anyString(), any(Message.class), any(SendCallback.class), anyLong());
+    }
+
+    @Test
+    void jobFailureEntryCreatesDifferentIdsForSeparateEvents() {
+        stubTemplateAvailable();
+        publisher.publishJobFailure("same-task", "任务失败", "人工重跑", "HIGH");
+        publisher.publishJobFailure("same-task", "任务失败", "人工重跑", "HIGH");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Message<SystemExceptionRecordMessage>> captor = ArgumentCaptor.forClass(Message.class);
+        verify(template, times(2)).asyncSend(anyString(), captor.capture(), any(SendCallback.class), anyLong());
+        String firstId = captor.getAllValues().get(0).getPayload().getEventId();
+        String secondId = captor.getAllValues().get(1).getPayload().getEventId();
+        assertThat(firstId).matches("[1-9][0-9]{0,18}");
+        assertThat(secondId).matches("[1-9][0-9]{0,18}").isNotEqualTo(firstId);
+    }
+
+    @Test
+    void publishSkipsInvalidProvidedEventIdsWithoutReplacingThem() {
+        stubTemplateAvailable();
+        for (String invalid : new String[]{"", " ", "0", "-1", "01", "abc", "9223372036854775808"}) {
+            SystemExceptionRecordMessage message = validJobMessage();
+            message.setEventId(invalid);
+            publisher.publish(message);
+            assertThat(message.getEventId()).isEqualTo(invalid);
+        }
+        verify(template, never()).asyncSend(anyString(), any(Message.class), any(SendCallback.class), anyLong());
+    }
+
     private SystemExceptionRecordMessage validJobMessage() {
         SystemExceptionRecordMessage message = new SystemExceptionRecordMessage();
+        message.setEventId("123456789");
         message.setExceptionType(SystemExceptionConstants.TYPE_JOB_FAILED);
         message.setSourceModule(SystemExceptionConstants.MODULE_SCHEDULER);
         message.setSourceNo("dashboard-daily-snapshot");

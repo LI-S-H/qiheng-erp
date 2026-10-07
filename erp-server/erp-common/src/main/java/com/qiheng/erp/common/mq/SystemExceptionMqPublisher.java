@@ -1,5 +1,6 @@
 package com.qiheng.erp.common.mq;
 
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.qiheng.erp.common.constant.SystemExceptionConstants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,12 +70,12 @@ public class SystemExceptionMqPublisher {
         }
         // 5. 组装异常记录消息
         SystemExceptionRecordMessage message = new SystemExceptionRecordMessage();
+        message.setEventId(IdWorker.getIdStr());
         message.setExceptionType(SystemExceptionConstants.TYPE_SYSTEM_ERROR);
         message.setSourceModule(sourceModule);
         message.setSourceNo(sourceNo);
         message.setSeverity(SystemExceptionConstants.SEVERITY_HIGH);
-        // errorCode 使用异常类简单名，使唯一键 (source_module, source_no, error_code, occurred_at)
-        // 能区分同接口同秒的不同异常；定时任务入口仍使用固定值 JOB_EXECUTION_FAILED
+        // 错误码用于定位异常类型，不承担事件判重；同类型同秒的真实异常也应分别记录。
         message.setErrorCode(e.getClass().getSimpleName());
         message.setErrorMessage(errorMessage);
         message.setDetailSummary(sourceModule + "模块接口 " + sourceNo + " 抛出 " + e.getClass().getSimpleName());
@@ -98,6 +99,7 @@ public class SystemExceptionMqPublisher {
     public void publishJobFailure(String taskNo, String detailSummary,
                                   String resolveHint, String severity) {
         SystemExceptionRecordMessage message = new SystemExceptionRecordMessage();
+        message.setEventId(IdWorker.getIdStr());
         message.setExceptionType(SystemExceptionConstants.TYPE_JOB_FAILED);
         message.setSourceModule(SystemExceptionConstants.MODULE_SCHEDULER);
         message.setSourceNo(taskNo);
@@ -114,7 +116,7 @@ public class SystemExceptionMqPublisher {
      * 异步发送异常记录消息。
      *
      * <p>Template 未装配或发送过程任何环节失败均只记日志，不向外抛；
-     * 消息 Key 使用 sourceNo，tag 使用 exceptionType，便于控制台按类型检索。</p>
+     * 消息 Key 使用 eventId，tag 使用 exceptionType，便于按事件或类型检索；Key 本身不负责去重。</p>
      *
      * <p>发送采用 RocketMQ 原生异步（asyncSend）：发送 IO 不阻塞调用线程——
      * 调用方多处于 HTTP 请求线程和单线程调度池，同步等待 broker ack 最坏
@@ -133,36 +135,43 @@ public class SystemExceptionMqPublisher {
             log.warn("系统异常消息缺失 exceptionType，跳过发送");
             return;
         }
-        SystemExceptionRocketMQTemplate template = templateProvider.getIfAvailable();
-        if (template == null) {
-            log.warn("未配置 rocketmq.name-server，系统异常消息仅记录日志 type={} sourceNo={} summary={}",
-                    message.getExceptionType(), message.getSourceNo(), message.getDetailSummary());
-            return;
-        }
         try {
+            // 事件身份由创建消息的入口确定；发送层只校验，不补号、不修改重发消息。
+            if (message.getEventId() == null || !message.getEventId().matches("[1-9][0-9]{0,18}")
+                    || (message.getEventId().length() == 19
+                    && message.getEventId().compareTo("9223372036854775807") > 0)) {
+                log.error("系统异常事件ID非法，跳过发送 eventId={}", message.getEventId());
+                return;
+            }
+            SystemExceptionRocketMQTemplate template = templateProvider.getIfAvailable();
+            if (template == null) {
+                log.warn("未配置 rocketmq.name-server，系统异常消息仅记录日志 eventId={} type={} sourceNo={} summary={}",
+                        message.getEventId(), message.getExceptionType(), message.getSourceNo(), message.getDetailSummary());
+                return;
+            }
             // 直接传对象，由框架的 RocketMQMessageConverter 统一完成 JSON 序列化
             Message<SystemExceptionRecordMessage> msg = MessageBuilder.withPayload(message)
-                    .setHeader(RocketMQHeaders.KEYS, message.getSourceNo()).build();
+                    .setHeader(RocketMQHeaders.KEYS, message.getEventId()).build();
             template.asyncSend(topic + ":" + message.getExceptionType(), msg,
                     new SendCallback() {
                         @Override
                         public void onSuccess(SendResult sendResult) {
-                            log.info("系统异常消息已投递 type={} sourceNo={}",
-                                    message.getExceptionType(), message.getSourceNo());
+                            log.info("系统异常消息已投递 eventId={} type={} sourceNo={}",
+                                    message.getEventId(), message.getExceptionType(), message.getSourceNo());
                         }
 
                         @Override
                         public void onException(Throwable ex) {
                             // best-effort：异步重试耗尽仍失败只记日志，不影响调用方
-                            log.error("系统异常消息发送失败 type={} sourceNo={}",
-                                    message.getExceptionType(), message.getSourceNo(), ex);
+                            log.error("系统异常消息发送失败 eventId={} type={} sourceNo={}",
+                                    message.getEventId(), message.getExceptionType(), message.getSourceNo(), ex);
                         }
                     },
                     template.getProducer().getSendMsgTimeout());
         } catch (Exception ex) {
             // best-effort：提交异步发送本身失败（如客户端在途消息超限）只记日志
-            log.error("系统异常消息提交失败 type={} sourceNo={}",
-                    message.getExceptionType(), message.getSourceNo(), ex);
+            log.error("系统异常消息提交失败 eventId={} type={} sourceNo={}",
+                    message.getEventId(), message.getExceptionType(), message.getSourceNo(), ex);
         }
     }
 

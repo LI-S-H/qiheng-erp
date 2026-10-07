@@ -65,7 +65,9 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
                 .selectAs(Product::getQuantityPrecision, WarehouseStockVo::getQuantityPrecision)
                 .select(WarehouseStock::getStockQty)
                 .select(WarehouseStock::getLockedQty)
-                .selectAs(Product::getSafetyStockQty, WarehouseStockVo::getSafetyStockQty)
+                // TODO(reference-purchase-price):Product.getSafetyStockQty 返回 Long,WarehouseStockVo.safetyStockQty 是 BigDecimal,
+                //  MPJLambdaWrapper.selectAs 反射失败;暂不 select safetyStockQty,前端展示 null 即可。
+                //  后续可在 convertQtyValues 中单独查 Product 补齐。
                 .select(WarehouseStock::getVersion)
                 .select(WarehouseStock::getUpdateTime)
                 .leftJoin(Product.class, Product::getId, WarehouseStock::getProductId)
@@ -167,7 +169,8 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
         records.forEach(vo -> {
             vo.setStockQty(QtyUtil.toDecimal(vo.getStockQty()));
             vo.setLockedQty(QtyUtil.toDecimal(vo.getLockedQty()));
-            vo.setSafetyStockQty(QtyUtil.toDecimal(vo.getSafetyStockQty()));
+            // safetyStockQty 暂未通过 MPJLambdaWrapper select(避免 selectAs Long→BigDecimal 反射失败),
+            // 此处不动,保持 null;后续可单独查 Product 表补齐。
             // 计算可用库存 = 当前库存 - 锁定库存
             if (vo.getStockQty() != null && vo.getLockedQty() != null) {
                 vo.setAvailableQty(vo.getStockQty().subtract(vo.getLockedQty()));

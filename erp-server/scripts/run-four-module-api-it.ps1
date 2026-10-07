@@ -184,7 +184,6 @@ function Create-PurchaseAndApprove([string]$SupplierId, [string]$SupplierProduct
             quantityPrecision = $script:productQuantityPrecision
             quantity = $Qty
             unitPrice = 12.34
-            selectedSupplierScore = 95
             remark = "$Prefix 采购明细"
         })
     }
@@ -284,22 +283,20 @@ try {
         contactPhone = '13800000000'
         address = '集成测试地址'
         paymentTerms = '现结'
-        overallScore = 95; deliveryScore = 95; qualityScore = 95; priceScore = 95; serviceScore = 95
-        avgDeliveryDays = 1; onTimeRate = 95; qualifiedRate = 95
+        serviceScore = 95
+        serviceScoreReason = "$Prefix 初始服务分"
         status = 1
         remark = "$Prefix 测试夹具"
     }
     $supplierProduct = Invoke-Api POST '/purchase/supplier-products' @{
         supplierId = "$($supplier.supplierId)"
         productId = "$($product.productId)"
-        supplierProductCode = "$Prefix-SUP"
-        latestPurchasePrice = 12.34
+        quotedPurchasePrice = '12.34'
+        quoteValidUntil = (Get-Date).AddDays(30).ToString('yyyy-MM-dd')
+        quoteReason = "$Prefix 初始报价"
         minOrderQty = 1
-        leadTimeDays = 1
-        deliveryScore = 95; qualityScore = 95; priceScore = 95; aiScore = 95
         status = 1
         remark = "$Prefix 测试夹具"
-        version = 0
     }
     $script:supplierProvisioning = '通过供应商新增接口创建'
     $customer = Invoke-Api POST '/sales/customers' @{

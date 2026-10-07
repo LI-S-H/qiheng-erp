@@ -44,10 +44,10 @@ public class WarehouseStockVo {
     @Schema(description = "锁定库存")
     private BigDecimal lockedQty;
 
-    @Schema(description = "可用库存，服务层计算 stock_qty - locked_qty")
+    @Schema(description = "可用库存,服务层计算 stock_qty - locked_qty")
     private BigDecimal availableQty;
 
-    @Schema(description = "安全库存")
+    @Schema(description = "安全库存;由 convertQtyValues 从 Product 表 select 出来(MPJLambdaWrapper selectAs 无法 Long→BigDecimal 自动转换,2026-09-25 修复)")
     private BigDecimal safetyStockQty;
 
     @Schema(description = "乐观锁版本号")

@@ -2,10 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const {
   runSmoke,
-  tableRow,
+  tableRow: findTableRow,
   assertFixedTableLayout,
   assertSharedListChrome,
 } = require('./smoke-helpers.cjs');
+
+function tableRow(page, billNo) {
+  const displayBillNo = billNo.replace(/^([IO]B)(\d{8})(\d{4,5})$/, '$1-$2-$3');
+  return findTableRow(page, displayBillNo);
+}
 
 const screenshotDirectory = path.resolve(
   process.env.QA_SCREENSHOT_DIR || 'qa-artifacts/warehouse-stock-bills',
@@ -41,7 +46,10 @@ async function assertStockBillColumnPreferences(page) {
   await page.getByRole('heading', { name: '入库单' }).waitFor();
   const inboundRow = tableRow(page, 'IB202606140001');
   await inboundRow.waitFor();
-  await assertFixedTableLayout(page, 12);
+  await assertFixedTableLayout(page, 13);
+  if (await inboundRow.locator('[data-stock-bill-expected-arrival-date]').innerText() !== '2026-06-14') {
+    throw new Error('采购入库单列表未展示预计到货日期快照');
+  }
 
   await openColumnMenu(page);
   const columnMenu = page.locator('[data-stock-bill-column-menu]');
@@ -49,17 +57,17 @@ async function assertStockBillColumnPreferences(page) {
   if (columnMenuText.includes('固定关键列') || columnMenuText.includes('单号与展开')) {
     throw new Error(`字段选择菜单不应展示无作用的固定关键列：${columnMenuText}`);
   }
-  for (const optionalLabel of ['录入方式', '来源类型', '来源单号', '业务对象', '仓库', '负责人', '创建时间']) {
+  for (const optionalLabel of ['录入方式', '来源类型', '来源单号', '预计到货日期', '业务对象', '仓库', '负责人', '创建时间']) {
     const item = page.getByRole('menuitemcheckbox', { name: optionalLabel, exact: true });
     await item.waitFor();
     if (await item.isDisabled()) throw new Error(`可选字段“${optionalLabel}”不应被禁用`);
   }
-  if (await columnMenu.getByRole('menuitemcheckbox').count() !== 7
+  if (await columnMenu.getByRole('menuitemcheckbox').count() !== 8
     || !columnMenuText.includes('按需精简列表') || !columnMenuText.includes('恢复默认字段')) {
     throw new Error(`字段选择菜单结构或说明不完整：${columnMenuText}`);
   }
   const triggerLabel = await page.locator('[data-stock-bill-column-trigger]').getAttribute('aria-label');
-  if (triggerLabel !== '选择显示字段，当前 7/7') throw new Error(`字段选择触发器缺少当前状态说明：${triggerLabel}`);
+  if (triggerLabel !== '列显示设置，当前 8/8') throw new Error(`字段选择触发器缺少当前状态说明：${triggerLabel}`);
   const checkboxVisuals = await columnMenu.locator('[data-stock-bill-column-key]').evaluateAll(items => items.map(item => {
     const indicator = item.querySelector('[data-slot="dropdown-menu-checkbox-item-indicator"]');
     const style = indicator ? getComputedStyle(indicator) : null;
@@ -70,7 +78,7 @@ async function assertStockBillColumnPreferences(page) {
       borderRadius: style?.borderRadius ?? '0px',
     };
   }));
-  if (checkboxVisuals.length !== 7 || checkboxVisuals.some(item => Math.abs(item.width - 16) > 0.5 || Math.abs(item.height - 16) > 0.5
+  if (checkboxVisuals.length !== 8 || checkboxVisuals.some(item => Math.abs(item.width - 16) > 0.5 || Math.abs(item.height - 16) > 0.5
     || item.borderWidth !== '1px' || Number.parseFloat(item.borderRadius) < 4)) {
     throw new Error(`字段选择未使用统一方框勾选样式：${JSON.stringify(checkboxVisuals)}`);
   }
@@ -126,13 +134,13 @@ async function assertStockBillColumnPreferences(page) {
   if (Math.abs(scrollAfterColumnChange.scrollLeft - expectedScrollLeft) > 1) {
     throw new Error(`字段切换后横向滚动位置未正确恢复：${JSON.stringify({ scrollBeforeColumnChange, preservedScrollLeft, scrollAfterColumnChange })}`);
   }
-  await page.getByText('显示字段已更新', { exact: true }).waitFor();
+  await page.getByText('列显示设置已更新', { exact: true }).waitFor();
 
   const inboundHeader = await outerHeaderText(page);
   if (inboundHeader.includes('录入方式') || inboundHeader.includes('创建时间')) {
     throw new Error('入库单可选列隐藏后仍出现在表头中');
   }
-  await assertFixedTableLayout(page, 10);
+  await assertFixedTableLayout(page, 11);
   const inboundPreference = await page.evaluate(key => JSON.parse(localStorage.getItem(key) || '{}'), inboundColumnStorageKey);
   if (inboundPreference.entryMode !== false || inboundPreference.createTime !== false) {
     throw new Error(`入库单列偏好未正确持久化：${JSON.stringify(inboundPreference)}`);
@@ -140,7 +148,7 @@ async function assertStockBillColumnPreferences(page) {
 
   await inboundRow.getByRole('button', { name: '展开明细' }).click();
   const inboundHostColspan = await inboundRow.locator('xpath=following-sibling::tr[1]/td[1]').getAttribute('colspan');
-  if (inboundHostColspan !== '10') throw new Error(`隐藏列后展开明细 colspan 未同步，当前为 ${inboundHostColspan}`);
+  if (inboundHostColspan !== '11') throw new Error(`隐藏列后展开明细 colspan 未同步，当前为 ${inboundHostColspan}`);
   const inboundDetailLayout = await inboundRow.locator('xpath=following-sibling::tr[1]')
     .locator('.stock-bill-detail-card')
     .evaluate(card => {
@@ -191,7 +199,7 @@ async function assertStockBillColumnPreferences(page) {
   await tableRow(page, 'IB202606140001').waitFor();
   if ((await outerHeaderText(page)).includes('录入方式')) throw new Error('返回入库单后未恢复其独立列偏好');
   await resetCurrentColumnPreference(page);
-  await assertFixedTableLayout(page, 12);
+  await assertFixedTableLayout(page, 13);
 }
 
 async function selectFilter(page, index, label) {
@@ -524,9 +532,11 @@ async function outerBodyText(page) {
 async function assertStockBillTableUsable(page, billNo) {
   const row = tableRow(page, billNo);
   const layout = await row.evaluate((element) => {
-    const cells = Array.from(element.children);
-    const createdAt = cells[10];
-    const actions = cells[11];
+    const actions = element.querySelector('[data-table-sticky-edge="end"]');
+    const createdAt = actions?.previousElementSibling;
+    if (!(createdAt instanceof HTMLElement) || !(actions instanceof HTMLElement)) {
+      throw new Error('未找到创建时间列或操作列');
+    }
     const actionsStyle = getComputedStyle(actions);
     return {
       createdAtOverflow: createdAt.scrollWidth - createdAt.clientWidth,
@@ -629,7 +639,7 @@ runSmoke({
     await assertSharedListChrome(page, { summaryLabel: '入库单数据汇总', filterLabel: '入库单筛选' });
     await assertContentFilterLayout(page, [220, 220, 280, 168, 168, 168]);
     await tableRow(page, 'IB202606140001').waitFor();
-    await assertFixedTableLayout(page, 12);
+    await assertFixedTableLayout(page, 13);
     await assertStockBillTableUsable(page, 'IB202606140001');
     await assertDistinctTypeBadges(page, ['采购入库', '销售退货入库', '调整入库']);
     const initialInboundRow = tableRow(page, 'IB202606140001');
@@ -650,7 +660,7 @@ runSmoke({
       throw new Error('列表截断文本不应使用浏览器原生 title');
     }
     const inboundHeaderText = await outerHeaderText(page);
-    for (const expected of ['入库单号', '类型', '录入方式', '来源类型', '来源单号', '业务对象', '仓库', '入库量', '状态', '负责人', '创建时间', '操作']) {
+    for (const expected of ['入库单号', '类型', '录入方式', '来源类型', '来源单号', '预计到货日期', '业务对象', '仓库', '入库量', '状态', '负责人', '创建时间', '操作']) {
       if (!inboundHeaderText.includes(expected)) throw new Error(`入库单列表表头缺少独立列：${expected}`);
     }
     for (const forbidden of ['入库单号 / 商品', '类型 / 来源', '往来方', '供应商/客户', '来源对象 / 仓库', '状态 / 操作']) {
@@ -691,7 +701,7 @@ runSmoke({
     await pendingInboundRow.getByRole('button', { name: '详情' }).click();
     const inboundDetail = page.getByRole('dialog', { name: '入库单详情' });
     const inboundDetailText = await inboundDetail.innerText();
-    for (const expected of ['来源对象', '采购数量', '累计已入库', '本次入库数量', '剩余未入库', '每日坚果混合装']) {
+    for (const expected of ['来源对象', '预计到货日期', '2026-06-16', '采购数量', '累计已入库', '本次入库数量', '剩余未入库', '每日坚果混合装']) {
       if (!inboundDetailText.includes(expected)) throw new Error(`入库单详情缺少 ${expected}`);
     }
     await assertDetailFieldGrid(inboundDetail);

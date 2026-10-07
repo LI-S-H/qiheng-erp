@@ -20,6 +20,12 @@ const screenshotPath = filename => path.join(screenshotDirectory, filename);
 const purchaseTypeSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'modules', 'purchase', 'types.ts'), 'utf8');
 const purchaseApiSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'modules', 'purchase', 'api.ts'), 'utf8');
 const purchaseOrderViewSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'modules', 'purchase', 'orders', 'views', 'PurchaseOrderManageView.vue'), 'utf8');
+const supplierManageViewSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'modules', 'purchase', 'suppliers', 'views', 'SupplierManageView.vue'), 'utf8');
+const supplierPageDtoSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'erp-server', 'erp-purchase', 'src', 'main', 'java', 'com', 'qiheng', 'erp', 'purchase', 'domain', 'supplier', 'dto', 'SupplierPageDto.java'), 'utf8');
+const supplierServiceSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'erp-server', 'erp-purchase', 'src', 'main', 'java', 'com', 'qiheng', 'erp', 'purchase', 'service', 'impl', 'SupplierServiceImpl.java'), 'utf8');
+const supplierCreateDtoSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'erp-server', 'erp-purchase', 'src', 'main', 'java', 'com', 'qiheng', 'erp', 'purchase', 'domain', 'supplier', 'dto', 'SupplierCreateDto.java'), 'utf8');
+const supplierUpdateDtoSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'erp-server', 'erp-purchase', 'src', 'main', 'java', 'com', 'qiheng', 'erp', 'purchase', 'domain', 'supplier', 'dto', 'SupplierUpdateDto.java'), 'utf8');
+const listFilterPanelSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'components', 'common', 'ListFilterPanel.vue'), 'utf8');
 
 function assertPurchaseQuantityPrecisionPayloadContract() {
   for (const [name, content, fragment] of [
@@ -31,6 +37,80 @@ function assertPurchaseQuantityPrecisionPayloadContract() {
     ['采购订单页面', purchaseOrderViewSource, ':step="quantityStep(line)"'],
   ]) {
     if (!content.includes(fragment)) throw new Error(`${name}缺少采购明细数量精度快照契约：${fragment}`);
+  }
+}
+
+function assertDraftRemoteSearchSkipsPageLoading() {
+  for (const [name, content, fragment] of [
+    ['供货产品查询 API', purchaseApiSource, 'export function listSupplierProducts(params: SupplierProductQuery, requestConfig?: AxiosRequestConfig)'],
+    ['供应商可选产品数查询', purchaseApiSource, 'supplierId }, remoteOptionRequestConfig);'],
+    ['采购单产品下拉', purchaseOrderViewSource, '}, { skipPageLoading: true });'],
+  ]) {
+    if (!content.includes(fragment)) throw new Error(`${name}会触发全局页面加载遮罩：${fragment}`);
+  }
+}
+
+function assertSupplierFilterAndOptionalFieldContract() {
+  for (const [name, content, fragment] of [
+    ['supplier query type', purchaseTypeSource, 'serviceScoreMin?: number | null;'],
+    ['supplier optional payload type', purchaseTypeSource, 'contactName?: string | null;'],
+    ['supplier query type', purchaseTypeSource, 'scoreBasisAmountMin?: string | null;'],
+    ['supplier nullable response type', purchaseTypeSource, 'scoreBasisAmount: number | null;'],
+    ['supplier query type', purchaseTypeSource, 'avgDeliveryDaysMin?: number | null;'],
+    ['supplier query api', purchaseApiSource, 'avgDeliveryDaysMax'],
+    ['supplier nullable response normalize', purchaseApiSource, "normalizeMoneyNumber(item.scoreBasisAmount, 'scoreBasisAmount', true, useMockApi)"],
+    ['supplier money query serialization', purchaseApiSource, 'const MONEY_QUERY_PATTERN = /^\\d+(?:\\.\\d{1,2})?$/;'],
+    ['supplier mock sort', purchaseApiSource, 'b.createTime.localeCompare(a.createTime) || b.supplierId.localeCompare(a.supplierId)'],
+    ['supplier view', supplierManageViewSource, 'validateMoneyQueryRange(query.scoreBasisAmountMin, query.scoreBasisAmountMax'],
+    ['supplier range grid', supplierManageViewSource, 'grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);'],
+    ['supplier actions at bottom', supplierManageViewSource, 'actions-position="bottom"'],
+    ['shared bottom actions mode', listFilterPanelSource, "actionsPosition?: 'inline' | 'bottom';"],
+    ['supplier page DTO', supplierPageDtoSource, 'private BigDecimal scoreBasisAmountMin;'],
+    ['supplier backend filter', supplierServiceSource, '.orderByDesc(Supplier::getCreateTime)'],
+    ['supplier backend optional normalize', supplierServiceSource, 'normalizeOptionalText(dto.getContactName())'],
+  ]) {
+    if (!content.includes(fragment)) throw new Error(`${name} missing contract fragment: ${fragment}`);
+  }
+  for (const [name, content] of [
+    ['supplier query type', purchaseTypeSource],
+    ['supplier page DTO', supplierPageDtoSource],
+    ['supplier backend service', supplierServiceSource],
+  ]) {
+    if (content.includes('sortField') || content.includes('sortDirection')) throw new Error(`${name} must not expose a supplier sort control`);
+  }
+  for (const [name, content] of [
+    ['supplier create DTO', supplierCreateDtoSource],
+    ['supplier update DTO', supplierUpdateDtoSource],
+  ]) {
+    for (const field of ['contactName', 'contactPhone', 'address', 'paymentTerms']) {
+      if (new RegExp(`@NotBlank[^\\n]*${field}`).test(content)) throw new Error(`${name} keeps ${field} mandatory`);
+    }
+  }
+}
+
+async function assertTightRangeLayout(page, filterSelector, rangeSelector, expectedCount) {
+  const layout = await page.locator(filterSelector).evaluate((element, config) => {
+    const ranges = [...element.querySelectorAll(config.rangeSelector)].map((range) => {
+      const inputs = [...range.querySelectorAll('input')].map(input => input.getBoundingClientRect());
+      return {
+        inputCount: inputs.length,
+        minWidth: Math.min(...inputs.map(input => input.width)),
+        gap: inputs.length === 2 ? inputs[1].left - inputs[0].right : Number.POSITIVE_INFINITY,
+        bottom: range.getBoundingClientRect().bottom,
+      };
+    });
+    const action = element.querySelector('.list-filter-panel__actions')?.getBoundingClientRect();
+    return {
+      ranges,
+      actionTop: action?.top ?? 0,
+      deepestRangeBottom: Math.max(...ranges.map(range => range.bottom)),
+    };
+  }, { rangeSelector });
+
+  if (layout.ranges.length !== expectedCount
+    || layout.ranges.some(range => range.inputCount !== 2 || range.minWidth < 90 || range.gap > 34)
+    || layout.actionTop < layout.deepestRangeBottom) {
+    throw new Error(`评分范围控件未保持紧凑布局或操作区未位于筛选条件之后：${JSON.stringify(layout)}`);
   }
 }
 
@@ -85,7 +165,7 @@ async function assertSupplierProductsNavigation(page) {
   await page.waitForURL(url => url.pathname === '/purchase/supplier-products');
   await page.getByRole('heading', { name: '供货产品' }).waitFor();
   await assertSharedListChrome(page, { summaryLabel: '供货产品数据汇总', filterLabel: '供货产品筛选' });
-  await assertContentSizedFilter(page, [280, 220, 220, 168]);
+  await assertContentSizedFilter(page, [280, 220, 280, 168, 220, 168, 168, 168, 220]);
   if (await supplierProductsLink.getAttribute('aria-current') !== 'page') {
     throw new Error('供货产品跳转后未标记当前页面');
   }
@@ -112,12 +192,15 @@ runSmoke({
   screenshot: screenshotPath('purchase-orders-normal.png'),
   async test(page) {
     assertPurchaseQuantityPrecisionPayloadContract();
+    assertDraftRemoteSearchSkipsPageLoading();
+    assertSupplierFilterAndOptionalFieldContract();
     await assertSupplierProductsNavigation(page);
     await page.getByRole('heading', { name: '供应商管理' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '供应商数据汇总', filterLabel: '供应商筛选' });
-    await assertContentSizedFilter(page, [220, 220, 220, 168]);
+    await assertContentSizedFilter(page, [168, 220, 168, 168, 168, 280, 280, 280, 280]);
+    await assertTightRangeLayout(page, '[aria-label="供应商筛选"]', '.supplier-score-range', 4);
     await tableRow(page, 'S001').waitFor();
-    await assertFixedTableLayout(page, 10);
+    await assertFixedTableLayout(page, 13);
     await clickRefreshAndAssertLoading(page, screenshotPath('purchase-supplier-refresh.png'));
 
     await page.getByPlaceholder('请输入名称').fill('华东');
@@ -127,7 +210,7 @@ runSmoke({
 
     await page.getByRole('button', { name: '新增供应商' }).click();
     const supplierDialog = page.getByRole('dialog', { name: '新增供应商' });
-    await assertRequiredLabels(supplierDialog, ['供应商名称']);
+    await assertRequiredLabels(supplierDialog, ['供应商名称', '状态']);
     await supplierDialog.getByRole('button', { name: '保存', exact: true }).click();
     if (!(await supplierDialog.innerText()).includes('请输入供应商名称')) throw new Error('供应商新增缺少必填校验');
     await supplierDialog.getByRole('button', { name: '取消', exact: true }).click();
@@ -138,12 +221,32 @@ runSmoke({
     await page.locator('[data-menu-path="/purchase/supplier-products"]').click();
     await page.getByRole('heading', { name: '供货产品' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '供货产品数据汇总', filterLabel: '供货产品筛选' });
-    await assertContentSizedFilter(page, [280, 220, 220, 168]);
-    await tableRow(page, 'HD-SD330').waitFor();
-    const nutSupplierProduct = tableRow(page, 'GC-NUT30');
+    const supplierProductFilterPanel = page.locator('[aria-label="供货产品筛选"]');
+    for (const label of ['供应商', '供应商名称', '产品', '产品编码', '产品名称', '报价状态', '评分状态', '状态', '报价有效截止日', '质量分范围', '价格分范围', '推荐分范围', '评分样本金额范围', '最小起订量范围']) {
+      await supplierProductFilterPanel.getByText(label, { exact: true }).waitFor();
+    }
+    await assertContentSizedFilter(page, [280, 220, 280, 168, 220, 168, 168, 168, 220]);
+    await assertTightRangeLayout(page, '[aria-label="供货产品筛选"]', '.supplier-product-filter-range', 5);
+    const dateWidth = await supplierProductFilterPanel.getByLabel('报价有效截止日').evaluate(element => element.getBoundingClientRect().width);
+    if (dateWidth < 190) {
+      throw new Error(`报价有效截止日输入框宽度不足，无法完整展示日期：${dateWidth}`);
+    }
+    const filterLayout = await supplierProductFilterPanel.evaluate((element) => {
+      const rangeInputs = [...element.querySelectorAll('[aria-label$="最低值"], [aria-label$="最高值"]')];
+      const action = [...element.querySelectorAll('button')].find(button => button.textContent?.trim() === '查询');
+      return {
+        maxFilterBottom: Math.max(...rangeInputs.map(input => input.getBoundingClientRect().bottom)),
+        actionTop: action?.getBoundingClientRect().top ?? 0,
+      };
+    });
+    if (filterLayout.actionTop < filterLayout.maxFilterBottom) {
+      throw new Error(`供货产品查询操作区未位于全部筛选条件之后：${JSON.stringify(filterLayout)}`);
+    }
+    await tableRow(page, 'P000001').waitFor();
+    const nutSupplierProduct = tableRow(page, 'P000007');
     await nutSupplierProduct.getByText('P000007', { exact: true }).waitFor();
     await nutSupplierProduct.getByText('每日坚果混合装', { exact: true }).waitFor();
-    await assertFixedTableLayout(page, 10);
+    await assertFixedTableLayout(page, 13);
     await page.getByPlaceholder('请输入产品名称').fill('苏打水');
     await clickQueryAndAssertLoading(page, screenshotPath('purchase-supplier-products-query.png'));
     await tableRow(page, '经典原味苏打水').waitFor();
@@ -152,12 +255,18 @@ runSmoke({
     await page.getByRole('button', { name: '新增供货产品' }).click();
     const supplierProductDialog = page.getByRole('dialog', { name: '新增供货产品' });
     await assertRequiredLabels(supplierProductDialog, ['供应商', '产品']);
+    if (await supplierProductDialog.getByText('产品编码', { exact: true }).count()) {
+      throw new Error('新增供货产品表单不应展示重复的产品编码字段');
+    }
+    if ((await supplierProductDialog.innerText()).split(/\s+/).includes('>')) {
+      throw new Error('新增供货产品表单出现了多余的 > 文本');
+    }
     await supplierProductDialog.getByRole('button', { name: '取消', exact: true }).click();
-    await tableRow(page, 'HD-SD330').getByRole('button', { name: '详情' }).click();
+    await tableRow(page, 'P000001').getByRole('button', { name: '详情' }).click();
     await page.getByRole('dialog', { name: '供货产品详情' }).getByText('最近采购价').waitFor();
     await page.getByRole('dialog', { name: '供货产品详情' }).getByRole('button', { name: '关闭' }).click();
-    await tableRow(page, 'WY-PEN12').getByText('未采购', { exact: true }).waitFor();
-    await tableRow(page, 'WY-PEN12').getByRole('button', { name: '详情' }).click();
+    await tableRow(page, 'P000021').getByText('未采购', { exact: true }).waitFor();
+    await tableRow(page, 'P000021').getByRole('button', { name: '详情' }).click();
     await page.getByRole('dialog', { name: '供货产品详情' }).getByText('未采购', { exact: true }).waitFor();
     await page.getByRole('dialog', { name: '供货产品详情' }).getByRole('button', { name: '关闭' }).click();
 
@@ -224,7 +333,8 @@ runSmoke({
     await submitDialog.getByText('提交后进入待审核状态').waitFor();
     await submitDialog.getByRole('button', { name: '提交', exact: true }).click();
     await submitDialog.waitFor({ state: 'hidden' });
-    await submitPreviewDialog.getByRole('button', { name: '关闭' }).click();
+    // 状态提交成功后详情必须自动关闭，不能继续显示或操作旧草稿。
+    await submitPreviewDialog.waitFor({ state: 'hidden' });
     await tableRow(page, 'PO202607003').getByRole('button', { name: '详情' }).click();
     const submittedDetailDialog = page.getByRole('dialog', { name: '采购单详情' });
     await submittedDetailDialog.getByText('提交采购订单审核', { exact: true }).waitFor();

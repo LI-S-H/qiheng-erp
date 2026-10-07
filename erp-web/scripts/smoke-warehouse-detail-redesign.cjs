@@ -69,6 +69,7 @@ async function verify(page, scenario, viewport) {
       } : null;
     })(),
     headerExtraCount: element.querySelectorAll('.warehouse-detail-table-frame__header-extra').length,
+    sourceSummaryCount: element.querySelectorAll('.stock-bill-detail-top__source').length,
     metrics: Array.from(element.querySelectorAll('[data-warehouse-detail-metrics] [aria-label]')).map(metric => metric.getAttribute('aria-label') || ''),
     overflow: element.scrollWidth - element.clientWidth,
     documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -77,7 +78,7 @@ async function verify(page, scenario, viewport) {
     || state.items < 1 || state.summaries !== 0 || state.groupedHeads !== 0 || state.heads < 6
     || state.stickyHead?.position !== 'sticky' || state.stickyHead?.top !== '0px'
     || !state.detailHeader || state.detailHeader.height < 42 || state.detailHeader.height > 46 || state.detailHeader.overflow > 1
-    || state.headerExtraCount !== 0
+    || state.headerExtraCount !== 0 || state.sourceSummaryCount !== 0
     || !state.headerLayout || state.headerLayout.metricsLeft < state.headerLayout.headingRight + 6
     || state.headerLayout.metricsRight > state.headerLayout.headerRight - 8
     || state.metrics.length < 1 || state.metrics.some(metric => metric.includes('单据状态'))

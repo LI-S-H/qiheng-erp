@@ -838,7 +838,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                     .setCurrentQty(0L)
                     .setPendingQty(pending)
                     .setQualifiedQty(0L)
-                    .setDefectiveQty(0L);
+                    .setDefectiveQty(0L)
+                    .setUnitPrice(item.getUnitPrice() == null ? 0L : item.getUnitPrice());
             inboundBillItemMapper.insert(billItem);
         }
     }

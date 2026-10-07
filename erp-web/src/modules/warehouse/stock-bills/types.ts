@@ -44,6 +44,10 @@ export interface StockBillListItem {
   updateTime: string;
 }
 
+export interface InboundBillListItem extends StockBillListItem {
+  expectedArrivalDate: string | null;
+}
+
 export interface StockBillItem {
   workBillItemId: string;
   workBillId: string;
@@ -72,6 +76,8 @@ export interface StockBillDetail extends StockBillListItem {
   items: StockBillItem[];
 }
 
+export interface InboundBillDetail extends StockBillDetail, InboundBillListItem {}
+
 export interface StockBillSummary {
   sourceGeneratedCount: number;
   pendingCount: number;
@@ -81,6 +87,10 @@ export interface StockBillSummary {
 
 export interface StockBillPage extends PageResult<StockBillListItem> {
   summary: StockBillSummary;
+}
+
+export interface InboundBillPage extends Omit<StockBillPage, 'records'> {
+  records: InboundBillListItem[];
 }
 
 export interface StockBillQuery {

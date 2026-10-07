@@ -6,6 +6,7 @@ export type StockBillOptionalColumnKey =
   | 'entryMode'
   | 'sourceType'
   | 'sourceNo'
+  | 'expectedArrivalDate'
   | 'party'
   | 'warehouse'
   | 'responsible'
@@ -24,6 +25,7 @@ interface StockBillListColumnDefinition {
   label: string;
   width: number;
   required: boolean;
+  directions?: readonly StockBillDirection[];
 }
 
 const STORAGE_VERSION = 1;
@@ -34,6 +36,7 @@ export const stockBillListColumns: readonly StockBillListColumnDefinition[] = [
   { key: 'entryMode', label: '录入方式', width: 120, required: false },
   { key: 'sourceType', label: '来源类型', width: 130, required: false },
   { key: 'sourceNo', label: '来源单号', width: 170, required: false },
+  { key: 'expectedArrivalDate', label: '预计到货日期', width: 140, required: false, directions: ['INBOUND'] },
   { key: 'party', label: '业务对象', width: 170, required: false },
   { key: 'warehouse', label: '仓库', width: 150, required: false },
   { key: 'quantity', label: '数量', width: 120, required: true },
@@ -46,6 +49,10 @@ export const stockBillListColumns: readonly StockBillListColumnDefinition[] = [
 export const stockBillOptionalColumns = stockBillListColumns.filter(
   (column): column is StockBillListColumnDefinition & { key: StockBillOptionalColumnKey; required: false } => !column.required,
 );
+
+export function isStockBillColumnAvailable(column: StockBillListColumnDefinition, direction: StockBillDirection) {
+  return !column.directions || column.directions.includes(direction);
+}
 
 type ColumnVisibility = Record<StockBillOptionalColumnKey, boolean>;
 
@@ -83,7 +90,8 @@ export function useStockBillTableColumns(direction: MaybeRefOrGetter<StockBillDi
 
   function isListColumnVisible(key: StockBillListColumnKey) {
     const column = stockBillListColumns.find(item => item.key === key);
-    return Boolean(column?.required || visibility.value[key as StockBillOptionalColumnKey]);
+    if (!column || !isStockBillColumnAvailable(column, toValue(direction))) return false;
+    return Boolean(column.required || visibility.value[key as StockBillOptionalColumnKey]);
   }
 
   function setVisible(key: StockBillOptionalColumnKey, visible: boolean) {

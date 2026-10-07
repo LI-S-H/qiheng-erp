@@ -251,7 +251,7 @@ async function fetchPurchaseProductSearchOptions(keyword: string, currentRowId?:
     status: 1,
     ...(form.supplierId ? { supplierId: form.supplierId } : {}),
     ...keywordQuery(keyword),
-  });
+  }, { skipPageLoading: true });
   mergeSupplierProducts(page.records);
   const selectedProductIds = new Set(draftItems.value
     .filter(item => item.rowId !== currentRowId)
@@ -291,15 +291,19 @@ function cacheOrderOptions(row: PurchaseOrderDetail) {
       productName: item.productName,
       unitName: item.unitName,
       quantityPrecision: item.quantityPrecision,
-      supplierProductCode: '',
+      quotedPurchasePrice: null,
+      quotedPriceReason: '',
+      quotedPriceUpdatedAt: null,
+      quoteValidUntil: null,
       latestPurchasePrice: item.unitPrice,
       minOrderQty: 1,
-      leadTimeDays: 0,
-      deliveryScore: item.selectedSupplierScore,
+      avgDeliveryDays: null,
       qualityScore: item.selectedSupplierScore,
       priceScore: item.selectedSupplierScore,
       aiScore: item.selectedSupplierScore,
       lastPurchaseAt: null,
+      scoreBasisAmount: null,
+      scoreStatus: 'NOT_READY' as const,
       status: 1,
       version: 0,
       remark: '',
@@ -469,14 +473,14 @@ function hasActiveSupply(supplierId: string, productId: string) {
 function findSupplierProduct(supplierId: string, productId: string) {
   return activeSupplierProducts.value
     .filter(item => item.supplierId === supplierId && item.productId === productId)
-    .sort((a, b) => b.aiScore - a.aiScore)[0] || null;
+    .sort((a, b) => (b.aiScore ?? -1) - (a.aiScore ?? -1))[0] || null;
 }
 
 function bestSupplierProductForProduct(productId: string, otherProductIds: string[] = []) {
   return activeSupplierProducts.value
     .filter(item => item.productId === productId)
     .filter(item => !otherProductIds.length || otherProductIds.every(otherProductId => hasActiveSupply(item.supplierId, otherProductId)))
-    .sort((a, b) => b.aiScore - a.aiScore)[0] || null;
+    .sort((a, b) => (b.aiScore ?? -1) - (a.aiScore ?? -1))[0] || null;
 }
 
 function clearLineProduct(line: DraftItem) {
@@ -491,7 +495,8 @@ function clearLineProduct(line: DraftItem) {
 function applySupplierProduct(line: DraftItem, supplierProduct: SupplierProductListItem) {
   line.productId = supplierProduct.productId;
   line.supplierProductId = supplierProduct.supplierProductId;
-  line.unitPrice = supplierProduct.latestPurchasePrice
+  line.unitPrice = supplierProduct.quotedPurchasePrice
+    ?? supplierProduct.latestPurchasePrice
     ?? productOptions.value.find(item => item.value === supplierProduct.productId)?.referencePurchasePrice
     ?? 0;
   line.selectedSupplierScore = supplierProduct.aiScore;
@@ -546,8 +551,8 @@ function selectProduct(line: DraftItem, productId: string | number) {
     : bestSupplierProductForProduct(line.productId, otherProductIds);
   const product = productOptions.value.find(item => item.value === line.productId);
   line.supplierProductId = supplierProduct?.supplierProductId || null;
-  line.unitPrice = supplierProduct?.latestPurchasePrice || product?.referencePurchasePrice || 0;
-  line.selectedSupplierScore = supplierProduct?.aiScore || 0;
+  line.unitPrice = supplierProduct?.quotedPurchasePrice ?? supplierProduct?.latestPurchasePrice ?? product?.referencePurchasePrice ?? 0;
+  line.selectedSupplierScore = supplierProduct?.aiScore ?? null;
   line.unitName = supplierProduct?.unitName || product?.unitName || '';
   line.quantityPrecision = supplierProduct?.quantityPrecision ?? product?.quantityPrecision ?? 0;
 }
@@ -602,7 +607,8 @@ function buildPayload(): PurchaseOrderFormPayload {
       quantityPrecision: Number(item.quantityPrecision),
       quantity: Number(item.quantity),
       unitPrice: Number(item.unitPrice),
-      selectedSupplierScore: Number(item.selectedSupplierScore),
+      // 仅作页面参考，API 适配层会剥离该字段；第 2 期在审核通过时由后端冻结快照。
+      selectedSupplierScore: item.selectedSupplierScore,
       remark: item.remark.trim(),
     })),
   };
@@ -674,6 +680,9 @@ function confirmOrderAction(row: PurchaseOrderListItem, action: 'submit' | 'appr
   showConfirm(title, description, confirmText, variant, async () => {
     await updatePurchaseOrderStatus(row.purchaseOrderId, action, row.version);
     toast.success('采购订单状态已更新');
+    // 状态已流转，关闭旧详情和确认层，再刷新列表，避免继续操作旧版本单据。
+    confirmState.open = false;
+    detailDialogOpen.value = false;
     await fetchOrders();
   });
 }
@@ -778,6 +787,10 @@ function returnCoverageMeta(coverage: string) {
 
 function formatMoney(value: number) {
   return `￥${value.toFixed(2)}`;
+}
+
+function formatCompletionRate(value: number) {
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}%`;
 }
 
 function applyDashboardStatusPreset() {
@@ -886,7 +899,7 @@ onMounted(() => {
                       <TableCell class="align-top"><RemoteSearchSelect :model-value="line.productId" :selected-label="selectedProductLabel(line.productId)" :fetch-options="keyword => fetchPurchaseProductSearchOptions(keyword, line.rowId)" :disabled="!form.supplierId" placeholder="请选择产品" search-placeholder="输入产品编码或名称" :invalid="Boolean(formErrors[`items.${index}.productId`])" @update:model-value="value => selectProduct(line, value)" /><p v-if="formErrors[`items.${index}.productId`]" class="mt-1 text-xs text-destructive">{{ formErrors[`items.${index}.productId`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="flex items-center gap-2"><Input v-model.number="line.quantity" type="number" min="0" :step="quantityStep(line)" class="min-w-0 text-right" /><span v-if="line.unitName" class="shrink-0 text-xs text-muted-foreground">{{ line.unitName }}</span></div><p v-if="formErrors[`items.${index}.quantity`]" class="form-error text-center">{{ formErrors[`items.${index}.quantity`] }}</p></TableCell>
                       <TableCell class="align-top"><div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">￥</span><Input v-model.number="line.unitPrice" type="number" min="0" step="0.01" class="price-input pl-8 text-center" /></div><p v-if="formErrors[`items.${index}.unitPrice`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.unitPrice`] }}</p></TableCell>
-                      <TableCell class="text-center tabular-nums">{{ Number(line.selectedSupplierScore || 0).toFixed(1) }}</TableCell>
+                      <TableCell class="text-center tabular-nums">{{ line.selectedSupplierScore == null ? '—' : line.selectedSupplierScore.toFixed(1) }}</TableCell>
                       <TableCell class="text-right font-medium tabular-nums">{{ formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0)) }}</TableCell>
                       <TableCell class="align-top"><Input v-model="line.remark" placeholder="可选" /><p v-if="formErrors[`items.${index}.remark`]" class="text-xs text-destructive">{{ formErrors[`items.${index}.remark`] }}</p></TableCell>
                       <TableCell class="align-top text-center"><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="removeLine(line.rowId)">删除</Button></TableCell>
@@ -908,14 +921,21 @@ onMounted(() => {
         <DialogScrollArea content-class="px-5 py-5 pr-6">
           <div v-if="detailLoading && !detailRow" class="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
           <div v-if="detailRow" class="space-y-5">
-            <BusinessDetailHero eyebrow="采购订单" :title="detailRow.purchaseNo" :subtitle="`${detailRow.supplierCode} · ${detailRow.supplierName} · ${detailRow.warehouseName}`" :status-label="statusMeta(detailRow.status).label" :status-class="statusMeta(detailRow.status).className" :metric-columns="3" variant="canvas">
-              <template #metrics>
-                <div class="business-detail-hero__metric"><span>订单金额</span><strong>{{ formatMoney(detailRow.totalAmount) }}</strong></div>
-                <div class="business-detail-hero__metric"><span>明细项目</span><strong>{{ detailRow.items.length }} 项</strong></div>
-                <div class="business-detail-hero__metric"><span>预计到货</span><strong>{{ detailRow.expectedArrivalDate || '未设置' }}</strong></div>
-                <div class="business-detail-hero__metric"><span>累计入库</span><strong>{{ formatMoney(detailRow.fulfillmentSummary.inboundAmount) }}</strong></div>
-                <div class="business-detail-hero__metric"><span>入库仓库</span><strong>{{ detailRow.warehouseName }}</strong></div>
-                <div class="business-detail-hero__metric"><span>采购人员</span><strong>{{ detailRow.createdByName || '系统' }}</strong></div>
+            <BusinessDetailHero eyebrow="采购订单" :title="detailRow.purchaseNo" :subtitle="`${detailRow.supplierCode} · ${detailRow.supplierName} · ${detailRow.warehouseName}`" :status-label="statusMeta(detailRow.status).label" :status-class="statusMeta(detailRow.status).className" variant="canvas">
+              <template #trailing>
+                <section class="purchase-fulfillment-overview" aria-label="履约概览">
+                  <div class="purchase-fulfillment-overview__headline">
+                    <span>履约概览</span>
+                    <strong>{{ formatCompletionRate(purchaseInboundSummary(detailRow).completionRate) }}</strong>
+                    <small>金额已入库</small>
+                  </div>
+                  <div class="purchase-fulfillment-overview__track" aria-hidden="true"><i :style="{ width: `${Math.min(100, Math.max(0, purchaseInboundSummary(detailRow).completionRate))}%` }" /></div>
+                  <dl class="purchase-fulfillment-overview__facts">
+                    <div><dt>订单金额</dt><dd>{{ formatMoney(detailRow.totalAmount) }}</dd></div>
+                    <div><dt>累计入库</dt><dd>{{ formatMoney(detailRow.fulfillmentSummary.inboundAmount) }}</dd></div>
+                    <div><dt>预计到货</dt><dd>{{ detailRow.expectedArrivalDate || '未设置' }}</dd></div>
+                  </dl>
+                </section>
               </template>
             </BusinessDetailHero>
 
@@ -959,7 +979,7 @@ onMounted(() => {
                       <TableCell class="text-center font-medium tabular-nums" :class="item.quantity > item.inboundQty ? 'text-amber-700' : 'text-emerald-700'">{{ Math.max(0, item.quantity - item.inboundQty) }} {{ item.unitName }}</TableCell>
                       <TableCell class="text-center tabular-nums">{{ formatMoney(item.unitPrice) }}</TableCell>
                       <TableCell class="text-center font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</TableCell>
-                      <TableCell class="text-center">{{ item.selectedSupplierScore.toFixed(1) }}</TableCell>
+                      <TableCell class="text-center">{{ item.selectedSupplierScore == null ? '—' : item.selectedSupplierScore.toFixed(1) }}</TableCell>
                       <TableCell><OverflowTooltip :text="item.remark" fallback="未维护" class="block text-muted-foreground" /></TableCell>
                     </TableRow>
                   </TableBody>
@@ -1008,6 +1028,18 @@ onMounted(() => {
 .price-input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 
 .purchase-workbench-record__section { padding: 18px 20px; }
+.purchase-fulfillment-overview { width: 344px; overflow: hidden; border: 1px solid #cfe0fb; border-radius: 10px; background: #f8fbff; }
+.purchase-fulfillment-overview__headline { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: baseline; padding: 12px 14px 8px; color: #385276; }
+.purchase-fulfillment-overview__headline > span { grid-column: 1 / -1; font-size: 12px; font-weight: 600; line-height: 16px; }
+.purchase-fulfillment-overview__headline strong { color: #0f315f; font-size: 25px; font-weight: 700; line-height: 28px; }
+.purchase-fulfillment-overview__headline small { color: #667991; font-size: 12px; }
+.purchase-fulfillment-overview__track { height: 7px; margin: 0 14px 12px; overflow: hidden; border-radius: 999px; background: #dce8f7; }
+.purchase-fulfillment-overview__track > i { display: block; height: 100%; min-width: 0; border-radius: inherit; background: #2878e5; transition: width var(--motion-duration-base) var(--motion-ease-standard); }
+.purchase-fulfillment-overview__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border-top: 1px solid #dbe7f5; background: #fff; }
+.purchase-fulfillment-overview__facts > div { min-width: 0; padding: 9px 11px 10px; }
+.purchase-fulfillment-overview__facts > div + div { border-left: 1px solid #dbe7f5; }
+.purchase-fulfillment-overview__facts dt { overflow: hidden; color: #72839a; font-size: 11px; line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.purchase-fulfillment-overview__facts dd { overflow: hidden; margin: 4px 0 0; color: #142f56; font-size: 13px; font-weight: 650; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
 .purchase-workbench-record__section + .purchase-workbench-record__section { border-top: 1px solid #e5eaf0; }
 .purchase-workbench-record__section--progress { padding: 0; }
 .purchase-workbench-info { padding-top: 18px; }
@@ -1043,6 +1075,7 @@ onMounted(() => {
 .purchase-detail-remark span { margin-right: 8px; color: var(--foreground); font-weight: 600; }
 
 @media (max-width: 640px) {
+  .purchase-fulfillment-overview { width: 100%; }
   .purchase-workbench-info__facts { grid-template-columns: 1fr; gap: 9px; }
   .purchase-detail-timeline__time { margin-left: 0; }
 }

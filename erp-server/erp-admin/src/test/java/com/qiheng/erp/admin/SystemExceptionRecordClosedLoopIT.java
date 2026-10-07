@@ -1,6 +1,7 @@
 package com.qiheng.erp.admin;
 
 import com.qiheng.erp.common.constant.SystemExceptionConstants;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.common.mq.SystemExceptionRecordMessage;
 import com.qiheng.erp.common.mq.SystemExceptionRocketMQTemplate;
@@ -47,6 +48,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -85,14 +92,25 @@ class SystemExceptionRecordClosedLoopIT {
         admin.setNamesrvAddr(NAME_SERVER);
         admin.setInstanceName(runId);
         JdbcTemplate jdbc = new JdbcTemplate(dataSource());
+        // 重建仅允许显式授权的本地开发库，不能用于远端或其他表。
+        if (Boolean.getBoolean("sys-exc.it.recreate-table")) {
+            recreateLocalExceptionTable(jdbc);
+        }
+        Throwable primaryFailure = null;
+        String brokerAddress = null;
+        boolean topicCreationAttempted = false;
+        boolean consumerStartupAttempted = false;
         try {
             admin.start();
             var api = admin.getDefaultMQProducerImpl().getMqClientFactory().getMQClientAPIImpl();
             var cluster = api.getBrokerClusterInfo(5000);
             String broker = cluster.getBrokerAddrTable().values().stream()
                     .map(b -> b.getBrokerAddrs().get(0L)).filter(Objects::nonNull).findFirst().orElseThrow();
+            brokerAddress = broker;
+            topicCreationAttempted = true;
             ensureTopic(admin, broker, topic);
 
+            consumerStartupAttempted = true;
             new ApplicationContextRunner()
                     .withConfiguration(AutoConfigurations.of(RocketMQAutoConfiguration.class))
                     .withUserConfiguration(RealExceptionConfiguration.class)
@@ -123,7 +141,7 @@ class SystemExceptionRecordClosedLoopIT {
 
                         // 4. 逐字段核对 HTTP 异常记录
                         Map<String, Object> sales = jdbc.queryForMap(
-                                "SELECT exception_no, exception_type, source_module, source_no, severity,"
+                                "SELECT event_id, exception_no, exception_type, source_module, source_no, severity,"
                                         + " error_code, error_message, detail_summary, resolve_hint, status, occurred_at"
                                         + " FROM system_exception WHERE source_module = 'SALES' AND error_message = ?",
                                 errorMessage);
@@ -133,7 +151,8 @@ class SystemExceptionRecordClosedLoopIT {
                         assertEquals("SALES", sales.get("source_module"));
                         assertEquals("POST /sales/order", sales.get("source_no"));
                         assertEquals("HIGH", sales.get("severity"));
-                        assertEquals("99999", sales.get("error_code"));
+                        assertEquals("RuntimeException", sales.get("error_code"));
+                        assertTrue(String.valueOf(sales.get("event_id")).matches("[1-9][0-9]{0,18}"));
                         assertEquals("SALES模块接口 POST /sales/order 抛出 RuntimeException", sales.get("detail_summary"));
                         assertEquals("查看应用日志 ERROR 级堆栈定位根因", sales.get("resolve_hint"));
                         assertEquals("PENDING", sales.get("status"));
@@ -150,20 +169,34 @@ class SystemExceptionRecordClosedLoopIT {
                         assertEquals("HIGH", job.get("severity"));
                         assertEquals("PENDING", job.get("status"));
 
-                        // 6. 幂等验证：完全相同四字段的消息重复投递后不得新增记录。
-                        //    先发重复消息，再发探针消息确认消费者仍存活；探针出现后重复消息必然已被处理。
+                        // 6. 重投必须沿用原事件标识；探针只能证明链路存活，不能证明跨队列消费顺序。
                         SystemExceptionRecordMessage duplicate = new SystemExceptionRecordMessage();
+                        duplicate.setEventId(String.valueOf(sales.get("event_id")));
                         duplicate.setExceptionType(SystemExceptionConstants.TYPE_SYSTEM_ERROR);
                         duplicate.setSourceModule("SALES");
                         duplicate.setSourceNo("POST /sales/order");
                         duplicate.setSeverity(SystemExceptionConstants.SEVERITY_HIGH);
-                        duplicate.setErrorCode("99999");
+                        duplicate.setErrorCode("RuntimeException");
                         duplicate.setErrorMessage(errorMessage);
                         duplicate.setDetailSummary("SALES模块接口 POST /sales/order 抛出 RuntimeException");
                         duplicate.setOccurredAt(toEpochMillis(sales.get("occurred_at")));
                         publisher.publish(duplicate);
 
+                        // 同一秒、同来源、同错误的另一次真实异常必须单独保存。
+                        SystemExceptionRecordMessage distinct = new SystemExceptionRecordMessage();
+                        distinct.setEventId(IdWorker.getIdStr());
+                        distinct.setExceptionType(duplicate.getExceptionType());
+                        distinct.setSourceModule(duplicate.getSourceModule());
+                        distinct.setSourceNo(duplicate.getSourceNo());
+                        distinct.setSeverity(duplicate.getSeverity());
+                        distinct.setErrorCode(duplicate.getErrorCode());
+                        distinct.setErrorMessage(duplicate.getErrorMessage());
+                        distinct.setDetailSummary(duplicate.getDetailSummary());
+                        distinct.setOccurredAt(duplicate.getOccurredAt());
+                        publisher.publish(distinct);
+
                         SystemExceptionRecordMessage probe = new SystemExceptionRecordMessage();
+                        probe.setEventId(IdWorker.getIdStr());
                         probe.setExceptionType(SystemExceptionConstants.TYPE_SYSTEM_ERROR);
                         probe.setSourceModule("SALES");
                         probe.setSourceNo("POST /sales/order");
@@ -180,31 +213,75 @@ class SystemExceptionRecordClosedLoopIT {
                         Integer total = jdbc.queryForObject(
                                 "SELECT COUNT(*) FROM system_exception WHERE source_no LIKE ? OR error_message LIKE ?",
                                 Integer.class, "%" + runId + "%", "%" + runId + "%");
-                        assertEquals(3, total, "重复消息必须被弱幂等拦截，总记录数应为 2+1 探针");
+                        awaitRows(jdbc, runId, 4);
+                        total = jdbc.queryForObject(
+                                "SELECT COUNT(*) FROM system_exception WHERE source_no LIKE ? OR error_message LIKE ?",
+                                Integer.class, "%" + runId + "%", "%" + runId + "%");
+                        assertEquals(4, total, "重投不新增，不同事件新增，总数应为原有2条加不同事件和探针");
                         Integer dupCount = jdbc.queryForObject(
                                 "SELECT COUNT(*) FROM system_exception WHERE source_module='SALES' AND error_message = ?",
                                 Integer.class, errorMessage);
-                        assertEquals(1, dupCount, "同四字段异常只允许一条记录");
+                        assertEquals(2, dupCount, "同四字段但不同事件必须保留两条");
+                        assertEquals(1, jdbc.queryForObject(
+                                "SELECT COUNT(*) FROM system_exception WHERE event_id = ?", Integer.class,
+                                duplicate.getEventId()), "原事件重投只能保留一条");
+
+                        // 并发真实消费者共享一个事件标识，使用真实Mapper及数据库唯一索引竞争。
+                        SystemExceptionRecordMessage concurrent = context.getBean(
+                                com.fasterxml.jackson.databind.ObjectMapper.class)
+                                .convertValue(distinct, SystemExceptionRecordMessage.class);
+                        concurrent.setEventId(IdWorker.getIdStr());
+                        var executor = Executors.newFixedThreadPool(8);
+                        try {
+                            CountDownLatch gate = new CountDownLatch(1);
+                            List<Future<?>> futures = new java.util.ArrayList<>();
+                            for (int i = 0; i < 8; i++) {
+                                futures.add(executor.submit(() -> {
+                                    gate.await();
+                                    context.getBean(SystemExceptionRecordConsumer.class).onMessage(concurrent);
+                                    return null;
+                                }));
+                            }
+                            gate.countDown();
+                            for (Future<?> future : futures) {
+                                future.get(30, TimeUnit.SECONDS);
+                            }
+                            assertEquals(1, jdbc.queryForObject(
+                                    "SELECT COUNT(*) FROM system_exception WHERE event_id = ?", Integer.class,
+                                    concurrent.getEventId()), "首次并发消费同一事件只能写入一次且不应死锁");
+                        } finally {
+                            executor.shutdownNow();
+                        }
                         System.out.println("SYS_EXC_E2E_OK runId=" + runId);
                     });
+        } catch (Exception | AssertionError failure) {
+            // 资源清理失败只能作为补充信息，不能覆盖真正的链路失败原因。
+            primaryFailure = failure;
+            throw failure;
         } finally {
             List<Exception> cleanupFailures = new java.util.ArrayList<>();
-            try {
-                jdbc.update("DELETE FROM system_exception WHERE source_no LIKE ? OR error_message LIKE ?",
-                        "%" + runId + "%", "%" + runId + "%");
-            } catch (Exception failure) {
-                cleanupFailures.add(failure);
+            if (consumerStartupAttempted) {
+                try {
+                    jdbc.update("DELETE FROM system_exception WHERE source_no LIKE ? OR error_message LIKE ?",
+                            "%" + runId + "%", "%" + runId + "%");
+                } catch (Exception failure) {
+                    cleanupFailures.add(failure);
+                }
             }
             try {
-                var api = admin.getDefaultMQProducerImpl().getMqClientFactory().getMQClientAPIImpl();
-                var cluster = api.getBrokerClusterInfo(5000);
-                String broker = cluster.getBrokerAddrTable().values().stream()
-                        .map(b -> b.getBrokerAddrs().get(0L)).filter(Objects::nonNull).findFirst().orElse(null);
-                if (broker != null) {
-                    deleteTestSubscriptionGroup(admin, broker, group);
+                // 复用已解析的Broker，不再次访问可能已断开的NameServer获取集群信息。
+                if (brokerAddress != null && topicCreationAttempted) {
+                    var api = admin.getDefaultMQProducerImpl().getMqClientFactory().getMQClientAPIImpl();
+                    if (consumerStartupAttempted) {
+                        try {
+                            deleteTestSubscriptionGroup(admin, brokerAddress, group);
+                        } catch (Exception failure) {
+                            cleanupFailures.add(failure);
+                        }
+                    }
                     for (String owned : List.of(topic, "%RETRY%" + group, "%DLQ%" + group)) {
                         try {
-                            api.deleteTopicInBroker(broker, owned, 5000);
+                            api.deleteTopicInBroker(brokerAddress, owned, 5000);
                         } catch (Exception failure) {
                             cleanupFailures.add(failure);
                         }
@@ -218,14 +295,25 @@ class SystemExceptionRecordClosedLoopIT {
             } catch (Exception failure) {
                 cleanupFailures.add(failure);
             } finally {
-                admin.shutdown();
+                try {
+                    admin.shutdown();
+                } catch (Exception failure) {
+                    cleanupFailures.add(failure);
+                }
             }
             if (!cleanupFailures.isEmpty()) {
                 IllegalStateException failure = new IllegalStateException("测试资源清理未全部成功，按 runId 核查：" + runId);
                 cleanupFailures.forEach(failure::addSuppressed);
-                throw failure;
+                if (primaryFailure != null) {
+                    primaryFailure.addSuppressed(failure);
+                } else {
+                    throw failure;
+                }
+            } else if (topicCreationAttempted) {
+                System.out.println("SYS_EXC_E2E_CLEANED topic=" + topic + " group=" + group);
+            } else {
+                System.out.println("SYS_EXC_E2E_NO_MQ_RESOURCES_CREATED runId=" + runId);
             }
-            System.out.println("SYS_EXC_E2E_CLEANED topic=" + topic + " group=" + group);
         }
     }
 
@@ -259,12 +347,31 @@ class SystemExceptionRecordClosedLoopIT {
         fail("探针消息未被消费，幂等结论不可信");
     }
 
-    /** DATETIME 查询结果转 Unix 毫秒，用于构造完全相同的四字段重复消息。 */
+    /** DATETIME 查询结果按业务时区还原，用于验证同一秒的不同事件不会合并。 */
     private long toEpochMillis(Object occurredAt) {
         LocalDateTime time = occurredAt instanceof java.sql.Timestamp timestamp
                 ? timestamp.toLocalDateTime()
                 : (LocalDateTime) occurredAt;
-        return time.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        return time.atZone(ZoneId.of("Asia/Shanghai")).toInstant().toEpochMilli();
+    }
+
+    /** 显式授权时只重建本机13307的异常表，不执行种子数据或其他表DDL。 */
+    private void recreateLocalExceptionTable(JdbcTemplate jdbc) throws Exception {
+        String url = ((DriverManagerDataSource) jdbc.getDataSource()).getUrl();
+        if (url == null || !url.matches("jdbc:mysql://(?:localhost|127\\.0\\.0\\.1):13307/erp(?:\\?.*)?")) {
+            throw new IllegalStateException("拒绝重建非本机13307开发库的异常表");
+        }
+        Path sqlFile = Path.of("../../docs/database/sql/007_mvp_system_exception.sql").toAbsolutePath().normalize();
+        String sql = Files.readString(sqlFile, StandardCharsets.UTF_8);
+        int start = sql.indexOf("CREATE TABLE IF NOT EXISTS system_exception (");
+        int end = sql.indexOf(";", start);
+        if (start < 0 || end < 0 || !sql.substring(start, end).contains("uk_system_exception_event_id")) {
+            throw new IllegalStateException("异常表建表SQL缺失或没有事件唯一索引");
+        }
+        System.out.println("SYS_EXC_RECREATE_LOCAL_TABLE existingRows=" + jdbc.queryForObject(
+                "SELECT COUNT(*) FROM system_exception", Long.class));
+        jdbc.execute("DROP TABLE system_exception");
+        jdbc.execute(sql.substring(start, end));
     }
 
     /** 仅为不存在的隔离 Topic 创建队列，并等待真实 NameServer 注册路由。 */

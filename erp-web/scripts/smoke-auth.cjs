@@ -42,7 +42,7 @@ async function run() {
     viewport: { width: 1440, height: 900 },
     screenshot: path.join(screenshotDirectory, 'auth-login-normal.png'),
     async test(page) {
-      await page.getByRole('heading', { name: '登录启衡 ERP' }).waitFor();
+      await page.getByRole('heading', { name: '登录云仓ERP' }).waitFor();
       await page.locator('[data-development-badge]').waitFor();
       await page.locator('[data-development-credentials]').waitFor();
 
@@ -98,7 +98,7 @@ async function run() {
     viewport: { width: 1280, height: 720 },
     screenshot: path.join(screenshotDirectory, 'auth-login-redirect-result.png'),
     async test(page) {
-      await page.getByRole('heading', { name: '登录启衡 ERP' }).waitFor();
+      await page.getByRole('heading', { name: '登录云仓ERP' }).waitFor();
 
       const reducedDuration = await page.locator('.login-shell').evaluate(
         element => getComputedStyle(element).animationDuration,
@@ -146,7 +146,7 @@ async function run() {
     viewport: { width: 1440, height: 900 },
     screenshot: path.join(screenshotDirectory, 'auth-login-production.png'),
     async test(page) {
-      await page.getByRole('heading', { name: '登录启衡 ERP' }).waitFor();
+      await page.getByRole('heading', { name: '登录云仓ERP' }).waitFor();
       if (await page.locator('[data-development-badge]').count() !== 0
         || await page.locator('[data-development-credentials]').count() !== 0) {
         throw new Error('生产构建仍显示开发环境标识或演示账号');

@@ -144,7 +144,7 @@ const fallbackFieldLabels: Record<string, string> = {
   gapQty: '安全库存缺口',
   lockQty: '锁定数量',
   releaseQty: '可释放数量',
-  onTimeRate: '准时率',
+  avgDeliveryDays: '平均到货周期',
   demandQty: '需求量',
 };
 </script>

@@ -10,7 +10,6 @@ import {
   ChevronRight,
   ClipboardCheck,
   Database,
-  Edit3,
   FileText,
   History,
   LineChart,
@@ -23,12 +22,12 @@ import {
   Plus,
   ShoppingCart,
   Sparkles,
-  Trash2,
   UserRound,
 } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import RemoteSearchSelect, { type RemoteSearchOption } from '@/components/common/RemoteSearchSelect.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -627,28 +626,28 @@ onBeforeUnmount(() => {
 
           <CollapsibleContent class="ai-conversation-list__drawer">
             <AiFadeSwitch :switch-key="selectedConversationDate || 'all'" content-class="ai-conversation-list__items">
-              <button
+              <div
                 v-for="conversation in pinnedConversations"
                 :key="conversation.conversationId"
-                type="button"
                 class="ai-conversation-row"
                 :class="{ 'is-active': conversationId === conversation.conversationId, 'is-switching': switchingConversationId === conversation.conversationId }"
-                @click="selectConversation(conversation.conversationId)"
               >
-                <History class="h-4 w-4" />
+                <button type="button" class="ai-conversation-row__main" @click="selectConversation(conversation.conversationId)">
+                  <History class="h-4 w-4" />
                 <span v-if="!sidebarCollapsed">
                   <strong>{{ conversation.title }}</strong>
                   <small>{{ conversation.updatedAt.slice(0, 16) }} · {{ conversation.description }}</small>
                 </span>
+                </button>
                 <span v-if="!sidebarCollapsed" class="ai-row-actions">
-                  <button type="button" aria-label="修改会话名称" @click.stop="openRename(conversation.conversationId, conversation.title)">
-                    <Edit3 class="h-3.5 w-3.5" />
-                  </button>
-                  <button type="button" aria-label="删除会话" @click.stop="removeConversation(conversation.conversationId)">
-                    <Trash2 class="h-3.5 w-3.5" />
-                  </button>
+                  <RowActionsMenu
+                    trigger-text="更多"
+                    :label="`更多 ${conversation.title} 操作`"
+                    :actions="[{ key: 'rename', label: '重命名' }, { key: 'delete', label: '删除会话', variant: 'destructive', separated: true }]"
+                    @select="key => key === 'rename' ? openRename(conversation.conversationId, conversation.title) : removeConversation(conversation.conversationId)"
+                  />
                 </span>
-              </button>
+              </div>
               <CollapsibleRoot
                 v-if="hiddenConversationCount > 0 && !sidebarCollapsed"
                 :open="conversationListExpanded"
@@ -657,28 +656,28 @@ onBeforeUnmount(() => {
               >
                 <CollapsibleContent class="ai-conversation-extra__drawer">
                   <div class="ai-conversation-extra__items">
-                    <button
+                    <div
                       v-for="conversation in extraConversations"
                       :key="conversation.conversationId"
-                      type="button"
                       class="ai-conversation-row"
                       :class="{ 'is-active': conversationId === conversation.conversationId, 'is-switching': switchingConversationId === conversation.conversationId }"
-                      @click="selectConversation(conversation.conversationId)"
                     >
-                      <History class="h-4 w-4" />
+                      <button type="button" class="ai-conversation-row__main" @click="selectConversation(conversation.conversationId)">
+                        <History class="h-4 w-4" />
                       <span v-if="!sidebarCollapsed">
                         <strong>{{ conversation.title }}</strong>
                         <small>{{ conversation.updatedAt.slice(0, 16) }} · {{ conversation.description }}</small>
                       </span>
+                      </button>
                       <span v-if="!sidebarCollapsed" class="ai-row-actions">
-                        <button type="button" aria-label="修改会话名称" @click.stop="openRename(conversation.conversationId, conversation.title)">
-                          <Edit3 class="h-3.5 w-3.5" />
-                        </button>
-                        <button type="button" aria-label="删除会话" @click.stop="removeConversation(conversation.conversationId)">
-                          <Trash2 class="h-3.5 w-3.5" />
-                        </button>
+                        <RowActionsMenu
+                          trigger-text="更多"
+                          :label="`更多 ${conversation.title} 操作`"
+                          :actions="[{ key: 'rename', label: '重命名' }, { key: 'delete', label: '删除会话', variant: 'destructive', separated: true }]"
+                          @select="key => key === 'rename' ? openRename(conversation.conversationId, conversation.title) : removeConversation(conversation.conversationId)"
+                        />
                       </span>
-                    </button>
+                    </div>
                   </div>
                 </CollapsibleContent>
               </CollapsibleRoot>
@@ -1327,7 +1326,6 @@ onBeforeUnmount(() => {
 .ai-prompt-card {
   display: grid;
   width: 100%;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   border: 1px solid #e5e7eb;
@@ -1339,6 +1337,28 @@ onBeforeUnmount(() => {
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.ai-conversation-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.ai-prompt-card {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+}
+
+.ai-conversation-row__main {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .ai-conversation-row:hover,
@@ -1403,29 +1423,7 @@ onBeforeUnmount(() => {
 .ai-row-actions {
   display: inline-flex;
   gap: 2px;
-  opacity: 0;
-}
-
-.ai-conversation-row:hover .ai-row-actions,
-.ai-conversation-row.is-active .ai-row-actions {
-  opacity: 1;
-}
-
-.ai-row-actions button {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #667085;
-  cursor: pointer;
-}
-
-.ai-row-actions button:hover {
-  background: white;
-  color: #172033;
+  align-items: center;
 }
 
 .ai-conversation-more {
@@ -1577,6 +1575,7 @@ onBeforeUnmount(() => {
   margin: 8px 0 0;
   color: #344054;
   line-height: 1.8;
+  white-space: pre-line;
 }
 
 .ai-task-message-card {

@@ -172,17 +172,17 @@ const mockSupplierCharts: AiChartSpec[] = [
     chartId: 'supplier-on-time-bar',
     type: 'bar',
     title: '供应商准时率对比',
-    description: '按近 30 天到货记录计算，值越低越需要复核履约风险。',
+    description: '按完全入库采购单计算平均到货周期，值越高越需要复核履约风险。',
     xField: 'supplierName',
-    yFields: ['onTimeRate'],
-    fieldLabels: { onTimeRate: '准时率' },
-    yUnit: '%',
+    yFields: ['avgDeliveryDays'],
+    fieldLabels: { avgDeliveryDays: '平均到货周期' },
+    yUnit: '天',
     nameField: null,
     valueField: null,
     data: [
-      { supplierName: '森纸纸业', onTimeRate: 97.4 },
-      { supplierName: '华东饮品', onTimeRate: 93.8 },
-      { supplierName: '拓联数码', onTimeRate: 84.6 },
+      { supplierName: '森纸纸业', avgDeliveryDays: 1.8 },
+      { supplierName: '华东饮品', avgDeliveryDays: 2.4 },
+      { supplierName: '拓联数码', avgDeliveryDays: 6.1 },
     ],
   },
 ];
@@ -265,8 +265,8 @@ const mockPurchaseWorkbench: AiAssistantWorkbench = {
   workbenchType: 'PURCHASE_DRAFT',
   route: '/purchase/orders',
   lines: [
-    { lineId: 'mock-line-a4', productId: '1920000000000000026', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 20, reason: '补足安全库存', supplierProductId: null, supplierId: null, supplierName: null, unitPrice: null, selectedSupplierScore: null, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
-    { lineId: 'mock-line-label', productId: '1920000000000000027', productName: '热敏标签纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 40, reason: '当前可用库存为零', supplierProductId: null, supplierId: null, supplierName: null, unitPrice: null, selectedSupplierScore: null, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
+    { lineId: 'mock-line-a4', productId: '1920000000000000026', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 20, reason: '补足安全库存并覆盖未来 7 天需求', supplierProductId: '1940000000000000026', supplierId: '1940000000000000001', supplierName: '森纸纸业', unitPrice: 21.8, selectedSupplierScore: 96.5, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
+    { lineId: 'mock-line-label', productId: '1920000000000000027', productName: '热敏标签纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 40, reason: '当前可用库存为零，优先补足安全库存', supplierProductId: '1940000000000000027', supplierId: '1940000000000000001', supplierName: '森纸纸业', unitPrice: 18.6, selectedSupplierScore: 96.5, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
   ],
   sections: [
     { title: '数据范围', items: ['销售订单、库存余额、采购在途', '华东中心仓、华南中心仓'] },
@@ -320,20 +320,82 @@ function mockMessage(messageId: string, role: 'assistant' | 'user', content: str
 }
 
 const mockMessagesByConversation: Record<string, AiChatMessage[]> = {
-  '1960000000000000001': [mockMessage('1963000000000000001', 'assistant', '我是智能经营助手。请选择快捷分析或直接描述经营问题。', '2026-07-01 10:18:00')],
+  '1960000000000000001': [
+    mockMessage('1963000000000000001', 'user', '请汇总今日经营风险，并给出优先处理建议。', '2026-07-01 10:17:42'),
+    mockMessage('1963000000000000008', 'assistant', `【经营巡检摘要】
+今日需要优先处理 2 项补货风险，均集中在华南中心仓。A4复印纸与热敏标签纸的可用库存已低于安全库存，若不处理，未来 7 天的销售需求将受到影响。
+
+【风险明细】
+1. A4复印纸：当前缺口 78 件，建议先补足安全库存，并在下一次销量汇总后复核需求变化。
+2. 热敏标签纸：当前缺口 40 件，且可用库存为零，应作为今日第一优先级处理。
+3. 供应商：森纸纸业近期履约评分为 96.5 分、报价稳定，可作为本轮采购建议的优选供货方。
+
+【建议处理顺序】
+先复核右侧工作框中的数量、入库仓与报价；确认无误后进入采购订单页面生成草稿。正式采购单仍需由业务人员确认，AI 不会直接写入业务单据。`, '2026-07-01 10:18:00', {
+      charts: [mockPurchaseCharts[1]],
+      actionCards: [mockActionCard('mock-today-purchase', '复核今日补货建议', '查看建议数量、报价与风险原因。', '/purchase/orders')],
+      sources: mockSources,
+      workbench: mockPurchaseWorkbench,
+    }),
+  ],
   '1960000000000000002': [
     mockMessage('1963000000000000002', 'user', '帮我分析今天需要优先补货的商品。', '2026-07-01 09:42:00'),
-    mockMessage('1963000000000000003', 'assistant', '已结合销售订单、库存余额和采购在途完成补货分析，请在右侧工作框复核建议。', '2026-07-01 09:42:18', {
+    mockMessage('1963000000000000003', 'assistant', `【补货分析结论】
+已结合近 7 日销售订单、当前可用库存、安全库存和采购在途完成分析。今日建议优先处理热敏标签纸与 A4复印纸，两项均存在明确安全库存缺口。
+
+【商品建议】
+1. 热敏标签纸：华南中心仓可用库存为零，建议补货 40 件，避免影响订单拣配与发货标签打印。
+2. A4复印纸：华南中心仓缺口 78 件，首批建议补货 20 件以恢复安全库存，再根据未来 7 天需求趋势追加。
+3. 速溶黑咖啡：近期需求上升但当前风险可控，建议继续观察销量变化，无需立即下单。
+
+【执行说明】
+右侧已生成采购建议工作框，包含建议数量、入库仓、优选供应商和参考报价。请先进行人工复核，再进入采购模块生成正式业务草稿。`, '2026-07-01 09:42:18', {
       charts: mockPurchaseCharts,
       actionCards: [mockActionCard('mock-open-purchase', '查看采购建议', '进入采购订单页面继续人工处理。', '/purchase/orders')],
       sources: mockSources,
       workbench: mockPurchaseWorkbench,
     }),
   ],
-  '1960000000000000003': [mockMessage('1963000000000000004', 'assistant', '销量预测已完成。', '2026-06-30 18:20:00', { charts: mockSalesCharts, sources: mockSources })],
-  '1960000000000000004': [mockMessage('1963000000000000005', 'assistant', '已识别跨仓库存缺口，请复核调拨建议。', '2026-06-30 16:40:00', { charts: mockStockCharts, actionCards: [mockActionCard('mock-open-stock', '查看库存余额', '进入库存余额页面继续人工处理。', '/warehouse/stocks')], sources: mockSources, workbench: mockTransferWorkbench })],
-  '1960000000000000005': [mockMessage('1963000000000000006', 'assistant', '供应商履约分析已完成。', '2026-06-29 15:12:00', { charts: mockSupplierCharts, sources: mockSources })],
-  '1960000000000000006': [mockMessage('1963000000000000007', 'assistant', '本周经营复盘已完成。', '2026-06-29 09:05:00', { charts: mockPurchaseCharts.slice(1), sources: mockSources })],
+  '1960000000000000003': [mockMessage('1963000000000000004', 'assistant', `【销量预测摘要】
+未来 7 天销量整体保持上升趋势。A4复印纸需求稳定增长，速溶黑咖啡的潜在需求较高，但可用库存偏低可能压制实际销量。
+
+【关键判断】
+1. A4复印纸：预测销量由 18 件逐步升至 33 件，建议维持安全库存，不宜延后补货。
+2. 速溶黑咖啡：需求增长明显，需先确认在途采购与可用库存，避免缺货造成销售损失。
+3. 热敏标签纸：需求波动较小，但应与仓库库存风险一并评估。
+
+【后续动作】
+建议在明日晨报中继续比对预测值与实际出库量；若偏差持续超过 15%，再调整采购频率和安全库存阈值。`, '2026-06-30 18:20:00', { charts: mockSalesCharts, sources: mockSources })],
+  '1960000000000000004': [mockMessage('1963000000000000005', 'assistant', `【库存风险巡检结果】
+本次巡检发现 4 个无可用库存商品、3 个低于安全库存商品，以及 2 项锁定库存占用偏高的情况。风险主要集中在华南中心仓，建议优先恢复可售库存。
+
+【优先处理项】
+1. 热敏标签纸：华南中心仓库存缺口明确，可从华东中心仓调拨 24 件。
+2. 中性签字笔：存在长期锁定未出库记录，需先复核来源销售单状态。
+3. A4复印纸：建议补足华南中心仓安全库存，减少未来销量预测带来的断货风险。
+
+【处理边界】
+右侧工作框仅提供调拨建议和可复核明细。请由仓储人员确认调出仓可用数量后，再进入业务页面处理正式调拨。`, '2026-06-30 16:40:00', { charts: mockStockCharts, actionCards: [mockActionCard('mock-open-stock', '查看库存余额', '进入库存余额页面继续人工处理。', '/warehouse/stocks')], sources: mockSources, workbench: mockTransferWorkbench })],
+  '1960000000000000005': [mockMessage('1963000000000000006', 'assistant', `【供应商履约分析】
+近 30 天供应商履约整体稳定，但不同供方的到货周期差异明显。纸品类供应商表现可靠，数码配件供方需要在下单前额外关注交期。
+
+【重点发现】
+1. 森纸纸业：平均到货周期 1.8 天，近期履约表现稳定，可作为纸品补货的优先供方。
+2. 华东饮品：平均到货周期 2.4 天，当前表现正常，建议维持现有合作节奏。
+3. 拓联数码：平均到货周期 6.1 天，明显高于其他供方；建议下单前确认延期原因，并准备备选供方。
+
+【建议】
+采购草稿中可优先选择履约稳定的供应商；对于到货周期超过 5 天的商品，应预留更长安全库存覆盖天数。`, '2026-06-29 15:12:00', { charts: mockSupplierCharts, sources: mockSources })],
+  '1960000000000000006': [mockMessage('1963000000000000007', 'assistant', `【本周经营复盘】
+本周销售需求整体平稳，库存风险主要来自华南中心仓的纸品类商品。采购在途能够覆盖部分需求，但仍需尽快处理热敏标签纸和 A4复印纸的安全库存缺口。
+
+【经营关注点】
+1. 销量：纸品需求连续增长，应持续跟踪预测与实际出库偏差。
+2. 库存：低库存商品优先通过补货或跨仓调拨恢复安全库存。
+3. 采购：优先选择履约稳定的供方，并在采购草稿中复核价格与到货周期。
+
+【下周建议】
+每天查看经营晨报；对高风险 SKU 设置专人跟进；在周中复核一次采购在途和库存缺口，避免风险累积。`, '2026-06-29 09:05:00', { charts: mockPurchaseCharts.slice(1), sources: mockSources })],
 };
 
 let mockTasks: AiScheduledTask[] = [
@@ -899,16 +961,78 @@ function buildMockAssistantReply(request: AiChatRequest): AiChatResponse {
   const isSales = request.message.includes('销量') || request.message.includes('预测');
   const isStock = request.message.includes('库存') || request.message.includes('风险');
   const content = isTransfer
-    ? '已完成跨仓库存分析。热敏标签纸建议从华东中心仓调拨到华南中心仓，A4复印纸建议从南京备货仓调拨到华南中心仓。右侧已生成调拨草稿工作框，可修改调出仓、调入仓和调拨数量。'
+    ? `【跨仓调拨分析】
+已完成华东中心仓与华南中心仓的可用库存、安全库存和未来需求比对。当前缺口优先通过内部调拨解决，可避免等待外部采购到货。
+
+【建议明细】
+1. 热敏标签纸：建议从华东中心仓调拨至华南中心仓，优先覆盖当前安全库存缺口。
+2. A4复印纸：建议复核南京备货仓可用数量后，再确定调拨批次，避免影响本地订单履约。
+
+【下一步】
+右侧已生成调拨建议工作框。请人工确认调出仓可用量、调入仓需求和建议数量后，再进入库存模块处理正式调拨。`
     : isRelease
-      ? '已识别可复核的锁定库存。两条销售单锁定超过 48 小时且未进入出库确认，右侧已生成锁定释放工作框，可修改释放数量和复核原因。'
+      ? `【锁定库存复核报告】
+已识别两条超过 48 小时且未进入出库确认的锁定记录。这些库存长期被占用，会降低可售库存并放大缺货风险。
+
+【复核建议】
+1. 逐条确认来源销售单是否已取消、超时或等待客户确认。
+2. 对确认无效的锁定，按来源单据和数量进行人工释放。
+3. 释放后重新计算可用库存，并复核是否仍需采购或调拨。
+
+【处理边界】
+右侧工作框只生成候选清单与复核理由，不会直接修改库存或订单状态。`
       : isSupplier
-        ? '已完成近 30 天供应商履约复盘。森纸纸业集团准时率保持 97.4%，可作为纸品供货优先供方；拓联数码配件准时率降至 84.6%，建议下单前先复核延期原因和备选供方。'
+        ? `【供应商履约复盘】
+已完成近 30 天到货周期、异常履约和供货稳定性分析。纸品类供应商表现稳定，数码配件供方存在交期偏长风险。
+
+【主要结论】
+1. 森纸纸业：近期履约稳定，可作为纸品补货的优选供方。
+2. 拓联数码：到货周期明显偏长，下单前应复核延期原因、在途状态与备选供方。
+3. 对交期超过 5 天的供方，建议相应提高安全库存覆盖天数。
+
+【建议动作】
+采购草稿中优先选择稳定供方；对高风险供方增加到货跟踪节点，避免延迟影响销售履约。`
       : isPurchase
-    ? '已完成初步拆解：先看库存缺口和销量预测，再用外部采购数据校验采购可行性。当前建议速溶黑咖啡和热敏标签纸优先补货，A4复印纸只补华南中心仓安全库存。'
+    ? `【采购补货建议】
+已完成库存缺口、销量预测、采购在途与供应商履约的交叉分析。本轮建议优先恢复高风险 SKU 的安全库存，再关注需求上升商品的采购节奏。
+
+【优先级建议】
+1. 热敏标签纸：可用库存为零，应优先补货，避免影响订单拣配与发货。
+2. 速溶黑咖啡：近期需求上升，建议尽快确认在途数量并补足需求缺口。
+3. A4复印纸：优先补足华南中心仓安全库存，其他仓库保持观察。
+
+【复核事项】
+请在右侧工作框核对建议数量、目标仓库、优选供应商与参考报价。确认后进入采购模块生成草稿，正式单据仍需人工审批。`
     : isSales
-      ? '销量预测显示：A4复印纸仍保持稳定增长，速溶黑咖啡受库存偏低影响导致销量被压制。建议先恢复可用库存，再观察未来 7 天销量回弹。'
-      : '我会按经营目标自动选择数据分析、采购、库存、销量或供应商方向，并把结果汇总为可执行建议。';
+      ? `【销量预测报告】
+未来 7 天预计销量总体向上。A4复印纸保持稳定增长；速溶黑咖啡可能因库存不足损失部分销量，需要结合补货进度持续观察。
+
+【趋势判断】
+1. A4复印纸：需求增长平稳，建议维持安全库存并按周复核。
+2. 速溶黑咖啡：预测需求提升，当前库存偏低是主要限制因素。
+3. 热敏标签纸：需求波动较小，但需防止缺货影响订单履约效率。
+
+【建议动作】
+先恢复高风险商品可用库存，再于 7 天后比对预测值与实际出库量；若偏差持续超过 15%，建议重新调整采购频率。`
+      : isStock
+        ? `【库存风险分析】
+已按可用库存、安全库存与锁定占用完成风险识别。当前风险重点集中在低库存商品和长期锁定库存，建议先处理会直接影响销售履约的项目。
+
+【处理顺序】
+1. 补足可用库存为零的商品。
+2. 复核低于安全库存商品的在途采购与跨仓可用量。
+3. 清理超过时限但未进入出库确认的锁定记录。
+
+【建议】
+完成复核后，可进入库存余额页面查看具体 SKU 和仓库明细。`
+        : `【经营分析说明】
+我会先识别你的经营目标，再组合库存、采购、销量和供应商等数据生成结论。
+
+【可输出内容】
+包括经营摘要、风险明细、趋势图表、优先处理顺序与下一步业务建议。
+
+【使用方式】
+你可以直接描述问题，例如“分析本周库存风险”或“生成 A4复印纸补货建议”；结果只提供建议与草稿预览，正式业务动作仍由人工确认。`;
   const charts = isTransfer
     ? mockPurchaseCharts.slice(1)
     : isRelease

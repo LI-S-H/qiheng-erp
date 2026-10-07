@@ -6,11 +6,8 @@ import {
   BarChart3,
   CalendarDays,
   ClipboardList,
-  Edit3,
   FileText,
-  LoaderCircle,
   Plus,
-  Play,
   RefreshCw,
   Repeat2,
 } from 'lucide-vue-next';
@@ -19,6 +16,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import MultiSelect from '@/components/common/MultiSelect.vue';
 import RemoteSearchSelect, { type RemoteSearchOption } from '@/components/common/RemoteSearchSelect.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -544,7 +542,7 @@ onMounted(async () => {
                 <col style="width: 18%" />
                 <col style="width: 16%" />
                 <col style="width: 13%" />
-                <col style="width: 21%" />
+                <col style="width: 15%" />
               </colgroup>
               <TableHeader>
                 <TableRow>
@@ -608,19 +606,21 @@ onMounted(async () => {
                   </TableCell>
                   <TableCell>
                     <div class="ai-task-actions">
-                      <Button size="sm" variant="outline" :disabled="!task.editable" @click="openEdit(task)">
-                        <Edit3 class="mr-1 h-3.5 w-3.5" />
-                        编辑
-                      </Button>
-                      <Button size="sm" variant="outline" :disabled="Boolean(actionTaskId) || task.status === 'DISABLED'" @click="runTask(task)">
-                        <LoaderCircle v-if="actionTaskId === task.taskId && taskAction === 'run'" class="mr-1 h-3.5 w-3.5 animate-spin" />
-                        <Play v-else class="mr-1 h-3.5 w-3.5" />
-                        {{ actionTaskId === task.taskId && taskAction === 'run' ? '执行中' : '执行' }}
-                      </Button>
-                      <Button size="sm" variant="outline" @click="selectLatestResult(task)">
-                        <FileText class="mr-1 h-3.5 w-3.5" />
-                        结果
-                      </Button>
+                      <Button size="sm" variant="ghost" class="h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700" @click="selectLatestResult(task)">查看结果</Button>
+                      <RowActionsMenu
+                        trigger-text="更多"
+                        :label="`更多 ${task.taskName} 操作`"
+                        :actions="[
+                          { key: 'edit', label: '编辑', disabled: !task.editable, disabledReason: '当前任务不允许编辑' },
+                          {
+                            key: 'run',
+                            label: actionTaskId === task.taskId && taskAction === 'run' ? '执行中' : '执行',
+                            disabled: Boolean(actionTaskId) || task.status === 'DISABLED',
+                            disabledReason: task.status === 'DISABLED' ? '已停用的任务不能执行' : Boolean(actionTaskId) ? '当前已有任务操作进行中' : undefined,
+                          },
+                        ]"
+                        @select="key => key === 'edit' ? openEdit(task) : runTask(task)"
+                      />
                     </div>
                   </TableCell>
                 </TableRow>

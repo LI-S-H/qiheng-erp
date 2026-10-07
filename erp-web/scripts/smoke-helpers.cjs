@@ -80,10 +80,10 @@ async function stopServer(child, targetBaseUrl) {
 
 async function loginIfNeeded(page, route, targetBaseUrl) {
   if (!page.url().includes('/login')) return;
-  await page.getByLabel('登录账号').fill('admin');
-  await page.getByLabel('登录密码').fill('123456');
+  await page.locator('#username').fill('admin');
+  await page.locator('#password').fill('123456');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await page.waitForURL(url => url.pathname !== '/login', { timeout: 10000 });
+  await page.waitForFunction(() => window.location.pathname !== '/login', undefined, { timeout: 10000 });
   await page.goto(`${targetBaseUrl}${route}`, { waitUntil: 'domcontentloaded' });
 }
 
@@ -391,9 +391,10 @@ async function clickPaginationAndAssertLoading(page, label) {
 async function clickRefreshAndAssertLoading(page, screenshotPath) {
   const refreshButton = page.getByRole('button', { name: '刷新', exact: true });
   await refreshButton.click();
+  // 本地接口响应很快时，遮罩出现后请求可能已结束；先在触发后的同一轮断言禁用状态。
+  if (!(await refreshButton.isDisabled())) throw new Error('刷新进行中按钮未禁用');
   const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
-  if (!(await refreshButton.isDisabled())) throw new Error('刷新进行中按钮未禁用');
   if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
   await overlay.waitFor({ state: 'hidden', timeout: 5000 });
 }
@@ -401,9 +402,10 @@ async function clickRefreshAndAssertLoading(page, screenshotPath) {
 async function clickResetAndAssertLoading(page, screenshotPath) {
   const resetButton = page.getByRole('button', { name: '重置', exact: true });
   await resetButton.click();
+  // 与刷新一致，在请求开始的同一轮检查，避免快速响应造成的测试竞争。
+  if (!(await resetButton.isDisabled())) throw new Error('重置查询进行中按钮未禁用');
   const overlay = page.locator('[data-page-loading]');
   await overlay.waitFor({ state: 'visible', timeout: 1000 });
-  if (!(await resetButton.isDisabled())) throw new Error('重置查询进行中按钮未禁用');
   if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
   await overlay.waitFor({ state: 'hidden', timeout: 5000 });
 }

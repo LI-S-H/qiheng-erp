@@ -7,12 +7,14 @@ withDefaults(defineProps<{
   subtitle?: string;
   statusLabel?: string;
   statusClass?: string;
+  showMetrics?: boolean;
   metricColumns?: 2 | 3;
   variant?: 'default' | 'canvas';
 }>(), {
   subtitle: '',
   statusLabel: '',
   statusClass: '',
+  showMetrics: true,
   metricColumns: 2,
   variant: 'default',
 });
@@ -28,7 +30,10 @@ withDefaults(defineProps<{
       </div>
       <p v-if="subtitle" class="business-detail-hero__subtitle">{{ subtitle }}</p>
     </div>
-    <div class="business-detail-hero__metrics" :class="`business-detail-hero__metrics--${metricColumns}`" aria-label="关键指标">
+    <div v-if="$slots.trailing" class="business-detail-hero__trailing">
+      <slot name="trailing" />
+    </div>
+    <div v-else-if="showMetrics" class="business-detail-hero__metrics" :class="`business-detail-hero__metrics--${metricColumns}`" aria-label="关键指标">
       <slot name="metrics" />
     </div>
   </section>
@@ -99,6 +104,7 @@ withDefaults(defineProps<{
 }
 
 .business-detail-hero__metrics--3 { grid-template-columns: repeat(3, minmax(112px, auto)); }
+.business-detail-hero__trailing { min-width: 0; }
 
 .business-detail-hero--canvas {
   gap: 24px;
@@ -136,6 +142,7 @@ withDefaults(defineProps<{
 
 @media (max-width: 680px) {
   .business-detail-hero { grid-template-columns: 1fr; }
+  .business-detail-hero__trailing { width: 100%; }
   .business-detail-hero__metrics, .business-detail-hero__metrics--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .business-detail-hero__metrics :slotted(.business-detail-hero__metric) { min-width: 0; }
 }

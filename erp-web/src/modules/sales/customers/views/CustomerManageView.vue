@@ -7,6 +7,7 @@ import BusinessDetailFacts from '@/components/common/BusinessDetailFacts.vue';
 import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
 import BusinessDetailSection from '@/components/common/BusinessDetailSection.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
@@ -348,10 +349,13 @@ onMounted(fetchCustomers);
               <TableCell class="text-center"><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
               <TableCell class="text-right">
-                <Button variant="ghost" size="sm" class="text-cyan-700 hover:text-cyan-800" @click="openDetail(row)">详情</Button>
-                <Button variant="ghost" size="sm" @click="openEditDialog(row)">编辑</Button>
-                <Button variant="ghost" size="sm" :class="row.status === 1 ? 'text-amber-700 hover:text-amber-800' : 'text-primary hover:text-primary'" @click="confirmStatus(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button>
-                <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="confirmDelete(row)">删除</Button>
+                <Button variant="ghost" size="sm" class="h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700" @click="openDetail(row)">查看</Button>
+                <RowActionsMenu
+                  trigger-text="更多"
+                  :label="`更多 ${row.customerName} 操作`"
+                  :actions="[{ key: 'edit', label: '编辑' }, { key: 'status', label: row.status === 1 ? '停用' : '启用' }, { key: 'delete', label: '删除', variant: 'destructive', separated: true }]"
+                  @select="key => key === 'edit' ? openEditDialog(row) : key === 'status' ? confirmStatus(row, row.status === 1 ? 0 : 1) : confirmDelete(row)"
+                />
               </TableCell>
             </TableRow>
           </TableBody>

@@ -6,10 +6,12 @@ withDefaults(defineProps<{
   gridClass?: HTMLAttributes['class'];
   ariaLabel?: string;
   layout?: 'grid' | 'content';
+  actionsPosition?: 'inline' | 'bottom';
 }>(), {
   gridClass: undefined,
   ariaLabel: '筛选条件',
   layout: 'grid',
+  actionsPosition: 'inline',
 });
 </script>
 
@@ -26,12 +28,15 @@ withDefaults(defineProps<{
       :data-filter-layout="layout"
     >
       <slot />
-      <div v-if="$slots.actions" class="filter-actions list-filter-panel__actions">
+      <div v-if="$slots.actions && actionsPosition === 'inline'" class="filter-actions list-filter-panel__actions">
         <slot name="actions" />
       </div>
     </div>
     <div v-if="$slots.footer" class="list-filter-panel__footer">
       <slot name="footer" />
+    </div>
+    <div v-if="$slots.actions && actionsPosition === 'bottom'" class="filter-actions list-filter-panel__actions list-filter-panel__actions--bottom">
+      <slot name="actions" />
     </div>
   </Card>
 </template>
@@ -132,6 +137,14 @@ withDefaults(defineProps<{
 
 .list-filter-panel__actions :deep([data-slot='button']) {
   min-width: 72px;
+}
+
+.list-filter-panel__actions--bottom {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 7%, var(--border));
+  padding-top: 12px;
 }
 
 .list-filter-panel__footer {

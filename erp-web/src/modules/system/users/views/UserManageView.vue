@@ -803,6 +803,7 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
                     :actions="getRowActions(row)"
                     :disabled="actionSubmitting"
                     :label="`更多 ${row.username} 操作`"
+                    trigger-text="更多"
                     @select="handleRowAction(row, $event)"
                   />
                 </div>

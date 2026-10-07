@@ -29,6 +29,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
@@ -739,8 +740,13 @@ function confirmBatchDelete() {
                 <div class="tree-table-cell-reveal">
                   <div class="flex items-center justify-center gap-1">
                     <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
-                    <Button size="sm" variant="ghost" class="text-primary" :disabled="actionSubmitting" @click="openChildDialog(row)">新增下级</Button>
-                    <Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="confirmDelete(row)">删除</Button>
+                    <RowActionsMenu
+                      trigger-text="更多"
+                      :disabled="actionSubmitting"
+                      :label="`更多 ${row.categoryName} 操作`"
+                      :actions="[{ key: 'child', label: '新增下级' }, { key: 'delete', label: '删除', variant: 'destructive', separated: true }]"
+                      @select="key => key === 'child' ? openChildDialog(row) : confirmDelete(row)"
+                    />
                   </div>
                 </div>
               </TableCell>

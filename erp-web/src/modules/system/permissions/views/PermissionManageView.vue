@@ -23,6 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
@@ -499,8 +500,13 @@ function handleBatchDelete() {
               <TableCell class="text-xs">{{ formatTableTime(row.updateTime) }}</TableCell>
               <TableCell class="text-center"><div class="flex items-center justify-center gap-1">
                 <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
-                <Button size="sm" variant="ghost" :class="row.status === 1 ? 'text-amber-700' : 'text-primary'" :disabled="actionSubmitting" @click="handleStatusChange(row, row.status === 1 ? 0 : 1)">{{ row.status === 1 ? '停用' : '启用' }}</Button>
-                <Button size="sm" variant="ghost" class="text-destructive" :disabled="actionSubmitting" @click="handleDelete(row)">删除</Button>
+                <RowActionsMenu
+                  trigger-text="更多"
+                  :disabled="actionSubmitting"
+                  :label="`更多 ${row.permissionName} 操作`"
+                  :actions="[{ key: 'status', label: row.status === 1 ? '停用' : '启用' }, { key: 'delete', label: '删除', variant: 'destructive', separated: true }]"
+                  @select="key => key === 'status' ? handleStatusChange(row, row.status === 1 ? 0 : 1) : handleDelete(row)"
+                />
               </div></TableCell>
             </TableRow>
           </TableBody>

@@ -1,31 +1,35 @@
 <script setup lang="ts">
-import { MoreHorizontal } from 'lucide-vue-next';
-import { Button } from '@/components/ui/button';
+import { MoreHorizontal } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 
 export interface RowActionOption {
   key: string;
   label: string;
-  variant?: 'default' | 'destructive';
+  variant?: "default" | "destructive";
   disabled?: boolean;
   disabledReason?: string;
   separated?: boolean;
 }
 
-const props = withDefaults(defineProps<{
-  actions: readonly RowActionOption[];
-  label?: string;
-  disabled?: boolean;
-}>(), {
-  label: '更多操作',
-  disabled: false,
-});
+const props = withDefaults(
+  defineProps<{
+    actions: readonly RowActionOption[];
+    label?: string;
+    triggerText?: string;
+    disabled?: boolean;
+  }>(),
+  {
+    label: "更多操作",
+    disabled: false,
+  },
+);
 
 const emit = defineEmits<{
   select: [key: string];
@@ -33,7 +37,7 @@ const emit = defineEmits<{
 
 function handleSelect(action: RowActionOption) {
   if (props.disabled || action.disabled) return;
-  emit('select', action.key);
+  emit("select", action.key);
 }
 </script>
 
@@ -42,14 +46,19 @@ function handleSelect(action: RowActionOption) {
     <DropdownMenuTrigger as-child>
       <Button
         type="button"
-        variant="ghost"
-        size="icon-sm"
+        :variant="props.triggerText ? 'link' : 'ghost'"
+        :size="props.triggerText ? 'sm' : 'icon-sm'"
         data-row-actions-trigger
         :disabled="disabled"
         :aria-label="label"
-        :title="label"
+        :class="
+          props.triggerText
+            ? 'h-8 px-2.5 font-medium text-primary hover:no-underline'
+            : undefined
+        "
       >
-        <MoreHorizontal aria-hidden="true" />
+        <template v-if="props.triggerText">{{ props.triggerText }}</template>
+        <MoreHorizontal v-else aria-hidden="true" />
       </Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" class="min-w-36">
@@ -58,7 +67,7 @@ function handleSelect(action: RowActionOption) {
         <DropdownMenuItem
           :variant="action.variant || 'default'"
           :disabled="action.disabled"
-          :title="action.disabled ? action.disabledReason : undefined"
+          :title="action.disabled ? action.disabledReason : action.label"
           @select="handleSelect(action)"
         >
           {{ action.label }}

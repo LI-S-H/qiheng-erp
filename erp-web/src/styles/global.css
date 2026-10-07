@@ -569,6 +569,18 @@ a {
   transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
+.table-scroll-viewport [data-table-sticky-edge^="group-"]::before {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  content: "";
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
 .table-scroll-viewport [data-table-sticky-edge="start"]::after {
   right: -18px;
   background: linear-gradient(90deg, rgb(15 23 42 / 18%), rgb(15 23 42 / 7%) 34%, transparent 100%);
@@ -579,13 +591,28 @@ a {
   background: linear-gradient(270deg, rgb(15 23 42 / 18%), rgb(15 23 42 / 7%) 34%, transparent 100%);
 }
 
+.table-scroll-viewport [data-table-sticky-edge="group-start"]::before,
+.table-scroll-viewport [data-table-sticky-edge="group-both"]::before {
+  left: -18px;
+  background: linear-gradient(270deg, rgb(15 23 42 / 18%), rgb(15 23 42 / 7%) 34%, transparent 100%);
+}
+
+.table-scroll-viewport [data-table-sticky-edge="group-end"]::after,
+.table-scroll-viewport [data-table-sticky-edge="group-both"]::after {
+  right: -18px;
+  background: linear-gradient(90deg, rgb(15 23 42 / 18%), rgb(15 23 42 / 7%) 34%, transparent 100%);
+}
+
 .table-scroll-viewport[data-scroll-start="true"] [data-table-sticky-edge="start"]::after,
-.table-scroll-viewport[data-scroll-end="true"] [data-table-sticky-edge="end"]::after {
+.table-scroll-viewport[data-scroll-end="true"] [data-table-sticky-edge="end"]::after,
+.table-scroll-viewport[data-scroll-start="true"] [data-table-sticky-edge^="group-"]::before,
+.table-scroll-viewport[data-scroll-start="true"] [data-table-sticky-edge^="group-"]::after {
   opacity: var(--table-sticky-edge-opacity);
 }
 
 .table-scroll-viewport[data-scroll-start="true"] [data-slot="table-row"]:hover > [data-table-sticky-edge="start"],
-.table-scroll-viewport[data-scroll-end="true"] [data-slot="table-row"]:hover > [data-table-sticky-edge="end"] {
+.table-scroll-viewport[data-scroll-end="true"] [data-slot="table-row"]:hover > [data-table-sticky-edge="end"],
+.table-scroll-viewport[data-scroll-start="true"] [data-slot="table-row"]:hover > [data-table-sticky-edge^="group-"] {
   --table-sticky-edge-opacity: 1;
 }
 

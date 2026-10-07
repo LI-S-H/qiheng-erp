@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getApiErrorMessage } from '@/api/http';
-import logoUrl from '@/assets/brand/qiheng-logo.svg';
+import logoUrl from '@/assets/brand/yuncang-logo.png';
 import visualUrl from '@/assets/brand/login-operations.svg';
 import { useAuthStore } from '../stores/authStore';
 import type { LoginRequest } from '../types';
@@ -109,10 +109,10 @@ async function handleSubmit() {
         <div class="relative z-10 mx-auto w-full max-w-[640px]">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-3">
-              <img class="h-12 w-12 rounded-xl ring-1 ring-slate-200 sm:h-14 sm:w-14" :src="logoUrl" alt="启衡 ERP" />
+              <img class="h-12 w-12 rounded-xl object-contain ring-1 ring-slate-200 sm:h-14 sm:w-14" :src="logoUrl" alt="云仓ERP" />
               <div>
-                <p class="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">启衡 ERP</p>
-                <p class="mt-0.5 text-xs text-slate-500">进销存智能管理平台</p>
+                <p class="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">云仓ERP</p>
+                <p class="mt-0.5 text-xs text-slate-500">云端仓储智能管理平台</p>
               </div>
             </div>
             <span
@@ -149,7 +149,7 @@ async function handleSubmit() {
           <img
             class="mt-7 hidden w-full max-w-[600px] rounded-xl border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgb(15_23_42/0.35)] lg:block"
             :src="visualUrl"
-            alt="启衡 ERP 经营数据概览"
+            alt="云仓ERP 经营数据概览"
           />
         </div>
       </section>
@@ -157,7 +157,7 @@ async function handleSubmit() {
       <section class="flex items-center justify-center border-t border-slate-200 bg-white p-6 sm:p-10 lg:border-l lg:border-t-0 lg:p-12">
         <Card class="w-full max-w-[380px] gap-0 border-0 py-0 shadow-none ring-0">
           <CardHeader class="space-y-2 px-0 pb-6">
-            <CardTitle class="text-3xl tracking-tight"><h2>登录启衡 ERP</h2></CardTitle>
+            <CardTitle class="text-3xl tracking-tight"><h2>登录云仓ERP</h2></CardTitle>
             <CardDescription>
               {{ isDevelopment ? '使用演示账号体验完整业务流程' : '使用企业账号进入管理平台' }}
             </CardDescription>

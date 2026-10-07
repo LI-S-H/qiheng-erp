@@ -1,7 +1,10 @@
 package com.qiheng.erp.dashboard.job;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.qiheng.erp.common.constant.SystemExceptionConstants;
 import com.qiheng.erp.common.annotation.DistributedLock;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
+import com.qiheng.erp.common.mq.SystemExceptionRecordMessage;
 import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
 import com.qiheng.erp.dashboard.loader.DashboardStockAlertLoader;
@@ -52,8 +55,12 @@ public class DashboardDailySnapshotJob {
     /** Redisson 分布式锁 key（SpEL 字符串字面量语法），多实例部署时只允许一个实例执行 */
     private static final String LOCK_KEY = "'dashboard:job:daily-snapshot'";
 
+    /** 上报用的稳定任务标识 */
+    private static final String TASK_NO = "dashboard-daily-snapshot";
+
     private final PrevValueCache prevValueCache;
     private final DashboardStockAlertLoader stockAlertLoader;
+    private final SystemExceptionMqPublisher systemExceptionMqPublisher;
     private final PurchaseOrderMapper purchaseOrderMapper;
     private final SalesOrderMapper salesOrderMapper;
     private final InboundBillMapper inboundBillMapper;
@@ -89,6 +96,11 @@ public class DashboardDailySnapshotJob {
             log.info("工作台日快照全部完成 date={}", today);
         } else {
             log.warn("工作台日快照部分失败 date={} pendingOk={} stockOk={}", today, pendingOk, stockOk);
+            // 重试已用尽仍失败，次日"较昨日"对比缺基线，上报待人工重跑
+            systemExceptionMqPublisher.publishJobFailure(TASK_NO,
+                    "工作台日快照失败 date=" + today + " pendingOk=" + pendingOk + " stockOk=" + stockOk,
+                    "检查 MySQL/Redis 连接后人工触发日快照；完成前次日对比基线缺失",
+                    SystemExceptionConstants.SEVERITY_HIGH);
         }
     }
 
@@ -106,13 +118,13 @@ public class DashboardDailySnapshotJob {
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         log.warn("重试等待被中断，终止重试 date={} step={}", today, stepName);
-                        // TODO: 处理中断异常，如记录日志、通知管理员等
+                        // 中断时保留中断标记并终止重试，失败状态由调用方统一上报。
                         break;
                     }
                 }
             }
         }
-        // TODO: 处理最大重试次数超过，如记录日志、通知管理员等
+        // 重试耗尽后返回失败，由快照入口汇总结果并上报系统异常。
         return false;
     }
 

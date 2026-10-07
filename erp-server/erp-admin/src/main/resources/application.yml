@@ -86,6 +86,15 @@ supplier-score:
     # 生产默认启用凌晨校正，承担 MQ 投递或消费失败后的最终补偿。
     enabled: ${SUPPLIER_SCORE_SCHEDULED_ENABLED:true}
 
+# 系统异常记录配置：全局拦截器与定时任务失败经 MQ 汇聚到 erp-dashboard 单点写库
+system-exception:
+  rocketmq:
+    topic: erp-system-exception-record
+    producer:
+      group: erp-system-exception-producer
+    consumer:
+      group: erp-system-exception-consumer
+
 knife4j:
   enable: true
   setting:

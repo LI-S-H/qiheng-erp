@@ -1,7 +1,10 @@
 package com.qiheng.erp.dashboard.job;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.qiheng.erp.common.constant.SystemExceptionConstants;
 import com.qiheng.erp.common.annotation.DistributedLock;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
+import com.qiheng.erp.common.mq.SystemExceptionRecordMessage;
 import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.domain.metric.enums.OrderMetricScope;
 import com.qiheng.erp.purchase.domain.purchaseorder.entity.PurchaseOrder;
@@ -45,7 +48,11 @@ public class DashboardMonthlySnapshotJob {
     /** Redisson 分布式锁 key（SpEL 字符串字面量语法），多实例部署时只允许一个实例执行 */
     private static final String LOCK_KEY = "'dashboard:job:monthly-snapshot'";
 
+    /** 上报用的稳定任务标识 */
+    private static final String TASK_NO = "dashboard-monthly-snapshot";
+
     private final PrevValueCache prevValueCache;
+    private final SystemExceptionMqPublisher systemExceptionMqPublisher;
     private final SalesOrderMapper salesOrderMapper;
     private final PurchaseOrderMapper purchaseOrderMapper;
 
@@ -95,7 +102,11 @@ public class DashboardMonthlySnapshotJob {
             log.info("工作台月快照全部完成 month={}", month);
         } else {
             log.warn("工作台月快照部分失败 month={} salesOk={} purchaseOk={}", month, salesOk, purchaseOk);
-
+            // 重试已用尽仍失败，次月"较上月"对比缺基线，上报待人工重跑
+            systemExceptionMqPublisher.publishJobFailure(TASK_NO,
+                    "工作台月快照失败 month=" + month + " salesOk=" + salesOk + " purchaseOk=" + purchaseOk,
+                    "检查 MySQL/Redis 连接后人工触发月快照；完成前次月对比基线缺失",
+                    SystemExceptionConstants.SEVERITY_HIGH);
         }
     }
 
@@ -113,13 +124,13 @@ public class DashboardMonthlySnapshotJob {
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         log.warn("重试等待被中断，终止重试 month={} step={}", month, stepName);
-                        // TODO: 处理中断异常，如记录日志、通知管理员等
+                        // 中断时保留中断标记并终止重试，失败状态由调用方统一上报。
                         break;
                     }
                 }
             }
         }
-        // TODO: 处理失败异常，如记录日志、通知管理员等
+        // 重试耗尽后返回失败，由快照入口汇总结果并上报系统异常。
         return false;
     }
 

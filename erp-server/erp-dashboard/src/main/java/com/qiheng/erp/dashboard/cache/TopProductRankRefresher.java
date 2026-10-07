@@ -1,6 +1,8 @@
 package com.qiheng.erp.dashboard.cache;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.qiheng.erp.common.constant.SystemExceptionConstants;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.dashboard.domain.metric.enums.OrderMetricScope;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrderItem;
@@ -38,19 +40,44 @@ import java.util.Map;
 @Slf4j
 public class TopProductRankRefresher {
 
+    /** 上报用的稳定任务标识 */
+    private static final String TASK_NO = "dashboard-top-product-rebuild";
+
     private final SalesOrderItemMapper salesOrderItemMapper;
     private final ReturnOrderItemMapper returnOrderItemMapper;
     private final TopProductRankCache rankCache;
+    private final SystemExceptionMqPublisher systemExceptionMqPublisher;
 
-    /** 凌晨 01:30 跑：避开月初月末高频审批时段，30 天滑动窗口首日跨过凌晨即重建 */
+    /**
+     * 凌晨 01:30 跑：避开月初月末高频审批时段，30 天滑动窗口首日跨过凌晨即重建。
+     *
+     * <p>失败语义：SKIPPED_LOCK_BUSY 是多实例正常抢占不上报；FAILED 说明重建失败但旧榜单
+     * 仍在服务且次日自动重试，上报 MEDIUM；能穿透 rebuild 的异常基本是 MySQL/Redis 环境级
+     * 故障（当前会被调度器静默吞掉），catch 后上报 HIGH。</p>
+     */
     @Scheduled(cron = "0 30 1 * * ?")
     public void refresh() {
-        TopProductRankCache.RebuildOutcome outcome = rankCache.rebuild(this::queryRankEntries);
-        // 区分三种结果：成功 / 被其他实例抢占 / 失败，便于监控告警
-        switch (outcome) {
-            case SUCCESS -> log.info("工作台 TOP 商品排行凌晨全量重建成功");
-            case SKIPPED_LOCK_BUSY -> log.info("工作台 TOP 商品排行凌晨全量重建跳过：其他实例正在跑");
-            case FAILED -> log.warn("工作台 TOP 商品排行凌晨全量重建失败，需要人工排查或等明天重试");
+        try {
+            TopProductRankCache.RebuildOutcome outcome = rankCache.rebuild(this::queryRankEntries);
+            // 区分三种结果：成功 / 被其他实例抢占 / 失败，便于监控告警
+            switch (outcome) {
+                case SUCCESS -> log.info("工作台 TOP 商品排行凌晨全量重建成功");
+                case SKIPPED_LOCK_BUSY -> log.info("工作台 TOP 商品排行凌晨全量重建跳过：其他实例正在跑");
+                case FAILED -> {
+                    log.warn("工作台 TOP 商品排行凌晨全量重建失败，需要人工排查或等明天重试");
+                    systemExceptionMqPublisher.publishJobFailure(TASK_NO,
+                            "TOP 商品排行凌晨全量重建失败，榜单将随 30 天滑动窗口失真",
+                            "检查 MySQL/Redis 连接；可通过工作台手动触发重建，或等次日 01:30 自动重试",
+                            SystemExceptionConstants.SEVERITY_MEDIUM);
+                }
+            }
+        } catch (Exception e) {
+            // 未捕获异常当前被调度器吞掉，必须在此上报否则无人知晓
+            log.error("工作台 TOP 商品排行凌晨重建抛出异常", e);
+            systemExceptionMqPublisher.publishJobFailure(TASK_NO,
+                    "TOP 商品排行凌晨重建抛出异常：" + e.getClass().getSimpleName() + "，重建未执行",
+                    "检查 MySQL/Redis 可用性后人工触发重建；此为环境级故障",
+                    SystemExceptionConstants.SEVERITY_HIGH);
         }
     }
 

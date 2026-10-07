@@ -1,6 +1,7 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.qiheng.erp.common.constant.SystemExceptionConstants;
 import com.qiheng.erp.dashboard.domain.exception.entity.SystemException;
 import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoDetailModel;
 import com.qiheng.erp.dashboard.domain.todo.enums.DashboardTodoType;
@@ -154,11 +155,12 @@ public class DashboardSystemExceptionLoader {
             return "未知";
         }
         return switch (exceptionType) {
-            case "MCP_TOOL_FAILED" -> "MCP超时";
-            case "MQ_DEAD_LETTER" -> "死信队列";
-            case "EXT_CALLBACK_FAILED" -> "回调超时";
-            case "JOB_FAILED" -> "任务失败";
-            case "COMPENSATION_FAILED" -> "补偿失败";
+            case SystemExceptionConstants.TYPE_MCP_TOOL_FAILED -> "MCP超时";
+            case SystemExceptionConstants.TYPE_MQ_DEAD_LETTER -> "死信队列";
+            case SystemExceptionConstants.TYPE_EXT_CALLBACK_FAILED -> "回调超时";
+            case SystemExceptionConstants.TYPE_JOB_FAILED -> "任务失败";
+            case SystemExceptionConstants.TYPE_COMPENSATION_FAILED -> "补偿失败";
+            case SystemExceptionConstants.TYPE_SYSTEM_ERROR -> "系统异常";
             default -> exceptionType;
         };
     }

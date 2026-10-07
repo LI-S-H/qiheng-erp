@@ -1,6 +1,8 @@
 package com.qiheng.erp.purchase.job;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.qiheng.erp.common.constant.SystemExceptionConstants;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.purchase.domain.supplier.entity.Supplier;
 import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
 import com.qiheng.erp.purchase.domain.supplierscore.dto.ScoreRecalcContext;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.HashSet;
@@ -33,9 +36,14 @@ import java.util.concurrent.TimeUnit;
 public class SupplierScoreScheduledJob {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final int PAGE_SIZE = 100;
+    /** 汇总上报 detailSummary 中最多携带的失败供应商 ID 数，避免极端故障刷爆待办摘要 */
+    private static final int FAILED_ID_SAMPLE_LIMIT = 5;
+    private static final String QUOTE_TASK_NO = "supplier-score-quote-expired";
+    private static final String DAILY_TASK_NO = "supplier-score-daily-reconciliation";
     private final SupplierScoreRecalculateService recalculateService;
     private final SupplierMapper supplierMapper;
     private final SupplierProductMapper supplierProductMapper;
+    private final SystemExceptionMqPublisher systemExceptionMqPublisher;
     private final RedissonClient redissonClient;
 
     /** 每天只处理前一天到期的报价，漏跑由两点的每日全量校正补偿。 */
@@ -64,7 +72,9 @@ public class SupplierScoreScheduledJob {
                 break;
             }
         }
-        // 3. 对每个供应商重算评分
+        // 3. 对每个供应商重算评分，失败计数汇总上报（有 02:00 全量校正兜底，severity=LOW）
+        int failedCount = 0;
+        List<Long> failedIds = new ArrayList<>();
         for (Long supplierId : supplierIds) {
             RLock lock = redissonClient.getLock(SupplierScoreRedisKeys.lockKey(supplierId));
             boolean acquired = false;
@@ -78,22 +88,41 @@ public class SupplierScoreScheduledJob {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.error("报价到期重算被中断 supplierId={}", supplierId, e);
+                // 中断也需上报：已 done 部分失败的汇总不能因 return 丢失，应用关闭期间仍能让工作台待办感知
+                if (failedCount > 0) {
+                    systemExceptionMqPublisher.publishJobFailure(QUOTE_TASK_NO,
+                            "报价到期评分重算被中断，已完成部分失败 " + failedCount + " 家(supplierId: " + failedIds + ")",
+                            "应用正在关闭；等待 02:00 每日全量校正自动兜底",
+                            SystemExceptionConstants.SEVERITY_LOW);
+                }
                 return;
             } catch (RuntimeException e) {
+                failedCount++;
+                if (failedIds.size() < FAILED_ID_SAMPLE_LIMIT) {
+                    failedIds.add(supplierId);
+                }
                 log.error("报价到期重算失败，待每日校正 supplierId={}", supplierId, e);
             } finally {
                 if (acquired && lock.isHeldByCurrentThread()) lock.unlock();
             }
         }
+        // 5. 汇总上报一条，绝不 per-supplier 发送，避免环境级故障刷爆工作台待办
+        if (failedCount > 0) {
+            systemExceptionMqPublisher.publishJobFailure(QUOTE_TASK_NO,
+                    "报价到期评分重算失败 " + failedCount + " 家(supplierId: " + failedIds + ")",
+                    "等待 02:00 每日全量校正自动兜底；连续多日出现时检查 MQ 消费与评分事实查询",
+                    SystemExceptionConstants.SEVERITY_LOW);
+        }
     }
 
-    /** 按固定业务日期分页校正启用供应商的评分，单个供应商失败不阻断后续处理。 */
+    /** 按固定业务日期分页校正启用供应商的评分，单个供应商失败不阻断后续处理；失败汇总上报待次日自愈。 */
     @Scheduled(cron = "0 0 2 * * ?", zone = "Asia/Shanghai")
     public void dailyReconciliation() {
         LocalDate date = LocalDate.now(BUSINESS_ZONE);
         RLock lock = redissonClient.getLock("supplier:score:daily:lock");
         boolean acquired = false;
         long success = 0, failed = 0, cursor = 0;
+        List<Long> failedIds = new ArrayList<>();
         try {
             acquired = lock.tryLock(0, TimeUnit.SECONDS);
             if (!acquired) return;
@@ -120,10 +149,16 @@ public class SupplierScoreScheduledJob {
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         failed++;
+                        if (failedIds.size() < FAILED_ID_SAMPLE_LIMIT) {
+                            failedIds.add(supplier.getId());
+                        }
                         log.error("每日评分校正被中断 supplierId={} businessDate={}", supplier.getId(), date, e);
                         return;
                     } catch (RuntimeException e) {
                         failed++;
+                        if (failedIds.size() < FAILED_ID_SAMPLE_LIMIT) {
+                            failedIds.add(supplier.getId());
+                        }
                         log.error("每日评分校正失败，需补跑 supplierId={} businessDate={}", supplier.getId(), date, e);
                     } finally {
                         if (supplierLocked && supplierLock.isHeldByCurrentThread()) supplierLock.unlock();
@@ -133,9 +168,33 @@ public class SupplierScoreScheduledJob {
                 if (page.size() < PAGE_SIZE) break;
             }
             log.info("每日评分校正完成 businessDate={} success={} failed={}", date, success, failed);
+            // 3. 失败汇总上报一条（次日 02:00 自动再校正兜底，severity=LOW）
+            if (failed > 0) {
+                systemExceptionMqPublisher.publishJobFailure(DAILY_TASK_NO,
+                        "每日评分校正失败 " + failed + " 家(supplierId: " + failedIds + ")，success=" + success,
+                        "次日 02:00 自动再校正；连续失败时检查 MQ 消费与 Redis pending",
+                        SystemExceptionConstants.SEVERITY_LOW);
+            }
         } catch (InterruptedException e) {
+            // 整体中断说明调度线程被关闭打断；恢复中断位并抛出，不上报（应用关闭场景 MQ 可能已停）。
+            // 但已 done 的失败仍需汇总上报，避免中断路径丢失工作台感知。
             Thread.currentThread().interrupt();
+            log.error("每日评分校正被中断 businessDate={}", date, e);
+            if (failed > 0) {
+                systemExceptionMqPublisher.publishJobFailure(DAILY_TASK_NO,
+                        "每日评分校正被中断，已完成部分失败 " + failed + " 家(supplierId: " + failedIds + ")",
+                        "应用正在关闭；下次 02:00 自动再校正",
+                        SystemExceptionConstants.SEVERITY_LOW);
+            }
             throw new IllegalStateException("每日评分校正被中断", e);
+        } catch (Exception e) {
+            // 整体失败说明兜底链路本身断了，这是最严重的一档，必须上报
+            log.error("每日评分校正整体失败 businessDate={}", date, e);
+            systemExceptionMqPublisher.publishJobFailure(DAILY_TASK_NO,
+                    "每日评分校正整体失败：" + e.getClass().getSimpleName(),
+                    "检查 MySQL/Redis 可用性后人工补跑校正；校正链路断裂期间评分可能漂移",
+                    SystemExceptionConstants.SEVERITY_HIGH);
+            throw new IllegalStateException("每日评分校正整体失败", e);
         } finally {
             if (acquired && lock.isHeldByCurrentThread()) lock.unlock();
         }

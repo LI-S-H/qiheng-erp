@@ -3,9 +3,11 @@ package com.qiheng.erp.common.handler;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.exception.ServiceUnavailableBizException;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.common.result.Result;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -23,11 +25,19 @@ import java.util.stream.Collectors;
 
 /**
  * 全局异常处理
+ *
+ * <p>仅 handleException 兜底路径上报系统异常消息（写入 system_exception 表）；
+ * 业务异常、参数校验、重复键等属于用户操作问题，只记日志不入异常表，
+ * 避免工作台"系统异常"待办被用户操作刷屏。</p>
  */
 @Slf4j
+@RequiredArgsConstructor
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
     private static final Pattern DUPLICATE_KEY_PATTERN = Pattern.compile("Duplicate entry '(.*?)' for key");
+
+    private final SystemExceptionMqPublisher systemExceptionMqPublisher;
 
     @ExceptionHandler(ServiceUnavailableBizException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
@@ -123,11 +133,15 @@ public class GlobalExceptionHandler {
 
     /**
      * 未知异常
+     *
+     * <p>除原有日志与响应外，异步投递系统异常消息（发送失败由 Publisher 内部吞掉，
+     * 不影响本方法返回用户可读的错误响应）。</p>
      */
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleException(Exception e) {
         log.error("未知异常", e);
+        systemExceptionMqPublisher.publishSystemError(e);
         return Result.fail(ErrorCode.UNKNOWN.getCode(), ErrorCode.UNKNOWN.getMessage());
     }
 }

@@ -36,7 +36,7 @@ class SupplierScoreDailyJobTest {
         SupplierProduct second = new SupplierProduct().setId(2L).setSupplierId(10L)
                 .setQuoteValidUntil(first.getQuoteValidUntil());
         when(productMapper.selectList(any())).thenReturn(List.of(first, second));
-        new SupplierScoreScheduledJob(recalc, supplierMapper, productMapper, redisson).scanExpiredQuotes();
+        new SupplierScoreScheduledJob(recalc, supplierMapper, productMapper, mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class), redisson).scanExpiredQuotes();
         verify(recalc).recalcPricesForSupplier(10L);
         verify(lock).unlock();
     }
@@ -47,6 +47,8 @@ class SupplierScoreDailyJobTest {
         SupplierMapper mapper = mock(SupplierMapper.class);
         SupplierScoreRecalculateService recalc = mock(SupplierScoreRecalculateService.class);
         RedissonClient redisson = mock(RedissonClient.class); RLock lock = mock(RLock.class);
+        com.qiheng.erp.common.mq.SystemExceptionMqPublisher publisher =
+                mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class);
         when(redisson.getLock(anyString())).thenReturn(lock);
         when(lock.tryLock(0, TimeUnit.SECONDS)).thenReturn(true);
         when(lock.tryLock(5, TimeUnit.SECONDS)).thenReturn(true);
@@ -54,9 +56,15 @@ class SupplierScoreDailyJobTest {
         Supplier first = new Supplier(); first.setId(1L); Supplier second = new Supplier(); second.setId(2L);
         when(mapper.selectList(any())).thenReturn(List.of(first, second));
         when(recalc.recalcFactsForSupplier(argThat(c -> c.getSupplierId().equals(1L)), any())).thenThrow(new IllegalStateException("test"));
-        new SupplierScoreScheduledJob(recalc, mapper, mock(SupplierProductMapper.class), redisson).dailyReconciliation();
+        new SupplierScoreScheduledJob(recalc, mapper, mock(SupplierProductMapper.class), publisher, redisson).dailyReconciliation();
         verify(recalc, times(2)).recalcFactsForSupplier(any(), any());
         verify(redisson, times(2)).getLock(startsWith("supplier:score:lock:"));
         verify(lock, times(3)).unlock();
+        // 单家失败必须被汇总上报一条 LOW，避免工作台待办感知丢失
+        verify(publisher, times(1)).publishJobFailure(
+                eq("supplier-score-daily-reconciliation"),
+                contains("失败 1 家"),
+                anyString(),
+                eq("LOW"));
     }
 }

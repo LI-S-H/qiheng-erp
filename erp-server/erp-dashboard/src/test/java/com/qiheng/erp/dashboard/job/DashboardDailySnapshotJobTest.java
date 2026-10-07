@@ -38,7 +38,8 @@ class DashboardDailySnapshotJobTest {
         when(stockAlertLoader.countRiskSkus()).thenReturn(11);
         when(returnOrderMapper.selectCount(any(Wrapper.class))).thenReturn(4L, 6L);
 
-        new DashboardDailySnapshotJob(prevValueCache, stockAlertLoader, purchaseOrderMapper,
+        new DashboardDailySnapshotJob(prevValueCache, stockAlertLoader,
+                mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class), purchaseOrderMapper,
                 salesOrderMapper, inboundBillMapper, outboundBillMapper, returnOrderMapper).snapshot();
 
         verify(prevValueCache).putPendingOrderSnapshot(LocalDate.now(),

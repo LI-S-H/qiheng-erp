@@ -37,7 +37,8 @@ class AiAssistantControllerHttpStatusTest {
         assistantService = mock(IAiAssistantService.class);
         AiAssistantController controller = new AiAssistantController(conversationService, messageService, assistantService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(
+                        mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class)))
                 .build();
     }
 

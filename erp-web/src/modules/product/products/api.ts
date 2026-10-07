@@ -10,6 +10,7 @@ import type {
   ProductFormPayload,
   ProductListItem,
   ProductQuery,
+  ProductReferencePricePayload,
 } from './types';
 
 const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
@@ -186,8 +187,33 @@ export async function updateProduct(productId: string, payload: ProductFormPaylo
     const product = mockProducts.find(item => item.productId === productId);
     return product ? normalizeProduct(product) : null;
   }
-  const request = { ...payload, referencePurchasePrice: serializeMoney(payload.referencePurchasePrice, '参考采购价'), referenceSalePrice: serializeMoney(payload.referenceSalePrice, '参考销售价') };
+  // 编辑接口不再带 referencePurchasePrice(后端 ProductFormRequest 已拆分该字段)
+  const { referencePurchasePrice: _drop, ...payloadWithoutPurchasePrice } = payload;
+  const request = { ...payloadWithoutPurchasePrice, referenceSalePrice: serializeMoney(payload.referenceSalePrice, '参考销售价') };
   const response = await http.put(`/products/${productId}`, request);
+  return normalizeProduct(response.data.data as ProductListItem);
+}
+
+/**
+ * 调整产品参考采购价(单独接口,2026-09-25 拆分)。
+ *
+ * <p>编辑接口不允许修改 referencePurchasePrice,必须通过本接口调用;
+ * 后端在同一事务内触发所有供应该产品的有效供货关系的评分重算。</p>
+ */
+export async function updateProductReferencePrice(productId: string, payload: ProductReferencePricePayload) {
+  if (useMockApi) {
+    const target = mockProducts.find(item => item.productId === productId);
+    if (!target) throw new Error('产品不存在');
+    mockProducts = mockProducts.map(item => item.productId === productId
+      ? { ...item, referencePurchasePrice: payload.referencePurchasePrice, updateTime: nowText() }
+      : item);
+    const product = mockProducts.find(item => item.productId === productId);
+    return product ? normalizeProduct(product) : null;
+  }
+  const request = {
+    referencePurchasePrice: serializeMoney(payload.referencePurchasePrice, '参考采购价'),
+  };
+  const response = await http.put(`/products/${productId}/reference-price`, request);
   return normalizeProduct(response.data.data as ProductListItem);
 }
 

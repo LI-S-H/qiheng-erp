@@ -32,9 +32,16 @@ import {
   deleteProduct,
   listProducts,
   updateProduct,
+  updateProductReferencePrice,
   updateProductStatus,
 } from '../api';
-import type { ProductFormPayload, ProductListItem, ProductQuery, ProductStatus } from '../types';
+import type {
+  ProductFormPayload,
+  ProductListItem,
+  ProductQuery,
+  ProductReferencePricePayload,
+  ProductStatus,
+} from '../types';
 
 const PRODUCT_TABLE_COLUMN_COUNT = 10;
 const LEGACY_PRODUCT_COLUMN_PREFERENCE_STORAGE_KEY = 'erp.product.products.table-columns.v1';
@@ -63,12 +70,19 @@ const loading = ref(false);
 const queryPending = ref(false);
 const formSubmitting = ref(false);
 const actionSubmitting = ref(false);
+const referencePriceSubmitting = ref(false);
 const selectedIds = ref<Set<string>>(new Set());
 const dialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingProductId = ref('');
 const editingProductCode = ref('');
 const editingOriginalStatus = ref<ProductStatus>(1);
+const referencePriceDialogVisible = ref(false);
+const referencePriceTarget = ref<ProductListItem | null>(null);
+const referencePriceForm = reactive<ProductReferencePricePayload>({
+  referencePurchasePrice: 0,
+});
+const referencePriceErrors = reactive<Record<string, string>>({});
 let fetchSequence = 0;
 
 const query = reactive<ProductQuery>({
@@ -237,7 +251,7 @@ function toggleSelect(productId: string, value: boolean | 'indeterminate') {
 function resetForm() {
   Object.assign(form, {
     productName: '', categoryId: null, brandName: '', unitName: '件', specification: '', barcode: null,
-    quantityPrecision: 0, referencePurchasePrice: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
+    quantityPrecision: 0, referenceSalePrice: 0, safetyStockQty: 0, status: 1, remark: '',
   });
   Object.keys(formErrors).forEach(key => delete formErrors[key]);
 }
@@ -263,7 +277,6 @@ function openEditDialog(row: ProductListItem) {
     quantityPrecision: row.quantityPrecision,
     specification: row.specification,
     barcode: row.barcode,
-    referencePurchasePrice: row.referencePurchasePrice,
     referenceSalePrice: row.referenceSalePrice,
     safetyStockQty: row.safetyStockQty,
     status: row.status,
@@ -379,8 +392,46 @@ function handleDelete(row: ProductListItem) {
   });
 }
 
+/**
+ * 打开参考采购价调整对话框(独立于产品编辑,2026-09-25 拆分)。
+ */
+function openReferencePriceDialog(row: ProductListItem) {
+  referencePriceTarget.value = row;
+  referencePriceForm.referencePurchasePrice = row.referencePurchasePrice ?? 0;
+  Object.keys(referencePriceErrors).forEach(key => delete referencePriceErrors[key]);
+  referencePriceDialogVisible.value = true;
+}
+
+function validateReferencePrice() {
+  Object.keys(referencePriceErrors).forEach(key => delete referencePriceErrors[key]);
+  if (!Number.isFinite(Number(referencePriceForm.referencePurchasePrice)) || Number(referencePriceForm.referencePurchasePrice) < 0) {
+    referencePriceErrors.referencePurchasePrice = '参考采购价不能小于 0';
+  }
+  return Object.keys(referencePriceErrors).length === 0;
+}
+
+async function submitReferencePrice() {
+  if (referencePriceSubmitting.value || !referencePriceTarget.value) return;
+  if (!validateReferencePrice()) return;
+  referencePriceSubmitting.value = true;
+  try {
+    await updateProductReferencePrice(referencePriceTarget.value.productId, {
+      referencePurchasePrice: Number(referencePriceForm.referencePurchasePrice),
+    });
+    toast.success('参考采购价已调整,供应商评分已重算');
+    referencePriceDialogVisible.value = false;
+    fetchProducts();
+  } catch (error) {
+    const message = getApiErrorMessage(error);
+    if (message) toast.warning(message);
+  } finally {
+    referencePriceSubmitting.value = false;
+  }
+}
+
 function getRowActions(row: ProductListItem): RowActionOption[] {
   return [
+    { key: 'reference-price', label: '调整参考采购价' },
     { key: 'toggle-status', label: row.status === 1 ? '停用产品' : '启用产品' },
     { key: 'delete', label: '删除产品', variant: 'destructive', separated: true },
   ];
@@ -388,6 +439,10 @@ function getRowActions(row: ProductListItem): RowActionOption[] {
 
 function handleRowAction(row: ProductListItem, actionKey: string) {
   if (actionSubmitting.value) return;
+  if (actionKey === 'reference-price') {
+    referencePriceTarget.value = row;
+    openReferencePriceDialog(row);
+  }
   if (actionKey === 'toggle-status') handleStatusChange(row, row.status === 1 ? 0 : 1);
   if (actionKey === 'delete') handleDelete(row);
 }
@@ -477,7 +532,7 @@ function formatMoney(value: number) {
               <TableCell><div class="flex flex-col whitespace-nowrap text-xs"><span>采 {{ formatMoney(row.referencePurchasePrice) }}</span><span class="text-muted-foreground">销 {{ formatMoney(row.referenceSalePrice) }}</span></div></TableCell>
               <TableCell>{{ formatQtyByPrecision(row.safetyStockQty, row.quantityPrecision) }}</TableCell>
               <TableCell><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
-              <TableCell class="text-center"><div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><RowActionsMenu :actions="getRowActions(row)" :disabled="actionSubmitting" :label="`更多 ${row.productCode} 操作`" @select="handleRowAction(row, $event)" /></div></TableCell>
+              <TableCell class="text-center"><div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><RowActionsMenu :actions="getRowActions(row)" :disabled="actionSubmitting" :label="`更多 ${row.productCode} 操作`" trigger-text="更多" @select="handleRowAction(row, $event)" /></div></TableCell>
             </TableRow>
           </TableBody>
       </Table>
@@ -499,13 +554,50 @@ function formatMoney(value: number) {
             <div class="space-y-1"><Label>规格型号</Label><Input v-model="form.specification" maxlength="255" placeholder="请输入规格型号" :aria-invalid="Boolean(formErrors.specification)" /><p v-if="formErrors.specification" class="text-xs text-destructive">{{ formErrors.specification }}</p></div>
             <div class="space-y-1"><Label>产品条码</Label><Input :model-value="form.barcode || ''" maxlength="64" placeholder="请输入条码" :aria-invalid="Boolean(formErrors.barcode)" @update:model-value="form.barcode = String($event) || null" /><p v-if="formErrors.barcode" class="text-xs text-destructive">{{ formErrors.barcode }}</p></div>
             <div class="space-y-1"><Label>安全库存</Label><Input v-model.number="form.safetyStockQty" type="number" min="0" :step="quantityStep" :aria-invalid="Boolean(formErrors.safetyStockQty)" /><p v-if="formErrors.safetyStockQty" class="text-xs text-destructive">{{ formErrors.safetyStockQty }}</p></div>
-            <div class="space-y-1"><Label>参考采购价</Label><div class="relative"><span data-currency-prefix class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">￥</span><Input v-model.number="form.referencePurchasePrice" class="pl-8" type="number" min="0" step="0.01" :aria-invalid="Boolean(formErrors.referencePurchasePrice)" /></div><p v-if="formErrors.referencePurchasePrice" class="text-xs text-destructive">{{ formErrors.referencePurchasePrice }}</p></div>
+            <div v-if="dialogMode === 'create'" class="space-y-1"><Label>参考采购价 <span class="text-destructive">*</span></Label><div class="relative"><span data-currency-prefix class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">￥</span><Input v-model.number="form.referencePurchasePrice" class="pl-8" type="number" min="0" step="0.01" :aria-invalid="Boolean(formErrors.referencePurchasePrice)" /></div><p v-if="formErrors.referencePurchasePrice" class="text-xs text-destructive">{{ formErrors.referencePurchasePrice }}</p><p class="text-xs text-muted-foreground">参考采购价变更需通过"更多"内的调整入口</p></div>
             <div class="space-y-1"><Label>参考销售价</Label><div class="relative"><span data-currency-prefix class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">￥</span><Input v-model.number="form.referenceSalePrice" class="pl-8" type="number" min="0" step="0.01" :aria-invalid="Boolean(formErrors.referenceSalePrice)" /></div><p v-if="formErrors.referenceSalePrice" class="text-xs text-destructive">{{ formErrors.referenceSalePrice }}</p></div>
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>启用状态 <span class="text-destructive">*</span></Label><RadioGroup :model-value="String(form.status)" class="flex gap-5" @update:model-value="form.status = Number($event) as ProductStatus"><div class="flex items-center gap-2"><RadioGroupItem id="product-status-1" value="1" /><Label for="product-status-1" class="cursor-pointer font-normal">启用</Label></div><div class="flex items-center gap-2"><RadioGroupItem id="product-status-0" value="0" /><Label for="product-status-0" class="cursor-pointer font-normal">停用</Label></div></RadioGroup></div>
             <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>备注</Label><Textarea v-model="form.remark" maxlength="500" rows="3" placeholder="补充产品采购、销售或仓储注意事项" :aria-invalid="Boolean(formErrors.remark)" /><div class="flex justify-between text-xs"><span :class="formErrors.remark ? 'text-destructive' : 'text-muted-foreground'">{{ formErrors.remark || '选填，最多 500 个字符' }}</span><span class="text-muted-foreground">{{ form.remark.length }}/500</span></div></div>
           </div>
         </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 参考采购价调整对话框(独立于产品编辑,2026-09-25 拆分) -->
+    <Dialog v-model:open="referencePriceDialogVisible">
+      <DialogContent class="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>调整参考采购价</DialogTitle>
+          <DialogDescription>
+            调整后会触发所有供应该产品的有效供货关系的评分重算,重算失败将整体回滚。
+          </DialogDescription>
+        </DialogHeader>
+        <div v-if="referencePriceTarget" class="space-y-3">
+          <div class="rounded-md border bg-muted/40 px-3 py-2 text-xs">
+            <div class="flex justify-between gap-2"><span class="text-muted-foreground">产品</span><span>{{ referencePriceTarget.productCode }} {{ referencePriceTarget.productName }}</span></div>
+            <div class="mt-1 flex justify-between gap-2"><span class="text-muted-foreground">当前参考采购价</span><span class="font-medium">{{ formatMoney(referencePriceTarget.referencePurchasePrice) }}</span></div>
+          </div>
+          <div class="space-y-1">
+            <Label>新参考采购价 <span class="text-destructive">*</span></Label>
+            <div class="relative">
+              <span data-currency-prefix class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">￥</span>
+              <Input
+                v-model.number="referencePriceForm.referencePurchasePrice"
+                class="pl-8"
+                type="number"
+                min="0"
+                step="0.01"
+                :aria-invalid="Boolean(referencePriceErrors.referencePurchasePrice)"
+              />
+            </div>
+            <p v-if="referencePriceErrors.referencePurchasePrice" class="text-xs text-destructive">{{ referencePriceErrors.referencePurchasePrice }}</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" :disabled="referencePriceSubmitting" @click="referencePriceDialogVisible = false">取消</Button>
+          <Button :disabled="referencePriceSubmitting" @click="submitReferencePrice">{{ referencePriceSubmitting ? '保存中...' : '确认调整' }}</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
 

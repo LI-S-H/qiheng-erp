@@ -39,11 +39,21 @@ export interface ProductFormPayload {
   quantityPrecision: number;
   specification: string;
   barcode: string | null;
+  // referencePurchasePrice(参考采购价)在编辑接口中不可改。
+  // 初始创建时可在 ProductFormPayload 中传入(后端 ProductFormRequest 接受该字段);
+  // 后续调整必须通过单独接口 PUT /products/{id}/reference-price。
   referencePurchasePrice: number;
   referenceSalePrice: number;
   safetyStockQty: number;
   status: ProductStatus;
   remark: string;
+}
+
+/**
+ * 参考采购价调整请求(单独接口,2026-09-25 拆分)。
+ */
+export interface ProductReferencePricePayload {
+  referencePurchasePrice: number;
 }
 
 export interface ProductBatchIdsPayload {

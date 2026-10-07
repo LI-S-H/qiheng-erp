@@ -15,7 +15,7 @@ import {
 } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import logoUrl from '@/assets/brand/qiheng-logo.svg';
+import logoUrl from '@/assets/brand/yuncang-logo.png';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import { useDashboardOverviewStore } from '@/stores/dashboardOverviewStore';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -80,7 +80,8 @@ const bellVisible = computed(() => {
   return state === 'ALLOWED' && bellItems.value.length > 0;
 });
 
-const bellDenied = computed(() => overviewStore.overview?.access?.todos?.state === 'DENIED');
+// 铃铛与工作台共用 overview 授权；待办区无数据或被业务权限裁剪时仍保留空态入口。
+const bellReady = computed(() => overviewStore.overview !== null);
 
 const menus: MenuItem[] = [
   { index: '/dashboard', title: '工作台', icon: Home },
@@ -173,7 +174,7 @@ const currentSection = computed(() => {
   return visibleMenus.value.find(item => item.index === route.path || item.children?.some(child => child.index === route.path));
 });
 
-const currentPageTitle = computed(() => String(route.meta.title || currentSection.value?.title || '启衡 ERP'));
+const currentPageTitle = computed(() => String(route.meta.title || currentSection.value?.title || '云仓ERP'));
 
 function isMenuActive(item: MenuItem) {
   if (item.index === activeMenu.value) return true;
@@ -268,10 +269,10 @@ watch(
     <aside class="app-sidebar flex shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
       <!-- Brand -->
       <div class="app-shell__brand flex items-center gap-3 px-4 text-sidebar-foreground border-b border-sidebar-border">
-        <img class="h-9 w-9 rounded-lg" :src="logoUrl" alt="启衡 ERP" />
+        <img class="h-9 w-9 rounded-lg object-contain" :src="logoUrl" alt="云仓ERP" />
         <div class="min-w-0">
-          <div class="text-[18px] font-bold leading-tight tracking-tight">启衡 ERP</div>
-          <div class="mt-1 truncate text-[13px] font-medium text-sidebar-foreground/55">进销存智能管理台</div>
+          <div class="text-[18px] font-bold leading-tight tracking-tight">云仓ERP</div>
+          <div class="mt-1 truncate text-[13px] font-medium text-sidebar-foreground/55">云端仓储智能管理台</div>
         </div>
       </div>
 
@@ -339,7 +340,7 @@ watch(
         <div class="flex items-center gap-3">
           <!-- Notification bell -->
           <Popover :open="notificationOpen" @update:open="handleNotificationOpen">
-            <PopoverTrigger v-if="!bellDenied" as-child>
+            <PopoverTrigger v-if="bellReady" as-child>
               <button class="relative flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer" type="button" aria-label="待处理通知" data-notification-trigger>
                 <Bell class="h-4 w-4" />
                 <span v-if="bellPendingCount" class="absolute -right-1 -top-1 min-w-4 rounded-full bg-destructive px-1 text-center text-[10px] font-bold leading-4 text-destructive-foreground ring-2 ring-sidebar">
@@ -404,7 +405,7 @@ watch(
       </header>
 
       <!-- Page content -->
-      <main class="relative flex-1 overflow-auto bg-background">
+      <main class="relative min-w-0 flex-1 overflow-auto bg-background">
         <RouterView v-slot="{ Component, route: viewRoute }">
           <component :is="Component" :key="viewRoute.path === '/dashboard' ? viewRoute.path : viewRoute.fullPath" />
         </RouterView>

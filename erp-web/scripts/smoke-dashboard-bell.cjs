@@ -91,6 +91,28 @@ runSmoke({
       throw new Error('点击"前往工作台"按钮不应打开待办详情');
     }
   },
+})).then(() => runSmoke({
+  route: '/dashboard',
+  screenshot: path.join(screenshotDirectory, 'bell-todos-denied.png'),
+  async setupPage(page) {
+    await page.route('**/api/dashboard/overview', async route => {
+      const response = await route.fetch();
+      const payload = await response.json();
+      payload.data.pendingCount = 0;
+      payload.data.todos = [];
+      payload.data.access.todos = { state: 'DENIED' };
+      await route.fulfill({ response, body: JSON.stringify(payload) });
+    });
+  },
+  async test(page) {
+    // 工作台已授权时，待办区被业务权限裁剪也不能让顶栏铃铛消失。
+    const trigger = page.locator('[data-notification-trigger]');
+    await trigger.waitFor({ state: 'visible' });
+    await trigger.click();
+    const popover = page.locator('[data-notification-popover]');
+    await popover.waitFor({ state: 'visible' });
+    await popover.getByText('当前没有待处理事项', { exact: true }).waitFor();
+  },
 })).then(() => {
   console.log('SMOKE_OK: 铃铛复用工作台 overview、无效 todoId 回退与底部 CTA 均通过');
 }).catch(error => {

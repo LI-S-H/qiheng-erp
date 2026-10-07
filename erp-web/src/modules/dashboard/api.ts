@@ -161,12 +161,12 @@ const mockOverview: DashboardOverview = {
     { productId: '1920000000000000027', productCode: 'P000027', productName: '热敏标签纸', salesAmount: 31200, salesQty: 84, availableQty: 0 },
   ],
   supplierPerformance: [
-    { supplierId: '2010000000000000001', supplierCode: 'S001', supplierName: '华东饮品供应链', deliveryScore: 94.2, qualityScore: 96.1, onTimeRate: 96.5 },
-    { supplierId: '2010000000000000005', supplierCode: 'S005', supplierName: '森纸纸业集团', deliveryScore: 95.8, qualityScore: 97.2, onTimeRate: 97.4 },
-    { supplierId: '2010000000000000003', supplierCode: 'S003', supplierName: '谷仓食品批发', deliveryScore: 92.4, qualityScore: 95.2, onTimeRate: 94.8 },
-    { supplierId: '2010000000000000002', supplierCode: 'S002', supplierName: '晨岛咖啡贸易', deliveryScore: 89.7, qualityScore: 93.4, onTimeRate: 91.1 },
-    { supplierId: '2010000000000000004', supplierCode: 'S004', supplierName: '文仪办公渠道', deliveryScore: 85.4, qualityScore: 90.5, onTimeRate: 88.7 },
-    { supplierId: '2010000000000000006', supplierCode: 'S006', supplierName: '拓联数码配件', deliveryScore: 78.2, qualityScore: 82.4, onTimeRate: 82.1 },
+    { supplierId: '2010000000000000001', supplierCode: 'S001', supplierName: '华东饮品供应链', overallScore: 94.6, deliveryScore: 94.2, qualityScore: 96.1, priceScore: 93.4, serviceScore: 95, avgDeliveryDays: 2.4, scoreBasisAmount: 128000, scoreStatus: 'READY' },
+    { supplierId: '2010000000000000005', supplierCode: 'S005', supplierName: '森纸纸业集团', overallScore: 95.8, deliveryScore: 95.8, qualityScore: 97.2, priceScore: 94.3, serviceScore: 96, avgDeliveryDays: 1.8, scoreBasisAmount: 98000, scoreStatus: 'READY' },
+    { supplierId: '2010000000000000003', supplierCode: 'S003', supplierName: '谷仓食品批发', overallScore: 93.4, deliveryScore: 92.4, qualityScore: 95.2, priceScore: 91.8, serviceScore: 94, avgDeliveryDays: 3.2, scoreBasisAmount: 74000, scoreStatus: 'READY' },
+    { supplierId: '2010000000000000002', supplierCode: 'S002', supplierName: '晨岛咖啡贸易', overallScore: 91.8, deliveryScore: 89.7, qualityScore: 93.4, priceScore: 92.5, serviceScore: 92, avgDeliveryDays: 3.8, scoreBasisAmount: 62000, scoreStatus: 'READY' },
+    { supplierId: '2010000000000000004', supplierCode: 'S004', supplierName: '文仪办公渠道', overallScore: 89.1, deliveryScore: 85.4, qualityScore: 90.5, priceScore: 91.7, serviceScore: 90, avgDeliveryDays: 4.6, scoreBasisAmount: 51000, scoreStatus: 'READY' },
+    { supplierId: '2010000000000000006', supplierCode: 'S006', supplierName: '拓联数码配件', overallScore: 81.5, deliveryScore: 78.2, qualityScore: 82.4, priceScore: 83.3, serviceScore: 84, avgDeliveryDays: 6.1, scoreBasisAmount: 36000, scoreStatus: 'READY' },
   ],
 };
 
@@ -343,9 +343,14 @@ function normalizeSupplierPerformance(item: DashboardSupplierPerformance): Dashb
   return {
     ...item,
     supplierId: normalizeStringId(item.supplierId, 'supplierId'),
-    deliveryScore: normalizeFiniteNumber(item.deliveryScore, 'deliveryScore'),
-    qualityScore: normalizeFiniteNumber(item.qualityScore, 'qualityScore'),
-    onTimeRate: normalizeFiniteNumber(item.onTimeRate, 'onTimeRate'),
+    overallScore: normalizeNullableFiniteNumber(item.overallScore, 'overallScore'),
+    deliveryScore: normalizeNullableFiniteNumber(item.deliveryScore, 'deliveryScore'),
+    qualityScore: normalizeNullableFiniteNumber(item.qualityScore, 'qualityScore'),
+    priceScore: normalizeNullableFiniteNumber(item.priceScore, 'priceScore'),
+    serviceScore: normalizeNullableFiniteNumber(item.serviceScore, 'serviceScore'),
+    avgDeliveryDays: normalizeNullableFiniteNumber(item.avgDeliveryDays, 'avgDeliveryDays'),
+    scoreBasisAmount: normalizeMoneyNumber(item.scoreBasisAmount, 'scoreBasisAmount', true, useMockApi),
+    scoreStatus: item.scoreStatus === 'READY' ? 'READY' : 'NOT_READY',
   };
 }
 
@@ -483,4 +488,9 @@ export async function getDashboardInventoryStatus(warehouseId?: string) {
     skipPageLoading: true,
     suppressErrorToast: true,
   }).then(normalizeInventoryStatus);
+}
+
+function normalizeNullableFiniteNumber(value: unknown, field: string): number | null {
+  if (value == null || value === '') return null;
+  return normalizeFiniteNumber(value, field);
 }

@@ -154,9 +154,14 @@ export interface DashboardSupplierPerformance {
   supplierId: string;
   supplierCode: string;
   supplierName: string;
-  deliveryScore: number;
-  qualityScore: number;
-  onTimeRate: number;
+  overallScore: number | null;
+  deliveryScore: number | null;
+  qualityScore: number | null;
+  priceScore: number | null;
+  serviceScore: number | null;
+  avgDeliveryDays: number | null;
+  scoreBasisAmount: number | null;
+  scoreStatus: 'NOT_READY' | 'READY';
 }
 
 export interface DashboardOverview {

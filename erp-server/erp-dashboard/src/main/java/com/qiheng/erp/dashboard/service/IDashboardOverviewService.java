@@ -3,7 +3,7 @@ package com.qiheng.erp.dashboard.service;
 import com.qiheng.erp.dashboard.domain.overview.vo.DashboardOverviewVO;
 
 /**
- * 工作台经营概览服务接口。
+ * 工作台概览服务接口。
  *
  * <p>对应 OpenAPI {@code GET /dashboard/overview}，
  * 返回当前登录用户可见范围内的经营概览数据，用于工作台首屏展示。</p>
@@ -17,7 +17,7 @@ import com.qiheng.erp.dashboard.domain.overview.vo.DashboardOverviewVO;
 public interface IDashboardOverviewService {
 
     /**
-     * 加载工作台经营概览
+     * 加载工作台概览
      *
      * @return 工作台概览 VO；无权限模块保留固定字段结构，并由 access 明确标识为 DENIED；指标数值与对比字段返回 null，
      *         趋势 / 订单流转字段附带 {@code trendPermissions} /

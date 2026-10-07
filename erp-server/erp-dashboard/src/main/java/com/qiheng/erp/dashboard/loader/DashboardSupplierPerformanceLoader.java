@@ -9,14 +9,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 
 /**
  * 工作台供应商履约评分聚合器。
  *
  * <p>直接读取 {@code supplier} 主表的综合评分（overall_score / delivery_score / quality_score /
- * price_score / service_score / on_time_rate），评分字段按 ×100 存储，接口展示为业务百分数（保留 1 位）。</p>
+ * price_score / service_score）；评分字段按 ×100 存储，接口展示为业务百分数。</p>
  *
  * <p>按 {@code overall_score} 降序取前 N 条，工作台建议返回最多 10 条以内。</p>
  *
@@ -39,6 +38,7 @@ public class DashboardSupplierPerformanceLoader {
         List<Supplier> suppliers = supplierMapper.selectList(
                 new LambdaQueryWrapper<Supplier>()
                         .eq(Supplier::getStatus, 1)
+                        .eq(Supplier::getScoreStatus, "READY")
                         .orderByDesc(Supplier::getOverallScore)
                         .last("LIMIT " + TOP_LIMIT));
         return suppliers.stream().map(this::toVO).toList();
@@ -54,15 +54,17 @@ public class DashboardSupplierPerformanceLoader {
         vo.setQualityScore(toPercent(supplier.getQualityScore()));
         vo.setPriceScore(toPercent(supplier.getPriceScore()));
         vo.setServiceScore(toPercent(supplier.getServiceScore()));
-        vo.setOnTimeRate(toPercent(supplier.getOnTimeRate()));
+        vo.setAvgDeliveryDays(supplier.getAvgDeliveryDays());
+        vo.setScoreBasisAmount(QtyUtil.toDecimal(supplier.getScoreBasisAmount()));
+        vo.setScoreStatus(supplier.getScoreStatus());
         return vo;
     }
 
     /** 数据库存储 ×100 转业务百分数（保留 1 位） */
     private static BigDecimal toPercent(Integer stored) {
         if (stored == null) {
-            return BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
+            return null;
         }
-        return QtyUtil.toDecimal(stored).setScale(1, RoundingMode.HALF_UP);
+        return QtyUtil.toDecimal(stored);
     }
 }

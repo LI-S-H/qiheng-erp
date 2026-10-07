@@ -36,7 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @RequiredArgsConstructor
 public class DashboardController {
-    // 工作台经营概览服务
+    // 工作台概览服务
     private final IDashboardOverviewService overviewService;
     private final DashboardInventoryStatusLoader inventoryStatusLoader;
     // 日快照任务（手动触发用）
@@ -45,19 +45,19 @@ public class DashboardController {
     private final DashboardMonthlySnapshotJob monthlySnapshotJob;
 
     /**
-     * 获取工作台经营概览
+     * 获取工作台概览
      *
      * <p>需要 {@code dashboard:overview:query} 权限；按当前用户的业务权限
      * 裁剪指标、趋势、订单流转等子项，详见 OpenAPI 描述。响应中的
      * {@code pendingCount} 与 {@code todos} 同步，供顶栏铃铛直接复用。</p>
      *
-     * @return 当前用户可见范围内的工作台经营概览数据
+     * @return 当前用户可见范围内的工作台概览数据
      */
     @GetMapping("/overview")
-    @Operation(summary = "获取工作台经营概览")
+    @Operation(summary = "获取工作台概览")
     public Result<DashboardOverviewVO> overview() {
         StpUtil.checkPermission("dashboard:overview:query");
-        log.info("加载工作台经营概览");
+        log.info("加载工作台概览");
         return Result.ok(overviewService.overview());
     }
 

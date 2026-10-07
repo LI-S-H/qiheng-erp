@@ -20,7 +20,7 @@ import java.util.List;
 
 /**
  * <p>
- * 工作台经营概览响应 VO
+ * 工作台概览响应 VO
  * </p>
  *
  * <p>字段顺序与 OpenAPI {@code DashboardOverview} 一致；后端按当前用户权限裁剪，
@@ -30,7 +30,7 @@ import java.util.List;
  * @since 2026-08-15
  */
 @Data
-@Schema(description = "工作台经营概览响应")
+@Schema(description = "工作台概览响应")
 public class DashboardOverviewVO {
 
     @Schema(description = "工作台数据刷新时间，后端生成")

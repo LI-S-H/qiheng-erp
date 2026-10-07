@@ -2,6 +2,7 @@ package com.qiheng.erp.dashboard.domain.supplier.vo;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.qiheng.erp.common.config.MoneyStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -46,6 +47,13 @@ public class DashboardSupplierPerformanceVO {
     @Schema(description = "服务评分（百分制，保留 1 位小数）")
     private BigDecimal serviceScore;
 
-    @Schema(description = "准时交付率（百分制，保留 1 位小数）")
-    private BigDecimal onTimeRate;
+    @Schema(description = "完全入库订单按金额加权的平均到货周期，只用于分析")
+    private BigDecimal avgDeliveryDays;
+
+    @Schema(description = "最近180天评分样本金额，金额字符串")
+    @JsonSerialize(using = MoneyStringSerializer.class)
+    private BigDecimal scoreBasisAmount;
+
+    @Schema(description = "评分状态：NOT_READY、READY")
+    private String scoreStatus;
 }

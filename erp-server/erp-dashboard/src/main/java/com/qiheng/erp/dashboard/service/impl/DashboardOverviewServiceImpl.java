@@ -32,7 +32,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 工作台经营概览服务实现。
+ * 工作台概览服务实现。
  *
  * <p>经营趋势保留既有权限契约；指标和其余业务面板统一通过 {@code access}
  * 区分无权限与暂无数据，避免将权限缺失伪装成业务 0 值。</p>

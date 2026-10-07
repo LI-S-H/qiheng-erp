@@ -391,9 +391,14 @@ function valueTone(value: number) {
   return 'is-neutral';
 }
 
-function metricBarWidth(value: number) {
-  if (!Number.isFinite(value)) return '0%';
-  return `${Math.min(100, Math.max(0, value))}%`;
+function metricBarWidth(value: number | null) {
+  const numberValue = value ?? Number.NaN;
+  if (!Number.isFinite(numberValue)) return '0%';
+  return `${Math.min(100, Math.max(0, numberValue))}%`;
+}
+
+function formatSupplierMetric(value: number | null, suffix = '') {
+  return value == null ? '—' : `${value.toFixed(1)}${suffix}`;
 }
 
 function showTrendTooltip(event: MouseEvent | FocusEvent, point: DashboardTrendPoint) {
@@ -993,11 +998,11 @@ onBeforeUnmount(() => {
               <div v-else v-for="supplier in visibleSupplierPerformance" :key="supplier.supplierId" class="dashboard-supplier">
                 <div class="min-w-0">
                   <strong class="block truncate text-[13px]">{{ supplier.supplierName }}</strong>
-                  <small class="text-xs text-muted-foreground">{{ supplier.supplierCode }} · 准时率 {{ supplier.onTimeRate.toFixed(1) }}%</small>
+                  <small class="text-xs text-muted-foreground">{{ supplier.supplierCode }} · 平均到货 {{ formatSupplierMetric(supplier.avgDeliveryDays, ' 天') }}</small>
                 </div>
                 <div class="dashboard-supplier__scores">
-                  <span>交付 {{ supplier.deliveryScore.toFixed(1) }}</span>
-                  <span>质量 {{ supplier.qualityScore.toFixed(1) }}</span>
+                  <span>交付 {{ formatSupplierMetric(supplier.deliveryScore) }}</span>
+                  <span>质量 {{ formatSupplierMetric(supplier.qualityScore) }}</span>
                 </div>
               </div>
             </CardContent>
@@ -1157,7 +1162,7 @@ onBeforeUnmount(() => {
                     <span role="columnheader">供应商编码 / 供应商名称</span>
                     <span role="columnheader">交付评分</span>
                     <span role="columnheader">质量评分</span>
-                    <span role="columnheader">准时率</span>
+                    <span role="columnheader">平均到货周期</span>
                   </div>
                   <div v-for="(supplier, index) in overview.supplierPerformance" :key="supplier.supplierId" class="dashboard-rank-matrix__row" role="row">
                     <span class="dashboard-rank-matrix__rank" :class="{ 'is-top': index < 3 }" role="cell">{{ String(index + 1).padStart(2, '0') }}</span>
@@ -1166,16 +1171,16 @@ onBeforeUnmount(() => {
                       <small :title="supplier.supplierName">{{ supplier.supplierName }}</small>
                     </span>
                     <span class="dashboard-rank-matrix__score" role="cell">
-                      <strong>{{ supplier.deliveryScore.toFixed(1) }}</strong>
+                      <strong>{{ formatSupplierMetric(supplier.deliveryScore) }}</strong>
                       <i><b :style="{ width: metricBarWidth(supplier.deliveryScore) }" /></i>
                     </span>
                     <span class="dashboard-rank-matrix__score" role="cell">
-                      <strong>{{ supplier.qualityScore.toFixed(1) }}</strong>
+                      <strong>{{ formatSupplierMetric(supplier.qualityScore) }}</strong>
                       <i><b :style="{ width: metricBarWidth(supplier.qualityScore) }" /></i>
                     </span>
                     <span class="dashboard-rank-matrix__score" role="cell">
-                      <strong>{{ supplier.onTimeRate.toFixed(1) }}%</strong>
-                      <i><b :style="{ width: metricBarWidth(supplier.onTimeRate) }" /></i>
+                      <strong>{{ formatSupplierMetric(supplier.avgDeliveryDays, ' 天') }}</strong>
+                      <i><b :style="{ width: metricBarWidth(supplier.avgDeliveryDays == null ? null : Math.max(0, 100 - supplier.avgDeliveryDays * 10)) }" /></i>
                     </span>
                   </div>
                 </div>

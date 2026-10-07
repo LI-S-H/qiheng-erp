@@ -8,6 +8,7 @@ import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
+import com.qiheng.erp.product.domain.dto.ProductReferencePriceDto;
 import com.qiheng.erp.product.domain.dto.ProductSaveDto;
 import com.qiheng.erp.product.domain.vo.ProductVo;
 import com.qiheng.erp.product.service.IProductService;
@@ -152,6 +153,23 @@ public class ProductController {
         StpUtil.checkPermission("product:manage");
         log.info("更新产品，参数: {}, {}", productId, dto);
         ProductVo vo = productService.update(productId, dto);
+        return Result.ok(vo);
+    }
+
+    /**
+     * 调整产品参考采购价。
+     *
+     * <p>独立于产品编辑接口,价格变化时在同一事务内触发供应商评分重算,
+     * 失败则整体回滚。</p>
+     */
+    @PutMapping("/{productId}/reference-price")
+    @Operation(summary = "调整产品参考采购价")
+    public Result<ProductVo> updateReferencePrice(
+            @PathVariable("productId") Long productId,
+            @Valid @RequestBody ProductReferencePriceDto dto) {
+        StpUtil.checkPermission("product:reference-price:manage");
+        log.info("调整产品参考采购价，参数: {}, {}", productId, dto);
+        ProductVo vo = productService.updateReferencePrice(productId, dto);
         return Result.ok(vo);
     }
 }

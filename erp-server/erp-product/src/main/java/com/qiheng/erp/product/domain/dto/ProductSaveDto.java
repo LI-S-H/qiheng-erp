@@ -58,8 +58,7 @@ public class ProductSaveDto {
     @Size(max = 64, message = "条码长度不能超过 64")
     private String barcode;
 
-    @Schema(description = "参考采购价，最多两位小数")
-    @NotNull(message = "参考采购价不能为空")
+    @Schema(description = "参考采购价，最多两位小数；编辑接口不接收本字段(必须用单独接口 PUT /products/{id}/reference-price),创建时必填")
     @DecimalMin(value = "0", message = "参考采购价不能为负数")
     @Digits(integer = 16, fraction = 2, message = "参考采购价最多保留两位小数")
     private BigDecimal referencePurchasePrice;

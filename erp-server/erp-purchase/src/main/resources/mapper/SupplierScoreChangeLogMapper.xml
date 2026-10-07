@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.qiheng.erp.purchase.mapper.SupplierScoreChangeLogMapper">
+
+    <!-- 查询指定日期 batchNo 的最大 5 位序号 -->
+    <select id="findMaxBatchNoSequence" resultType="long">
+        SELECT COALESCE(MAX(CAST(SUBSTRING(batch_no, -5) AS UNSIGNED)), 0)
+        FROM supplier_score_change_log
+        WHERE batch_no LIKE CONCAT(#{dayPrefix}, '%')
+    </select>
+
+</mapper>

@@ -11,14 +11,15 @@ export interface SupplierListItem {
   contactPhone: string;
   address: string;
   paymentTerms: string;
-  overallScore: number;
-  deliveryScore: number;
-  qualityScore: number;
-  priceScore: number;
-  serviceScore: number;
-  avgDeliveryDays: number;
-  onTimeRate: number;
-  qualifiedRate: number;
+  overallScore: number | null;
+  deliveryScore: number | null;
+  qualityScore: number | null;
+  priceScore: number | null;
+  serviceScore: number | null;
+  serviceScoreReason: string;
+  avgDeliveryDays: number | null;
+  scoreBasisAmount: number | null;
+  scoreStatus: 'NOT_READY' | 'READY';
   status: PurchaseStatus;
   version: number;
   remark: string;
@@ -33,32 +34,99 @@ export interface SupplierQuery {
   supplierName?: string;
   contactName?: string;
   status?: PurchaseStatus | '' | 'all';
+  scoreStatus?: 'NOT_READY' | 'READY' | '' | 'all';
+  overallScoreMin?: number | null;
+  overallScoreMax?: number | null;
+  serviceScoreMin?: number | null;
+  serviceScoreMax?: number | null;
+  /** 金额按 OpenAPI 的 decimal 字符串传输，避免在请求边界损失精度。 */
+  scoreBasisAmountMin?: string | null;
+  scoreBasisAmountMax?: string | null;
+  avgDeliveryDaysMin?: number | null;
+  avgDeliveryDaysMax?: number | null;
   pageNum: number;
   pageSize: number;
 }
 
-export interface SupplierFormPayload {
+export interface SupplierBasePayload {
   supplierName: string;
-  contactName: string;
-  contactPhone: string;
-  address: string;
-  paymentTerms: string;
-  overallScore: number;
-  deliveryScore: number;
-  qualityScore: number;
-  priceScore: number;
-  serviceScore: number;
-  avgDeliveryDays: number;
-  onTimeRate: number;
-  qualifiedRate: number;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  address?: string | null;
+  paymentTerms?: string | null;
   status: PurchaseStatus;
-  version?: number;
   remark: string;
+}
+
+export interface SupplierCreatePayload extends SupplierBasePayload {
+  serviceScore: number | null;
+  serviceScoreReason: string | null;
+}
+
+export interface SupplierUpdatePayload extends SupplierBasePayload { version: number; }
+
+export interface SupplierServiceScorePayload {
+  version: number;
+  serviceScore: number | null;
+  reason: string;
+}
+
+export type ScoreMetricType = 'SERVICE' | 'DELIVERY' | 'QUALITY' | 'PRICE';
+export type ScoreTriggerType = 'PRICE_TRIGGER' | 'SERVICE_TRIGGER' | 'INBOUND_TRIGGER' | 'QUOTE_EXPIRED_TRIGGER' | 'DAILY_TRIGGER' | 'MERGED';
+
+export interface ScoreChangeLogQuery {
+  supplierId?: string | null;
+  supplierProductId?: string | null;
+  metricType?: ScoreMetricType | null;
+  triggerType?: ScoreTriggerType | null;
+  batchNo?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  pageNum: number;
+  pageSize: number;
+}
+
+export interface ScoreChangeSource {
+  businessType: 'PURCHASE_ORDER' | 'SUPPLIER_PRODUCT' | 'PRODUCT' | 'SUPPLIER';
+  businessId: string;
+  businessNo: string | null;
+}
+
+export interface ScoreChangeLog {
+  scoreChangeLogId: string;
+  supplierId: string;
+  supplierProductId: string | null;
+  metricType: ScoreMetricType;
+  metricScoreBefore: number | null;
+  metricScoreAfter: number | null;
+  productRecommendScoreBefore: number | null;
+  productRecommendScoreAfter: number | null;
+  supplierOverallScoreBefore: number | null;
+  supplierOverallScoreAfter: number | null;
+  triggerType: ScoreTriggerType;
+  batchNo: string;
+  ruleVersion: string;
+  relatedSources: ScoreChangeSource[];
+  operatorType: 'USER' | 'SYSTEM';
+  operatorId: string | null;
+  operatorName: string;
+  reason: string;
+  createTime: string;
 }
 
 export interface SupplierBatchIdsPayload {
   supplierIds: string[];
   versionBySupplierId: Record<string, number>;
+}
+
+/**
+ * 供应商批量删除失败明细。
+ * 后端部分失败时通过 code=0 + data=SupplierBatchFailure[] 业务级响应,
+ * 避免 Map.toString() 拼接到 msg 不可解析。
+ */
+export interface SupplierBatchFailure {
+  supplierId: string;
+  reason: string;
 }
 
 export interface SupplierBatchStatusPayload extends SupplierBatchIdsPayload {
@@ -82,15 +150,20 @@ export interface SupplierProductListItem {
   productName: string;
   unitName: string;
   quantityPrecision: number;
-  supplierProductCode: string;
+  quotedPurchasePrice: number | null;
+  quotedPriceReason: string;
+  quotedPriceUpdatedAt: string | null;
+  quoteValidUntil: string | null;
   latestPurchasePrice: number | null;
   minOrderQty: number;
-  leadTimeDays: number;
-  deliveryScore: number;
-  qualityScore: number;
-  priceScore: number;
-  aiScore: number;
+  /** 仅由完全入库事实回写，暂无完整样本时为空。 */
+  avgDeliveryDays: number | null;
+  qualityScore: number | null;
+  priceScore: number | null;
+  aiScore: number | null;
   lastPurchaseAt: string | null;
+  scoreBasisAmount: number | null;
+  scoreStatus: 'NOT_READY' | 'READY';
   status: PurchaseStatus;
   version: number;
   remark: string;
@@ -102,28 +175,51 @@ export interface SupplierProductListItem {
 
 export interface SupplierProductQuery {
   supplierId?: string | 'all';
+  productId?: string | 'all';
   supplierName?: string;
   productCode?: string;
   productName?: string;
   status?: PurchaseStatus | '' | 'all';
+  scoreStatus?: 'NOT_READY' | 'READY' | '' | 'all';
+  quoteStatus?: 'NONE' | 'VALID' | 'EXPIRED' | '' | 'all';
+  quoteValidUntilEnd?: string;
+  qualityScoreMin?: number | null;
+  qualityScoreMax?: number | null;
+  priceScoreMin?: number | null;
+  priceScoreMax?: number | null;
+  aiScoreMin?: number | null;
+  aiScoreMax?: number | null;
+  scoreBasisAmountMin?: number | null;
+  scoreBasisAmountMax?: number | null;
+  minOrderQtyMin?: number | null;
+  minOrderQtyMax?: number | null;
   pageNum: number;
   pageSize: number;
 }
 
-export interface SupplierProductFormPayload {
+export interface SupplierProductCreatePayload {
   supplierId: string;
   productId: string;
-  supplierProductCode: string;
-  latestPurchasePrice: number | null;
+  quotedPurchasePrice: number | null;
+  quoteValidUntil: string | null;
+  quoteReason: string | null;
   minOrderQty: number;
-  leadTimeDays: number;
-  deliveryScore: number;
-  qualityScore: number;
-  priceScore: number;
-  aiScore: number;
   status: PurchaseStatus;
-  version?: number;
   remark: string;
+}
+
+export interface SupplierProductUpdatePayload {
+  version: number;
+  minOrderQty: number;
+  status: PurchaseStatus;
+  remark: string;
+}
+
+export interface SupplierProductQuotePayload {
+  version: number;
+  quotedPurchasePrice: number | null;
+  quoteValidUntil: string | null;
+  reason: string;
 }
 
 export interface SupplierProductBatchIdsPayload {
@@ -149,7 +245,7 @@ export interface PurchaseOrderItem {
   inboundQty: number;
   unitPrice: number;
   totalAmount: number;
-  selectedSupplierScore: number;
+  selectedSupplierScore: number | null;
   remark: string;
 }
 
@@ -252,7 +348,8 @@ export interface PurchaseOrderDraftItemPayload {
   quantityPrecision: number;
   quantity: number;
   unitPrice: number;
-  selectedSupplierScore: number;
+  /** 仅供编辑页展示当前推荐分，API 适配层绝不提交；审核快照由第2期后端写入。 */
+  selectedSupplierScore?: number | null;
   remark: string;
 }
 

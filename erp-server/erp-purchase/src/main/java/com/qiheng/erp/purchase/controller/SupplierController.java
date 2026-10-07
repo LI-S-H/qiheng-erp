@@ -13,11 +13,8 @@ import com.qiheng.erp.purchase.domain.supplier.dto.SupplierPageDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierStatusDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierUpdateDto;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierServiceScoreDto;
-import com.qiheng.erp.purchase.domain.supplierscore.dto.SupplierScoreChangeLogPageDto;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierBatchFailure;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierVo;
-import com.qiheng.erp.purchase.domain.supplierscore.vo.SupplierScoreChangeLogVo;
-import com.qiheng.erp.purchase.service.ISupplierScoreChangeLogService;
 import com.qiheng.erp.purchase.service.ISupplierService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -43,9 +40,6 @@ public class SupplierController {
     @Autowired
     private ISupplierService supplierService;
 
-    @Autowired
-    private ISupplierScoreChangeLogService supplierScoreChangeLogService;
-
     /**
      * 供应商分页查询
      * @param dto 分页查询参数DTO
@@ -60,19 +54,16 @@ public class SupplierController {
         return Result.ok(page);
     }
 
+    /**
+     * 获取供应商详情
+     * @param supplierId 供应商ID
+     * @return 供应商VO
+     */
     @GetMapping("/{supplierId}")
     @Operation(summary = "获取供应商详情")
     public Result<SupplierVo> detail(@PathVariable Long supplierId) {
         StpUtil.checkPermission("supplier:query");
         return Result.ok(supplierService.detail(supplierId));
-    }
-
-    @GetMapping("/{supplierId}/score-change-logs")
-    @Operation(summary = "分页查询供应商评分变更记录")
-    public Result<PageResult<SupplierScoreChangeLogVo>> pageScoreChangeLogs(@PathVariable Long supplierId,
-                                                                              @Valid SupplierScoreChangeLogPageDto dto) {
-        StpUtil.checkPermission("supplier:query");
-        return Result.ok(supplierScoreChangeLogService.pageScoreChangeLogsBySupplier(supplierId, dto));
     }
 
     /**

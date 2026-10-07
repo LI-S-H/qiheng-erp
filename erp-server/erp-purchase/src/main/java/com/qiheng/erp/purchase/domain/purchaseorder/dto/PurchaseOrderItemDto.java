@@ -45,12 +45,6 @@ public class PurchaseOrderItemDto {
     @Schema(description = "采购单价")
     private BigDecimal unitPrice;
 
-    @NotNull(message = "供应商推荐分不能为空")
-    @DecimalMin(value = "0", message = "供应商推荐分最小为0")
-    @DecimalMax(value = "100", message = "供应商推荐分最大为100")
-    @Schema(description = "下单时供应商推荐分，0-100 业务值")
-    private BigDecimal selectedSupplierScore;
-
     @Size(max = 500, message = "备注最长500个字符")
     @Schema(description = "备注")
     private String remark;

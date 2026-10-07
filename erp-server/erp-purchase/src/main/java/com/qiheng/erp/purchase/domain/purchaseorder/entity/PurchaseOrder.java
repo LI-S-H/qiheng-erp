@@ -107,6 +107,10 @@ public class PurchaseOrder implements Serializable {
     @TableField("approved_at")
     private LocalDateTime approvedAt;
 
+    @Schema(description = "使采购单完全入库的最后一笔入库确认时间")
+    @TableField("fully_received_at")
+    private LocalDateTime fullyReceivedAt;
+
     @Schema(description = "创建时间")
     @TableField("create_time")
     private LocalDateTime createTime;

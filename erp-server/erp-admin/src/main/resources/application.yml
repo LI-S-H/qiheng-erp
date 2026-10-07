@@ -65,6 +65,27 @@ springdoc:
     - group: 销售管理
       packages-to-scan: com.qiheng.erp.sales.controller
 
+# RocketMQ 配置
+rocketmq:
+  name-server: 8.154.27.144:9876
+  # 公共发送参数；评分生产者组由专用 Template 的注解注册。
+  producer:
+    send-message-timeout: 3000
+    retry-times-when-send-failed: 2
+    retry-times-when-send-async-failed: 2
+
+# 供应商评分配置
+supplier-score:
+  rocketmq:
+    topic: erp-supplier-score-recalc
+    producer:
+      group: erp-supplier-score-producer
+    consumer:
+      group: erp-supplier-score-fire-consumer
+  scheduled:
+    # 生产默认启用凌晨校正，承担 MQ 投递或消费失败后的最终补偿。
+    enabled: ${SUPPLIER_SCORE_SCHEDULED_ENABLED:true}
+
 knife4j:
   enable: true
   setting:

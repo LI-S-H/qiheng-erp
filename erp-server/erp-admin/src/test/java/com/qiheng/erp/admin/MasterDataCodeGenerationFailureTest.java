@@ -5,6 +5,7 @@ import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.util.CodeNoDefinition;
 import com.qiheng.erp.common.util.CodeNoGenerator;
 import com.qiheng.erp.product.domain.entity.Product;
+import com.qiheng.erp.product.domain.dto.ProductSaveDto;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.product.service.impl.ProductServiceImpl;
 import com.qiheng.erp.purchase.domain.supplier.dto.SupplierCreateDto;
@@ -65,7 +66,7 @@ class MasterDataCodeGenerationFailureTest {
         ReflectionTestUtils.setField(service, "productMapper", productMapper);
         stubCodeGenerationFailure();
 
-        assertThrows(BizException.class, () -> service.add(new Product()));
+        assertThrows(BizException.class, () -> service.add(new ProductSaveDto()));
 
         verify(productMapper).findMaxProductCodeSequence(anyString(), anyInt(), anyInt());
         verify(productMapper, org.mockito.Mockito.never()).insert(any(Product.class));

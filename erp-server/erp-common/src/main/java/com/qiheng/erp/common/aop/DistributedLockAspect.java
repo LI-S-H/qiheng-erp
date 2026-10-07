@@ -33,13 +33,24 @@ public class DistributedLockAspect {
         this.redissonClient = redissonClient;
     }
 
+    /**
+     * 在业务方法外层获取分布式锁；负租期启用续约，固定租期保持原有行为。
+     *
+     * @param joinPoint 被拦截的业务方法
+     * @param lock 锁键、等待时间及租期配置
+     * @return 业务方法的原始返回值
+     * @throws Throwable 获取锁失败或业务方法执行异常，原异常继续向调用方传播
+     */
     @Around("@annotation(lock)")
     public Object around(ProceedingJoinPoint joinPoint, DistributedLock lock) throws Throwable {
         String lockKey = resolveKey(joinPoint, lock.key());
         RLock rLock = redissonClient.getLock(lockKey);
         boolean acquired;
         try {
-            acquired = rLock.tryLock(lock.waitTime(), lock.leaseTime(), lock.timeUnit());
+            // 不传固定租期才启用看门狗；其他入口仍保留注解指定的租期，不扩大本次修复范围。
+            acquired = lock.leaseTime() < 0
+                    ? rLock.tryLock(lock.waitTime(), lock.timeUnit())
+                    : rLock.tryLock(lock.waitTime(), lock.leaseTime(), lock.timeUnit());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "操作被中断");

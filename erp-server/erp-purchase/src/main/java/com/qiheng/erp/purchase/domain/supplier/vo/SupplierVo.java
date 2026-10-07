@@ -2,8 +2,8 @@ package com.qiheng.erp.purchase.domain.supplier.vo;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import com.fasterxml.jackson.databind.ser.std.NumberSerializer;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.qiheng.erp.common.config.BigDecimalNumberSerializer;
 import com.qiheng.erp.common.config.MoneyStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -55,14 +55,15 @@ public class SupplierVo {
     private String serviceScoreReason;
 
     /**
-     * OpenAPI 要求 number/double:BigDecimal 默认可能输出为字符串,使用 NumberSerializer 强制输出为数字。
+     * OpenAPI 要求 number/double，使用项目内无参序列化器避免 Spring 创建 Jackson 内部 NumberSerializer 失败。
      */
     @Schema(description = "完全入库订单按金额加权的平均到货周期，只作分析，不重复进入权重")
-    @JsonSerialize(using = NumberSerializer.class)
+    @JsonSerialize(using = BigDecimalNumberSerializer.class)
     private BigDecimal avgDeliveryDays;
 
     @Schema(description = "最近 180 天有效已确认入库金额，金额字符串；无有效已确认入库样本时返回 null，数据库以分保存")
-    @JsonSerialize(using = MoneyStringSerializer.class) private BigDecimal scoreBasisAmount;
+    @JsonSerialize(using = MoneyStringSerializer.class)
+    private BigDecimal scoreBasisAmount;
 
     @Schema(description = "NOT_READY 表示样本或必需输入不足；READY 表示可参与自动推荐")
     private String scoreStatus;
@@ -77,10 +78,12 @@ public class SupplierVo {
     private String remark;
 
     @Schema(description = "对应 supplier.create_time")
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8") private LocalDateTime createTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
+    private LocalDateTime createTime;
 
     @Schema(description = "对应 supplier.update_time")
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8") private LocalDateTime updateTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
+    private LocalDateTime updateTime;
 
     @Schema(description = "对应 supplier.updated_by_id，BIGINT 按字符串传输；最后一次创建、编辑或启停操作的人")
     @JsonSerialize(using = ToStringSerializer.class) private Long updatedById;

@@ -43,6 +43,9 @@ import com.qiheng.erp.purchase.mapper.SupplierMapper;
 import com.qiheng.erp.purchase.mapper.SupplierProductMapper;
 import com.qiheng.erp.purchase.service.IPurchaseOrderItemService;
 import com.qiheng.erp.purchase.service.IPurchaseOrderService;
+import com.qiheng.erp.purchase.domain.supplierscore.enums.TriggerType;
+import com.qiheng.erp.purchase.domain.supplierscore.mq.SupplierScoreEventTrigger;
+import com.qiheng.erp.purchase.service.support.ScoreRecalcPendingService;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.warehouse.domain.common.enums.EntryMode;
@@ -60,6 +63,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -68,6 +72,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -86,46 +92,34 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, PurchaseOrder> implements IPurchaseOrderService {
-
     @Autowired
     private PurchaseOrderMapper purchaseOrderMapper;
-
     @Autowired
     private PurchaseOrderItemMapper purchaseOrderItemMapper;
-
     @Autowired
     private IPurchaseOrderItemService purchaseOrderItemService;
-
     @Autowired
     private SupplierMapper supplierMapper;
-
     @Autowired
     private WarehouseMapper warehouseMapper;
-
     @Autowired
     private ProductMapper productMapper;
-
     @Autowired
     private SupplierProductMapper supplierProductMapper;
-
     @Autowired
     private InboundBillMapper inboundBillMapper;
-
     @Autowired
     private InboundBillItemMapper inboundBillItemMapper;
-
-    @Autowired
-    private RedissonClient redissonClient;
-
     @Autowired
     private SourceOperationLockSupport sourceOperationLockSupport;
-
     @Autowired
     private BillNoGenerator billNoGenerator;
     @Autowired
     private ReturnOrderApprovalSummaryProvider returnOrderApprovalSummaryProvider;
     @Autowired
     private ApplicationEventPublisher applicationEventPublisher;
+    @Autowired
+    private ObjectProvider<ScoreRecalcPendingService> scorePendingServiceProvider;
 
     /**
      * 采购订单分页查询
@@ -326,7 +320,8 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             item.setInboundQty(0L);
             item.setUnitPrice(QtyUtil.toStored(unitPrice));
             item.setTotalAmount(QtyUtil.toStored(lineAmount));
-            item.setSelectedSupplierScore(QtyUtil.toStoredInt(itemDto.getSelectedSupplierScore()));
+            // TODO(供应商评分第2期)：审核通过时由后端冻结当时 ai_score；草稿、编辑阶段不得信任前端传分。
+            item.setSelectedSupplierScore(null);
             item.setRemark(itemDto.getRemark());
             items.add(item);
         }
@@ -439,7 +434,8 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             item.setInboundQty(0L);
             item.setUnitPrice(QtyUtil.toStored(unitPrice));
             item.setTotalAmount(QtyUtil.toStored(lineAmount));
-            item.setSelectedSupplierScore(QtyUtil.toStoredInt(itemDto.getSelectedSupplierScore()));
+            // TODO(供应商评分第2期)：审核通过时由后端冻结当时 ai_score；草稿、编辑阶段不得信任前端传分。
+            item.setSelectedSupplierScore(null);
             item.setRemark(itemDto.getRemark());
             itemsToSave.add(item);
         }
@@ -527,6 +523,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         }
         // 生成 PURCHASE_IN 待确认入库单
         generatePurchaseInboundBill(order);
+        // 新审核订单引起的交付窗口变化由每日评分校正处理，不额外触发重算。
         applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
                 DashboardTrendMetric.PURCHASE, update.getApprovedAt().toLocalDate()));
     }
@@ -550,11 +547,10 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 && !PurchaseOrderStatus.PARTIAL_INBOUND.name().equals(order.getStatus())) {
             throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "当前采购订单状态不允许入库确认");
         }
-        // 校验入库单明细是否关联采购订单明细
+        // 3. 校验入库单明细是否关联采购订单明细且数量是否超过采购订单剩余数量
         List<PurchaseOrderItem> purchaseItems = purchaseOrderItemService.list(
                 new LambdaQueryWrapper<PurchaseOrderItem>()
                         .eq(PurchaseOrderItem::getPurchaseOrderId, order.getId()));
-        // 创建采购订单明细id映射表
         Map<Long, PurchaseOrderItem> itemById = purchaseItems.stream()
                 .collect(Collectors.toMap(PurchaseOrderItem::getId, item -> item));
         for (InboundBillItem inboundItem : inboundItems) {
@@ -601,15 +597,159 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         if (!purchaseOrderItemService.updateBatchById(purchaseItems)) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "采购订单明细回写失败，请刷新后重试");
         }
-        // 校验采购订单明细是否全部入库
+        // 3. 判断是否全部入库 & 更新订单状态
         boolean allInbound = purchaseItems.stream().allMatch(item ->
                 (item.getInboundQty() != null ? item.getInboundQty() : 0L) >= (item.getQuantity() != null ? item.getQuantity() : 0L));
+        LocalDateTime completedAt = null;
+        if (allInbound) {
+            completedAt = bill.getConfirmedAt();
+            if (completedAt == null) {
+                throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "已确认入库单缺少确认时间，无法完成采购订单");
+            }
+        }
         order.setStatus(allInbound ? PurchaseOrderStatus.INBOUND_DONE.name() : PurchaseOrderStatus.PARTIAL_INBOUND.name());
+        if (allInbound) {
+            order.setFullyReceivedAt(completedAt);
+        }
         if (purchaseOrderMapper.updateById(order) == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "采购订单已发生变化，请刷新后重试");
         }
+        // 部分入库及跨午夜迟提交的交付变化允许延迟到每日校正，不注册交付缓存失效回调。
+        // 4. 刷新供应商平均到货周期
+        if (allInbound) {
+            // 平均到货周期会先写 SP、后写 supplier；先锁 supplier 才能与评分校正保持统一行锁顺序。
+            if (supplierMapper.lockByIdForUpdate(order.getSupplierId()) == null) {
+                throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "供应商不存在，无法完成入库回写");
+            }
+            refreshAverageDeliveryDays(order.getSupplierId());
+            // 当前事务还会继续累加 score_basis_amount；提交后才投递，确保消费者看到完整事实。
+            // 5. 发送完全入库评分消息
+            registerScoreRecalculationAfterCommit(order.getSupplierId(), order.getId(), order.getPurchaseNo());
+        }
         if (!allInbound) {
             generatePurchaseInboundBill(order);
+        }
+    }
+
+    /** 首次完全入库才登记评分事件，部分入库交由每日校正处理。 */
+    private void registerScoreRecalculationAfterCommit(Long supplierId, Long purchaseOrderId, String purchaseNo) {
+        SupplierScoreEventTrigger trigger = new SupplierScoreEventTrigger();
+        trigger.setSupplierId(supplierId);
+        trigger.setTriggerType(TriggerType.INBOUND_TRIGGER);
+        trigger.setSourceRefId(purchaseOrderId);
+        trigger.setSourceRefNo(purchaseNo);
+        trigger.setOccurredAt(System.currentTimeMillis());
+        Runnable publish = () -> {
+            ScoreRecalcPendingService pendingService = scorePendingServiceProvider.getIfAvailable();
+            if (pendingService == null) {
+                log.error("完全入库评分事件未投递：MQ 服务不可用 supplierId={} purchaseNo={}，等待每日校正",
+                        supplierId, purchaseNo);
+                return;
+            }
+            try {
+                pendingService.mergeAndScheduleFire(trigger);
+            } catch (RuntimeException e) {
+                // 事务已提交，异常无法回滚入库；保留日志并由每日校正补齐评分。
+                log.error("完全入库评分事件投递失败 supplierId={} purchaseNo={}，等待每日校正",
+                        supplierId, purchaseNo, e);
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publish.run();
+                }
+            });
+        } else {
+            publish.run();
+        }
+    }
+
+    /**
+     * 仅使用最近 180 天已完全入库的采购事实，按采购明细金额加权计算到货周期。
+     * 部分入库不具备完整履约终点，不进入任何平均周期样本。
+     */
+    private void refreshAverageDeliveryDays(Long supplierId) {
+        LocalDateTime sampleStart = LocalDate.now().minusDays(180).atStartOfDay();
+        // 1. 查询最近 180 天已完全入库的采购订单
+        List<PurchaseOrder> completedOrders = purchaseOrderMapper.selectList(
+                new LambdaQueryWrapper<PurchaseOrder>()
+                        .eq(PurchaseOrder::getSupplierId, supplierId)
+                        .eq(PurchaseOrder::getStatus, PurchaseOrderStatus.INBOUND_DONE.name())
+                        .ge(PurchaseOrder::getFullyReceivedAt, sampleStart)
+                        .isNotNull(PurchaseOrder::getApprovedAt)
+                        .isNotNull(PurchaseOrder::getFullyReceivedAt));
+        if (completedOrders.isEmpty()) {
+            return;
+        }
+        // 2. 查询采购订单明细
+        Map<Long, PurchaseOrder> orderById = completedOrders.stream()
+                .collect(Collectors.toMap(PurchaseOrder::getId, item -> item));
+        List<PurchaseOrderItem> items = purchaseOrderItemMapper.selectList(
+                new LambdaQueryWrapper<PurchaseOrderItem>()
+                        .in(PurchaseOrderItem::getPurchaseOrderId, orderById.keySet()));
+        // 3. 计算到货周期
+        Map<Long, DeliveryPeriodAggregate> aggregates = new HashMap<>();
+        for (PurchaseOrderItem item : items) {
+            // 3.1 跳过无效明细
+            if (item.getSupplierProductId() == null || item.getTotalAmount() == null || item.getTotalAmount() <= 0) {
+                continue;
+            }
+            PurchaseOrder completedOrder = orderById.get(item.getPurchaseOrderId());
+            // 3.2 获取到货周期秒数
+            long seconds = Math.max(0, Duration.between(
+                    completedOrder.getApprovedAt(), completedOrder.getFullyReceivedAt()).getSeconds());
+            // 3.3 计算到货周期天数
+            BigDecimal days = BigDecimal.valueOf(seconds)
+                    .divide(BigDecimal.valueOf(86_400), 8, RoundingMode.HALF_UP);
+            // 3.4 按产品累加累加到货周期
+            aggregates.computeIfAbsent(item.getSupplierProductId(), ignored -> new DeliveryPeriodAggregate())
+                    .add(days, item.getTotalAmount());
+        }
+        // 4. 更新供应商产品到货周期
+        DeliveryPeriodAggregate supplierAggregate = new DeliveryPeriodAggregate();
+        for (Map.Entry<Long, DeliveryPeriodAggregate> entry : aggregates.entrySet()) {
+            DeliveryPeriodAggregate aggregate = entry.getValue();
+            supplierAggregate.add(aggregate);
+            SupplierProduct update = new SupplierProduct()
+                    .setId(entry.getKey())
+                    .setAvgDeliveryDays(aggregate.averageDays());
+            supplierProductMapper.updateById(update);
+        }
+        // 5. 更新供应商到货周期
+        if (supplierAggregate.hasSample()) {
+            Supplier supplier = new Supplier()
+                    .setId(supplierId)
+                    .setAvgDeliveryDays(supplierAggregate.averageDays());
+            supplierMapper.updateById(supplier);
+        }
+    }
+
+    /**
+     * 供应商产品到货周期加权累加器
+     */
+    private static final class DeliveryPeriodAggregate {
+        private BigDecimal weightedDays = BigDecimal.ZERO;
+        private BigDecimal totalAmount = BigDecimal.ZERO;
+
+        private void add(BigDecimal days, long amount) {
+            BigDecimal weight = BigDecimal.valueOf(amount);
+            weightedDays = weightedDays.add(days.multiply(weight));
+            totalAmount = totalAmount.add(weight);
+        }
+
+        private void add(DeliveryPeriodAggregate other) {
+            weightedDays = weightedDays.add(other.weightedDays);
+            totalAmount = totalAmount.add(other.totalAmount);
+        }
+
+        private boolean hasSample() {
+            return totalAmount.signum() > 0;
+        }
+
+        private BigDecimal averageDays() {
+            return weightedDays.divide(totalAmount, 2, RoundingMode.HALF_UP);
         }
     }
 
@@ -655,6 +795,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已发生变化，请刷新后重试");
         }
+        // 取消订单引起的交付窗口变化由每日评分校正处理。
         if (PurchaseOrderStatus.APPROVED.name().equals(order.getStatus()) && order.getApprovedAt() != null) {
             applicationEventPublisher.publishEvent(new DashboardTrendInvalidatedEvent(
                     DashboardTrendMetric.PURCHASE, order.getApprovedAt().toLocalDate()));
@@ -895,6 +1036,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 .setWarehouseId(order.getWarehouseId())
                 .setWarehouseName(order.getWarehouseName())
                 .setStatus(StockBillStatus.PENDING_CONFIRM.name())
+                .setExpectedArrivalDate(order.getExpectedArrivalDate())
                 .setCreatedById(currentUserId)
                 .setCreatedByName(currentUserName)
                 .setResponsibleById(currentUserId)
@@ -925,7 +1067,8 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                     .setCurrentQty(0L)
                     .setPendingQty(pendingQty)
                     .setQualifiedQty(0L)
-                    .setDefectiveQty(0L);
+                    .setDefectiveQty(0L)
+                    .setUnitPrice(item.getUnitPrice() == null ? 0L : item.getUnitPrice());
             billItems.add(billItem);
         }
         // 等效于 IService#saveBatch：单条循环入库（MyBatis-Plus saveBatch 默认实现也是循环 insert）

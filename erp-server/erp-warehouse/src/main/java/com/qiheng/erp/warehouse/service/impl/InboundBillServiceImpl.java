@@ -56,6 +56,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -71,49 +72,34 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, InboundBill> implements IInboundBillService {
-
     @Autowired
     private InboundBillMapper inboundBillMapper;
-
     @Autowired
     private StockBillMapper stockBillMapper;
-
     @Autowired
     private IInboundBillItemService inboundBillItemService;
-
     @Autowired
     private IWarehouseStockService warehouseStockService;
-
     @Autowired
     private WarehouseStockLockSupport warehouseStockLockSupport;
-
     @Autowired
     private SourceOperationLockSupport sourceOperationLockSupport;
-
     @Autowired
     private StockBillServiceHelper stockBillServiceHelper;
-
     @Autowired
     private StockBillDraftSupport stockBillDraftSupport;
-
     @Autowired
     private StockBillEditingSupport stockBillEditingSupport;
-
     @Autowired
     private IStockBillService stockBillService;
-
     @Autowired
     private IStockBillItemService stockBillItemService;
-
     @Autowired
     private WarehouseMapper warehouseMapper;
-
     @Autowired
     private BillNoGenerator billNoGenerator;
-
     @Autowired
     private InboundBillItemMapper inboundBillItemMapper;
-
     @Autowired(required = false)
     private List<InboundSourceWritebackPort> inboundSourceWritebackPorts = Collections.emptyList();
 
@@ -184,6 +170,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .select(InboundBill::getWarehouseId)
                 .select(InboundBill::getWarehouseName)
                 .select(InboundBill::getStatus)
+                .select(InboundBill::getExpectedArrivalDate)
                 .select(InboundBill::getConfirmedById)
                 .select(InboundBill::getConfirmedByName)
                 .select(InboundBill::getConfirmedAt)
@@ -284,6 +271,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                     itemDto.getCurrentQty(),
                     itemDto.getQualifiedQty(),
                     itemDto.getDefectiveQty(),
+                    0L,
                     itemDto.getRemark());
         }
         inboundBillItemService.saveBatch(items);
@@ -304,7 +292,7 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
     /**
      * 新增入库单明细
      */
-    private void addItem(String inboundNo, InboundBill bill, List<InboundBillItem> items, Long productId, Product product, String sourceItemId, BigDecimal planQty, BigDecimal currentQty, BigDecimal qualifiedQty, BigDecimal defectiveQty, String remark) {
+    private void addItem(String inboundNo, InboundBill bill, List<InboundBillItem> items, Long productId, Product product, String sourceItemId, BigDecimal planQty, BigDecimal currentQty, BigDecimal qualifiedQty, BigDecimal defectiveQty, Long unitPrice, String remark) {
         // 修复：计算同 source_item_id 已确认入库单的 current_qty 累加(processed_qty 历史累计)
         Long processedQty = null;
         if (sourceItemId != null && !sourceItemId.isBlank()) {
@@ -327,6 +315,8 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 .setPendingQty(null)
                 .setQualifiedQty(QtyUtil.toStored(qualifiedQty))
                 .setDefectiveQty(QtyUtil.toStored(defectiveQty))
+                // 系统生成的采购入库单编辑后仍保留原单价快照；手工单没有来源单价，保持 0。
+                .setUnitPrice(unitPrice)
                 .setRemark(remark);
         items.add(item);
         validateInboundItemBalance(item, inboundNo);
@@ -692,6 +682,22 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                               InboundType billType) {
         stockBillDraftSupport.validateQualityQuantities(itemDtos, billType);
         Map<Long, Product> productMap = stockBillDraftSupport.loadProductMap(itemDtos);
+        boolean preservePurchasePrice = billType == InboundType.PURCHASE_IN
+                && EntryMode.SOURCE_GENERATED.name().equals(bill.getEntryMode());
+        Map<Long, Long> unitPriceBySourceItemId = new HashMap<>();
+        if (preservePurchasePrice) {
+            for (InboundBillItem existingItem : existingItems) {
+                Long sourceItemId = existingItem.getSourceItemId();
+                Long unitPrice = existingItem.getUnitPrice();
+                if (sourceItemId == null || unitPrice == null || unitPrice <= 0) {
+                    throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "采购入库明细缺少有效单价快照");
+                }
+                Long previous = unitPriceBySourceItemId.putIfAbsent(sourceItemId, unitPrice);
+                if (previous != null && !previous.equals(unitPrice)) {
+                    throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "同一采购明细的入库单价快照不一致");
+                }
+            }
+        }
         // 全删
         if (!existingItems.isEmpty()) {
             List<Long> idsToDelete = existingItems.stream()
@@ -705,10 +711,18 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
         for (StockBillUpdateDto itemDto : itemDtos) {
             Long productId = IdUtil.parseRequiredLongId(itemDto.getProductId(), "产品ID");
             Product product = productMap.get(productId);
+            Long unitPrice = 0L;
+            if (preservePurchasePrice) {
+                Long sourceItemId = IdUtil.parseRequiredLongId(itemDto.getSourceItemId(), "来源明细ID");
+                unitPrice = unitPriceBySourceItemId.get(sourceItemId);
+                if (unitPrice == null) {
+                    throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "采购入库明细缺少单价快照来源");
+                }
+            }
             addItem(inboundNo, bill, itemsToSave, productId, product,
                     itemDto.getSourceItemId(), itemDto.getPlanQty(),
                     itemDto.getCurrentQty(), itemDto.getQualifiedQty(),
-                    itemDto.getDefectiveQty(), itemDto.getRemark());
+                    itemDto.getDefectiveQty(), unitPrice, itemDto.getRemark());
         }
         if (!itemsToSave.isEmpty()) {
             inboundBillItemService.saveBatch(itemsToSave);
@@ -727,7 +741,9 @@ public class InboundBillServiceImpl extends ServiceImpl<InboundBillMapper, Inbou
                 bill = fresh;
             }
         }
-        return stockBillServiceHelper.convertToDetailVo(bill, InboundBillDetailVo::new);
+        InboundBillDetailVo vo = stockBillServiceHelper.convertToDetailVo(bill, InboundBillDetailVo::new);
+        vo.setExpectedArrivalDate(bill.getExpectedArrivalDate());
+        return vo;
     }
 
     /**

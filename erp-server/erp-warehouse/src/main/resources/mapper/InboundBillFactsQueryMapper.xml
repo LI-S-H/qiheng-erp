@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.qiheng.erp.warehouse.mapper.InboundBillFactsQueryMapper">
+
+    <!--
+        查 supplier 180 天已完全入库(PURCHASE_IN + CONFIRMED)的入库单明细聚合。
+
+        数据来源(2 表):
+          inbound_bill(主单):expected_arrival_date / confirmed_at /
+                              source_party_id(PURCHASE_IN 时即 supplier.id) /
+                              inbound_type / status / deleted
+          inbound_bill_item(明细):qualified_qty / defective_qty /
+                                    current_qty / unit_price(单价快照,分)
+          purchase_order_item(订单行):supplier_product_id(SP 维度金额分组)
+
+        金额公式:本次入库金额(分) = current_qty × unit_price / 100
+          - current_qty 是 100 倍整数(数量),unit_price 是分(单价)
+          - 两者相乘得到 10000 倍分,SUM 后 /100 转回分
+          - CAST AS UNSIGNED 保证返回整数,Java 端 Long 直接接收无精度问题
+
+        过滤:
+          inbound_type = 'PURCHASE_IN'  (只看采购入库)
+          status = 'CONFIRMED'           (已确认入库单)
+          confirmed_at >= #{since}       (180 天滚动窗口起点)
+          ib.deleted = 0                 (inbound_bill_item 无 deleted 列,不加)
+
+        性能:
+          - SQL JOIN 2 张表 + LEFT JOIN POI(为 supplier_product_id 必须)
+          - 走 idx_inbound_bill_supplier_confirmed 复合索引
+          - LIMIT 30000,适配大单 supplier 的异常情况(原 10000 → 30000)
+
+        聚合粒度:按入库单 ID + supplier_product_id GROUP BY,合并同一入库单的 SP 维度金额。
+        SP 维度金额由 Java 端 ScoreFactsQueryService.fromDatabase 按 supplierProductId SUM 出。
+    -->
+    <select id="selectRecentInboundFacts" resultType="com.qiheng.erp.warehouse.domain.scoring.InboundFactsRow">
+        SELECT
+            ib.expected_arrival_date  AS expectedArrivalDate,
+            ib.confirmed_at           AS confirmedAt,
+            poi.supplier_product_id   AS supplierProductId,
+            SUM(COALESCE(ibi.qualified_qty, 0)) AS qualifiedQty,
+            SUM(COALESCE(ibi.defective_qty, 0)) AS defectiveQty,
+            CAST(SUM(COALESCE(ibi.current_qty, 0) * COALESCE(ibi.unit_price, 0)) / 100 AS UNSIGNED) AS totalAmount
+        FROM inbound_bill ib
+        JOIN inbound_bill_item ibi ON ibi.inbound_bill_id = ib.id
+        LEFT JOIN purchase_order_item poi ON poi.id = ibi.source_item_id
+        WHERE ib.source_party_id = #{supplierId}
+          AND ib.inbound_type    = 'PURCHASE_IN'
+          AND ib.status          = 'CONFIRMED'
+          AND ib.confirmed_at   IS NOT NULL
+          AND ib.confirmed_at >= #{since}
+          AND ib.deleted         = 0
+        GROUP BY ib.id, ib.expected_arrival_date, ib.confirmed_at, poi.supplier_product_id
+        ORDER BY ib.confirmed_at ASC
+        LIMIT 30000
+    </select>
+
+</mapper>

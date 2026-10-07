@@ -12,13 +12,10 @@ spring:
       port: 6379
       database: 0
 
-# RocketMQ
+# 开发环境连接云端 RocketMQ；需放行当前公网出口 IP 的 9876、10911、10909 端口。
+# 各业务生产者组和公共发送参数继承 application.yml，无需重复注册默认组。
 rocketmq:
-  name-server: localhost:9876
-  producer:
-    group: erp-producer-group
-    send-message-timeout: 3000
-    retry-times-when-send-failed: 2
+  name-server: 8.154.27.144:9876
 
 # MyBatis-Plus 开发环境打印 SQL
 mybatis-plus:

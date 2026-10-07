@@ -5,6 +5,8 @@ import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductBatchDe
 import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductBatchStatusDto;
 import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductCreateDto;
 import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductPageDto;
+import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductQuoteDto;
+import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductUpdateDto;
 import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
 import com.qiheng.erp.purchase.domain.supplierproduct.vo.SupplierProductVo;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -28,6 +30,8 @@ public interface ISupplierProductService extends IService<SupplierProduct> {
      */
     PageResult<SupplierProductVo> page(SupplierProductPageDto dto);
 
+    SupplierProductVo detail(Long supplierProductId);
+
     /**
      * 新增供货产品（后端保存供应商和产品快照）
      * @param dto 新增供货产品请求DTO
@@ -41,7 +45,10 @@ public interface ISupplierProductService extends IService<SupplierProduct> {
      * @param dto 编辑供货产品请求DTO
      * @return 供货产品VO
      */
-    SupplierProductVo update(Long supplierProductId, SupplierProductCreateDto dto);
+    SupplierProductVo update(Long supplierProductId, SupplierProductUpdateDto dto);
+
+    /** 人工维护有效报价；价格评分重算在第3期接入。 */
+    SupplierProductVo updateQuote(Long supplierProductId, SupplierProductQuoteDto dto);
 
     /**
      * 批量修改供货产品状态（最佳努力模式，乐观锁实现）

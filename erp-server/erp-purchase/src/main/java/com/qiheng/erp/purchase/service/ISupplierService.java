@@ -10,7 +10,6 @@ import com.qiheng.erp.purchase.domain.supplier.dto.SupplierServiceScoreDto;
 import com.qiheng.erp.purchase.domain.supplier.entity.Supplier;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierBatchFailure;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierVo;
-import com.qiheng.erp.purchase.domain.supplier.vo.SupplierSummaryVo;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.util.List;
@@ -31,8 +30,6 @@ public interface ISupplierService extends IService<Supplier> {
      * @return 分页查询结果VO
      */
     PageResult<SupplierVo> page(SupplierPageDto dto);
-
-    SupplierSummaryVo summary(SupplierPageDto dto);
 
     SupplierVo detail(Long supplierId);
 

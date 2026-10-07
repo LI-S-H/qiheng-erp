@@ -4,7 +4,9 @@ import java.io.Serial;
 
 import com.baomidou.mybatisplus.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.io.Serializable;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -41,25 +43,29 @@ public class SupplierProduct implements Serializable {
     @TableField("product_id")
     private Long productId;
 
-    @Schema(description = "供应商侧产品编码")
-    @TableField("supplier_product_code")
-    private String supplierProductCode;
-
     @Schema(description = "最近采购单价，放大100倍保存")
     @TableField("latest_purchase_price")
     private Long latestPurchasePrice;
 
+    @Schema(description = "当前人工有效报价，单位分")
+    @TableField("quoted_purchase_price")
+    private Long quotedPurchasePrice;
+
+    @Schema(description = "当前人工有效报价原因；无报价时为空字符串")
+    @TableField("quoted_price_reason")
+    private String quotedPriceReason;
+
+    @Schema(description = "最近报价维护时间")
+    @TableField("quoted_price_updated_at")
+    private LocalDateTime quotedPriceUpdatedAt;
+
+    @Schema(description = "报价有效截止日")
+    @TableField("quote_valid_until")
+    private LocalDate quoteValidUntil;
+
     @Schema(description = "最小起订量，放大100倍保存")
     @TableField("min_order_qty")
     private Long minOrderQty;
-
-    @Schema(description = "预计交期天数")
-    @TableField("lead_time_days")
-    private Integer leadTimeDays;
-
-    @Schema(description = "该产品维度交付评分，放大100倍保存，10000表示100.00")
-    @TableField("delivery_score")
-    private Integer deliveryScore;
 
     @Schema(description = "该产品维度质量评分，放大100倍保存，10000表示100.00")
     @TableField("quality_score")
@@ -70,12 +76,33 @@ public class SupplierProduct implements Serializable {
     private Integer priceScore;
 
     @Schema(description = "AI/规则综合推荐分，放大100倍保存，10000表示100.00")
-    @TableField("ai_score")
+    // 旧接口字段仅保留兼容；数据库已统一为 recommend_score，不能再读写旧列。
+    @TableField(exist = false)
     private Integer aiScore;
+
+    /**
+     * 推荐分(产品维度)。由评分重算系统写入，旧接口 aiScore 映射到此字段。
+     * 评分公式:价格分×30% + 供应商交付分×30% + 产品质量分×30% + 服务分×10%。
+     */
+    @Schema(description = "推荐分;评分重算系统写入,放大100倍保存,10000表示100.00")
+    @TableField("recommend_score")
+    private Integer recommendScore;
 
     @Schema(description = "最近采购时间")
     @TableField("last_purchase_at")
     private LocalDateTime lastPurchaseAt;
+
+    @Schema(description = "最近180天完全入库采购单的金额加权平均到货周期（天），仅供分析")
+    @TableField("avg_delivery_days")
+    private BigDecimal avgDeliveryDays;
+
+    @Schema(description = "已确认入库累计金额，单位分；不参与质量分计算")
+    @TableField("score_basis_amount")
+    private Long scoreBasisAmount;
+
+    @Schema(description = "评分状态：NOT_READY、READY")
+    @TableField("score_status")
+    private String scoreStatus;
 
     @Schema(description = "状态：1启用，0禁用")
     @TableField("status")

@@ -9,12 +9,14 @@ import com.qiheng.erp.common.annotation.DistributedLock;
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.result.PageResult;
+import com.qiheng.erp.common.scoring.ProductReferencePriceChangeHandler;
 import com.qiheng.erp.common.util.CodeNoDefinition;
 import com.qiheng.erp.common.util.CodeNoGenerator;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.common.util.QtyUtil;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
+import com.qiheng.erp.product.domain.dto.ProductReferencePriceDto;
 import com.qiheng.erp.product.domain.dto.ProductSaveDto;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.domain.entity.ProductCategory;
@@ -23,8 +25,10 @@ import com.qiheng.erp.product.mapper.ProductCategoryMapper;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.product.service.IProductService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -39,6 +43,7 @@ import java.util.stream.Collectors;
  * @author Li
  * @since 2026-06-28
  */
+@Slf4j
 @Service
 public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> implements IProductService {
 
@@ -52,6 +57,14 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     @Autowired
     private CodeNoGenerator codeNoGenerator;
+
+    /**
+     * 产品参考采购价变化处理器(由 Spring 注入所有实现)。
+     * erp-purchase 提供实现,本模块调用即可,不需要直接依赖 erp-purchase。
+     * 允许为空(单元测试或 erp-purchase 未加载场景),空时跳过评分重算。
+     */
+    @Autowired(required = false)
+    private List<ProductReferencePriceChangeHandler> referencePriceHandlers;
 
     /**
      * 产品分页查询
@@ -310,7 +323,65 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
             }
         }
         productMapper.updateById(product);
+        // TODO(reference-purchase-price):referencePurchasePrice 不在此接口中处理,
+        //  必须通过单独接口 updateReferencePrice 调用,以触发供应商评分重算。
         return getDetailById(product.getId());
+    }
+
+    /**
+     * 调整产品参考采购价。
+     *
+     * <p>独立于产品编辑接口,避免编辑与价格变更混在同一事务内导致重算副作用。
+     * 价格变化时通过反转接口同步触发所有供应该产品的有效供货关系的价格分、
+     * 推荐分与对应供应商汇总分重算;重算失败则整体回滚。</p>
+     *
+     * @param productId 需要调整参考采购价的产品ID
+     * @param dto 新参考采购价
+     * @return 包含最新参考采购价的产品详情
+     */
+    // 参考价可能重算多个供应商；使用看门狗续约，避免等待行锁或批量计算超过30秒后互斥提前失效。
+    @DistributedLock(key = "'product:category:global'", leaseTime = -1)
+    @Override
+    @Transactional(rollbackFor = Exception.class, isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public ProductVo updateReferencePrice(Long productId, ProductReferencePriceDto dto) {
+        if (dto.getReferencePurchasePrice() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "参考采购价不能为空");
+        }
+        // 后续评分会等待供应商行锁；最外层使用读已提交，避免等待后继续读取旧报价快照。
+        Product existing = productMapper.selectById(productId);
+        if (existing == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "产品不存在");
+        }
+        BigDecimal oldPrice = existing.getReferencePurchasePrice();
+        BigDecimal newPrice = dto.getReferencePurchasePrice();
+
+        // 产品表没有 version；更新由外层产品锁串行保护，不接收无效版本参数。
+        Product update = new Product();
+        update.setId(productId);
+        update.setReferencePurchasePrice(newPrice);
+        int rows = productMapper.updateById(update);
+        if (rows == 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
+                    "产品数据已被修改,请刷新后重试");
+        }
+
+        // 仅当价格实际变化时触发评分重算
+        if (oldPrice == null || oldPrice.compareTo(newPrice) != 0) {
+            log.info("产品参考采购价变化 productId={} oldPrice={} newPrice={}",
+                    productId, oldPrice, newPrice);
+            for (ProductReferencePriceChangeHandler handler : referencePriceHandlers) {
+                try {
+                    handler.onReferencePriceChanged(productId);
+                } catch (Exception e) {
+                    log.error("参考价变更评分重算失败 productId={}", productId, e);
+                    throw e;
+                }
+            }
+        } else {
+            log.debug("产品参考采购价未变化,跳过评分重算 productId={}", productId);
+        }
+
+        return getDetailById(productId);
     }
 
 }

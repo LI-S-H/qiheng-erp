@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.Version;
 
 import java.io.Serial;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.TableId;
 import java.io.Serializable;
@@ -84,6 +85,10 @@ public class InboundBill implements Serializable, StockBillDetailVoMapping.BillS
     @Schema(description="状态：DRAFT、PENDING_CONFIRM、CONFIRMED、CANCELLED")
     @TableField("status")
     private String status;
+
+    @Schema(description="采购订单预计到货日期快照；仅系统生成的采购入库单有值")
+    @TableField("expected_arrival_date")
+    private LocalDate expectedArrivalDate;
 
     @Schema(description="确认人ID")
     @TableField("confirmed_by_id")

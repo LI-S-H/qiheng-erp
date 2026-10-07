@@ -10,6 +10,8 @@ import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductBatchDe
 import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductBatchStatusDto;
 import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductCreateDto;
 import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductPageDto;
+import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductQuoteDto;
+import com.qiheng.erp.purchase.domain.supplierproduct.dto.SupplierProductUpdateDto;
 import com.qiheng.erp.purchase.domain.supplierproduct.vo.SupplierProductVo;
 import com.qiheng.erp.purchase.service.ISupplierProductService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -52,6 +54,18 @@ public class SupplierProductController {
     }
 
     /**
+     * 获取供货产品详情
+     * @param supplierProductId 供货产品ID
+     * @return 供货产品VO
+     */
+    @GetMapping("/{supplierProductId}")
+    @Operation(summary = "获取供货产品详情")
+    public Result<SupplierProductVo> detail(@PathVariable Long supplierProductId) {
+        StpUtil.checkPermission("supplier:query");
+        return Result.ok(supplierProductService.detail(supplierProductId));
+    }
+
+    /**
      * 新增供货产品
      * @param dto 新增供货产品请求DTO
      * @return 供货产品VO
@@ -74,11 +88,25 @@ public class SupplierProductController {
     @PutMapping("/{supplierProductId}")
     @Operation(summary = "编辑供货产品")
     public Result<SupplierProductVo> update(@PathVariable Long supplierProductId,
-                                            @Valid @RequestBody SupplierProductCreateDto dto) {
+                                            @Valid @RequestBody SupplierProductUpdateDto dto) {
         StpUtil.checkPermission("purchase:create");
         log.info("编辑供货产品，参数: supplierProductId={}, dto={}", supplierProductId, dto);
         SupplierProductVo vo = supplierProductService.update(supplierProductId, dto);
         return Result.ok(vo);
+    }
+
+    /**
+     * 调整供货关系报价
+     * @param supplierProductId 供货产品ID
+     * @param dto 调整供货关系报价请求DTO
+     * @return 供货产品VO
+     */
+    @PutMapping("/{supplierProductId}/quote")
+    @Operation(summary = "调整供货关系报价")
+    public Result<SupplierProductVo> updateQuote(@PathVariable Long supplierProductId,
+                                                 @Valid @RequestBody SupplierProductQuoteDto dto) {
+        StpUtil.checkPermission("supplier:manage");
+        return Result.ok(supplierProductService.updateQuote(supplierProductId, dto));
     }
 
     /**
@@ -135,12 +163,8 @@ public class SupplierProductController {
         if (version == null) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "版本号不能为空");
         }
-        try {
-            if (version < 0) {
-                throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "版本号不能为负数");
-            }
-        } catch (NumberFormatException e) {
-            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "版本号格式错误");
+        if (version < 0) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "版本号不能为负数");
         }
         // 复用批量删除接口
         SupplierProductBatchDeleteDto dto = new SupplierProductBatchDeleteDto();

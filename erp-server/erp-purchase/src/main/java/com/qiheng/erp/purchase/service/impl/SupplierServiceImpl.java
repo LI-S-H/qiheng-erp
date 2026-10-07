@@ -25,12 +25,11 @@ import com.qiheng.erp.purchase.domain.supplierproduct.enums.SupplierScoreStatus;
 import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierBatchFailure;
 import com.qiheng.erp.purchase.domain.supplier.vo.SupplierVo;
-import com.qiheng.erp.purchase.domain.supplier.vo.SupplierSummaryVo;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.purchase.mapper.SupplierMapper;
 import com.qiheng.erp.purchase.mapper.SupplierProductMapper;
-import com.qiheng.erp.purchase.service.ISupplierScoreChangeLogService;
 import com.qiheng.erp.purchase.service.ISupplierService;
+import com.qiheng.erp.purchase.service.SupplierScoreRecalculateService;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
 import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
 import com.qiheng.erp.returnorder.domain.port.ReturnType;
@@ -42,15 +41,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Objects;
 
 /**
  * <p>
@@ -73,8 +67,10 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     @Autowired
     private CodeNoGenerator codeNoGenerator;
     @Autowired
-    private ISupplierScoreChangeLogService supplierScoreChangeLogService;
+    private SupplierScoreRecalculateService supplierScoreRecalculateService;
+
     private static final CodeNoDefinition SUPPLIER_CODE = new CodeNoDefinition("supplier:code", "S", 4);
+
     /**
      * 供应商分页查询
      * @param dto 分页查询参数DTO
@@ -93,23 +89,6 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
                 (int) result.getCurrent(),
                 (int) result.getSize()
         );
-    }
-
-    /**
-        * 供应商统计查询
-      */
-    @Override
-    public SupplierSummaryVo summary(SupplierPageDto dto) {
-        validatePageQuery(dto);
-        SupplierSummaryVo summary = supplierMapper.selectSummary(dto);
-        if (summary == null) {
-            summary = new SupplierSummaryVo();
-        }
-        summary.setTotalCount(summary.getTotalCount() == null ? 0L : summary.getTotalCount());
-        summary.setEnabledCount(summary.getEnabledCount() == null ? 0L : summary.getEnabledCount());
-        summary.setReadyCount(summary.getReadyCount() == null ? 0L : summary.getReadyCount());
-        summary.setAverageOverallScore(QtyUtil.toDecimal(summary.getAverageOverallScore()));
-        return summary;
     }
 
     /**
@@ -134,10 +113,10 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
                 .like(StrUtil.isNotBlank(dto.getContactName()), Supplier::getContactName, dto.getContactName())
                 .eq(dto.getStatus() != null, Supplier::getStatus, dto.getStatus())
                 .eq(StrUtil.isNotBlank(dto.getScoreStatus()), Supplier::getScoreStatus, dto.getScoreStatus())
-                .ge(dto.getOverallScoreMin() != null, Supplier::getOverallScore, toStoredScore(dto.getOverallScoreMin()))
-                .le(dto.getOverallScoreMax() != null, Supplier::getOverallScore, toStoredScore(dto.getOverallScoreMax()))
-                .ge(dto.getServiceScoreMin() != null, Supplier::getServiceScore, toStoredScore(dto.getServiceScoreMin()))
-                .le(dto.getServiceScoreMax() != null, Supplier::getServiceScore, toStoredScore(dto.getServiceScoreMax()))
+                .ge(dto.getOverallScoreMin() != null, Supplier::getOverallScore, QtyUtil.toStoredInt(dto.getOverallScoreMin()))
+                .le(dto.getOverallScoreMax() != null, Supplier::getOverallScore, QtyUtil.toStoredInt(dto.getOverallScoreMax()))
+                .ge(dto.getServiceScoreMin() != null, Supplier::getServiceScore, QtyUtil.toStoredInt(dto.getServiceScoreMin()))
+                .le(dto.getServiceScoreMax() != null, Supplier::getServiceScore, QtyUtil.toStoredInt(dto.getServiceScoreMax()))
                 .ge(dto.getScoreBasisAmountMin() != null, Supplier::getScoreBasisAmount, QtyUtil.toStored(dto.getScoreBasisAmountMin()))
                 .le(dto.getScoreBasisAmountMax() != null, Supplier::getScoreBasisAmount, QtyUtil.toStored(dto.getScoreBasisAmountMax()))
                 .ge(dto.getAvgDeliveryDaysMin() != null, Supplier::getAvgDeliveryDays, dto.getAvgDeliveryDaysMin())
@@ -207,7 +186,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         entity.setAddress(normalizeOptionalText(dto.getAddress()));
         entity.setPaymentTerms(normalizeOptionalText(dto.getPaymentTerms()));
         validateInitialServiceScore(dto.getServiceScore(), dto.getServiceScoreReason());
-        entity.setServiceScore(toStoredScore(dto.getServiceScore()));
+        entity.setServiceScore(QtyUtil.toStoredInt(dto.getServiceScore()));
         entity.setServiceScoreReason(dto.getServiceScore() == null ? "" : dto.getServiceScoreReason().trim());
         entity.setScoreBasisAmount(0L);
         entity.setScoreStatus(SupplierScoreStatus.NOT_READY.name());
@@ -266,25 +245,29 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
      * @return 供应商VO
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public SupplierVo updateServiceScore(Long supplierId, SupplierServiceScoreDto dto) {
+        // 业务字段与衍生评分共用供应商行锁，锁必须先于评分依据读取，并保留到事务提交。
+        if (supplierMapper.lockByIdForUpdate(supplierId) == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND);
+        }
         Supplier existing = supplierMapper.selectById(supplierId);
         if (existing == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND);
         }
         validateScorePrecision(dto.getServiceScore());
         String reason = dto.getReason().trim();
-        Integer after = toStoredScore(dto.getServiceScore());
+        Integer after = QtyUtil.toStoredInt(dto.getServiceScore());
         Integer before = existing.getServiceScore();
         LoginUser currentUser = UserContext.requireCurrentUser();
         // 显式 LambdaUpdateWrapper：updateById 默认忽略 null；清空服务分必须显式 SET NULL，
         // 才能同时满足分数与原因的成组约束。
-        // 服务分原因为 nullable：清空分数时原因也写 null，与 Schema 字段 nullable 对齐。
+         // 服务分为空时原因必须清空为字符串，满足数据库 NOT NULL 与成组约束。
         LambdaUpdateWrapper<Supplier> update = new LambdaUpdateWrapper<Supplier>()
                 .eq(Supplier::getId, supplierId)
                 .eq(Supplier::getVersion, dto.getVersion())
                 .set(Supplier::getServiceScore, after)
-                .set(Supplier::getServiceScoreReason, after == null ? null : reason)
+                 .set(Supplier::getServiceScoreReason, after == null ? "" : reason)
                 .set(Supplier::getUpdatedById, currentUser.getUserId())
                 .set(Supplier::getUpdatedByName, currentUser.getRealName())
                 .set(Supplier::getVersion, dto.getVersion() + 1);
@@ -292,9 +275,9 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商数据已变化，请刷新后重试");
         }
         if (!Objects.equals(before, after)) {
-            supplierScoreChangeLogService.writeServiceScoreLog(supplierId, before, after, reason, currentUser);
+            // 与服务分更新处于同一事务，日志、综合分和产品推荐分必须一起提交。
+            supplierScoreRecalculateService.recalcForServiceScoreChange(supplierId, before, reason);
         }
-        // TODO(供应商评分第3期)：服务分变化后，在此同一事务内重算供应商总分和全部供货关系推荐分。
         return toVo(supplierMapper.selectById(supplierId));
     }
 
@@ -304,7 +287,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
      */
     private void validateInitialServiceScore(BigDecimal score, String reason) {
         boolean scoreProvided = score != null;
-        boolean reasonProvided = reason != null && StrUtil.isNotBlank(reason);
+        boolean reasonProvided = StrUtil.isNotBlank(reason);
         if (scoreProvided != reasonProvided) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "初始服务分与服务分原因必须同时填写或同时为空");
         }
@@ -318,10 +301,6 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         if (score != null && score.stripTrailingZeros().scale() > QtyUtil.SCALE) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "服务分最多保留两位小数");
         }
-    }
-
-    private Integer toStoredScore(BigDecimal score) {
-        return QtyUtil.toStoredInt(score);
     }
 
     /** 可选基础资料统一保存为空字符串，兼容现有 NOT NULL DEFAULT '' 列定义。 */
@@ -426,6 +405,9 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
             return new DisableBlockReasons(Set.of(), Set.of(), Set.of());
         }
 
+        /**
+         * 校验供应商是否被未完成的业务单据引用。
+         */
         void assertDisableAllowed(Long supplierId) {
             if (productHolders.contains(supplierId)) {
                 throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供应商存在供货产品，无法停用");

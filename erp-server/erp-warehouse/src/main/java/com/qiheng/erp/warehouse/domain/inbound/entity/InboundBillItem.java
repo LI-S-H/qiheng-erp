@@ -81,6 +81,10 @@ public class InboundBillItem implements Serializable, StockBillDetailVoMapping.B
     @TableField("current_qty")
     private Long currentQty;
 
+    @Schema(description="入库单价快照(分);系统生成从来源订单行复制,手补录/调整入库保持 0")
+    @TableField("unit_price")
+    private Long unitPrice;
+
     @Schema(description="确认本单后剩余未入库数量，按100倍整数存储")
     @TableField("pending_qty")
     private Long pendingQty;

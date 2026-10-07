@@ -1,16 +1,13 @@
 package com.qiheng.erp.common.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-
 /**
  * Jackson 配置
- * Long → String 序列化，解决 JS 精度丢失问题
+ * Long → String 序列化，解决 JS 精度丢失问题。
  */
 @Configuration
 public class JacksonConfig {

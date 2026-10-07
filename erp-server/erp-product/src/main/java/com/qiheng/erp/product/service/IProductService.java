@@ -3,6 +3,7 @@ package com.qiheng.erp.product.service;
 import com.qiheng.erp.common.result.PageResult;
 import com.qiheng.erp.product.domain.dto.ProductBatchStatusDto;
 import com.qiheng.erp.product.domain.dto.ProductPageDto;
+import com.qiheng.erp.product.domain.dto.ProductReferencePriceDto;
 import com.qiheng.erp.product.domain.dto.ProductSaveDto;
 import com.qiheng.erp.product.domain.entity.Product;
 import com.qiheng.erp.product.domain.vo.ProductVo;
@@ -67,4 +68,16 @@ public interface IProductService extends IService<Product> {
      * @param ids 产品ID列表
      */
     void deleteBatch(List<String> ids);
+
+    /**
+     * 调整产品参考采购价。
+     *
+     * <p>价格变化时在同一事务内同步重算所有供应该产品的有效供货关系的价格分、推荐分与对应供应商汇总分;
+     * 重算失败则参考价变更整体回滚。</p>
+     *
+     * @param productId 产品 ID
+     * @param dto 参考采购价调整请求
+     * @return 更新后的产品 VO
+     */
+    ProductVo updateReferencePrice(Long productId, @Valid ProductReferencePriceDto dto);
 }

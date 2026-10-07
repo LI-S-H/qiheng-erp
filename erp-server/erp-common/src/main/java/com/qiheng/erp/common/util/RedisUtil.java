@@ -8,10 +8,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -141,11 +138,43 @@ public class RedisUtil {
         }
         template.opsForHash().delete(key, fields.toArray());
     }
+
     /** 返回 Hash 的全部字段名，供按日期窗口清理历史字段。 */
     public Set<String> hashKeys(String key) {
         return template.opsForHash().keys(key).stream()
                 .map(String::valueOf)
                 .collect(Collectors.toSet());
+    }
+
+    /**
+     * HGETALL。返回 key 下所有 field→value 映射；key 不存在或为空 Hash 时返回空 Map。
+     */
+    public Map<String, String> hashEntries(String key) {
+        Map<Object, Object> raw = template.opsForHash().entries(key);
+        if (raw == null || raw.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> result = new HashMap<>(raw.size());
+        for (Map.Entry<Object, Object> e : raw.entrySet()) {
+            result.put(String.valueOf(e.getKey()),
+                    e.getValue() == null ? null : String.valueOf(e.getValue()));
+        }
+        return result;
+    }
+
+    /**
+     * HGET。字段不存在或值 null 时返回 null；否则返回值字符串形式。
+     */
+    public String hashGet(String key, String field) {
+        Object value = template.opsForHash().get(key, field);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    /**
+     * HINCRBY。返回增量后的最新值；key/field 不存在时按 0 起算。
+     */
+    public Long hashIncrement(String key, String field, long delta) {
+        return template.opsForHash().increment(key, field, delta);
     }
     // ==================== List 存取 ====================
 

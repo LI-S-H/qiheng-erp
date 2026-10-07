@@ -78,17 +78,21 @@ public class Supplier implements Serializable {
     @TableField("service_score")
     private Integer serviceScore;
 
+    @Schema(description = "当前人工服务评分原因；服务分为空时为空字符串")
+    @TableField("service_score_reason")
+    private String serviceScoreReason;
+
     @Schema(description = "平均交付天数")
     @TableField("avg_delivery_days")
     private BigDecimal avgDeliveryDays;
 
-    @Schema(description = "准时交付率，放大100倍保存，10000表示100.00%")
-    @TableField("on_time_rate")
-    private Integer onTimeRate;
+    @Schema(description = "已确认入库累计金额，单位分；不参与质量分计算")
+    @TableField("score_basis_amount")
+    private Long scoreBasisAmount;
 
-    @Schema(description = "到货合格率，放大100倍保存，10000表示100.00%")
-    @TableField("qualified_rate")
-    private Integer qualifiedRate;
+    @Schema(description = "评分状态：NOT_READY、READY")
+    @TableField("score_status")
+    private String scoreStatus;
 
     @Schema(description = "状态：1启用，0禁用")
     @TableField("status")

@@ -18,7 +18,7 @@ import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
 import com.qiheng.erp.purchase.mapper.PurchaseOrderMapper;
 import com.qiheng.erp.purchase.mapper.SupplierMapper;
 import com.qiheng.erp.purchase.mapper.SupplierProductMapper;
-import com.qiheng.erp.purchase.service.ISupplierScoreChangeLogService;
+import com.qiheng.erp.purchase.service.SupplierScoreRecalculateService;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
 import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
 import com.qiheng.erp.returnorder.domain.port.ReturnType;
@@ -45,6 +45,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -65,7 +66,7 @@ import static org.mockito.Mockito.when;
  *     <li>ensureCanDisable 文案改为"无法停用"</li>
  *     <li>batchUpdateStatus 加事务且停用分支前置批量校验</li>
  *     <li>batchDelete 返回 List&lt;SupplierBatchFailure&gt; 而非 Map</li>
- *     <li>updateServiceScore 清空分数时 reason 写 null</li>
+ *     <li>updateServiceScore 清空分数时 reason 写空字符串</li>
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
@@ -83,7 +84,7 @@ class SupplierServiceImplTest {
     @Mock
     private com.qiheng.erp.common.util.CodeNoGenerator codeNoGenerator;
     @Mock
-    private ISupplierScoreChangeLogService supplierScoreChangeLogService;
+    private SupplierScoreRecalculateService supplierScoreRecalculateService;
 
     private SupplierServiceImpl service;
 
@@ -107,7 +108,8 @@ class SupplierServiceImplTest {
         ReflectionTestUtils.setField(service, "purchaseOrderMapper", purchaseOrderMapper);
         ReflectionTestUtils.setField(service, "returnOrderMapper", returnOrderMapper);
         ReflectionTestUtils.setField(service, "codeNoGenerator", codeNoGenerator);
-        ReflectionTestUtils.setField(service, "supplierScoreChangeLogService", supplierScoreChangeLogService);
+        ReflectionTestUtils.setField(service, "supplierScoreRecalculateService", supplierScoreRecalculateService);
+        when(supplierMapper.lockByIdForUpdate(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         LoginUser user = new LoginUser();
         user.setUserId(1L);
@@ -388,7 +390,7 @@ class SupplierServiceImplTest {
         verify(supplierMapper, never()).deleteByIdWithVersion(any(), any(Integer.class));
     }
 
-    // ===== updateServiceScore: 清空分数时 reason=null =====
+    // ===== updateServiceScore: 清空分数时 reason="" =====
 
     @Test
     void updateServiceScoreShouldClearReasonWhenServiceScoreIsNull() {
@@ -410,13 +412,13 @@ class SupplierServiceImplTest {
         org.mockito.ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Supplier>> captor =
                 org.mockito.ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper.class);
         verify(supplierMapper).update(eq(null), captor.capture());
-        // 校验 paramNameValuePairs 中:service_score 与 service_score_reason 都映射到 null
+        // service_score 置 null，service_score_reason 置空字符串以满足数据库约束。
         Map<String, Object> params = captor.getValue().getParamNameValuePairs();
         assertNotNull(params);
         assertTrue(params.containsKey("MPGENVAL1"));
         assertNull(params.get("MPGENVAL1"));
         assertTrue(params.containsKey("MPGENVAL2"));
-        assertNull(params.get("MPGENVAL2"));
+        assertEquals("", params.get("MPGENVAL2"));
     }
 
     @Test
@@ -445,7 +447,7 @@ class SupplierServiceImplTest {
     }
 
     @Test
-    void updateServiceScoreShouldWriteChangeLogWhenScoreChanged() {
+    void updateServiceScoreShouldRecalculateWhenScoreChanged() {
         SupplierServiceScoreDto dto = new SupplierServiceScoreDto();
         dto.setVersion(0);
         dto.setServiceScore(new BigDecimal("85"));
@@ -460,8 +462,41 @@ class SupplierServiceImplTest {
 
         service.updateServiceScore(1L, dto);
 
-        verify(supplierScoreChangeLogService, times(1))
-                .writeServiceScoreLog(eq(1L), eq(7500), eq(8500), eq("调整"), any(LoginUser.class));
+        verify(supplierScoreRecalculateService).recalcForServiceScoreChange(1L, 7500, "调整");
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(supplierMapper, supplierScoreRecalculateService);
+        order.verify(supplierMapper).lockByIdForUpdate(1L);
+        order.verify(supplierMapper).selectById(1L);
+        order.verify(supplierMapper).update(eq(null), any());
+        order.verify(supplierScoreRecalculateService).recalcForServiceScoreChange(1L, 7500, "调整");
+    }
+
+    @Test
+    void updateServiceScoreShouldPassPreviousScoreForConsecutiveChanges() {
+        Supplier first = new Supplier();
+        first.setId(1L);
+        first.setVersion(0);
+        first.setServiceScore(7500);
+        Supplier second = new Supplier();
+        second.setId(1L);
+        second.setVersion(1);
+        second.setServiceScore(8500);
+        when(supplierMapper.selectById(1L)).thenReturn(first, first, second, second);
+        when(supplierMapper.update(eq(null), any())).thenReturn(1);
+
+        SupplierServiceScoreDto firstRequest = new SupplierServiceScoreDto();
+        firstRequest.setVersion(0);
+        firstRequest.setServiceScore(new BigDecimal("85"));
+        firstRequest.setReason("第一次调整");
+        SupplierServiceScoreDto secondRequest = new SupplierServiceScoreDto();
+        secondRequest.setVersion(1);
+        secondRequest.setServiceScore(new BigDecimal("90"));
+        secondRequest.setReason("第二次调整");
+
+        service.updateServiceScore(1L, firstRequest);
+        service.updateServiceScore(1L, secondRequest);
+
+        verify(supplierScoreRecalculateService).recalcForServiceScoreChange(1L, 7500, "第一次调整");
+        verify(supplierScoreRecalculateService).recalcForServiceScoreChange(1L, 8500, "第二次调整");
     }
 
     @Test
@@ -480,7 +515,7 @@ class SupplierServiceImplTest {
 
         service.updateServiceScore(1L, dto);
 
-        verify(supplierScoreChangeLogService, never()).writeServiceScoreLog(any(), any(), any(), any(), any());
+        verify(supplierScoreRecalculateService, never()).recalcForServiceScoreChange(any(), any(), any());
     }
 
     // ===== 工具 =====

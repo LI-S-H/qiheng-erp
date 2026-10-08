@@ -2,6 +2,7 @@ package com.qiheng.erp.dashboard.cache;
 
 import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent;
 import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent.RankItemInput;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -19,8 +20,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,6 +32,7 @@ class TopProductRankCacheTest {
     private StringRedisTemplate redisTemplate;
     private RedissonClient redissonClient;
     private RLock lock;
+    private SystemExceptionMqPublisher systemExceptionMqPublisher;
     private TopProductRankCache cache;
     @SuppressWarnings("rawtypes")
     private org.springframework.data.redis.core.ZSetOperations zsetOps;
@@ -42,6 +46,7 @@ class TopProductRankCacheTest {
         redisTemplate = mock(StringRedisTemplate.class);
         redissonClient = mock(RedissonClient.class);
         lock = mock(RLock.class);
+        systemExceptionMqPublisher = mock(SystemExceptionMqPublisher.class);
         zsetOps = mock(org.springframework.data.redis.core.ZSetOperations.class);
         hashOps = mock(org.springframework.data.redis.core.HashOperations.class);
         valueOps = mock(org.springframework.data.redis.core.ValueOperations.class);
@@ -51,7 +56,7 @@ class TopProductRankCacheTest {
         when(redissonClient.getLock(anyString())).thenReturn(lock);
         when(lock.isHeldByCurrentThread()).thenReturn(true);
         when(lock.tryLock(any(Long.class), any(Long.class), any())).thenReturn(true);
-        cache = new TopProductRankCache(redisTemplate, redissonClient);
+        cache = new TopProductRankCache(redisTemplate, redissonClient, systemExceptionMqPublisher);
     }
 
     @Test
@@ -208,13 +213,143 @@ class TopProductRankCacheTest {
         verify(redisTemplate, never()).delete("dashboard:top-product:rebuilding");
     }
 
+    // ========== 线性重试与系统异常上报相关用例（参考 DashboardDailySnapshotJob.retryStep） ==========
+
     @Test
-    void shouldTreatNullQuantityAsZero() {
-        when(hashOps.multiGet(eq("dashboard:top-product:sales-qty"), any()))
-                .thenReturn(Arrays.asList(null, "5"));
+    void shouldNotRetryWhenFirstExecutionSucceeds() {
+        TopProductRankAdjustEvent event = new TopProductRankAdjustEvent(
+                LocalDate.now(), 1,
+                List.of(new RankItemInput(1L, 1000L, 5L)));
 
-        List<Long> qtys = cache.readQuantities(List.of(1L, 2L));
+        cache.onAdjust(event);
 
-        assertThat(qtys).containsExactly(0L, 5L);
+        // 一次成功只调用一次脚本，不上报系统异常
+        verify(redisTemplate, times(1)).execute(any(RedisScript.class), anyList(), any(Object[].class));
+        verify(systemExceptionMqPublisher, never()).publishSystemError(any());
+    }
+
+    @Test
+    void shouldRetryAndEventuallyPublishSystemErrorWhenAllAttemptsFail() {
+        // Lua 脚本执行三次都失败：验证重试耗尽后调用 publishSystemError 且不向上抛
+        org.mockito.Mockito.doThrow(new RuntimeException("Redis 抖动"))
+                .when(redisTemplate).execute(any(RedisScript.class), anyList(), any(Object[].class));
+
+        TopProductRankAdjustEvent event = new TopProductRankAdjustEvent(
+                LocalDate.now(), 1,
+                List.of(new RankItemInput(1L, 1000L, 5L)));
+
+        // 监听器不能向上抛异常——业务接口 200 OK
+        org.assertj.core.api.Assertions.assertThatCode(() -> cache.onAdjust(event))
+                .doesNotThrowAnyException();
+
+        // 三次都执行了脚本
+        verify(redisTemplate, times(3)).execute(any(RedisScript.class), anyList(), any(Object[].class));
+        // 重试耗尽后上报系统异常：参数是包装异常，errorCode=本类简单名
+        ArgumentCaptor<RuntimeException> captor = ArgumentCaptor.forClass(RuntimeException.class);
+        verify(systemExceptionMqPublisher, times(1)).publishSystemError(captor.capture());
+        assertThat(captor.getValue()).isInstanceOf(TopRankUpdateFailedException.class);
+    }
+
+    @Test
+    void shouldStopAfterFirstSuccessfulRetry() {
+        // 前两次失败，第三次成功：只调用 publishSystemError 0 次
+        org.mockito.Mockito.doThrow(new RuntimeException("Redis 抖动"))
+                .doThrow(new RuntimeException("仍然抖动"))
+                .doReturn(1L)
+                .when(redisTemplate).execute(any(RedisScript.class), anyList(), any(Object[].class));
+
+        TopProductRankAdjustEvent event = new TopProductRankAdjustEvent(
+                LocalDate.now(), -1,
+                List.of(new RankItemInput(2L, 2000L, 8L)));
+
+        cache.onAdjust(event);
+
+        verify(redisTemplate, times(3)).execute(any(RedisScript.class), anyList(), any(Object[].class));
+        verify(systemExceptionMqPublisher, never()).publishSystemError(any());
+    }
+
+    // ========== readTop 脏数据防护（外部污染 Redis 时抛异常给 Loader） ==========
+
+    @Test
+    void shouldReturnEmptyWhenRawIsNull() {
+        // Lua 脚本异常返回 nil（罕见场景）：readTop 静默返回空，不上报（无业务感知）
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString())).thenReturn(null);
+
+        assertThat(cache.readTop(10)).isEmpty();
+    }
+
+    @Test
+    void shouldReturnEmptyWhenRawIsNotList() {
+        // Lua 返回非 List 包装对象（极罕见）：readTop 静默返回空
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString())).thenReturn("oops");
+
+        assertThat(cache.readTop(10)).isEmpty();
+    }
+
+    @Test
+    void shouldThrowRankDataCorruptedExceptionWhenMemberIsNotLong() {
+        // member="bad" 无法解析 → 抛脏数据异常（不含 NPE）
+        List<List<Object>> luaResult = List.of(
+                List.of("bad", "1000", "5"),
+                List.of("2", "2000", "8"));
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString())).thenReturn(luaResult);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> cache.readTop(10))
+                .isInstanceOf(RankDataCorruptedException.class)
+                .hasMessageContaining("member=bad");
+    }
+
+    @Test
+    void shouldThrowRankDataCorruptedExceptionWhenScoreIsNotLong() {
+        List<List<Object>> luaResult = List.of(
+                List.of("1", "not-a-number", "5"));
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString())).thenReturn(luaResult);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> cache.readTop(10))
+                .isInstanceOf(RankDataCorruptedException.class)
+                .hasMessageContaining("score=not-a-number");
+    }
+
+    @Test
+    void shouldThrowRankDataCorruptedExceptionWhenQtyIsNullString() {
+        // 历史上 quantity=null 被 String.valueOf 转成 "null" 字符串写入 Redis 的回归测试
+        List<List<Object>> luaResult = List.of(
+                List.of("1", "1000", "null"));
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString())).thenReturn(luaResult);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> cache.readTop(10))
+                .isInstanceOf(RankDataCorruptedException.class)
+                .hasMessageContaining("qty=null");
+    }
+
+    @Test
+    void shouldParseValidEntriesWithoutThrowing() {
+        List<List<Object>> luaResult = List.of(
+                List.of("3", "3000", "8"),
+                List.of("1", "1000", "5"));
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString())).thenReturn(luaResult);
+
+        List<TopProductRankCache.RankEntry> top = cache.readTop(10);
+
+        assertThat(top).hasSize(2);
+        // RankEntry 字段为 long 基本类型，编译期阻止 null
+        assertThat(top.get(0).productId()).isEqualTo(3L);
+        assertThat(top.get(0).amount()).isEqualTo(3000L);
+        assertThat(top.get(0).quantity()).isEqualTo(8L);
+    }
+
+    // ========== rebuild 异常穿透契约(Refresher 区分 HIGH vs FAILED) ==========
+
+    @Test
+    void shouldPropagateIllegalStateExceptionWhenSwapScriptReturnsZero() throws InterruptedException {
+        // SWAP 返回 0 表示双 EXISTS 校验失败(ZSet/Hash 任一缺失),doRebuild 抛 IllegalStateException,
+        // rebuild() 让该异常穿透(由 Refresher 上报 HIGH),Loader 守卫 catch 后 log warn。
+        // 这里所有 execute(RedisScript, List) 都返回 0L,触发 SWAP 校验失败。
+        when(redisTemplate.execute(any(RedisScript.class), anyList())).thenReturn(0L);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                cache.rebuild(() -> List.of(new TopProductRankCache.RankEntry(1L, 1000L, 5L))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SWAP_SCRIPT");
     }
 }

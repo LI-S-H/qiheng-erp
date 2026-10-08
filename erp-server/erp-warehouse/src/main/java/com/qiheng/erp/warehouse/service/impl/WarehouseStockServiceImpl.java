@@ -63,11 +63,10 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
                 .select(WarehouseStock::getProductName)
                 .select(WarehouseStock::getUnitName)
                 .selectAs(Product::getQuantityPrecision, WarehouseStockVo::getQuantityPrecision)
+                // 产品安全库存按100倍整数落库，先映射到Long原始字段，再统一转换成业务数量。
+                .selectAs(Product::getSafetyStockQty, WarehouseStockVo::getSafetyStockQtyStored)
                 .select(WarehouseStock::getStockQty)
                 .select(WarehouseStock::getLockedQty)
-                // TODO(reference-purchase-price):Product.getSafetyStockQty 返回 Long,WarehouseStockVo.safetyStockQty 是 BigDecimal,
-                //  MPJLambdaWrapper.selectAs 反射失败;暂不 select safetyStockQty,前端展示 null 即可。
-                //  后续可在 convertQtyValues 中单独查 Product 补齐。
                 .select(WarehouseStock::getVersion)
                 .select(WarehouseStock::getUpdateTime)
                 .leftJoin(Product.class, Product::getId, WarehouseStock::getProductId)
@@ -134,8 +133,9 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
      */
     private void applyRiskOnly(MPJLambdaWrapper<WarehouseStock> wrapper, boolean riskOnly) {
         if (riskOnly) {
-            wrapper.apply("(t.stock_qty - t.locked_qty) <= 0"
-                    + " OR (t1.safety_stock_qty > 0 AND (t.stock_qty - t.locked_qty) <= t1.safety_stock_qty)");
+            // OR 两侧整体加括号，确保风险条件与仓库、商品、健康状态等筛选按 AND 组合。
+            wrapper.apply("((t.stock_qty - t.locked_qty) <= 0"
+                    + " OR (t1.safety_stock_qty > 0 AND (t.stock_qty - t.locked_qty) <= t1.safety_stock_qty))");
         }
     }
 
@@ -169,8 +169,8 @@ public class WarehouseStockServiceImpl extends ServiceImpl<WarehouseStockMapper,
         records.forEach(vo -> {
             vo.setStockQty(QtyUtil.toDecimal(vo.getStockQty()));
             vo.setLockedQty(QtyUtil.toDecimal(vo.getLockedQty()));
-            // safetyStockQty 暂未通过 MPJLambdaWrapper select(避免 selectAs Long→BigDecimal 反射失败),
-            // 此处不动,保持 null;后续可单独查 Product 表补齐。
+            vo.setSafetyStockQty(QtyUtil.toDecimal(vo.getSafetyStockQtyStored()));
+            vo.setSafetyStockQtyStored(null);
             // 计算可用库存 = 当前库存 - 锁定库存
             if (vo.getStockQty() != null && vo.getLockedQty() != null) {
                 vo.setAvailableQty(vo.getStockQty().subtract(vo.getLockedQty()));

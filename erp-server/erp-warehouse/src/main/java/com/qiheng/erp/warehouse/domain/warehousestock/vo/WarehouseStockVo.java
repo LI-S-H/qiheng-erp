@@ -1,5 +1,6 @@
 package com.qiheng.erp.warehouse.domain.warehousestock.vo;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -47,8 +48,13 @@ public class WarehouseStockVo {
     @Schema(description = "可用库存,服务层计算 stock_qty - locked_qty")
     private BigDecimal availableQty;
 
-    @Schema(description = "安全库存;由 convertQtyValues 从 Product 表 select 出来(MPJLambdaWrapper selectAs 无法 Long→BigDecimal 自动转换,2026-09-25 修复)")
+    @Schema(description = "安全库存业务真实值，由产品档案的100倍整数存储值转换")
     private BigDecimal safetyStockQty;
+
+    /** 查询投影使用的数据库原始值，服务层转换后不对外返回。 */
+    @JsonIgnore
+    @Schema(hidden = true)
+    private Long safetyStockQtyStored;
 
     @Schema(description = "乐观锁版本号")
     private Integer version;

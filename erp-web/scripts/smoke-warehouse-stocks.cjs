@@ -3,11 +3,60 @@ const {
   tableRow,
   assertFixedTableLayout,
   assertSharedListChrome,
-  clickQueryAndAssertLoading,
-  clickPaginationAndAssertLoading,
-  clickRefreshAndAssertLoading,
-  clickResetAndAssertLoading,
 } = require('./smoke-helpers.cjs');
+const path = require('path');
+const fs = require('fs');
+const screenshotDirectory = path.resolve(process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/warehouse-stocks');
+fs.mkdirSync(screenshotDirectory, { recursive: true });
+const screenshotPath = filename => path.join(screenshotDirectory, filename);
+
+// 库存查询只遮挡数据区：保留旧数据，并在防抖等待期立即锁住操作与分页。
+async function assertLocalLoading(page, screenshot) {
+  const overlay = page.locator('.data-panel [data-list-loading]');
+  await overlay.waitFor({ state: 'visible', timeout: 1000 });
+  const panel = page.locator('.data-panel');
+  const state = await overlay.evaluate(element => ({
+    position: getComputedStyle(element).position,
+    pointerEvents: getComputedStyle(element).pointerEvents,
+    spinnerAnimation: getComputedStyle(element.querySelector('.page-loading-spinner')).animationName,
+    containsOldRows: Boolean(element.parentElement.querySelector('tbody tr')),
+  }));
+  if (state.position !== 'absolute' || state.pointerEvents !== 'auto'
+    || state.spinnerAnimation !== 'page-loading-spin' || !state.containsOldRows) {
+    throw new Error(`库存局部加载反馈异常：${JSON.stringify(state)}`);
+  }
+  const [overlayBox, panelBox] = await Promise.all([overlay.boundingBox(), panel.boundingBox()]);
+  if (!overlayBox || !panelBox || Math.abs(overlayBox.width - panelBox.width) > 2
+    || Math.abs(overlayBox.height - panelBox.height) > 2) throw new Error('库存加载层没有完整覆盖数据区');
+  const pagination = page.locator('[data-table-pagination]');
+  if (await pagination.getAttribute('aria-busy') !== 'true'
+    || await pagination.evaluate(element => getComputedStyle(element).pointerEvents) !== 'none') {
+    throw new Error('库存刷新期间分页未锁定');
+  }
+  if (!(await page.getByRole('button', { name: '查询中', exact: true }).isDisabled())
+    || !(await page.getByRole('button', { name: '重置', exact: true }).isDisabled())
+    || !(await page.getByRole('button', { name: '刷新', exact: true }).isDisabled())) {
+    throw new Error('库存刷新期间查询、重置或刷新按钮未禁用');
+  }
+  if (screenshot) await page.screenshot({ path: screenshotPath(screenshot), fullPage: true });
+  await overlay.waitFor({ state: 'hidden', timeout: 5000 });
+}
+async function clickQueryAndAssertLoading(page, screenshot) {
+  await page.getByRole('button', { name: '查询', exact: true }).click();
+  await assertLocalLoading(page, screenshot);
+}
+async function clickResetAndAssertLoading(page, screenshot) {
+  await page.getByRole('button', { name: '重置', exact: true }).click();
+  await assertLocalLoading(page, screenshot);
+}
+async function clickRefreshAndAssertLoading(page, screenshot) {
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await assertLocalLoading(page, screenshot);
+}
+async function clickPaginationAndAssertLoading(page, label) {
+  await page.locator('[data-table-pagination]').getByText(label, { exact: true }).click();
+  await assertLocalLoading(page);
+}
 
 async function selectFilter(page, index, label) {
   const trigger = page.locator('.filter-panel').getByRole('combobox').nth(index);
@@ -25,9 +74,11 @@ async function selectRemoteFilter(page, index, keyword, label) {
 
 runSmoke({
   route: '/warehouse/stocks',
-  screenshot: 'smoke-warehouse-stocks.png',
+  screenshot: screenshotPath('smoke-warehouse-stocks.png'),
   async test(page) {
     await page.getByRole('heading', { name: '库存管理' }).waitFor();
+    // 页面进入遮罩与列表查询遮罩不是一回事，布局取证必须等前者退出。
+    await page.locator('[data-page-loading]').waitFor({ state: 'hidden' });
     await assertSharedListChrome(page, { summaryLabel: '库存数据汇总', filterLabel: '库存筛选' });
     const desktopFilterState = await page.getByRole('search', { name: '库存筛选' }).evaluate(element => ({
       layout: element.querySelector('[data-filter-layout]')?.getAttribute('data-filter-layout'),
@@ -67,7 +118,7 @@ runSmoke({
       || !warningHoverVisual.marker.includes('4px')) {
       throw new Error(`低库存行悬停后缺少加重的背景或左侧风险标识：${JSON.stringify({ warningBackground, warningHoverVisual, riskVisuals })}`);
     }
-    await page.screenshot({ path: 'smoke-warehouse-stocks-risk-contrast.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('smoke-warehouse-stocks-risk-contrast.png'), fullPage: true });
 
     const summaryText = await page.locator('.summary-strip').innerText();
     for (const expected of ['本页仓库\n4', '本页产品\n9', '本页低库存\n4', '本页已锁定\n5']) {
@@ -135,7 +186,7 @@ runSmoke({
       || criticalVisual.background === riskVisuals[1].background || !criticalVisual.marker.includes('inset')) {
       throw new Error(`零库存行缺少清晰红色背景与左侧风险标识：${JSON.stringify(criticalVisual)}`);
     }
-    await page.screenshot({ path: 'smoke-warehouse-stocks-zero-contrast.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('smoke-warehouse-stocks-zero-contrast.png'), fullPage: true });
     await clickResetAndAssertLoading(page);
 
     await clickPaginationAndAssertLoading(page, '下一页');
@@ -148,6 +199,7 @@ runSmoke({
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '库存管理' }).waitFor();
     await tableRow(page, 'P000001').waitFor();
+    await page.locator('[data-page-loading]').waitFor({ state: 'hidden' });
     const mediumFilterState = await page.getByRole('search', { name: '库存筛选' }).evaluate(element => {
       const actions = element.querySelector('.list-filter-panel__actions');
       return {
@@ -161,7 +213,7 @@ runSmoke({
       || mediumFilterState.overflow > 1 || !mediumFilterState.actionsReachable) {
       throw new Error(`库存筛选中等视口布局异常：${JSON.stringify(mediumFilterState)}`);
     }
-    await page.screenshot({ path: 'smoke-warehouse-stocks-1115.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('smoke-warehouse-stocks-1115.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
     const mobileFilterState = await page.getByRole('search', { name: '库存筛选' }).evaluate(element => {
@@ -178,12 +230,13 @@ runSmoke({
       || mobileFilterState.pageOverflow > 1) {
       throw new Error(`库存筛选移动端布局异常：${JSON.stringify(mobileFilterState)}`);
     }
-    await page.screenshot({ path: 'smoke-warehouse-stocks-390.png', fullPage: true });
+    await page.screenshot({ path: screenshotPath('smoke-warehouse-stocks-390.png'), fullPage: true });
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '库存管理' }).waitFor();
     await tableRow(page, 'P000001').waitFor();
+    await page.locator('[data-page-loading]').waitFor({ state: 'hidden' });
   },
 }).then(() => {
   console.log('SMOKE_OK: 库存余额、库存健康、占用情况、组合筛选、分页与加载反馈通过');

@@ -96,7 +96,14 @@ function normalizeStock(item: WarehouseStockListItem): WarehouseStockListItem {
   const stockQty = normalizeFiniteNumber(item.stockQty, 'stockQty');
   const lockedQty = normalizeFiniteNumber(item.lockedQty, 'lockedQty');
   const availableQty = normalizeFiniteNumber(item.availableQty, 'availableQty');
-  const safetyStockQty = normalizeFiniteNumber(item.safetyStockQty, 'safetyStockQty');
+  const rawSafetyStockQty: unknown = item.safetyStockQty;
+  if (rawSafetyStockQty === null || rawSafetyStockQty === undefined
+    || typeof rawSafetyStockQty === 'boolean'
+    || (typeof rawSafetyStockQty === 'string' && rawSafetyStockQty.trim() === '')
+    || (typeof rawSafetyStockQty !== 'number' && typeof rawSafetyStockQty !== 'string')) {
+    throw new Error('接口字段 safetyStockQty 必须为有效数值，不能为 null、空值或布尔值');
+  }
+  const safetyStockQty = normalizeFiniteNumber(rawSafetyStockQty, 'safetyStockQty');
   if (stockQty < 0 || lockedQty < 0 || availableQty < 0 || safetyStockQty < 0 || lockedQty > stockQty) {
     throw new Error('库存数量字段不符合非负数和锁定量约束');
   }
@@ -156,8 +163,9 @@ function matchesInventoryHealth(item: WarehouseStockListItem, health: WarehouseS
 }
 
 function matchesRiskOnly(item: WarehouseStockListItem, riskOnly: WarehouseStockQuery['riskOnly']) {
-  // 与工作台风险 SKU 一致：仅可用库存严格低于安全库存。
-  return !riskOnly || item.availableQty < item.safetyStockQty;
+  // 零可用库存始终属于风险；正安全库存达到阈值也属于风险（含恰好相等）。
+  return !riskOnly || item.availableQty <= 0
+    || (item.safetyStockQty > 0 && item.availableQty <= item.safetyStockQty);
 }
 function matchesReservationState(item: WarehouseStockListItem, state: WarehouseStockQuery['reservationState']) {
   if (!state || state === 'all') return true;
@@ -184,7 +192,8 @@ function filterStocks(params: WarehouseStockQuery): WarehouseStockPage {
     if (productCode && !item.productCode.toLocaleLowerCase().includes(productCode)) return false;
     if (productName && !item.productName.toLocaleLowerCase().includes(productName)) return false;
     return matchesInventoryHealth(item, params.inventoryHealth)
-      && matchesReservationState(item, params.reservationState);
+      && matchesReservationState(item, params.reservationState)
+      && matchesRiskOnly(item, params.riskOnly);
   });
   filtered = filtered.sort((a, b) => a.warehouseCode.localeCompare(b.warehouseCode) || a.productCode.localeCompare(b.productCode));
   const start = (params.pageNum - 1) * params.pageSize;

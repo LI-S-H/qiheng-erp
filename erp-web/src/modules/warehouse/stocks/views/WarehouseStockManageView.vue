@@ -7,6 +7,7 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Badge } from '@/components/ui/badge';
@@ -240,6 +241,7 @@ onMounted(() => {
     </ListFilterPanel>
 
     <div class="data-panel relative">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" label="库存刷新中" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">库存余额</strong><span class="text-xs text-muted-foreground">库存变更请通过出入库或库存调整业务完成</span></div>
         <div class="table-toolbar__actions">
@@ -335,5 +337,12 @@ onMounted(() => {
 .stock-risk-shortcut :deep([data-slot='button']) {
   min-width: 0;
   padding-inline: 10px;
+}
+
+@media (max-width: 640px) {
+  .stock-risk-shortcut {
+    flex-basis: 100% !important;
+    max-width: 100% !important;
+  }
 }
 </style>

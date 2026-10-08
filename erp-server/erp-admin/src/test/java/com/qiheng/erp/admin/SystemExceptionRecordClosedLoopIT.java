@@ -28,8 +28,8 @@ import org.redisson.spring.data.connection.RedissonConnectionFactory;
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -429,8 +429,8 @@ class SystemExceptionRecordClosedLoopIT {
         return source;
     }
 
-    /** 最小真实装配：仅系统异常链路的真实 Producer、Consumer、Mapper 与编号生成器。 */
-    @Configuration(proxyBeanMethods = false)
+    /** 最小真实装配：仅由本测试显式导入，避免被完整应用扫描后污染其他集成测试。 */
+    @TestConfiguration(proxyBeanMethods = false)
     @Import({SystemExceptionRocketMQTemplate.class, SystemExceptionMqPublisher.class,
             SystemExceptionRecordConsumer.class})
     static class RealExceptionConfiguration {

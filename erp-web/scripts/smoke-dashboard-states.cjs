@@ -22,6 +22,29 @@ const inventoryDeniedPayload = {
 
 function mockOverviewState(states, trendPermissions, inventoryPayload, denyMetrics = false) {
   return async page => {
+    // Mock API 不发送 HTTP，必须在真实模块返回点注入夹具，不能用默认数据冒充状态回归。
+    await page.route('**/src/modules/dashboard/api.ts*', async route => {
+      const response = await route.fetch();
+      let source = await response.text();
+      const overviewReturn = 'return normalizeOverview(mockOverview);';
+      if (!source.includes(overviewReturn)) throw new Error('工作台状态 Mock 注入入口不存在');
+      source = source.replace(overviewReturn, `
+        const stateData = structuredClone(mockOverview);
+        Object.entries(${JSON.stringify(states)}).forEach(([key, state]) => { stateData.access[key] = { state }; });
+        Object.assign(stateData, { pendingCount: 0, todos: [], orderStages: [], topProducts: [], supplierPerformance: [], trend: [], trendPermissions: ${JSON.stringify(trendPermissions)} });
+        if (${denyMetrics}) stateData.metrics.forEach(metric => {
+          Object.assign(metric, { value: null, changeRate: null, compareText: null, comparisonState: null });
+          stateData.access.metrics[metric.key] = { state: 'DENIED' };
+        });
+        window.__dashboardStateFixtureApplied = true;
+        return normalizeOverview(stateData);`);
+      if (inventoryPayload) {
+        const inventoryReturn = 'return normalizeInventoryStatus(mockInventoryStatus);';
+        if (!source.includes(inventoryReturn)) throw new Error('库存状态 Mock 注入入口不存在');
+        source = source.replace(inventoryReturn, `return normalizeInventoryStatus(${JSON.stringify(inventoryPayload.data)});`);
+      }
+      await route.fulfill({ response, body: source });
+    });
     await page.route('**/api/dashboard/overview', async route => {
       const response = await route.fetch();
       const payload = await response.json();
@@ -34,15 +57,18 @@ function mockOverviewState(states, trendPermissions, inventoryPayload, denyMetri
       data.topProducts = [];
       data.supplierPerformance = [];
       data.trend = [];
+      data.pendingCount = 0;
       data.trendPermissions = trendPermissions;
       if (denyMetrics) {
         data.metrics.forEach(metric => {
           metric.value = null;
           metric.changeRate = null;
           metric.compareText = null;
+          metric.comparisonState = null;
           data.access.metrics[metric.key] = { state: 'DENIED' };
         });
       }
+      await page.evaluate(() => { window.__dashboardStateFixtureApplied = true; });
       await route.fulfill({ response, body: JSON.stringify(payload) });
     });
     if (inventoryPayload) {
@@ -56,6 +82,9 @@ function mockOverviewState(states, trendPermissions, inventoryPayload, denyMetri
 }
 
 async function assertStatePanels(page, expected) {
+  if (!await page.evaluate(() => window.__dashboardStateFixtureApplied === true)) {
+    throw new Error('工作台状态夹具未应用，不能以默认数据证明 EMPTY / DENIED');
+  }
   const expectations = [
     ['[data-dashboard-trend-empty]', expected.trend],
     ['[data-dashboard-todos-state]', expected.todos],

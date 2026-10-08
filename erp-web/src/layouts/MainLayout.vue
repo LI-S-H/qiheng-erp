@@ -75,11 +75,6 @@ const bellItems = computed<DashboardTodoSummary[]>(() => {
 
 const bellPendingCount = computed(() => overviewStore.overview?.pendingCount ?? 0);
 
-const bellVisible = computed(() => {
-  const state = overviewStore.overview?.access?.todos?.state;
-  return state === 'ALLOWED' && bellItems.value.length > 0;
-});
-
 // 铃铛与工作台共用 overview 授权；待办区无数据或被业务权限裁剪时仍保留空态入口。
 const bellReady = computed(() => overviewStore.overview !== null);
 
@@ -241,11 +236,11 @@ async function confirmLogout() {
 }
 
 function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') void overviewStore.refresh();
+  if (document.visibilityState === 'visible') void overviewStore.refresh().catch(() => undefined);
 }
 
 onMounted(() => {
-  void overviewStore.refresh();
+  void overviewStore.refresh().catch(() => undefined);
   document.addEventListener('visibilitychange', handleVisibilityChange);
 });
 
@@ -341,7 +336,7 @@ watch(
           <!-- Notification bell -->
           <Popover :open="notificationOpen" @update:open="handleNotificationOpen">
             <PopoverTrigger v-if="bellReady" as-child>
-              <button class="relative flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer" type="button" aria-label="待处理通知" data-notification-trigger>
+              <button class="relative flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer" type="button" :aria-label="`待处理通知，当前有 ${bellPendingCount} 项`" data-notification-trigger>
                 <Bell class="h-4 w-4" />
                 <span v-if="bellPendingCount" class="absolute -right-1 -top-1 min-w-4 rounded-full bg-destructive px-1 text-center text-[10px] font-bold leading-4 text-destructive-foreground ring-2 ring-sidebar">
                   {{ bellPendingCount > 99 ? '99+' : bellPendingCount }}
@@ -352,7 +347,7 @@ watch(
               <div class="flex items-start justify-between border-b px-4 py-3">
                 <div>
                   <h2 class="text-sm font-semibold">待处理事项</h2>
-                  <p class="mt-0.5 text-xs text-muted-foreground">业务状态汇总，不代表未读消息</p>
+                  <p class="mt-0.5 text-xs text-muted-foreground" aria-live="polite">{{ overviewStore.loading ? '正在刷新' : overviewStore.refreshError ? '刷新失败，当前显示上次数据' : '业务状态汇总，不代表未读消息' }}</p>
                 </div>
                 <span v-if="overviewStore.overview" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ bellPendingCount }} 项</span>
               </div>
@@ -360,7 +355,7 @@ watch(
                 <Loader2 class="h-4 w-4 animate-spin" /> 正在加载
               </div>
               <div v-else-if="!bellItems.length" class="flex h-40 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Bell class="h-5 w-5" /> 暂无待处理事项
+                <Bell class="h-5 w-5" /> 当前没有待处理事项
               </div>
               <div v-else class="max-h-[420px] overflow-y-auto py-1">
                 <button v-for="item in bellItems" :key="item.todoId" :aria-label="`查看${item.title}待办详情`" class="flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/60" type="button" @click="handleNotificationItem(item)">

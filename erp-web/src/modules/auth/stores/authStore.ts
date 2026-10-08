@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { AUTH_TOKEN_NAME_STORAGE_KEY, AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
 import { getCurrentUserApi, loginApi, logoutApi } from '../api';
 import type { CurrentUser, LoginRequest } from '../types';
+import { useDashboardOverviewStore } from '@/stores/dashboardOverviewStore';
 
 interface AuthState {
   token: string;
@@ -27,6 +28,7 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     async login(payload: LoginRequest) {
       const loginResult = await loginApi(payload);
+      useDashboardOverviewStore().reset();
       this.token = loginResult.token;
       this.tokenName = loginResult.tokenName || 'satoken';
       this.user = loginResult.user;
@@ -46,6 +48,8 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async logout() {
+      // 注销请求发出前即隐藏原账号的业务数据，不能等待网络完成才清空。
+      useDashboardOverviewStore().reset();
       if (this.token) {
         await logoutApi().catch(() => undefined);
       }
@@ -54,6 +58,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     clearSession() {
+      useDashboardOverviewStore().reset();
       this.token = '';
       this.tokenName = 'satoken';
       this.user = null;

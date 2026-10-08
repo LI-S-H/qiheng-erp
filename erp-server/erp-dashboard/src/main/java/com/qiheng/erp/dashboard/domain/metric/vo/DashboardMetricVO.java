@@ -2,6 +2,7 @@ package com.qiheng.erp.dashboard.domain.metric.vo;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.qiheng.erp.dashboard.domain.metric.enums.MetricKey;
+import com.qiheng.erp.dashboard.domain.metric.enums.MetricComparisonState;
 import com.qiheng.erp.dashboard.domain.metric.enums.MetricStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -40,6 +41,10 @@ public class DashboardMetricVO {
     @Schema(description = "对比周期文案，例如 较昨日、较上月同期")
     @JsonInclude(JsonInclude.Include.ALWAYS)
     private String compareText;
+
+    @Schema(description = "对比状态：AVAILABLE 可比较、NO_BASELINE 无可比基线、UNAVAILABLE 读取失败；无指标权限时为 null")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    private MetricComparisonState comparisonState;
 
     @Schema(description = "指标趋势语义：good / watch / risk / neutral。前端用于方向和百分比徽标；无可比基线时为 neutral，不展示方向和百分比，可展示中性基线提示", allowableValues = {"good", "watch", "risk", "neutral"})
     private MetricStatus status;

@@ -1,6 +1,8 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
+import com.qiheng.erp.dashboard.domain.metric.enums.MetricComparisonState;
 
 import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
@@ -50,7 +52,8 @@ class DashboardMetricsLoaderTest {
 
         List<DashboardMetricVO> metrics = new DashboardMetricsLoader(
                 permissionGuard, salesOrderMapper, purchaseOrderMapper, inboundBillMapper,
-                outboundBillMapper, returnOrderMapper, stockAlertLoader, prevValueCache).load(user);
+                outboundBillMapper, returnOrderMapper, stockAlertLoader, prevValueCache,
+                mock(SystemExceptionMqPublisher.class)).load(user);
 
         assertThat(metrics.getFirst().getValue()).isEqualByComparingTo("100");
         assertThat(metrics.get(1).getValue()).isEqualByComparingTo("60");
@@ -82,12 +85,98 @@ class DashboardMetricsLoaderTest {
 
         List<DashboardMetricVO> metrics = new DashboardMetricsLoader(
                 permissionGuard, salesOrderMapper, purchaseOrderMapper, inboundBillMapper,
-                outboundBillMapper, returnOrderMapper, stockAlertLoader, prevValueCache).load(user);
+                outboundBillMapper, returnOrderMapper, stockAlertLoader, prevValueCache,
+                mock(SystemExceptionMqPublisher.class)).load(user);
 
         DashboardMetricVO pendingMetric = metrics.get(2);
         assertThat(pendingMetric.getValue()).isEqualByComparingTo("10");
         assertThat(pendingMetric.getChangeRate()).isEqualByComparingTo("42.86");
         assertThat(pendingMetric.getCompareText()).isEqualTo("较昨日");
         assertThat(pendingMetric.getStatus().name()).isEqualTo("RISK");
+    }
+
+    @Test
+    void shouldRecalculateAfterRedisReadFailureAndKeepResultWhenCacheWriteFails() {
+        Fixture f = new Fixture();
+        when(f.cache.getMonthlySnapshot(any(), any())).thenThrow(new IllegalStateException("Redis 读取失败"));
+        org.mockito.Mockito.doThrow(new IllegalStateException("Redis 写入失败"))
+                .when(f.cache).putMonthlySnapshot(any(), any(), any());
+        var metrics = f.loader.load(f.user);
+        assertThat(metrics.getFirst().getValue()).isEqualByComparingTo("100");
+        assertThat(metrics.getFirst().getChangeRate()).isEqualByComparingTo("0");
+        assertThat(metrics.getFirst().getComparisonState()).isEqualTo(MetricComparisonState.AVAILABLE);
+        verify(f.sales, times(2)).selectObjs(any(Wrapper.class));
+    }
+
+    @Test
+    void shouldKeepCurrentValueAndExposeUnavailableWhenPreviousMonthQueryFails() {
+        Fixture f = new Fixture();
+        when(f.sales.selectObjs(ArgumentMatchers.<Wrapper<SalesOrder>>any()))
+                .thenReturn(List.of((Object) 10_000L)).thenThrow(new IllegalStateException("上月查询失败"));
+        var metrics = f.loader.load(f.user);
+        assertThat(metrics.getFirst().getValue()).isEqualByComparingTo("100");
+        assertThat(metrics.get(1).getValue()).isEqualByComparingTo("60");
+        assertThat(metrics.getFirst().getChangeRate()).isNull();
+        assertThat(metrics.getFirst().getComparisonState()).isEqualTo(MetricComparisonState.UNAVAILABLE);
+        assertThat(metrics.get(1).getComparisonState()).isEqualTo(MetricComparisonState.UNAVAILABLE);
+        verify(f.publisher).publishSystemError(any());
+    }
+
+    @Test
+    void shouldDistinguishZeroBaselineFromReadFailure() {
+        Fixture f = new Fixture();
+        when(f.cache.getMonthlySnapshot(any(), any())).thenReturn(java.math.BigDecimal.ZERO);
+        var metrics = f.loader.load(f.user);
+        assertThat(metrics.getFirst().getChangeRate()).isNull();
+        assertThat(metrics.getFirst().getComparisonState()).isEqualTo(MetricComparisonState.NO_BASELINE);
+        assertThat(metrics.get(2).getComparisonState()).isEqualTo(MetricComparisonState.NO_BASELINE);
+        org.mockito.Mockito.verifyNoInteractions(f.publisher);
+    }
+
+    @Test
+    void shouldKeepOperationalValuesWhenDailyCacheReadFails() {
+        Fixture f = new Fixture();
+        when(f.cache.getPendingOrderSnapshot(any())).thenThrow(new IllegalStateException("日快照读取失败"));
+        when(f.cache.getDailySnapshot(any(), any())).thenThrow(new IllegalStateException("日快照读取失败"));
+        var metrics = f.loader.load(f.user);
+        assertThat(metrics.get(2).getValue()).isEqualByComparingTo("0");
+        assertThat(metrics.get(3).getValue()).isEqualByComparingTo("0");
+        assertThat(metrics.get(2).getComparisonState()).isEqualTo(MetricComparisonState.UNAVAILABLE);
+        assertThat(metrics.get(3).getComparisonState()).isEqualTo(MetricComparisonState.UNAVAILABLE);
+    }
+
+    @Test
+    void shouldNotExposeComparisonStateOrQueryBaselineWithoutPermissions() {
+        Fixture f = new Fixture();
+        when(f.guard.canViewSales(f.user)).thenReturn(false);
+        when(f.guard.canViewPurchase(f.user)).thenReturn(false);
+        when(f.guard.canViewWarehouse(f.user)).thenReturn(false);
+        assertThat(f.loader.load(f.user)).allSatisfy(metric -> {
+            assertThat(metric.getValue()).isNull();
+            assertThat(metric.getComparisonState()).isNull();
+        });
+        org.mockito.Mockito.verifyNoInteractions(f.cache, f.publisher);
+    }
+
+    /** 故障测试使用独立 mock，避免一条测试的异常状态污染其他场景。 */
+    private static class Fixture {
+        final LoginUser user = new LoginUser();
+        final DashboardPermissionGuard guard = mock(DashboardPermissionGuard.class);
+        final SalesOrderMapper sales = mock(SalesOrderMapper.class);
+        final PurchaseOrderMapper purchases = mock(PurchaseOrderMapper.class);
+        final PrevValueCache cache = mock(PrevValueCache.class);
+        final SystemExceptionMqPublisher publisher = mock(SystemExceptionMqPublisher.class);
+        final DashboardMetricsLoader loader;
+
+        Fixture() {
+            when(guard.canViewSales(user)).thenReturn(true);
+            when(guard.canViewPurchase(user)).thenReturn(true);
+            when(guard.canViewWarehouse(user)).thenReturn(true);
+            when(sales.selectObjs(ArgumentMatchers.<Wrapper<SalesOrder>>any())).thenReturn(List.of((Object) 10_000L));
+            when(purchases.selectObjs(ArgumentMatchers.<Wrapper<PurchaseOrder>>any())).thenReturn(List.of((Object) 4_000L));
+            loader = new DashboardMetricsLoader(guard, sales, purchases, mock(InboundBillMapper.class),
+                    mock(OutboundBillMapper.class), mock(ReturnOrderMapper.class),
+                    mock(DashboardStockAlertLoader.class), cache, publisher);
+        }
     }
 }

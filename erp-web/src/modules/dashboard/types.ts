@@ -5,6 +5,7 @@ export interface DashboardMetric {
   unit: string;
   changeRate: number | null;
   compareText: string | null;
+  comparisonState: 'AVAILABLE' | 'NO_BASELINE' | 'UNAVAILABLE' | null;
   status: 'good' | 'watch' | 'risk' | 'neutral';
 }
 

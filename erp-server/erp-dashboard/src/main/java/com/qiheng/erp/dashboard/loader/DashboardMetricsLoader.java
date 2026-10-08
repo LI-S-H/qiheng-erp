@@ -3,9 +3,11 @@ package com.qiheng.erp.dashboard.loader;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiheng.erp.common.util.QtyUtil;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.dashboard.cache.PrevValueCache;
 import com.qiheng.erp.dashboard.cache.model.PendingOrderSnapshot;
 import com.qiheng.erp.dashboard.domain.metric.enums.MetricKey;
+import com.qiheng.erp.dashboard.domain.metric.enums.MetricComparisonState;
 import com.qiheng.erp.dashboard.domain.metric.enums.MetricStatus;
 import com.qiheng.erp.dashboard.domain.metric.enums.OrderMetricScope;
 import com.qiheng.erp.dashboard.domain.metric.vo.DashboardMetricVO;
@@ -76,6 +78,7 @@ public class DashboardMetricsLoader {
     private final ReturnOrderMapper returnOrderMapper;
     private final DashboardStockAlertLoader stockAlertLoader;
     private final PrevValueCache prevValueCache;
+    private final SystemExceptionMqPublisher exceptionPublisher;
 
     /**
      * 加载首屏经营指标
@@ -111,15 +114,17 @@ public class DashboardMetricsLoader {
         // 获取上个月的月份对象
         YearMonth prevMonth = YearMonth.from(monthStart).minusMonths(1);
         // 从 Redis 缓存获取上月销售累计值,若 miss 则实时聚合
-        BigDecimal prevMonthSales = resolveMonthlySnapshot(prevMonth,
+        MonthlySnapshot salesSnapshot = resolveMonthlySnapshot(prevMonth,
                 PrevValueCache.MonthlySnapshotType.SALES_TOTAL,
                 canSales ? () -> sumSalesApprovedBetween(
                         prevMonth.atDay(1).atStartOfDay(), prevMonth.atEndOfMonth().atTime(23, 59, 59)) : null);
         // 从 Redis 缓存获取上月采购累计值,若 miss 则实时聚合
-        BigDecimal prevMonthPurchase = resolveMonthlySnapshot(prevMonth,
+        MonthlySnapshot purchaseSnapshot = resolveMonthlySnapshot(prevMonth,
                 PrevValueCache.MonthlySnapshotType.PURCHASE_TOTAL,
                 canPurchase ? () -> sumPurchaseApprovedBetween(
                         prevMonth.atDay(1).atStartOfDay(), prevMonth.atEndOfMonth().atTime(23, 59, 59)) : null);
+        BigDecimal prevMonthSales = salesSnapshot.value();
+        BigDecimal prevMonthPurchase = purchaseSnapshot.value();
         // 上月毛利只在两个上月累计都有值且当前用户有毛利权限时才可比，否则明确标记为不可比。
         BigDecimal prevMonthGross = (canSales && canPurchase
                 && prevMonthSales != null && prevMonthPurchase != null)
@@ -156,13 +161,30 @@ public class DashboardMetricsLoader {
 
         // 昨日待处理订单使用同一权限组合的分项快照；快照缺失时明确标记为不可比较。
         LocalDate yesterday = today.minusDays(1);
-        PendingOrderSnapshot prevPendingSnapshot = canViewPending
-                ? prevValueCache.getPendingOrderSnapshot(yesterday) : null;
+        PendingOrderSnapshot prevPendingSnapshot = null;
+        boolean pendingUnavailable = false;
+        if (canViewPending) {
+            try {
+                prevPendingSnapshot = prevValueCache.getPendingOrderSnapshot(yesterday);
+            } catch (Exception ex) {
+                pendingUnavailable = true;
+                log.warn("工作台昨日待处理订单快照读取失败 date={}", yesterday, ex);
+                exceptionPublisher.publishSystemError(ex);
+            }
+        }
         BigDecimal prevPending = prevPendingSnapshot == null ? null : BigDecimal.valueOf(
                 sumVisiblePendingOrders(prevPendingSnapshot, canPurchase, canSales, canWarehouse));
-        BigDecimal prevStockRisk = canWarehouse
-                ? prevValueCache.getDailySnapshot(yesterday, PrevValueCache.DailySnapshotType.STOCK_RISK_COUNT)
-                : null;
+        BigDecimal prevStockRisk = null;
+        boolean stockRiskUnavailable = false;
+        if (canWarehouse) {
+            try {
+                prevStockRisk = prevValueCache.getDailySnapshot(yesterday, PrevValueCache.DailySnapshotType.STOCK_RISK_COUNT);
+            } catch (Exception ex) {
+                stockRiskUnavailable = true;
+                log.warn("工作台昨日库存风险快照读取失败 date={}", yesterday, ex);
+                exceptionPublisher.publishSystemError(ex);
+            }
+        }
 
         // 5. 构建固定顺序的指标。无权限时数值和对比字段必须为 null，不能伪装为 0。
 
@@ -179,35 +201,44 @@ public class DashboardMetricsLoader {
         metrics.add(buildMetric(MetricKey.MONTH_SALES,
                 canSales ? QtyUtil.toDecimal(monthSales) : null,
                 monthSalesChangeRate,
-                canSales ? PrevValueCache.computeStatus(monthSalesChangeRate, MetricKey.MONTH_SALES.getDirection()) : MetricStatus.NEUTRAL));
+                canSales ? PrevValueCache.computeStatus(monthSalesChangeRate, MetricKey.MONTH_SALES.getDirection()) : MetricStatus.NEUTRAL,
+                salesSnapshot.unavailable()));
         metrics.add(buildMetric(MetricKey.MONTH_GROSS_PROFIT,
                 canSales && canPurchase ? QtyUtil.toDecimal(monthGross) : null,
                 monthGrossChangeRate,
-                canSales && canPurchase ? PrevValueCache.computeStatus(monthGrossChangeRate, MetricKey.MONTH_GROSS_PROFIT.getDirection()) : MetricStatus.NEUTRAL));
+                canSales && canPurchase ? PrevValueCache.computeStatus(monthGrossChangeRate, MetricKey.MONTH_GROSS_PROFIT.getDirection()) : MetricStatus.NEUTRAL,
+                salesSnapshot.unavailable() || purchaseSnapshot.unavailable()));
         metrics.add(buildMetric(MetricKey.PENDING_ORDERS,
                 canViewPending ? BigDecimal.valueOf(pendingOrder) : null,
                 pendingOrderChangeRate,
-                canViewPending ? PrevValueCache.computeStatus(pendingOrderChangeRate, MetricKey.PENDING_ORDERS.getDirection()) : MetricStatus.NEUTRAL));
+                canViewPending ? PrevValueCache.computeStatus(pendingOrderChangeRate, MetricKey.PENDING_ORDERS.getDirection()) : MetricStatus.NEUTRAL,
+                pendingUnavailable));
         metrics.add(buildMetric(MetricKey.STOCK_RISK_SKU,
                 canWarehouse ? BigDecimal.valueOf(stockRisk) : null,
                 stockRiskChangeRate,
-                canWarehouse ? PrevValueCache.computeStatus(stockRiskChangeRate, MetricKey.STOCK_RISK_SKU.getDirection()) : MetricStatus.NEUTRAL));
+                canWarehouse ? PrevValueCache.computeStatus(stockRiskChangeRate, MetricKey.STOCK_RISK_SKU.getDirection()) : MetricStatus.NEUTRAL,
+                stockRiskUnavailable));
         return metrics;
     }
 
     /**
-     * 解析月快照值：优先 Redis 缓存；miss 时用 supplier 实时聚合并回填缓存。无权限或聚合失败返回 null 表示无可比基线。
+     * 解析月快照：缓存读取失败也尝试数据库回算；只在回算失败时标记不可用，不影响本月值。
      */
-    private BigDecimal resolveMonthlySnapshot(YearMonth prevMonth,
+    private MonthlySnapshot resolveMonthlySnapshot(YearMonth prevMonth,
                                               PrevValueCache.MonthlySnapshotType type,
                                               Supplier<BigDecimal> fallback) {
         if (fallback == null) {
-            return null;
+            return new MonthlySnapshot(null, false);
         }
         // 1. 优先 Redis 缓存
-        BigDecimal cached = prevValueCache.getMonthlySnapshot(prevMonth, type);
-        if (cached != null) {
-            return cached;
+        try {
+            BigDecimal cached = prevValueCache.getMonthlySnapshot(prevMonth, type);
+            if (cached != null) {
+                return new MonthlySnapshot(cached, false);
+            }
+        } catch (Exception ex) {
+            // Redis 故障不是金额为零；读取失败后仍可以从数据库取得正确基线。
+            log.warn("工作台月快照读取失败，尝试实时回算 month={} type={}", prevMonth, type, ex);
         }
         // 2. 缓存未命中，实时聚合并回填缓存
         BigDecimal computed;
@@ -216,18 +247,22 @@ public class DashboardMetricsLoader {
             computed = fallback.get();
         } catch (Exception ex) {
             log.warn("工作台月快照实时聚合失败, month={}, type={}", prevMonth, type, ex);
-            // TODO: 处理异常，例如记录日志、返回默认值等
-            return null;
+            // 无缓存且实时回算失败时返回 null，避免把未知金额伪装成 0。
+            exceptionPublisher.publishSystemError(ex);
+            return new MonthlySnapshot(null, true);
         }
         try {
             // 3. 回填缓存
             prevValueCache.putMonthlySnapshot(prevMonth, type, computed);
         } catch (Exception ex) {
             log.warn("工作台月快照缓存回填失败, month={}, type={}", prevMonth, type, ex);
-            // TODO: 处理异常，例如记录日志、返回默认值等
+            // 缓存回填失败不影响本次已回算结果，继续返回 computed。
         }
-        return computed;
+        return new MonthlySnapshot(computed, false);
     }
+
+    /** 仅在本次请求内保存月基线及失败标记，避免共享可变状态造成并发串值。 */
+    private record MonthlySnapshot(BigDecimal value, boolean unavailable) { }
 
     /** 销售单经营金额（按统一状态、approved_at 和时间段在数据库中聚合）。 */
     private BigDecimal sumSalesApprovedBetween(LocalDateTime start, LocalDateTime end) {
@@ -283,7 +318,8 @@ public class DashboardMetricsLoader {
     }
     /** 构建指标VO */
     private static DashboardMetricVO buildMetric(MetricKey key, BigDecimal value,
-                                                 BigDecimal changeRate, MetricStatus status) {
+                                                 BigDecimal changeRate, MetricStatus status,
+                                                 boolean comparisonUnavailable) {
         DashboardMetricVO vo = new DashboardMetricVO();
         vo.setKey(key);
         vo.setLabel(key.getLabel());
@@ -292,6 +328,9 @@ public class DashboardMetricsLoader {
         vo.setChangeRate(changeRate);
         vo.setCompareText(changeRate != null ? key.getCompareText() : null);
         vo.setStatus(status);
+        vo.setComparisonState(value == null ? null : comparisonUnavailable
+                ? MetricComparisonState.UNAVAILABLE : changeRate == null
+                ? MetricComparisonState.NO_BASELINE : MetricComparisonState.AVAILABLE);
         return vo;
     }
 }

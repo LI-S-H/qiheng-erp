@@ -18,6 +18,8 @@ declare module 'axios' {
 
 interface LoadingRequestConfig extends InternalAxiosRequestConfig {
   finishPageLoading?: () => void;
+  /** 请求发出时的会话，用于忽略换账号后才返回的旧 401。 */
+  sessionToken?: string | null;
 }
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -48,6 +50,7 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   }
 
   const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  loadingConfig.sessionToken = token;
   const tokenName = localStorage.getItem(AUTH_TOKEN_NAME_STORAGE_KEY) || 'satoken';
 
   if (token) {
@@ -77,7 +80,8 @@ http.interceptors.response.use(
       : error.response?.data?.message || error.message || '网络请求异常';
     if (!error.config?.suppressErrorToast) toast.error(message);
 
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401
+      && (error.config as LoadingRequestConfig | undefined)?.sessionToken === localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) {
       localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
       localStorage.removeItem(AUTH_TOKEN_NAME_STORAGE_KEY);
       window.location.href = '/login';

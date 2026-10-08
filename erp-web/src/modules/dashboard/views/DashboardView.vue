@@ -666,6 +666,7 @@ onBeforeUnmount(() => {
     <div class="relative">
 
       <div v-if="overview" class="space-y-4">
+        <p v-if="overviewStore.refreshError" class="text-sm text-amber-700" role="status">刷新失败，当前显示上次数据；请重试。</p>
         <div class="summary-strip dashboard-metrics">
           <div
             v-for="metric in overview.metrics"
@@ -688,7 +689,7 @@ onBeforeUnmount(() => {
             <div v-else-if="metric.value !== null" class="mt-2 flex items-center gap-2">
               <Badge variant="outline" class="border-slate-200 bg-slate-50 text-slate-600">
                 <Clock3 class="mr-1 h-3 w-3" />
-                暂无可比基线
+                {{ metric.comparisonState === 'UNAVAILABLE' ? '对比数据暂不可用' : '暂无可比基线' }}
               </Badge>
             </div>
           </div>

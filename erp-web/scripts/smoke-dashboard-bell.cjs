@@ -86,6 +86,8 @@ runSmoke({
     await page.waitForURL(url => (
       url.pathname === '/dashboard' && !url.searchParams.has('todoId')
     ), { timeout: 3000 });
+    // Popover 同样具有 dialog 角色，必须等其关闭，不能误判为业务详情。
+    await popover.waitFor({ state: 'hidden' });
     // 不应打开详情弹窗
     if (await page.getByRole('dialog').count()) {
       throw new Error('点击"前往工作台"按钮不应打开待办详情');
@@ -95,6 +97,20 @@ runSmoke({
   route: '/dashboard',
   screenshot: path.join(screenshotDirectory, 'bell-todos-denied.png'),
   async setupPage(page) {
+    // mock API 在模块内直接返回，HTTP 拦截不会生效；同步拦截模块响应构造裁剪夹具。
+    await page.route('**/src/modules/dashboard/api.ts*', async route => {
+      const response = await route.fetch();
+      const source = await response.text();
+      if (!source.includes('return normalizeOverview(mockOverview);')) throw new Error('工作台 Mock 注入入口不存在');
+      const body = source.replace('return normalizeOverview(mockOverview);', `
+        const denied = structuredClone(mockOverview);
+        denied.pendingCount = 0;
+        denied.todos = [];
+        denied.access.todos = { state: 'DENIED' };
+        window.__bellDeniedFixtureApplied = true;
+        return normalizeOverview(denied);`);
+      await route.fulfill({ response, body });
+    });
     await page.route('**/api/dashboard/overview', async route => {
       const response = await route.fetch();
       const payload = await response.json();
@@ -108,6 +124,9 @@ runSmoke({
     // 工作台已授权时，待办区被业务权限裁剪也不能让顶栏铃铛消失。
     const trigger = page.locator('[data-notification-trigger]');
     await trigger.waitFor({ state: 'visible' });
+    if (!await page.evaluate(() => window.__bellDeniedFixtureApplied === true)) {
+      throw new Error('待办 DENIED 夹具未真正应用，不能以默认 Mock 证明权限裁剪');
+    }
     await trigger.click();
     const popover = page.locator('[data-notification-popover]');
     await popover.waitFor({ state: 'visible' });

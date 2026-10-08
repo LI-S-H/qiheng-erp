@@ -66,10 +66,10 @@ const mockOverview: DashboardOverview = {
     supplierPerformance: { state: 'ALLOWED' },
   },
   metrics: [
-    { key: 'MONTH_SALES', label: '本月销售额', value: 286430, unit: '元', changeRate: 12.8, compareText: '较上月', status: 'good' },
-    { key: 'MONTH_GROSS_PROFIT', label: '本月毛利额', value: -842600, unit: '元', changeRate: 6.4, compareText: '较上月', status: 'good' },
-    { key: 'PENDING_ORDERS', label: '待处理订单', value: 7, unit: '单', changeRate: -8.1, compareText: '较昨日', status: 'good' },
-    { key: 'STOCK_RISK_SKU', label: '库存风险 SKU', value: 11, unit: '个', changeRate: 18.6, compareText: '较上月', status: 'risk' },
+    { key: 'MONTH_SALES', label: '本月销售额', value: 286430, unit: '元', changeRate: 12.8, compareText: '较上月', comparisonState: 'AVAILABLE', status: 'good' },
+    { key: 'MONTH_GROSS_PROFIT', label: '本月毛利额', value: -842600, unit: '元', changeRate: 6.4, compareText: '较上月', comparisonState: 'AVAILABLE', status: 'good' },
+    { key: 'PENDING_ORDERS', label: '待处理订单', value: 7, unit: '单', changeRate: -8.1, compareText: '较昨日', comparisonState: 'AVAILABLE', status: 'good' },
+    { key: 'STOCK_RISK_SKU', label: '库存风险 SKU', value: 11, unit: '个', changeRate: 18.6, compareText: '较昨日', comparisonState: 'AVAILABLE', status: 'risk' },
   ],
   trend: [
     { date: '06-01', salesAmount: 186200, purchaseAmount: 112400, grossMarginAmount: 54200 },
@@ -192,6 +192,14 @@ const mockInventoryStatus: DashboardInventoryStatus = {
 function normalizeMetric(item: DashboardMetric): DashboardMetric {
   if (!dashboardMetricKeys.includes(item.key)) {
     throw new Error(`dashboard metric key is invalid: ${String(item.key)}`);
+  }
+  if (item.comparisonState !== null && !['AVAILABLE', 'NO_BASELINE', 'UNAVAILABLE'].includes(item.comparisonState)) {
+    throw new Error('接口字段 comparisonState 必须为有效的指标对比状态');
+  }
+  if ((item.value == null && item.comparisonState !== null)
+    || (item.value != null && item.comparisonState === null)
+    || ((item.changeRate != null) !== (item.comparisonState === 'AVAILABLE'))) {
+    throw new Error('指标对比状态与 value、changeRate 不一致');
   }
   return {
     ...item,
@@ -432,7 +440,12 @@ export async function getDashboardOverview() {
     return normalizeOverview(mockOverview);
   }
 
-  return getResult<DashboardOverview>('/dashboard/overview').then(normalizeOverview);
+  // 主页自行呈现骨架/错误，后台刷新保留现有数据，不触发整页遮罩或重复 toast。
+  return getResult<DashboardOverview>('/dashboard/overview', undefined, {
+    skipPageLoading: true,
+    suppressErrorToast: true,
+    timeout: 5_000,
+  }).then(normalizeOverview);
 }
 
 function normalizeInventoryRiskPreviewItem(item: DashboardInventoryRiskPreviewItem): DashboardInventoryRiskPreviewItem {

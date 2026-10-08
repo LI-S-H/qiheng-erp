@@ -136,7 +136,12 @@ async function checkApiContracts() {
     {
       name: '采购退回供应商选择器',
       path: '/purchase/suppliers',
-      queries: ['supplierCode', 'supplierName', 'contactName', 'status', 'pageNum', 'pageSize'],
+      queries: [
+        'supplierCode', 'supplierName', 'contactName', 'status', 'scoreStatus',
+        'overallScoreMin', 'overallScoreMax', 'serviceScoreMin', 'serviceScoreMax',
+        'scoreBasisAmountMin', 'scoreBasisAmountMax', 'avgDeliveryDaysMin', 'avgDeliveryDaysMax',
+        'pageNum', 'pageSize',
+      ],
       source: purchaseApiSource,
       fragments: ["getResult<PageResult<SupplierListItem>>('/purchase/suppliers'", 'export async function searchSupplierOptions', 'pageNum: 1', 'status: 1'],
     },

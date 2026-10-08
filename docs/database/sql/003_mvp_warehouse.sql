@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS inbound_bill (
     warehouse_id BIGINT NOT NULL COMMENT '仓库ID',
     warehouse_name VARCHAR(100) NOT NULL COMMENT '仓库名称快照',
     status VARCHAR(32) NOT NULL DEFAULT 'PENDING_CONFIRM' COMMENT '状态：DRAFT、PENDING_CONFIRM、CONFIRMED、CANCELLED',
+    expected_arrival_date DATE DEFAULT NULL COMMENT '采购订单预计到货日期快照；仅系统生成的采购入库单有值',
     confirmed_by_id BIGINT DEFAULT NULL COMMENT '确认人ID',
     confirmed_by_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '确认人姓名',
     confirmed_at DATETIME DEFAULT NULL COMMENT '确认时间',
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS inbound_bill_item (
     processed_qty BIGINT DEFAULT NULL COMMENT '生成本单前累计已入库数量，按100倍整数存储；线下补录或调整无来源时为空',
     current_qty BIGINT NOT NULL DEFAULT 0 COMMENT '本次入库数量，按100倍整数存储',
     pending_qty BIGINT DEFAULT NULL COMMENT '确认本单后剩余未入库数量，按100倍整数存储；线下补录或调整无来源时为空',
+    unit_price BIGINT NOT NULL DEFAULT 0 COMMENT '来源交易单价快照，单位分；系统生成从来源明细复制',
     qualified_qty BIGINT NOT NULL DEFAULT 0 COMMENT '合格数量，按100倍整数存储；采购入库和销售退货入库使用',
     defective_qty BIGINT NOT NULL DEFAULT 0 COMMENT '不合格数量，按100倍整数存储；采购入库和销售退货入库使用',
     stock_bill_item_id BIGINT DEFAULT NULL COMMENT '确认后生成的库存流水明细ID',
@@ -218,6 +220,7 @@ CREATE TABLE IF NOT EXISTS stock_bill_item (
     KEY idx_stock_bill_item_product (product_id),
     KEY idx_stock_bill_item_work_item (work_bill_item_id),
     KEY idx_stock_bill_item_business_source_item (business_source_item_id),
+    KEY idx_stock_bill_item_source_bill (business_source_item_id, bill_id),
     CONSTRAINT chk_stock_bill_item_quantity_precision CHECK (quantity_precision BETWEEN 0 AND 2)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存流水凭证明细表';
 

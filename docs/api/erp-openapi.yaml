@@ -11,7 +11,7 @@ servers:
     description: 本地开发环境
 tags:
   - name: Dashboard
-    description: 工作台与顶栏通知 - 经营概览、待办摘要、库存风险和关键排行
+    description: 工作台与顶栏通知 - 工作台概览、待办摘要、库存风险和关键排行
   - name: AIAssistant
     description: 智能助手 - 智能经营助手、经营任务中心和受控 AI Workflow 入口
   - name: Auth
@@ -1037,7 +1037,7 @@ paths:
       tags:
         - SystemRole
       summary: 批量删除角色
-      description: 逻辑删除角色，对应 `sys_role.deleted = 1`。已绑定用户的角色需要先解除 `sys_user_role` 关系后再删除。
+      description: 逻辑删除角色，对应 `sys_role.deleted = 1`。任一角色仍绑定用户时，整批删除返回业务码 `30003`，不会自动删除 `sys_user_role` 关系。
       operationId: systemRoleBatchDelete
       security:
         - SaTokenAuth: []
@@ -1049,7 +1049,7 @@ paths:
               $ref: '#/components/schemas/SystemRoleBatchDeleteRequest'
       responses:
         "200":
-          description: 批量删除成功
+          description: 批量删除成功；若任一角色仍绑定用户，则返回业务码 30003。
           content:
             application/json:
               schema:
@@ -1122,7 +1122,7 @@ paths:
       tags:
         - SystemRole
       summary: 删除角色
-      description: 逻辑删除角色，对应 `sys_role.deleted = 1`。已绑定用户的角色需要先解除 `sys_user_role` 关系后再删除。
+      description: 逻辑删除角色，对应 `sys_role.deleted = 1`。角色仍绑定用户时返回业务码 `30003`，不会自动删除 `sys_user_role` 关系。
       operationId: systemRoleDelete
       security:
         - SaTokenAuth: []
@@ -1130,7 +1130,7 @@ paths:
         - $ref: '#/components/parameters/RoleId'
       responses:
         "200":
-          description: 删除成功
+          description: 删除成功；角色仍绑定用户时返回业务码 30003。
           content:
             application/json:
               schema:
@@ -1750,7 +1750,7 @@ paths:
       tags: [PurchaseSupplier]
       summary: 分页查询供应商
       description: |
-        查询未删除的 `supplier` 数据。供应商编码、供应商名称和联系人分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。
+        查询未删除的 `supplier` 数据。供应商编码、供应商名称和联系人分别使用包含匹配，状态使用精确匹配，多个有效条件按 AND 组合。结果固定按创建时间、ID 倒序返回。
         不接收含义不明确的 `keyword` 参数。评分字段接口按 0-100 业务值返回，数据库按放大 100 倍整数保存。
         本接口需要 `supplier:query` 权限。
       operationId: purchaseSupplierPage
@@ -1773,6 +1773,42 @@ paths:
           in: query
           schema: { type: integer, enum: [0, 1] }
           description: 状态，对应 `supplier.status`，1 启用，0 停用，使用精确匹配
+        - name: scoreStatus
+          in: query
+          schema: { type: string, enum: [NOT_READY, READY] }
+          description: 评分状态，对应 `supplier.score_status`，使用精确匹配。
+        - name: overallScoreMin
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 综合分下限，接口使用 0-100 业务值。
+        - name: overallScoreMax
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 综合分上限，接口使用 0-100 业务值。
+        - name: serviceScoreMin
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 服务分下限，接口使用 0-100 业务值。
+        - name: serviceScoreMax
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 服务分上限，接口使用 0-100 业务值。
+        - name: scoreBasisAmountMin
+          in: query
+          schema: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+          description: 评分样本金额下限，单位元。
+        - name: scoreBasisAmountMax
+          in: query
+          schema: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+          description: 评分样本金额上限，单位元。
+        - name: avgDeliveryDaysMin
+          in: query
+          schema: { type: number, minimum: 0 }
+          description: 平均到货周期下限，单位天。
+        - name: avgDeliveryDaysMax
+          in: query
+          schema: { type: number, minimum: 0 }
+          description: 平均到货周期上限，单位天。
         - name: pageNum
           in: query
           required: true
@@ -1797,7 +1833,9 @@ paths:
     post:
       tags: [PurchaseSupplier]
       summary: 新增供应商
-      description: 供应商编码由后端统一生成并通过唯一索引保证不重复，前端创建请求不提交供应商编码；评分字段按 0-100 业务值提交，后端负责放大 100 倍落库。本接口 MVP 阶段复用 `purchase:create` 权限。
+      description: |
+        新建时仅允许可选填写人工 `serviceScore`；填写服务分时 `serviceScoreReason` 必填。服务分以 0-100 业务值传输，后端按 100 倍整数落库。
+        新建服务分仅是建档初值，不写 `supplier_score_change_log`；后续人工调整或系统重算导致实际分数变化时才写日志。
       operationId: purchaseSupplierCreate
       security:
         - SaTokenAuth: []
@@ -1871,10 +1909,32 @@ paths:
         "409": { $ref: '#/components/responses/Conflict' }
 
   /purchase/suppliers/{supplierId}:
+    get:
+      tags: [PurchaseSupplier]
+      summary: 获取供应商详情
+      operationId: purchaseSupplierDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplier' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
     put:
       tags: [PurchaseSupplier]
       summary: 编辑供应商
-      description: 编辑请求不接收 `supplierCode`；供应商名称修改时，后端同步当前供货产品快照，历史采购单继续保留下单时快照。本接口 MVP 阶段复用 `purchase:create` 权限。
+      description: 编辑请求只维护供应商基础资料，不接收 `supplierCode` 或任何评分字段；供应商名称修改时，后端同步当前供货产品快照，历史采购单继续保留下单时快照。服务分只能通过专用接口调整。本接口 MVP 阶段复用 `purchase:create` 权限。
       operationId: purchaseSupplierUpdate
       security:
         - SaTokenAuth: []
@@ -1926,6 +1986,106 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { $ref: '#/components/responses/Conflict' }
 
+  /purchase/suppliers/{supplierId}/service-score:
+    put:
+      tags: [PurchaseSupplier]
+      summary: 调整供应商服务分
+      description: |
+        仅 `supplier:manage` 可调用。服务分按 0-100 业务值提交；传 `null` 表示清空人工服务分。`reason` 必填，作为本次人工调整原因。
+        服务分变化时在同一事务内重算供应商综合分和全部供货关系推荐分，并记录实际评分变化。初始建档值不写日志。日志保存供应商来源、真实操作人及本次请求原因。
+      operationId: purchaseSupplierServiceScoreUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierServiceScoreRequest' }
+      responses:
+        "200":
+          description: 调整成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplier' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/score-change-logs:
+    get:
+      tags: [PurchaseSupplier]
+      summary: 分页查询评分变更记录
+      description: |
+        需要 `supplier:query` 权限。`supplierId` 和 `supplierProductId` 均为可选精确筛选；都不传时分页查询全部记录，同时传入时按 AND 组合，不匹配时返回空页。
+        `metricType`、`triggerType` 和 `batchNo` 使用精确匹配；创建时间使用闭区间。记录实际基础指标或衍生分变化，初始建档不记日志；仅衍生分校正在对应记录原因中明确标注。
+        `relatedSources` 返回完整、去重的业务来源数组，无来源为 []。单据 ID 与编号必须对应同一业务对象；完全入库合并保留全部采购单，不仅返回第一单。人工操作包含真实用户 ID、姓名，系统操作用户 ID 为 null、名称为场景说明。
+        指标分、产品推荐分及供应商综合分的前后值按 0-100 业务值返回；无对应快照时为 null，不得解释为 0。
+      operationId: purchaseScoreChangeLogPage
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - name: supplierId
+          in: query
+          required: false
+          description: 供应商 ID，精确匹配
+          schema: { type: string }
+        - name: supplierProductId
+          in: query
+          required: false
+          description: 供货关系 ID，精确匹配
+          schema: { type: string }
+        - name: pageNum
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+        - name: metricType
+          in: query
+          required: false
+          schema: { type: string, enum: [PRICE, QUALITY, DELIVERY, SERVICE] }
+        - name: triggerType
+          in: query
+          required: false
+          schema: { type: string, enum: [PRICE_TRIGGER, SERVICE_TRIGGER, INBOUND_TRIGGER, QUOTE_EXPIRED_TRIGGER, DAILY_TRIGGER, MERGED] }
+        - name: batchNo
+          in: query
+          required: false
+          schema: { type: string }
+        - name: startTime
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: endTime
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseScoreChangeLogPage' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
   /purchase/suppliers/{supplierId}/status:
     patch:
       tags: [PurchaseSupplier]
@@ -1973,7 +2133,11 @@ paths:
         - name: supplierName
           in: query
           schema: { type: string, maxLength: 200 }
-          description: 供应商名称，对应 `supplier_product.supplier_name` 冗余快照，使用包含匹配；采购订单供应商选择按此参数请求第一页候选并提取 distinct 供应商
+          description: 供应商名称，对应关联 `supplier.supplier_name`，使用包含匹配；采购订单供应商选择按此参数请求第一页候选并提取 distinct 供应商
+        - name: productId
+          in: query
+          schema: { type: string }
+          description: 产品 ID，对应 `supplier_product.product_id`，精确匹配。
         - name: productCode
           in: query
           schema: { type: string, maxLength: 64 }
@@ -1986,6 +2150,58 @@ paths:
           in: query
           schema: { type: integer, enum: [0, 1] }
           description: 状态，对应 `supplier_product.status`，1 启用，0 停用，使用精确匹配
+        - name: scoreStatus
+          in: query
+          schema: { type: string, enum: [NOT_READY, READY] }
+          description: 评分状态，对应 `supplier_product.score_status`，精确匹配。
+        - name: quoteStatus
+          in: query
+          schema: { type: string, enum: [NONE, VALID, EXPIRED] }
+          description: NONE 为无报价；VALID 为有报价且 `quoteValidUntil` 不早于服务端当前业务日；EXPIRED 为有报价且截止日早于当前业务日。
+        - name: quoteValidUntilEnd
+          in: query
+          schema: { type: string, format: date }
+          description: 报价有效截止日；筛选不晚于该日期的记录，对应 `supplier_product.quote_valid_until`。
+        - name: qualityScoreMin
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 质量分下限，接口使用 0-100 业务值。
+        - name: qualityScoreMax
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 质量分上限，接口使用 0-100 业务值。
+        - name: priceScoreMin
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 价格分下限，接口使用 0-100 业务值。
+        - name: priceScoreMax
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 价格分上限，接口使用 0-100 业务值。
+        - name: aiScoreMin
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 推荐分下限，接口使用 0-100 业务值。
+        - name: aiScoreMax
+          in: query
+          schema: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+          description: 推荐分上限，接口使用 0-100 业务值。
+        - name: scoreBasisAmountMin
+          in: query
+          schema: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+          description: 评分样本金额下限，单位元。
+        - name: scoreBasisAmountMax
+          in: query
+          schema: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+          description: 评分样本金额上限，单位元。
+        - name: minOrderQtyMin
+          in: query
+          schema: { type: number, minimum: 0.01, maximum: 999999999.99 }
+          description: 最小起订量下限,业务值必须大于 0;后端按产品数量精度(quantityPrecision,0-2 位小数)校验并按 100 倍整数保存
+        - name: minOrderQtyMax
+          in: query
+          schema: { type: number, minimum: 0.01, maximum: 999999999.99 }
+          description: 最小起订量上限,业务值必须大于 0;后端按产品数量精度(quantityPrecision,0-2 位小数)校验并按 100 倍整数保存
         - name: pageNum
           in: query
           required: true
@@ -2010,7 +2226,7 @@ paths:
     post:
       tags: [PurchaseSupplierProduct]
       summary: 新增供货产品
-      description: 后端根据 `supplierId`、`productId` 保存供应商与产品快照；建议唯一约束 `(supplier_id, product_id)`，冲突时返回 409。本接口 MVP 阶段复用 `purchase:create` 权限。
+      description: 后端根据 `supplierId`、`productId` 创建供货关系；供应商和产品均须启用，且 `(supplier_id, product_id)` 唯一，冲突时返回 409。初始报价仅作为建档初值，不写评分变化日志；自动评分由后端维护，前端不得传入。本接口 MVP 阶段复用 `purchase:create` 权限。
       operationId: purchaseSupplierProductCreate
       security:
         - SaTokenAuth: []
@@ -2018,7 +2234,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PurchaseSupplierProductFormRequest' }
+            schema: { $ref: '#/components/schemas/PurchaseSupplierProductCreateRequest' }
       responses:
         "200":
           description: 创建成功
@@ -2084,10 +2300,32 @@ paths:
         "409": { $ref: '#/components/responses/Conflict' }
 
   /purchase/supplier-products/{supplierProductId}:
+    get:
+      tags: [PurchaseSupplierProduct]
+      summary: 获取供货产品详情
+      operationId: purchaseSupplierProductDetail
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierProductId'
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplierProduct' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
     put:
       tags: [PurchaseSupplierProduct]
       summary: 编辑供货产品
-      description: 编辑时后端重新校验供应商和产品是否存在；如更换供应商或产品，必须校验 `(supplier_id, product_id)` 唯一性。供应商与产品的编码、名称和单位在查询时实时关联主数据。本接口 MVP 阶段复用 `purchase:create` 权限。
+      description: 编辑只允许维护供货关系条件（供应商侧产品编码、最小起订量、交期、状态、备注）；`supplierId` 与 `productId` 创建后不可变，报价和自动评分字段不得通过本接口传入。供应商与产品的编码、名称和单位在查询时实时关联主数据。本接口 MVP 阶段复用 `purchase:create` 权限。
       operationId: purchaseSupplierProductUpdate
       security:
         - SaTokenAuth: []
@@ -2097,7 +2335,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PurchaseSupplierProductFormRequest' }
+            schema: { $ref: '#/components/schemas/PurchaseSupplierProductUpdateRequest' }
       responses:
         "200":
           description: 编辑成功
@@ -2134,6 +2372,40 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /purchase/supplier-products/{supplierProductId}/quote:
+    put:
+      tags: [PurchaseSupplierProduct]
+      summary: 调整供货关系报价
+      description: |
+        仅 `supplier:manage` 可调用。设置报价时 `quotedPurchasePrice`、`quoteValidUntil`、`reason` 必须同时提供，报价必须大于零；清空报价时前两项都传 `null`，`reason` 仍必填。
+        初始报价仅作为建档初值，不写评分变更日志；后续报价调整在同一事务内重算价格分、推荐分和供应商汇总分，仅实际评分变化时写日志。日志保存供货关系来源、真实操作人以及本次请求原因；清空报价也保留本次原因。
+      operationId: purchaseSupplierProductQuoteUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SupplierProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseSupplierProductQuoteRequest' }
+      responses:
+        "200":
+          description: 调整成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PurchaseSupplierProduct' }
+        "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
@@ -2196,7 +2468,7 @@ paths:
       description: |
         采购单号、供应商和产品快照、订单总金额、创建人和审计字段由后端维护，前端不提交；创建后状态为 `DRAFT`，不生成入库流水。
         草稿阶段 `expectedArrivalDate` 可为空；提交或审核前，后端必须校验单头预计到货日期非空。
-        明细数量和金额使用业务真实值传输，数据库按 decimal 保存；`selectedSupplierScore` 按 0-100 业务值提交，后端负责放大 100 倍落库。
+        明细数量和金额使用业务真实值传输，数据库以 BIGINT 保存真实值放大 100 倍后的整数；创建和编辑时不得提交 `selectedSupplierScore`，未审核明细保存 null。后端在审核通过时按该明细当时供货关系的推荐分写入评分快照，之后评分变化不回写历史订单。
         本接口需要 `purchase:create` 权限。
       operationId: purchaseOrderCreate
       security:
@@ -2254,7 +2526,7 @@ paths:
       summary: 编辑采购订单
       description: |
         `DRAFT` 状态可由采购创建权限编辑；`SUBMITTED` 状态仍允许具备审核/审批权限的用户编辑供应商、入库仓库、预计到货日期、备注和明细。
-        `APPROVED`、`PARTIAL_INBOUND`、`INBOUND_DONE`、`CANCELLED` 不允许通过本接口修改；已审核后的业务纠正应通过仓库出入库、冲销或反向业务单据处理。
+        `APPROVED`、`PARTIAL_INBOUND`、`INBOUND_DONE`、`CANCELLED` 不允许通过本接口修改；审核通过时冻结 `expectedArrivalDate` 和各明细 `selectedSupplierScore`，之后评分或报价变化不回写历史订单。已审核后的业务纠正应通过仓库出入库、冲销或反向业务单据处理。
         采购单号、状态、已入库数量、创建人、提交人、审核人和审计字段由后端维护，前端不得提交。
         明细传入 `purchaseOrderItemId` 表示更新已有明细，不传表示新增明细，被移除的旧明细由后端物理删除；采购明细不维护单独预计到货日期。
         后端必须重新校验权限、供应商、仓库、产品、供货关系、数量精度和价格，并重算主表 `total_amount`。本接口需要 `purchase:create` 或审核/审批权限。
@@ -2318,7 +2590,7 @@ paths:
       summary: 审核采购订单
       description: |
         仅允许 `SUBMITTED -> APPROVED`。前端调用本接口前必须先通过详情数据向审核人展示完整采购单头和采购明细，并在二次确认后审核通过。审核前后端必须重新校验单头预计到货日期非空、供应商、仓库、产品、供货关系和明细数量价格。
-        审核通过后，后端在同一事务内生成仓库模块 `PURCHASE_IN` 待确认入库单，`source_type = PURCHASE_ORDER`、`source_id = purchase_order.id`、`source_no = purchase_order.purchase_no`，并带入供应商、入库仓库、采购数量、累计已入库和剩余未入库数量。
+        审核通过后，后端在同一事务内生成仓库模块 `PURCHASE_IN` 待确认入库单，`source_type = PURCHASE_ORDER`、`source_id = purchase_order.id`、`source_no = purchase_order.purchase_no`，并带入供应商、入库仓库、采购数量、累计已入库和剩余未入库数量。同时按当前供货关系的 `recommend_score` 写入每条采购明细的 `selectedSupplierScore` 快照；无可用评分为 null，有效零分保留 0，写入失败整体回滚。
         采购订单审核后不直接改变库存，也不生成库存流水；需要审核/审批权限并保证重复请求幂等。
       operationId: purchaseOrderApprove
       security:
@@ -2346,7 +2618,7 @@ paths:
     post:
       tags: [PurchaseOrder]
       summary: 取消采购订单
-      description: 允许 `DRAFT`、`SUBMITTED` 取消，也允许尚未发生任何确认入库事实的 `APPROVED` 取消。取消 `APPROVED` 订单时，后端在同一事务内作废全部 `source_type = PURCHASE_ORDER` 的 `DRAFT`、`PENDING_CONFIRM` 入库工作单；取消不改变实物库存、不生成库存流水。`PARTIAL_INBOUND`、`INBOUND_DONE`，或存在任一已确认入库工作单时返回 `409`。已取消订单重复调用按幂等成功处理且不会重复作废工作单；未取消订单版本过期或与入库确认并发时返回 `409`。本接口需要 `purchase:create` 权限。
+      description: 允许 `DRAFT`、`SUBMITTED` 取消，也允许尚未发生任何确认入库事实的 `APPROVED` 取消。取消 `APPROVED` 订单时，后端在同一事务内作废全部 `source_type = PURCHASE_ORDER` 的 `DRAFT`、`PENDING_CONFIRM` 入库工作单；取消不改变实物库存、不生成库存流水。`PARTIAL_INBOUND`、`INBOUND_DONE`，或存在任一已确认入库工作单时返回 `409`。请求只接收乐观锁版本号，取消原因和供应商责任评分尚未接入。已取消订单重复调用按幂等成功处理且不会重复作废工作单；未取消订单版本过期或与入库确认并发时返回 `409`。本接口需要 `purchase:create` 权限。
       operationId: purchaseOrderCancel
       security:
         - SaTokenAuth: []
@@ -3282,7 +3554,7 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/StockBillDetail' }
+                      data: { $ref: '#/components/schemas/InboundBillDetail' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -3488,7 +3760,7 @@ paths:
       security: [{ SaTokenAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
       responses:
-        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "200": { $ref: '#/components/responses/InboundBillDetailSuccess' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
@@ -3505,7 +3777,7 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/StockBillUpdateRequest' }
       responses:
-        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "200": { $ref: '#/components/responses/InboundBillDetailSuccess' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -3522,7 +3794,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
       responses:
-        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "200": { $ref: '#/components/responses/InboundBillDetailSuccess' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -3539,7 +3811,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
       responses:
-        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "200": { $ref: '#/components/responses/InboundBillDetailSuccess' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -3556,7 +3828,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/InboundBillId' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OptimisticLockVersionRequest' } } } }
       responses:
-        "200": { $ref: '#/components/responses/StockBillDetailSuccess' }
+        "200": { $ref: '#/components/responses/InboundBillDetailSuccess' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
@@ -4034,7 +4306,7 @@ paths:
     put:
       tags: [Product]
       summary: 编辑产品档案
-      description: 产品编码创建后不可修改，编辑请求不接收产品编码；启用产品不能归属停用分类。通过编辑接口停用产品时遵守与状态接口相同的业务规则。本接口需要 `product:manage` 权限。
+      description: 产品编码创建后不可修改，编辑请求不接收产品编码；启用产品不能归属停用分类。通过编辑接口停用产品时遵守与状态接口相同的业务规则。**参考采购价(`referencePurchasePrice`)不在本接口中处理，必须通过单独接口 `PUT /products/{id}/reference-price` 调用，参考价变化时后端在同一事务内同步重算评分；重算失败则参考价变更整体回滚。**本接口需要 `product:manage` 权限。
       operationId: productUpdate
       security:
         - SaTokenAuth: []
@@ -4076,6 +4348,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  /products/{productId}/reference-price:
+    put:
+      tags: [Product]
+      summary: 调整产品参考采购价
+      description: 参考采购价独立于产品编辑接口,价格变化时在同一事务内同步重算所有供应该产品的有效供货关系的价格分、推荐分与对应供应商汇总分;重算失败则参考价变更整体回滚。初始创建产品时如需填写参考采购价,在 `POST /products` 的 `ProductFormRequest.referencePurchasePrice` 中传入(仅创建时);后续调整必须通过本接口。本接口需要 `product:reference-price:manage` 权限。
+      operationId: productReferencePriceUpdate
+      security:
+        - SaTokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductReferencePriceRequest' }
+      responses:
+        "200":
+          description: 调整成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
@@ -4456,6 +4760,16 @@ components:
         type: string
       description: 销售订单 ID，对应 `sales_order.id`，BIGINT 按字符串传输
   responses:
+    InboundBillDetailSuccess:
+      description: 入库单详情
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Result'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/InboundBillDetail' }
     StockBillDetailSuccess:
       description: 单据详情
       content:
@@ -5228,7 +5542,7 @@ components:
 
     DashboardMetric:
       type: object
-      required: [key, label, value, unit, changeRate, compareText, status]
+      required: [key, label, value, unit, changeRate, compareText, comparisonState, status]
       properties:
         key:
           type: string
@@ -5254,6 +5568,11 @@ components:
           type: string
           nullable: true
           description: 对比周期文案；无权限或不展示环比时返回 null。
+        comparisonState:
+          type: string
+          nullable: true
+          enum: [AVAILABLE, NO_BASELINE, UNAVAILABLE]
+          description: AVAILABLE 表示可计算对比率，NO_BASELINE 表示正常缺少快照或上期为零且本期非零，UNAVAILABLE 表示对比数据读取或回算失败。无指标权限时返回 null；失败保留本期值，不伪装为零。
         status:
           type: string
           enum: [good, watch, risk, neutral]
@@ -5424,14 +5743,19 @@ components:
 
     DashboardSupplierPerformance:
       type: object
-      required: [supplierId, supplierCode, supplierName, deliveryScore, qualityScore, onTimeRate]
+      required: [supplierId, supplierCode, supplierName, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, scoreBasisAmount, scoreStatus]
       properties:
         supplierId: { type: string, description: 对应 `supplier.id`，BIGINT 按字符串传输 }
         supplierCode: { type: string, maxLength: 64 }
         supplierName: { type: string, maxLength: 200 }
-        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100, description: 供应商交付评分；主卡和详情弹窗均展示 }
-        qualityScore: { type: number, format: double, minimum: 0, maximum: 100, description: 供应商质量评分；主卡和详情弹窗均展示 }
-        onTimeRate: { type: number, format: double, minimum: 0, maximum: 100, description: 准时交付率百分比数值；用于供应商履约排行辅助判断 }
+        overallScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, description: 供应商综合评分 }
+        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, description: 供应商交付评分 }
+        qualityScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, description: 供应商质量评分 }
+        priceScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, description: 供应商价格评分 }
+        serviceScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, description: 人工服务评分 }
+        avgDeliveryDays: { type: number, format: double, minimum: 0, nullable: true, description: 完全入库订单按金额加权的平均到货周期，仅作分析 }
+        scoreBasisAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 已确认入库累计金额（不作为质量分权重），金额字符串 }
+        scoreStatus: { type: string, enum: [NOT_READY, READY], description: 评分状态；工作台只返回启用且 READY 的供应商 }
 
     Result:
       type: object
@@ -5668,6 +5992,7 @@ components:
         roleIds:
           type: array
           minItems: 1
+          maxItems: 100
           items:
             type: string
           description: 绑定角色 ID 列表
@@ -6290,9 +6615,55 @@ components:
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1 }
 
+    PurchaseScoreChangeLogPage:
+      type: object
+      required: [records, total, pageNum, pageSize]
+      properties:
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/PurchaseScoreChangeLog' }
+        total: { type: integer, minimum: 0 }
+        pageNum: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+
+    PurchaseScoreChangeLog:
+      type: object
+      required: [scoreChangeLogId, supplierId, metricType, metricScoreBefore, metricScoreAfter, productRecommendScoreBefore, productRecommendScoreAfter, supplierOverallScoreBefore, supplierOverallScoreAfter, triggerType, batchNo, ruleVersion, relatedSources, operatorType, operatorName, reason, createTime]
+      properties:
+        scoreChangeLogId: { type: string }
+        supplierId: { type: string }
+        supplierProductId: { type: string, nullable: true }
+        metricType: { type: string, enum: [SERVICE, DELIVERY, QUALITY, PRICE] }
+        metricScoreBefore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
+        metricScoreAfter: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
+        productRecommendScoreBefore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
+        productRecommendScoreAfter: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
+        supplierOverallScoreBefore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
+        supplierOverallScoreAfter: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
+        triggerType: { type: string, enum: [PRICE_TRIGGER, SERVICE_TRIGGER, INBOUND_TRIGGER, QUOTE_EXPIRED_TRIGGER, DAILY_TRIGGER, MERGED] }
+        batchNo: { type: string }
+        ruleVersion: { type: string }
+        relatedSources:
+          type: array
+          description: 完整来源快照，按业务类型与 ID 去重排序，无来源为 []，不截断多单列表
+          items: { $ref: '#/components/schemas/PurchaseScoreChangeSource' }
+        operatorType: { type: string, enum: [USER, SYSTEM] }
+        operatorId: { type: string, nullable: true }
+        operatorName: { type: string, minLength: 1, maxLength: 100, description: 人工操作填用户姓名，系统操作填场景说明 }
+        reason: { type: string, maxLength: 600, description: 原始请求原因最多500字符，响应完整保留原因及系统追加的衍生分校正说明 }
+        createTime: { type: string, format: date-time }
+
+    PurchaseScoreChangeSource:
+      type: object
+      required: [businessType, businessId, businessNo]
+      properties:
+        businessType: { type: string, enum: [PURCHASE_ORDER, SUPPLIER_PRODUCT, PRODUCT, SUPPLIER] }
+        businessId: { type: string, pattern: '^[1-9]\d*$', description: 来源业务 ID，BIGINT 使用字符串传输 }
+        businessNo: { type: string, nullable: true, maxLength: 64, description: 同一业务对象的单号或编码；供货关系没有业务编号时为 null }
+
     PurchaseSupplier:
       type: object
-      required: [supplierId, supplierCode, supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, version, remark, createTime, updateTime]
+      required: [supplierId, supplierCode, supplierName, contactName, contactPhone, address, paymentTerms, serviceScoreReason, scoreStatus, status, version, remark, createTime, updateTime]
       properties:
         supplierId: { type: string, description: 对应 `supplier.id`，BIGINT 按字符串传输 }
         supplierCode: { type: string, minLength: 1, maxLength: 64, readOnly: true, description: 对应 `supplier.supplier_code`，由后端生成、全局唯一且创建后不可修改 }
@@ -6301,14 +6672,15 @@ components:
         contactPhone: { type: string, maxLength: 32, description: 对应 `supplier.contact_phone` }
         address: { type: string, maxLength: 255, description: 对应 `supplier.address` }
         paymentTerms: { type: string, maxLength: 100, description: 对应 `supplier.payment_terms` }
-        overallScore: { type: number, format: double, minimum: 0, maximum: 100, description: 综合评分展示值；数据库 `supplier.overall_score` 按 100 倍整数存储 }
-        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100, description: 交付评分展示值；数据库按 100 倍整数存储 }
-        qualityScore: { type: number, format: double, minimum: 0, maximum: 100, description: 质量评分展示值；数据库按 100 倍整数存储 }
-        priceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 价格评分展示值；数据库按 100 倍整数存储 }
-        serviceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 服务评分展示值；数据库按 100 倍整数存储 }
-        avgDeliveryDays: { type: number, format: double, minimum: 0, description: 对应 `supplier.avg_delivery_days`，平均交付天数，保留 2 位小数 }
-        onTimeRate: { type: number, format: double, minimum: 0, maximum: 100, description: 准时率展示值；数据库 `supplier.on_time_rate` 按 100 倍整数存储 }
-        qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100, description: 合格率展示值；数据库 `supplier.qualified_rate` 按 100 倍整数存储 }
+        overallScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, readOnly: true, description: 综合评分；NULL 表示必需评分输入尚未齐备，数据库按 INT×100 保存 }
+        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, readOnly: true, description: 供应商交付评分；NULL 表示尚无已到承诺日的交付样本，数据库按 INT×100 保存 }
+        qualityScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, readOnly: true, description: 最近180天完全入库订单全部确认批次的合格金额占比，按入库单价快照加权；无有效样本为NULL，数据库按INT×100保存 }
+        priceScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, readOnly: true, description: 各供货关系价格分按样本金额加权的汇总分，数据库按 INT×100 保存 }
+        serviceScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, description: 人工服务评分；NULL 表示尚未设定，数据库按 INT×100 保存 }
+        serviceScoreReason: { type: string, maxLength: 500, readOnly: true, description: 当前人工服务分原因；服务分为空时返回空字符串，初始值不写评分变化日志但原因保留 }
+        avgDeliveryDays: { type: number, format: double, minimum: 0, nullable: true, readOnly: true, description: 完全入库订单按金额加权的平均到货周期，只作分析，不重复进入权重 }
+        scoreBasisAmount: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 已确认入库累计金额（不作为质量分权重），金额字符串；无有效已确认入库样本时返回 null，数据库以分保存 }
+        scoreStatus: { type: string, enum: [NOT_READY, READY], readOnly: true, description: NOT_READY 表示样本或必需输入不足；READY 表示可参与自动推荐 }
         status: { type: integer, enum: [0, 1], description: 对应 `supplier.status`，1 启用，0 停用 }
         version: { type: integer, minimum: 0, description: Current `supplier.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `supplier.remark` }
@@ -6319,44 +6691,38 @@ components:
 
     PurchaseSupplierCreateRequest:
       type: object
-      required: [supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, remark]
+      required: [supplierName, status, remark]
       properties:
         supplierName: { type: string, minLength: 1, maxLength: 200 }
-        contactName: { type: string, maxLength: 100 }
-        contactPhone: { type: string, maxLength: 32 }
-        address: { type: string, maxLength: 255 }
-        paymentTerms: { type: string, maxLength: 100 }
-        overallScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        qualityScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        priceScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        serviceScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        avgDeliveryDays: { type: number, format: double, minimum: 0 }
-        onTimeRate: { type: number, format: double, minimum: 0, maximum: 100 }
-        qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100 }
+        contactName: { type: string, maxLength: 100, nullable: true, description: 选填；未维护时服务端以空字符串保存并返回 }
+        contactPhone: { type: string, maxLength: 32, nullable: true, description: 选填；未维护时服务端以空字符串保存并返回 }
+        address: { type: string, maxLength: 255, nullable: true, description: 选填；未维护时服务端以空字符串保存并返回 }
+        paymentTerms: { type: string, maxLength: 100, nullable: true, description: 选填；未维护时服务端以空字符串保存并返回 }
+        serviceScore: { type: number, format: double, minimum: 0, maximum: 100, multipleOf: 0.01, nullable: true, description: 可选初始服务分；最多两位小数，非空时 serviceScoreReason 必填，初始值不写评分变化日志 }
+        serviceScoreReason: { type: string, nullable: true, minLength: 1, maxLength: 500, description: 初始服务分原因；serviceScore 非空时必填，serviceScore 为空时必须为空 }
         status: { type: integer, enum: [0, 1] }
         remark: { type: string, maxLength: 500 }
 
     PurchaseSupplierUpdateRequest:
       type: object
-      required: [version, supplierName, contactName, contactPhone, address, paymentTerms, overallScore, deliveryScore, qualityScore, priceScore, serviceScore, avgDeliveryDays, onTimeRate, qualifiedRate, status, remark]
+      required: [version, supplierName, status, remark]
       properties:
         version: { type: integer, minimum: 0, description: 当前供应商版本号，用于乐观锁校验 }
         supplierName: { type: string, minLength: 1, maxLength: 200 }
-        contactName: { type: string, maxLength: 100 }
-        contactPhone: { type: string, maxLength: 32 }
-        address: { type: string, maxLength: 255 }
-        paymentTerms: { type: string, maxLength: 100 }
-        overallScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        qualityScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        priceScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        serviceScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        avgDeliveryDays: { type: number, format: double, minimum: 0 }
-        onTimeRate: { type: number, format: double, minimum: 0, maximum: 100 }
-        qualifiedRate: { type: number, format: double, minimum: 0, maximum: 100 }
+        contactName: { type: string, maxLength: 100, nullable: true, description: 选填；未维护时服务端以空字符串保存并返回 }
+        contactPhone: { type: string, maxLength: 32, nullable: true, description: 选填；未维护时服务端以空字符串保存并返回 }
+        address: { type: string, maxLength: 255, nullable: true, description: 选填；未维护时服务端以空字符串保存并返回 }
+        paymentTerms: { type: string, maxLength: 100, nullable: true, description: 选填；未维护时服务端以空字符串保存并返回 }
         status: { type: integer, enum: [0, 1] }
         remark: { type: string, maxLength: 500 }
+
+    PurchaseSupplierServiceScoreRequest:
+      type: object
+      required: [version, serviceScore, reason]
+      properties:
+        version: { type: integer, minimum: 0, description: 当前供应商版本号，用于乐观锁校验 }
+        serviceScore: { type: number, format: double, minimum: 0, maximum: 100, multipleOf: 0.01, nullable: true, description: 新服务分；传 null 清空人工服务分，最多两位小数 }
+        reason: { type: string, minLength: 1, maxLength: 500, description: 人工调整原因 }
 
     PurchaseSupplierStatusRequest:
       type: object
@@ -6407,51 +6773,92 @@ components:
 
     PurchaseSupplierProduct:
       type: object
-      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, quantityPrecision, supplierProductCode, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, status, version, remark, createTime, updateTime]
+      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, quantityPrecision, quotedPurchasePrice, quotedPriceReason, quoteValidUntil, latestPurchasePrice, lastPurchaseAt, avgDeliveryDays, minOrderQty, qualityScore, priceScore, aiScore, scoreStatus, status, version, remark, createTime, updateTime]
       properties:
         supplierProductId: { type: string, description: 对应 `supplier_product.id`，BIGINT 按字符串传输 }
         supplierId: { type: string, description: 对应 `supplier_product.supplier_id`，BIGINT 按字符串传输 }
-        supplierCode: { type: string, maxLength: 64, description: 关联 `supplier.supplier_code` 返回的当前供应商编码，只读 }
-        supplierName: { type: string, maxLength: 200, description: 关联 `supplier.supplier_name` 返回的当前供应商名称，只读 }
+        supplierCode: { type: string, maxLength: 64, readOnly: true, description: 关联供应商主数据返回的当前供应商编码 }
+        supplierName: { type: string, maxLength: 200, readOnly: true, description: 关联供应商主数据返回的当前供应商名称 }
         productId: { type: string, description: 对应 `supplier_product.product_id`，BIGINT 按字符串传输 }
-        productCode: { type: string, maxLength: 64, description: 关联 `product.product_code` 返回的当前产品编码，只读 }
-        productName: { type: string, maxLength: 200, description: 关联 `product.product_name` 返回的当前产品名称，只读 }
-        unitName: { type: string, maxLength: 32, description: 关联 `product.unit_name` 返回的当前产品单位，只读 }
-        quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 关联产品当前允许的小数位；采购数量和最小起订量的输入步进必须据此确定，0 表示步进 1，1 表示 0.1，2 表示 0.01 }
-        supplierProductCode: { type: string, maxLength: 100, description: 对应 `supplier_product.supplier_product_code` }
-        latestPurchasePrice: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', description: 最近采购单价金额字符串；数据库按 100 倍 BIGINT 整数存储，未采购过时为 null }
-        minOrderQty: { type: number, format: double, minimum: 0, description: 最小起订量展示值；数据库按 100 倍 BIGINT 整数存储 }
-        leadTimeDays: { type: integer, minimum: 0, description: 对应 `supplier_product.lead_time_days` }
-        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100, description: 交付评分展示值；数据库按 100 倍整数存储 }
-        qualityScore: { type: number, format: double, minimum: 0, maximum: 100, description: 质量评分展示值；数据库按 100 倍整数存储 }
-        priceScore: { type: number, format: double, minimum: 0, maximum: 100, description: 价格评分展示值；数据库按 100 倍整数存储 }
-        aiScore: { type: number, format: double, minimum: 0, maximum: 100, description: 推荐分展示值；数据库 `supplier_product.ai_score` 按 100 倍整数存储 }
-        lastPurchaseAt: { type: string, format: date-time, nullable: true, description: 最近采购时间；未采购过时为 null，响应中不保证返回该字段，对应 `supplier_product.last_purchase_at` }
+        productCode: { type: string, maxLength: 64, readOnly: true, description: 关联产品主数据返回的当前产品编码 }
+        productName: { type: string, maxLength: 200, readOnly: true, description: 关联产品主数据返回的当前产品名称 }
+        unitName: { type: string, maxLength: 32, readOnly: true, description: 关联产品主数据返回的当前产品单位 }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2, readOnly: true, description: 产品当前数量精度；最小起订量与采购数量按此校验 }
+        quotedPurchasePrice: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', description: 当前人工有效报价金额字符串；null 表示未报价，数据库以分保存 }
+        quotedPriceReason: { type: string, maxLength: 500, readOnly: true, description: 当前人工有效报价原因；无报价时返回空字符串，初始报价不写评分变化日志但原因保留 }
+        quotedPriceUpdatedAt: { type: string, format: date-time, nullable: true, readOnly: true, description: 最近报价维护时间；无报价时为 null }
+        quoteValidUntil: { type: string, format: date, nullable: true, description: 报价有效截止日；无报价时为 null }
+        latestPurchasePrice: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 已确认采购入库事实维护的最近成交单价；未采购过时为 null }
+        lastPurchaseAt: { type: string, format: date-time, nullable: true, readOnly: true, description: 当前最近成交价对应的最后一次已确认采购入库时间 }
+        minOrderQty: { type: number, format: double, minimum: 0, description: 最小起订量业务值；数据库按 100 倍整数保存 }
+        avgDeliveryDays: { type: number, format: double, minimum: 0, nullable: true, readOnly: true, description: 最近 180 天完全入库采购单的金额加权平均到货周期（天）；部分入库不计入样本，暂无样本时为 null }
+        qualityScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, readOnly: true, description: 最近180天完全入库订单中该产品的合格金额占比，按确认入库明细单价快照加权；NULL表示无有效样本，数据库按INT×100保存 }
+        priceScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, readOnly: true, description: 供应产品价格评分；NULL 表示参考价或有效报价不足，数据库按 INT×100 保存 }
+        aiScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, readOnly: true, description: 供应产品推荐评分，兼容字段名对应数据库recommend_score；NULL表示必需输入不足，数据库按INT×100保存 }
+        scoreBasisAmount: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', readOnly: true, description: 已确认入库累计金额（不作为质量分权重），金额字符串；无有效已确认入库样本时返回 null，数据库以分保存 }
+        scoreStatus: { type: string, enum: [NOT_READY, READY], readOnly: true, description: NOT_READY 表示样本或必需输入不足；READY 表示可参与自动推荐 }
         status: { type: integer, enum: [0, 1], description: 对应 `supplier_product.status`，1 启用，0 停用 }
         version: { type: integer, minimum: 0, description: Current `supplier_product.version` for optimistic locking. }
         remark: { type: string, maxLength: 500, description: 对应 `supplier_product.remark` }
         createTime: { type: string, description: 对应 `supplier_product.create_time` }
         updateTime: { type: string, description: 对应 `supplier_product.update_time` }
-        updatedById: { type: string, nullable: true, readOnly: true, description: 对应 `supplier_product.updated_by_id`，BIGINT 按字符串传输；最后一次创建、编辑或启停操作的人 }
-        updatedByName: { type: string, nullable: true, maxLength: 100, readOnly: true, description: 对应 `supplier_product.updated_by_name`；历史数据未记录时可为空 }
+        updatedById: { type: string, nullable: true, readOnly: true }
+        updatedByName: { type: string, nullable: true, maxLength: 100, readOnly: true }
 
-    PurchaseSupplierProductFormRequest:
+    PurchaseSupplierProductCreateRequest:
       type: object
-      required: [supplierId, productId, supplierProductCode, minOrderQty, leadTimeDays, deliveryScore, qualityScore, priceScore, aiScore, status, remark]
+      required: [supplierId, productId, minOrderQty, status, remark]
       properties:
-        supplierId: { type: string, description: 启用供应商 ID；供货关系仅保存该关联 ID，展示字段查询时关联供应商主数据 }
-        productId: { type: string, description: 启用产品 ID；供货关系仅保存该关联 ID，展示字段查询时关联产品主数据 }
-        supplierProductCode: { type: string, maxLength: 100 }
-        latestPurchasePrice: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', description: 最近采购单价金额字符串，后端 ×100 存为 BIGINT；新增时可为 null 或 "0.00" }
-        minOrderQty: { type: number, format: double, minimum: 0, description: 最小起订量业务值，后端 ×100 存为 BIGINT }
-        leadTimeDays: { type: integer, minimum: 0 }
-        deliveryScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        supplierId: { type: string, description: 启用供应商 ID；创建成功后不可修改 }
+        productId: { type: string, description: 启用产品 ID；创建成功后不可修改 }
+        quotedPurchasePrice: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', description: 可选初始报价；与 quoteValidUntil、quoteReason 必须同时填写或同时为空；初始值不写评分变化日志 }
+        quoteValidUntil: { type: string, format: date, nullable: true, description: 初始报价有效截止日；不得早于服务端当前业务日；与 quotedPurchasePrice、quoteReason 必须同时填写或同时为空 }
+        quoteReason: { type: string, nullable: true, minLength: 1, maxLength: 500, description: 初始报价原因；与 quotedPurchasePrice、quoteValidUntil 必须同时填写或同时为空 }
+        minOrderQty: { type: number, format: double, minimum: 0.01, maximum: 999999999.99, description: "最小起订量业务值，必须大于 0；后端按产品数量精度(quantityPrecision，0-2 位小数)校验并按 100 倍整数保存" }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    PurchaseSupplierProductUpdateRequest:
+      type: object
+      required: [version, minOrderQty, status, remark]
+      properties:
+        version: { type: integer, minimum: 0, description: 当前供货关系版本号，用于乐观锁校验 }
+        minOrderQty: { type: number, format: double, minimum: 0.01, maximum: 999999999.99, description: "最小起订量业务值，必须大于 0；后端按产品数量精度(quantityPrecision，0-2 位小数)校验并按 100 倍整数保存" }
+        status: { type: integer, enum: [0, 1] }
+        remark: { type: string, maxLength: 500 }
+
+    PurchaseSupplierProductQuoteRequest:
+      type: object
+      required: [version, quotedPurchasePrice, quoteValidUntil, reason]
+      properties:
+        version: { type: integer, minimum: 0, description: 当前供货关系版本号，用于乐观锁校验 }
+        quotedPurchasePrice: { type: string, nullable: true, pattern: '^\d+(\.\d{1,2})?$', description: 新报价；传 null 时 quoteValidUntil 必须也为 null }
+        quoteValidUntil: { type: string, format: date, nullable: true, description: 新报价有效截止日；不得早于服务端当前业务日；传 null 时 quotedPurchasePrice 必须也为 null }
+        reason: { type: string, minLength: 1, maxLength: 500, description: 报价调整或清空原因 }
+
+    PurchaseSupplierProductCandidate:
+      type: object
+      required: [supplierProductId, supplierId, supplierCode, supplierName, productId, productCode, productName, unitName, quantityPrecision, quotedPurchasePrice, quoteValidUntil, aiScore, scoreBasisAmount, avgDeliveryDays, supplierOverallScore, supplierDeliveryScore, qualityScore, priceScore, serviceScore]
+      properties:
+        supplierProductId: { type: string }
+        supplierId: { type: string }
+        supplierCode: { type: string, maxLength: 64 }
+        supplierName: { type: string, maxLength: 200 }
+        productId: { type: string }
+        productCode: { type: string, maxLength: 64 }
+        productName: { type: string, maxLength: 200 }
+        unitName: { type: string, maxLength: 32 }
+        quantityPrecision: { type: integer, minimum: 0, maximum: 2 }
+        quotedPurchasePrice: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+        quoteValidUntil: { type: string, format: date }
+        aiScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        scoreBasisAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+        avgDeliveryDays: { type: number, format: double, minimum: 0, nullable: true }
+        supplierOverallScore: { type: number, format: double, minimum: 0, maximum: 100 }
+        supplierDeliveryScore: { type: number, format: double, minimum: 0, maximum: 100 }
         qualityScore: { type: number, format: double, minimum: 0, maximum: 100 }
         priceScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        aiScore: { type: number, format: double, minimum: 0, maximum: 100 }
-        status: { type: integer, enum: [0, 1] }
-        version: { type: integer, minimum: 0, description: Required when editing an existing supplier product; omit on create. }
-        remark: { type: string, maxLength: 500 }
+        serviceScore: { type: number, format: double, minimum: 0, maximum: 100 }
 
     PurchaseSupplierProductBatchStatusRequest:
       type: object
@@ -6505,7 +6912,7 @@ components:
         warehouseName: { type: string, maxLength: 100, description: 对应 `purchase_order.warehouse_name` 仓库快照 }
         status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, PARTIAL_INBOUND, INBOUND_DONE, CANCELLED], description: 对应 `purchase_order.status` }
         totalAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 订单总金额字符串；数据库 `purchase_order.total_amount` 按 100 倍 BIGINT 整数存储 }
-        expectedArrivalDate: { type: string, nullable: true, description: 对应 `purchase_order.expected_arrival_date`；草稿可为空，提交和审核前必须非空 }
+        expectedArrivalDate: { type: string, nullable: true, description: 对应 `purchase_order.expected_arrival_date`；草稿可为空，审核通过后冻结，不因供应商报价或评分变化而改变 }
         createdById: { type: string, nullable: true, description: 对应 `purchase_order.created_by_id`，BIGINT 按字符串传输 }
         createdByName: { type: string, maxLength: 100, description: 对应 `purchase_order.created_by_name` }
         submittedAt: { type: string, nullable: true, description: 对应 `purchase_order.submitted_at` }
@@ -6597,7 +7004,7 @@ components:
         inboundQty: { type: number, format: double, minimum: 0, description: 对应 `purchase_order_item.inbound_qty`；数据库按 100 倍 BIGINT 整数存储 }
         unitPrice: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 采购单价金额字符串；数据库 `purchase_order_item.unit_price` 按 100 倍 BIGINT 整数存储 }
         totalAmount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 明细金额字符串；数据库 `purchase_order_item.total_amount` 按 100 倍 BIGINT 整数存储 }
-        selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100, description: 下单时推荐分展示值；数据库 `purchase_order_item.selected_supplier_score` 按 100 倍整数存储 }
+        selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, readOnly: true, description: 审核通过时由后端按当时供货关系推荐分写入的快照；草稿和未审核订单可为 null，数据库按 INT×100 保存 }
         remark: { type: string, maxLength: 500, description: 对应 `purchase_order_item.remark` }
 
     PurchaseOrderCreateRequest:
@@ -6629,7 +7036,7 @@ components:
 
     PurchaseOrderDraftItemRequest:
       type: object
-      required: [supplierProductId, productId, quantityPrecision, quantity, unitPrice, selectedSupplierScore, remark]
+      required: [supplierProductId, productId, quantityPrecision, quantity, unitPrice, remark]
       properties:
         purchaseOrderItemId: { type: string, nullable: true, description: 编辑草稿时传已有明细 ID，对应 `purchase_order_item.id`；新增明细或创建订单时不传 }
         supplierProductId: { type: string, description: 选中的供货关系 ID，对应 `supplier_product.id`；前端应按单头供应商和产品双向过滤后传入，后端校验该供货关系存在且属于 `supplierId` 与 `productId` }
@@ -6637,7 +7044,6 @@ components:
         quantityPrecision: { type: integer, minimum: 0, maximum: 2, description: 前端按所选产品回传的数量精度；后端不得信任，必须按 `productId` 当前产品档案重新校验并覆盖固化到 `purchase_order_item.quantity_precision` }
         quantity: { type: number, format: double, minimum: 0, exclusiveMinimum: true }
         unitPrice: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 采购单价金额字符串，后端 ×100 存为 BIGINT }
-        selectedSupplierScore: { type: number, format: double, minimum: 0, maximum: 100 }
         remark: { type: string, maxLength: 500 }
 
     ReturnOrderPage:
@@ -7160,9 +7566,10 @@ components:
       allOf:
         - $ref: '#/components/schemas/StockBill'
         - type: object
-          required: [billType]
+          required: [billType, expectedArrivalDate]
           properties:
             billType: { type: string, enum: [PURCHASE_IN, SALES_RETURN, ADJUST_IN], description: 入库类型，对应 inbound_bill.inbound_type }
+            expectedArrivalDate: { type: string, format: date, nullable: true, readOnly: true, description: 采购订单预计到货日期快照；仅系统生成且来源为采购订单的采购入库单有值，销售退货、调整入库和手工补录均为 null }
 
     OutboundBillListItem:
       description: 出库单列表响应，billType 仅包含出库类型。
@@ -7234,6 +7641,19 @@ components:
             billType: { type: string, enum: [PURCHASE_IN, SALES_OUT, PURCHASE_RETURN, SALES_RETURN, ADJUST_IN, ADJUST_OUT], description: 入库或出库工作单类型 }
             manualReason: { type: string, maxLength: 500, description: 对应入库单或出库单的补录/调整原因；系统生成单据为空字符串 }
             remark: { type: string, maxLength: 500, description: 对应工作单备注 }
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/StockBillItem' }
+
+    InboundBillDetail:
+      description: 入库单详情响应；在入库列表字段基础上返回备注和产品明细。
+      allOf:
+        - $ref: '#/components/schemas/InboundBillListItem'
+        - type: object
+          required: [manualReason, remark, items]
+          properties:
+            manualReason: { type: string, maxLength: 500, description: 入库单补录或调整原因；系统生成单据为空字符串 }
+            remark: { type: string, maxLength: 500, description: 入库单备注 }
             items:
               type: array
               items: { $ref: '#/components/schemas/StockBillItem' }
@@ -7556,7 +7976,6 @@ components:
         - quantityPrecision
         - specification
         - barcode
-        - referencePurchasePrice
         - referenceSalePrice
         - safetyStockQty
         - status
@@ -7574,11 +7993,18 @@ components:
           type: string
           nullable: true
           maxLength: 64
-        referencePurchasePrice: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+        # referencePurchasePrice 已在 2026-09-25 拆分到单独接口 PUT /products/{id}/reference-price,
+        #  因为参考价变化需要触发供应商评分重算,编辑接口与价格变更不能在同一事务内混合。
         referenceSalePrice: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
         safetyStockQty: { type: number, format: double, minimum: 0, multipleOf: 0.01, description: 业务真实值；数据库按 100 倍整数存储 }
         status: { type: integer, enum: [0, 1] }
         remark: { type: string, maxLength: 500 }
+
+    ProductReferencePriceRequest:
+      type: object
+      required: [referencePurchasePrice]
+      properties:
+        referencePurchasePrice: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: 新参考采购价；后端在同一事务内调用 SupplierScoreRecalculateService 重算所有供应该产品的有效供货关系的价格分、推荐分及对应供应商汇总分；重算失败则参考价变更整体回滚 }
 
     ProductStatusRequest:
       type: object

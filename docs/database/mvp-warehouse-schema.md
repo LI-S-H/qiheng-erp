@@ -78,6 +78,7 @@
 | warehouse_id          | bigint       | 仓库ID                                                       |
 | warehouse_name        | varchar(100) | 仓库名称快照                                                     |
 | status                | varchar(32)  | `DRAFT`、`PENDING_CONFIRM`、`CONFIRMED`、`CANCELLED`          |
+| expected_arrival_date | date         | 采购订单预计到货日期快照；仅系统生成的采购入库单有值，其他入库类型为空                    |
 | confirmed_by_id       | bigint       | 确认人ID                                                      |
 | confirmed_by_name     | varchar(100) | 确认人姓名                                                      |
 | confirmed_at          | datetime     | 确认时间                                                       |
@@ -106,6 +107,7 @@
 | plan_qty           | bigint       | 来源单据计划数量，例如采购数量，按 100 倍整数存储            |
 | processed_qty      | bigint       | 本入库单生成前来源明细累计已入库数量快照                   |
 | current_qty        | bigint       | 本次入库数量，仓库人员确认时填写，按 100 倍整数存储           |
+| unit_price         | bigint       | 来源交易单价快照，单位分；系统生成从来源明细复制，质量金额使用此快照；非采购来源不进入采购评分 |
 | pending_qty        | bigint       | 确认本入库单后来源明细预计剩余未入库数量快照                 |
 | qualified_qty      | bigint       | 合格数量，采购入库和销售退货入库使用                     |
 | defective_qty      | bigint       | 不合格数量，采购入库和销售退货入库使用                    |
@@ -114,7 +116,7 @@
 | update_time        | datetime     | 更新时间                                   |
 | remark             | varchar(500) | 备注                                     |
 
-说明：明细不再维护独立预计到货日期；同一入库单对应同一批到货预期，预计到货日期放在主表。
+说明：明细不再维护独立预计到货日期；采购订单审核生成首张采购入库单、部分入库后生成续单时，均将已经冻结的采购订单预计到货日期复制到入库主表。该字段为只读来源快照，销售退货、调整入库和手工补录入库均为空。
 
 ## 表：outbound_bill（出库单主表）
 

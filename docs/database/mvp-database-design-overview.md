@@ -14,7 +14,7 @@
 
 ## 当前表清单
 
-MVP 阶段共设计并已落 DDL 30 张表。
+MVP 阶段共设计并已落 DDL 31 张表。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
@@ -37,6 +37,7 @@ MVP 阶段共设计并已落 DDL 30 张表。
 | 采购 | `supplier_product` | 供应商可供货产品、价格、交期和产品维度评分 |
 | 采购 | `purchase_order` | 采购订单主表 |
 | 采购 | `purchase_order_item` | 采购订单明细 |
+| 采购 | `supplier_score_change_log` | 供应商各指标评分变化、受影响产品推荐分和供应商总分的前后值审计 |
 | 销售 | `customer` | 客户主数据 |
 | 销售 | `sales_order` | 销售订单主表 |
 | 销售 | `sales_order_item` | 销售订单明细 |
@@ -332,21 +333,21 @@ sequenceDiagram
 
 - 供应商能供应哪个产品。
 - 最近采购价。
+- 当前有效报价及报价有效期。
 - 最小起订量。
 - 预计交期。
 - 价格分。
-- 交付分。
 - 质量分。
 - AI 综合推荐分。
 
-AI 选择供应商时，不需要每次实时扫描所有历史订单，可以先按 `product_id` 找候选供应商，再按 `ai_score`、价格、交期等字段排序。
+AI 选择供应商时，不需要每次实时扫描所有历史订单，可以先按 `product_id` 找到 `READY` 的候选供货关系，再按 `recommend_score`、报价、样本金额和平均到货周期排序。
 
-供应商评分由 `SupplierScoreRefreshJob` 定时刷新：
+评分服务由业务事件和每日任务统一触发：
 
-- 价格分来自最近采购价和同产品最低价对比。
-- 交付分来自预计到货日期和实际入库确认时间。
-- 质量分来自入库明细里的合格数量和不合格数量。
-- 综合分按价格、交付、质量、服务权重计算。
+- 产品价格分来自参考采购价和有效报价；同产品最低报价只用于展示和排序。
+- 供应商交付分按过去180天内到期采购单的应交金额和分段逾期罚额计算，确认批次与未交剩余数量分别计罚；未到期订单不进入交付样本。
+- 产品质量分来自近180天完全入库采购单的确认入库明细，以单价快照汇总合格、不合格金额；供应商质量分直接汇总两类金额计算。
+- 产品推荐分与供应商综合分均按价格、交付、质量、服务的 30%、30%、30%、10% 权重计算。
 
 这能保证 AI 模块后续做采购建议时有稳定、可解释、可落库的数据基础。
 
@@ -354,9 +355,9 @@ AI 选择供应商时，不需要每次实时扫描所有历史订单，可以�
 
 | 指标 | 数据来源 | 业务含义 |
 |---|---|---|
-| 价格分 | 采购订单明细、最近采购价 | 同产品下谁的价格更优 |
-| 交付分 | 预计到货日期、入库确认时间 | 供应商是否准时 |
-| 质量分 | 入库合格数量、不合格数量 | 到货质量是否稳定 |
+| 价格分 | 产品参考采购价、有效报价 | 是否达到目标采购价 |
+| 交付分 | 承诺到货日期、确认入库批次与未交剩余金额 | 到期订单按分段逾期系数计罚后的履约得分 |
+| 质量分 | 完全入库订单的合格与不合格金额 | 到货质量是否稳定 |
 | 服务分 | 人工维护或后续售后数据 | 沟通、响应、售后表现 |
 | 综合分 | 加权计算 | AI 推荐排序依据 |
 
@@ -618,7 +619,7 @@ flowchart LR
     product["product<br/>产品表<br/>id 主键<br/>product_code 产品编码<br/>product_name 产品名称"]
     warehouse["warehouse<br/>仓库表<br/>id 主键<br/>warehouse_code 仓库编码<br/>warehouse_name 仓库名称"]
     supplier["supplier<br/>供应商表<br/>id 主键<br/>supplier_code 供应商编码<br/>overall_score 综合评分"]
-    supplierProduct["supplier_product<br/>供应商供货产品表<br/>supplier_id 供应商ID<br/>product_id 产品ID<br/>latest_purchase_price 最近采购价<br/>ai_score 推荐分"]
+    supplierProduct["supplier_product<br/>供应商供货产品表<br/>supplier_id 供应商ID<br/>product_id 产品ID<br/>latest_purchase_price 最近采购价<br/>recommend_score 推荐分"]
     purchaseOrder["purchase_order<br/>采购订单主表<br/>supplier_id 供应商ID<br/>warehouse_id 入库仓库ID<br/>status 采购状态"]
     purchaseItem["purchase_order_item<br/>采购订单明细表<br/>purchase_order_id 采购订单ID<br/>product_id 产品ID<br/>quantity 采购数量<br/>inbound_qty 已入库数量"]
     customer["customer<br/>客户表<br/>id 主键<br/>customer_code 客户编码<br/>customer_name 客户名称"]
@@ -762,10 +763,10 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    supplier["supplier 供应商表<br/>id 主键<br/>supplier_code 供应商编码<br/>supplier_name 供应商名称<br/>contact_name / contact_phone 联系方式<br/>address 地址<br/>payment_terms 付款条件<br/>overall_score 综合评分<br/>delivery_score 交付评分<br/>quality_score 质量评分<br/>price_score 价格评分<br/>service_score 服务评分<br/>avg_delivery_days 平均交付天数<br/>on_time_rate 准时率<br/>qualified_rate 合格率<br/>status / deleted 状态字段<br/>remark 备注"]
-    supplierProduct["supplier_product 供应商供货产品表<br/>id 主键<br/>supplier_id 供应商ID<br/>product_id 产品ID<br/>supplier_product_code 供应商侧产品编码<br/>latest_purchase_price 最近采购价<br/>min_order_qty 最小起订量<br/>lead_time_days 预计交期<br/>delivery_score / quality_score / price_score 分项评分<br/>ai_score 推荐分<br/>last_purchase_at 最近采购时间<br/>status / deleted 状态字段"]
-    purchaseOrder["purchase_order 采购订单主表<br/>id 主键<br/>purchase_no 采购单号<br/>supplier_id 供应商ID<br/>supplier_code / supplier_name 供应商快照<br/>warehouse_id 入库仓库ID<br/>warehouse_name 仓库名称快照<br/>status 订单状态<br/>total_amount 订单总金额<br/>expected_arrival_date 预计到货日期<br/>created_by / submitted_at / approved_by / approved_at 流程字段<br/>create_time / update_time / deleted 审计字段"]
-    purchaseItem["purchase_order_item 采购订单明细表<br/>id 主键<br/>purchase_order_id 采购订单ID<br/>purchase_no 采购单号快照<br/>supplier_product_id 供货产品ID，可空<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 采购数量<br/>inbound_qty 已入库数量<br/>unit_price 采购单价<br/>total_amount 明细金额<br/>selected_supplier_score 下单时推荐分快照"]
+    supplier["supplier 供应商表<br/>id 主键<br/>supplier_code 供应商编码<br/>supplier_name 供应商名称<br/>contact_name / contact_phone / address / payment_terms 基础资料可选<br/>overall / delivery / quality / price / service 评分<br/>avg_delivery_days 平均到货周期<br/>score_basis_amount / score_status<br/>status / deleted 状态字段"]
+    supplierProduct["supplier_product 供应商供货产品表<br/>id 主键<br/>supplier_id / product_id<br/>quoted_purchase_price / quote_valid_until<br/>latest_purchase_price / last_purchase_at<br/>quality_score / price_score / recommend_score<br/>score_basis_amount / score_status<br/>status / deleted 状态字段"]
+    purchaseOrder["purchase_order 采购订单主表<br/>id 主键<br/>purchase_no / supplier_id / warehouse_id<br/>status / total_amount / expected_arrival_date<br/>fully_received_at<br/>cancelled_at / cancel_affects_delivery_score<br/>流程与审计字段"]
+    purchaseItem["purchase_order_item 采购订单明细表<br/>id 主键<br/>purchase_order_id 采购订单ID<br/>purchase_no 采购单号快照<br/>supplier_product_id 供货产品ID，可空<br/>product_id 产品ID<br/>product_code / product_name 产品快照<br/>unit_name 单位快照<br/>quantity 采购数量<br/>inbound_qty 已入库数量<br/>unit_price 采购单价<br/>total_amount 明细金额<br/>selected_supplier_score 审核时推荐分快照"]
     productRef["product 产品表<br/>id 产品ID<br/>product_code 产品编码<br/>product_name 产品名称"]
     warehouseRef["warehouse 仓库表<br/>id 仓库ID<br/>warehouse_name 仓库名称"]
 
@@ -798,7 +799,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    inboundBill["inbound_bill 入库单主表<br/>id 主键<br/>inbound_no 入库单号<br/>inbound_type 入库类型<br/>source_type/source_id/source_no 原业务来源<br/>source_party_name 供应商或客户快照<br/>status 入库单状态<br/>expected_arrival_date 预计到货日期<br/>confirmed_by / confirmed_at 确认信息"]
+    inboundBill["inbound_bill 入库单主表<br/>id 主键<br/>inbound_no 入库单号<br/>inbound_type 入库类型<br/>source_type/source_id/source_no 原业务来源<br/>source_party_name 供应商或客户快照<br/>status 入库单状态<br/>expected_arrival_date 采购预计到货日期快照<br/>confirmed_by / confirmed_at 确认信息"]
     inboundItem["inbound_bill_item 入库单明细<br/>id 主键<br/>inbound_bill_id 入库单ID<br/>source_item_id 来源明细ID<br/>plan_qty 计划数量<br/>processed_qty 累计已入库快照<br/>current_qty 本次入库数量<br/>pending_qty 剩余未入库快照"]
     outboundBill["outbound_bill 出库单主表<br/>id 主键<br/>outbound_no 出库单号<br/>outbound_type 出库类型<br/>source_type/source_id/source_no 原业务来源<br/>source_party_name 客户或供应商快照<br/>status 出库单状态<br/>confirmed_by / confirmed_at 确认信息"]
     outboundItem["outbound_bill_item 出库单明细<br/>id 主键<br/>outbound_bill_id 出库单ID<br/>source_item_id 来源明细ID<br/>plan_qty 计划数量<br/>processed_qty 累计已出库快照<br/>current_qty 本次出库数量<br/>pending_qty 剩余未出库快照"]

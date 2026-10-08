@@ -1902,10 +1902,8 @@ const quoteSchema = schemaBlock(
   "PurchaseSupplierProductQuoteRequest",
   "PurchaseSupplierProductCandidate",
 );
-const cancelSchema = schemaBlock(
-  "PurchaseOrderCancelRequest",
-  "ReturnOrderPage",
-);
+const purchaseOrderSchema = schemaBlock("PurchaseOrder", "PurchaseOrderDetail");
+const purchaseCancelOperation = source.match(/  \/purchase\/orders\/\{purchaseOrderId\}\/cancel:[\s\S]*?(?=\n  \/|\ncomponents:)/)?.[0] || "";
 const dashboardSupplierSchema = schemaBlock(
   "DashboardSupplierPerformance",
   "Result",
@@ -1991,15 +1989,11 @@ for (const fragment of [
     );
 }
 if (
-  !cancelSchema.includes(
-    "required: [version, cancelReason, cancelAffectsDeliveryScore]",
-  ) ||
-  !source.includes("PurchaseOrderCancelRequest") ||
-  !source.includes("fullyReceivedAt:") ||
-  !source.includes("cancelAffectsDeliveryScore:") ||
+  !purchaseCancelOperation.includes("#/components/schemas/OptimisticLockVersionRequest") ||
+  /(?:fullyReceivedAt|cancelledAt|cancelReason|cancelAffectsDeliveryScore|cancelledById|cancelledByName):/.test(purchaseOrderSchema) ||
   !source.includes("selectedSupplierScore` 快照")
 ) {
-  throw new Error("采购取消责任、完全入库时间和审核评分/交期快照契约不完整");
+  throw new Error("采购取消请求必须只接收版本号，响应不能宣称未实现字段，审核评分/交期快照契约须保留");
 }
 if (
   !dashboardSupplierSchema.includes("overallScore:") ||
@@ -2129,6 +2123,24 @@ for (const schemaName of [
     : "pattern: '^\\d+(\\.\\d{1,2})?$'";
   if (!schema.includes("type: string") || !schema.includes(moneyPattern)) {
     throw new Error(`金额 API 必须采用元字符串契约：${schemaName}`);
+  }
+}
+
+// YAML 单引号保留反斜杠：执行金额正则，防止重复转义让正常金额无法匹配。
+for (const schemaName of [
+  "PurchaseSupplier",
+  "PurchaseSupplierProduct",
+  "PurchaseSupplierProductCandidate",
+  "DashboardSupplierPerformance",
+]) {
+  const schema = source.split(`    ${schemaName}:`)[1]?.split(/\n    [A-Za-z][A-Za-z0-9]+:\n/)[0];
+  const amountLine = schema?.split("\n").find(line => /^\s+scoreBasisAmount:/.test(line));
+  const pattern = /pattern: '([^']+)'/.exec(amountLine || "")?.[1];
+  if (!pattern) throw new Error(`评分金额缺少正则契约：${schemaName}`);
+  const expression = new RegExp(pattern);
+  if (["0", "12", "12.3", "12.34"].some(value => !expression.test(value))
+      || ["-1", "abc", "12.345"].some(value => expression.test(value))) {
+    throw new Error(`评分金额正则不符合元字符串口径：${schemaName}`);
   }
 }
 

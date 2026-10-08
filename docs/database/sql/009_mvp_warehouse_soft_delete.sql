@@ -12,3 +12,4 @@ ALTER TABLE inbound_bill ADD COLUMN deleted TINYINT NOT NULL DEFAULT 0 COMMENT '
 -- 2. 加索引(MyBatis-Plus @TableLogic 自动带 deleted=0 的查询必须走索引)
 ALTER TABLE outbound_bill ADD INDEX idx_outbound_bill_deleted_status (deleted, status);
 ALTER TABLE inbound_bill ADD INDEX idx_inbound_bill_deleted_status (deleted, status);
+ALTER TABLE inbound_bill ADD INDEX idx_inbound_bill_due_scan (inbound_type, status, deleted, expected_arrival_date);

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import { useRoute, useRouter } from 'vue-router';
 import { getApiErrorMessage } from '@/api/http';
+import { useAuthStore } from '@/modules/auth/stores/authStore';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import BusinessExecutionProgress from '@/components/common/BusinessExecutionProgress.vue';
 import BusinessDetailHero from '@/components/common/BusinessDetailHero.vue';
@@ -32,6 +33,7 @@ import {
   createPurchaseOrder,
   getEnabledSupplierProductTotal,
   getPurchaseOrderDetail,
+  getSupplierProductDetail,
   listEnabledProductOptions,
   listEnabledWarehouseOptions,
   listPurchaseOrders,
@@ -59,6 +61,8 @@ interface Option {
 }
 
 interface DraftItem extends Omit<PurchaseOrderDraftItemPayload, 'supplierProductId'> {
+  /** 表单预览当前推荐分，不进入采购单写入请求。 */
+  selectedSupplierScore: number | null;
   rowId: string;
   supplierProductId: string | null;
   remark: string;
@@ -126,9 +130,15 @@ const productOptions = ref<Array<Option & { referencePurchasePrice: number; quan
 const supplierProducts = ref<SupplierProductListItem[]>([]);
 let requestSequence = 0;
 let lineSequence = 1;
+let scorePreviewSequence = 0;
 
 const route = useRoute();
 const router = useRouter();
+const authStore = useAuthStore();
+
+// 关闭、重开或离开页面后，旧评分补查不能回写新表单。
+watch(createDialogOpen, open => { if (!open) scorePreviewSequence++; });
+onBeforeUnmount(() => { scorePreviewSequence++; });
 
 const query = reactive<PurchaseOrderQuery>({
   purchaseNo: '',
@@ -280,7 +290,7 @@ function cacheOrderOptions(row: PurchaseOrderDetail) {
     unitName: item.unitName,
   })));
   mergeSupplierProducts(row.items
-    .filter(item => item.supplierProductId)
+    .filter(item => item.supplierProductId && !supplierProducts.value.some(product => product.supplierProductId === item.supplierProductId))
     .map(item => ({
       supplierProductId: item.supplierProductId || '',
       supplierId: row.supplierId,
@@ -298,9 +308,9 @@ function cacheOrderOptions(row: PurchaseOrderDetail) {
       latestPurchasePrice: item.unitPrice,
       minOrderQty: 1,
       avgDeliveryDays: null,
-      qualityScore: item.selectedSupplierScore,
-      priceScore: item.selectedSupplierScore,
-      aiScore: item.selectedSupplierScore,
+      qualityScore: null,
+      priceScore: null,
+      aiScore: null,
       lastPurchaseAt: null,
       scoreBasisAmount: null,
       scoreStatus: 'NOT_READY' as const,
@@ -374,6 +384,7 @@ const {
 });
 
 function resetForm() {
+  scorePreviewSequence++;
   Object.assign(form, { supplierId: '', warehouseId: '', expectedArrivalDate: '', remark: '', items: [] });
   draftItems.value = [];
   selectableProductTotal.value = null;
@@ -423,13 +434,39 @@ async function openEditDialog(row: PurchaseOrderListItem) {
       quantityPrecision: item.quantityPrecision,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
-      selectedSupplierScore: item.selectedSupplierScore,
+      selectedSupplierScore: null,
       remark: item.remark,
       unitName: item.unitName,
     }))
     : [];
-  void refreshSelectableProductTotal();
   createDialogOpen.value = true;
+  if (!authStore.hasPermission('supplier:query')) {
+    toast.warning('无供货产品查询权限，当前推荐分暂不显示，不影响编辑采购单');
+    return;
+  }
+  void refreshSelectableProductTotal();
+  // 推荐分只是参考信息：先打开表单，再补查；单条失效不能阻塞整单编辑。
+  const previewSequence = scorePreviewSequence;
+  const previewLines = draftItems.value.map(line => ({ rowId: line.rowId, supplierProductId: line.supplierProductId }));
+  const supplierProductIds = [...new Set(previewLines.map(line => line.supplierProductId).filter((id): id is string => Boolean(id)))];
+  void Promise.allSettled(supplierProductIds.map(id => getSupplierProductDetail(id, { suppressErrorToast: true, timeout: 5_000 })))
+    .then(results => {
+      if (previewSequence !== scorePreviewSequence || !createDialogOpen.value
+        || editingOrder.value?.purchaseOrderId !== detail.purchaseOrderId || form.supplierId !== detail.supplierId) return;
+      let failed = false;
+      results.forEach((result, index) => {
+        const id = supplierProductIds[index];
+        const product = result.status === 'fulfilled' ? result.value : null;
+        if (!product || product.supplierId !== detail.supplierId) failed = true;
+        else mergeSupplierProducts([product]);
+        for (const original of previewLines.filter(line => line.supplierProductId === id)) {
+          const current = draftItems.value.find(line => line.rowId === original.rowId && line.supplierProductId === id);
+          if (current) current.selectedSupplierScore = product?.supplierId === detail.supplierId
+            && product.productId === current.productId && product.scoreStatus === 'READY' ? product.aiScore : null;
+        }
+      });
+      if (failed) toast.warning('部分当前推荐分暂不可用，不影响编辑；审核时由后端冻结评分');
+    });
 }
 
 function newDraftItem(): DraftItem {
@@ -441,7 +478,7 @@ function newDraftItem(): DraftItem {
     quantityPrecision: 0,
     quantity: 1,
     unitPrice: 0,
-    selectedSupplierScore: 0,
+    selectedSupplierScore: null,
     remark: '',
     unitName: '',
   };
@@ -487,7 +524,7 @@ function clearLineProduct(line: DraftItem) {
   line.productId = '';
   line.supplierProductId = null;
   line.unitPrice = 0;
-  line.selectedSupplierScore = 0;
+  line.selectedSupplierScore = null;
   line.unitName = '';
   line.quantityPrecision = 0;
 }
@@ -499,7 +536,7 @@ function applySupplierProduct(line: DraftItem, supplierProduct: SupplierProductL
     ?? supplierProduct.latestPurchasePrice
     ?? productOptions.value.find(item => item.value === supplierProduct.productId)?.referencePurchasePrice
     ?? 0;
-  line.selectedSupplierScore = supplierProduct.aiScore;
+  line.selectedSupplierScore = supplierProduct.scoreStatus === 'READY' ? supplierProduct.aiScore : null;
   line.unitName = supplierProduct.unitName;
   line.quantityPrecision = supplierProduct.quantityPrecision;
 }
@@ -552,7 +589,7 @@ function selectProduct(line: DraftItem, productId: string | number) {
   const product = productOptions.value.find(item => item.value === line.productId);
   line.supplierProductId = supplierProduct?.supplierProductId || null;
   line.unitPrice = supplierProduct?.quotedPurchasePrice ?? supplierProduct?.latestPurchasePrice ?? product?.referencePurchasePrice ?? 0;
-  line.selectedSupplierScore = supplierProduct?.aiScore ?? null;
+  line.selectedSupplierScore = supplierProduct?.scoreStatus === 'READY' ? supplierProduct.aiScore : null;
   line.unitName = supplierProduct?.unitName || product?.unitName || '';
   line.quantityPrecision = supplierProduct?.quantityPrecision ?? product?.quantityPrecision ?? 0;
 }
@@ -607,8 +644,6 @@ function buildPayload(): PurchaseOrderFormPayload {
       quantityPrecision: Number(item.quantityPrecision),
       quantity: Number(item.quantity),
       unitPrice: Number(item.unitPrice),
-      // 仅作页面参考，API 适配层会剥离该字段；第 2 期在审核通过时由后端冻结快照。
-      selectedSupplierScore: item.selectedSupplierScore,
       remark: item.remark.trim(),
     })),
   };
@@ -884,7 +919,7 @@ onMounted(() => {
               <ScrollArea class="w-full">
                 <Table class="order-line-table min-w-[920px] table-fixed" data-purchase-form-items>
                   <colgroup><col class="w-[250px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[90px]" /><col class="w-[115px]" /><col class="w-[150px]" /><col class="w-[75px]" /></colgroup>
-                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">采购价</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead class="text-right">小计</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-right">数量</TableHead><TableHead class="text-right">采购价</TableHead><TableHead class="text-center">当前推荐分</TableHead><TableHead class="text-right">小计</TableHead><TableHead>明细备注</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-if="draftItems.length === 0">
                       <TableCell colspan="7" class="h-28 p-0">
@@ -970,7 +1005,7 @@ onMounted(() => {
                 <ScrollArea class="w-full purchase-order-line-scroll detail-table-floating" aria-label="采购订单商品明细">
                 <Table class="min-w-[1020px] table-fixed">
                   <colgroup><col class="w-[240px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[160px]" /></colgroup>
-                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">订购数量</TableHead><TableHead class="text-center">已入库</TableHead><TableHead class="text-center">待入库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead class="text-center">推荐分</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>产品</TableHead><TableHead class="text-center">订购数量</TableHead><TableHead class="text-center">已入库</TableHead><TableHead class="text-center">待入库</TableHead><TableHead class="text-center">单价</TableHead><TableHead class="text-center">金额</TableHead><TableHead class="text-center">审核时推荐分</TableHead><TableHead>明细备注</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow v-for="item in detailRow.items" :key="item.purchaseOrderItemId">
                       <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ item.productCode }}</code><div class="mt-1">{{ item.productName }}</div></TableCell>

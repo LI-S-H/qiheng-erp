@@ -1,6 +1,7 @@
 package com.qiheng.erp.purchase.domain.purchaseorder.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -79,8 +80,8 @@ public class PurchaseOrderItem implements Serializable {
     @Schema(description = "总金额")
     private Long totalAmount;
 
-    @TableField("selected_supplier_score")
-    @Schema(description = "选中供应商评分")
+    @TableField(value = "selected_supplier_score", updateStrategy = FieldStrategy.ALWAYS)
+    @Schema(description = "审核时推荐分快照，放大100倍保存；未审核或无可用评分为空")
     private Integer selectedSupplierScore;
 
     @TableField("create_time")

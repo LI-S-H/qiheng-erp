@@ -66,6 +66,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -320,7 +321,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             item.setInboundQty(0L);
             item.setUnitPrice(QtyUtil.toStored(unitPrice));
             item.setTotalAmount(QtyUtil.toStored(lineAmount));
-            // TODO(供应商评分第2期)：审核通过时由后端冻结当时 ai_score；草稿、编辑阶段不得信任前端传分。
+            // 评分第2期：审核通过时由后端冻结当时推荐分；草稿、编辑阶段不得信任前端传分。
             item.setSelectedSupplierScore(null);
             item.setRemark(itemDto.getRemark());
             items.add(item);
@@ -434,7 +435,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
             item.setInboundQty(0L);
             item.setUnitPrice(QtyUtil.toStored(unitPrice));
             item.setTotalAmount(QtyUtil.toStored(lineAmount));
-            // TODO(供应商评分第2期)：审核通过时由后端冻结当时 ai_score；草稿、编辑阶段不得信任前端传分。
+            // 评分第2期：审核通过时由后端冻结当时推荐分；草稿、编辑阶段不得信任前端传分。
             item.setSelectedSupplierScore(null);
             item.setRemark(itemDto.getRemark());
             itemsToSave.add(item);
@@ -497,7 +498,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
      * @param version 乐观锁版本号
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
     public void approve(Long purchaseOrderId, Integer version) {
         PurchaseOrder order = loadAndCheckStatus(purchaseOrderId, version, "仅待审核状态可审核", PurchaseOrderStatus.SUBMITTED);
         // 校验预计到货日期非空
@@ -520,6 +521,29 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         int rows = purchaseOrderMapper.updateById(update);
         if (rows == 0) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "数据已发生变化，请刷新后重试");
+        }
+        // 先锁采购单、再锁供应商，与入库回写保持同序；等评分事务提交后读取最新推荐分。
+        if (supplierMapper.lockByIdForUpdate(order.getSupplierId()) == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "供应商不存在或已删除");
+        }
+        List<PurchaseOrderItem> items = purchaseOrderItemService.list(
+                new LambdaQueryWrapper<PurchaseOrderItem>()
+                        .eq(PurchaseOrderItem::getPurchaseOrderId, purchaseOrderId));
+        Map<Long, SupplierProduct> scoreById = supplierProductMapper.selectByIds(items.stream()
+                        .map(PurchaseOrderItem::getSupplierProductId).distinct().toList()).stream()
+                .collect(Collectors.toMap(SupplierProduct::getId, product -> product));
+        for (PurchaseOrderItem item : items) {
+            SupplierProduct product = scoreById.get(item.getSupplierProductId());
+            if (product == null || !order.getSupplierId().equals(product.getSupplierId())
+                    || !item.getProductId().equals(product.getProductId())) {
+                throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "供货关系已发生变化，请刷新后重试");
+            }
+            // 无可用分数保持空值，真实零分不能被当作无评分；审核后不再回写历史快照。
+            item.setSelectedSupplierScore("READY".equals(product.getScoreStatus())
+                    ? product.getRecommendScore() : null);
+        }
+        if (!purchaseOrderItemService.updateBatchById(items)) {
+            throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "采购评分快照写入失败，请刷新后重试");
         }
         // 生成 PURCHASE_IN 待确认入库单
         generatePurchaseInboundBill(order);

@@ -348,8 +348,6 @@ export interface PurchaseOrderDraftItemPayload {
   quantityPrecision: number;
   quantity: number;
   unitPrice: number;
-  /** 仅供编辑页展示当前推荐分，API 适配层绝不提交；审核快照由第2期后端写入。 */
-  selectedSupplierScore?: number | null;
   remark: string;
 }
 

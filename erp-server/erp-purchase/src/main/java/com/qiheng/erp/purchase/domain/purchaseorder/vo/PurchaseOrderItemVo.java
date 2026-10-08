@@ -1,5 +1,6 @@
 package com.qiheng.erp.purchase.domain.purchaseorder.vo;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.qiheng.erp.common.config.MoneyStringSerializer;
@@ -65,7 +66,8 @@ public class PurchaseOrderItemVo {
     @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal totalAmount;
 
-    @Schema(description = "下单时推荐分，0-100 业务值")
+    @Schema(description = "审核时推荐分快照，0-100业务值；未审核或无有效评分为null，真实零分为0")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     private BigDecimal selectedSupplierScore;
 
     @Schema(description = "备注")

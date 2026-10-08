@@ -285,8 +285,15 @@ function buildOrderSeed(
     PO202607007: ['2012100000000000008'],
   };
   const items = lines.map((line, index) => {
-    const supplierProduct = mockSupplierProducts.find(item => item.productCode === line[0]);
-    const product = supplierProduct || mockSupplierProducts[0];
+    // 历史夹具使用旧产品编码，必须映射到本供应商真实供货关系，不能退回第一条关系。
+    const seedProductCodes: Record<string, string> = {
+      'HD-SD330': 'P000001', 'CD-CF50': 'P000002', 'GC-NUT30': 'P000007',
+      'SZ-A4-70G': 'P000026', 'WY-PEN12': 'P000021', 'HD-CF50-HIS': 'P000002',
+      'GC-LD2K-HIS': 'P000033', 'WY-HOOK6-HIS': 'P000038',
+    };
+    const productCode = seedProductCodes[line[0]] || line[0];
+    const product = mockSupplierProducts.find(item => item.productCode === productCode && item.supplierId === supplier.supplierId);
+    if (!product) throw new Error(`采购模拟明细缺少供货关系：${supplierCode}/${productCode}`);
     return normalizeOrderItem({
       purchaseOrderItemId: itemIds[purchaseNo][index],
       purchaseOrderId,
@@ -301,7 +308,8 @@ function buildOrderSeed(
       inboundQty: status === 'PARTIAL_INBOUND' ? Math.floor(line[1] / 2) : status === 'INBOUND_DONE' ? line[1] : 0,
       unitPrice: line[2],
       totalAmount: line[1] * line[2],
-      selectedSupplierScore: product.aiScore,
+      selectedSupplierScore: ['APPROVED', 'PARTIAL_INBOUND', 'INBOUND_DONE'].includes(status)
+        && product.scoreStatus === 'READY' ? product.aiScore : null,
       remark: line[3] || '',
     }, true);
   });
@@ -975,13 +983,13 @@ export async function searchSupplierProductLogOptions(keyword = '', supplierId?:
 }
 
 /** 详情页始终按主键读取，避免报价或评分刚调整后仍展示旧列表数据。 */
-export function getSupplierProductDetail(supplierProductId: string) {
+export function getSupplierProductDetail(supplierProductId: string, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) {
     const supplierProduct = mockSupplierProducts.find(item => item.supplierProductId === supplierProductId);
     if (!supplierProduct) return Promise.reject(new Error('供货关系不存在'));
     return Promise.resolve(normalizeSupplierProduct(supplierProduct));
   }
-  return getResult<SupplierProductListItem>(`/purchase/supplier-products/${supplierProductId}`, undefined, remoteOptionRequestConfig)
+  return getResult<SupplierProductListItem>(`/purchase/supplier-products/${supplierProductId}`, undefined, { ...remoteOptionRequestConfig, ...requestConfig })
     .then(normalizeSupplierProduct);
 }
 
@@ -1152,7 +1160,7 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
         inboundQty: 0,
         unitPrice: line.unitPrice,
         totalAmount: line.quantity * line.unitPrice,
-        selectedSupplierScore: line.selectedSupplierScore ?? null,
+        selectedSupplierScore: null,
         remark: line.remark.trim(),
       });
     });
@@ -1186,7 +1194,7 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
     mockOrders = [created, ...mockOrders];
     return Promise.resolve(created);
   }
-  const request = { ...payload, items: payload.items.map(({ selectedSupplierScore: _currentScore, ...item }) => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '采购单价') })) };
+  const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '采购单价') })) };
   return postResult<PurchaseOrderDetail, typeof request>('/purchase/orders', request).then(normalizeOrderDetail);
 }
 
@@ -1218,7 +1226,7 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
         inboundQty: 0,
         unitPrice: line.unitPrice,
         totalAmount: line.quantity * line.unitPrice,
-        selectedSupplierScore: line.selectedSupplierScore ?? null,
+        selectedSupplierScore: null,
         remark: line.remark.trim(),
       });
     });
@@ -1240,7 +1248,7 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
     mockOrders = mockOrders.map(item => (item.purchaseOrderId === purchaseOrderId ? updated : item));
     return Promise.resolve(updated);
   }
-  const request = { ...payload, items: payload.items.map(({ selectedSupplierScore: _currentScore, ...item }) => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '采购单价') })) };
+  const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '采购单价') })) };
   const response = await http.put(`/purchase/orders/${purchaseOrderId}`, request);
   return normalizeOrderDetail(response.data.data as PurchaseOrderDetail);
 }
@@ -1271,8 +1279,17 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'subm
         timeline.push({ event: 'APPROVED', occurredAt: timestamp, operatorName: '采购主管', inboundBillId: null, inboundBillNo: null });
         timeline.push({ event: 'INBOUND_CREATED', occurredAt: timestamp, operatorName: '系统', inboundBillId, inboundBillNo });
       }
+      // 与真实接口一致，创建/编辑不收分数，仅审核时冻结最新的供货关系推荐分。
+      const items = action === 'approve' ? item.items.map(line => {
+        const product = mockSupplierProducts.find(product => product.supplierProductId === line.supplierProductId);
+        if (!product || product.supplierId !== item.supplierId || product.productId !== line.productId) {
+          throw new Error('供货关系不属于当前供应商或与产品不匹配');
+        }
+        return { ...line, selectedSupplierScore: product.scoreStatus === 'READY' ? product.aiScore : null };
+      }) : item.items;
       return {
         ...item,
+        items,
         status: action === 'submit' ? 'SUBMITTED' : action === 'approve' ? 'APPROVED' : 'CANCELLED',
         submittedAt: action === 'submit' ? timestamp : item.submittedAt,
         submittedById: action === 'submit' ? '1900000000000000001' : item.submittedById,

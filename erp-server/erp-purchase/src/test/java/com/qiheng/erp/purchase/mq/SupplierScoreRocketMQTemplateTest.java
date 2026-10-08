@@ -28,17 +28,18 @@ class SupplierScoreRocketMQTemplateTest {
             .withPropertyValues("rocketmq.name-server=127.0.0.1:65535");
 
     @Test
-    void actualTemplateConvertsSpringHeadersAndBytesIntoNativeDelayedMessage() throws Exception {
+    void actualTemplateConvertsObjectAndHeadersIntoNativeDelayedMessage() throws Exception {
         // 使用真实 Template 和官方转换器，仅 mock 最终网络发送，不启动客户端或替换已启动的生产者。
         SupplierScoreRocketMQTemplate template = new SupplierScoreRocketMQTemplate();
         DefaultMQProducer producer = mock(DefaultMQProducer.class);
         template.setProducer(producer);
-        template.setMessageConverter(new org.apache.rocketmq.spring.support.RocketMQMessageConverter().getMessageConverter());
+        var converter = new org.apache.rocketmq.spring.support.RocketMQMessageConverter().getMessageConverter();
+        template.setMessageConverter(converter);
         var payload = new com.qiheng.erp.purchase.domain.supplierscore.mq.SupplierScoreFireMessage();
-        payload.setMsgType("SCHEDULED_FIRE"); payload.setSupplierId(7L);
-        payload.setBatchNo("SC2026100600001"); payload.setScheduledFireAt(123L);
-        byte[] bytes = new ObjectMapper().writeValueAsBytes(payload);
-        var springMessage = org.springframework.messaging.support.MessageBuilder.withPayload(bytes)
+        // 大于 JavaScript 安全整数范围的 ID 必须在框架往返转换中保持 Long 精度。
+        payload.setMsgType("SCHEDULED_FIRE"); payload.setSupplierId(1791396328523123456L);
+        payload.setBatchNo("SC2026100600001"); payload.setScheduledFireAt(1791396328523L);
+        var springMessage = org.springframework.messaging.support.MessageBuilder.withPayload(payload)
                 .setHeader(org.apache.rocketmq.spring.support.RocketMQHeaders.KEYS, payload.getBatchNo()).build();
         org.mockito.Mockito.when(producer.send(org.mockito.ArgumentMatchers.any(org.apache.rocketmq.common.message.Message.class),
                 org.mockito.ArgumentMatchers.eq(4321L))).thenReturn(mock(org.apache.rocketmq.client.producer.SendResult.class));
@@ -49,10 +50,22 @@ class SupplierScoreRocketMQTemplateTest {
         assertThat(actual.getValue().getTags()).isEqualTo("SCHEDULED_FIRE");
         assertThat(actual.getValue().getKeys()).isEqualTo(payload.getBatchNo());
         assertThat(actual.getValue().getDelayTimeLevel()).isEqualTo(9);
-        assertThat(actual.getValue().getBody()).containsExactly(bytes);
         var json = new ObjectMapper().readTree(actual.getValue().getBody());
         assertThat(json.get("batchNo").asText()).isEqualTo(payload.getBatchNo());
         assertThat(json.has("batchToken")).isFalse();
+        assertThat(json.get("msgType").asText()).isEqualTo("SCHEDULED_FIRE");
+        assertThat(json.get("supplierId").longValue()).isEqualTo(payload.getSupplierId());
+        assertThat(json.get("scheduledFireAt").longValue()).isEqualTo(payload.getScheduledFireAt());
+        // 与消费者使用同类框架转换器，验证网络字节可还原成原消息对象。
+        var received = org.springframework.messaging.support.MessageBuilder
+                .withPayload(actual.getValue().getBody()).build();
+        var restored = (com.qiheng.erp.purchase.domain.supplierscore.mq.SupplierScoreFireMessage)
+                converter.fromMessage(received, com.qiheng.erp.purchase.domain.supplierscore.mq.SupplierScoreFireMessage.class);
+        assertThat(restored).isNotNull();
+        assertThat(restored.getSupplierId()).isEqualTo(payload.getSupplierId());
+        assertThat(restored.getScheduledFireAt()).isEqualTo(payload.getScheduledFireAt());
+        assertThat(restored.getBatchNo()).isEqualTo(payload.getBatchNo());
+        assertThat(restored.getMsgType()).isEqualTo(payload.getMsgType());
     }
 
     @Test

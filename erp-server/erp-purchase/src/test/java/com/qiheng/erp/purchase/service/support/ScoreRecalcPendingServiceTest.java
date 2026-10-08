@@ -24,6 +24,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -62,13 +63,13 @@ class ScoreRecalcPendingServiceTest {
         verify(mq).syncSend(eq("erp-supplier-score-recalc:SCHEDULED_FIRE"), message.capture(), eq(3000L), eq(9));
         assertEquals("SC2026100600001", message.getValue().getHeaders().get(RocketMQHeaders.KEYS));
         var mapper = new ObjectMapper();
-        byte[] body = (byte[]) message.getValue().getPayload();
-        var payload = mapper.readValue(body, SupplierScoreFireMessage.class);
+        // 合并服务交给框架的是对象；实际转换字节和反序列化在专用 Template 测试验证。
+        var payload = assertInstanceOf(SupplierScoreFireMessage.class, message.getValue().getPayload());
         assertEquals("SC2026100600001", payload.getBatchNo());
         assertEquals("SCHEDULED_FIRE", payload.getMsgType());
         assertEquals(7L, payload.getSupplierId());
-        assertFalse(mapper.readTree(body).has("batchToken"));
-        assertEquals("SC2026100600001", mapper.readTree(body).get("batchNo").asText());
+        assertFalse(mapper.valueToTree(payload).has("batchToken"));
+        assertEquals("SC2026100600001", mapper.valueToTree(payload).get("batchNo").asText());
         verify(billNoGenerator).nextNo(eq("SC"), any());
         verify(producer, never()).send(any(org.apache.rocketmq.common.message.Message.class));
         verify(redis, never()).delete(any(String.class));

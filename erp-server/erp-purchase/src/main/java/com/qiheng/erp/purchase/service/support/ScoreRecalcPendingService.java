@@ -156,23 +156,23 @@ public class ScoreRecalcPendingService {
         return snapshot.getBatchNo();
     }
 
-    /** 同步发送五分钟延迟消息，生产者内建重试仍失败时将异常交给合并入口处理。 */
+    /**
+     * 同步发送五分钟延迟消息，生产者内建重试仍失败时将异常交给合并入口处理。
+     *
+     * <p>直接传递对象给 RocketMQMessageConverter 统一序列化，与 Consumer 端反序列化使用同一个
+     * 框架默认 ObjectMapper，避免手动序列化（应用 ObjectMapper Long→String）与框架反序列化
+     * （默认 ObjectMapper 不做 Long→String）的不对称风险。</p>
+     */
     private void scheduleFire(Long supplierId, String batchNo, long fireAt) throws Exception {
         SupplierScoreFireMessage msg = new SupplierScoreFireMessage();
         msg.setMsgType("SCHEDULED_FIRE");
         msg.setSupplierId(supplierId);
         msg.setBatchNo(batchNo);
         msg.setScheduledFireAt(fireAt);
-        byte[] body;
-        try {
-            body = objectMapper.writeValueAsBytes(msg);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("SCHEDULED_FIRE 消息序列化失败", e);
-        }
-        // 字节体沿用现有 JSON 序列化；Key 用批次号检索，消费幂等仍由锁、批次核对和日志键保证。
-        Message<byte[]> message = MessageBuilder.withPayload(body)
+        // 直接传对象，由框架的 RocketMQMessageConverter 统一完成 JSON 序列化
+        Message<SupplierScoreFireMessage> message = MessageBuilder.withPayload(msg)
                 .setHeader(RocketMQHeaders.KEYS, batchNo).build();
-        // 使用 4.x Broker 支持的延迟等级；沿用专用生产者的超时和内建重试，失败必须向外抛出。
+        // 使用Broker 支持的延迟等级；沿用专用生产者的超时和内建重试，失败必须向外抛出。
         rocketMQTemplate.syncSend(mqTopic + ":SCHEDULED_FIRE", message,
                 rocketMQTemplate.getProducer().getSendMsgTimeout(), SupplierScoreConstants.MQ_DELAY_LEVEL_5MIN);
     }

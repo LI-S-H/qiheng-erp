@@ -115,7 +115,7 @@ flowchart TD
 项目采用模块化单体结构，代码按业务领域拆分为多个 Maven 子模块，由 `erp-admin` 作为统一启动模块。
 
 ```text
-erp-system
+erp-server
 ├── erp-common              通用工具、异常、响应体、枚举
 ├── erp-security            登录、Session、权限、数据权限
 ├── erp-system              用户、角色、部门
@@ -125,7 +125,7 @@ erp-system
 ├── erp-sales               客户、销售订单
 ├── erp-return              统一退货单、采购退货、销售退货
 ├── erp-ai                  智能体、RAG、Tools、Prompt、多 Agent 编排
-├── erp-job                 定时任务
+├── erp-dashboard           工作台聚合、缓存、跨模块只读视图
 └── erp-admin               启动模块
 ```
 
@@ -141,7 +141,7 @@ flowchart TD
     Admin --> Sales["erp-sales"]
     Admin --> Return["erp-return"]
     Admin --> AI["erp-ai"]
-    Admin --> Job["erp-job"]
+    Admin --> Dashboard["erp-dashboard"]
 
     Security --> Common["erp-common"]
     System --> Common
@@ -149,8 +149,9 @@ flowchart TD
     Warehouse --> Common
     Purchase --> Common
     Sales --> Common
+    Return --> Common
     AI --> Common
-    Job --> Common
+    Dashboard --> Common
 
     Purchase --> Product
     Purchase --> Warehouse
@@ -288,7 +289,7 @@ MVP 阶段暂不设计库位表、批次、序列号、保质期、库存预警�
 - 采购订单。
 - 采购订单明细。
 
-MVP 阶段采购模块不单独设计采购入库单表；采购订单审核后生成仓库模块的 `PURCHASE_IN` 待确认入库单，不直接改变库存。仓库人员确认本次入库数量后完成入库、更新库存、生成库存流水并回写采购订单已入库数量。供应商供货产品表保留价格、交期和评分字段，用于后续 AI 自动选择本次采购得分最高的供应商。供应商评分由 `SupplierScoreRefreshJob` 定时任务根据采购订单、入库单/库存流水、合格数量和不合格数量刷新。
+MVP 阶段采购模块不单独设计采购入库单表；采购订单审核后生成仓库模块的 `PURCHASE_IN` 待确认入库单，不直接改变库存。仓库人员确认本次入库数量后完成入库、更新库存、生成库存流水并回写采购订单已入库数量。供应商供货产品表保留价格、交期和评分字段，用于后续 AI 自动选择本次采购得分最高的供应商。供应商评分由 `SupplierScoreScheduledJob` 定时任务根据采购订单、入库单/库存流水、合格数量和不合格数量刷新。
 
 供应商评分、推荐分、准时率、合格率等百分制字段统一用 `int` 存放大 100 倍后的整数，避免 Java 对象转换和小数精度问题。例如 `89.75` 存 `8975`，`100.00` 存 `10000`；接口展示时再除以 100。
 
@@ -350,20 +351,13 @@ AI 模块分三层落地：第一层是基础 AI 查询能力，所有查询必�
 
 MVP 阶段 AI 模块数据库只设计知识库文档表、文档切片表和统一 AI 交互审计表；Embedding 向量本体存 RedisStack，MySQL 只保存 `vector_key` 和可追溯元数据。RAG 问答、AI Tool 调用和后续 Workflow 调用统一写入 `ai_interaction_log`，避免过早拆分复杂会话表和多类日志表。
 
-### 6.10 erp-job
+定时任务已下沉到各业务模块自身(`erp-purchase`、`erp-dashboard` 等),由 `erp-admin` 统一启用 `@EnableScheduling`,不再保留独立 `erp-job` 模块。现有任务包括:
 
-定时任务模块，负责周期性统计、扫描和分析任务。
+- 供应商评分刷新:`SupplierScoreScheduledJob`。
+- 工作台快照任务:`DashboardDailySnapshotJob` / `DashboardMonthlySnapshotJob` / `DashboardTrendDailyCacheJob`。
+- 顶栏铃铛缓存刷新:`TopProductRankRefresher`。
 
-主要内容：
-
-- 每日销售汇总。
-- 每日库存预警扫描。
-- 每日滞销商品分析。
-- 每日供应商评分刷新：`SupplierScoreRefreshJob`。
-- 每日采购建议草稿计算。
-- AI 分析缓存刷新。
-
-### 6.11 erp-admin
+### 6.10 erp-admin
 
 启动模块，负责聚合所有业务模块并启动应用。
 
@@ -741,7 +735,7 @@ MVP 阶段 RocketMQ 部署建议：
 供应商评分刷新任务：
 
 ```text
-SupplierScoreRefreshJob
+SupplierScoreScheduledJob
 - 输入：近 180 天采购订单、采购订单明细、采购入库单、库存流水、合格数量、不合格数量。
 - 输出：更新 supplier_product 的价格分、交付分、质量分、综合推荐分；汇总更新 supplier 总评分、准时率、合格率、平均交付天数。
 - 计算：价格分 30% + 交付分 30% + 质量分 30% + 服务分 10%；评分落库时统一乘以 100 转成整数。
@@ -853,7 +847,7 @@ AI 相关审计先使用 `ai_interaction_log`，记录：
 - 安全库存计算。
 - 采购数量建议。
 - 分析结果落库和误差指标记录。
-- SupplierScoreRefreshJob。
+- SupplierScoreScheduledJob。
 - 定时分析任务。
 
 ### 阶段 7：AI 业务闭环

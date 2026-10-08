@@ -177,7 +177,7 @@ AI 禁止行为：
 ## 10. 模块划分
 
 ```text
-erp-system
+erp-server
 ├── erp-common              通用工具、异常、响应体、枚举
 ├── erp-security            登录、Session、权限、数据权限
 ├── erp-system              用户、角色、部门
@@ -187,7 +187,7 @@ erp-system
 ├── erp-sales               客户、销售订单
 ├── erp-return              统一退货单、采购退货、销售退货
 ├── erp-ai                  智能体、RAG、Tools、Prompt、多 Agent 编排
-├── erp-job                 定时任务
+├── erp-dashboard           工作台聚合、缓存、跨模块只读视图
 └── erp-admin               启动模块
 ```
 
@@ -202,7 +202,7 @@ erp-system
 | `erp-sales` | 客户、销售订单、库存锁定、销售出库及销售退货来源能力 |
 | `erp-return` | 统一退货单、采购退货出库、销售退货入库和仓储执行回写 |
 | `erp-ai` | RAG、AI Tool、Agent 编排、分析工作流和 AI 审计 |
-| `erp-job` | 定时统计、预警扫描和分析任务调度 |
+| `erp-dashboard` | 工作台聚合、缓存、跨模块只读视图与顶栏铃铛摘要 |
 | `erp-admin` | 系统统一启动入口 |
 
 ## 11. 企业开发规范体现

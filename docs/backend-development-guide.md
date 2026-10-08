@@ -19,15 +19,15 @@
 ### 2.1 模块依赖链
 
 ```
-erp-admin → erp-security, erp-system, erp-product, erp-warehouse, erp-purchase, erp-sales
+erp-admin → erp-security, erp-system, erp-product, erp-warehouse, erp-purchase, erp-sales, erp-return, erp-dashboard, erp-ai
 erp-security → erp-common
 erp-system → erp-common, erp-security
 erp-product → erp-common
 erp-warehouse → erp-common
-erp-purchase → erp-common, erp-product, erp-warehouse, erp-system
-erp-sales → erp-common, erp-product, erp-warehouse, erp-system
+erp-purchase → erp-common, erp-product, erp-warehouse, erp-system, erp-return
+erp-sales → erp-common, erp-product, erp-warehouse, erp-system, erp-return
 erp-ai → erp-common, erp-security, erp-product, erp-warehouse, erp-purchase, erp-sales
-erp-job → erp-common
+erp-dashboard → erp-common, erp-security, erp-system, erp-product, erp-warehouse, erp-purchase, erp-sales, erp-return
 ```
 
 ### 2.2 依赖原则

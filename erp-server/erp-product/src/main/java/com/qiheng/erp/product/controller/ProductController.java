@@ -167,7 +167,7 @@ public class ProductController {
     public Result<ProductVo> updateReferencePrice(
             @PathVariable("productId") Long productId,
             @Valid @RequestBody ProductReferencePriceDto dto) {
-        StpUtil.checkPermission("product:reference-price:manage");
+        StpUtil.checkPermission("product:manage");
         log.info("调整产品参考采购价，参数: {}, {}", productId, dto);
         ProductVo vo = productService.updateReferencePrice(productId, dto);
         return Result.ok(vo);

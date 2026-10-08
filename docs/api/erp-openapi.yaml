@@ -78,9 +78,9 @@ paths:
       tags: [AIAssistant]
       summary: 获取智能经营助手概览
       description: |
-        返回智能经营助手首屏需要的会话列表和参数化快捷任务。页面不再展示“能力边界”“当前上下文”、顶部智能体标签或知识库问答入口。
-        推荐后端采用 Spring AI Alibaba 的多智能体能力：主控智能体负责意图识别、任务拆解和结果汇总，数据分析、采购建议、库存分析、销量预测、供应商评估等专家智能体负责各自领域分析。
-        实际业务数据查询仍必须由受控 Tool 经过权限校验和 ERP Service 完成，专家智能体不能直接执行自由 SQL 或直接修改正式业务数据。
+        返回当前用户的真实会话列表；基础交互阶段 quickPrompts 返回空数组，不展示尚未实现的业务分析入口。
+        当前仅接入一个 ChatModel 和一个 OrchestratorAgent，支持文本对话。完整架构以 docs/feature-spec.md 的 AI 章节为准，后续由 DataQuerySubAgent 查询业务数据、DataAnalysisSubAgent 分析注入的数据。
+        本阶段不注册业务 Tool，不生成业务草稿，不返回虚构图表或协同轨迹。
       operationId: aiAssistantOverview
       security:
         - SaTokenAuth: []
@@ -101,13 +101,13 @@ paths:
   /ai/assistant/messages:
     post:
       tags: [AIAssistant]
-      summary: 发送智能经营助手消息
+      summary: 发送智能经营助手消息(非流式,直接拿最终回复)
       description: |
-        统一的经营助手对话入口。后端基于 Spring AI Alibaba 实现多智能体协同：主控智能体路由到数据分析、采购建议、库存分析、销量预测、供应商评估等专家智能体，并在 `agentTraces` 中返回本轮协同轨迹。
-        `conversationId` 为空时创建新会话；不为空时追加到已有会话。后端应记录必要的 AI 交互日志，但不再提供独立“AI 调用审计”业务菜单页面。
-        回复可以包含 `message.content` 文本和 `message.charts` 图表规格。后端不返回图表图片，只返回图表类型、字段映射和业务数据行；前端按统一样式动态渲染折线图、柱状图或饼图。
-        如果使用流式传输，客户端通过 `Accept: text/event-stream` 请求，后端按 `AiChatStreamEvent` 事件推送：先推 `MESSAGE_DELTA` 文本增量，最后通过 `MESSAGE_FINAL` 返回完整 `AiChatMessage`（包含 charts、sources、actionCards），避免模型在流中自由拼装不可校验图表数据。
-        需要进入业务动作的回复通过 `actionCards` 表达下一步。前端遵循“AI 建议 -> 用户预览 -> 生成草稿 -> 人工确认 -> 正式单据”的边界；后端不得让智能体直接修改正式业务数据。
+        文本对话入口,返回完整 Result<AiChatResponse>。客户端先新建或选择会话,conversationId 必须为当前登录用户所属的有效会话 ID；不存在、已删除或他人的会话统一返回 404。
+        如需边推边渲染请使用 `/ai/assistant/messages/stream`(SSE 端点),与本端点路径不同,需客户端自行选择。
+        同一请求的 requestId、conversationId 保持一致,BIGINT ID 使用字符串。基础阶段 charts、actionCards、sources、agentTraces 均为空数组,taskCard 和 workbench 为空。
+        服务端从当前用户的数据库历史构建有序上下文,保存用户消息后调用 Agent；完成才保存助手消息。模型失败或超时时保留已保存的用户消息,不把部分回复保存为完整助手消息。
+        模型未配置或未启用时返回 503,不返回固定回复；JSON 请求失败后客户端重新读取历史，不以页面回滚判断消息未保存。
       operationId: aiAssistantSendMessage
       security:
         - SaTokenAuth: []
@@ -118,8 +118,8 @@ paths:
             schema:
               $ref: '#/components/schemas/AiChatRequest'
             example:
-              conversationId: null
-              message: 帮我分析当前库存风险，并给出需要优先补货的商品
+              conversationId: "1970000000000000001"
+              message: 我叫小李，请记住这个称呼
       responses:
         "200":
           description: 回复成功
@@ -131,6 +131,39 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/AiChatResponse' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /ai/assistant/messages/stream:
+    post:
+      tags: [AIAssistant]
+      summary: 发送智能经营助手消息(SSE 流式,边推边渲染)
+      description: |
+        流式对话入口,produces 为 `text/event-stream`。客户端先新建或选择会话,conversationId 必须为当前登录用户所属的有效会话 ID；不存在、已删除或他人的会话统一返回 404。
+        前端通过携带动态 Sa-Token 请求头的 fetch POST 消费流,不使用原生 EventSource。
+        SSE 的 event 名称与 data JSON 中 eventType 一致：MESSAGE_DELTA 仅含文本增量；MESSAGE_FINAL 在助手消息保存成功后返回完整消息；ERROR 返回安全的 errorMessage 并结束流。
+        同一请求的 requestId、conversationId 保持一致,BIGINT ID 使用字符串。基础阶段 charts、actionCards、sources、agentTraces 均为空数组,taskCard 和 workbench 为空。
+        服务端从当前用户的数据库历史构建有序上下文,保存用户消息后调用 Agent；完成才保存助手消息。模型失败、超时或客户端取消时保留已保存的用户消息,不把部分回复保存为完整助手消息。
+        发送前校验失败使用常规 HTTP 错误；流建立后的失败使用 ERROR 事件。缺少 MESSAGE_FINAL 的断流不能视为成功；前端失败或取消后重新读取历史。模型未配置或未启用时返回 503,不返回固定回复。
+      operationId: aiAssistantSendMessageStream
+      security:
+        - SaTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiChatRequest'
+            example:
+              conversationId: "1970000000000000001"
+              message: 我叫小李，请记住这个称呼
+      responses:
+        "200":
+          description: SSE 流式响应
+          content:
             text/event-stream:
               schema:
                 type: string
@@ -139,14 +172,16 @@ paths:
                   summary: 流式事件示例
                   value: |
                     event: MESSAGE_DELTA
-                    data: {"requestId":"req-001","conversationId":"conv-today","contentDelta":"正在分析 USB-C扩展坞库存..."}
+                    data: {"eventType":"MESSAGE_DELTA","requestId":"req-001","conversationId":"1970000000000000001","contentDelta":"你好，小李。"}
 
                     event: MESSAGE_FINAL
-                    data: {"requestId":"req-001","conversationId":"conv-today","message":{"messageId":"msg-001","role":"assistant","content":"建议生成补货草稿。","createdAt":"2026-07-01 10:30:00","charts":[],"actionCards":[],"sources":[],"agentTraces":[],"taskCard":null}}
+                    data: {"eventType":"MESSAGE_FINAL","requestId":"req-001","conversationId":"1970000000000000001","message":{"messageId":"1970000000000000002","role":"assistant","content":"你好，小李。","createdAt":"2026-10-08 20:00:00","charts":[],"actionCards":[],"sources":[],"agentTraces":[],"taskCard":null,"workbench":null}}
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
         "503": { $ref: '#/components/responses/ServiceUnavailable' }
+
 
   /ai/assistant/conversations:
     post:
@@ -271,9 +306,11 @@ paths:
       tags: [AIAssistant]
       summary: 获取经营任务中心数据
       description: |
-        返回经营任务中心首屏数据，包括任务摘要、内置模板、已配置任务和最近执行记录。任务由后端调度器触发多智能体协同分析，执行结果直接在本页面展示。
+        本组经营任务接口为规划契约，当前基础骨架没有 Controller 实现，前端入口关闭；不得按已交付能力调用。
+        未来返回经营任务中心首屏数据，包括任务摘要、内置模板、已配置任务和最近执行记录。任务由后端调度器触发多智能体协同分析，执行结果直接在本页面展示。
         任务配置必须允许指定商品范围、仓库范围、接收人和分析目标。例如采购补货建议任务应明确关注商品，不能只有一个泛化定时器。
       operationId: aiScheduledTaskPage
+      x-implementation-status: planned
       security:
         - SaTokenAuth: []
       responses:
@@ -294,6 +331,7 @@ paths:
       summary: 新增经营任务
       description: 新增用户自定义经营任务。任务可以由内置模板带入，也可以完全自定义；保存后进入调度配置，不立即写入业务单据。
       operationId: aiScheduledTaskCreate
+      x-implementation-status: planned
       security:
         - SaTokenAuth: []
       requestBody:
@@ -325,6 +363,7 @@ paths:
         修改经营任务的可编辑配置，包括任务名称、执行频率、cron、关注商品、关注仓库、接收人和分析目标。
         不允许通过本接口修改系统生成字段、执行结果、审计字段或任务执行状态；启停状态使用 `/ai/scheduled-tasks/{taskId}/status`。
       operationId: aiScheduledTaskUpdate
+      x-implementation-status: planned
       security:
         - SaTokenAuth: []
       parameters:
@@ -369,6 +408,7 @@ paths:
       summary: 立即执行经营任务
       description: 手动触发一次定时经营任务。后端创建执行记录并异步调度多智能体协同分析，接口只返回已受理的执行标识；执行结果写入最近执行记录，不直接生成正式业务单据。
       operationId: aiScheduledTaskRun
+      x-implementation-status: planned
       security:
         - SaTokenAuth: []
       parameters:
@@ -399,6 +439,7 @@ paths:
       summary: 修改经营任务状态
       description: 启用或停用内置经营任务。状态变更是调度配置动作，不代表业务事实变更；后端需要记录操作人和更新时间。
       operationId: aiScheduledTaskStatus
+      x-implementation-status: planned
       security:
         - SaTokenAuth: []
       parameters:
@@ -1934,7 +1975,7 @@ paths:
     put:
       tags: [PurchaseSupplier]
       summary: 编辑供应商
-      description: 编辑请求只维护供应商基础资料，不接收 `supplierCode` 或任何评分字段；供应商名称修改时，后端同步当前供货产品快照，历史采购单继续保留下单时快照。服务分只能通过专用接口调整。本接口 MVP 阶段复用 `purchase:create` 权限。
+      description: 编辑请求只维护供应商基础资料，不接收 `supplierCode` 或任何评分字段；供应商名称修改时，关联展示的供应商名称由 `supplier_id` 实时 JOIN 读取，不在 `supplier_product` 表同步快照；历史采购单继续保留下单时快照。服务分只能通过专用接口调整。本接口 MVP 阶段复用 `purchase:create` 权限。
       operationId: purchaseSupplierUpdate
       security:
         - SaTokenAuth: []
@@ -4824,7 +4865,7 @@ components:
         refreshedAt: { type: string, description: 概览刷新时间，后端生成 }
         quickPrompts:
           type: array
-          description: 参数化快捷任务。前端点击后展示参数弹窗，确认后发送由后端可识别的完整提示词，但对话中只显示任务卡片。调拨类快捷任务不得要求用户填写预测天数，应基于已完成销量预测、库存缺口和跨仓可用库存生成调出仓、调入仓和调拨数量建议。
+          description: 后续参数化快捷任务预留字段；基础对话阶段返回空数组，不展示未实现的业务分析入口。
           items: { $ref: '#/components/schemas/AiQuickPrompt' }
         conversations:
           type: array
@@ -4866,8 +4907,8 @@ components:
         agentName: { type: string, description: 智能体名称 }
         role:
           type: string
-          enum: [ROUTER, ANALYSIS, PURCHASE, INVENTORY, SALES, SUPPLIER]
-          description: 智能体角色；主控智能体使用 `ROUTER`
+          enum: [ORCHESTRATOR, DATA_QUERY, DATA_ANALYSIS]
+          description: 后续三智能体角色，分别对应主智能体、数据查询子智能体和数据分析子智能体
         description: { type: string, description: 智能体职责说明 }
         status: { type: string, enum: [ONLINE, BUSY, IDLE], description: 展示状态 }
 
@@ -4876,7 +4917,7 @@ components:
       required: [promptId, title, description, intentCode, promptTemplate, fields]
       description: |
         快捷分析入口配置。每个入口应落到明确业务下一步，例如库存筛选、采购草稿、调拨草稿、锁定库存复核或预测报告。
-        `transfer`/调拨类入口的 `fields` 只采集调拨商品和参与仓库，不采集 `DAYS`；预测窗口由销量预测智能体结果或后端任务上下文提供。
+        `transfer`/调拨类入口的 `fields` 只采集调拨商品和参与仓库，不采集 `DAYS`；预测窗口由分析子智能体结果或后端任务上下文提供。基础阶段不返回快捷任务。
       properties:
         promptId: { type: string, description: 快捷提示稳定标识 }
         title: { type: string, description: 快捷提示标题 }
@@ -4966,7 +5007,8 @@ components:
       type: object
       required: [requestId, eventType, conversationId]
       description: |
-        智能经营助手流式响应事件。`MESSAGE_DELTA` 只承载文本增量；`MESSAGE_FINAL` 必须承载完整 `AiChatMessage`，前端以最终消息中的 charts/sources/actionCards 为准渲染结构化内容。
+        智能经营助手流式响应事件。SSE event 名称必须与 JSON eventType 一致。MESSAGE_DELTA 必须包含 contentDelta；MESSAGE_FINAL 必须包含已持久化的完整 AiChatMessage；ERROR 必须包含 errorMessage。
+        流必须以 MESSAGE_FINAL 或 ERROR 终止；连接直接关闭不能当作生成完成。基础阶段只返回文本，结构化数组为空。
       properties:
         requestId: { type: string, description: 本次请求 ID }
         eventType: { type: string, enum: [MESSAGE_DELTA, MESSAGE_FINAL, ERROR], description: 流式事件类型 }
@@ -4981,12 +5023,12 @@ components:
 
     AiChatRequest:
       type: object
-      required: [message]
+      required: [conversationId, message]
       properties:
         conversationId:
           type: string
-          nullable: true
-          description: 会话 ID；新会话传 `null`，已有会话传后端返回值
+          pattern: '^[1-9][0-9]*$'
+          description: 必填。先通过会话创建接口获取 ID，再发送消息；必须为当前用户所属的有效会话
         message:
           type: string
           minLength: 1
@@ -5022,7 +5064,7 @@ components:
           items: { $ref: '#/components/schemas/AiContextSource' }
         agentTraces:
           type: array
-          description: 本轮多智能体协同轨迹，用于展示主控智能体如何分派专家智能体
+          description: 后续主智能体调度 DataQuerySubAgent 和 DataAnalysisSubAgent 的协同轨迹；基础交互阶段返回空数组
           items: { $ref: '#/components/schemas/AiAgentTrace' }
         taskCard:
           nullable: true

@@ -37,8 +37,9 @@ erp-admin
   ├─ erp-warehouse
   ├─ erp-purchase
   ├─ erp-sales
+  ├─ erp-return
   ├─ erp-ai
-  └─ erp-job
+  └─ erp-dashboard
 ```
 
 选择模块化单体的原因：
@@ -67,7 +68,8 @@ erp-admin
 | `erp-sales` | 客户、销售订单、销售出库流程 | 不直接绕过仓储模块改库存 |
 | `erp-return` | 统一退货单、采购退货出库、销售退货入库与回写 | 不直接绕过仓储模块改库存 |
 | `erp-ai` | RAG、Tool、Agent 编排、分析建议 | 不直接修改业务数据 |
-| `erp-job` | 定时统计、预警扫描、分析刷新 | 不承载核心交易逻辑 |
+
+定时任务已下沉到各业务模块自身(`erp-purchase`、`erp-dashboard` 等),由 `erp-admin` 统一启用 `@EnableScheduling`。
 
 关键原则：
 

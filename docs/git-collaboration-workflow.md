@@ -33,8 +33,8 @@ erp-server/
 ├── erp-warehouse/       仓库、库存、出入库
 ├── erp-purchase/        供应商、采购订单
 ├── erp-sales/           客户、销售订单
-├── erp-ai/              AI 智能体（后续）
-├── erp-job/             定时任务（后续）
+├── erp-ai/              AI 智能体
+├── erp-dashboard/       工作台聚合与缓存
 └── erp-admin/           启动模块（配置文件 + 启动类）
 ```
 

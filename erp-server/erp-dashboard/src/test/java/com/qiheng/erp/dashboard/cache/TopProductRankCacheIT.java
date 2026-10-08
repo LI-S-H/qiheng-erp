@@ -2,6 +2,7 @@ package com.qiheng.erp.dashboard.cache;
 
 import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent;
 import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent.RankItemInput;
+import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.common.util.RedisUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,9 @@ class TopProductRankCacheIT {
     @Autowired
     private RedisUtil redisUtil;
 
+    @Autowired
+    private SystemExceptionMqPublisher systemExceptionMqPublisher;
+
     private TopProductRankCache cache;
 
     private static final String AMOUNT_KEY = "dashboard:top-product:sales-amount";
@@ -51,7 +55,7 @@ class TopProductRankCacheIT {
 
     @BeforeEach
     void setUp() {
-        cache = new TopProductRankCache(redisTemplate, redissonClient);
+        cache = new TopProductRankCache(redisTemplate, redissonClient, systemExceptionMqPublisher);
         // 清理测试残留
         redisUtil.delete(AMOUNT_KEY);
         redisUtil.delete(QTY_KEY);

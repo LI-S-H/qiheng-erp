@@ -3,6 +3,8 @@ package com.qiheng.erp.dashboard.cache;
 import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent;
 import com.qiheng.erp.common.event.dashboard.TopProductRankAdjustEvent.RankItemInput;
 import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
+import com.qiheng.erp.dashboard.exception.RankDataCorruptedException;
+import com.qiheng.erp.dashboard.exception.TopRankUpdateFailedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

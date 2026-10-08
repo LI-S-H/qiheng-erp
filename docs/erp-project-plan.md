@@ -2,6 +2,8 @@
 
 ## 1. 项目介绍
 
+> 本文及 [供应商评分模块化交付计划](supplier-score-module-delivery-plan.md) 保留历史分期规划，不作为当前功能完成清单。评分实际口径以 [采购库表设计](database/mvp-purchase-schema.md) 为准，剩余事项与验收状态见 [当前未完成事项](project-open-items.md)。
+
 本项目计划搭建一个面向企业内部管理的 ERP 系统，覆盖产品、仓库、采购、销售、供应商、客户等核心业务模块，并在传统 ERP 能力之上接入 AI 智能体。
 
 系统的核心原则是：

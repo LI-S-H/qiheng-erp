@@ -323,8 +323,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
             }
         }
         productMapper.updateById(product);
-        // TODO(reference-purchase-price):referencePurchasePrice 不在此接口中处理,
-        //  必须通过单独接口 updateReferencePrice 调用,以触发供应商评分重算。
+        // 参考采购价通过独立接口维护，以隔离产品编辑与供应商评分重算事务。
         return getDetailById(product.getId());
     }
 

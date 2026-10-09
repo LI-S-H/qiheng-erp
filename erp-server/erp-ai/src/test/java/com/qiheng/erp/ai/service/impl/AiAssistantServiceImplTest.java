@@ -20,6 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 import java.util.List;
 import java.util.Map;
@@ -187,6 +188,49 @@ class AiAssistantServiceImplTest {
         AiChatRequest request = new AiChatRequest();
         request.setConversationId(100L); request.setMessage("  新问题  ");
         return request;
+    }
+
+    @Test
+    void differentConversationsRunTogetherAndCancellationOnlyReleasesItsOwnLock() throws Exception {
+        when(conversations.getOwnedConversation(101L, 7L)).thenReturn(new AiConversation().setId(101L).setUserId(7L));
+        when(messages.recentForUser(101L, 7L)).thenReturn(List.of());
+        when(messages.appendForUser(eq(101L), eq(7L), any())).thenAnswer(invocation -> {
+            AiMessageCreateCommand command = invocation.getArgument(2);
+            AiChatMessageVO reply = new AiChatMessageVO();
+            reply.setMessageId(21L); reply.setRole(command.getRole()); reply.setContent(command.getContent());
+            return reply;
+        });
+        Sinks.Many<Message> firstOutput = Sinks.many().unicast().onBackpressureBuffer();
+        Sinks.Many<Message> secondOutput = Sinks.many().unicast().onBackpressureBuffer();
+        CountDownLatch subscribed = new CountDownLatch(2);
+        when(agent.streamMessages(anyList(), any(RunnableConfig.class))).thenAnswer(invocation -> {
+            RunnableConfig config = invocation.getArgument(1);
+            String threadId = config.threadId().orElseThrow();
+            assertTrue(Set.of("7:100", "7:101").contains(threadId));
+            return ("7:100".equals(threadId) ? firstOutput : secondOutput).asFlux()
+                    .doOnSubscribe(ignored -> subscribed.countDown());
+        });
+        AiChatRequest secondRequest = request();
+        secondRequest.setConversationId(101L);
+        SseEmitter firstEmitter;
+        SseEmitter secondEmitter;
+        try (var context = mockStatic(UserContext.class)) {
+            context.when(UserContext::getUserId).thenReturn(7L);
+            firstEmitter = service.stream(request());
+            secondEmitter = service.stream(secondRequest);
+            assertTrue(subscribed.await(3, TimeUnit.SECONDS), "不同会话应能同时订阅同一个Agent");
+            ((Runnable) ReflectionTestUtils.getField(firstEmitter, "completionCallback")).run();
+            Set<?> active = (Set<?>) ReflectionTestUtils.getField(service, "activeConversations");
+            assertEquals(Set.of("7:101"), active, "取消A不能释放B的并发锁");
+            assertThrows(BizException.class, () -> service.stream(secondRequest));
+        }
+        secondOutput.emitNext(new AssistantMessage("会话B的完整回复"), Sinks.EmitFailureHandler.FAIL_FAST);
+        secondOutput.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
+        awaitReleased();
+        verify(messages, never()).appendForUser(eq(100L), eq(7L), argThat(command -> "assistant".equals(command.getRole())));
+        verify(messages).appendForUser(eq(101L), eq(7L), argThat(command -> "assistant".equals(command.getRole())
+                && "会话B的完整回复".equals(command.getContent())));
+        assertEquals("101", events(secondEmitter).getLast().get("conversationId"));
     }
 
     private void awaitReleased() throws InterruptedException {

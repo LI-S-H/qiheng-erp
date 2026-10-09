@@ -24,11 +24,8 @@ interface ConversationHistoryState {
   error: string | null;
 }
 const loading = ref(false);
-const sending = ref(false);
 const overview = ref<AiAssistantOverview | null>(null);
 const overviewError = ref('');
-const streamError = ref('');
-const inputMessage = ref('');
 const conversationId = ref<string | null>(null);
 const sidebarCollapsed = ref(false);
 const conversationListExpanded = ref(false);
@@ -46,12 +43,22 @@ const pendingDeleteConversation = ref<{ id: string; title: string } | null>(null
 const messageScroll = ref<HTMLElement | null>(null);
 const messagesByConversation = reactive<Record<string, AiChatMessage[]>>({});
 const historyStateByConversation = reactive<Record<string, ConversationHistoryState>>({});
+const sendingByConversation = reactive<Record<string, boolean>>({});
+const errorsByConversation = reactive<Record<string, string>>({});
+const draftsByConversation = reactive<Record<string, string>>({});
+const generationControllers = new Map<string, AbortController>();
+const recoveryControllers = new Map<string, AbortController>();
 let historySequence = 0;
 let historyController: AbortController | null = null;
 let generationSequence = 0;
-let generationController: AbortController | null = null;
-let generatingConversationId: string | null = null;
 let disposed = false;
+
+const sending = computed(() => Boolean(conversationId.value && sendingByConversation[conversationId.value]));
+const streamError = computed(() => conversationId.value ? errorsByConversation[conversationId.value] || '' : '');
+const inputMessage = computed({
+  get: () => conversationId.value ? draftsByConversation[conversationId.value] || '' : '',
+  set: (value: string) => { if (conversationId.value) draftsByConversation[conversationId.value] = value; },
+});
 
 const conversationDateGroups = computed(() => {
   const groups = new Map<string, number>();
@@ -79,23 +86,37 @@ function isRequestCancelled(error: unknown) {
   ));
 }
 function stopGeneration() {
-  generationController?.abort();
+  if (!conversationId.value) return;
+  generationControllers.get(conversationId.value)?.abort();
+  recoveryControllers.get(conversationId.value)?.abort();
 }
-function discardGeneration() {
-  stopGeneration();
-  if (generatingConversationId) historyStateByConversation[generatingConversationId] = { status: 'idle', error: null };
-  generationSequence += 1;
-  generationController = null;
-  generatingConversationId = null;
-  sending.value = false;
+function discardGeneration(id: string) {
+  const controller = generationControllers.get(id);
+  // 先让运行实例失效，再中断网络，删除后的旧回调不能重新建立会话状态。
+  generationControllers.delete(id);
+  controller?.abort();
+  recoveryControllers.get(id)?.abort();
+  recoveryControllers.delete(id);
+  sendingByConversation[id] = false;
+  historyStateByConversation[id] = { status: 'idle', error: null };
 }
-async function scrollToLatest() {
+async function scrollToLatest(id = conversationId.value) {
   await nextTick();
-  if (messageScroll.value) messageScroll.value.scrollTop = messageScroll.value.scrollHeight;
+  if (conversationId.value === id && messageScroll.value) messageScroll.value.scrollTop = messageScroll.value.scrollHeight;
+}
+function cancelHistoryLoad() {
+  historySequence += 1;
+  historyController?.abort();
+  historyController = null;
+  const previous = switchingConversationId.value;
+  if (previous && historyStateByConversation[previous]?.status === 'loading') {
+    historyStateByConversation[previous] = { status: 'idle', error: null };
+  }
+  switchingConversationId.value = null;
 }
 async function loadConversationHistory(id: string) {
+  cancelHistoryLoad();
   const sequence = ++historySequence;
-  historyController?.abort();
   const controller = new AbortController();
   historyController = controller;
   switchingConversationId.value = id;
@@ -105,7 +126,7 @@ async function loadConversationHistory(id: string) {
     if (disposed || sequence !== historySequence || conversationId.value !== id) return;
     messagesByConversation[id] = messages;
     historyStateByConversation[id] = { status: 'success', error: null };
-    await scrollToLatest();
+    await scrollToLatest(id);
   } catch (error) {
     if (isRequestCancelled(error) || disposed || sequence !== historySequence || conversationId.value !== id) return;
     historyStateByConversation[id] = { status: 'error', error: getApiErrorMessage(error) || '会话历史加载失败，请重试' };
@@ -117,10 +138,13 @@ async function loadConversationHistory(id: string) {
   }
 }
 async function switchConversation(id: string, force = false) {
-  if (conversationId.value !== id) discardGeneration();
+  cancelHistoryLoad();
   conversationId.value = id;
-  streamError.value = '';
-  if (!force && historyStateByConversation[id]?.status === 'success') return;
+  // 正在生成或同步的会话由自己的请求更新缓存，切回时不能用数据库快照覆盖增量。
+  if (sendingByConversation[id] || (!force && historyStateByConversation[id]?.status === 'success')) {
+    await scrollToLatest(id);
+    return;
+  }
   await loadConversationHistory(id);
 }
 async function retryConversationHistory() {
@@ -149,7 +173,6 @@ async function selectConversation(id: string) {
 }
 async function createConversation() {
   if (loading.value) return;
-  discardGeneration();
   loading.value = true;
   try {
     const conversation = await createAiConversation();
@@ -207,7 +230,7 @@ async function removeConversation() {
   if (!id) return;
   const conversation = overview.value?.conversations.find(item => item.conversationId === id);
   if (!conversation) { updateDeleteDialogOpen(false); return; }
-  if (generatingConversationId === id) discardGeneration();
+  if (generationControllers.has(id)) discardGeneration(id);
   deletingConversationId.value = id;
   try {
     await deleteAiConversation(id);
@@ -217,15 +240,22 @@ async function removeConversation() {
     if (overview.value) overview.value.conversations = overview.value.conversations.filter(item => item.conversationId !== id);
     delete messagesByConversation[id];
     delete historyStateByConversation[id];
+    delete sendingByConversation[id];
+    delete errorsByConversation[id];
+    delete draftsByConversation[id];
     if (conversationId.value === id) {
-      historyController?.abort();
-      historySequence += 1;
+      cancelHistoryLoad();
       const next = overview.value?.conversations[0]?.conversationId || null;
       conversationId.value = next;
       if (next) await switchConversation(next, true);
     }
     toast.success('会话已删除');
-  } catch (error) { if (!disposed) toast.warning(getApiErrorMessage(error) || '删除会话失败'); }
+  } catch (error) {
+    if (!disposed) {
+      toast.warning(getApiErrorMessage(error) || '删除会话失败');
+      if (conversationId.value === id && historyStateByConversation[id]?.status === 'idle') await switchConversation(id, true);
+    }
+  }
   finally { deletingConversationId.value = null; }
 }
 function localMessage(messageId: string, role: 'user' | 'assistant', content: string): AiChatMessage {
@@ -235,29 +265,27 @@ async function submitMessage() {
   const message = inputMessage.value.trim();
   const id = conversationId.value;
   if (!message || sending.value || !id || currentHistoryState.value.status !== 'success') return;
-  if (message.length > 2000) { streamError.value = '消息不能超过 2000 字'; return; }
-  generationController?.abort();
+  if (message.length > 2000) { errorsByConversation[id] = '消息不能超过 2000 字'; return; }
   const sequence = ++generationSequence;
   const controller = new AbortController();
-  generationController = controller;
-  generatingConversationId = id;
+  generationControllers.set(id, controller);
   const placeholderId = `local-assistant-${sequence}`;
   messagesByConversation[id] = [...(messagesByConversation[id] || []), localMessage(`local-user-${sequence}`, 'user', message), localMessage(placeholderId, 'assistant', '')];
-  inputMessage.value = '';
-  streamError.value = '';
-  sending.value = true;
-  await scrollToLatest();
-  const isCurrent = () => !disposed && generationSequence === sequence && conversationId.value === id;
+  draftsByConversation[id] = '';
+  errorsByConversation[id] = '';
+  sendingByConversation[id] = true;
+  await scrollToLatest(id);
+  const isCurrent = () => !disposed && generationControllers.get(id) === controller;
+  if (!isCurrent()) return;
   try {
     const response = await sendAiAssistantMessage({ conversationId: id, message }, delta => {
       if (!isCurrent()) return;
       const placeholder = messagesByConversation[id]?.find(item => item.messageId === placeholderId);
       if (placeholder) placeholder.content += delta;
-      void scrollToLatest();
+      void scrollToLatest(id);
     }, controller.signal);
     if (!isCurrent()) return;
     messagesByConversation[id] = messagesByConversation[id].map(item => item.messageId === placeholderId ? response.message : item);
-    sending.value = false;
     // 最终消息替换临时气泡后再回读，取回真实用户消息 ID，刷新后的历史与当前页面一致。
     try {
       const persisted = await getAiConversationHistory(id, controller.signal);
@@ -266,31 +294,43 @@ async function submitMessage() {
     } catch (error) {
       if (!isCurrent()) return;
       // FINAL 已确认回复成功，历史同步失败不能把已完成的提问恢复到输入框诱导重复发送。
-      streamError.value = '回复已完成，但历史同步失败，可刷新页面重试同步。';
+      errorsByConversation[id] = '回复已完成，但历史同步失败，可刷新页面重试同步。';
     }
     const conversation = overview.value?.conversations.find(item => item.conversationId === id);
     if (conversation) { conversation.updatedAt = response.message.createdAt; conversation.description = message.slice(0, 80); }
-    await scrollToLatest();
+    await scrollToLatest(id);
   } catch (error) {
     if (!isCurrent()) return;
-    inputMessage.value = message;
-    streamError.value = isRequestCancelled(error) ? '生成已停止，可重新发送问题。' : getApiErrorMessage(error) || 'AI 响应失败，请重试';
+    if (!draftsByConversation[id]) draftsByConversation[id] = message;
+    errorsByConversation[id] = isRequestCancelled(error) ? '生成已停止，可重新发送问题。' : getApiErrorMessage(error) || 'AI 响应失败，请重试';
     // 失败或停止时后端可能已经保存用户消息，按持久化历史恢复，避免乐观回滚造成错乱。
-    await loadConversationHistory(id);
+    const recoveryController = new AbortController();
+    recoveryControllers.set(id, recoveryController);
+    historyStateByConversation[id] = { status: 'loading', error: null };
+    try {
+      const persisted = await getAiConversationHistory(id, recoveryController.signal);
+      if (!isCurrent()) return;
+      messagesByConversation[id] = persisted;
+      historyStateByConversation[id] = { status: 'success', error: null };
+      await scrollToLatest(id);
+    } catch (historyError) {
+      if (!isCurrent()) return;
+      historyStateByConversation[id] = { status: 'error', error: getApiErrorMessage(historyError) || '会话历史加载失败，请重试' };
+    } finally {
+      if (recoveryControllers.get(id) === recoveryController) recoveryControllers.delete(id);
+    }
   } finally {
-    if (generationSequence === sequence) {
-      sending.value = false;
-      generationController = null;
-      generatingConversationId = null;
+    if (generationControllers.get(id) === controller) {
+      sendingByConversation[id] = false;
+      generationControllers.delete(id);
     }
   }
 }
 onMounted(loadOverview);
 onBeforeUnmount(() => {
   disposed = true;
-  discardGeneration();
-  historyController?.abort();
-  historySequence += 1;
+  for (const id of generationControllers.keys()) discardGeneration(id);
+  cancelHistoryLoad();
 });
 </script>
 
@@ -382,7 +422,8 @@ onBeforeUnmount(() => {
                 <Tooltip :disabled="!sidebarCollapsed" :disable-hoverable-content="true">
                   <TooltipTrigger as-child>
                     <button type="button" class="ai-conversation-row__main" :aria-label="conversation.title" @click="selectConversation(conversation.conversationId)">
-                      <History class="h-4 w-4" />
+                      <LoaderCircle v-if="sendingByConversation[conversation.conversationId]" class="h-4 w-4 animate-spin" aria-label="正在生成或同步回复" />
+                      <History v-else class="h-4 w-4" />
                       <span v-if="!sidebarCollapsed">
                         <strong>{{ conversation.title }}</strong>
                         <small>{{ conversation.updatedAt.slice(0, 16) }} · {{ conversation.description }}</small>
@@ -418,7 +459,8 @@ onBeforeUnmount(() => {
                       :class="{ 'is-active': conversationId === conversation.conversationId, 'is-switching': switchingConversationId === conversation.conversationId }"
                     >
                       <button type="button" class="ai-conversation-row__main" @click="selectConversation(conversation.conversationId)">
-                        <History class="h-4 w-4" />
+                        <LoaderCircle v-if="sendingByConversation[conversation.conversationId]" class="h-4 w-4 animate-spin" aria-label="正在生成或同步回复" />
+                        <History v-else class="h-4 w-4" />
                         <span v-if="!sidebarCollapsed">
                           <strong>{{ conversation.title }}</strong>
                           <small>{{ conversation.updatedAt.slice(0, 16) }} · {{ conversation.description }}</small>

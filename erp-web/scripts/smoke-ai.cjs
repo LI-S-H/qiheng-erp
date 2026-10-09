@@ -15,6 +15,8 @@ let nextConversation = 1960000000000000000n;
 let nextMessage = 1963000000000000000n;
 let historyReadCount = 0;
 let interruptedCount = 0;
+const activeStreams = new Set();
+let maxParallelStreams = 0;
 let failNextHistory = false;
 let failNextDelete = false;
 const time = () => new Date().toLocaleString('sv-SE');
@@ -93,6 +95,8 @@ async function handleRequest(request, response) {
     if (payload.message === '服务未启用') return result(response, { message: '模型未配置，请联系管理员' }, 503);
     const history = histories.get(payload.conversationId);
     if (!history) return result(response, { message: '会话不存在' }, 404);
+    activeStreams.add(response);
+    maxParallelStreams = Math.max(maxParallelStreams, activeStreams.size);
     history.push(message('user', payload.message));
     response.writeHead(200, { 'Content-Type': 'text/event-stream;charset=UTF-8', 'Cache-Control': 'no-cache' });
     response.flushHeaders();
@@ -102,6 +106,7 @@ async function handleRequest(request, response) {
     const timers = [];
     const later = (ms, action) => timers.push(setTimeout(() => { if (!response.destroyed && !response.writableEnded) action(); }, ms));
     response.once('close', () => {
+      activeStreams.delete(response);
       timers.forEach(clearTimeout);
       if (!response.writableEnded) interruptedCount += 1;
     });
@@ -135,11 +140,13 @@ async function handleRequest(request, response) {
     } else if (payload.message === '缺少完成事件') {
       later(550, () => response.end());
     } else {
-      const long = ['停止测试', '切会话测试', '离页测试'].includes(payload.message);
+      const long = ['停止测试', '切会话测试', '离页测试', '删除旁路A', '删除目标B'].includes(payload.message);
       later(long ? 4000 : 650, () => response.write(emit('MESSAGE_DELTA', { contentDelta: '，第二段' })));
       later(long ? 6000 : 1300, () => {
         const completed = message('assistant', `完整回复：${payload.message}`, payload.message === '基础发送测试' ? [chart] : []);
         history.push(completed);
+        const conversation = conversations.find(item => item.conversationId === payload.conversationId);
+        if (conversation) conversation.updatedAt = completed.createdAt;
         if (payload.message === '历史同步失败测试') failNextHistory = true;
         response.write(emit('MESSAGE_FINAL', { message: completed }));
         response.end();
@@ -297,15 +304,67 @@ async function main() {
     await page.waitForTimeout(700);
     await expect(page.locator('.ai-chat-message')).toHaveCount(0);
     assert.equal(histories.get(secondId).length, 0, '其他会话消息不能写入当前会话');
+    const interruptedBeforeParallel = interruptedCount;
+    await send('并行会话B');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' }).click();
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await expect(input).toBeDisabled();
+    await page.locator('.ai-conversation-row__main').filter({ hasText: secondTitle }).click();
+    await expect(assistantText.last()).toHaveText('完整回复：并行会话B');
+    await expect(input).toBeEnabled();
+    await page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' }).click();
+    await expect(assistantText.last()).toHaveText('完整回复：切会话测试', { timeout: 10000 });
+    await expect(input).toBeEnabled();
+    assert.ok(maxParallelStreams >= 2, '两个不同会话必须同时保持生成连接');
+    assert.equal(interruptedCount, interruptedBeforeParallel, '切换会话不得中断任何模型流');
+    assert.ok(histories.get(firstId).some(item => item.content === '完整回复：切会话测试'));
+    assert.ok(histories.get(secondId).some(item => item.content === '完整回复：并行会话B'));
+
+    await send('切会话测试');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.locator('.ai-conversation-row__main').filter({ hasText: secondTitle }).click();
+    await send('停止测试');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.getByRole('button', { name: '停止生成', exact: true }).click();
+    await expect(page.locator('.ai-stream-error')).toContainText('生成已停止');
+    await expect(input).toBeEnabled();
+    await page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' }).click();
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await expect(page.getByRole('button', { name: '停止生成', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: '停止生成', exact: true }).click();
+    await expect(input).toBeEnabled();
+
+    await send('错误事件');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.locator('.ai-conversation-row__main').filter({ hasText: secondTitle }).click();
+    await input.fill('会话B自己的草稿');
+    await page.waitForTimeout(900);
+    await expect(input).toHaveValue('会话B自己的草稿');
+    await expect(page.locator('.ai-stream-error')).not.toContainText('测试服务临时不可用');
+    await page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' }).click();
+    await expect(page.locator('.ai-stream-error')).toContainText('测试服务临时不可用');
+    await expect(input).toHaveValue('错误事件');
+    await send('切会话测试');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.locator('.ai-conversation-row__main').filter({ hasText: secondTitle }).click();
     await send('离页测试');
     await expect(assistantText.last()).toHaveText('第一段中文');
     await page.reload();
     await expect(input).toBeEnabled();
     await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0);
-    assert.ok(interruptedCount >= 3, '停止/切会话/离页必须中断真实HTTP长连接');
+    assert.ok(interruptedCount >= 5, '停止只取消当前会话，离页必须取消所有会话长连接');
 
     await page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' }).click();
     await expect(input).toBeEnabled();
+    await send('删除旁路A');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.locator('.ai-conversation-row__main').filter({ hasText: secondTitle }).click();
+    await expect(input).toBeEnabled();
+    await send('删除目标B');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' }).click();
+    await expect(assistantText.last()).toHaveText('第一段中文');
     let nativeDialogs = 0;
     page.on('dialog', async dialog => { nativeDialogs += 1; await dialog.dismiss(); });
     const openDelete = async () => {
@@ -339,6 +398,8 @@ async function main() {
     assert.equal(nativeDialogs, 0, '删除确认不得使用浏览器弹窗');
     assert.equal(requests.filter(item => item.method === 'DELETE').length, deletesBefore + 2, '失败重试每次只能发送一次删除请求');
     await expect(page.locator('.ai-conversation-row.is-active')).toContainText('流式会话一');
+    await expect(assistantText.last()).toHaveText('完整回复：删除旁路A', { timeout: 10000 });
+    await expect(input).toBeEnabled();
     assert.ok(histories.has(firstId));
     const streamRequests = requests.filter(item => item.path === '/ai/assistant/messages/stream');
     assert.ok(streamRequests.length >= 7);
@@ -471,7 +532,7 @@ async function main() {
     }
     await page.goto(`${baseURL}/ai/tasks`);
     await expect(page).toHaveURL(`${baseURL}/ai/assistant`);
-    console.log(`SMOKE_AI_OK: 空会话/真实中文分块SSE/两次增量/最终替换/历史回读及同步失败/图表/改名删除/503与错误及截断/停止/切会话/离页/动态认证/任务入口/Markdown跨块与回读/HTML与危险链接隔离/三视口代码表格局部滚动；截图 ${screenshots}`);
+    console.log(`SMOKE_AI_OK: 空会话/真实中文分块SSE/两次增量/最终替换/历史回读及同步失败/图表/改名删除/503与错误及截断/多会话并行/停止隔离/草稿错误隔离/离页取消全部/动态认证/任务入口/Markdown跨块与回读/HTML与危险链接隔离/三视口代码表格局部滚动；截图 ${screenshots}`);
   } finally {
     await browser?.close();
     if (vite && vite.exitCode === null) { const exit = new Promise(resolve => vite.once('exit', resolve)); vite.kill(); await Promise.race([exit, sleep(3000)]); }

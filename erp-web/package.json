@@ -66,6 +66,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-vue-next": "^0.577.0",
+    "markdown-it": "^15.0.2",
     "pinia": "^2.3.0",
     "radix-vue": "^1.9.17",
     "reka-ui": "^2.9.10",
@@ -79,6 +80,7 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^25.9.3",
     "playwright": "^1.60.0",
     "typescript": "^5.7.2",

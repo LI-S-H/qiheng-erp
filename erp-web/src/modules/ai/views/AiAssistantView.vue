@@ -15,6 +15,7 @@ import { getApiErrorMessage } from '@/api/http';
 import AiChartCard from '../components/AiChartCard.vue';
 import AiComposerDock from '../components/AiComposerDock.vue';
 import AiFadeSwitch from '../components/AiFadeSwitch.vue';
+import AiMarkdownContent from '../components/AiMarkdownContent.vue';
 import { createAiConversation, deleteAiConversation, getAiAssistantOverview, getAiConversationHistory, sendAiAssistantMessage, updateAiConversation } from '../api';
 import type { AiAssistantOverview, AiChatMessage } from '../types';
 
@@ -473,7 +474,8 @@ onBeforeUnmount(() => {
                 <div class="ai-chat-avatar"><UserRound v-if="message.role === 'user'" class="h-4 w-4" /><Bot v-else class="h-4 w-4" /></div>
                 <div class="ai-chat-bubble">
                   <div class="ai-chat-meta"><strong>{{ message.role === 'user' ? '我' : '智能经营助手' }}</strong><span>{{ message.createdAt }}</span></div>
-                  <p v-if="message.content">{{ message.content }}</p>
+                  <AiMarkdownContent v-if="message.content && message.role === 'assistant'" :content="message.content" />
+                  <p v-else-if="message.content">{{ message.content }}</p>
                   <div v-if="message.charts.length" class="ai-message-charts"><AiChartCard v-for="chart in message.charts" :key="chart.chartId" :chart="chart" /></div>
                 </div>
               </article>
@@ -898,8 +900,10 @@ onBeforeUnmount(() => {
 .ai-chat-stage {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -908,6 +912,7 @@ onBeforeUnmount(() => {
 
 .ai-chat-scroll {
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   padding: 22px;
   scroll-padding-bottom: 22px;
@@ -915,6 +920,8 @@ onBeforeUnmount(() => {
 
 .ai-chat-stream {
   display: grid;
+  /* 代码块的最小内容宽度不能反向撑开消息列，横向滚动交给正文组件。 */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 18px;
   min-height: 100%;

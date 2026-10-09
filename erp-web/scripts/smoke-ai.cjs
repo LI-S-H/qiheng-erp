@@ -22,6 +22,33 @@ const message = (role, content, charts = []) => ({ messageId: String(++nextMessa
 const chart = { chartId: 'fixture-chart', type: 'line', title: '最终消息图表', description: '仅用于验证保留的图表组件', xField: 'day', yFields: ['value'], fieldLabels: { value: '数量' }, yUnit: '件', nameField: null, valueField: null, data: [{ day: '周一', value: 2 }, { day: '周二', value: 3 }] };
 const result = (response, data, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ code: status === 200 ? 0 : status, message: status === 200 ? '成功' : data.message, data: status === 200 ? data : null })); };
 const emptyAccess = { state: 'EMPTY' };
+const markdownReply = [
+  '# 经营分析', '', '**重点**与*说明*，使用 `stockQty`。', '普通换行', '',
+  '- 库存预警', '- 采购建议', '  - 核对供应商', '', '1. 检查库存', '2. 确认采购', '',
+  '> 数据仅供分析', '', '---', '',
+  '| 产品 | 建议 | 数量 | 仓库 | 供应商 | 备注 |', '| --- | --- | ---: | --- | --- | --- |',
+  '| 办公纸品 | 补货 | 120 | 华东仓库 | 测试供应商 | 宽表格局部滚动 |', '',
+  '```js', 'const stockQty = 120;', `const detail = "${'long-code-'.repeat(35)}";`, '</script><img src=x onerror=alert(1)>', '```', '',
+  '[安全链接](https://example.com/report) https://example.com/docs', '',
+  '<script>window.__markdownExecuted = true</script>', '<img src=x onerror="window.__markdownExecuted = true">', '',
+  '[危险链接](javascript:alert(1)) [数据链接](data:text/html,test) [文件链接](file:///test)', '',
+  '![报表图片](https://example.com/chart.png)',
+  '![失效图片](https://example.com/missing.png)',
+  '[![链接内图片](https://example.com/missing.png)](https://example.com/detail)',
+  '![危险图片](javascript:alert(1)) ![数据图片](data:image/png;base64,AAAA)',
+].join('\n');
+const previewReply = [
+  '## 库存与采购建议', '',
+  '**办公纸品库存低于安全库存，建议优先补货。**', '',
+  '| 产品 | 当前库存 | 安全库存 | 建议补货 |', '| --- | ---: | ---: | ---: |',
+  '| 办公纸品 | 120 件 | 200 件 | 80 件 |',
+  '| 包装材料 | 360 件 | 300 件 | 暂不补货 |', '',
+  '### 建议操作', '',
+  '1. 核对办公纸品的在途采购数量。',
+  '2. 确认供应商交期，再决定本次采购数量。', '',
+  '> 以下数据为展示示例，尚未创建采购单。', '',
+  '![库存走势示例](https://example.com/chart.png)',
+].join('\n');
 const dashboard = { refreshedAt: time(), pendingCount: 0, metrics: [], trend: [], todos: [], stockAlerts: [], orderStages: [], topProducts: [], supplierPerformance: [], orderStagePeriod: { type: 'CURRENT_CALENDAR_MONTH', startAt: '2026-10-01', endAtExclusive: '2026-11-01' }, access: { metrics: { MONTH_SALES: emptyAccess, MONTH_GROSS_PROFIT: emptyAccess, PENDING_ORDERS: emptyAccess, STOCK_RISK_SKU: emptyAccess }, todos: emptyAccess, stockAlerts: emptyAccess, orderStages: emptyAccess, topProducts: emptyAccess, supplierPerformance: emptyAccess } };
 
 async function handleRequest(request, response) {
@@ -78,6 +105,27 @@ async function handleRequest(request, response) {
       timers.forEach(clearTimeout);
       if (!response.writableEnded) interruptedCount += 1;
     });
+    if (payload.message === '请分析库存情况，给出补货建议。') {
+      response.write(emit('MESSAGE_DELTA', { contentDelta: '## 库存与采购建议\n\n' }));
+      later(400, () => {
+        const completed = message('assistant', previewReply);
+        history.push(completed);
+        response.write(emit('MESSAGE_FINAL', { message: completed }));
+        response.end();
+      });
+      return;
+    }
+    if (payload.message === 'Markdown 格式测试 **原文**') {
+      response.write(emit('MESSAGE_DELTA', { contentDelta: '# 经营分析\n\n**重' }));
+      later(650, () => response.write(emit('MESSAGE_DELTA', { contentDelta: '点**\n\n```js\nconst stockQty = 120;' })));
+      later(1300, () => {
+        const completed = message('assistant', markdownReply);
+        history.push(completed);
+        response.write(emit('MESSAGE_FINAL', { message: completed }));
+        response.end();
+      });
+      return;
+    }
     const first = Buffer.from(emit('MESSAGE_DELTA', { contentDelta: '第一段中文' }));
     const split = first.indexOf(Buffer.from('中')) + 1;
     response.write(first.subarray(0, split));
@@ -132,6 +180,12 @@ async function main() {
     }
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_BROWSER_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    // 提供可加载的图片资源，同时明确覆盖图片地址失效，避免用占位地址假装图片已验证。
+    await page.route('https://example.com/chart.png', route => route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="200" viewBox="0 0 720 200"><rect width="720" height="200" rx="8" fill="#eff6ff"/><text x="24" y="35" font-family="sans-serif" font-size="20" fill="#344054">库存走势（示例）</text><path d="M30 165 L140 140 L250 150 L360 100 L470 115 L580 65 L690 45" fill="none" stroke="#006bd6" stroke-width="4"/></svg>',
+    }));
+    await page.route('https://example.com/missing.png', route => route.fulfill({ status: 404, body: '' }));
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => { localStorage.setItem('erp_auth_token', 'fixture-auth'); localStorage.setItem('erp_auth_token_name', 'x-erp-fixture-session'); });
@@ -155,7 +209,7 @@ async function main() {
     const firstId = conversations[0].conversationId;
     const beforeHistory = historyReadCount;
     const send = async text => { await input.fill(text); await input.press('Enter'); };
-    const assistantText = page.locator('.ai-chat-message.is-assistant > .ai-chat-bubble > p');
+    const assistantText = page.locator('.ai-chat-message.is-assistant .ai-markdown-content');
     await send('基础发送测试');
     await expect(assistantText.last()).toHaveText('第一段中文');
     await expect(page.getByRole('button', { name: '停止生成', exact: true })).toBeEnabled();
@@ -295,6 +349,55 @@ async function main() {
 
     const screenshots = path.resolve(process.env.QA_SCREENSHOT_DIR || path.join(__dirname, '../docs/qa-screenshots', `${new Date().toISOString().replace(/[:.]/g, '-')}-ai-sse`));
     fs.mkdirSync(screenshots, { recursive: true });
+    await send('Markdown 格式测试 **原文**');
+    await expect(assistantText.last().locator('h1')).toHaveText('经营分析');
+    await expect(assistantText.last().locator('pre code')).toHaveText('const stockQty = 120;');
+    await expect(assistantText.last().locator('strong')).toHaveText('重点');
+    await expect(input).toBeEnabled();
+    const verifyMarkdown = async () => {
+      const body = assistantText.last();
+      await expect(body.locator('h1')).toHaveText('经营分析');
+      await expect(body.locator('strong')).toHaveText('重点');
+      await expect(body.locator('em')).toHaveText('说明');
+      await expect(body.locator('ul li')).toHaveCount(3);
+      await expect(body.locator('ol li')).toHaveCount(2);
+      await expect(body.locator('blockquote')).toContainText('数据仅供分析');
+      await expect(body.locator('hr')).toHaveCount(1);
+      await expect(body.locator('p').filter({ hasText: '普通换行' }).locator('br')).toHaveCount(1);
+      await expect(body.locator('table th')).toHaveCount(6);
+      await expect(body.locator('pre code')).toContainText('</script><img src=x onerror=alert(1)>');
+      await expect(body.locator('script, iframe, [onerror]')).toHaveCount(0);
+      await expect(body.locator('img')).toHaveCount(3);
+      await expect(body.locator('img[src^="javascript:"], img[src^="data:"], img[src^="file:"]')).toHaveCount(0);
+      await expect(body.locator('a[href^="javascript:"], a[href^="data:"], a[href^="file:"]')).toHaveCount(0);
+      await expect(body.getByRole('link', { name: '安全链接', exact: true })).toHaveAttribute('href', 'https://example.com/report');
+      await expect(body.getByRole('link', { name: '安全链接', exact: true })).toHaveAttribute('target', '_blank');
+      await expect(body.getByRole('link', { name: '安全链接', exact: true })).toHaveAttribute('rel', 'noopener noreferrer');
+      const reportImage = body.getByRole('img', { name: '报表图片', exact: true });
+      await reportImage.scrollIntoViewIfNeeded();
+      await expect(reportImage).toBeVisible();
+      await expect.poll(() => reportImage.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+      await expect(reportImage).toHaveAttribute('referrerpolicy', 'no-referrer');
+      await expect(body.locator('.ai-markdown-image-error').filter({ hasText: '报表图片' })).toBeHidden();
+      const failedImage = body.locator('img[alt="失效图片"]');
+      await failedImage.locator('..').scrollIntoViewIfNeeded();
+      const fallback = body.locator('.ai-markdown-image-error').filter({ hasText: '失效图片' });
+      await expect(fallback).toBeVisible();
+      await expect(failedImage).toBeHidden();
+      await expect(fallback.getByRole('link', { name: '打开原图' })).toHaveAttribute('href', 'https://example.com/missing.png');
+      const linkedFallback = body.locator('.ai-markdown-image-error').filter({ hasText: '链接内图片' });
+      await linkedFallback.locator('..').scrollIntoViewIfNeeded();
+      await expect(linkedFallback).toBeVisible();
+      await expect(linkedFallback.locator('a')).toHaveCount(0);
+      await expect(body.getByRole('link', { name: '图片加载失败：链接内图片', exact: true })).toHaveAttribute('href', 'https://example.com/detail');
+      assert.equal(await page.evaluate(() => window.__markdownExecuted), undefined);
+      await expect(page.locator('.ai-chat-message.is-user > .ai-chat-bubble > p').last()).toHaveText('Markdown 格式测试 **原文**');
+      assert.equal(histories.get(firstId).at(-1).content, markdownReply, '历史保存原始 Markdown');
+    };
+    await verifyMarkdown();
+    await page.reload();
+    await expect(input).toBeEnabled();
+    await verifyMarkdown();
     await page.getByRole('button', { name: '折叠会话', exact: true }).click();
     const tooltip = page.locator('[data-slot="tooltip-content"]:not([data-state="closed"])');
     const collapsedToggle = page.getByRole('button', { name: '收起会话记录', exact: true });
@@ -315,13 +418,13 @@ async function main() {
     await expect(tooltip).toContainText('新建会话');
     await page.getByRole('button', { name: '展开会话', exact: true }).hover();
     await expect(tooltip).toContainText('展开会话');
-    await page.screenshot({ path: path.join(screenshots, 'ai-sidebar-collapsed.png'), fullPage: true });
+    await page.screenshot({ path: path.join(screenshots, 'security-sidebar-collapsed.png'), fullPage: true });
     await page.getByRole('button', { name: '展开会话', exact: true }).click();
     for (const [width, height] of [[1440, 900], [1115, 838], [390, 844]]) {
       await page.setViewportSize({ width, height });
       await page.waitForTimeout(250);
       const inputFont = await input.evaluate(element => getComputedStyle(element).fontSize);
-      const messageFont = await page.locator('.ai-chat-bubble > p').first().evaluate(element => getComputedStyle(element).fontSize);
+      const messageFont = await assistantText.last().evaluate(element => getComputedStyle(element).fontSize);
       assert.equal(inputFont, '14px');
       assert.equal(inputFont, messageFont, `视口 ${width} 输入框与聊天正文字号必须一致`);
       const layout = await page.locator('.ai-chat-stage').evaluate(stage => {
@@ -332,11 +435,43 @@ async function main() {
       assert.ok(Math.abs(layout.dockTop - layout.scrollBottom) < 2, '消息滚动区与输入底座必须相邻');
       assert.notEqual(layout.dockBackground, 'rgba(0, 0, 0, 0)');
       assert.equal(layout.horizontalOverflow, false, `视口 ${width} 不得横向溢出`);
+      const codeOverflow = await assistantText.last().locator('pre').evaluate(element => ({ scrollable: getComputedStyle(element).overflowX, width: element.clientWidth, contentWidth: element.scrollWidth }));
+      assert.equal(codeOverflow.scrollable, 'auto');
+      assert.ok(codeOverflow.contentWidth > codeOverflow.width, `视口 ${width} 长代码必须在消息内横向滚动：${JSON.stringify(codeOverflow)}`);
+      if (width === 390) {
+        const tableOverflow = await assistantText.last().locator('.ai-markdown-table').evaluate(element => element.scrollWidth > element.clientWidth);
+        assert.ok(tableOverflow, '窄视口宽表格必须在消息内横向滚动');
+      }
+      await page.screenshot({ path: path.join(screenshots, `security-markdown-${width}x${height}.png`), fullPage: true });
+      const reportImage = assistantText.last().getByRole('img', { name: '报表图片', exact: true });
+      await reportImage.scrollIntoViewIfNeeded();
+      const imageFits = await reportImage.evaluate(image => image.getBoundingClientRect().width <= image.closest('.ai-markdown-content').getBoundingClientRect().width + 1);
+      assert.ok(imageFits, `视口 ${width} 图片不得撑宽消息`);
+      await page.screenshot({ path: path.join(screenshots, `security-image-${width}x${height}.png`), fullPage: true });
+    }
+    // 正常效果展示使用独立会话，不让安全测试载荷混入交付截图。
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByRole('button', { name: '新建会话', exact: true }).click();
+    await expect(input).toBeEnabled();
+    await send('请分析库存情况，给出补货建议。');
+    await expect(assistantText.last().locator('h2')).toHaveText('库存与采购建议');
+    await expect(input).toBeEnabled();
+    await expect(assistantText.last().locator('pre, script, .ai-markdown-image-error:not([hidden])')).toHaveCount(0);
+    await expect(assistantText.last()).not.toContainText('long-code');
+    await expect(assistantText.last()).not.toContainText('markdownExecuted');
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, { timeout: 10000 });
+    for (const [width, height] of [[1440, 900], [1115, 838], [390, 844]]) {
+      await page.setViewportSize({ width, height });
+      await page.waitForTimeout(250);
+      const previewImage = assistantText.last().getByRole('img', { name: '库存走势示例', exact: true });
+      await previewImage.scrollIntoViewIfNeeded();
+      await expect.poll(() => previewImage.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
       await page.screenshot({ path: path.join(screenshots, `ai-assistant-${width}x${height}.png`), fullPage: true });
     }
     await page.goto(`${baseURL}/ai/tasks`);
     await expect(page).toHaveURL(`${baseURL}/ai/assistant`);
-    console.log(`SMOKE_AI_OK: 空会话/真实中文分块SSE/两次增量/最终替换/历史回读及同步失败/图表/改名删除/503与错误及截断/停止/切会话/离页/动态认证/任务入口/三视口布局；截图 ${screenshots}`);
+    console.log(`SMOKE_AI_OK: 空会话/真实中文分块SSE/两次增量/最终替换/历史回读及同步失败/图表/改名删除/503与错误及截断/停止/切会话/离页/动态认证/任务入口/Markdown跨块与回读/HTML与危险链接隔离/三视口代码表格局部滚动；截图 ${screenshots}`);
   } finally {
     await browser?.close();
     if (vite && vite.exitCode === null) { const exit = new Promise(resolve => vite.once('exit', resolve)); vite.kill(); await Promise.race([exit, sleep(3000)]); }

@@ -3,6 +3,7 @@ package com.qiheng.erp.ai.service.impl;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.qiheng.erp.ai.domain.dto.AiMessageCreateCommand;
 import com.qiheng.erp.ai.domain.entity.AiConversation;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
@@ -102,5 +103,29 @@ class AiMessageServiceImplTest {
             assertEquals(2001L, result.getMessageId());
             assertTrue(conversation.getLastMessageAt() != null);
         }
+    }
+
+    @Test
+    void asynchronousAppendUsesCapturedOwnerAndIncludesNullableContractFields() {
+        AiConversation conversation = new AiConversation().setId(1001L).setUserId(7L).setVersion(0);
+        when(conversationService.getOwnedConversation(1001L, 7L)).thenReturn(conversation);
+        when(messageMapper.insert(any(AiMessage.class))).thenReturn(1);
+        when(conversationMapper.updateById(any(AiConversation.class))).thenReturn(1);
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules()
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        AiMessageServiceImpl service = new AiMessageServiceImpl(messageMapper, conversationMapper, conversationService, mapper);
+        AiMessageCreateCommand command = new AiMessageCreateCommand();
+        command.setRole("assistant"); command.setContent("真实回复");
+
+        // 此处故意没有登录上下文，模拟模型完成后的工作线程。
+        var result = service.appendForUser(1001L, 7L, command);
+        var json = mapper.valueToTree(result);
+        assertTrue(json.has("taskCard") && json.get("taskCard").isNull());
+        assertTrue(json.has("workbench") && json.get("workbench").isNull());
+        assertTrue(json.get("charts").isArray() && json.get("charts").isEmpty());
+        verify(conversationService).getOwnedConversation(1001L, 7L);
+        ArgumentCaptor<AiMessage> captor = ArgumentCaptor.forClass(AiMessage.class);
+        verify(messageMapper).insert(captor.capture());
+        assertEquals(7L, captor.getValue().getUserId());
     }
 }

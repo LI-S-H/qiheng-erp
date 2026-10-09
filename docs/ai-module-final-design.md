@@ -14,7 +14,7 @@
 
 ## 本阶段：基础对话骨架
 
-本阶段只接入一个可配置 ChatModel 和一个 OrchestratorAgent，完成真实文本对话、SSE、会话历史和追问。查询子智能体、分析子智能体、任务管理、反思、RAG 和业务草稿属于后续扩展，本阶段不注册或模拟这些能力。
+本阶段注册 deepseek-v4-pro 和 deepseek-flash 两个 ChatModel，当前 OrchestratorAgent 显式注入 Pro，未来其他智能体可同时注入 Flash，完成真实文本对话、SSE、会话历史和追问。查询子智能体、分析子智能体、任务管理、反思、RAG 和业务草稿属于后续扩展，本阶段不注册或模拟这些能力。
 
 包职责保持清晰：chatmodel 创建模型，agent 定义 Agent，service 承担会话校验、上下文和消息保存，controller 提供 HTTP 接口；实体与 Mapper 保留既有结构。
 

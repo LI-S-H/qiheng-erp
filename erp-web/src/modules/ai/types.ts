@@ -144,9 +144,14 @@ export interface AiAgentTrace {
 }
 
 export interface AiChatRequest {
-  conversationId: string | null;
+  conversationId: string;
   message: string;
 }
+
+export type AiChatStreamEvent =
+  | { eventType: 'MESSAGE_DELTA'; requestId: string; conversationId: string; contentDelta: string }
+  | { eventType: 'MESSAGE_FINAL'; requestId: string; conversationId: string; message: AiChatMessage }
+  | { eventType: 'ERROR'; requestId: string; conversationId: string; errorMessage: string };
 
 export interface AiChatResponse {
   conversationId: string;

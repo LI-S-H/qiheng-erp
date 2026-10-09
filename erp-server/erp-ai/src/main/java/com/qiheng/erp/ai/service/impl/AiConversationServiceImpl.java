@@ -105,13 +105,18 @@ public class AiConversationServiceImpl extends ServiceImpl<AiConversationMapper,
 
     @Override
     public AiConversation getOwnedConversation(Long conversationId) {
-        if (conversationId == null) {
+        return getOwnedConversation(conversationId, currentUserId());
+    }
+
+    @Override
+    public AiConversation getOwnedConversation(Long conversationId, Long userId) {
+        if (conversationId == null || userId == null) {
             throw new BizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
         }
         AiConversation conversation = conversationMapper.selectOne(
                 new LambdaQueryWrapper<AiConversation>()
                         .eq(AiConversation::getId, conversationId)
-                        .eq(AiConversation::getUserId, currentUserId()));
+                        .eq(AiConversation::getUserId, userId));
         if (conversation == null) {
             throw new BizException(ErrorCode.AI_CONVERSATION_NOT_FOUND);
         }

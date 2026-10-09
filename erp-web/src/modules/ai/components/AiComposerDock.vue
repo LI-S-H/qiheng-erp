@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoaderCircle, Send } from 'lucide-vue-next';
+import { Send, Square } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -9,17 +9,23 @@ const props = withDefaults(defineProps<{
   sending?: boolean;
   disabled?: boolean;
 }>(), {
-  placeholder: '输入经营问题，例如：分析 A4复印纸未来 14 天补货建议',
+  placeholder: '输入问题，开始对话',
   sending: false,
   disabled: false,
 });
 const emit = defineEmits<{
   submit: [];
+  stop: [];
 }>();
 
 function submitMessage() {
   if (props.sending || props.disabled || !inputMessage.value.trim()) return;
   emit('submit');
+}
+function onEnter(event: KeyboardEvent) {
+  if (event.isComposing) return;
+  event.preventDefault();
+  submitMessage();
 }
 </script>
 
@@ -33,17 +39,19 @@ function submitMessage() {
         aria-label="经营问题"
         aria-describedby="ai-composer-hint"
         :disabled="sending || disabled"
-        @keydown.enter.exact.prevent="submitMessage"
+        maxlength="2000"
+        @keydown.enter.exact="onEnter"
       />
       <span id="ai-composer-hint" class="sr-only">按 Enter 发送，按 Shift+Enter 换行</span>
       <Button
         class="ai-composer__send"
-        type="submit"
+        :type="sending ? 'button' : 'submit'"
         size="sm"
-        :aria-label="sending ? '正在分析' : '发送消息'"
-        :disabled="sending || disabled || !inputMessage.trim()"
+        :aria-label="sending ? '停止生成' : '发送消息'"
+        :disabled="!sending && (disabled || !inputMessage.trim())"
+        @click="sending && emit('stop')"
       >
-        <LoaderCircle v-if="sending" class="h-4 w-4 animate-spin" />
+        <Square v-if="sending" class="h-4 w-4" />
         <Send v-else class="h-4 w-4" />
       </Button>
     </form>
@@ -93,7 +101,7 @@ function submitMessage() {
   border: 0;
   background: transparent;
   resize: none;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 

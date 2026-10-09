@@ -44,6 +44,7 @@
     "smoke:dashboard-states": "node scripts/smoke-dashboard-states.cjs",
     "smoke:dashboard-inventory-status": "node scripts/smoke-dashboard-inventory-status.cjs",
     "smoke:ai": "node scripts/smoke-ai.cjs",
+    "test:ai-sse": "node scripts/test-ai-sse.cjs",
     "smoke:purchase": "node scripts/smoke-purchase.cjs",
     "smoke:purchase-returns": "node scripts/smoke-purchase-returns.cjs",
     "smoke:purchase-returns-contract": "node scripts/smoke-purchase-returns-contract.cjs",

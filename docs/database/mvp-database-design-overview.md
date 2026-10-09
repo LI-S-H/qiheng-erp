@@ -283,13 +283,15 @@ sys_role.permission_codes
 
 ### 8. AI 设计只保留必要落库点
 
-AI 模块第一版不拆聊天会话表、Prompt 模板表、Workflow 节点日志表，只设计 3 张表：
+AI 模块共保留 5 张表；基础交互先使用会话与消息表，后续知识库和审计使用预留表。不额外拆 Prompt 模板表或节点日志表：
 
 - `ai_document`
 - `ai_document_chunk`
 - `ai_interaction_log`
+- `ai_conversation`
+- `ai_message`
 
-原因是 MVP 先落地两类能力：
+基础交互先保存当前用户的会话、完整消息和历史上下文；后续再落地两类能力：
 
 - RAG 问答：需要保存文档、切片和向量 key。
 - AI Tool 查询：需要记录用户问题、Tool 名称、参数、权限校验结果和返回摘要。

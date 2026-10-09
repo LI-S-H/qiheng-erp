@@ -25,7 +25,6 @@ const CustomerManageView = () => import('@/modules/sales/customers/views/Custome
 const SalesOrderManageView = () => import('@/modules/sales/orders/views/SalesOrderManageView.vue');
 const SalesReturnManageView = () => import('@/modules/sales/returns/views/SalesReturnManageView.vue');
 const AiAssistantView = () => import('@/modules/ai/views/AiAssistantView.vue');
-const AiScheduledTasksView = () => import('@/modules/ai/views/AiScheduledTasksView.vue');
 
 const routes: RouteRecordRaw[] = [
   {
@@ -213,10 +212,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'ai/tasks',
         name: 'ai-tasks',
-        component: AiScheduledTasksView,
-        meta: {
-          title: '经营任务中心',
-        },
+        redirect: '/ai/assistant',
       },
     ],
   },
@@ -273,7 +269,7 @@ router.beforeEach(async (to, from) => {
     return '/dashboard';
   }
 
-  document.title = `${String(to.meta.title || '管理系统')} - 启衡 ERP`;
+  document.title = `${String(to.meta.title || '管理系统')} - 云仓ERP`;
 
   return true;
 });

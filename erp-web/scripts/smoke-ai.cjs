@@ -1,528 +1,347 @@
-const fs = require('fs');
-const path = require('path');
-const { runSmoke } = require('./smoke-helpers.cjs');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const http = require('node:http');
+const net = require('node:net');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { chromium, expect } = require('playwright/test');
 
-const screenshotDirectory = path.resolve(
-  process.env.QA_SCREENSHOT_DIR || 'qa-artifacts/ai-assistant-tasks',
-);
-const screenshotPath = filename => path.join(screenshotDirectory, filename);
+// 独立 HTTP 服务真实分批发送 SSE；浏览器直接运行生产源码，不走业务 Mock 或付费模型。
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const conversations = [];
+const histories = new Map();
+const requests = [];
+let nextConversation = 1960000000000000000n;
+let nextMessage = 1963000000000000000n;
+let historyReadCount = 0;
+let interruptedCount = 0;
+let failNextHistory = false;
+let failNextDelete = false;
+const time = () => new Date().toLocaleString('sv-SE');
+const message = (role, content, charts = []) => ({ messageId: String(++nextMessage), role, content, createdAt: time(), charts, actionCards: [], sources: [], agentTraces: [], taskCard: null, workbench: null });
+const chart = { chartId: 'fixture-chart', type: 'line', title: '最终消息图表', description: '仅用于验证保留的图表组件', xField: 'day', yFields: ['value'], fieldLabels: { value: '数量' }, yUnit: '件', nameField: null, valueField: null, data: [{ day: '周一', value: 2 }, { day: '周二', value: 3 }] };
+const result = (response, data, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ code: status === 200 ? 0 : status, message: status === 200 ? '成功' : data.message, data: status === 200 ? data : null })); };
+const emptyAccess = { state: 'EMPTY' };
+const dashboard = { refreshedAt: time(), pendingCount: 0, metrics: [], trend: [], todos: [], stockAlerts: [], orderStages: [], topProducts: [], supplierPerformance: [], orderStagePeriod: { type: 'CURRENT_CALENDAR_MONTH', startAt: '2026-10-01', endAtExclusive: '2026-11-01' }, access: { metrics: { MONTH_SALES: emptyAccess, MONTH_GROSS_PROFIT: emptyAccess, PENDING_ORDERS: emptyAccess, STOCK_RISK_SKU: emptyAccess }, todos: emptyAccess, stockAlerts: emptyAccess, orderStages: emptyAccess, topProducts: emptyAccess, supplierPerformance: emptyAccess } };
 
-fs.mkdirSync(screenshotDirectory, { recursive: true });
-
-function durationToMilliseconds(value) {
-  return value.split(',').reduce((maximum, item) => {
-    const duration = item.trim().endsWith('ms')
-      ? Number.parseFloat(item)
-      : Number.parseFloat(item) * 1000;
-    return Math.max(maximum, duration);
-  }, 0);
-}
-
-async function observeNextTransition(page, selector) {
-  await page.evaluate((targetSelector) => {
-    window.__aiObservedTransition = null;
-    window.__aiTransitionObserver?.disconnect();
-    const observer = new MutationObserver(() => {
-      const element = document.querySelector(targetSelector);
-      if (!element) return;
-      window.__aiObservedTransition = getComputedStyle(element).transitionDuration;
-      observer.disconnect();
+async function handleRequest(request, response) {
+  const url = new URL(request.url, 'http://fixture');
+  let raw = '';
+  for await (const chunk of request) raw += chunk;
+  const payload = raw ? JSON.parse(raw) : {};
+  requests.push({ path: url.pathname, method: request.method, headers: request.headers, payload });
+  if (url.pathname === '/auth/me') return result(response, { userId: '1900000000000000001', username: 'sse-tester', realName: '流式测试用户', deptId: '1900000000000000100', deptName: '测试', isAdmin: true, roleCodes: ['SUPER_ADMIN'], permissionCodes: [] });
+  if (url.pathname === '/dashboard/overview') return result(response, dashboard);
+  if (url.pathname === '/ai/assistant/overview') return result(response, { refreshedAt: time(), quickPrompts: [], conversations });
+  if (url.pathname === '/ai/assistant/conversations' && request.method === 'POST') {
+    const conversation = { conversationId: String(++nextConversation), title: `基础会话 ${conversations.length + 1}`, description: '尚未开始对话', updatedAt: time() };
+    conversations.unshift(conversation);
+    histories.set(conversation.conversationId, []);
+    return result(response, conversation);
+  }
+  const historyMatch = url.pathname.match(/^\/ai\/assistant\/conversations\/(\d+)\/messages$/);
+  if (historyMatch) {
+    historyReadCount += 1;
+    if (failNextHistory) { failNextHistory = false; return result(response, { message: '测试历史同步失败' }, 503); }
+    const records = histories.get(historyMatch[1]) || [];
+    const pageNum = Number(url.searchParams.get('pageNum') || 1);
+    const pageSize = Number(url.searchParams.get('pageSize') || 50);
+    return result(response, { records: records.slice((pageNum - 1) * pageSize, pageNum * pageSize), pageNum, pageSize, total: records.length, hasNext: pageNum * pageSize < records.length });
+  }
+  const conversationMatch = url.pathname.match(/^\/ai\/assistant\/conversations\/(\d+)$/);
+  if (conversationMatch && request.method === 'PATCH') {
+    const conversation = conversations.find(item => item.conversationId === conversationMatch[1]);
+    conversation.title = payload.title;
+    return result(response, conversation);
+  }
+  if (conversationMatch && request.method === 'DELETE') {
+    await sleep(600);
+    if (failNextDelete) { failNextDelete = false; return result(response, { message: '测试删除失败，请重试' }, 503); }
+    const index = conversations.findIndex(item => item.conversationId === conversationMatch[1]);
+    if (index >= 0) conversations.splice(index, 1);
+    histories.delete(conversationMatch[1]);
+    return result(response, null);
+  }
+  if (url.pathname === '/ai/assistant/messages/stream' && request.method === 'POST') {
+    if (payload.message === '服务未启用') return result(response, { message: '模型未配置，请联系管理员' }, 503);
+    const history = histories.get(payload.conversationId);
+    if (!history) return result(response, { message: '会话不存在' }, 404);
+    history.push(message('user', payload.message));
+    response.writeHead(200, { 'Content-Type': 'text/event-stream;charset=UTF-8', 'Cache-Control': 'no-cache' });
+    response.flushHeaders();
+    response.write(': heartbeat\r\n\r\ndata:\r\n\r\n');
+    const requestId = `req-${history.length}`;
+    const emit = (eventType, fields) => `event: ${eventType}\r\ndata: ${JSON.stringify({ eventType, requestId, conversationId: payload.conversationId, ...fields })}\r\n\r\n`;
+    const timers = [];
+    const later = (ms, action) => timers.push(setTimeout(() => { if (!response.destroyed && !response.writableEnded) action(); }, ms));
+    response.once('close', () => {
+      timers.forEach(clearTimeout);
+      if (!response.writableEnded) interruptedCount += 1;
     });
-    observer.observe(document.body, { attributes: true, childList: true, subtree: true });
-    window.__aiTransitionObserver = observer;
-  }, selector);
+    const first = Buffer.from(emit('MESSAGE_DELTA', { contentDelta: '第一段中文' }));
+    const split = first.indexOf(Buffer.from('中')) + 1;
+    response.write(first.subarray(0, split));
+    later(35, () => response.write(first.subarray(split)));
+    if (payload.message === '错误事件') {
+      later(550, () => { response.write(emit('ERROR', { errorMessage: '测试服务临时不可用，请重试' })); response.end(); });
+    } else if (payload.message === '缺少完成事件') {
+      later(550, () => response.end());
+    } else {
+      const long = ['停止测试', '切会话测试', '离页测试'].includes(payload.message);
+      later(long ? 4000 : 650, () => response.write(emit('MESSAGE_DELTA', { contentDelta: '，第二段' })));
+      later(long ? 6000 : 1300, () => {
+        const completed = message('assistant', `完整回复：${payload.message}`, payload.message === '基础发送测试' ? [chart] : []);
+        history.push(completed);
+        if (payload.message === '历史同步失败测试') failNextHistory = true;
+        response.write(emit('MESSAGE_FINAL', { message: completed }));
+        response.end();
+      });
+    }
+    return;
+  }
+  return result(response, { message: `测试服务未定义 ${url.pathname}` }, 404);
 }
 
-async function readObservedTransition(page, label) {
-  await page.waitForFunction(() => Boolean(window.__aiObservedTransition), undefined, { timeout: 2000 });
-  const duration = await page.evaluate(() => window.__aiObservedTransition);
-  if (!duration) throw new Error(`未观察到${label}动效`);
-  return durationToMilliseconds(duration);
+async function freePort() {
+  const server = net.createServer();
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  await new Promise(resolve => server.close(resolve));
+  return port;
 }
+async function main() {
+  const fixture = http.createServer((req, res) => { handleRequest(req, res).catch(error => { console.error(error); if (!res.headersSent) result(res, { message: error.message }, 500); else res.destroy(); }); });
+  let vite;
+  let browser;
+  let output = '';
+  try {
+    await new Promise(resolve => fixture.listen(0, '127.0.0.1', resolve));
+    const vitePort = await freePort();
+    const baseURL = `http://127.0.0.1:${vitePort}`;
+    vite = spawn(process.execPath, [path.resolve(__dirname, '../node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(vitePort), '--strictPort'], {
+      cwd: path.resolve(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+      env: { ...process.env, VITE_PROXY_TARGET: `http://127.0.0.1:${fixture.address().port}`, VITE_USE_MOCK_API: 'false', VITE_USE_MOCK_AUTH: 'false' },
+    });
+    vite.stdout.on('data', data => { output += data.toString(); });
+    vite.stderr.on('data', data => { output += data.toString(); });
+    const started = Date.now();
+    while (Date.now() - started < 20000) {
+      if (await fetch(`${baseURL}/login`).then(response => response.ok).catch(() => false)) break;
+      if (vite.exitCode !== null) throw new Error(`Vite 启动失败：${output}`);
+      await sleep(100);
+    }
+    browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_BROWSER_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(() => { localStorage.setItem('erp_auth_token', 'fixture-auth'); localStorage.setItem('erp_auth_token_name', 'x-erp-fixture-session'); });
+    await page.goto(`${baseURL}/ai/assistant`);
+    const input = page.getByLabel('经营问题');
+    await expect(page.getByText('创建会话后开始提问。')).toBeVisible();
+    await expect(input).toBeDisabled();
+    await expect(page.getByText('经营任务中心', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: '开始新会话', exact: true }).click();
+    await expect(input).toBeEnabled();
+    const firstRow = page.locator('.ai-conversation-row').first();
+    await page.mouse.move(1300, 100);
+    await input.focus();
+    const rowBefore = await firstRow.boundingBox();
+    const borderBefore = await firstRow.evaluate(element => getComputedStyle(element).borderColor);
+    await firstRow.hover();
+    await page.waitForTimeout(200);
+    const rowAfter = await firstRow.boundingBox();
+    assert.equal(rowAfter.y, rowBefore.y, '首条会话悬停时不得上浮裁切');
+    assert.notEqual(await firstRow.evaluate(element => getComputedStyle(element).borderColor), borderBefore, '会话悬停必须有明显的边框变化');
+    const firstId = conversations[0].conversationId;
+    const beforeHistory = historyReadCount;
+    const send = async text => { await input.fill(text); await input.press('Enter'); };
+    const assistantText = page.locator('.ai-chat-message.is-assistant > .ai-chat-bubble > p');
+    await send('基础发送测试');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await expect(page.getByRole('button', { name: '停止生成', exact: true })).toBeEnabled();
+    await expect(input).toBeDisabled();
+    await expect(assistantText.last()).toHaveText('第一段中文，第二段');
+    await expect(assistantText.last()).toHaveText('完整回复：基础发送测试');
+    await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-message-id^="local-"]')).toHaveCount(0);
+    await expect(page.locator('.ai-chart-card').first()).toBeVisible();
+    assert.ok(historyReadCount > beforeHistory, '成功后必须回读持久化历史');
+    await page.reload();
+    await expect(assistantText.last()).toHaveText('完整回复：基础发送测试');
+    await expect(input).toBeEnabled();
+    await page.locator('.ai-row-actions button').first().click();
+    await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+    await page.locator('#renameTitle').fill('流式会话一');
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await expect(page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' })).toBeVisible();
 
-async function assertExpandedChartCenteredInContent(page, label) {
-  const geometry = await page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
-    const main = document.querySelector('main');
-    if (!main) throw new Error('未找到应用主内容区');
+    await send('历史同步失败测试');
+    await expect(assistantText.last()).toHaveText('完整回复：历史同步失败测试');
+    await expect(page.locator('.ai-stream-error')).toContainText('回复已完成，但历史同步失败');
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveValue('');
+    await page.reload();
+    await expect(assistantText.last()).toHaveText('完整回复：历史同步失败测试');
+    await expect(input).toBeEnabled();
 
-    const mainRect = main.getBoundingClientRect();
-    const dialogRect = dialog.getBoundingClientRect();
-    return {
-      mainCenterX: mainRect.left + mainRect.width / 2,
-      mainCenterY: mainRect.top + mainRect.height / 2,
-      dialogCenterX: dialogRect.left + dialogRect.width / 2,
-      dialogCenterY: dialogRect.top + dialogRect.height / 2,
-      dialogLeft: dialogRect.left,
-      dialogRight: dialogRect.right,
-      mainLeft: mainRect.left,
-      mainRight: mainRect.right,
+    for (const [text, expected] of [['错误事件', '测试服务临时不可用，请重试'], ['缺少完成事件', '未收到完整回复'], ['服务未启用', '模型未配置']]) {
+      const reads = historyReadCount;
+      await send(text);
+      await expect(page.locator('.ai-stream-error')).toContainText(expected);
+      await expect(input).toBeEnabled();
+      await expect(input).toHaveValue(text);
+      await expect(page.locator('[data-message-id^="local-"]')).toHaveCount(0);
+      assert.ok(historyReadCount > reads, '失败后必须回读历史');
+    }
+    await send('停止测试');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.getByRole('button', { name: '停止生成', exact: true }).click();
+    await expect(page.locator('.ai-stream-error')).toContainText('生成已停止');
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveValue('停止测试');
+    await expect(page.locator('[data-message-id^="local-"]')).toHaveCount(0);
+
+    await page.getByRole('button', { name: '新建会话', exact: true }).click();
+    await expect(input).toBeEnabled();
+    const secondId = conversations[0].conversationId;
+    const secondTitle = conversations[0].title;
+    await page.waitForTimeout(300);
+    const cards = page.locator('.ai-conversation-row');
+    const topCard = await cards.nth(0).boundingBox();
+    const nextCard = await cards.nth(1).boundingBox();
+    assert.ok(nextCard.y - topCard.y - topCard.height >= 9, '会话之间必须保留 10px 间距');
+    const gapPoint = { x: topCard.x + topCard.width / 2, y: topCard.y + topCard.height + 5 };
+    const gapIsInteractive = await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('button, a, [role="button"]')), gapPoint);
+    assert.equal(gapIsInteractive, false, '会话间隙不得命中操作按钮');
+    const readsBeforeGapClick = historyReadCount;
+    await page.mouse.click(gapPoint.x, gapPoint.y);
+    await expect(cards.nth(0)).toHaveClass(/is-active/);
+    assert.equal(historyReadCount, readsBeforeGapClick, '点击间隙不得切换会话或请求历史');
+    await expect(page.locator('[data-ai-fade-switch-content]')).toHaveCSS('user-select', 'none');
+    const shadows = await cards.evaluateAll(elements => elements.map(element => getComputedStyle(element).boxShadow));
+    assert.ok(shadows.every(shadow => shadow === 'none' || (shadow.includes('inset') && !shadow.includes(','))), '卡片只能有内部选中标记，不能有扩散到间隙的外阴影');
+    const nextButton = await cards.nth(1).locator('.ai-conversation-row__main').boundingBox();
+    assert.ok(Math.abs(nextButton.width - nextCard.width) <= 2 && Math.abs(nextButton.height - nextCard.height) <= 2, '会话按钮必须覆盖整个卡片内部');
+    await cards.nth(1).click({ position: { x: 3, y: 3 } });
+    await expect(cards.nth(1)).toHaveClass(/is-active/);
+    await expect(input).toBeEnabled();
+    await page.mouse.move(1300, 100);
+    await input.focus();
+    await cards.nth(0).hover();
+    await expect(cards.nth(0)).toHaveCSS('background-color', 'rgb(242, 244, 247)');
+    await cards.nth(0).locator('strong').click();
+    await expect(cards.nth(0)).toHaveClass(/is-active/);
+    await expect(input).toBeEnabled();
+    await page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' }).click();
+    await expect(input).toBeEnabled();
+    await send('切会话测试');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.locator('.ai-conversation-row__main').filter({ hasText: secondTitle }).click();
+    await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0);
+    await expect(page.locator('.ai-chat-message')).toHaveCount(0);
+    await expect(page.getByText('暂无消息，可以开始提问。')).toBeVisible();
+    await page.waitForTimeout(700);
+    await expect(page.locator('.ai-chat-message')).toHaveCount(0);
+    assert.equal(histories.get(secondId).length, 0, '其他会话消息不能写入当前会话');
+    await send('离页测试');
+    await expect(assistantText.last()).toHaveText('第一段中文');
+    await page.reload();
+    await expect(input).toBeEnabled();
+    await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0);
+    assert.ok(interruptedCount >= 3, '停止/切会话/离页必须中断真实HTTP长连接');
+
+    await page.locator('.ai-conversation-row__main').filter({ hasText: '流式会话一' }).click();
+    await expect(input).toBeEnabled();
+    let nativeDialogs = 0;
+    page.on('dialog', async dialog => { nativeDialogs += 1; await dialog.dismiss(); });
+    const openDelete = async () => {
+      await page.locator('.ai-conversation-row').filter({ hasText: secondTitle }).locator('.ai-row-actions button').click();
+      await expect(page.locator('.ai-conversation-row.is-active')).toContainText('流式会话一');
+      await page.getByRole('menuitem', { name: '删除会话', exact: true }).click();
+      await expect(page.locator('[data-confirm-dialog]')).toContainText(secondTitle);
+      await page.waitForTimeout(200);
+      const centered = await page.locator('[data-confirm-dialog]').evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        const sidebarWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-shell-sidebar-width'));
+        return { actual: bounds.left + bounds.width / 2, expected: (innerWidth + sidebarWidth) / 2 };
+      });
+      assert.ok(Math.abs(centered.actual - centered.expected) < 2, '删除弹窗必须在右侧操作区水平居中');
     };
-  });
-  const deltaX = Math.abs(geometry.dialogCenterX - geometry.mainCenterX);
-  const deltaY = Math.abs(geometry.dialogCenterY - geometry.mainCenterY);
-  if (deltaX > 1 || deltaY > 1 || geometry.dialogLeft < geometry.mainLeft - 1 || geometry.dialogRight > geometry.mainRight + 1) {
-    throw new Error(`${label}未按主内容区居中：${JSON.stringify({ ...geometry, deltaX, deltaY })}`);
+    const deletesBefore = requests.filter(item => item.method === 'DELETE').length;
+    await openDelete();
+    await page.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(page.locator('[data-confirm-dialog]')).toHaveCount(0);
+    assert.equal(requests.filter(item => item.method === 'DELETE').length, deletesBefore, '取消不得发送删除请求');
+    await openDelete();
+    failNextDelete = true;
+    await page.getByRole('button', { name: '删除会话', exact: true }).click();
+    await expect(page.getByRole('button', { name: '处理中...', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '取消', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '删除会话', exact: true })).toBeEnabled();
+    await expect(page.locator('[data-confirm-dialog]')).toBeVisible();
+    await page.getByRole('button', { name: '删除会话', exact: true }).click();
+    await expect(page.locator('.ai-conversation-row__main').filter({ hasText: secondTitle })).toHaveCount(0);
+    await expect(page.locator('[data-confirm-dialog]')).toHaveCount(0);
+    assert.equal(nativeDialogs, 0, '删除确认不得使用浏览器弹窗');
+    assert.equal(requests.filter(item => item.method === 'DELETE').length, deletesBefore + 2, '失败重试每次只能发送一次删除请求');
+    await expect(page.locator('.ai-conversation-row.is-active')).toContainText('流式会话一');
+    assert.ok(histories.has(firstId));
+    const streamRequests = requests.filter(item => item.path === '/ai/assistant/messages/stream');
+    assert.ok(streamRequests.length >= 7);
+    assert.ok(streamRequests.every(item => item.headers['x-erp-fixture-session'] === 'fixture-auth' && item.headers.accept === 'text/event-stream'));
+    assert.ok(!requests.some(item => item.path === '/ai/scheduled-tasks' || item.path === '/ai/assistant/messages'));
+    assert.deepEqual(errors, [], '浏览器不得产生未处理异常');
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, { timeout: 10000 });
+
+    const screenshots = path.resolve(process.env.QA_SCREENSHOT_DIR || path.join(__dirname, '../docs/qa-screenshots', `${new Date().toISOString().replace(/[:.]/g, '-')}-ai-sse`));
+    fs.mkdirSync(screenshots, { recursive: true });
+    await page.getByRole('button', { name: '折叠会话', exact: true }).click();
+    const tooltip = page.locator('[data-slot="tooltip-content"]:not([data-state="closed"])');
+    const collapsedToggle = page.getByRole('button', { name: '收起会话记录', exact: true });
+    await collapsedToggle.hover();
+    await expect(tooltip).toContainText('收起会话记录');
+    await expect(collapsedToggle.locator('.lucide-chevrons-up')).toHaveCount(1);
+    await collapsedToggle.click();
+    await page.mouse.move(1300, 100);
+    await page.getByRole('button', { name: '展开会话记录', exact: true }).hover();
+    await expect(tooltip).toContainText('展开会话记录');
+    await page.getByRole('button', { name: '展开会话记录', exact: true }).click();
+    await page.waitForTimeout(350);
+    await page.mouse.move(1300, 100);
+    await page.locator('.ai-conversation-row__main').first().hover();
+    await expect(tooltip).toContainText('流式会话一');
+    await expect(tooltip).toContainText(conversations[0].updatedAt.slice(0, 16));
+    await page.getByRole('button', { name: '新建会话', exact: true }).hover();
+    await expect(tooltip).toContainText('新建会话');
+    await page.getByRole('button', { name: '展开会话', exact: true }).hover();
+    await expect(tooltip).toContainText('展开会话');
+    await page.screenshot({ path: path.join(screenshots, 'ai-sidebar-collapsed.png'), fullPage: true });
+    await page.getByRole('button', { name: '展开会话', exact: true }).click();
+    for (const [width, height] of [[1440, 900], [1115, 838], [390, 844]]) {
+      await page.setViewportSize({ width, height });
+      await page.waitForTimeout(250);
+      const inputFont = await input.evaluate(element => getComputedStyle(element).fontSize);
+      const messageFont = await page.locator('.ai-chat-bubble > p').first().evaluate(element => getComputedStyle(element).fontSize);
+      assert.equal(inputFont, '14px');
+      assert.equal(inputFont, messageFont, `视口 ${width} 输入框与聊天正文字号必须一致`);
+      const layout = await page.locator('.ai-chat-stage').evaluate(stage => {
+        const dock = stage.querySelector('[data-ai-composer-dock]');
+        const scroll = stage.querySelector('.ai-chat-scroll');
+        return { dockTop: dock.getBoundingClientRect().top, scrollBottom: scroll.getBoundingClientRect().bottom, dockBackground: getComputedStyle(dock).backgroundColor, horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 };
+      });
+      assert.ok(Math.abs(layout.dockTop - layout.scrollBottom) < 2, '消息滚动区与输入底座必须相邻');
+      assert.notEqual(layout.dockBackground, 'rgba(0, 0, 0, 0)');
+      assert.equal(layout.horizontalOverflow, false, `视口 ${width} 不得横向溢出`);
+      await page.screenshot({ path: path.join(screenshots, `ai-assistant-${width}x${height}.png`), fullPage: true });
+    }
+    await page.goto(`${baseURL}/ai/tasks`);
+    await expect(page).toHaveURL(`${baseURL}/ai/assistant`);
+    console.log(`SMOKE_AI_OK: 空会话/真实中文分块SSE/两次增量/最终替换/历史回读及同步失败/图表/改名删除/503与错误及截断/停止/切会话/离页/动态认证/任务入口/三视口布局；截图 ${screenshots}`);
+  } finally {
+    await browser?.close();
+    if (vite && vite.exitCode === null) { const exit = new Promise(resolve => vite.once('exit', resolve)); vite.kill(); await Promise.race([exit, sleep(3000)]); }
+    fixture.closeAllConnections();
+    await new Promise(resolve => fixture.close(resolve));
   }
 }
-
-async function smokeAssistant() {
-  await runSmoke({
-    route: '/ai/assistant',
-    screenshot: screenshotPath('ai-assistant-normal.png'),
-    async test(page) {
-      await page.locator('.ai-chat-stage').waitFor();
-      await page.locator('.ai-composer').waitFor();
-
-      if (await page.locator('.ai-chat-stage').getAttribute('aria-busy') !== 'false') {
-        throw new Error('AI 助手初始状态不应标记为忙碌');
-      }
-      if (await page.locator('.ai-chat-stream').getAttribute('aria-live') !== 'polite') {
-        throw new Error('AI 消息流缺少礼貌级动态播报');
-      }
-      const composerInput = page.getByLabel('经营问题');
-      if (await composerInput.getAttribute('aria-describedby') !== 'ai-composer-hint') {
-        throw new Error('AI 输入框缺少键盘操作提示关联');
-      }
-      const composerHint = await page.locator('#ai-composer-hint').innerText();
-      if (!composerHint.includes('Enter 发送') || !composerHint.includes('Shift+Enter 换行')) {
-        throw new Error(`AI 输入提示不完整：${composerHint}`);
-      }
-
-      const composer = await page.locator('.ai-composer').evaluate(element => {
-        const rect = element.getBoundingClientRect();
-        const dock = element.closest('[data-ai-composer-dock]');
-        const dockRect = dock?.getBoundingClientRect();
-        const stageRect = element.closest('.ai-chat-stage')?.getBoundingClientRect();
-        const scrollRect = element.closest('.ai-chat-stage')?.querySelector('.ai-chat-scroll')?.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        const dockStyle = dock ? window.getComputedStyle(dock) : null;
-        return {
-          height: rect.height,
-          width: rect.width,
-          dockBottomGap: dockRect ? Number((dockRect.bottom - rect.bottom).toFixed(1)) : -1,
-          stageBottomGap: stageRect && dockRect ? Number((stageRect.bottom - dockRect.bottom).toFixed(1)) : -1,
-          rowGap: dockRect && scrollRect ? Number((dockRect.top - scrollRect.bottom).toFixed(1)) : -1,
-          dockBackground: dockStyle?.backgroundColor || '',
-          dockBoxShadow: dockStyle?.boxShadow || '',
-          boxShadow: style.boxShadow,
-          parentClass: element.parentElement?.className || '',
-          position: style.position,
-          transform: style.transform,
-        };
-      });
-      if (composer.height > 76
-        || composer.width < 360
-        || composer.dockBottomGap < 12
-        || composer.dockBottomGap > 24
-        || Math.abs(composer.stageBottomGap) > 1
-        || Math.abs(composer.rowGap) > 1
-        || composer.dockBackground === 'rgba(0, 0, 0, 0)'
-        || composer.dockBoxShadow === 'none'
-        || composer.boxShadow !== 'none'
-        || composer.position !== 'static'
-        || composer.transform !== 'none'
-        || !composer.parentClass.includes('ai-composer-dock')) {
-        throw new Error(`AI composer layout invalid: ${JSON.stringify(composer)}`);
-      }
-
-      await page.locator('.ai-prompt-list__toggle').click();
-      await page.waitForTimeout(220);
-      const openPromptDrawers = await page.locator('.ai-prompt-list__drawer[data-state="open"]').count();
-      if (openPromptDrawers !== 0) throw new Error(`Quick analysis drawer should be collapsed, open count=${openPromptDrawers}`);
-      await page.locator('.ai-prompt-list__toggle').click();
-      await page.locator('.ai-prompt-card').first().waitFor();
-
-      const redundantCollapseButtons = await page.locator('.ai-conversation-more').filter({ hasText: '全部收起' }).count();
-      if (redundantCollapseButtons !== 0) throw new Error(`Redundant all-collapse button should be removed, count=${redundantCollapseButtons}`);
-
-      await page.locator('.ai-conversation-date').click();
-      await page.locator('.ai-conversation-calendar button').first().waitFor();
-      const conversationDateButtons = await page.locator('.ai-conversation-calendar button').count();
-      if (conversationDateButtons > 1) {
-        await page.locator('.ai-conversation-calendar button').nth(1).click();
-        await page.locator('.ai-conversation-list [data-ai-fade-switch-content]').waitFor();
-        await page.locator('.ai-conversation-calendar button').first().click();
-        await page.locator('.ai-conversation-list [data-ai-fade-switch-content]').waitFor();
-      }
-      await page.keyboard.press('Escape');
-
-      const extraConversationToggle = page.locator('.ai-conversation-more').first();
-      if (await extraConversationToggle.count()) {
-        await extraConversationToggle.click();
-        await page.locator('.ai-conversation-extra__drawer[data-state="open"]').waitFor();
-        const extraRows = await page.locator('.ai-conversation-extra__drawer .ai-conversation-row').count();
-        if (extraRows < 1) throw new Error(`Expanded conversation drawer should reveal extra rows, count=${extraRows}`);
-        const extraOpenOpacity = await page.locator('.ai-conversation-extra__drawer').evaluate(element => Number(window.getComputedStyle(element).opacity));
-        if (extraOpenOpacity !== 1) throw new Error(`Extra conversation drawer should expand without opacity fade, opacity=${extraOpenOpacity}`);
-        await extraConversationToggle.click();
-        const extraCloseOpacity = await page.locator('.ai-conversation-extra__drawer').evaluate(element => Number(window.getComputedStyle(element).opacity));
-        if (extraCloseOpacity !== 1) throw new Error(`Extra conversation drawer should collapse without opacity fade, opacity=${extraCloseOpacity}`);
-        await page.locator('.ai-conversation-extra__drawer[data-state="closed"]').waitFor();
-      }
-
-      await page.locator('.ai-conversation-list__toggle').click();
-      const rowsDuringClose = await page.locator('.ai-conversation-list__drawer .ai-conversation-row').count();
-      if (rowsDuringClose < 1) throw new Error(`Conversation rows should remain mounted during collapse animation, count=${rowsDuringClose}`);
-      const drawerOpacityDuringClose = await page.locator('.ai-conversation-list__drawer').evaluate(element => Number(window.getComputedStyle(element).opacity));
-      if (drawerOpacityDuringClose !== 1) throw new Error(`Conversation drawer should collapse without opacity fade, opacity=${drawerOpacityDuringClose}`);
-      await page.waitForTimeout(240);
-      const closedConversationDrawer = await page.locator('.ai-conversation-list__drawer[data-state="closed"]').count();
-      if (closedConversationDrawer !== 1) throw new Error(`Conversation drawer should be collapsed, count=${closedConversationDrawer}`);
-      await page.locator('.ai-conversation-list__toggle').click();
-      await page.locator('.ai-conversation-row').nth(1).waitFor();
-
-      await page.locator('.ai-conversation-row').nth(1).click({ position: { x: 22, y: 22 } });
-      await page.locator('.ai-chat-stage.is-switching').waitFor();
-      const conversationTransitionDuration = await page.locator('.ai-chat-stream').evaluate(element => {
-        const values = getComputedStyle(element).transitionDuration.split(',');
-        return Math.max(...values.map(value => value.trim().endsWith('ms') ? Number.parseFloat(value) : Number.parseFloat(value) * 1000));
-      });
-      if (conversationTransitionDuration < 140 || conversationTransitionDuration > 300) {
-        throw new Error(`会话切换动效时长异常：${conversationTransitionDuration}ms`);
-      }
-      await page.locator('.ai-message-charts .ai-chart-card').first().waitFor();
-      const visibleSources = await page.locator('.ai-source-strip:visible').count();
-      if (visibleSources !== 0) throw new Error(`Source strip should be hidden, visible count=${visibleSources}`);
-
-      await page.locator('.ai-chart-card__zoom').first().click();
-      await page.locator('[data-ai-chart-expanded]').waitFor();
-      await assertExpandedChartCenteredInContent(page, 'AI 助手放大图表');
-      await page.locator('[data-slot="dialog-close"]').click();
-      await page.locator('[data-ai-chart-expanded]').waitFor({ state: 'hidden' });
-
-      const barRects = await page.locator('.ai-message-charts .ai-chart-card__bar-layer rect').count();
-      if (barRects < 3) throw new Error(`Assistant bar chart should render bars, count=${barRects}`);
-      const yLabels = await page.locator('.ai-message-charts .ai-chart-card__y-axis text').count();
-      if (yLabels < 5) throw new Error(`Assistant charts should render y-axis labels, count=${yLabels}`);
-      const xLabels = await page.locator('.ai-message-charts .ai-chart-card__x-axis text').count();
-      if (xLabels < 6) throw new Error(`Assistant charts should render stable x-axis labels, count=${xLabels}`);
-      const chartUnit = await page.locator('.ai-message-charts .ai-chart-card__unit').first().evaluate(element => element.textContent || '');
-      if (!chartUnit.includes('单位')) throw new Error(`Assistant chart should render y-axis unit, got=${chartUnit}`);
-      const legendText = await page.locator('.ai-message-charts .ai-chart-card__legend').first().innerText();
-      if (!legendText.includes('速溶黑咖啡需求') || !legendText.includes('热敏标签纸需求')) {
-        throw new Error(`Assistant line legend should use business labels, got=${legendText}`);
-      }
-      const baseline = await page.locator('.ai-message-charts .ai-chart-card__bar-layer rect').first().evaluate(rect => {
-        const y = Number(rect.getAttribute('y'));
-        const height = Number(rect.getAttribute('height'));
-        return Number((y + height).toFixed(1));
-      });
-      if (Math.abs(baseline - 214) > 0.5) throw new Error(`Assistant bar chart baseline mismatch: ${baseline}`);
-
-      await page.locator('.ai-workbench').waitFor();
-      await page.locator('.ai-workbench-resizer').waitFor();
-
-      await composerInput.fill('分析本周采购与库存风险');
-      await composerInput.press('Enter');
-      await page.getByRole('status').filter({ hasText: '正在分析' }).waitFor();
-      if (await page.locator('.ai-chat-stage').getAttribute('aria-busy') !== 'true') {
-        throw new Error('AI 分析期间消息区未标记忙碌状态');
-      }
-      const sendingButton = page.getByRole('button', { name: '正在分析', exact: true });
-      if (!(await sendingButton.isDisabled())) throw new Error('AI 分析期间发送按钮未锁定');
-      await page.getByRole('status').filter({ hasText: '正在分析' }).waitFor({ state: 'hidden', timeout: 5000 });
-      if (await page.locator('.ai-chat-stage').getAttribute('aria-busy') !== 'false') {
-        throw new Error('AI 回复完成后忙碌状态未恢复');
-      }
-      await page.getByText('分析本周采购与库存风险', { exact: true }).waitFor();
-
-      const newConversationButton = page.getByRole('button', { name: '新建会话', exact: true });
-      await newConversationButton.click();
-      const creatingButton = page.getByRole('button', { name: '创建中', exact: true });
-      await creatingButton.waitFor();
-      if (!(await creatingButton.isDisabled())) throw new Error('新建会话期间按钮未锁定');
-      await page.getByText('新会话已创建', { exact: true }).waitFor();
-      await page.locator('.ai-chat-stage.is-switching').waitFor({ state: 'hidden', timeout: 3000 });
-      const analysisConversation = page.locator('.ai-conversation-row').filter({ hasText: '补货建议讨论' }).first();
-      await analysisConversation.click({ position: { x: 22, y: 22 } });
-      await page.locator('.ai-chat-stage.is-switching').waitFor({ state: 'hidden', timeout: 3000 });
-      await page.locator('.ai-message-charts .ai-chart-card').first().waitFor();
-      await page.locator('[data-sonner-toast]').waitFor({ state: 'hidden', timeout: 6000 }).catch(() => undefined);
-
-      console.log('SMOKE_OK: AI assistant page passed');
-    },
-  });
-}
-
-async function smokeTasksDesktopLayout() {
-  await runSmoke({
-    route: '/ai/tasks',
-    viewport: { width: 1440, height: 900 },
-    screenshot: screenshotPath('ai-tasks-layout-1440.png'),
-    async test(page) {
-      const taskSkeleton = page.locator('[data-ai-task-skeleton]');
-      await taskSkeleton.waitFor({ state: 'visible' });
-      if (await taskSkeleton.locator('tbody tr').count() !== 5
-        || await taskSkeleton.locator('.ai-task-skeleton__results').count() !== 1) {
-        throw new Error('经营任务中心首次加载未保留任务配置与结果区块骨架');
-      }
-      await taskSkeleton.waitFor({ state: 'hidden' });
-      const state = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
-        const container = wrapper.querySelector('[data-slot="table-container"]');
-        const bodyCell = wrapper.querySelector('tbody [data-slot="table-cell"]');
-        const typeBadge = wrapper.querySelector('.ai-task-dimension--type');
-        const frequencyBadge = wrapper.querySelector('.ai-task-dimension--frequency');
-        const actions = wrapper.querySelector('.ai-task-actions');
-        const actionCell = actions?.closest('[data-slot="table-cell"]');
-        const actionCellStyle = actionCell ? getComputedStyle(actionCell) : null;
-        const actionContentWidth = actionCell && actionCellStyle
-          ? actionCell.clientWidth
-            - Number.parseFloat(actionCellStyle.paddingLeft)
-            - Number.parseFloat(actionCellStyle.paddingRight)
-          : 0;
-        return {
-          clientWidth: container?.clientWidth ?? 0,
-          scrollWidth: container?.scrollWidth ?? 0,
-          stickyCount: wrapper.querySelectorAll('[data-task-sticky]').length,
-          bodyFontSize: bodyCell ? Number.parseFloat(getComputedStyle(bodyCell).fontSize) : 0,
-          typeFontSize: typeBadge ? Number.parseFloat(getComputedStyle(typeBadge).fontSize) : 0,
-          frequencyFontSize: frequencyBadge ? Number.parseFloat(getComputedStyle(frequencyBadge).fontSize) : 0,
-          frequencyUsesRepeatIcon: Boolean(frequencyBadge?.querySelector('[data-task-frequency-icon].lucide-repeat-2')),
-          frequencyUsesCalendarIcon: Boolean(frequencyBadge?.querySelector('.lucide-calendar-days')),
-          actionsFit: Boolean(actions && actions.scrollWidth <= actionContentWidth + 1),
-        };
-      });
-      if (state.scrollWidth > state.clientWidth + 1 || state.stickyCount !== 0 || !state.actionsFit) {
-        throw new Error(`任务配置桌面布局仍存在横向滚动、固定列或操作拥挤：${JSON.stringify(state)}`);
-      }
-      if (state.bodyFontSize < 14 || state.typeFontSize < 13 || state.frequencyFontSize < 13) {
-        throw new Error(`任务类型、频率或表格正文字号层级不足：${JSON.stringify(state)}`);
-      }
-      if (!state.frequencyUsesRepeatIcon || state.frequencyUsesCalendarIcon) {
-        throw new Error(`任务频率应使用循环语义图标：${JSON.stringify(state)}`);
-      }
-    },
-  });
-}
-
-async function smokeTasks() {
-  await runSmoke({
-    route: '/ai/tasks',
-    viewport: { width: 1115, height: 820 },
-    screenshot: screenshotPath('ai-tasks-normal-1115.png'),
-    async test(page) {
-      const taskSummary = page.getByRole('region', { name: 'AI 定时任务数据汇总' });
-      await taskSummary.waitFor();
-      if (await taskSummary.locator('.summary-item').count() !== 4 || await taskSummary.locator('dt').count() !== 4 || await taskSummary.locator('dd').count() !== 4) {
-        throw new Error('AI 定时任务页未使用共享汇总组件或语义结构不完整');
-      }
-      await page.locator('.ai-result-archive').waitFor();
-      const taskTable = page.locator('.ai-task-table-wrap [data-slot="table-container"]');
-      await taskTable.waitFor();
-      const scrollStructure = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
-        const container = wrapper.querySelector('[data-slot="table-container"]');
-        return {
-          wrapperOverflow: getComputedStyle(wrapper).overflow,
-          containerOverflowX: container ? getComputedStyle(container).overflowX : '',
-          horizontalOverflow: container ? container.scrollWidth > container.clientWidth + 1 : false,
-        };
-      });
-      if (scrollStructure.wrapperOverflow !== 'visible' || scrollStructure.containerOverflowX !== 'auto' || !scrollStructure.horizontalOverflow) {
-        throw new Error(`任务表格滚动层级异常：${JSON.stringify(scrollStructure)}`);
-      }
-
-      const scrollBaseline = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
-        const name = wrapper.querySelector('[data-slot="table-head"]:first-child');
-        const actions = wrapper.querySelector('[data-slot="table-head"]:last-child');
-        return {
-          nameLeft: name?.getBoundingClientRect().left ?? 0,
-          actionsLeft: actions?.getBoundingClientRect().left ?? 0,
-        };
-      });
-      await taskTable.evaluate(element => { element.scrollLeft = element.scrollWidth; });
-      await page.waitForTimeout(80);
-      const naturalScrollState = await page.locator('.ai-task-table-wrap').evaluate(wrapper => {
-        const name = wrapper.querySelector('[data-slot="table-head"]:first-child');
-        const actions = wrapper.querySelector('[data-slot="table-head"]:last-child');
-        return {
-          stickyCount: wrapper.querySelectorAll('[data-task-sticky]').length,
-          namePosition: name ? getComputedStyle(name).position : '',
-          actionsPosition: actions ? getComputedStyle(actions).position : '',
-          nameLeft: name?.getBoundingClientRect().left ?? 0,
-          actionsLeft: actions?.getBoundingClientRect().left ?? 0,
-        };
-      });
-      if (naturalScrollState.stickyCount !== 0
-        || naturalScrollState.namePosition === 'sticky'
-        || naturalScrollState.actionsPosition === 'sticky'
-        || naturalScrollState.nameLeft >= scrollBaseline.nameLeft - 40
-        || naturalScrollState.actionsLeft >= scrollBaseline.actionsLeft - 40) {
-        throw new Error(`任务表格首尾列未随内容自然滚动：${JSON.stringify({ scrollBaseline, naturalScrollState })}`);
-      }
-
-      await observeNextTransition(page, '.ai-fade-switch-leave-active, .ai-fade-switch-enter-active');
-      await page.getByRole('button', { name: '全部日期', exact: true }).click();
-      const archiveTransitionDuration = await readObservedTransition(page, '任务归档日期切换');
-      if (archiveTransitionDuration < 140 || archiveTransitionDuration > 300) {
-        throw new Error(`任务归档日期切换动效时长异常：${archiveTransitionDuration}ms`);
-      }
-      await page.waitForTimeout(240);
-
-      const alternateExecution = page.locator('.ai-archive-list button:not(.is-active)').first();
-      await alternateExecution.waitFor();
-      await observeNextTransition(page, '.ai-result-switch-leave-active, .ai-result-switch-enter-active');
-      await alternateExecution.click();
-      const resultTransitionDuration = await readObservedTransition(page, '任务结果切换');
-      if (resultTransitionDuration < 140 || resultTransitionDuration > 300) {
-        throw new Error(`任务结果切换动效时长异常：${resultTransitionDuration}ms`);
-      }
-      await page.waitForTimeout(240);
-
-      let enabledSwitch = page.getByRole('switch', { name: /停用$/ }).first();
-      await enabledSwitch.waitFor();
-      const toggleRow = enabledSwitch.locator('xpath=ancestor::tr');
-      const toggleTaskName = (await toggleRow.locator('.ai-task-title').innerText()).trim();
-      const stableToggleRow = page.getByRole('row').filter({ hasText: toggleTaskName }).first();
-      await enabledSwitch.click();
-      await page.waitForFunction(() => document.querySelector('.ai-task-table-wrap [data-slot="table-container"]')?.getAttribute('aria-busy') === 'true');
-      const actionLock = await page.evaluate(() => ({
-        switchesLocked: [...document.querySelectorAll('.ai-task-table-wrap [role="switch"]')].every(element => element.hasAttribute('disabled') || element.getAttribute('aria-disabled') === 'true'),
-        executeButtonsLocked: [...document.querySelectorAll('.ai-task-actions button')]
-          .filter(element => element.textContent?.trim() === '执行')
-          .every(element => element.hasAttribute('disabled')),
-      }));
-      if (!actionLock.switchesLocked || !actionLock.executeButtonsLocked) {
-        throw new Error(`任务开关操作期间未全表锁定：${JSON.stringify(actionLock)}`);
-      }
-      await stableToggleRow.getByRole('switch', { name: `${toggleTaskName}启用`, exact: true }).waitFor({ timeout: 5000 });
-      if (await taskTable.getAttribute('aria-busy') !== 'false') throw new Error('任务停用完成后表格忙碌状态未恢复');
-      enabledSwitch = stableToggleRow.getByRole('switch', { name: `${toggleTaskName}启用`, exact: true });
-      await enabledSwitch.click();
-      await stableToggleRow.getByRole('switch', { name: `${toggleTaskName}停用`, exact: true }).waitFor({ timeout: 5000 });
-      if (await taskTable.getAttribute('aria-busy') !== 'false') throw new Error('任务重新启用后表格忙碌状态未恢复');
-
-      enabledSwitch = page.getByRole('switch', { name: /停用$/ }).first();
-      const enabledRow = enabledSwitch.locator('xpath=ancestor::tr');
-      const executeButton = enabledRow.getByRole('button', { name: '执行', exact: true });
-      await executeButton.click();
-      const executingButton = enabledRow.getByRole('button', { name: '执行中', exact: true });
-      await executingButton.waitFor();
-      if (!(await executingButton.isDisabled())) throw new Error('任务执行期间按钮未锁定');
-      if (await taskTable.getAttribute('aria-busy') !== 'true') throw new Error('任务执行期间表格未标记忙碌状态');
-      const otherActionsLocked = await page.getByRole('button', { name: '执行', exact: true }).evaluateAll(buttons => buttons.every(button => button.hasAttribute('disabled')));
-      const switchesLocked = await page.getByRole('switch').evaluateAll(switches => switches.every(element => element.hasAttribute('disabled') || element.getAttribute('aria-disabled') === 'true'));
-      if (!otherActionsLocked || !switchesLocked) throw new Error('任务执行期间未锁定其他行操作');
-      await executingButton.waitFor({ state: 'hidden', timeout: 5000 });
-      if (await taskTable.getAttribute('aria-busy') !== 'false') throw new Error('任务执行完成后表格忙碌状态未恢复');
-      await page.getByText(/已执行$/).last().waitFor();
-
-      await page.locator('.ai-date-filter__trigger').waitFor();
-      await page.locator('.ai-date-filter__trigger').click();
-      await page.locator('.ai-calendar-grid button').first().waitFor();
-      const archiveDateButtons = await page.locator('.ai-calendar-grid button').count();
-      if (archiveDateButtons > 1) {
-        await page.locator('.ai-calendar-grid button').nth(1).click();
-        await page.locator('.ai-result-archive [data-ai-fade-switch-content]').waitFor();
-      }
-      await page.keyboard.press('Escape');
-
-      await page.locator('.ai-execution-conversation').waitFor();
-      await page.locator('.ai-execution-charts .ai-chart-card').first().waitFor();
-      const barRects = await page.locator('.ai-execution-charts .ai-chart-card__bar-layer rect').count();
-      if (barRects < 3) throw new Error(`Task bar chart should render bars, count=${barRects}`);
-      const yLabels = await page.locator('.ai-execution-charts .ai-chart-card__y-axis text').count();
-      if (yLabels < 5) throw new Error(`Task charts should render y-axis labels, count=${yLabels}`);
-      const xLabels = await page.locator('.ai-execution-charts .ai-chart-card__x-axis text').count();
-      if (xLabels < 6) throw new Error(`Task charts should render stable x-axis labels, count=${xLabels}`);
-      const chartUnit = await page.locator('.ai-execution-charts .ai-chart-card__unit').first().evaluate(element => element.textContent || '');
-      if (!chartUnit.includes('单位')) throw new Error(`Task chart should render y-axis unit, got=${chartUnit}`);
-      const baseline = await page.locator('.ai-execution-charts .ai-chart-card__bar-layer rect').first().evaluate(rect => {
-        const y = Number(rect.getAttribute('y'));
-        const height = Number(rect.getAttribute('height'));
-        return Number((y + height).toFixed(1));
-      });
-      if (Math.abs(baseline - 214) > 0.5) throw new Error(`Task bar chart baseline mismatch: ${baseline}`);
-
-      await page.locator('.ai-chart-card__zoom').first().click();
-      await page.locator('[data-ai-chart-expanded]').waitFor();
-      await assertExpandedChartCenteredInContent(page, '经营任务中心放大图表');
-      await page.locator('[data-slot="dialog-close"]').click();
-      await page.locator('[data-ai-chart-expanded]').waitFor({ state: 'hidden' });
-
-      await taskTable.evaluate(element => { element.scrollLeft = 0; });
-      await page.getByRole('heading', { name: '经营任务中心' }).evaluate(element => {
-        let current = element;
-        while (current) {
-          if (current instanceof HTMLElement) current.scrollTop = 0;
-          current = current.parentElement;
-        }
-        window.scrollTo(0, 0);
-      });
-      await page.locator('[data-sonner-toast]').waitFor({ state: 'hidden', timeout: 6000 }).catch(() => undefined);
-
-      console.log('SMOKE_OK: AI scheduled tasks page passed');
-    },
-  });
-}
-
-async function smokeReducedMotion() {
-  await runSmoke({
-    route: '/ai/assistant',
-    reducedMotion: 'reduce',
-    viewport: { width: 1280, height: 720 },
-    screenshot: screenshotPath('ai-assistant-reduced-motion.png'),
-    async test(page) {
-      await page.locator('.ai-composer').waitFor();
-      const durations = await page.locator('.ai-composer').evaluate(element => ({
-        composer: getComputedStyle(element).transitionDuration,
-        stream: getComputedStyle(document.querySelector('.ai-chat-stream')).transitionDuration,
-      }));
-      if (durationToMilliseconds(durations.composer) > 1 || durationToMilliseconds(durations.stream) > 1) {
-        throw new Error(`减少动态效果模式仍存在长过渡：${JSON.stringify(durations)}`);
-      }
-      const input = page.getByLabel('经营问题');
-      await input.fill('检查库存风险');
-      await input.press('Enter');
-      const status = page.getByRole('status').filter({ hasText: '正在分析' });
-      await status.waitFor();
-      const animationDuration = await status.locator('span').first().evaluate(element => getComputedStyle(element).animationDuration);
-      if (durationToMilliseconds(animationDuration) > 1) {
-        throw new Error(`减少动态效果模式下思考动画仍过长：${animationDuration}`);
-      }
-      await status.waitFor({ state: 'hidden', timeout: 5000 });
-    },
-  });
-}
-
-async function smokeTasksReducedMotion() {
-  await runSmoke({
-    route: '/ai/tasks',
-    reducedMotion: 'reduce',
-    viewport: { width: 1280, height: 720 },
-    screenshot: screenshotPath('ai-tasks-reduced-motion.png'),
-    async test(page) {
-      await page.locator('.ai-result-card__inner').waitFor();
-      await page.locator('.ai-date-filter__trigger').click();
-      const calendarButton = page.locator('.ai-calendar-grid button').first();
-      await calendarButton.waitFor();
-      const calendarDuration = await calendarButton.evaluate(element => getComputedStyle(element).transitionDuration);
-      if (durationToMilliseconds(calendarDuration) > 1) {
-        throw new Error(`减少动态效果模式下日历按钮过渡仍过长：${calendarDuration}`);
-      }
-      await page.keyboard.press('Escape');
-
-      await observeNextTransition(page, '.ai-fade-switch-leave-active, .ai-fade-switch-enter-active');
-      await page.getByRole('button', { name: '全部日期', exact: true }).click();
-      const archiveDuration = await readObservedTransition(page, '减少动态效果任务归档切换');
-      if (archiveDuration > 1) throw new Error(`减少动态效果模式下归档切换仍过长：${archiveDuration}ms`);
-      await page.waitForTimeout(30);
-
-      const alternateExecution = page.locator('.ai-archive-list button:not(.is-active)').first();
-      await alternateExecution.waitFor();
-      await observeNextTransition(page, '.ai-result-switch-leave-active, .ai-result-switch-enter-active');
-      await alternateExecution.click();
-      const resultDuration = await readObservedTransition(page, '减少动态效果任务结果切换');
-      if (resultDuration > 1) throw new Error(`减少动态效果模式下结果切换仍过长：${resultDuration}ms`);
-    },
-  });
-}
-
-smokeAssistant()
-  .then(smokeTasksDesktopLayout)
-  .then(smokeTasks)
-  .then(smokeReducedMotion)
-  .then(smokeTasksReducedMotion)
-  .catch(error => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+main().catch(error => { console.error(error); process.exitCode = 1; });

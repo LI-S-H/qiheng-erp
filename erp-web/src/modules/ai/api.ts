@@ -1,3 +1,6 @@
+import { AUTH_TOKEN_NAME_STORAGE_KEY, AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
+import { readSseStream } from './sse';
+import type { AiChatStreamEvent } from './types';
 import { getResult, http } from '@/api/http';
 import { normalizeFiniteNumber, normalizeNullableStringId, normalizeStringId } from '@/shared/utils/api-normalizers';
 import { normalizeMoneyNumber } from '@/shared/utils/money';
@@ -19,632 +22,14 @@ import type {
   AiPromptField,
   AiQuickPrompt,
   AiScheduledTask,
-  AiScheduledTaskOutputFormat,
   AiScheduledTaskPage,
   AiScheduledTaskStatus,
-  AiScheduledTaskSummary,
-  AiScheduledTaskTemplate,
   AiScheduledTaskRunAccepted,
   AiScheduledTaskUpdateRequest,
   AiTaskCard,
-  AiTaskExecution,
-  AiTaskExecutionAction,
-  AiTaskExecutionMetric,
   AiWorkbenchLine,
   AiWorkbenchSection,
 } from './types';
-
-const useMockApi = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true';
-
-let mockConversationSeq = 4;
-let mockTaskSeq = 5;
-
-const agentNameMap: Record<string, string> = {
-  'chief-router-agent': '主控智能体',
-  'data-analysis-agent': '数据分析智能体',
-  'purchase-advice-agent': '采购建议智能体',
-  'inventory-analysis-agent': '库存分析智能体',
-  'sales-forecast-agent': '销量预测智能体',
-  'supplier-evaluation-agent': '供应商评估智能体',
-};
-
-let mockConversations: AiConversationSummary[] = [
-  { conversationId: '1960000000000000001', title: '今日经营分析', description: '库存、销量和采购风险协同分析', updatedAt: '2026-07-01 10:18:00' },
-  { conversationId: '1960000000000000002', title: '补货建议讨论', description: '指定商品生成采购建议', updatedAt: '2026-07-01 09:42:00' },
-  { conversationId: '1960000000000000003', title: '销量异常复盘', description: '解释下滑商品和预测需求', updatedAt: '2026-06-30 18:20:00' },
-  { conversationId: '1960000000000000004', title: '库存风险巡检', description: '低库存、锁定库存和调拨建议', updatedAt: '2026-06-30 16:40:00' },
-  { conversationId: '1960000000000000005', title: '供应商履约分析', description: '交期、价格和异常履约复盘', updatedAt: '2026-06-29 15:12:00' },
-  { conversationId: '1960000000000000006', title: '周经营复盘', description: '周销量、采购和库存状态汇总', updatedAt: '2026-06-29 09:05:00' },
-];
-
-const mockSources: AiContextSource[] = [
-  { sourceId: 'stock-tool', sourceType: 'TOOL', title: '库存余额 Tool', description: 'warehouse_stock 可用库存、锁定库存和安全库存', freshness: '实时查询' },
-  { sourceId: 'sales-summary-tool', sourceType: 'TOOL', title: '销售汇总 Tool', description: '销售订单、出库和商品销量趋势', freshness: '今日 10:00' },
-  { sourceId: 'purchase-tool', sourceType: 'TOOL', title: '采购在途 Tool', description: '采购订单、入库进度和供应商供货关系', freshness: '今日 10:00' },
-];
-
-const mockPurchaseCharts: AiChartSpec[] = [
-  {
-    chartId: 'purchase-demand-line',
-    type: 'line',
-    title: '补货商品近 7 日需求趋势',
-    description: '用于判断补货优先级，数值来自销售订单和出库汇总。',
-    xField: 'date',
-    yFields: ['usbDemand', 'labelDemand'],
-    fieldLabels: { usbDemand: '速溶黑咖啡需求', labelDemand: '热敏标签纸需求' },
-    yUnit: '件',
-    nameField: null,
-    valueField: null,
-    data: [
-      { date: '06-25', usbDemand: 4, labelDemand: 18 },
-      { date: '06-26', usbDemand: 5, labelDemand: 21 },
-      { date: '06-27', usbDemand: 7, labelDemand: 20 },
-      { date: '06-28', usbDemand: 8, labelDemand: 24 },
-      { date: '06-29', usbDemand: 10, labelDemand: 28 },
-      { date: '06-30', usbDemand: 12, labelDemand: 31 },
-      { date: '07-01', usbDemand: 14, labelDemand: 35 },
-    ],
-  },
-  {
-    chartId: 'purchase-gap-bar',
-    type: 'bar',
-    title: '安全库存缺口',
-    description: '缺口越高，越适合进入右侧草稿工作框复核。',
-    xField: 'productName',
-    yFields: ['gapQty'],
-    fieldLabels: { gapQty: '安全库存缺口' },
-    yUnit: '件',
-    nameField: null,
-    valueField: null,
-    data: [
-      { productName: '速溶黑咖啡', gapQty: 1 },
-      { productName: '热敏标签纸', gapQty: 40 },
-      { productName: 'A4复印纸', gapQty: 78 },
-    ],
-  },
-];
-
-const mockStockCharts: AiChartSpec[] = [
-  {
-    chartId: 'stock-risk-pie',
-    type: 'pie',
-    title: '库存风险分布',
-    description: '风险分类由库存余额、安全库存和锁定库存派生。',
-    xField: null,
-    yFields: [],
-    yUnit: '项',
-    nameField: 'riskType',
-    valueField: 'count',
-    data: [
-      { riskType: '无可用库存', count: 4 },
-      { riskType: '低于安全库存', count: 3 },
-      { riskType: '锁定占用过高', count: 2 },
-    ],
-  },
-];
-
-const mockLockReleaseCharts: AiChartSpec[] = [
-  {
-    chartId: 'lock-release-bar',
-    type: 'bar',
-    title: '可复核锁定数量',
-    description: '按来源单据展示可复核数量，避免用占比图掩盖具体处理对象。',
-    xField: 'sourceNo',
-    yFields: ['releaseQty'],
-    fieldLabels: { releaseQty: '可复核锁定数量' },
-    yUnit: '件',
-    nameField: null,
-    valueField: null,
-    data: [
-      { sourceNo: 'SO012', releaseQty: 12 },
-      { sourceNo: 'SO018', releaseQty: 30 },
-      { sourceNo: 'SO021', releaseQty: 8 },
-    ],
-  },
-];
-
-const mockSalesCharts: AiChartSpec[] = [
-  {
-    chartId: 'sales-forecast-line',
-    type: 'line',
-    title: '未来 7 天销量预测',
-    description: '预测数据由销量预测智能体基于销售订单和出库趋势生成。',
-    xField: 'date',
-    yFields: ['forecastQty'],
-    fieldLabels: { forecastQty: '预测销量' },
-    yUnit: '件',
-    nameField: null,
-    valueField: null,
-    data: [
-      { date: 'D1', forecastQty: 18 },
-      { date: 'D2', forecastQty: 22 },
-      { date: 'D3', forecastQty: 24 },
-      { date: 'D4', forecastQty: 21 },
-      { date: 'D5', forecastQty: 27 },
-      { date: 'D6', forecastQty: 30 },
-      { date: 'D7', forecastQty: 33 },
-    ],
-  },
-];
-
-const mockSupplierCharts: AiChartSpec[] = [
-  {
-    chartId: 'supplier-on-time-bar',
-    type: 'bar',
-    title: '供应商准时率对比',
-    description: '按完全入库采购单计算平均到货周期，值越高越需要复核履约风险。',
-    xField: 'supplierName',
-    yFields: ['avgDeliveryDays'],
-    fieldLabels: { avgDeliveryDays: '平均到货周期' },
-    yUnit: '天',
-    nameField: null,
-    valueField: null,
-    data: [
-      { supplierName: '森纸纸业', avgDeliveryDays: 1.8 },
-      { supplierName: '华东饮品', avgDeliveryDays: 2.4 },
-      { supplierName: '拓联数码', avgDeliveryDays: 6.1 },
-    ],
-  },
-];
-
-const mockOverview: AiAssistantOverview = {
-  refreshedAt: '2026-07-01 10:30:00',
-  conversations: mockConversations,
-  quickPrompts: [
-    {
-      promptId: 'risk',
-      title: '经营风险巡检',
-      description: '按仓库和商品范围识别今天最需要处理的风险',
-      intentCode: 'multi-agent-risk-review',
-      promptTemplate: '请按以下范围做经营风险巡检：商品范围：{{products}}；仓库范围：{{warehouses}}；关注事项：{{focus}}。输出库存、销量、采购和供应商风险，并给出今日处理顺序。',
-      fields: [
-        { fieldKey: 'products', label: '商品范围', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择需要巡检的商品', defaultValue: ['全部商品'] },
-        { fieldKey: 'warehouses', label: '仓库范围', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择需要巡检的仓库', defaultValue: ['全部仓库'] },
-        { fieldKey: 'focus', label: '关注事项', fieldType: 'TEXT', required: false, placeholder: '例如：优先看缺货和滞销', defaultValue: '优先识别缺货、滞销、锁定占用和采购交期风险' },
-      ],
-      actionPreview: { title: '库存风险处理预览', description: '完成分析后进入库存余额复核风险范围。', steps: ['确认巡检范围', '核对库存与锁定占用', '人工决定后续处理'], route: '/warehouse/stocks', confirmLabel: '查看流程' },
-    },
-    {
-      promptId: 'purchase',
-      title: '生成补货建议',
-      description: '选择商品、仓库后生成采购建议',
-      intentCode: 'multi-agent-purchase-advice',
-      promptTemplate: '请为以下商品生成补货建议：{{products}}；关注仓库：{{warehouses}}；预测天数：{{days}} 天。需要结合销量预测、可用库存、安全库存、在途采购和供应商评分。',
-      fields: [
-        { fieldKey: 'products', label: '关注商品', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['A4复印纸', '速溶黑咖啡'] },
-        { fieldKey: 'warehouses', label: '关注仓库', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择仓库', defaultValue: ['华东中心仓', '华南中心仓'] },
-        { fieldKey: 'days', label: '预测天数', fieldType: 'DAYS', required: true, placeholder: '填写预测天数', defaultValue: '14' },
-      ],
-      actionPreview: { title: '采购建议确认预览', description: '先复核建议范围，再进入采购订单处理。', steps: ['核对销量与库存缺口', '预览补货建议', '人工进入采购模块处理'], route: '/purchase/orders', confirmLabel: '查看流程' },
-    },
-    {
-      promptId: 'transfer',
-      title: '生成调拨单',
-      description: '识别跨仓缺口并生成调拨草稿工作框',
-      intentCode: 'multi-agent-transfer-draft',
-      promptTemplate: '请基于已完成的销量预测、库存缺口和跨仓可用库存生成调拨建议：商品范围：{{products}}；参与仓库：{{warehouses}}。需要给出调出仓、调入仓、调拨数量和原因。',
-      fields: [
-        { fieldKey: 'products', label: '调拨商品', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['A4复印纸', '热敏标签纸'] },
-        { fieldKey: 'warehouses', label: '参与仓库', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择调出/调入仓库', defaultValue: ['华东中心仓', '华南中心仓'] },
-      ],
-      actionPreview: { title: '调拨建议工作框预览', description: '复核调出仓、调入仓和建议数量。', steps: ['核对跨仓库存', '预览调拨建议', '人工进入库存模块处理'], route: '/warehouse/outbound-bills', confirmLabel: '查看流程' },
-    },
-    {
-      promptId: 'release',
-      title: '释放锁定库存',
-      description: '找出长期锁定但未出库的库存',
-      intentCode: 'multi-agent-lock-release',
-      promptTemplate: '请按以下范围检查可释放锁定库存：商品范围：{{products}}；仓库范围：{{warehouses}}；关注事项：{{focus}}。需要返回来源单号、可释放数量和复核原因。',
-      fields: [
-        { fieldKey: 'products', label: '商品范围', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['全部商品'] },
-        { fieldKey: 'warehouses', label: '仓库范围', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择仓库', defaultValue: ['全部仓库'] },
-        { fieldKey: 'focus', label: '释放条件', fieldType: 'TEXT', required: false, placeholder: '例如：锁定超过 48 小时且未出库', defaultValue: '锁定超过 48 小时且未进入出库确认' },
-      ],
-      actionPreview: { title: '锁定库存释放预览', description: '只展示可复核候选，不直接修改库存。', steps: ['核对来源订单', '复核建议释放数量', '进入业务页面人工处理'], route: '/warehouse/stocks', confirmLabel: '查看流程' },
-    },
-    {
-      promptId: 'sales',
-      title: '销量预测',
-      description: '选择商品并预测未来销量',
-      intentCode: 'multi-agent-sales-forecast',
-      promptTemplate: '请预测以下商品未来 {{days}} 天销量：{{products}}；仓库范围：{{warehouses}}。需要解释增长或下滑原因，并提示缺货对销量的影响。',
-      fields: [
-        { fieldKey: 'products', label: '预测商品', fieldType: 'PRODUCT_MULTI', required: true, placeholder: '选择商品', defaultValue: ['A4复印纸', '速溶黑咖啡', '热敏标签纸'] },
-        { fieldKey: 'warehouses', label: '仓库范围', fieldType: 'WAREHOUSE_MULTI', required: true, placeholder: '选择仓库', defaultValue: ['全部仓库'] },
-        { fieldKey: 'days', label: '预测天数', fieldType: 'DAYS', required: true, placeholder: '填写预测天数', defaultValue: '7' },
-      ],
-      actionPreview: { title: '销量预测报告预览', description: '生成趋势结论并在任务中心持续跟踪。', steps: ['确认预测范围', '生成趋势和风险结论', '进入任务中心跟踪'], route: '/ai/tasks', confirmLabel: '查看流程' },
-    },
-  ],
-};
-
-const mockPurchaseWorkbench: AiAssistantWorkbench = {
-  workbenchId: 'mock-workbench-purchase',
-  title: '采购建议工作框',
-  description: '由开发环境 Mock 返回的只读采购建议，正式处理请进入采购模块。',
-  workbenchType: 'PURCHASE_DRAFT',
-  route: '/purchase/orders',
-  lines: [
-    { lineId: 'mock-line-a4', productId: '1920000000000000026', productName: 'A4复印纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 20, reason: '补足安全库存并覆盖未来 7 天需求', supplierProductId: '1940000000000000026', supplierId: '1940000000000000001', supplierName: '森纸纸业', unitPrice: 21.8, selectedSupplierScore: 96.5, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
-    { lineId: 'mock-line-label', productId: '1920000000000000027', productName: '热敏标签纸', warehouseId: '1930000000000000002', warehouseName: 'WH002 华南中心仓', suggestedQty: 40, reason: '当前可用库存为零，优先补足安全库存', supplierProductId: '1940000000000000027', supplierId: '1940000000000000001', supplierName: '森纸纸业', unitPrice: 18.6, selectedSupplierScore: 96.5, targetWarehouseId: null, targetWarehouseName: null, sourceNo: null },
-  ],
-  sections: [
-    { title: '数据范围', items: ['销售订单、库存余额、采购在途', '华东中心仓、华南中心仓'] },
-    { title: '安全边界', items: ['本工作框仅供预览', '正式单据必须在采购模块人工处理'] },
-  ],
-};
-
-const mockTransferWorkbench: AiAssistantWorkbench = {
-  workbenchId: 'mock-workbench-transfer',
-  title: '调拨建议工作框',
-  description: '由开发环境 Mock 返回的只读跨仓调拨建议。',
-  workbenchType: 'TRANSFER_DRAFT',
-  route: '/warehouse/outbound-bills',
-  lines: [
-    { lineId: 'mock-transfer-label', productId: '1920000000000000027', productName: '热敏标签纸', warehouseId: '1930000000000000001', warehouseName: 'WH001 华东中心仓', suggestedQty: 24, reason: '华南中心仓低于安全库存', supplierProductId: null, supplierId: null, supplierName: null, unitPrice: null, selectedSupplierScore: null, targetWarehouseId: '1930000000000000002', targetWarehouseName: 'WH002 华南中心仓', sourceNo: null },
-  ],
-  sections: [{ title: '处理边界', items: ['仅展示调拨建议', '正式调拨需进入库存模块人工处理'] }],
-};
-
-function mockActionCard(actionId: string, title: string, description: string, route: string | null): AiActionCard {
-  return {
-    actionId,
-    title,
-    description,
-    actionType: route ? 'NAVIGATE' : 'PREVIEW',
-    route,
-    riskLevel: 'MEDIUM',
-    preview: {
-      title,
-      description,
-      steps: ['复核 AI 使用的数据范围', '检查建议明细和风险', '进入业务模块人工处理'],
-      route,
-      confirmLabel: route ? '进入业务页面' : '关闭预览',
-    },
-  };
-}
-
-function mockMessage(messageId: string, role: 'assistant' | 'user', content: string, createdAt: string, options: Partial<AiChatMessage> = {}): AiChatMessage {
-  return {
-    messageId,
-    role,
-    content,
-    createdAt,
-    charts: options.charts || [],
-    actionCards: options.actionCards || [],
-    sources: options.sources || [],
-    agentTraces: options.agentTraces || [],
-    taskCard: options.taskCard || null,
-    workbench: options.workbench || null,
-  };
-}
-
-const mockMessagesByConversation: Record<string, AiChatMessage[]> = {
-  '1960000000000000001': [
-    mockMessage('1963000000000000001', 'user', '请汇总今日经营风险，并给出优先处理建议。', '2026-07-01 10:17:42'),
-    mockMessage('1963000000000000008', 'assistant', `【经营巡检摘要】
-今日需要优先处理 2 项补货风险，均集中在华南中心仓。A4复印纸与热敏标签纸的可用库存已低于安全库存，若不处理，未来 7 天的销售需求将受到影响。
-
-【风险明细】
-1. A4复印纸：当前缺口 78 件，建议先补足安全库存，并在下一次销量汇总后复核需求变化。
-2. 热敏标签纸：当前缺口 40 件，且可用库存为零，应作为今日第一优先级处理。
-3. 供应商：森纸纸业近期履约评分为 96.5 分、报价稳定，可作为本轮采购建议的优选供货方。
-
-【建议处理顺序】
-先复核右侧工作框中的数量、入库仓与报价；确认无误后进入采购订单页面生成草稿。正式采购单仍需由业务人员确认，AI 不会直接写入业务单据。`, '2026-07-01 10:18:00', {
-      charts: [mockPurchaseCharts[1]],
-      actionCards: [mockActionCard('mock-today-purchase', '复核今日补货建议', '查看建议数量、报价与风险原因。', '/purchase/orders')],
-      sources: mockSources,
-      workbench: mockPurchaseWorkbench,
-    }),
-  ],
-  '1960000000000000002': [
-    mockMessage('1963000000000000002', 'user', '帮我分析今天需要优先补货的商品。', '2026-07-01 09:42:00'),
-    mockMessage('1963000000000000003', 'assistant', `【补货分析结论】
-已结合近 7 日销售订单、当前可用库存、安全库存和采购在途完成分析。今日建议优先处理热敏标签纸与 A4复印纸，两项均存在明确安全库存缺口。
-
-【商品建议】
-1. 热敏标签纸：华南中心仓可用库存为零，建议补货 40 件，避免影响订单拣配与发货标签打印。
-2. A4复印纸：华南中心仓缺口 78 件，首批建议补货 20 件以恢复安全库存，再根据未来 7 天需求趋势追加。
-3. 速溶黑咖啡：近期需求上升但当前风险可控，建议继续观察销量变化，无需立即下单。
-
-【执行说明】
-右侧已生成采购建议工作框，包含建议数量、入库仓、优选供应商和参考报价。请先进行人工复核，再进入采购模块生成正式业务草稿。`, '2026-07-01 09:42:18', {
-      charts: mockPurchaseCharts,
-      actionCards: [mockActionCard('mock-open-purchase', '查看采购建议', '进入采购订单页面继续人工处理。', '/purchase/orders')],
-      sources: mockSources,
-      workbench: mockPurchaseWorkbench,
-    }),
-  ],
-  '1960000000000000003': [mockMessage('1963000000000000004', 'assistant', `【销量预测摘要】
-未来 7 天销量整体保持上升趋势。A4复印纸需求稳定增长，速溶黑咖啡的潜在需求较高，但可用库存偏低可能压制实际销量。
-
-【关键判断】
-1. A4复印纸：预测销量由 18 件逐步升至 33 件，建议维持安全库存，不宜延后补货。
-2. 速溶黑咖啡：需求增长明显，需先确认在途采购与可用库存，避免缺货造成销售损失。
-3. 热敏标签纸：需求波动较小，但应与仓库库存风险一并评估。
-
-【后续动作】
-建议在明日晨报中继续比对预测值与实际出库量；若偏差持续超过 15%，再调整采购频率和安全库存阈值。`, '2026-06-30 18:20:00', { charts: mockSalesCharts, sources: mockSources })],
-  '1960000000000000004': [mockMessage('1963000000000000005', 'assistant', `【库存风险巡检结果】
-本次巡检发现 4 个无可用库存商品、3 个低于安全库存商品，以及 2 项锁定库存占用偏高的情况。风险主要集中在华南中心仓，建议优先恢复可售库存。
-
-【优先处理项】
-1. 热敏标签纸：华南中心仓库存缺口明确，可从华东中心仓调拨 24 件。
-2. 中性签字笔：存在长期锁定未出库记录，需先复核来源销售单状态。
-3. A4复印纸：建议补足华南中心仓安全库存，减少未来销量预测带来的断货风险。
-
-【处理边界】
-右侧工作框仅提供调拨建议和可复核明细。请由仓储人员确认调出仓可用数量后，再进入业务页面处理正式调拨。`, '2026-06-30 16:40:00', { charts: mockStockCharts, actionCards: [mockActionCard('mock-open-stock', '查看库存余额', '进入库存余额页面继续人工处理。', '/warehouse/stocks')], sources: mockSources, workbench: mockTransferWorkbench })],
-  '1960000000000000005': [mockMessage('1963000000000000006', 'assistant', `【供应商履约分析】
-近 30 天供应商履约整体稳定，但不同供方的到货周期差异明显。纸品类供应商表现可靠，数码配件供方需要在下单前额外关注交期。
-
-【重点发现】
-1. 森纸纸业：平均到货周期 1.8 天，近期履约表现稳定，可作为纸品补货的优先供方。
-2. 华东饮品：平均到货周期 2.4 天，当前表现正常，建议维持现有合作节奏。
-3. 拓联数码：平均到货周期 6.1 天，明显高于其他供方；建议下单前确认延期原因，并准备备选供方。
-
-【建议】
-采购草稿中可优先选择履约稳定的供应商；对于到货周期超过 5 天的商品，应预留更长安全库存覆盖天数。`, '2026-06-29 15:12:00', { charts: mockSupplierCharts, sources: mockSources })],
-  '1960000000000000006': [mockMessage('1963000000000000007', 'assistant', `【本周经营复盘】
-本周销售需求整体平稳，库存风险主要来自华南中心仓的纸品类商品。采购在途能够覆盖部分需求，但仍需尽快处理热敏标签纸和 A4复印纸的安全库存缺口。
-
-【经营关注点】
-1. 销量：纸品需求连续增长，应持续跟踪预测与实际出库偏差。
-2. 库存：低库存商品优先通过补货或跨仓调拨恢复安全库存。
-3. 采购：优先选择履约稳定的供方，并在采购草稿中复核价格与到货周期。
-
-【下周建议】
-每天查看经营晨报；对高风险 SKU 设置专人跟进；在周中复核一次采购在途和库存缺口，避免风险累积。`, '2026-06-29 09:05:00', { charts: mockPurchaseCharts.slice(1), sources: mockSources })],
-};
-
-let mockTasks: AiScheduledTask[] = [
-  {
-    taskId: 'task-daily-report',
-    productIds: ['ALL'],
-    warehouseIds: ['ALL'],
-    recipientRoleIds: ['1900000000000001003'],
-    taskName: '每日经营晨报',
-    category: 'REPORT',
-    frequency: 'DAILY',
-    cronExpression: '0 30 8 * * ?',
-    productScope: ['全部商品'],
-    warehouseScope: ['全部仓库'],
-    analysisGoal: '汇总昨日销售、采购、库存、供应商和待办异常，给出今日优先处理建议。',
-    nextRunAt: '2026-07-02 08:30:00',
-    lastRunAt: '2026-07-01 08:30:02',
-    lastResultSummary: '昨日销售额 28.6 万，库存高风险 SKU 4 个，建议优先处理待审核销售单和 USB-C 扩展坞补货。',
-    recipients: ['经营负责人', '采购主管'],
-    status: 'ENABLED',
-    agentCodes: ['chief-router-agent', 'data-analysis-agent', 'inventory-analysis-agent', 'purchase-advice-agent'],
-    painPoint: '每天不用人工逐页看销售、采购和库存。',
-    outputFormat: 'REPORT',
-    editable: true,
-  },
-  {
-    taskId: 'task-inventory-health',
-    productIds: ['1920000000000000002', '1920000000000000027', '1920000000000000026'],
-    warehouseIds: ['1930000000000000001', '1930000000000000002', '1930000000000000008'],
-    recipientRoleIds: ['1900000000000001004', '1900000000000001003'],
-    taskName: '库存健康巡检',
-    category: 'INVENTORY',
-    frequency: 'DAILY',
-    cronExpression: '0 30 9 * * ?',
-    productScope: ['速溶黑咖啡', '热敏标签纸', 'A4复印纸'],
-    warehouseScope: ['华东中心仓', '华南中心仓', '南京备货仓'],
-    analysisGoal: '识别低库存、无可用库存、高锁定库存和滞销商品，并给出补货或调拨建议。',
-    nextRunAt: '2026-07-02 09:30:00',
-    lastRunAt: '2026-07-01 09:30:01',
-    lastResultSummary: '8 个 SKU 触发库存预警，其中 4 个无可用库存，建议生成补货草稿。',
-    recipients: ['仓库主管', '采购主管'],
-    status: 'ENABLED',
-    agentCodes: ['chief-router-agent', 'inventory-analysis-agent', 'purchase-advice-agent'],
-    painPoint: '提前发现缺货、滞销和锁定库存，减少临时救火。',
-    outputFormat: 'REPORT',
-    editable: true,
-  },
-  {
-    taskId: 'task-purchase-advice',
-    productIds: ['1920000000000000026', '1920000000000000002', '1920000000000000027'],
-    warehouseIds: ['1930000000000000001', '1930000000000000002'],
-    recipientRoleIds: ['1900000000000001003'],
-    taskName: '采购补货建议',
-    category: 'PURCHASE',
-    frequency: 'DAILY',
-    cronExpression: '0 0 10 * * ?',
-    productScope: ['A4复印纸', '速溶黑咖啡', '热敏标签纸'],
-    warehouseScope: ['华东中心仓', '华南中心仓'],
-    analysisGoal: '根据指定商品的销量预测、当前库存、安全库存、在途采购和供应商评分给出补货建议。',
-    nextRunAt: '2026-07-02 10:00:00',
-    lastRunAt: '2026-07-01 10:00:05',
-    lastResultSummary: '建议补货 5 个商品，优先向华东饮品供应链和森纸纸业集团下单。',
-    recipients: ['采购主管'],
-    status: 'ENABLED',
-    agentCodes: ['chief-router-agent', 'purchase-advice-agent', 'sales-forecast-agent', 'supplier-evaluation-agent'],
-    painPoint: '把销量预测、库存和供应商评分合并成可执行建议。',
-    outputFormat: 'REPORT',
-    editable: true,
-  },
-  {
-    taskId: 'task-weekly-sales',
-    productIds: ['ALL'],
-    warehouseIds: ['ALL'],
-    recipientRoleIds: ['1900000000000001003'],
-    taskName: '每周销量报告',
-    category: 'SALES',
-    frequency: 'WEEKLY',
-    cronExpression: '0 0 9 ? * MON',
-    productScope: ['全部商品'],
-    warehouseScope: ['全部仓库'],
-    analysisGoal: '总结 Top 商品、下滑商品、客户贡献和未来一周销量预测。',
-    nextRunAt: '2026-07-06 09:00:00',
-    lastRunAt: '2026-06-29 09:00:03',
-    lastResultSummary: 'A4复印纸、苏打水增长明显，速溶黑咖啡因库存偏低影响销量。',
-    recipients: ['销售主管', '经营负责人'],
-    status: 'ENABLED',
-    agentCodes: ['chief-router-agent', 'data-analysis-agent', 'sales-forecast-agent'],
-    painPoint: '自动找出销量波动，不再手动导出表格对比。',
-    outputFormat: 'REPORT',
-    editable: true,
-  },
-];
-
-const mockTemplates: AiScheduledTaskTemplate[] = [
-  {
-    templateId: 'tpl-daily-report',
-    taskName: '每日经营晨报',
-    category: 'REPORT',
-    frequency: 'DAILY',
-    description: '主控智能体调度多个专家，生成经营日报。',
-    defaultCronExpression: '0 30 8 * * ?',
-    agentCodes: ['chief-router-agent', 'data-analysis-agent', 'inventory-analysis-agent'],
-    defaultProductScope: ['全部商品'],
-    defaultWarehouseScope: ['全部仓库'],
-    defaultAnalysisGoal: '汇总昨日销售、采购、库存、供应商和待办异常，给出今日优先处理建议。',
-    outputFormat: 'REPORT',
-  },
-  {
-    templateId: 'tpl-purchase-advice',
-    taskName: '采购补货建议',
-    category: 'PURCHASE',
-    frequency: 'DAILY',
-    description: '采购、库存、销量预测和供应商评估智能体协同。',
-    defaultCronExpression: '0 0 10 * * ?',
-    agentCodes: ['purchase-advice-agent', 'sales-forecast-agent', 'supplier-evaluation-agent'],
-    defaultProductScope: ['A4复印纸', '速溶黑咖啡'],
-    defaultWarehouseScope: ['华东中心仓', '华南中心仓'],
-    defaultAnalysisGoal: '根据指定商品的销量预测、当前库存、安全库存、在途采购和供应商评分给出补货建议。',
-    outputFormat: 'REPORT',
-  },
-  {
-    templateId: 'tpl-weekly-sales',
-    taskName: '每周销量报告',
-    category: 'SALES',
-    frequency: 'WEEKLY',
-    description: '销量预测智能体和数据分析智能体生成周报。',
-    defaultCronExpression: '0 0 9 ? * MON',
-    agentCodes: ['data-analysis-agent', 'sales-forecast-agent'],
-    defaultProductScope: ['全部商品'],
-    defaultWarehouseScope: ['全部仓库'],
-    defaultAnalysisGoal: '总结 Top 商品、下滑商品、客户贡献和未来一周销量预测。',
-    outputFormat: 'REPORT',
-  },
-];
-
-// 旧 Mock 夹具保留 sections 仅用于兼容历史样例；对外归一化结果不再暴露该字段。
-let mockExecutions: Array<AiTaskExecution & { sections?: unknown[] }> = [
-  {
-    executionId: 'exec-20260701-1000',
-    taskId: 'task-purchase-advice',
-    taskName: '采购补货建议',
-    startedAt: '2026-07-01 10:00:05',
-    finishedAt: '2026-07-01 10:00:16',
-    status: 'SUCCESS',
-    resultSummary: '建议补货 3 个商品，速溶黑咖啡和热敏标签纸优先级最高；A4复印纸在华南中心仓需要补安全库存。',
-    agents: ['主控智能体', '采购建议智能体', '销量预测智能体', '供应商评估智能体'],
-    findings: ['速溶黑咖啡在华东中心仓可用库存为 7 盒，低于安全库存。', '热敏标签纸安全库存缺口 40 卷，华南中心仓已无可用库存。', '供应商信息属于外部采购数据，创建正式采购单前需人工复核。'],
-    suggestions: ['生成速溶黑咖啡补货草稿 12 盒。', '热敏标签纸建议补货 40 卷。', '采购前复核外部供应商近期履约信息。'],
-    metrics: [
-      { label: '高优先级商品', value: '2 个', tone: 'risk' },
-      { label: '建议补货量', value: '126 件', tone: 'watch' },
-      { label: '预计覆盖', value: '14 天', tone: 'good' },
-      { label: '供应商风险', value: '1 项', tone: 'watch' },
-    ],
-    charts: mockPurchaseCharts,
-    sections: [
-      { sectionId: 'scope', title: '分析范围', items: ['商品：A4复印纸、速溶黑咖啡、热敏标签纸。', '仓库：华东中心仓、华南中心仓。', '预测窗口：未来 14 天销量与安全库存缺口。'] },
-      { sectionId: 'purchase', title: '采购建议明细', items: ['速溶黑咖啡：华东中心仓可用库存为 7 盒，建议补货 12 盒。', '热敏标签纸：建议补货 40 卷，华南中心仓优先，需覆盖安全库存缺口。', 'A4复印纸：华南中心仓建议补 20 箱，避免重复占用库存。'] },
-      { sectionId: 'supplier', title: '数据边界', items: ['供应商履约与报价来自外部采购数据，正式下单前必须在采购模块人工复核。'] },
-    ],
-    nextActions: [
-      { actionId: 'open-purchase', title: '进入采购订单', description: '复核后生成采购草稿', route: '/purchase/orders' },
-      { actionId: 'open-stock', title: '查看库存余额', description: '核对低库存 SKU', route: '/warehouse/stocks' },
-    ],
-  },
-  {
-    executionId: 'exec-20260701-0930',
-    taskId: 'task-inventory-health',
-    taskName: '库存健康巡检',
-    startedAt: '2026-07-01 09:30:01',
-    finishedAt: '2026-07-01 09:30:08',
-    status: 'SUCCESS',
-    resultSummary: '发现 8 个库存风险 SKU，其中 4 个无可用库存，2 个存在高锁定占用。',
-    agents: ['主控智能体', '库存分析智能体', '采购建议智能体'],
-    findings: ['华东中心仓速溶黑咖啡可用库存为 7 盒。', '华南中心仓热敏标签纸低于安全库存。'],
-    suggestions: ['优先生成补货建议。', '复核是否存在待确认入库单。'],
-    metrics: [
-      { label: '风险 SKU', value: '8 个', tone: 'risk' },
-      { label: '无可用库存', value: '4 个', tone: 'risk' },
-      { label: '高锁定占用', value: '2 个', tone: 'watch' },
-      { label: '建议调拨', value: '3 条', tone: 'good' },
-    ],
-    charts: mockStockCharts,
-    sections: [
-      { sectionId: 'risk', title: '库存风险', items: ['速溶黑咖啡在华东中心仓低于安全库存，建议补货。', '热敏标签纸华南中心仓低于安全库存，建议从华东中心仓调拨或追加采购。'] },
-      { sectionId: 'operation', title: '处理建议', items: ['先复核待确认入库单，避免重复采购。', '对锁定超过 24 小时的销售单做出库或释放库存处理。'] },
-    ],
-    nextActions: [
-      { actionId: 'open-stock', title: '打开库存管理', description: '查看风险 SKU', route: '/warehouse/stocks' },
-    ],
-  },
-  {
-    executionId: 'exec-20260630-1000',
-    taskId: 'task-purchase-advice',
-    taskName: '采购补货建议',
-    startedAt: '2026-06-30 10:00:04',
-    finishedAt: '2026-06-30 10:00:13',
-    status: 'SUCCESS',
-    resultSummary: '建议补货 3 个商品，A4复印纸和热敏标签纸优先级最高；速溶黑咖啡库存处于安全线以下。',
-    agents: ['主控智能体', '采购建议智能体', '销量预测智能体', '供应商评估智能体'],
-    findings: ['A4复印纸华南中心仓低于安全库存。', '热敏标签纸华南中心仓安全库存缺口 40 卷。', '速溶黑咖啡华东中心仓可用库存为 7 盒。'],
-    suggestions: ['A4复印纸建议补货 20 箱。', '热敏标签纸建议补货 40 卷。', '速溶黑咖啡建议补货 12 盒。'],
-    metrics: [
-      { label: '高优先级商品', value: '2 个', tone: 'risk' },
-      { label: '建议补货量', value: '92 件', tone: 'watch' },
-      { label: '预计覆盖', value: '12 天', tone: 'good' },
-      { label: '供应商风险', value: '0 项', tone: 'good' },
-    ],
-    charts: mockPurchaseCharts.slice(1),
-    sections: [
-      { sectionId: 'scope', title: '分析范围', items: ['商品：A4复印纸、速溶黑咖啡、热敏标签纸。', '仓库：华东中心仓、华南中心仓。', '预测窗口：未来 14 天销量与安全库存缺口。'] },
-      { sectionId: 'purchase', title: '采购建议明细', items: ['A4复印纸：华南中心仓建议补 20 箱。', '热敏标签纸：华南中心仓建议补 40 卷。', '速溶黑咖啡：华东中心仓建议补 12 盒。'] },
-    ],
-    nextActions: [
-      { actionId: 'open-purchase', title: '进入采购订单', description: '复核后生成采购草稿', route: '/purchase/orders' },
-      { actionId: 'open-stock', title: '查看库存余额', description: '核对低库存 SKU', route: '/warehouse/stocks' },
-    ],
-  },
-  {
-    executionId: 'exec-20260630-0930',
-    taskId: 'task-inventory-health',
-    taskName: '库存健康巡检',
-    startedAt: '2026-06-30 09:30:02',
-    finishedAt: '2026-06-30 09:30:11',
-    status: 'SUCCESS',
-    resultSummary: '发现 7 个库存风险 SKU，其中 3 个无可用库存，3 个存在高锁定占用。',
-    agents: ['主控智能体', '库存分析智能体', '采购建议智能体'],
-    findings: ['华南中心仓热敏标签纸低于安全库存。', '华东中心仓中性签字笔存在锁定占用。'],
-    suggestions: ['热敏标签纸建议补货或调拨。', '复核中性签字笔锁定库存。'],
-    metrics: [
-      { label: '风险 SKU', value: '7 个', tone: 'risk' },
-      { label: '无可用库存', value: '3 个', tone: 'risk' },
-      { label: '高锁定占用', value: '3 个', tone: 'watch' },
-      { label: '建议调拨', value: '2 条', tone: 'good' },
-    ],
-    charts: mockStockCharts,
-    sections: [
-      { sectionId: 'risk', title: '库存风险', items: ['热敏标签纸华南中心仓低于安全库存。', '中性签字笔锁定库存偏高，建议复核销售单状态。'] },
-      { sectionId: 'operation', title: '处理建议', items: ['先处理热敏标签纸调拨。', '释放超过 24 小时未出库的锁定库存。'] },
-    ],
-    nextActions: [
-      { actionId: 'open-stock', title: '打开库存管理', description: '查看风险 SKU', route: '/warehouse/stocks' },
-    ],
-  },
-];
-
-function delay(ms = 220) {
-  return new Promise(resolve => window.setTimeout(resolve, ms));
-}
 
 function normalizeStringArray(value: unknown) {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
@@ -719,7 +104,7 @@ function normalizeWorkbenchLine(value: unknown, workbenchType: AiAssistantWorkbe
     supplierProductId: normalizeNullableStringId(item.supplierProductId, `workbench.lines[${index}].supplierProductId`),
     supplierId: normalizeNullableStringId(item.supplierId, `workbench.lines[${index}].supplierId`),
     supplierName: item.supplierName == null || item.supplierName === '' ? null : requiredText(item.supplierName, `workbench.lines[${index}].supplierName`),
-    unitPrice: item.unitPrice == null ? null : normalizeMoneyNumber(item.unitPrice, `workbench.lines[${index}].unitPrice`, false, useMockApi),
+    unitPrice: item.unitPrice == null ? null : normalizeMoneyNumber(item.unitPrice, `workbench.lines[${index}].unitPrice`, false),
     selectedSupplierScore: item.selectedSupplierScore == null ? null : normalizeFiniteNumber(item.selectedSupplierScore, `workbench.lines[${index}].selectedSupplierScore`),
     targetWarehouseId: normalizeNullableStringId(item.targetWarehouseId, `workbench.lines[${index}].targetWarehouseId`),
     targetWarehouseName: item.targetWarehouseName == null || item.targetWarehouseName === '' ? null : requiredText(item.targetWarehouseName, `workbench.lines[${index}].targetWarehouseName`),
@@ -844,6 +229,7 @@ function normalizeChart(chart: AiChartSpec): AiChartSpec {
 }
 
 function normalizeMessage(item: AiChatMessage): AiChatMessage {
+  if (!item || !['user', 'assistant'].includes(item.role) || typeof item.content !== 'string') throw new Error('消息字段不符合接口契约');
   return {
     messageId: normalizeStringId(item.messageId, 'messageId'),
     role: item.role === 'user' ? 'user' : 'assistant',
@@ -913,23 +299,14 @@ function normalizeConversationMessagePage(data: AiConversationMessagePage): AiCo
   };
 }
 
+
+export async function getAiAssistantOverview() {
+  return getResult<AiAssistantOverview>('/ai/assistant/overview').then(normalizeOverview);
+}
+
 async function getAiConversationMessagePage(conversationId: string, pageNum: number, pageSize: number, signal?: AbortSignal) {
-  if (useMockApi) {
-    await delay(120);
-    if (signal?.aborted) throw new DOMException('会话历史请求已取消', 'AbortError');
-    const messages = mockMessagesByConversation[conversationId] || [];
-    const start = (pageNum - 1) * pageSize;
-    return normalizeConversationMessagePage({
-      records: messages.slice(start, start + pageSize),
-      pageNum,
-      pageSize,
-      total: messages.length,
-      hasNext: start + pageSize < messages.length,
-    });
-  }
   const response = await http.get<Result<AiConversationMessagePage>>(`/ai/assistant/conversations/${conversationId}/messages`, {
-    params: { pageNum, pageSize },
-    signal,
+    params: { pageNum, pageSize }, signal, skipPageLoading: true, suppressErrorToast: true,
   });
   return normalizeConversationMessagePage(response.data.data);
 }
@@ -952,424 +329,89 @@ export async function getAiConversationHistory(conversationId: string, signal?: 
   return Array.from(messageById.values()).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.messageId.localeCompare(right.messageId));
 }
 
-function buildMockAssistantReply(request: AiChatRequest): AiChatResponse {
-  const conversationId = request.conversationId || `conv-${Date.now()}`;
-  const isTransfer = request.message.includes('调拨');
-  const isRelease = request.message.includes('释放') || request.message.includes('锁定');
-  const isPurchase = request.message.includes('采购') || request.message.includes('补货');
-  const isSupplier = request.message.includes('供应商') || request.message.includes('履约');
-  const isSales = request.message.includes('销量') || request.message.includes('预测');
-  const isStock = request.message.includes('库存') || request.message.includes('风险');
-  const content = isTransfer
-    ? `【跨仓调拨分析】
-已完成华东中心仓与华南中心仓的可用库存、安全库存和未来需求比对。当前缺口优先通过内部调拨解决，可避免等待外部采购到货。
-
-【建议明细】
-1. 热敏标签纸：建议从华东中心仓调拨至华南中心仓，优先覆盖当前安全库存缺口。
-2. A4复印纸：建议复核南京备货仓可用数量后，再确定调拨批次，避免影响本地订单履约。
-
-【下一步】
-右侧已生成调拨建议工作框。请人工确认调出仓可用量、调入仓需求和建议数量后，再进入库存模块处理正式调拨。`
-    : isRelease
-      ? `【锁定库存复核报告】
-已识别两条超过 48 小时且未进入出库确认的锁定记录。这些库存长期被占用，会降低可售库存并放大缺货风险。
-
-【复核建议】
-1. 逐条确认来源销售单是否已取消、超时或等待客户确认。
-2. 对确认无效的锁定，按来源单据和数量进行人工释放。
-3. 释放后重新计算可用库存，并复核是否仍需采购或调拨。
-
-【处理边界】
-右侧工作框只生成候选清单与复核理由，不会直接修改库存或订单状态。`
-      : isSupplier
-        ? `【供应商履约复盘】
-已完成近 30 天到货周期、异常履约和供货稳定性分析。纸品类供应商表现稳定，数码配件供方存在交期偏长风险。
-
-【主要结论】
-1. 森纸纸业：近期履约稳定，可作为纸品补货的优选供方。
-2. 拓联数码：到货周期明显偏长，下单前应复核延期原因、在途状态与备选供方。
-3. 对交期超过 5 天的供方，建议相应提高安全库存覆盖天数。
-
-【建议动作】
-采购草稿中优先选择稳定供方；对高风险供方增加到货跟踪节点，避免延迟影响销售履约。`
-      : isPurchase
-    ? `【采购补货建议】
-已完成库存缺口、销量预测、采购在途与供应商履约的交叉分析。本轮建议优先恢复高风险 SKU 的安全库存，再关注需求上升商品的采购节奏。
-
-【优先级建议】
-1. 热敏标签纸：可用库存为零，应优先补货，避免影响订单拣配与发货。
-2. 速溶黑咖啡：近期需求上升，建议尽快确认在途数量并补足需求缺口。
-3. A4复印纸：优先补足华南中心仓安全库存，其他仓库保持观察。
-
-【复核事项】
-请在右侧工作框核对建议数量、目标仓库、优选供应商与参考报价。确认后进入采购模块生成草稿，正式单据仍需人工审批。`
-    : isSales
-      ? `【销量预测报告】
-未来 7 天预计销量总体向上。A4复印纸保持稳定增长；速溶黑咖啡可能因库存不足损失部分销量，需要结合补货进度持续观察。
-
-【趋势判断】
-1. A4复印纸：需求增长平稳，建议维持安全库存并按周复核。
-2. 速溶黑咖啡：预测需求提升，当前库存偏低是主要限制因素。
-3. 热敏标签纸：需求波动较小，但需防止缺货影响订单履约效率。
-
-【建议动作】
-先恢复高风险商品可用库存，再于 7 天后比对预测值与实际出库量；若偏差持续超过 15%，建议重新调整采购频率。`
-      : isStock
-        ? `【库存风险分析】
-已按可用库存、安全库存与锁定占用完成风险识别。当前风险重点集中在低库存商品和长期锁定库存，建议先处理会直接影响销售履约的项目。
-
-【处理顺序】
-1. 补足可用库存为零的商品。
-2. 复核低于安全库存商品的在途采购与跨仓可用量。
-3. 清理超过时限但未进入出库确认的锁定记录。
-
-【建议】
-完成复核后，可进入库存余额页面查看具体 SKU 和仓库明细。`
-        : `【经营分析说明】
-我会先识别你的经营目标，再组合库存、采购、销量和供应商等数据生成结论。
-
-【可输出内容】
-包括经营摘要、风险明细、趋势图表、优先处理顺序与下一步业务建议。
-
-【使用方式】
-你可以直接描述问题，例如“分析本周库存风险”或“生成 A4复印纸补货建议”；结果只提供建议与草稿预览，正式业务动作仍由人工确认。`;
-  const charts = isTransfer
-    ? mockPurchaseCharts.slice(1)
-    : isRelease
-      ? mockLockReleaseCharts
-      : isSupplier
-        ? mockSupplierCharts
-      : isPurchase
-        ? mockPurchaseCharts
-        : isSales
-          ? mockSalesCharts
-          : isStock
-            ? mockStockCharts
-            : [];
-
-  return {
-    conversationId,
-    message: {
-      messageId: `msg-${Date.now()}-${mockConversationSeq++}`,
-      role: 'assistant',
-      content,
-      createdAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
-      charts,
-      actionCards: [
-        mockActionCard(isTransfer ? 'preview-transfer' : isRelease ? 'preview-release' : isSupplier ? 'view-supplier' : 'view-stock', isTransfer ? '预览调拨建议' : isRelease ? '预览释放清单' : isSupplier ? '查看供应商资料' : '打开库存管理', isTransfer ? '在右侧工作框复核调拨明细' : isRelease ? '复核锁定来源和建议数量' : isSupplier ? '查看履约、价格和异常记录' : '查看风险 SKU 的库存余额', isTransfer ? '/warehouse/outbound-bills' : isRelease ? '/warehouse/stocks' : isSupplier ? '/purchase/suppliers' : '/warehouse/stocks'),
-        mockActionCard('view-task', '查看任务结果', '进入经营任务中心查看最近执行报告', '/ai/tasks'),
-      ],
-      sources: isPurchase || isSupplier ? [mockSources[0], mockSources[2]] : [mockSources[0], mockSources[1]],
-      agentTraces: [
-        { traceId: 'trace-router', agentCode: 'chief-router-agent', agentName: '主控智能体', summary: '识别经营目标并选择专家智能体。', status: 'DONE' },
-        { traceId: 'trace-inventory', agentCode: 'inventory-analysis-agent', agentName: '库存分析智能体', summary: '读取库存余额、安全库存和锁定库存。', status: 'DONE' },
-        { traceId: isSales ? 'trace-sales' : isSupplier ? 'trace-supplier' : isTransfer || isRelease ? 'trace-stock-action' : 'trace-purchase', agentCode: isSales ? 'sales-forecast-agent' : isSupplier ? 'supplier-evaluation-agent' : isTransfer || isRelease ? 'inventory-analysis-agent' : 'purchase-advice-agent', agentName: isSales ? '销量预测智能体' : isSupplier ? '供应商评估智能体' : isTransfer || isRelease ? '库存分析智能体' : '采购建议智能体', summary: isSales ? '分析销量趋势并预测未来需求。' : isSupplier ? '按准时率、延期次数和异常反馈识别履约风险。' : isTransfer ? '结合跨仓可用库存和安全库存缺口生成调拨建议。' : isRelease ? '识别长期锁定且未进入出库确认的库存。' : '结合库存缺口和供应商评分生成补货建议。', status: 'DONE' },
-      ],
-      taskCard: null,
-      workbench: isTransfer ? mockTransferWorkbench : isPurchase ? mockPurchaseWorkbench : null,
-    },
-  };
+function normalizeStreamEvent(value: unknown, conversationId: string): AiChatStreamEvent {
+  const item = asRecord(value);
+  if (!item) throw new Error('AI 流式事件格式无效');
+  const requestId = requiredText(item.requestId, 'requestId');
+  const id = normalizeStringId(item.conversationId, 'conversationId');
+  if (id !== conversationId) throw new Error('AI 流式事件返回了其他会话');
+  if (item.eventType === 'MESSAGE_DELTA') {
+    if (typeof item.contentDelta !== 'string') throw new Error('AI 文本增量格式无效');
+    return { eventType: item.eventType, requestId, conversationId: id, contentDelta: item.contentDelta };
+  }
+  if (item.eventType === 'MESSAGE_FINAL') {
+    const message = normalizeMessage(item.message as AiChatMessage);
+    if (message.role !== 'assistant') throw new Error('AI 最终消息角色无效');
+    return { eventType: item.eventType, requestId, conversationId: id, message };
+  }
+  if (item.eventType === 'ERROR') {
+    return { eventType: item.eventType, requestId, conversationId: id, errorMessage: requiredText(item.errorMessage, 'errorMessage') };
+  }
+  throw new Error('AI 流式事件类型无效');
 }
 
-function normalizeSummary(summary: AiScheduledTaskSummary): AiScheduledTaskSummary {
-  return {
-    totalCount: normalizeFiniteNumber(summary.totalCount, 'totalCount'),
-    enabledCount: normalizeFiniteNumber(summary.enabledCount, 'enabledCount'),
-    failedCount: normalizeFiniteNumber(summary.failedCount, 'failedCount'),
-    nextRunCount: normalizeFiniteNumber(summary.nextRunCount, 'nextRunCount'),
-  };
-}
-
-function normalizeTaskStatus(value: unknown): AiScheduledTaskStatus {
-  return value === 'DISABLED' || value === 'RUNNING' || value === 'FAILED' ? value : 'ENABLED';
-}
-
-function normalizeOutputFormat(value: unknown): AiScheduledTaskOutputFormat {
-  return value === 'CHAT_CARD' ? value : 'REPORT';
-}
-
-function normalizeTask(task: AiScheduledTask): AiScheduledTask {
-  return {
-    ...task,
-    taskId: normalizeStringId(task.taskId, 'taskId'),
-    taskName: String(task.taskName || ''),
-    category: task.category,
-    frequency: task.frequency,
-    cronExpression: String(task.cronExpression || ''),
-    productIds: normalizeStringArray(task.productIds),
-    warehouseIds: normalizeStringArray(task.warehouseIds),
-    recipientRoleIds: normalizeStringArray(task.recipientRoleIds),
-    productScope: normalizeStringArray(task.productScope),
-    warehouseScope: normalizeStringArray(task.warehouseScope),
-    analysisGoal: String(task.analysisGoal || ''),
-    nextRunAt: String(task.nextRunAt || ''),
-    lastRunAt: normalizeNullableStringId(task.lastRunAt, 'lastRunAt'),
-    lastResultSummary: String(task.lastResultSummary || ''),
-    recipients: normalizeStringArray(task.recipients),
-    status: normalizeTaskStatus(task.status),
-    agentCodes: normalizeStringArray(task.agentCodes),
-    painPoint: String(task.painPoint || ''),
-    outputFormat: normalizeOutputFormat(task.outputFormat),
-    editable: Boolean(task.editable),
-  };
-}
-
-function normalizeMetric(metric: AiTaskExecutionMetric): AiTaskExecutionMetric {
-  return {
-    label: String(metric.label || ''),
-    value: String(metric.value || ''),
-    tone: metric.tone === 'good' || metric.tone === 'watch' || metric.tone === 'risk' ? metric.tone : 'neutral',
-  };
-}
-
-function normalizeExecutionAction(action: AiTaskExecutionAction): AiTaskExecutionAction {
-  return {
-    actionId: normalizeStringId(action.actionId, 'actionId'),
-    title: String(action.title || ''),
-    description: String(action.description || ''),
-    route: normalizeNullableStringId(action.route, 'route'),
-  };
-}
-
-function normalizeExecution(execution: AiTaskExecution): AiTaskExecution {
-  return {
-    executionId: normalizeStringId(execution.executionId, 'executionId'),
-    taskId: normalizeStringId(execution.taskId, 'taskId'),
-    taskName: String(execution.taskName || ''),
-    startedAt: String(execution.startedAt || ''),
-    finishedAt: normalizeNullableStringId(execution.finishedAt, 'finishedAt'),
-    status: execution.status === 'FAILED' || execution.status === 'RUNNING' ? execution.status : 'SUCCESS',
-    resultSummary: String(execution.resultSummary || ''),
-    agents: normalizeStringArray(execution.agents),
-    findings: normalizeStringArray(execution.findings),
-    suggestions: normalizeStringArray(execution.suggestions),
-    metrics: Array.isArray(execution.metrics) ? execution.metrics.map(normalizeMetric) : [],
-    charts: Array.isArray(execution.charts) ? execution.charts.map(normalizeChart) : [],
-    nextActions: Array.isArray(execution.nextActions) ? execution.nextActions.map(normalizeExecutionAction) : [],
-  };
-}
-
-function normalizeTaskPage(data: AiScheduledTaskPage): AiScheduledTaskPage {
-  return {
-    refreshedAt: String(data.refreshedAt || ''),
-    summary: normalizeSummary(data.summary),
-    templates: data.templates.map((template: AiScheduledTaskTemplate) => ({
-      templateId: normalizeStringId(template.templateId, 'templateId'),
-      taskName: String(template.taskName || ''),
-      category: template.category,
-      frequency: template.frequency,
-      description: String(template.description || ''),
-      defaultCronExpression: String(template.defaultCronExpression || ''),
-      agentCodes: normalizeStringArray(template.agentCodes),
-      defaultProductScope: normalizeStringArray(template.defaultProductScope),
-      defaultWarehouseScope: normalizeStringArray(template.defaultWarehouseScope),
-      defaultAnalysisGoal: String(template.defaultAnalysisGoal || ''),
-      outputFormat: normalizeOutputFormat(template.outputFormat),
-    })),
-    tasks: data.tasks.map(normalizeTask),
-    recentExecutions: data.recentExecutions.map(normalizeExecution),
-  };
-}
-
-function buildTaskPage(): AiScheduledTaskPage {
-  const enabledCount = mockTasks.filter(task => task.status === 'ENABLED' || task.status === 'RUNNING').length;
-  const failedCount = mockTasks.filter(task => task.status === 'FAILED').length;
-  return normalizeTaskPage({
-    refreshedAt: '2026-07-01 10:40:00',
-    summary: {
-      totalCount: mockTasks.length,
-      enabledCount,
-      failedCount,
-      nextRunCount: mockTasks.filter(task => task.status === 'ENABLED').length,
-    },
-    templates: mockTemplates,
-    tasks: mockTasks,
-    recentExecutions: mockExecutions,
+/** 与普通请求共用地址及动态认证头；长连接不使用普通 JSON 请求的 15 秒超时。 */
+export async function sendAiAssistantMessage(request: AiChatRequest, onDelta: (text: string) => void, signal?: AbortSignal): Promise<AiChatResponse> {
+  if (!/^[1-9]\d*$/.test(request.conversationId)) throw new Error('请先创建有效会话');
+  const message = request.message.trim();
+  if (!message || message.length > 2000) throw new Error('消息长度必须在 1 到 2000 字之间');
+  const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  const tokenName = localStorage.getItem(AUTH_TOKEN_NAME_STORAGE_KEY) || 'satoken';
+  const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'text/event-stream' });
+  if (token) headers.set(tokenName, token);
+  const baseURL = String(http.defaults.baseURL || '/api').replace(/\/$/, '');
+  const response = await fetch(`${baseURL}/ai/assistant/messages/stream`, {
+    method: 'POST', headers, body: JSON.stringify({ ...request, message }), signal,
   });
-}
-
-function buildTaskFromPayload(payload: AiScheduledTaskUpdateRequest): AiScheduledTask {
-  const agentCodes = payload.category === 'PURCHASE'
-    ? ['chief-router-agent', 'purchase-advice-agent', 'inventory-analysis-agent', 'sales-forecast-agent', 'supplier-evaluation-agent']
-    : payload.category === 'SALES'
-      ? ['chief-router-agent', 'data-analysis-agent', 'sales-forecast-agent']
-      : payload.category === 'INVENTORY'
-        ? ['chief-router-agent', 'inventory-analysis-agent', 'purchase-advice-agent']
-        : ['chief-router-agent', 'data-analysis-agent', 'inventory-analysis-agent'];
-  return {
-    taskId: `task-custom-${mockTaskSeq++}`,
-    taskName: payload.taskName,
-    category: payload.category,
-    frequency: payload.frequency,
-    cronExpression: payload.cronExpression,
-    productIds: payload.productIds,
-    warehouseIds: payload.warehouseIds,
-    recipientRoleIds: payload.recipientRoleIds,
-    productScope: payload.productIds.map(id => id === 'ALL' ? '全部商品' : id),
-    warehouseScope: payload.warehouseIds.map(id => id === 'ALL' ? '全部仓库' : id),
-    analysisGoal: payload.analysisGoal,
-    nextRunAt: '2026-07-02 09:00:00',
-    lastRunAt: null,
-    lastResultSummary: '尚未执行',
-    recipients: payload.recipientRoleIds,
-    status: 'ENABLED',
-    agentCodes,
-    painPoint: '自定义经营任务，减少重复查询和人工整理。',
-    outputFormat: payload.outputFormat,
-    editable: true,
-  };
-}
-
-export async function getAiAssistantOverview() {
-  if (useMockApi) {
-    await delay();
-    return normalizeOverview({ ...mockOverview, conversations: mockConversations });
+  if (!response.ok) {
+    let errorMessage = `AI 请求失败（${response.status}）`;
+    const error = await response.json().catch(() => null);
+    if (error && typeof error.message === 'string') errorMessage = error.message;
+    if (response.status === 401 && token === localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) {
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      localStorage.removeItem(AUTH_TOKEN_NAME_STORAGE_KEY);
+      window.location.href = '/login';
+    }
+    throw new Error(errorMessage);
   }
-  return getResult<AiAssistantOverview>('/ai/assistant/overview').then(normalizeOverview);
-}
-
-export async function sendAiAssistantMessage(request: AiChatRequest) {
-  if (useMockApi) {
-    await delay(420);
-    const response = buildMockAssistantReply(request);
-    const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    const current = mockMessagesByConversation[response.conversationId] || [];
-    mockMessagesByConversation[response.conversationId] = [
-      ...current,
-      mockMessage(`mock-user-${Date.now()}`, 'user', request.message, createdAt),
-      response.message,
-    ];
-    return {
-      conversationId: response.conversationId,
-      message: normalizeMessage(response.message),
-    };
+  if (!response.headers.get('content-type')?.includes('text/event-stream') || !response.body) {
+    await response.body?.cancel();
+    throw new Error('AI 服务未返回约定的 SSE 响应');
   }
-  return http.post<Result<AiChatResponse>>('/ai/assistant/messages', request).then(response => ({
-    conversationId: normalizeStringId(response.data.data.conversationId, 'conversationId'),
-    message: normalizeMessage(response.data.data.message),
-  }));
+  let requestId: string | null = null;
+  let finalMessage: AiChatMessage | null = null;
+  await readSseStream(response.body, frame => {
+    if (token !== localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) throw new Error('登录会话已变更，请重新提问');
+    let payload: unknown;
+    try { payload = JSON.parse(frame.data); } catch { throw new Error('AI 流式事件 JSON 无效'); }
+    const event = normalizeStreamEvent(payload, request.conversationId);
+    if (frame.event !== 'message' && frame.event !== event.eventType) throw new Error('AI 流式事件名称不一致');
+    if (requestId && requestId !== event.requestId) throw new Error('AI 流式请求标识不一致');
+    requestId = event.requestId;
+    if (finalMessage) throw new Error('AI 最终消息后仍有数据事件');
+    if (event.eventType === 'ERROR') throw new Error(event.errorMessage);
+    if (event.eventType === 'MESSAGE_DELTA') onDelta(event.contentDelta);
+    if (event.eventType === 'MESSAGE_FINAL') finalMessage = event.message;
+  }, signal);
+  if (!finalMessage) throw new Error('AI 响应中断，未收到完整回复，请重试');
+  return { conversationId: request.conversationId, message: finalMessage };
 }
 
 export async function createAiConversation() {
-  if (useMockApi) {
-    await delay(180);
-    const conversation: AiConversationSummary = {
-      conversationId: `conv-local-${Date.now()}`,
-      title: `新的经营会话 ${mockConversationSeq++}`,
-      description: '尚未开始分析',
-      updatedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
-    };
-    mockConversations = [conversation, ...mockConversations];
-    mockMessagesByConversation[conversation.conversationId] = [];
-    return normalizeConversation(conversation);
-  }
   return http.post<Result<AiConversationSummary>>('/ai/assistant/conversations').then(response => normalizeConversation(response.data.data));
 }
 
 export async function updateAiConversation(conversationId: string, payload: AiConversationUpdateRequest) {
-  if (useMockApi) {
-    await delay(180);
-    mockConversations = mockConversations.map(item => item.conversationId === conversationId ? { ...item, title: payload.title } : item);
-    const conversation = mockConversations.find(item => item.conversationId === conversationId);
-    if (!conversation) throw new Error('会话不存在');
-    return normalizeConversation(conversation);
-  }
   return http.patch<Result<AiConversationSummary>>(`/ai/assistant/conversations/${conversationId}`, payload).then(response => normalizeConversation(response.data.data));
 }
 
 export async function deleteAiConversation(conversationId: string) {
-  if (useMockApi) {
-    await delay(180);
-    mockConversations = mockConversations.filter(item => item.conversationId !== conversationId);
-    delete mockMessagesByConversation[conversationId];
-    return;
-  }
   await http.delete(`/ai/assistant/conversations/${conversationId}`);
 }
 
-export async function getAiScheduledTaskPage() {
-  if (useMockApi) {
-    await delay();
-    return buildTaskPage();
-  }
-  return getResult<AiScheduledTaskPage>('/ai/scheduled-tasks').then(normalizeTaskPage);
-}
-
-export async function runAiScheduledTask(taskId: string) {
-  if (useMockApi) {
-    await delay(460);
-    const task = mockTasks.find(item => item.taskId === taskId);
-    if (!task) throw new Error('定时任务不存在');
-    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    task.lastRunAt = now;
-    task.lastResultSummary = `已手动执行 ${task.taskName}，生成最新多智能体分析报告。`;
-    const execution: AiTaskExecution & { sections?: unknown[] } = {
-      executionId: `exec-${Date.now()}`,
-      taskId: task.taskId,
-      taskName: task.taskName,
-      startedAt: now,
-      finishedAt: now,
-      status: 'SUCCESS',
-      resultSummary: task.lastResultSummary,
-      agents: task.agentCodes.map(code => agentNameMap[code] || code),
-      findings: [`本次分析范围：${task.productScope.join('、') || '全部商品'}。`, `关注仓库：${task.warehouseScope.join('、') || '全部仓库'}。`, '本次报告已结合库存余额、销售趋势、采购在途和供应商评分生成。'],
-      suggestions: ['建议进入业务模块复核后生成草稿。', '下次任务可缩小商品范围以提升建议准确度。', '若需要自动通知，可在任务配置中增加接收岗位。'],
-      metrics: [
-        { label: '分析商品', value: `${task.productScope.length || 1} 项`, tone: 'neutral' },
-        { label: '风险提示', value: '3 条', tone: 'watch' },
-        { label: '建议动作', value: '3 条', tone: 'good' },
-        { label: '执行耗时', value: '11s', tone: 'neutral' },
-      ],
-      charts: task.category === 'SALES' ? mockSalesCharts : task.category === 'INVENTORY' ? mockStockCharts : mockPurchaseCharts,
-      sections: [
-        { sectionId: 'scope', title: '范围和数据', items: [`商品范围：${task.productScope.join('、') || '全部商品'}。`, `仓库范围：${task.warehouseScope.join('、') || '全部仓库'}。`, `分析目标：${task.analysisGoal}`] },
-        { sectionId: 'agent', title: '智能体结论', items: ['主控智能体完成任务拆解，并确认本次不直接写入业务单据。', '数据分析智能体识别销售波动，库存分析智能体识别可用库存缺口。', '采购建议智能体将缺口、在途采购和供应商评分合并为建议动作。'] },
-        { sectionId: 'action', title: '下一步处理', items: ['高风险商品优先进入对应业务模块复核。', '需要补货的商品先生成采购草稿，人工确认后再提交。', '建议保留本次报告，作为明日晨会处理依据。'] },
-      ],
-      nextActions: [
-        { actionId: 'open-stock', title: '查看库存管理', description: '核对库存和锁定占用', route: '/warehouse/stocks' },
-        { actionId: 'open-purchase', title: '查看采购订单', description: '复核采购草稿或在途订单', route: '/purchase/orders' },
-      ],
-    };
-    mockExecutions = [execution, ...mockExecutions].slice(0, 8);
-    return {
-      executionId: execution.executionId,
-      taskId: task.taskId,
-      status: 'RUNNING',
-      acceptedAt: now,
-    } satisfies AiScheduledTaskRunAccepted;
-  }
-  return http.post<Result<AiScheduledTaskRunAccepted>>(`/ai/scheduled-tasks/${taskId}/run`).then(response => response.data.data);
-}
-
-export async function updateAiScheduledTaskStatus(taskId: string, status: AiScheduledTaskStatus) {
-  if (useMockApi) {
-    await delay(260);
-    mockTasks = mockTasks.map(task => task.taskId === taskId ? { ...task, status } : task);
-    const task = mockTasks.find(item => item.taskId === taskId);
-    if (!task) throw new Error('定时任务不存在');
-    return normalizeTask(task);
-  }
-  return http.patch<Result<AiScheduledTask>>(`/ai/scheduled-tasks/${taskId}/status`, { status }).then(response => normalizeTask(response.data.data));
-}
-
-export async function createAiScheduledTask(payload: AiScheduledTaskUpdateRequest) {
-  if (useMockApi) {
-    await delay(320);
-    const task = buildTaskFromPayload(payload);
-    mockTasks = [task, ...mockTasks];
-    return normalizeTask(task);
-  }
-  return http.post<Result<AiScheduledTask>>('/ai/scheduled-tasks', payload).then(response => normalizeTask(response.data.data));
-}
-
-export async function updateAiScheduledTask(taskId: string, payload: AiScheduledTaskUpdateRequest) {
-  if (useMockApi) {
-    await delay(320);
-    mockTasks = mockTasks.map(task => task.taskId === taskId ? { ...task, ...payload } : task);
-    const task = mockTasks.find(item => item.taskId === taskId);
-    if (!task) throw new Error('定时任务不存在');
-    return normalizeTask(task);
-  }
-  return http.patch<Result<AiScheduledTask>>(`/ai/scheduled-tasks/${taskId}`, payload).then(response => normalizeTask(response.data.data));
-}
+// 页面组件暂存供以后接回；后端任务能力未实现前，不发送不存在的接口或生成假报告。
+export async function getAiScheduledTaskPage(): Promise<AiScheduledTaskPage> { throw new Error('经营任务暂未开放'); }
+export async function runAiScheduledTask(_taskId: string): Promise<AiScheduledTaskRunAccepted> { throw new Error('经营任务暂未开放'); }
+export async function updateAiScheduledTaskStatus(_taskId: string, _status: AiScheduledTaskStatus): Promise<AiScheduledTask> { throw new Error('经营任务暂未开放'); }
+export async function createAiScheduledTask(_payload: AiScheduledTaskUpdateRequest): Promise<AiScheduledTask> { throw new Error('经营任务暂未开放'); }
+export async function updateAiScheduledTask(_taskId: string, _payload: AiScheduledTaskUpdateRequest): Promise<AiScheduledTask> { throw new Error('经营任务暂未开放'); }

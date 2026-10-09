@@ -1804,12 +1804,8 @@ for (const forbidden of [
   if (aiViewSource.includes(forbidden))
     throw new Error(`AI 生产组件仍包含前端业务数据推断：${forbidden}`);
 }
-if (
-  !aiApiSource.includes(
-    "import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true'",
-  )
-) {
-  throw new Error("AI Mock 未受 DEV 环境边界保护");
+if (aiApiSource.includes("VITE_USE_MOCK_API") || aiApiSource.includes("mockMessages")) {
+  throw new Error("AI 基础对话不得使用业务 Mock 替代真实接口");
 }
 if (
   !aiApiSource.includes(
@@ -1817,9 +1813,12 @@ if (
   ) ||
   !aiApiSource.includes("signal") ||
   !aiViewSource.includes("historySequence") ||
-  !aiViewSource.includes("message.workbench")
+  !aiApiSource.includes("/ai/assistant/messages/stream") ||
+  !aiApiSource.includes("text/event-stream") ||
+  !aiApiSource.includes("MESSAGE_FINAL") ||
+  !aiApiSource.includes("readSseStream")
 ) {
-  throw new Error("AI 非 Mock 历史请求、竞态保护或结构化工作框消费未完整接入");
+  throw new Error("AI 真实历史请求、竞态保护或 SSE 消费未完整接入");
 }
 
 const stalePermissionDescriptions = [

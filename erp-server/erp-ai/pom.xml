@@ -40,17 +40,18 @@
             <artifactId>erp-sales</artifactId>
         </dependency>
 
-        <!-- Spring AI Alibaba（开发 AI 模块时取消注释） -->
-        <!--
+        <!-- Spring AI OpenAI 兼容协议(用于 DeepSeek / 后续豆包等) -->
         <dependency>
-            <groupId>com.alibaba.cloud.ai</groupId>
-            <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai</artifactId>
         </dependency>
+
+        <!-- Spring AI Alibaba Agent Framework(ReactAgent / Hook / Interceptor) -->
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-agent-framework</artifactId>
         </dependency>
-        -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

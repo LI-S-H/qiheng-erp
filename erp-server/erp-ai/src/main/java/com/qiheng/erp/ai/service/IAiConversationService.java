@@ -15,4 +15,7 @@ public interface IAiConversationService {
     void delete(Long conversationId);
 
     AiConversation getOwnedConversation(Long conversationId);
+
+    /** 内部异步链路使用请求线程已认证的用户ID，不能从工作线程读取登录上下文。 */
+    AiConversation getOwnedConversation(Long conversationId, Long userId);
 }

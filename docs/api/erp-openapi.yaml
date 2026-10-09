@@ -79,7 +79,7 @@ paths:
       summary: 获取智能经营助手概览
       description: |
         返回当前用户的真实会话列表；基础交互阶段 quickPrompts 返回空数组，不展示尚未实现的业务分析入口。
-        当前仅接入一个 ChatModel 和一个 OrchestratorAgent，支持文本对话。完整架构以 docs/feature-spec.md 的 AI 章节为准，后续由 DataQuerySubAgent 查询业务数据、DataAnalysisSubAgent 分析注入的数据。
+        当前注册 deepseek-v4-pro 和 deepseek-flash 两个 ChatModel，当前 OrchestratorAgent 显式注入 Pro，未来其他智能体可同时注入 Flash，支持文本对话。完整架构以 docs/feature-spec.md 的 AI 章节为准，后续由 DataQuerySubAgent 查询业务数据、DataAnalysisSubAgent 分析注入的数据。
         本阶段不注册业务 Tool，不生成业务草稿，不返回虚构图表或协同轨迹。
       operationId: aiAssistantOverview
       security:

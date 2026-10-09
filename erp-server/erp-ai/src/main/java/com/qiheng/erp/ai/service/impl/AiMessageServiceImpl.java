@@ -26,6 +26,8 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.Collections;
 
 @Service
 public class AiMessageServiceImpl extends ServiceImpl<AiMessageMapper, AiMessage>
@@ -66,6 +68,33 @@ public class AiMessageServiceImpl extends ServiceImpl<AiMessageMapper, AiMessage
     public AiChatMessageVO append(Long conversationId, AiMessageCreateCommand command) {
         AiConversation conversation = conversationService.getOwnedConversation(conversationId);
         Long userId = currentUserId();
+        return appendValidated(conversation, userId, command);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AiChatMessageVO appendForUser(Long conversationId, Long userId, AiMessageCreateCommand command) {
+        AiConversation conversation = conversationService.getOwnedConversation(conversationId, userId);
+        return appendValidated(conversation, userId, command);
+    }
+
+    @Override
+    public List<AiChatMessageVO> recentForUser(Long conversationId, Long userId) {
+        conversationService.getOwnedConversation(conversationId, userId);
+        // 仅回灌最近100条真实历史，倒序截断后恢复时间顺序，避免无限膨胀提示词。
+        List<AiMessage> messages = new ArrayList<>(messageMapper.selectList(
+                new LambdaQueryWrapper<AiMessage>()
+                        .eq(AiMessage::getConversationId, conversationId)
+                        .eq(AiMessage::getUserId, userId)
+                        .orderByDesc(AiMessage::getCreateTime)
+                        .orderByDesc(AiMessage::getId)
+                        .last("LIMIT 100")));
+        Collections.reverse(messages);
+        return messages.stream().map(this::toVO).toList();
+    }
+
+    private AiChatMessageVO appendValidated(AiConversation conversation, Long userId, AiMessageCreateCommand command) {
+        Long conversationId = conversation.getId();
         String role = normalizeRole(command.getRole());
         if (!StringUtils.hasText(command.getContent())) {
             throw new BizException(ErrorCode.PARAM_ERROR);

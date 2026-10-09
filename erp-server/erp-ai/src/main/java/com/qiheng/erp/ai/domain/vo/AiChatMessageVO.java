@@ -1,6 +1,7 @@
 package com.qiheng.erp.ai.domain.vo;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
 
@@ -19,6 +20,8 @@ public class AiChatMessageVO {
     private JsonNode actionCards;
     private JsonNode sources;
     private JsonNode agentTraces;
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     private JsonNode taskCard;
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     private JsonNode workbench;
 }

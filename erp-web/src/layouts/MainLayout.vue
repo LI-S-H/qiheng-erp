@@ -7,7 +7,6 @@ import {
   ShoppingCart,
   Tag,
   MessageCircle,
-  CalendarClock,
   Bell,
   LogOut,
   Loader2,
@@ -145,7 +144,6 @@ const menus: MenuItem[] = [
     anyRoleCodes: ['SALES_STAFF', 'PURCHASE_STAFF'],
     children: [
       { index: '/ai/assistant', title: '智能经营助手' },
-      { index: '/ai/tasks', title: '经营任务中心', icon: CalendarClock },
     ],
   },
 ];

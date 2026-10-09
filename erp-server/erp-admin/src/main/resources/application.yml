@@ -2,6 +2,8 @@ server:
   port: 8081
 
 spring:
+  config:
+    import: classpath:application-ai.yml
   profiles:
     active: dev
   application:

@@ -1,0 +1,11 @@
+# 本地启动以 erp-server 为工作目录，自动读取该目录中不入库的 .env.ai.yaml。
+# 两个模型可共用一个 Key；环境变量方式仍兼容，但不设置全局模型选择。
+spring:
+  config:
+    import: optional:file:./.env.ai.yaml
+erp:
+  ai:
+    enabled: ${ERP_AI_ENABLED:false}
+    api-key: ${DEEPSEEK_API_KEY:${OPENAI_COMPAT_API_KEY:}}
+    base-url: ${OPENAI_COMPAT_BASE_URL:https://api.deepseek.com}
+    temperature: ${ERP_AI_TEMPERATURE:0.2}

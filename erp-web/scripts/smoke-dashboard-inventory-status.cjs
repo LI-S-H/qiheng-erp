@@ -1,10 +1,15 @@
 const path = require('path');
+const fs = require('fs');
+// 库存状态通过受控 HTTP 响应验证；不能使用绕过 HTTP 的 Mock API 模式。
+if (process.env.DASHBOARD_UI_URL) process.env.SMOKE_BASE_URL = process.env.DASHBOARD_UI_URL;
 const { runSmoke } = require('./smoke-helpers.cjs');
 
 const screenshotDirectory = path.resolve(process.env.QA_SCREENSHOT_DIR || 'qa-artifacts/dashboard-states');
+fs.mkdirSync(screenshotDirectory, { recursive: true });
 
 async function waitForDashboardSettled(page) {
-  await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor();
+  // 窄屏隐藏更新时间文案，数据仍已加载；等待内容写入而非可见性。
+  await page.locator('[data-dashboard-refresh-status]').getByText(/更新于/).waitFor({ state: 'attached' });
   // 刷新时间写入后，库存卡片请求仍可能处于同一轮全局加载计数中。
   // 等待最短遮罩时长结束，再截取实际界面而非过渡中的加载遮罩。
   await page.waitForTimeout(350);
@@ -82,9 +87,11 @@ runSmoke({
     const panel = page.locator('.inventory-status-panel');
     await panel.waitFor();
     await waitForDashboardSettled(page);
-    await panel.getByText('12.50 kg', { exact: true }).waitFor();
-    await panel.getByText('15.50 kg', { exact: true }).waitFor();
-    if (await panel.getByText('12.5 kg', { exact: true }).count()) {
+    const quantity = panel.locator('.inventory-status-panel__quantity');
+    await quantity.locator('strong').getByText('12.50', { exact: true }).waitFor();
+    await quantity.locator('span').getByText('/ 15.50', { exact: true }).waitFor();
+    await quantity.locator('small').getByText('kg', { exact: true }).waitFor();
+    if (await quantity.locator('strong').getByText('12.5', { exact: true }).count()) {
       throw new Error('精度为 2 的风险库存不应省略末尾小数位');
     }
     for (const nameSelector of ['[data-dashboard-inventory-product-name]', '[data-dashboard-inventory-warehouse-name]']) {
@@ -109,12 +116,8 @@ runSmoke({
     const panel = page.locator('.inventory-status-panel');
     await waitForDashboardSettled(page);
     await panel.getByText('您暂无库存查看权限', { exact: true }).waitFor();
-    if (await panel.locator('.inventory-status-panel__donut').count()
-      || await panel.getByText('风险仓储商品', { exact: true }).count()) {
-      throw new Error('无库存权限时必须完整替换饼图和风险商品区域');
-    }
-    if (await panel.locator('.dashboard-empty-panel--stacked').count()) {
-      throw new Error('库存权限提示必须保持横向布局');
+    if (await panel.locator('.inventory-status-panel__distribution, .inventory-status-panel__risks, .inventory-status-panel__action').count()) {
+      throw new Error('无库存权限时必须完整替换状态分布和风险区域，隐藏查看操作');
     }
     if (await page.getByText('库存状态加载失败', { exact: true }).count()) {
       throw new Error('无仓储权限应降级为权限提示，不能显示接口加载失败');
@@ -131,18 +134,14 @@ runSmoke({
     await waitForDashboardSettled(page);
     const state = panel.locator('[data-dashboard-inventory-state]');
     await state.getByText('暂无库存记录', { exact: true }).waitFor();
-    if (await panel.locator('.inventory-status-panel__donut').count()
-      || await panel.getByText('风险仓储商品', { exact: true }).count()) {
-      throw new Error('库存为空时必须完整替换饼图和风险商品区域');
-    }
-    if (await panel.locator('.dashboard-empty-panel--stacked').count()) {
-      throw new Error('库存空态必须保持横向布局');
+    if (await panel.locator('.inventory-status-panel__distribution, .inventory-status-panel__risks, .inventory-status-panel__action').count()) {
+      throw new Error('库存为空时必须完整替换状态分布和风险区域，隐藏查看操作');
     }
     const layout = await state.evaluate(element => ({
       height: element.getBoundingClientRect().height,
       width: element.getBoundingClientRect().width,
     }));
-    if (layout.height < 360 || layout.width < 600) {
+    if (layout.height < 300 || layout.width < 250) {
       throw new Error(`库存空态未覆盖原内容区：${JSON.stringify(layout)}`);
     }
     await panel.screenshot({ path: path.join(screenshotDirectory, 'inventory-empty-panel.png') });

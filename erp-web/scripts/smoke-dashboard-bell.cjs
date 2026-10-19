@@ -34,6 +34,7 @@ runSmoke({
     }
 
     // 3. 点击条目,跳转到工作台详情
+    await page.locator('.dashboard-page').evaluate(element => { element.dataset.bellMountProbe = 'stable'; });
     await item.click();
     await page.waitForURL(url => (
       url.pathname === '/dashboard'
@@ -43,13 +44,16 @@ runSmoke({
 
     const dialog = page.getByRole('dialog');
     await dialog.waitFor({ state: 'visible' });
-    const detail = dialog.locator('.dashboard-todo-workbench__detail');
+    const detail = dialog.locator('.dashboard-drawer-heading');
     await detail.waitFor({ state: 'visible' });
 
     // 4. 详情标题应包含铃铛条目标题
-    const detailTitle = (await detail.locator('h3').first().innerText()).trim();
-    if (!label.includes(detailTitle)) {
+    const detailTitle = (await detail.getByRole('heading').first().innerText()).trim();
+    if (label !== `查看${detailTitle.replace(/详情$/, '')}待办详情`) {
       throw new Error(`铃铛条目与详情标题不一致: bell="${label}" detail="${detailTitle}"`);
+    }
+    if (await page.locator('.dashboard-page').getAttribute('data-bell-mount-probe') !== 'stable') {
+      throw new Error('同工作台打开通知详情不应重新挂载整个页面');
     }
 
     // 5. 关闭详情,URL 的 todoId 参数被清除

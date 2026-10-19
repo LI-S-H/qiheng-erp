@@ -342,7 +342,7 @@ export function listCustomers(params: CustomerQuery, requestConfig?: AxiosReques
     ...(customerName?.trim() ? { customerName: customerName.trim() } : {}),
     ...(contactName?.trim() ? { contactName: contactName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  }, requestConfig).then(page => normalizePage(page, normalizeCustomer));
+  }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(page => normalizePage(page, normalizeCustomer));
 }
 
 export async function searchCustomerOptions(keyword = '', pageSize = 10): Promise<CustomerOption[]> {
@@ -459,7 +459,7 @@ export function listSalesOrders(params: SalesOrderQuery, requestConfig?: AxiosRe
     ...(customerId && customerId !== 'all' ? { customerId } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(status && status !== 'all' ? { status } : {}),
-  }, requestConfig).then(page => normalizePage(page, normalizeOrder));
+  }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(page => normalizePage(page, normalizeOrder));
 }
 
 export function getSalesOrderDetail(salesOrderId: string) {

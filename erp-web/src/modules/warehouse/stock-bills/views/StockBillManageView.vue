@@ -9,7 +9,7 @@ import {
   watch,
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ChevronRight, Columns3, RotateCcw } from "lucide-vue-next";
+import { ChevronRight } from "lucide-vue-next";
 import { CollapsibleContent, CollapsibleRoot } from "reka-ui";
 import { toast } from "vue-sonner";
 import { getApiErrorMessage } from "@/api/http";
@@ -24,6 +24,8 @@ import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import DataTablePagination from "@/components/common/DataTablePagination.vue";
 import ListFilterActions from "@/components/common/ListFilterActions.vue";
 import ListFilterPanel from "@/components/common/ListFilterPanel.vue";
+import ListLoadingOverlay from "@/components/common/ListLoadingOverlay.vue";
+import TableColumnPreferencesCanvas from "@/components/common/TableColumnPreferencesCanvas.vue";
 import ListSummaryStrip from "@/components/common/ListSummaryStrip.vue";
 import OrderNumberLink from "@/components/common/OrderNumberLink.vue";
 import OverflowTooltip from "@/components/common/OverflowTooltip.vue";
@@ -43,15 +45,6 @@ import {
   DialogScrollArea,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -69,6 +62,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { usePagedQuery } from "@/shared/composables/use-paged-query";
+import { useTextTableColumns } from "@/shared/composables/use-text-table-columns";
 import { formatQtyByPrecision } from "@/shared/utils/qty";
 import { summarizeWarehouseDetailQuantities } from "@/shared/utils/warehouse-detail-summary";
 import { useAuthStore } from "@/modules/auth/stores/authStore";
@@ -158,19 +152,27 @@ const pageDirection = computed<StockBillDirection>(() =>
   String(route.meta.stockDirection) === "OUTBOUND" ? "OUTBOUND" : "INBOUND",
 );
 const isInboundPage = computed(() => pageDirection.value === "INBOUND");
+const isRefinedWarehouse = computed(() => ['/warehouse/inbound-bills', '/warehouse/outbound-bills'].includes(route.path));
+const pageRoot = ref<HTMLElement | null>(null);
 const {
   isVisible: isListColumnVisible,
   reset: resetListColumnsImmediately,
   setVisible: setListColumnVisibleImmediately,
   tableMinWidth,
   visibleColumnCount,
-  visibleOptionalCount,
 } = useStockBillTableColumns(pageDirection);
 const availableStockBillOptionalColumns = computed(() =>
   stockBillOptionalColumns.filter((column) =>
     isStockBillColumnAvailable(column, pageDirection.value),
   ),
 );
+
+const columnSettingsOpen = ref(false);
+const columnSettings = computed(() => availableStockBillOptionalColumns.value.map(column => ({
+  key: column.key,
+  label: column.key === 'party' ? pageText.value.partyColumnLabel : column.label,
+  visible: isPendingListColumnVisible(column.key),
+})));
 
 type ColumnLayoutState = "idle" | "leaving" | "entering";
 
@@ -364,6 +366,12 @@ const loading = ref(false);
 const queryPending = ref(false);
 const requestSequence = ref(0);
 const records = ref<StockBillListItem[]>([]);
+const visibleColumnDefinitions = computed(() => stockBillListColumns.filter(column => isListColumnVisible(column.key)).map(column => ({ key: column.key, minWidth: column.key === 'billNo' ? 270 : column.key === 'actions' ? 76 : undefined })));
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(
+  computed(() => isRefinedWarehouse.value ? pageRoot.value : null),
+  () => [records.value, visibleColumnDefinitions.value],
+  { definitions: () => visibleColumnDefinitions.value },
+);
 const total = ref(0);
 const summary = reactive(emptySummary());
 const detailVisible = ref(false);
@@ -2119,7 +2127,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell space-y-4" :class="{ 'purchase-pilot-page warehouse-pilot-page warehouse-work-pilot-page': isRefinedWarehouse }" :data-list-page-size="isRefinedWarehouse ? query.pageSize : undefined">
     <div class="page-heading">
       <div>
         <h1 class="page-title">{{ pageText.title }}</h1>
@@ -2186,7 +2194,8 @@ onMounted(async () => {
       </template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel relative" :class="{ 'purchase-list-body': isRefinedWarehouse }">
+      <ListLoadingOverlay v-if="isRefinedWarehouse" :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">{{ pageText.title }}列表</strong>
@@ -2195,70 +2204,17 @@ onMounted(async () => {
           >
         </div>
         <div class="table-toolbar__actions">
-          <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <Button
-                size="sm"
-                variant="outline"
-                class="gap-2 border-slate-200 bg-white shadow-sm hover:border-primary/35 hover:bg-primary/[0.03]"
-                :aria-label="`列显示设置，当前 ${visibleOptionalCount}/${availableStockBillOptionalColumns.length}`"
-                data-stock-bill-column-trigger
-              >
-                <Columns3 class="size-4 text-muted-foreground" />
-                列显示设置
-                <span
-                  class="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground"
-                  >{{ visibleOptionalCount }}/{{
-                    availableStockBillOptionalColumns.length
-                  }}</span
-                >
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              class="w-64 rounded-[10px] border-border/80 p-1.5 shadow-lg"
-              align="end"
-              :side-offset="6"
-              data-stock-bill-column-menu
-            >
-              <DropdownMenuLabel class="px-2.5 py-2">
-                <strong class="block text-sm font-semibold text-foreground"
-                  >列显示设置</strong
-                >
-                <small
-                  class="mt-0.5 block font-normal leading-4 text-muted-foreground"
-                  >按需精简列表，偏好仅保存在当前浏览器</small
-                >
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                v-for="column in availableStockBillOptionalColumns"
-                :key="column.key"
-                indicator-style="checkbox"
-                class="min-h-9 text-sm"
-                :model-value="isPendingListColumnVisible(column.key)"
-                :data-stock-bill-column-key="column.key"
-                @select.prevent
-                @update:model-value="
-                  setListColumnVisible(column.key, Boolean($event))
-                "
-              >
-                {{
-                  column.key === "party"
-                    ? pageText.partyColumnLabel
-                    : column.label
-                }}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                class="min-h-9 gap-2 px-2 text-sm text-muted-foreground"
-                data-stock-bill-column-reset
-                @select="resetListColumns"
-              >
-                <RotateCcw class="size-3.5" />
-                恢复默认字段
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <TableColumnPreferencesCanvas
+            v-model:open="columnSettingsOpen"
+            content-class="!max-h-[min(520px,var(--reka-popover-content-available-height),calc(100dvh-1rem))]"
+            :columns="columnSettings"
+            @toggle-visible="(key, visible) => setListColumnVisible(key as StockBillOptionalColumnKey, visible)"
+            @reset="resetListColumns"
+          >
+            <template #trigger>
+              <Button size="sm" variant="outline" class="gap-2" data-stock-bill-column-trigger>列设置</Button>
+            </template>
+          </TableColumnPreferencesCanvas>
           <Tooltip>
             <TooltipTrigger as-child>
               <span class="inline-flex"
@@ -2287,12 +2243,14 @@ onMounted(async () => {
       >
         <Table
           class="stock-bill-list-table table-fixed"
-          :class="{ 'stock-bill-list-table--empty': records.length === 0 }"
-          :style="{ '--stock-bill-table-min-width': `${tableMinWidth}px` }"
+          :class="{ 'stock-bill-list-table--empty': records.length === 0, 'business-data-table': isRefinedWarehouse }"
+          :style="isRefinedWarehouse ? { '--purchase-table-width': `${measuredTableWidth}px`, '--stock-bill-table-min-width': `${measuredTableWidth}px` } : { '--stock-bill-table-min-width': `${tableMinWidth}px` }"
+          :inert="isRefinedWarehouse && queryBusy ? '' : undefined"
           :scroll-label="`${pageText.title}列表`"
           data-stock-bill-list-table
         >
-          <colgroup>
+          <colgroup v-if="isRefinedWarehouse"><col v-for="(width, index) in measuredWidths" :key="visibleColumnDefinitions[index]?.key || index" :style="{ width: `${width}px` }" /></colgroup>
+          <colgroup v-else>
             <template v-for="column in stockBillListColumns" :key="column.key">
               <col
                 v-if="isListColumnVisible(column.key)"
@@ -2450,7 +2408,7 @@ onMounted(async () => {
                   <TableCell
                     v-if="isListColumnVisible('createTime')"
                     class="whitespace-nowrap text-muted-foreground"
-                    >{{ row.createTime }}</TableCell
+                    ><template v-if="isRefinedWarehouse"><span class="purchase-update-date">{{ row.createTime.split(' ')[0] }}</span><span class="purchase-update-time">{{ row.createTime.split(' ')[1] }}</span></template><template v-else>{{ row.createTime }}</template></TableCell
                   >
                   <TableCell
                     class="stock-bill-actions-column sticky right-0 z-20 whitespace-nowrap border-l border-border/60 bg-background text-center group-hover:bg-muted/50"
@@ -2673,6 +2631,7 @@ onMounted(async () => {
         :inert="confirmState.open ? '' : undefined"
         class="flex !h-[min(820px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-white shadow-2xl sm:max-w-[1240px]"
         data-stock-bill-form-dialog
+        :data-purchase-form-dialog="isRefinedWarehouse ? '' : undefined"
       >
         <DialogHeader>
           <DialogTitle>{{
@@ -3148,7 +3107,8 @@ onMounted(async () => {
         placement="app-content"
         :inert="confirmState.open ? '' : undefined"
         data-order-workbench
-        class="stock-bill-workbench flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl"
+        class="stock-bill-workbench flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-5xl"
+        :class="{ '!bg-[#f6f8fb] !p-4': !isRefinedWarehouse }"
       >
         <DialogHeader class="sr-only"
           ><DialogTitle>{{ pageText.formTitle }}详情</DialogTitle

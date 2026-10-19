@@ -14,6 +14,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
@@ -28,6 +29,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import { formatQtyByPrecision } from '@/shared/utils/qty';
 import {
@@ -99,6 +101,8 @@ const statusOptions: Array<{ value: SalesOrderStatus | 'all'; label: string }> =
 ];
 
 const orders = ref<SalesOrderListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const { columns: measuredWidths, tableWidth } = useTextTableColumns(pageRoot, () => orders.value);
 const total = ref(0);
 const summary = reactive(emptySummary());
 const summaryItems = computed(() => [
@@ -688,7 +692,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell purchase-pilot-page sales-order-pilot-page space-y-4" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">销售订单</h1>
@@ -708,27 +712,28 @@ onMounted(() => {
       </template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel purchase-list-body relative">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">销售订单列表</strong><span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；审核只生成待确认出库单，库存扣减由仓库确认本次数量</span></div>
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增销售单</Button></div>
       </div>
 
-      <Table class="business-data-table min-w-[1177px] table-fixed" scroll-label="销售订单列表">
-          <colgroup><col class="w-[220px]" /><col class="w-[145px]" /><col class="w-[105px]" /><col class="w-[120px]" /><col class="w-[110px]" /><col class="w-[100px]" /><col class="w-[110px]" /><col class="w-[135px]" /><col class="w-[96px]" /></colgroup>
-          <TableHeader><TableRow><TableHead data-sales-no-column>销售单号</TableHead><TableHead>客户</TableHead><TableHead>出库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计发货</TableHead><TableHead>锁定数量</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-sales-actions-column>操作</TableHead></TableRow></TableHeader>
+      <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${tableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="销售订单列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="index" :style="{ width: `${width}px` }" /></colgroup>
+          <TableHeader><TableRow><TableHead data-sales-no-column data-table-sticky-edge="start">销售单号</TableHead><TableHead>客户</TableHead><TableHead>出库仓库</TableHead><TableHead data-pilot-status-column>状态</TableHead><TableHead>订单金额</TableHead><TableHead>预计发货</TableHead><TableHead>锁定数量</TableHead><TableHead>更新时间</TableHead><TableHead data-sales-actions-column data-table-sticky-edge="end">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无销售订单</TableCell></TableRow>
             <TableRow v-for="row in orders" v-else :key="row.salesOrderId" class="group">
-              <TableCell data-sales-no-column><OrderNumberLink :value="row.salesNo" label="销售单号" /></TableCell>
-              <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.customerCode }}</code><div class="mt-1 truncate font-medium" :title="row.customerName">{{ row.customerName }}</div></TableCell>
+              <TableCell data-sales-no-column data-table-sticky-edge="start"><OrderNumberLink :value="row.salesNo" label="销售单号" /></TableCell>
+              <TableCell data-pilot-party-column><div class="truncate" :title="row.customerName">{{ row.customerName }}</div><code class="purchase-supplier-code">{{ row.customerCode }}</code></TableCell>
               <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
-              <TableCell class="text-center"><div class="flex flex-col items-center gap-1"><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge><span class="text-[11px] text-muted-foreground">{{ statusHint(row.status) }}</span></div></TableCell>
+              <TableCell data-pilot-status-column><Badge variant="outline" :data-sales-status="row.status">{{ statusMeta(row.status).label }}</Badge></TableCell>
               <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.totalAmount) }}</TableCell>
               <TableCell class="text-center text-sm">{{ row.expectedDeliveryDate || '未设置' }}</TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ lockedInventoryText(row) }}</TableCell>
-              <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-center" data-sales-actions-column><Button variant="ghost" size="sm" :class="hasOrderActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
+              <TableCell>{{ lockedInventoryText(row) }}</TableCell>
+              <TableCell :title="row.updateTime"><span class="purchase-update-date">{{ row.updateTime.split(' ')[0] }}</span><span class="purchase-update-time">{{ row.updateTime.split(' ')[1] }}</span></TableCell>
+              <TableCell data-sales-actions-column data-table-sticky-edge="end"><Button variant="ghost" size="sm" class="h-8 px-2.5 text-primary hover:bg-accent" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
             </TableRow>
           </TableBody>
       </Table>
@@ -736,7 +741,7 @@ onMounted(() => {
     </div>
 
     <Dialog v-model:open="createDialogOpen">
-      <DialogContent placement="app-content" class="order-form-dialog flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl" data-sales-form-dialog>
+      <DialogContent placement="app-content" data-purchase-form-dialog class="order-form-dialog flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl" data-sales-form-dialog>
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增销售单草稿' : '编辑销售单' }}</DialogTitle><DialogDescription>销售单保存为草稿后可提交审核，提交时校验并锁定可用库存，审核后生成待确认出库单。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div class="space-y-4 p-1">
@@ -788,7 +793,7 @@ onMounted(() => {
     </Dialog>
 
     <Dialog v-model:open="detailDialogOpen">
-      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" data-order-workbench class="sales-order-workbench flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl">
+      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" data-order-workbench class="sales-order-workbench flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-5xl">
         <DialogHeader class="sr-only"><DialogTitle>销售单详情</DialogTitle><DialogDescription>核对销售单头、明细数量、库存锁定和出库流转状态。</DialogDescription></DialogHeader>
         <DialogScrollArea content-class="px-5 py-5 pr-6">
           <div v-if="detailLoading && !detailRow" class="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>

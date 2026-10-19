@@ -8,9 +8,11 @@ import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -18,7 +20,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -48,6 +49,10 @@ const statusFilterOptions = [
 ];
 
 const warehouses = ref<WarehouseListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const { columns: measuredWidths, tableWidth } = useTextTableColumns(pageRoot, () => warehouses.value, {
+  definitions: () => [{ key: 'selection', fixedWidth: 44 }, ...['code', 'name', 'contact', 'phone', 'address', 'status', 'updated'].map(key => ({ key })), { key: 'actions', minWidth: 128 }],
+});
 const loading = ref(false);
 const queryPending = ref(false);
 const formSubmitting = ref(false);
@@ -311,7 +316,7 @@ function handleBatchDelete() {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell purchase-pilot-page warehouse-pilot-page warehouse-master-pilot-page space-y-4" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">仓库管理</h1>
@@ -332,7 +337,8 @@ function handleBatchDelete() {
       </template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel purchase-list-body relative">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">仓库列表</strong><span class="text-xs" :class="selectedIds.size ? 'text-primary' : 'text-muted-foreground'">已选 {{ selectedIds.size }} 项</span></div>
         <div class="table-toolbar__actions">
@@ -344,34 +350,32 @@ function handleBatchDelete() {
         </div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="min-w-[1114px] table-fixed">
-          <colgroup><col class="w-[44px]" /><col class="w-[100px]" /><col class="w-[150px]" /><col class="w-[100px]" /><col class="w-[130px]" /><col class="w-[220px]" /><col class="w-[70px]" /><col class="w-[130px]" /><col class="w-[170px]" /></colgroup>
+        <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${tableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="仓库列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="index" :style="{ width: `${width}px` }" /></colgroup>
           <TableHeader><TableRow>
-            <TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>仓库编码</TableHead><TableHead>仓库名称</TableHead><TableHead>联系人</TableHead><TableHead>联系电话</TableHead><TableHead>仓库地址</TableHead><TableHead>状态</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center">操作</TableHead>
+            <TableHead data-table-sticky-edge="start"><Checkbox :model-value="allSelected" aria-label="全选仓库" @update:model-value="toggleSelectAll" /></TableHead><TableHead>仓库编码</TableHead><TableHead>仓库名称</TableHead><TableHead>联系人</TableHead><TableHead>联系电话</TableHead><TableHead>仓库地址</TableHead><TableHead>状态</TableHead><TableHead>更新时间</TableHead><TableHead data-table-sticky-edge="end">操作</TableHead>
           </TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="warehouses.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
             <TableRow v-for="row in warehouses" v-else :key="row.warehouseId">
-              <TableCell><Checkbox :model-value="selectedIds.has(row.warehouseId)" @update:model-value="toggleSelect(row.warehouseId, $event)" /></TableCell>
+              <TableCell data-table-sticky-edge="start"><Checkbox :model-value="selectedIds.has(row.warehouseId)" :aria-label="`选择仓库：${row.warehouseName}`" @update:model-value="toggleSelect(row.warehouseId, $event)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium">{{ row.warehouseCode }}</code></TableCell>
               <TableCell><div class="flex min-w-0 flex-col"><span class="font-medium">{{ row.warehouseName }}</span><OverflowTooltip :text="row.remark" fallback="暂无备注" class="block text-xs text-muted-foreground" /></div></TableCell>
               <TableCell>{{ row.contactName || '未维护' }}</TableCell>
               <TableCell>{{ row.contactPhone || '未维护' }}</TableCell>
               <TableCell><span class="block truncate" :title="row.address">{{ row.address || '未维护' }}</span></TableCell>
               <TableCell><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-center"><div class="flex justify-center gap-1"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><RowActionsMenu trigger-text="更多" :disabled="actionSubmitting" :label="`更多 ${row.warehouseName} 操作`" :actions="[{ key: 'status', label: row.status === 1 ? '停用' : '启用' }, { key: 'delete', label: '删除', variant: 'destructive', separated: true }]" @select="key => key === 'status' ? handleStatusChange(row, row.status === 1 ? 0 : 1) : handleDelete(row)" /></div></TableCell>
+              <TableCell><span class="purchase-update-date">{{ row.updateTime.split(' ')[0] }}</span><span class="purchase-update-time">{{ row.updateTime.split(' ')[1] }}</span></TableCell>
+              <TableCell data-table-sticky-edge="end"><div class="flex justify-center gap-1"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><RowActionsMenu trigger-text="更多" :disabled="actionSubmitting" :label="`更多 ${row.warehouseName} 操作`" :actions="[{ key: 'status', label: row.status === 1 ? '停用' : '启用' }, { key: 'delete', label: '删除', variant: 'destructive', separated: true }]" @select="key => key === 'status' ? handleStatusChange(row, row.status === 1 ? 0 : 1) : handleDelete(row)" /></div></TableCell>
             </TableRow>
           </TableBody>
         </Table>
-      </ScrollArea>
 
       <DataTablePagination simple :current-count="warehouses.length" :has-next="hasNextPage" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[720px]">
+      <DialogContent placement="app-content" data-supplier-form-dialog data-warehouse-form-dialog :inert="confirmState.open ? '' : undefined" class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[720px]">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增仓库' : '编辑仓库' }}</DialogTitle><DialogDescription>仓库会被采购、销售和库存业务共同引用，请准确维护基础信息。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">

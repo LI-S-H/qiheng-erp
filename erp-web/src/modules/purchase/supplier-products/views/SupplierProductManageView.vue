@@ -6,6 +6,7 @@ import {
   onMounted,
   reactive,
   ref,
+  watch,
 } from "vue";
 import { useDebounceFn } from "@vueuse/core";
 import { toast } from "vue-sonner";
@@ -17,6 +18,7 @@ import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import DataTablePagination from "@/components/common/DataTablePagination.vue";
 import ListFilterActions from "@/components/common/ListFilterActions.vue";
 import ListFilterPanel from "@/components/common/ListFilterPanel.vue";
+import ListLoadingOverlay from "@/components/common/ListLoadingOverlay.vue";
 import ListSummaryStrip from "@/components/common/ListSummaryStrip.vue";
 import OverflowTooltip from "@/components/common/OverflowTooltip.vue";
 import RemoteSearchSelect from "@/components/common/RemoteSearchSelect.vue";
@@ -53,6 +55,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useListRefresh } from "@/shared/composables/use-list-refresh";
+import { useTextTableColumns } from "@/shared/composables/use-text-table-columns";
 import {
   useTableColumnPreferences,
   type TableColumnPreferenceDefinition,
@@ -102,7 +105,6 @@ const {
   reset: resetColumns,
   setPinnedLeft,
   setVisible,
-  tableMinWidth,
 } = useTableColumnPreferences(
   "erp.purchase.supplier-products.table-columns.v2",
   columns,
@@ -120,6 +122,18 @@ const columnSettings = computed(() =>
   })),
 );
 const rows = ref<SupplierProductListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const visibleColumnDefinitions = computed(() => [
+  { key: 'selection', fixedWidth: 44 },
+  ...columns.filter(column => isVisible(column.key)).map(column => ({ key: column.key, minWidth: column.key === 'actions' ? 128 : undefined })),
+]);
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(
+  pageRoot,
+  () => [rows.value, visibleColumnDefinitions.value],
+  { definitions: () => visibleColumnDefinitions.value },
+);
+// 总表宽不变时各列仍可能重分配，需在新col宽落入DOM后重算原位固定偏移。
+watch(measuredWidths, () => { void nextTick(updatePinnedColumnOffsets); }, { flush: 'post' });
 const total = ref(0);
 const loading = ref(false);
 const queryPending = ref(false);
@@ -703,7 +717,7 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell purchase-pilot-page supplier-pilot-page supplier-product-pilot-page space-y-4" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">供货产品</h1>
@@ -824,7 +838,8 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
       </template>
       <template #actions><ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" /></template>
     </ListFilterPanel>
-    <div ref="tablePanelRef" class="data-panel relative">
+    <div ref="tablePanelRef" class="data-panel purchase-list-body relative">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar supplier-product-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">供货关系列表</strong>
@@ -934,6 +949,7 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
         </div>
         <div class="table-toolbar__actions supplier-product-toolbar__settings">
           <TableColumnPreferencesCanvas
+            content-class="!max-h-[min(520px,var(--reka-popover-content-available-height),calc(100dvh-1rem))]"
             v-model:open="columnSettingsOpen"
             :columns="columnSettings"
             pinning-enabled
@@ -950,20 +966,16 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
         </div>
       </div>
       <Table
-        class="supplier-product-table table-fixed"
-        :style="{ width: `${tableMinWidth}px`, minWidth: `${tableMinWidth}px` }"
+        class="supplier-product-table business-data-table table-fixed"
+        :style="{ '--purchase-table-width': `${measuredTableWidth}px` }"
+        :inert="queryBusy ? '' : undefined"
         scroll-label="供货产品列表"
         ><colgroup>
-          <col class="w-[44px]" />
-          <template v-for="column in columns" :key="column.key"
-            ><col
-              v-if="isVisible(column.key)"
-              :style="{ width: `${column.width}px` }"
-          /></template>
+          <col v-for="(width, index) in measuredWidths" :key="visibleColumnDefinitions[index]?.key || index" :style="{ width: `${width}px` }" />
         </colgroup>
         <TableHeader
           ><TableRow
-            ><TableHead
+            ><TableHead data-table-sticky-edge="start"
               ><Checkbox
                 :model-value="allSelected"
                 aria-label="全选供货关系"
@@ -1062,7 +1074,7 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
             v-else
             :key="row.supplierProductId"
             class="group"
-            ><TableCell
+            ><TableCell data-table-sticky-edge="start"
               ><Checkbox
                 :model-value="selectedIds.has(row.supplierProductId)"
                 :aria-label="`选择供货关系：${row.supplierName} ${row.productName}`"
@@ -1199,6 +1211,7 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
     </div>
   </section>
   <SupplierScoreChangeLogDialog
+    placement="app-content"
     v-model:open="scoreLogVisible"
     :supplier-id="scoreLogTarget?.supplierId"
     :supplier-name="scoreLogTarget?.supplierName"
@@ -1208,6 +1221,7 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
   <Dialog v-model:open="editVisible"
     ><DialogContent
       placement="app-content"
+      data-supplier-form-dialog data-supplier-product-form-dialog
       class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-2xl"
       ><DialogHeader
         ><DialogTitle>{{
@@ -1294,7 +1308,7 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
     ></Dialog
   >
   <Dialog v-model:open="quoteVisible"
-    ><DialogContent placement="app-content"
+    ><DialogContent placement="app-content" data-supplier-quote-dialog
       ><DialogHeader
         ><DialogTitle>调整报价</DialogTitle
         ><DialogDescription
@@ -1337,7 +1351,7 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
     ></Dialog
   >
   <Dialog v-model:open="detailVisible">
-    <DialogContent placement="app-content" data-supplier-product-detail-workbench class="supplier-product-detail-workbench flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl">
+    <DialogContent placement="app-content" data-order-workbench data-supplier-product-detail-workbench class="supplier-product-detail-workbench flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-5xl">
       <DialogHeader class="sr-only"><DialogTitle>供货关系详情</DialogTitle><DialogDescription>供货条件、报价、成交与产品级评分。</DialogDescription></DialogHeader>
       <DialogScrollArea content-class="px-5 py-5 pr-6">
         <div v-if="detailLoading" class="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><span class="page-loading-spinner" />详情加载中…</div>
@@ -1391,8 +1405,7 @@ onBeforeUnmount(() => columnResizeObserver?.disconnect());
   min-width: 0 !important;
 }
 .data-panel :deep(table.supplier-product-table) {
-  width: max-content !important;
-  min-width: 100%;
+  width: var(--purchase-table-width);
 }
 .data-panel {
   width: 100%;

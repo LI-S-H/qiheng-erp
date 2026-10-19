@@ -17,9 +17,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogScrollArea,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
@@ -27,6 +26,8 @@ import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
@@ -76,6 +77,9 @@ const actionBadgeClasses: Record<PermissionAction, string> = {
 };
 
 const permissions = ref<SystemPermissionListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const columnDefinitions = [{ key: 'selection', fixedWidth: 44 }, { key: 'code' }, { key: 'name' }, { key: 'module' }, { key: 'action' }, { key: 'roles' }, { key: 'status' }, { key: 'sort' }, { key: 'updated' }, { key: 'actions', minWidth: 136 }];
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(pageRoot, () => permissions.value, { definitions: () => columnDefinitions });
 const total = ref(0);
 const loading = ref(false);
 const queryPending = ref(false);
@@ -415,7 +419,7 @@ function handleBatchDelete() {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell space-y-4 purchase-pilot-page catalog-pilot-page permission-master-pilot-page" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">权限码配置</h1>
@@ -451,7 +455,8 @@ function handleBatchDelete() {
         </template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel relative purchase-list-body">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">权限码列表</strong>
@@ -466,30 +471,18 @@ function handleBatchDelete() {
         </div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="min-w-[1220px] table-fixed">
-          <colgroup>
-            <col class="w-[44px]" />
-            <col class="w-[190px]" />
-            <col class="w-[220px]" />
-            <col class="w-[120px]" />
-            <col class="w-[100px]" />
-            <col class="w-[90px]" />
-            <col class="w-[80px]" />
-            <col class="w-[70px]" />
-            <col class="w-[110px]" />
-            <col class="w-[190px]" />
-          </colgroup>
+        <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${measuredTableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="权限码列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="columnDefinitions[index]?.key" :style="{ width: `${width}px` }" /></colgroup>
           <TableHeader><TableRow>
-            <TableHead class="w-[44px]"><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead>
+            <TableHead data-table-sticky-edge="start"><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead>
             <TableHead>权限码</TableHead><TableHead>权限名称</TableHead><TableHead class="text-center">所属模块</TableHead><TableHead class="text-center">操作类型</TableHead>
             <TableHead class="text-center">角色引用</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-center">排序</TableHead>
-            <TableHead>更新时间</TableHead><TableHead class="w-[190px] text-center">操作</TableHead>
+            <TableHead>更新时间</TableHead><TableHead class="text-center" data-table-sticky-edge="end">操作</TableHead>
           </TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="permissions.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
             <TableRow v-for="row in permissions" v-else :key="row.permissionId">
-              <TableCell><Checkbox :model-value="selectedIds.has(row.permissionId)" @update:model-value="toggleSelect(row.permissionId, $event)" /></TableCell>
+              <TableCell data-table-sticky-edge="start"><Checkbox :model-value="selectedIds.has(row.permissionId)" @update:model-value="toggleSelect(row.permissionId, $event)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium text-foreground">{{ row.permissionCode }}</code></TableCell>
               <TableCell><div class="flex max-w-[220px] flex-col"><span>{{ row.permissionName }}</span><OverflowTooltip :text="row.description" fallback="暂无说明" class="block text-xs text-muted-foreground" /></div></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="getModuleBadgeClass(row.moduleCode)">{{ getModuleName(row.moduleCode) }}</Badge></TableCell>
@@ -498,7 +491,7 @@ function handleBatchDelete() {
               <TableCell class="text-center"><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
               <TableCell class="text-center">{{ row.sortOrder }}</TableCell>
               <TableCell class="text-xs">{{ formatTableTime(row.updateTime) }}</TableCell>
-              <TableCell class="text-center"><div class="flex items-center justify-center gap-1">
+              <TableCell class="text-center" data-table-sticky-edge="end"><div class="flex items-center justify-center gap-1">
                 <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
                 <RowActionsMenu
                   trigger-text="更多"
@@ -511,7 +504,6 @@ function handleBatchDelete() {
             </TableRow>
           </TableBody>
         </Table>
-      </ScrollArea>
 
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize"
         :loading="queryBusy"
@@ -520,8 +512,9 @@ function handleBatchDelete() {
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="sm:max-w-[620px]">
+      <DialogContent data-master-form-dialog placement="app-content" style="--master-dialog-width: 760px; --master-dialog-height: 640px" :inert="confirmState.open ? '' : undefined" class="sm:max-w-[620px]">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增权限码' : '编辑权限码' }}</DialogTitle><DialogDescription>权限码用于后端鉴权和角色授权，保存后请同步业务接口使用。</DialogDescription></DialogHeader>
+        <DialogScrollArea>
         <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
           <div class="col-span-2 space-y-1 max-sm:col-span-1">
             <Label>权限码 <span class="text-destructive">*</span></Label>
@@ -535,6 +528,7 @@ function handleBatchDelete() {
           <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>启用状态 <span class="text-destructive">*</span></Label><RadioGroup :model-value="String(form.status)" class="flex gap-5" @update:model-value="form.status = Number($event) as PermissionStatus"><div class="flex items-center gap-2"><RadioGroupItem id="permission-status-1" value="1" /><Label for="permission-status-1" class="cursor-pointer font-normal">启用</Label></div><div class="flex items-center gap-2"><RadioGroupItem id="permission-status-0" value="0" /><Label for="permission-status-0" class="cursor-pointer font-normal">停用</Label></div></RadioGroup></div>
           <div class="col-span-2 space-y-1 max-sm:col-span-1"><Label>权限说明</Label><Textarea v-model="form.description" maxlength="500" rows="3" placeholder="说明该权限允许执行的业务操作" :aria-invalid="Boolean(formErrors.description)" /><div class="flex justify-between text-xs"><span v-if="formErrors.description" class="text-destructive">{{ formErrors.description }}</span><span v-else class="text-muted-foreground">选填，便于授权人员理解权限边界</span><span class="text-muted-foreground">{{ form.description.length }}/500</span></div></div>
         </div>
+        </DialogScrollArea>
         <DialogFooter><Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button><Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>

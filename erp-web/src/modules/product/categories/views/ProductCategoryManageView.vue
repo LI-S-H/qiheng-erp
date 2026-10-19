@@ -25,13 +25,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogScrollArea,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import TreeSelect from '@/components/common/TreeSelect.vue';
@@ -114,6 +116,9 @@ const summaryItems = computed(() => [
   { key: 'products', label: '关联产品', value: productTotal.value },
 ]);
 const visibleCategories = computed(() => flattenVisibleCategoryTree(categories.value));
+const pageRoot = ref<HTMLElement | null>(null);
+const columnDefinitions = [{ key: 'selection', fixedWidth: 44 }, { key: 'category', minWidth: 200 }, { key: 'parent' }, { key: 'path' }, { key: 'products' }, { key: 'status' }, { key: 'actions', minWidth: 136 }];
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(pageRoot, () => visibleCategories.value, { definitions: () => columnDefinitions });
 const selectedRows = computed(() => flatCategories.value.filter(item => selectedIds.value.has(item.categoryId)));
 const queryBusy = computed(() => queryPending.value || loading.value);
 const allSelected = computed(() =>
@@ -599,7 +604,7 @@ function confirmBatchDelete() {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell space-y-4 purchase-pilot-page catalog-pilot-page catalog-tree-page">
     <div class="page-heading">
       <div>
         <h1 class="page-title">产品分类</h1>
@@ -623,7 +628,8 @@ function confirmBatchDelete() {
         </template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel relative purchase-list-body">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">分类列表</strong>
@@ -653,29 +659,20 @@ function confirmBatchDelete() {
         </div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="min-w-[1076px] table-fixed">
-          <colgroup>
-            <col class="w-[46px]" />
-            <col class="w-[220px]" />
-            <col class="w-[130px]" />
-            <col class="w-[260px]" />
-            <col class="w-[104px]" />
-            <col class="w-[96px]" />
-            <col class="w-[220px]" />
-          </colgroup>
+        <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${measuredTableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="产品分类列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="columnDefinitions[index]?.key" :style="{ width: `${width}px` }" /></colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead class="w-[46px]"><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead>
+              <TableHead data-table-sticky-edge="start"><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead>
               <TableHead>分类</TableHead>
               <TableHead class="text-center">上级分类</TableHead>
               <TableHead>层级路径</TableHead>
               <TableHead class="text-center">产品数量</TableHead>
               <TableHead class="text-center">状态</TableHead>
-              <TableHead class="text-center">操作</TableHead>
+              <TableHead class="text-center" data-table-sticky-edge="end">操作</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody v-if="loading">
+          <TableBody v-if="loading && visibleCategories.length === 0">
             <TableRow>
               <TableCell colspan="7" class="text-center text-muted-foreground py-8">加载中...</TableCell>
             </TableRow>
@@ -693,7 +690,7 @@ function confirmBatchDelete() {
               :data-tree-row-collapsing="row.isCollapsing ? 'true' : undefined"
               :class="{ 'bg-muted/50': selectedIds.has(row.categoryId) }"
             >
-              <TableCell>
+              <TableCell data-table-sticky-edge="start">
                 <div class="tree-table-cell-reveal">
                   <Checkbox :model-value="selectedIds.has(row.categoryId)" @update:model-value="toggleSelectRow(row.categoryId)" />
                 </div>
@@ -736,7 +733,7 @@ function confirmBatchDelete() {
                   <Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge>
                 </div>
               </TableCell>
-              <TableCell class="text-center">
+              <TableCell class="text-center" data-table-sticky-edge="end">
                 <div class="tree-table-cell-reveal">
                   <div class="flex items-center justify-center gap-1">
                     <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
@@ -753,7 +750,6 @@ function confirmBatchDelete() {
             </TableRow>
           </TreeTableBody>
         </Table>
-      </ScrollArea>
 
       <div class="flex min-h-[52px] items-center justify-between border-t border-border px-4">
         <span class="text-xs text-muted-foreground">命中 {{ filteredListResponse.length }} 条</span>
@@ -762,11 +758,12 @@ function confirmBatchDelete() {
     </div>
 
     <Dialog v-model:open="dialogVisible" @update:open="(value: boolean) => { if (!value) resetForm() }">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="sm:max-w-[500px]">
+      <DialogContent data-master-form-dialog placement="app-content" style="--master-dialog-width: 560px; --master-dialog-height: 460px" :inert="confirmState.open ? '' : undefined" class="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{{ dialogTitle }}</DialogTitle>
           <DialogDescription>填写产品分类信息</DialogDescription>
         </DialogHeader>
+        <DialogScrollArea>
         <div class="space-y-4 py-2">
           <div class="space-y-1">
             <Label>上级分类 <span class="text-destructive">*</span></Label>
@@ -792,6 +789,7 @@ function confirmBatchDelete() {
             </RadioGroup>
           </div>
         </div>
+        </DialogScrollArea>
         <DialogFooter>
           <Button variant="outline" :disabled="formSubmitting" @click="dialogVisible = false">取消</Button>
           <Button :disabled="formSubmitting" @click="submitForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button>

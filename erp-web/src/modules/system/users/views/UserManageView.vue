@@ -27,8 +27,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogScrollArea,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import PromptDialog from '@/components/common/PromptDialog.vue';
@@ -37,6 +37,8 @@ import TreeSelect from '@/components/common/TreeSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
@@ -91,6 +93,9 @@ const formSubmitting = ref(false);
 const roleSubmitting = ref(false);
 const actionSubmitting = ref(false);
 const users = ref<SystemUserListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const columnDefinitions = [{ key: 'selection', fixedWidth: 44 }, { key: 'account', minWidth: 150 }, { key: 'dept' }, { key: 'roles' }, { key: 'admin' }, { key: 'status' }, { key: 'time' }, { key: 'actions', minWidth: 136 }];
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(pageRoot, () => users.value, { definitions: () => columnDefinitions });
 const total = ref(0);
 const roleOptions = ref<RoleOption[]>([]);
 const deptOptions = ref<DeptOption[]>([]);
@@ -609,7 +614,7 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell space-y-4 purchase-pilot-page catalog-pilot-page user-master-pilot-page" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">用户管理</h1>
@@ -671,7 +676,8 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
     </ListFilterPanel>
 
     <!-- Table -->
-    <div class="data-panel relative">
+    <div class="data-panel relative purchase-list-body">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-toolbar__title">
@@ -728,21 +734,11 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
         </div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="min-w-[990px] table-fixed">
-          <colgroup>
-            <col class="w-[44px]" />
-            <col class="w-[190px]" />
-            <col class="w-[110px]" />
-            <col class="w-[210px]" />
-            <col class="w-[90px]" />
-            <col class="w-[80px]" />
-            <col class="w-[150px]" />
-            <col class="w-[116px]" />
-          </colgroup>
+        <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${measuredTableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="用户列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="columnDefinitions[index]?.key" :style="{ width: `${width}px` }" /></colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead class="w-[44px]">
+              <TableHead data-table-sticky-edge="start">
                 <Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" />
               </TableHead>
               <TableHead class="text-center">账号</TableHead>
@@ -751,18 +747,18 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
               <TableHead class="text-center w-[108px]">管理员</TableHead>
               <TableHead class="text-center w-[96px]">状态</TableHead>
               <TableHead>时间</TableHead>
-              <TableHead class="text-center w-[116px]">操作</TableHead>
+              <TableHead class="text-center" data-table-sticky-edge="end">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow v-if="loading">
+            <TableRow v-if="loading && users.length === 0">
               <TableCell colspan="8" class="text-center text-muted-foreground py-8">加载中...</TableCell>
             </TableRow>
             <TableRow v-else-if="users.length === 0">
               <TableCell colspan="8" class="text-center text-muted-foreground py-8">暂无数据</TableCell>
             </TableRow>
             <TableRow v-for="row in users" :key="row.userId" :class="{ 'bg-muted/50': selectedIds.has(row.userId) }">
-              <TableCell>
+              <TableCell data-table-sticky-edge="start">
                 <Checkbox :model-value="selectedIds.has(row.userId)" @update:model-value="toggleSelectRow(row.userId)" />
               </TableCell>
               <TableCell class="text-center">
@@ -771,8 +767,8 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
                     <AvatarFallback class="text-primary-foreground text-xs bg-primary"><User class="h-4 w-4" /></AvatarFallback>
                   </Avatar>
                   <div class="min-w-0">
-                    <div class="text-sm font-medium">{{ row.username }}</div>
-                    <div class="text-xs text-muted-foreground">{{ row.realName }}</div>
+                    <div class="text-sm font-medium" :title="row.username">{{ row.username }}</div>
+                    <div class="text-xs text-muted-foreground" :title="row.realName">{{ row.realName }}</div>
                   </div>
                 </div>
               </TableCell>
@@ -796,7 +792,7 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
                   <span class="text-muted-foreground">更新 {{ formatTableTime(row.updateTime) }}</span>
                 </div>
               </TableCell>
-              <TableCell class="text-center">
+              <TableCell class="text-center" data-table-sticky-edge="end">
                 <div class="flex items-center justify-center gap-1">
                   <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
                   <RowActionsMenu
@@ -811,7 +807,6 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
             </TableRow>
           </TableBody>
         </Table>
-      </ScrollArea>
 
       <DataTablePagination
         :total="total"
@@ -825,11 +820,12 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
 
     <!-- Create/Edit User Dialog -->
     <Dialog v-model:open="userDialogVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="sm:max-w-[560px]">
+      <DialogContent data-master-form-dialog data-user-form-dialog placement="app-content" style="--master-dialog-width: 640px; --master-dialog-height: 760px" :inert="confirmState.open ? '' : undefined" class="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>{{ dialogMode === 'create' ? '新增用户' : '编辑用户' }}</DialogTitle>
           <DialogDescription>填写用户基本信息</DialogDescription>
         </DialogHeader>
+        <DialogScrollArea>
         <div class="space-y-4 py-2">
           <div class="space-y-1">
             <Label>登录账号 <span class="text-destructive">*</span></Label>
@@ -874,6 +870,7 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
             </RadioGroup>
           </div>
         </div>
+        </DialogScrollArea>
         <DialogFooter>
           <Button variant="outline" :disabled="formSubmitting" @click="userDialogVisible = false">取消</Button>
           <Button :disabled="formSubmitting" @click="submitUserForm">{{ formSubmitting ? '保存中...' : '保存' }}</Button>
@@ -883,11 +880,12 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
 
     <!-- Role Binding Dialog -->
     <Dialog v-model:open="roleDialogVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="sm:max-w-[460px]">
+      <DialogContent data-master-form-dialog data-user-roles-dialog placement="app-content" style="--master-dialog-width: 520px; --master-dialog-height: 420px" :inert="confirmState.open ? '' : undefined" class="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle>角色绑定</DialogTitle>
           <DialogDescription>为用户「{{ roleEditingUser?.realName }}」配置角色</DialogDescription>
         </DialogHeader>
+        <DialogScrollArea>
         <div class="space-y-4 py-2">
           <div class="space-y-1">
             <Label>当前用户</Label>
@@ -899,6 +897,7 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
             <p v-if="roleFormErrors.roleIds" class="text-xs text-destructive">{{ roleFormErrors.roleIds }}</p>
           </div>
         </div>
+        </DialogScrollArea>
         <DialogFooter>
           <Button variant="outline" :disabled="roleSubmitting" @click="roleDialogVisible = false">取消</Button>
           <Button :disabled="roleSubmitting" @click="submitRoleForm">{{ roleSubmitting ? '保存中...' : '保存' }}</Button>
@@ -919,7 +918,7 @@ function handleRowAction(row: SystemUserListItem, actionKey: string) {
     />
 
     <!-- Prompt Dialog -->
-    <PromptDialog
+    <PromptDialog overlay-class="!z-[70]"
       :open="promptState.open"
       :title="promptState.title"
       :description="promptState.description"

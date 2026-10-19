@@ -127,7 +127,7 @@ export function listStockLedgers(params: StockLedgerQuery) {
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(billType && billType !== 'all' ? { billType } : {}),
     ...(entryMode && entryMode !== 'all' ? { entryMode } : {}),
-  }).then(normalizeStockLedgerPage);
+  }, { skipPageLoading: true, timeout: 5_000 }).then(normalizeStockLedgerPage);
 }
 
 /** 获取单条只读库存流水及全部产品变动明细；仅在用户展开该流水时调用。 */

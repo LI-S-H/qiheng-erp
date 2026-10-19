@@ -107,7 +107,7 @@ export function listSystemUsers(params: SystemUserQuery) {
     ...(deptId && deptId !== 'all' ? { deptId } : {}),
     ...(effectiveRoleId ? { roleId: effectiveRoleId } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  });
+  }, { skipPageLoading: true, timeout: 5_000 });
 }
 
 export function getSystemUser(userId: string) {

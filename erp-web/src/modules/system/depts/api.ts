@@ -98,7 +98,7 @@ export function listSystemDepts(params: SystemDeptQuery = {}) {
     ...rest,
     ...(deptName?.trim() ? { deptName: deptName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  });
+  }, { skipPageLoading: true, timeout: 5_000 });
 }
 
 export function getSystemDept(deptId: string) {

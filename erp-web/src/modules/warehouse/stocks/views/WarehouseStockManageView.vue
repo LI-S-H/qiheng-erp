@@ -14,10 +14,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import { formatQtyByPrecision } from '@/shared/utils/qty';
 import { listWarehouses } from '../../warehouses/api';
 import { listWarehouseStocks } from '../api';
@@ -43,6 +43,10 @@ const loading = ref(false);
 const queryPending = ref(false);
 const requestSequence = ref(0);
 const stocks = ref<WarehouseStockListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const { columns: measuredWidths, tableWidth } = useTextTableColumns(pageRoot, () => stocks.value, {
+  definitions: () => ['warehouse', 'product', 'unit', 'stock', 'locked', 'available', 'safety', 'health', 'reservation', 'updated'].map(key => ({ key })),
+});
 const summary = reactive(emptySummary());
 const warehouseOptions = ref<Array<{ value: string; label: string }>>([{ value: 'all', label: '全部仓库' }]);
 const query = reactive<WarehouseStockQuery>({
@@ -218,7 +222,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell purchase-pilot-page warehouse-pilot-page inventory-pilot-page space-y-4" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">库存管理</h1>
@@ -234,13 +238,15 @@ onMounted(() => {
         <div class="space-y-1" data-filter-size="standard"><Label class="text-xs">产品名称</Label><Input :disabled="query.riskOnly || queryBusy" v-model="query.productName" placeholder="请输入产品名称" @keyup.enter="handleSearch" /></div>
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">库存健康</Label><AnchoredSelect :disabled="query.riskOnly || queryBusy" v-model="query.inventoryHealth" :options="inventoryHealthOptions" placeholder="全部健康状态" /></div>
         <div class="space-y-1" data-filter-size="compact"><Label class="text-xs">占用情况</Label><AnchoredSelect :disabled="query.riskOnly || queryBusy" v-model="query.reservationState" :options="reservationStateOptions" placeholder="全部占用情况" /></div>
-        <div class="stock-risk-shortcut space-y-1" data-filter-size="compact"><Label class="text-xs">{{ '\u98ce\u9669\u9884\u8bbe' }}</Label><Tooltip><TooltipTrigger as-child><Button size="sm" :variant="query.riskOnly ? 'default' : 'outline'" class="w-full" :disabled="queryBusy" :aria-label="'\u67e5\u770b\u98ce\u9669\u5e93\u5b58'" @click="toggleRiskOnly">{{ '\u67e5\u770b\u98ce\u9669\u5e93\u5b58' }}</Button></TooltipTrigger><TooltipContent>{{ '\u542f\u7528\u540e\u4ec5\u663e\u793a\u7f3a\u8d27\u3001\u65e0\u53ef\u7528\u5e93\u5b58\u6216\u4f4e\u4e8e\u5b89\u5168\u5e93\u5b58\u7684\u8bb0\u5f55' }}</TooltipContent></Tooltip></div>
       <template #actions>
+        <div class="warehouse-filter-action-group">
+        <div class="stock-risk-shortcut space-y-1"><Label class="text-xs">{{ '\u98ce\u9669\u9884\u8bbe' }}</Label><Tooltip><TooltipTrigger as-child><Button size="sm" :variant="query.riskOnly ? 'default' : 'outline'" class="w-full" :disabled="queryBusy" :aria-label="'\u67e5\u770b\u98ce\u9669\u5e93\u5b58'" @click="toggleRiskOnly">{{ '\u67e5\u770b\u98ce\u9669\u5e93\u5b58' }}</Button></TooltipTrigger><TooltipContent>{{ '\u542f\u7528\u540e\u4ec5\u663e\u793a\u7f3a\u8d27\u3001\u65e0\u53ef\u7528\u5e93\u5b58\u6216\u4f4e\u4e8e\u5b89\u5168\u5e93\u5b58\u7684\u8bb0\u5f55' }}</TooltipContent></Tooltip></div>
         <ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="resetFilters" />
+        </div>
       </template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel purchase-list-body relative">
       <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" label="库存刷新中" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">库存余额</strong><span class="text-xs text-muted-foreground">库存变更请通过出入库或库存调整业务完成</span></div>
@@ -249,14 +255,13 @@ onMounted(() => {
         </div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="min-w-[1250px] table-fixed">
-          <colgroup><col class="w-[170px]" /><col class="w-[220px]" /><col class="w-[70px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[115px]" /><col class="w-[105px]" /><col class="w-[150px]" /></colgroup>
-          <TableHeader><TableRow><TableHead>仓库</TableHead><TableHead>产品</TableHead><TableHead class="text-center">单位</TableHead><TableHead class="text-right">当前库存</TableHead><TableHead class="text-right">锁定库存</TableHead><TableHead class="text-right">可用库存</TableHead><TableHead class="text-right">安全库存</TableHead><TableHead class="text-center">库存健康</TableHead><TableHead class="text-center">占用情况</TableHead><TableHead>更新时间</TableHead></TableRow></TableHeader>
+        <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${tableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="库存余额列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="index" :style="{ width: `${width}px` }" /></colgroup>
+          <TableHeader><TableRow><TableHead data-table-sticky-edge="start">仓库</TableHead><TableHead>产品</TableHead><TableHead>单位</TableHead><TableHead>当前库存</TableHead><TableHead>锁定库存</TableHead><TableHead>可用库存</TableHead><TableHead>安全库存</TableHead><TableHead>库存健康</TableHead><TableHead>占用情况</TableHead><TableHead data-table-sticky-edge="end">更新时间</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="stocks.length === 0"><TableCell colspan="10" class="h-28 text-center text-muted-foreground">暂无符合条件的库存记录</TableCell></TableRow>
             <TableRow v-for="row in stocks" v-else :key="row.stockId" :data-stock-id="row.stockId" :data-stock-risk="stockRiskLevel(row)" :class="stockRowClass(row)">
-              <TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.warehouseCode }}</code><span class="max-w-full truncate font-medium" :title="row.warehouseName">{{ row.warehouseName }}</span></div></TableCell>
+              <TableCell data-table-sticky-edge="start"><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.warehouseCode }}</code><span class="max-w-full truncate font-medium" :title="row.warehouseName">{{ row.warehouseName }}</span></div></TableCell>
               <TableCell><div class="flex flex-col items-center gap-1 text-center"><code class="w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{{ row.productCode }}</code><span class="max-w-full truncate font-medium" :title="row.productName">{{ row.productName }}</span></div></TableCell>
               <TableCell class="text-center">{{ row.unitName }}</TableCell>
               <TableCell class="text-right font-medium tabular-nums">{{ formatQty(row.stockQty, row) }}</TableCell>
@@ -265,11 +270,10 @@ onMounted(() => {
               <TableCell class="text-right tabular-nums text-muted-foreground">{{ formatQty(row.safetyStockQty, row) }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="stockHealth(row).className">{{ stockHealth(row).label }}</Badge></TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="reservationState(row).className">{{ reservationState(row).label }}</Badge></TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
+              <TableCell data-table-sticky-edge="end"><span class="purchase-update-date">{{ row.updateTime.split(' ')[0] }}</span><span class="purchase-update-time">{{ row.updateTime.split(' ')[1] }}</span></TableCell>
             </TableRow>
           </TableBody>
         </Table>
-      </ScrollArea>
 
       <DataTablePagination simple :current-count="stocks.length" :has-next="hasNextPage" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>

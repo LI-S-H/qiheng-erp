@@ -155,7 +155,7 @@ export function listProducts(params: ProductQuery, requestConfig?: AxiosRequestC
     ...(barcode?.trim() ? { barcode: barcode.trim() } : {}),
     ...(categoryId && categoryId !== 'all' ? { categoryId } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  }, requestConfig).then(normalizeProductPage);
+  }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(normalizeProductPage);
 }
 
 export function createProduct(payload: ProductFormPayload) {

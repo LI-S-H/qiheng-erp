@@ -40,7 +40,7 @@ export function listSystemPermissions(params: SystemPermissionQuery) {
     ...(moduleCode && moduleCode !== 'all' ? { moduleCode } : {}),
     ...(actionType && actionType !== 'all' ? { actionType } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  });
+  }, { skipPageLoading: true, timeout: 5_000 });
 }
 
 export function listPermissionOptions() {

@@ -27,7 +27,6 @@ import {
   DialogScrollArea,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
@@ -36,6 +35,8 @@ import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { useListRefresh } from '@/shared/composables/use-list-refresh';
 import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
@@ -56,6 +57,9 @@ const permissionGroups = ref<PermissionGroup[]>([]);
 const allPermissionCodes = computed(() => permissionGroups.value.flatMap(group => group.codes));
 
 const roles = ref<SystemRoleListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const columnDefinitions = [{ key: 'selection', fixedWidth: 44 }, { key: 'role' }, { key: 'permissions' }, { key: 'users' }, { key: 'status' }, { key: 'remark' }, { key: 'time' }, { key: 'actions', minWidth: 136 }];
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(pageRoot, () => roles.value, { definitions: () => columnDefinitions });
 const total = ref(0);
 const loading = ref(false);
 const queryPending = ref(false);
@@ -478,7 +482,7 @@ function togglePermForm(code: string, checked: boolean) {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell space-y-4 purchase-pilot-page catalog-pilot-page role-master-pilot-page" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">角色管理</h1>
@@ -507,7 +511,8 @@ function togglePermForm(code: string, checked: boolean) {
     </ListFilterPanel>
 
     <!-- Table -->
-    <div class="data-panel relative">
+    <div class="data-panel relative purchase-list-body">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-toolbar__title">
@@ -540,21 +545,11 @@ function togglePermForm(code: string, checked: boolean) {
         </div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="min-w-[1216px] table-fixed">
-          <colgroup>
-            <col class="w-[44px]" />
-            <col class="w-[180px]" />
-            <col class="w-[220px]" />
-            <col class="w-[120px]" />
-            <col class="w-[96px]" />
-            <col class="w-[220px]" />
-            <col class="w-[160px]" />
-            <col class="w-[176px]" />
-          </colgroup>
+        <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${measuredTableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="角色列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="columnDefinitions[index]?.key" :style="{ width: `${width}px` }" /></colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead class="w-[44px]">
+              <TableHead data-table-sticky-edge="start">
                 <Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" />
               </TableHead>
               <TableHead>角色</TableHead>
@@ -563,18 +558,18 @@ function togglePermForm(code: string, checked: boolean) {
               <TableHead class="text-center w-[96px]">状态</TableHead>
               <TableHead>备注</TableHead>
               <TableHead>时间</TableHead>
-              <TableHead class="text-center w-[176px]">操作</TableHead>
+              <TableHead class="text-center" data-table-sticky-edge="end">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow v-if="loading">
+            <TableRow v-if="loading && roles.length === 0">
               <TableCell colspan="8" class="text-center text-muted-foreground py-8">加载中...</TableCell>
             </TableRow>
             <TableRow v-else-if="roles.length === 0">
               <TableCell colspan="8" class="text-center text-muted-foreground py-8">暂无数据</TableCell>
             </TableRow>
             <TableRow v-for="row in roles" :key="row.roleId" :class="{ 'bg-muted/50': selectedIds.has(row.roleId) }">
-              <TableCell>
+              <TableCell data-table-sticky-edge="start">
                 <Checkbox :model-value="selectedIds.has(row.roleId)" @update:model-value="toggleSelectRow(row.roleId)" />
               </TableCell>
               <TableCell>
@@ -613,7 +608,7 @@ function togglePermForm(code: string, checked: boolean) {
                   <span class="text-muted-foreground">更新 {{ formatTableTime(row.updateTime) }}</span>
                 </div>
               </TableCell>
-              <TableCell class="text-center">
+              <TableCell class="text-center" data-table-sticky-edge="end">
                 <div class="flex items-center justify-center gap-1">
                   <Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button>
                   <RowActionsMenu
@@ -632,7 +627,6 @@ function togglePermForm(code: string, checked: boolean) {
             </TableRow>
           </TableBody>
         </Table>
-      </ScrollArea>
 
       <DataTablePagination
         :total="total"
@@ -646,7 +640,7 @@ function togglePermForm(code: string, checked: boolean) {
 
     <!-- Create/Edit Role Dialog -->
     <Dialog v-model:open="roleDialogVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[760px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[620px]">
+      <DialogContent data-master-form-dialog data-role-form-dialog placement="app-content" style="--master-dialog-width: 760px; --master-dialog-height: 760px" :inert="confirmState.open ? '' : undefined" class="flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{{ dialogMode === 'create' ? '新增角色' : '编辑角色' }}</DialogTitle>
           <DialogDescription>填写角色信息和权限码</DialogDescription>
@@ -713,14 +707,14 @@ function togglePermForm(code: string, checked: boolean) {
 
     <!-- Permission Preview Dialog -->
     <Dialog v-model:open="permissionPreviewVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[520px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[640px]">
+      <DialogContent data-master-form-dialog data-role-preview-dialog placement="app-content" style="--master-dialog-width: 820px; --master-dialog-height: 580px" :inert="confirmState.open ? '' : undefined" class="flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{{ permissionPreviewRole?.roleName }} 的权限</DialogTitle>
           <DialogDescription>
             {{ permissionPreviewRole?.roleCode }} · 已配置 {{ permissionPreviewCount }} 项
           </DialogDescription>
         </DialogHeader>
-        <div v-if="permissionPreviewRole" class="flex min-h-0 flex-1 gap-6">
+        <div v-if="permissionPreviewRole" data-permission-preview-layout class="flex min-h-0 flex-1 gap-6">
           <aside data-permission-preview-sidebar class="flex w-[155px] shrink-0 flex-col rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
             <p class="px-2 pb-2 text-xs font-medium text-slate-500">按模块浏览</p>
             <div class="min-h-0 flex-1 space-y-1 overflow-y-auto">
@@ -776,7 +770,7 @@ function togglePermForm(code: string, checked: boolean) {
 
     <!-- Permission Config Dialog -->
     <Dialog v-model:open="permissionDialogVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[720px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[600px]">
+      <DialogContent data-master-form-dialog data-role-permissions-dialog placement="app-content" style="--master-dialog-width: 760px; --master-dialog-height: 720px" :inert="confirmState.open ? '' : undefined" class="flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>权限配置</DialogTitle>
           <DialogDescription>为角色配置权限码</DialogDescription>

@@ -116,7 +116,7 @@ export function listProductCategories(params?: ProductCategoryQuery) {
   return getResult<ProductCategoryListItem[]>('/product/categories', {
     ...(categoryName ? { categoryName } : {}),
     ...(status !== null ? { status } : {}),
-  }).then(items => items.map(normalizeCategory));
+  }, { skipPageLoading: true, timeout: 5_000 }).then(items => items.map(normalizeCategory));
 }
 
 export function getProductCategory(categoryId: string) {

@@ -13,6 +13,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
@@ -27,6 +28,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import { formatQtyByPrecision } from '@/shared/utils/qty';
 import {
@@ -91,11 +93,11 @@ const statusLabels: Record<PurchaseOrderStatus, string> = {
 
 const statusClassNames: Record<PurchaseOrderStatus, string> = {
   DRAFT: 'border-slate-200 bg-slate-50 text-slate-600',
-  SUBMITTED: 'border-blue-200 bg-blue-50 text-blue-700',
-  APPROVED: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  PARTIAL_INBOUND: 'border-amber-200 bg-amber-50 text-amber-700',
+  SUBMITTED: 'border-amber-200 bg-amber-50 text-amber-700',
+  APPROVED: 'border-blue-200 bg-blue-50 text-blue-700',
+  PARTIAL_INBOUND: 'border-blue-200 bg-blue-50 text-blue-700',
   INBOUND_DONE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  CANCELLED: 'border-rose-200 bg-rose-50 text-rose-700',
+  CANCELLED: 'border-slate-200 bg-slate-50 text-slate-600',
 };
 
 const statusOptions: Array<{ value: PurchaseOrderStatus | 'all'; label: string }> = [
@@ -105,6 +107,8 @@ const statusOptions: Array<{ value: PurchaseOrderStatus | 'all'; label: string }
 ];
 
 const orders = ref<PurchaseOrderListItem[]>([]);
+const purchasePage = ref<HTMLElement | null>(null);
+const { columns: purchaseColumns, tableWidth: purchaseTableWidth } = useTextTableColumns(purchasePage, () => orders.value);
 const total = ref(0);
 const summary = reactive(emptySummary());
 const summaryItems = computed(() => [
@@ -749,18 +753,6 @@ function statusMeta(status: PurchaseOrderStatus) {
   return { label: statusLabels[status], className: statusClassNames[status] };
 }
 
-function statusHint(status: PurchaseOrderStatus) {
-  const map: Record<PurchaseOrderStatus, string> = {
-    DRAFT: '待提交',
-    SUBMITTED: '等待审核',
-    APPROVED: '等待入库',
-    PARTIAL_INBOUND: '部分入库',
-    INBOUND_DONE: '流程完成',
-    CANCELLED: '流程终止',
-  };
-  return map[status];
-}
-
 function purchaseProgressSteps(row: PurchaseOrderDetail): BusinessDetailProgressStep[] {
   if (row.status === 'CANCELLED') {
     return [
@@ -850,7 +842,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="purchasePage" class="page-shell purchase-pilot-page space-y-4" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">采购订单</h1>
@@ -873,27 +865,30 @@ onMounted(() => {
     <div class="data-panel relative">
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">采购订单列表</strong><span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；审核动作只生成待确认入库单，实际入库由仓库确认本次数量</span></div>
-        <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" @click="openCreateDialog">新增采购单</Button></div>
+        <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button><Button size="sm" :disabled="queryBusy" @click="openCreateDialog">新增采购单</Button></div>
       </div>
 
-      <Table class="business-data-table min-w-[1197px] table-fixed" scroll-label="采购订单列表">
-          <colgroup><col class="w-[220px]" /><col class="w-[145px]" /><col class="w-[110px]" /><col class="w-[120px]" /><col class="w-[120px]" /><col class="w-[105px]" /><col class="w-[105px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
-          <TableHeader><TableRow><TableHead data-purchase-no-column>采购单号</TableHead><TableHead>供应商</TableHead><TableHead>入库仓库</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计到货</TableHead><TableHead>创建人</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-purchase-actions-column>操作</TableHead></TableRow></TableHeader>
+      <div class="purchase-list-body relative" :aria-busy="queryBusy">
+      <Table :inert="queryBusy ? '' : undefined" :style="{ '--purchase-table-width': `${purchaseTableWidth}px` }" class="business-data-table table-fixed" scroll-label="采购订单列表">
+          <colgroup><col v-for="(width, index) in purchaseColumns" :key="index" :style="{ width: `${width}px` }" /></colgroup>
+          <TableHeader><TableRow><TableHead data-purchase-no-column data-table-sticky-edge="start">采购单号</TableHead><TableHead>供应商</TableHead><TableHead>入库仓库</TableHead><TableHead class="text-center" data-pilot-status-column>状态</TableHead><TableHead class="text-right">订单金额</TableHead><TableHead>预计到货</TableHead><TableHead>创建人</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-purchase-actions-column data-table-sticky-edge="end">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="orders.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无采购订单</TableCell></TableRow>
             <TableRow v-for="row in orders" v-else :key="row.purchaseOrderId" class="group">
-              <TableCell data-purchase-no-column><OrderNumberLink :value="row.purchaseNo" label="采购单号" /></TableCell>
-              <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.supplierCode }}</code><div class="mt-1 truncate font-medium">{{ row.supplierName }}</div></TableCell>
+              <TableCell data-purchase-no-column data-table-sticky-edge="start"><OrderNumberLink :value="row.purchaseNo" label="采购单号" /></TableCell>
+              <TableCell data-pilot-party-column><div class="truncate" :title="row.supplierName">{{ row.supplierName }}</div><code class="purchase-supplier-code">{{ row.supplierCode }}</code></TableCell>
               <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
-              <TableCell class="text-center"><div class="flex flex-col items-center gap-1"><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge><span class="text-[11px] text-muted-foreground">{{ statusHint(row.status) }}</span></div></TableCell>
+              <TableCell class="text-center" data-purchase-status-column data-pilot-status-column><Badge variant="outline" :class="statusMeta(row.status).className">{{ statusMeta(row.status).label }}</Badge></TableCell>
               <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.totalAmount) }}</TableCell>
               <TableCell class="text-center text-sm">{{ row.expectedArrivalDate || '未设置' }}</TableCell>
               <TableCell class="whitespace-nowrap" :title="row.createdByName || '系统'">{{ row.createdByName || '系统' }}</TableCell>
-              <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-center" data-purchase-actions-column><Button variant="ghost" size="sm" :class="hasOrderActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
+              <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime"><span class="purchase-update-date">{{ row.updateTime.split(' ')[0] }}</span><span class="purchase-update-time">{{ row.updateTime.split(' ')[1] }}</span></TableCell>
+              <TableCell class="text-center" data-purchase-actions-column data-table-sticky-edge="end"><Button variant="ghost" size="sm" class="h-8 px-2.5 text-primary hover:bg-accent" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasOrderActions(row) ? '处理' : '查看' }}</Button></TableCell>
             </TableRow>
           </TableBody>
       </Table>
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
+      </div>
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
 
@@ -951,7 +946,7 @@ onMounted(() => {
     </Dialog>
 
     <Dialog v-model:open="detailDialogOpen">
-      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" data-order-workbench class="purchase-order-workbench flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl">
+      <DialogContent placement="app-content" :inert="confirmState.open ? '' : undefined" data-order-workbench class="purchase-order-workbench flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-5xl">
         <DialogHeader class="sr-only"><DialogTitle>采购单详情</DialogTitle><DialogDescription>先查看单据状态和入库进度，再核对明细与审批信息。</DialogDescription></DialogHeader>
         <DialogScrollArea content-class="px-5 py-5 pr-6">
           <div v-if="detailLoading && !detailRow" class="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>

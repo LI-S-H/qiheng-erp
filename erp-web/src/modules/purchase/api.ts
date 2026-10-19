@@ -712,7 +712,7 @@ export function listSuppliers(params: SupplierQuery, requestConfig?: AxiosReques
     ...(scoreBasisAmountMaxValue !== undefined ? { scoreBasisAmountMax: scoreBasisAmountMaxValue } : {}),
     ...(optionalNumber(avgDeliveryDaysMin) !== undefined ? { avgDeliveryDaysMin: optionalNumber(avgDeliveryDaysMin) } : {}),
     ...(optionalNumber(avgDeliveryDaysMax) !== undefined ? { avgDeliveryDaysMax: optionalNumber(avgDeliveryDaysMax) } : {}),
-  }, requestConfig).then(page => normalizePage(page, normalizeSupplier));
+  }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(page => normalizePage(page, normalizeSupplier));
 }
 
 export function listScoreChangeLogs(params: ScoreChangeLogQuery) {
@@ -733,7 +733,7 @@ export function listScoreChangeLogs(params: ScoreChangeLogQuery) {
     ...(params.endTime?.trim() ? { endTime: params.endTime.trim() } : {}),
   };
   if (useMockApi) return Promise.resolve(normalizePage(filterScoreChangeLogs(query), normalizeScoreChangeLog));
-  return getResult<PageResult<ScoreChangeLog>>('/purchase/score-change-logs', { ...query })
+  return getResult<PageResult<ScoreChangeLog>>('/purchase/score-change-logs', { ...query }, { skipPageLoading: true, timeout: 5_000 })
     .then(page => normalizePage(page, normalizeScoreChangeLog));
 }
 
@@ -963,7 +963,7 @@ export function listSupplierProducts(params: SupplierProductQuery, requestConfig
     ...(optionalNumber(scoreBasisAmountMax) !== undefined ? { scoreBasisAmountMax: optionalNumber(scoreBasisAmountMax) } : {}),
     ...(optionalNumber(minOrderQtyMin) !== undefined ? { minOrderQtyMin: optionalNumber(minOrderQtyMin) } : {}),
     ...(optionalNumber(minOrderQtyMax) !== undefined ? { minOrderQtyMax: optionalNumber(minOrderQtyMax) } : {}),
-  }, requestConfig).then(page => normalizePage(page, normalizeSupplierProduct));
+  }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(page => normalizePage(page, normalizeSupplierProduct));
 }
 
 /** 日志筛选复用供货关系列表的远程分页查询，避免把前 100 条当作全部选项。 */
@@ -1123,7 +1123,7 @@ export function listPurchaseOrders(params: PurchaseOrderQuery, requestConfig?: A
     ...(supplierId && supplierId !== 'all' ? { supplierId } : {}),
     ...(warehouseId && warehouseId !== 'all' ? { warehouseId } : {}),
     ...(status && status !== 'all' ? { status } : {}),
-  }, requestConfig).then(page => normalizePage(page, normalizeOrder));
+  }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(page => normalizePage(page, normalizeOrder));
 }
 
 export function getPurchaseOrderDetail(purchaseOrderId: string) {

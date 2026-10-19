@@ -218,5 +218,5 @@ export function listWarehouseStocks(params: WarehouseStockQuery) {
     ...(inventoryHealth && inventoryHealth !== 'all' ? { inventoryHealth } : {}),
     ...(reservationState && reservationState !== 'all' ? { reservationState } : {}),
     ...(riskOnly ? { riskOnly: true } : {}),
-  }).then(normalizeStockPage);
+  }, { skipPageLoading: true, timeout: 5_000 }).then(normalizeStockPage);
 }

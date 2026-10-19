@@ -11,6 +11,7 @@ import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,11 +19,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import {
   batchDeleteCustomers,
@@ -46,6 +47,14 @@ const statusOptions = [
 ];
 
 const customers = ref<CustomerListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const { columns: measuredWidths, tableWidth } = useTextTableColumns(pageRoot, () => customers.value, {
+  definitions: () => [
+    { key: 'selection', fixedWidth: 44 }, { key: 'code' }, { key: 'customer' },
+    { key: 'contact' }, { key: 'credit' }, { key: 'status' },
+    { key: 'updated' }, { key: 'actions', minWidth: 128 },
+  ],
+});
 const total = ref(0);
 const loading = ref(false);
 const queryPending = ref(false);
@@ -302,7 +311,7 @@ onMounted(fetchCustomers);
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell purchase-pilot-page customer-pilot-page space-y-4" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">客户管理</h1>
@@ -322,7 +331,8 @@ onMounted(fetchCustomers);
       </template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel purchase-list-body relative">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">客户列表</strong><span class="text-xs text-muted-foreground">客户编码由后端生成，页面不提交编码字段</span></div>
         <div class="table-toolbar__actions">
@@ -334,21 +344,20 @@ onMounted(fetchCustomers);
         </div>
       </div>
 
-      <ScrollArea class="w-full">
-        <Table class="business-data-table min-w-[1089px] table-fixed">
-          <colgroup><col class="w-[44px]" /><col class="w-[105px]" /><col class="w-[200px]" /><col class="w-[160px]" /><col class="w-[130px]" /><col class="w-[80px]" /><col class="w-[150px]" /><col class="w-[220px]" /></colgroup>
-          <TableHeader><TableRow><TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead>编码</TableHead><TableHead>客户</TableHead><TableHead>联系人</TableHead><TableHead class="text-right">信用额度</TableHead><TableHead class="text-center">状态</TableHead><TableHead>更新时间</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader>
+        <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${tableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="客户列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="index" :style="{ width: `${width}px` }" /></colgroup>
+          <TableHeader><TableRow><TableHead data-table-sticky-edge="start"><Checkbox :model-value="allSelected" aria-label="全选客户" @update:model-value="toggleSelectAll" /></TableHead><TableHead>编码</TableHead><TableHead>客户</TableHead><TableHead>联系人</TableHead><TableHead>信用额度</TableHead><TableHead data-pilot-status-column>状态</TableHead><TableHead>更新时间</TableHead><TableHead data-table-sticky-edge="end">操作</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="customers.length === 0"><TableCell colspan="8" class="h-28 text-center text-muted-foreground">暂无客户</TableCell></TableRow>
             <TableRow v-for="row in customers" v-else :key="row.customerId">
-              <TableCell><Checkbox :model-value="selectedIds.has(row.customerId)" @update:model-value="value => toggleSelect(row.customerId, value)" /></TableCell>
+              <TableCell data-table-sticky-edge="start"><Checkbox :model-value="selectedIds.has(row.customerId)" :aria-label="`选择客户：${row.customerName}`" @update:model-value="value => toggleSelect(row.customerId, value)" /></TableCell>
               <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.customerCode }}</code></TableCell>
               <TableCell><div class="truncate font-medium" :title="row.customerName">{{ row.customerName }}</div><div class="truncate text-xs text-muted-foreground" :title="row.address">{{ row.address || '未维护地址' }}</div></TableCell>
               <TableCell><div>{{ row.contactName || '未维护' }}</div><div class="text-xs text-muted-foreground">{{ row.contactPhone || '无电话' }}</div></TableCell>
               <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.creditLimit) }}</TableCell>
               <TableCell class="text-center"><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.updateTime }}</TableCell>
-              <TableCell class="text-right">
+              <TableCell><span class="purchase-update-date">{{ row.updateTime.split(' ')[0] }}</span><span class="purchase-update-time">{{ row.updateTime.split(' ')[1] }}</span></TableCell>
+              <TableCell data-table-sticky-edge="end">
                 <Button variant="ghost" size="sm" class="h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700" @click="openDetail(row)">查看</Button>
                 <RowActionsMenu
                   trigger-text="更多"
@@ -360,12 +369,11 @@ onMounted(fetchCustomers);
             </TableRow>
           </TableBody>
         </Table>
-      </ScrollArea>
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-3xl">
+      <DialogContent placement="app-content" data-supplier-form-dialog data-customer-form-dialog :inert="confirmState.open ? '' : undefined" class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-3xl">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增客户' : '编辑客户' }}</DialogTitle><DialogDescription>客户档案会被销售订单引用，请准确维护联系方式、信用额度和启停状态。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
@@ -384,11 +392,12 @@ onMounted(fetchCustomers);
     </Dialog>
 
     <Dialog v-model:open="detailVisible">
-      <DialogContent class="flex h-[min(620px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-4xl">
+      <DialogContent placement="app-content" data-order-workbench data-customer-detail-dialog class="flex h-[min(620px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-4xl">
         <DialogHeader><DialogTitle>客户详情</DialogTitle><DialogDescription>核对客户主数据、信用额度和销售订单引用状态。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div v-if="detailRow" class="space-y-6 p-1">
             <BusinessDetailHero
+              variant="canvas"
               eyebrow="客户档案"
               :title="detailRow.customerCode"
               :subtitle="detailRow.customerName"

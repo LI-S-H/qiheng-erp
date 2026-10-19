@@ -765,8 +765,8 @@ export function listStockBills(params: StockBillQuery) {
     ...(status && status !== 'all' ? { status } : {}),
   };
   return direction === 'INBOUND'
-    ? getResult<InboundBillPage>(endpoint, requestParams).then(normalizeInboundBillPage)
-    : getResult<StockBillPage>(endpoint, requestParams).then(normalizeStockBillPage);
+    ? getResult<InboundBillPage>(endpoint, requestParams, { skipPageLoading: true, timeout: 5_000 }).then(normalizeInboundBillPage)
+    : getResult<StockBillPage>(endpoint, requestParams, { skipPageLoading: true, timeout: 5_000 }).then(normalizeStockBillPage);
 }
 
 export function getStockBillDetail(direction: StockBillDirection, stockBillId: string) {

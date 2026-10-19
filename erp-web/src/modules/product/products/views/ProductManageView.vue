@@ -18,6 +18,8 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
 import type { RowActionOption } from '@/components/common/RowActionsMenu.vue';
@@ -64,6 +66,9 @@ const categoryBadgePalette = [
 ];
 
 const products = ref<ProductListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const columnDefinitions = [{ key: 'selection', fixedWidth: 44 }, { key: 'code' }, { key: 'name' }, { key: 'category' }, { key: 'brand' }, { key: 'unit' }, { key: 'prices' }, { key: 'safety' }, { key: 'status' }, { key: 'actions', minWidth: 136 }];
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(pageRoot, () => products.value, { definitions: () => columnDefinitions });
 const categories = ref<ProductCategoryListItem[]>([]);
 const total = ref(0);
 const loading = ref(false);
@@ -481,7 +486,7 @@ function formatMoney(value: number) {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell space-y-4 purchase-pilot-page catalog-pilot-page product-master-pilot-page" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">产品档案</h1>
@@ -503,7 +508,8 @@ function formatMoney(value: number) {
         </template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel relative purchase-list-body">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">产品列表</strong><span class="text-xs" :class="selectedIds.size ? 'text-primary' : 'text-muted-foreground'">已选 {{ selectedIds.size }} 项</span></div>
         <div class="table-toolbar__actions">
@@ -515,15 +521,15 @@ function formatMoney(value: number) {
         </div>
       </div>
 
-      <Table class="product-products-table table-fixed" scroll-label="产品档案列表">
-          <colgroup><col class="w-[40px]" /><col class="w-[104px]" /><col class="w-[170px]" /><col class="w-[124px]" /><col class="w-[130px]" /><col class="w-[54px]" /><col class="w-[112px]" /><col class="w-[82px]" /><col class="w-[72px]" /><col class="w-[104px]" /></colgroup>
+      <Table class="product-products-table business-data-table table-fixed" :style="{ '--purchase-table-width': `${measuredTableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="产品档案列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="columnDefinitions[index]?.key" :style="{ width: `${width}px` }" /></colgroup>
           <TableHeader><TableRow>
-            <TableHead><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead data-product-code-column>产品编码</TableHead><TableHead>产品名称</TableHead><TableHead>分类</TableHead><TableHead>品牌 / 规格</TableHead><TableHead>单位</TableHead><TableHead>参考价格</TableHead><TableHead>安全库存</TableHead><TableHead>状态</TableHead><TableHead class="text-center">操作</TableHead>
+            <TableHead data-table-sticky-edge="start"><Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" /></TableHead><TableHead data-product-code-column>产品编码</TableHead><TableHead>产品名称</TableHead><TableHead>分类</TableHead><TableHead>品牌 / 规格</TableHead><TableHead>单位</TableHead><TableHead>参考价格</TableHead><TableHead>安全库存</TableHead><TableHead>状态</TableHead><TableHead class="text-center" data-table-sticky-edge="end">操作</TableHead>
           </TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="products.length === 0"><TableCell :colspan="PRODUCT_TABLE_COLUMN_COUNT" class="h-28 text-center text-muted-foreground">暂无数据</TableCell></TableRow>
             <TableRow v-for="row in products" v-else :key="row.productId" class="group">
-              <TableCell><Checkbox :model-value="selectedIds.has(row.productId)" @update:model-value="toggleSelect(row.productId, $event)" /></TableCell>
+              <TableCell data-table-sticky-edge="start"><Checkbox :model-value="selectedIds.has(row.productId)" @update:model-value="toggleSelect(row.productId, $event)" /></TableCell>
               <TableCell data-product-code-column><code class="rounded bg-muted px-1.5 py-1 text-xs font-medium">{{ row.productCode }}</code></TableCell>
               <TableCell><div class="flex min-w-0 flex-col"><span class="truncate font-medium" :title="row.productName">{{ row.productName }}</span><span class="truncate text-xs text-muted-foreground" :title="row.barcode || '暂无条码'">{{ row.barcode || '暂无条码' }}</span></div></TableCell>
               <TableCell><Badge variant="outline" class="max-w-full" :class="getCategoryBadgeClass(row)"><span class="truncate" :title="row.categoryName || '未分类'">{{ row.categoryName || '未分类' }}</span></Badge></TableCell>
@@ -532,7 +538,7 @@ function formatMoney(value: number) {
               <TableCell><div class="flex flex-col whitespace-nowrap text-xs"><span>采 {{ formatMoney(row.referencePurchasePrice) }}</span><span class="text-muted-foreground">销 {{ formatMoney(row.referenceSalePrice) }}</span></div></TableCell>
               <TableCell>{{ formatQtyByPrecision(row.safetyStockQty, row.quantityPrecision) }}</TableCell>
               <TableCell><Badge variant="outline" :class="row.status === 1 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'">{{ row.status === 1 ? '启用' : '停用' }}</Badge></TableCell>
-              <TableCell class="text-center"><div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><RowActionsMenu :actions="getRowActions(row)" :disabled="actionSubmitting" :label="`更多 ${row.productCode} 操作`" trigger-text="更多" @select="handleRowAction(row, $event)" /></div></TableCell>
+              <TableCell class="text-center" data-table-sticky-edge="end"><div class="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap"><Button size="sm" variant="ghost" :disabled="actionSubmitting" @click="openEditDialog(row)">编辑</Button><RowActionsMenu :actions="getRowActions(row)" :disabled="actionSubmitting" :label="`更多 ${row.productCode} 操作`" trigger-text="更多" @select="handleRowAction(row, $event)" /></div></TableCell>
             </TableRow>
           </TableBody>
       </Table>
@@ -541,7 +547,7 @@ function formatMoney(value: number) {
     </div>
 
     <Dialog v-model:open="dialogVisible">
-      <DialogContent :inert="confirmState.open ? '' : undefined" class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[760px]">
+      <DialogContent data-master-form-dialog placement="app-content" style="--master-dialog-width: 900px; --master-dialog-height: 760px" :inert="confirmState.open ? '' : undefined" class="flex h-[min(720px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[760px]">
         <DialogHeader><DialogTitle>{{ dialogMode === 'create' ? '新增产品' : '编辑产品' }}</DialogTitle><DialogDescription>产品档案将被采购、销售和库存业务共同引用，请准确维护主数据。</DialogDescription></DialogHeader>
         <DialogScrollArea>
           <div class="grid grid-cols-2 gap-4 py-2 max-sm:grid-cols-1">
@@ -566,13 +572,14 @@ function formatMoney(value: number) {
 
     <!-- 参考采购价调整对话框(独立于产品编辑,2026-09-25 拆分) -->
     <Dialog v-model:open="referencePriceDialogVisible">
-      <DialogContent class="sm:max-w-[420px]">
+      <DialogContent data-master-form-dialog placement="app-content" style="--master-dialog-width: 480px; --master-dialog-height: 460px" class="sm:max-w-[420px]">
         <DialogHeader>
           <DialogTitle>调整参考采购价</DialogTitle>
           <DialogDescription>
             调整后会触发所有供应该产品的有效供货关系的评分重算,重算失败将整体回滚。
           </DialogDescription>
         </DialogHeader>
+        <DialogScrollArea>
         <div v-if="referencePriceTarget" class="space-y-3">
           <div class="rounded-md border bg-muted/40 px-3 py-2 text-xs">
             <div class="flex justify-between gap-2"><span class="text-muted-foreground">产品</span><span>{{ referencePriceTarget.productCode }} {{ referencePriceTarget.productName }}</span></div>
@@ -594,6 +601,7 @@ function formatMoney(value: number) {
             <p v-if="referencePriceErrors.referencePurchasePrice" class="text-xs text-destructive">{{ referencePriceErrors.referencePurchasePrice }}</p>
           </div>
         </div>
+        </DialogScrollArea>
         <DialogFooter>
           <Button variant="outline" :disabled="referencePriceSubmitting" @click="referencePriceDialogVisible = false">取消</Button>
           <Button :disabled="referencePriceSubmitting" @click="submitReferencePrice">{{ referencePriceSubmitting ? '保存中...' : '确认调整' }}</Button>

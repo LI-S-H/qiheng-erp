@@ -117,7 +117,7 @@ export function listWarehouses(params: WarehouseQuery, requestConfig?: AxiosRequ
     ...(contactName?.trim() ? { contactName: contactName.trim() } : {}),
     ...(contactPhone?.trim() ? { contactPhone: contactPhone.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  }, requestConfig).then(normalizeWarehousePage);
+  }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(normalizeWarehousePage);
 }
 
 export function createWarehouse(payload: WarehouseCreatePayload) {

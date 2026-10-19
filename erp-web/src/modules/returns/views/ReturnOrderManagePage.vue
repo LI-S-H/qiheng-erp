@@ -14,6 +14,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
@@ -30,6 +31,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import type {
   ReturnHandlingType,
   ReturnOrderDetail,
@@ -110,6 +112,13 @@ const reasonOptions = [
 ];
 
 const rows = ref<ReturnOrderListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const isRefinedTheme = computed(() => ['PURCHASE_RETURN', 'SALES_RETURN'].includes(props.config.returnType));
+// 采购与销售退货共享已确认的视觉规则，业务方向仍完全由config决定。
+const { columns: pilotColumns, tableWidth: pilotTableWidth } = useTextTableColumns(
+  computed(() => isRefinedTheme.value ? pageRoot.value : null),
+  () => rows.value,
+);
 const total = ref(0);
 const loading = ref(false);
 const queryPending = ref(false);
@@ -857,7 +866,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-shell space-y-4" :data-return-type="config.returnType">
+  <section ref="pageRoot" class="page-shell space-y-4" :class="{ 'purchase-pilot-page purchase-return-pilot-page': isRefinedTheme }" :data-return-type="config.returnType" :data-list-page-size="isRefinedTheme ? query.pageSize : undefined">
     <div class="page-heading">
       <div>
         <h1 class="page-title">{{ config.title }}</h1>
@@ -876,27 +885,30 @@ onMounted(() => {
       <template #actions><ListFilterActions :busy="queryBusy" :disabled="!canQuery" @query="handleSearch" @reset="resetFilters" /></template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel relative" :class="{ 'purchase-list-body': isRefinedTheme }">
+      <ListLoadingOverlay v-if="isRefinedTheme" :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">{{ config.listTitle }}</strong><span class="text-xs text-muted-foreground">点击“处理”查看详情并完成后续操作；退回审核只生成来源工作单，实际库存变化由仓库确认</span></div>
         <div class="table-toolbar__actions"><Button size="sm" variant="outline" :disabled="queryBusy || !canQuery" @click="refreshList">刷新</Button><Button v-if="canCreate" size="sm" @click="openCreateDialog">{{ config.createButtonLabel }}</Button></div>
       </div>
 
-      <Table class="business-data-table min-w-[1330px] table-fixed" :scroll-label="config.listTitle" data-return-order-table>
-        <colgroup><col class="w-[220px]" /><col class="w-[220px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
-        <TableHeader><TableRow><TableHead data-return-no-column>退回单号</TableHead><TableHead>{{ config.sourceOrderLabel }}号</TableHead><TableHead>{{ config.partyLabel }}</TableHead><TableHead>{{ config.warehouseLabel }}</TableHead><TableHead class="text-center">状态</TableHead><TableHead class="text-right">退回金额</TableHead><TableHead class="text-center">预计执行</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-return-actions-column>操作</TableHead></TableRow></TableHeader>
+      <Table class="business-data-table table-fixed" :class="{ 'min-w-[1330px]': !isRefinedTheme }" :style="isRefinedTheme ? { '--purchase-table-width': `${pilotTableWidth}px` } : undefined" :inert="isRefinedTheme && queryBusy ? '' : undefined" :scroll-label="config.listTitle" data-return-order-table>
+        <colgroup v-if="isRefinedTheme"><col v-for="(width, index) in pilotColumns" :key="index" :style="{ width: `${width}px` }" /></colgroup>
+        <colgroup v-else><col class="w-[220px]" /><col class="w-[220px]" /><col class="w-[160px]" /><col class="w-[115px]" /><col class="w-[135px]" /><col class="w-[110px]" /><col class="w-[110px]" /><col class="w-[140px]" /><col class="w-[96px]" /></colgroup>
+        <TableHeader><TableRow><TableHead data-return-no-column :data-table-sticky-edge="isRefinedTheme ? 'start' : undefined">退回单号</TableHead><TableHead>{{ config.sourceOrderLabel }}号</TableHead><TableHead>{{ config.partyLabel }}</TableHead><TableHead>{{ config.warehouseLabel }}</TableHead><TableHead class="text-center" :data-pilot-status-column="isRefinedTheme ? '' : undefined">状态</TableHead><TableHead class="text-right">退回金额</TableHead><TableHead class="text-center">预计执行</TableHead><TableHead>更新时间</TableHead><TableHead class="text-center" data-return-actions-column :data-table-sticky-edge="isRefinedTheme ? 'end' : undefined">操作</TableHead></TableRow></TableHeader>
         <TableBody>
           <TableRow v-if="rows.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">{{ config.emptyText }}</TableCell></TableRow>
           <TableRow v-for="row in rows" v-else :key="row.returnOrderId">
-            <TableCell data-return-no-column><OrderNumberLink :value="row.returnNo" label="退回单号" /></TableCell>
+            <TableCell data-return-no-column :data-table-sticky-edge="isRefinedTheme ? 'start' : undefined"><OrderNumberLink :value="row.returnNo" label="退回单号" /></TableCell>
             <TableCell><OrderNumberLink :value="row.sourceOrderNo" :label="`${config.sourceOrderLabel}号`" /></TableCell>
-            <TableCell><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.partyCode }}</code><div class="mt-1 truncate font-medium" :title="row.partyName">{{ row.partyName }}</div></TableCell>
+            <TableCell v-if="isRefinedTheme" data-pilot-party-column><div class="truncate" :title="row.partyName">{{ row.partyName }}</div><code class="purchase-supplier-code">{{ row.partyCode }}</code></TableCell>
+            <TableCell v-else><code class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.partyCode }}</code><div class="mt-1 truncate font-medium" :title="row.partyName">{{ row.partyName }}</div></TableCell>
             <TableCell class="truncate" :title="row.warehouseName">{{ row.warehouseName }}</TableCell>
-            <TableCell class="text-center"><div class="flex flex-col items-center gap-1"><Badge variant="outline" :class="statusClassNames[row.status]">{{ statusLabels[row.status] }}</Badge><span class="text-[11px] text-muted-foreground">{{ statusHint(row.status) }}</span></div></TableCell>
+            <TableCell class="text-center" :data-pilot-status-column="isRefinedTheme ? '' : undefined"><Badge v-if="isRefinedTheme" variant="outline" :data-return-status="row.status">{{ statusLabels[row.status] }}</Badge><div v-else class="flex flex-col items-center gap-1"><Badge variant="outline" :class="statusClassNames[row.status]">{{ statusLabels[row.status] }}</Badge><span class="text-[11px] text-muted-foreground">{{ statusHint(row.status) }}</span></div></TableCell>
             <TableCell class="text-right font-semibold tabular-nums">{{ formatMoney(row.totalAmount) }}</TableCell>
             <TableCell class="text-center">{{ row.expectedExecutionDate || '未设置' }}</TableCell>
-            <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime">{{ row.updateTime }}</TableCell>
-            <TableCell class="text-center" data-return-actions-column><Button variant="ghost" size="sm" :class="hasReturnActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasReturnActions(row) ? '处理' : '查看' }}</Button></TableCell>
+            <TableCell class="truncate whitespace-nowrap text-xs text-muted-foreground" :title="row.updateTime"><template v-if="isRefinedTheme"><span class="purchase-update-date">{{ row.updateTime.split(' ')[0] }}</span><span class="purchase-update-time">{{ row.updateTime.split(' ')[1] }}</span></template><template v-else>{{ row.updateTime }}</template></TableCell>
+            <TableCell class="text-center" data-return-actions-column :data-table-sticky-edge="isRefinedTheme ? 'end' : undefined"><Button variant="ghost" size="sm" :class="isRefinedTheme ? 'h-8 px-2.5 text-primary hover:bg-accent' : hasReturnActions(row) ? 'h-8 px-2.5 font-medium text-teal-700 hover:bg-teal-50 hover:text-teal-800' : 'h-8 px-2.5 font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700'" :disabled="actionSubmitting" @click="openDetail(row)">{{ hasReturnActions(row) ? '处理' : '查看' }}</Button></TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -959,7 +971,7 @@ onMounted(() => {
     </Dialog>
 
     <Dialog v-model:open="detailDialogOpen">
-      <DialogContent placement="app-content" :inert="(confirmState.open || promptState.open) ? '' : undefined" data-order-workbench class="return-order-workbench flex h-[min(770px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl" data-return-detail-dialog>
+      <DialogContent placement="app-content" :inert="(confirmState.open || promptState.open) ? '' : undefined" data-order-workbench class="return-order-workbench flex h-[min(770px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-5xl" :class="{ '!bg-[#f6f8fb] !p-4': !isRefinedTheme }" data-return-detail-dialog>
         <DialogHeader class="sr-only"><DialogTitle>{{ config.detailTitle }}</DialogTitle><DialogDescription>{{ detailActionDescription() }}</DialogDescription></DialogHeader>
         <DialogScrollArea content-class="px-5 py-5 pr-6">
           <div v-if="detailLoading && !detailRow" class="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><span class="page-loading-spinner" />详情加载中...</div>
@@ -1019,7 +1031,7 @@ onMounted(() => {
     </Dialog>
 
     <ConfirmDialog placement="app-content" :open="confirmState.open" :title="confirmState.title" :description="confirmState.description" :confirm-text="confirmState.confirmText" cancel-text="取消" :variant="confirmState.variant" :loading="actionSubmitting" @update:open="confirmState.open = $event" @confirm="runConfirmAction" />
-    <PromptDialog :open="promptState.open" :title="promptState.title" :description="promptState.description" :input-placeholder="'请输入取消原因'" :input-pattern="/^\s*\S[\s\S]{0,499}$/" input-error-message="原因必填且不能超过 500 字" :confirm-text="promptState.confirmText" :loading="actionSubmitting" @update:open="promptState.open = $event" @confirm="runReasonAction" />
+    <PromptDialog :open="promptState.open" :overlay-class="isRefinedTheme ? '!z-[70]' : undefined" :title="promptState.title" :description="promptState.description" :input-placeholder="'请输入取消原因'" :input-pattern="/^\s*\S[\s\S]{0,499}$/" input-error-message="原因必填且不能超过 500 字" :confirm-text="promptState.confirmText" :loading="actionSubmitting" @update:open="promptState.open = $event" @confirm="runReasonAction" />
   </section>
 </template>
 

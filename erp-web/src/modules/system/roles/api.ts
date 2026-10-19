@@ -103,7 +103,7 @@ export function listSystemRoles(params: SystemRoleQuery) {
     ...(roleCode?.trim() ? { roleCode: roleCode.trim() } : {}),
     ...(roleName?.trim() ? { roleName: roleName.trim() } : {}),
     ...(status !== '' && status !== 'all' && status !== undefined ? { status } : {}),
-  });
+  }, { skipPageLoading: true, timeout: 5_000 });
 }
 
 export function getSystemRole(roleId: string) {

@@ -8,6 +8,8 @@ import AnchoredSelect from '@/components/common/AnchoredSelect.vue';
 import DataTablePagination from '@/components/common/DataTablePagination.vue';
 import ListFilterActions from '@/components/common/ListFilterActions.vue';
 import ListFilterPanel from '@/components/common/ListFilterPanel.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
 import ListSummaryStrip from '@/components/common/ListSummaryStrip.vue';
 import OrderNumberLink from '@/components/common/OrderNumberLink.vue';
 import OverflowTooltip from '@/components/common/OverflowTooltip.vue';
@@ -18,7 +20,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
@@ -45,6 +46,13 @@ const queryPending = ref(false);
 const requestSequence = ref(0);
 const records = ref<StockLedgerListItem[]>([]);
 const total = ref(0);
+const pageRoot = ref<HTMLElement | null>(null);
+const columnDefinitions = [
+  { key: 'billNo', minWidth: 270 }, { key: 'billType' }, { key: 'entryMode' },
+  { key: 'sourceType' }, { key: 'sourceNo' }, { key: 'warehouse' },
+  { key: 'confirmedBy' }, { key: 'confirmedAt' }, { key: 'createTime' },
+];
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(pageRoot, () => records.value, { definitions: () => columnDefinitions });
 const expandedDetails = reactive<Record<string, StockLedgerDetail | undefined>>({});
 const expandedDetailIds = ref<Set<string>>(new Set());
 const detailLoadingIds = ref<Set<string>>(new Set());
@@ -265,7 +273,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell space-y-4 purchase-pilot-page warehouse-pilot-page warehouse-ledger-pilot-page" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">库存流水</h1>
@@ -285,16 +293,16 @@ onMounted(() => {
       <template #actions><ListFilterActions :busy="queryBusy" @query="handleSearch" @reset="handleReset" /></template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel relative purchase-list-body">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar">
         <div class="table-toolbar__title"><strong class="text-sm">已确认库存事实</strong><span class="text-xs text-muted-foreground">仅用于追溯，不能新建、编辑、提交、确认或取消</span></div>
         <div class="table-toolbar__actions"><Tooltip><TooltipTrigger as-child><span class="inline-flex"><Button size="sm" variant="outline" :disabled="queryBusy" @click="refreshList">刷新</Button></span></TooltipTrigger><TooltipContent>重新加载库存流水</TooltipContent></Tooltip></div>
       </div>
 
-      <ScrollArea class="w-full">
         <div class="stock-ledger-table-scroll">
-        <Table class="min-w-[1455px] table-fixed">
-          <colgroup><col class="w-[270px]" /><col class="w-[130px]" /><col class="w-[120px]" /><col class="w-[130px]" /><col class="w-[175px]" /><col class="w-[170px]" /><col class="w-[120px]" /><col class="w-[170px]" /><col class="w-[170px]" /></colgroup>
+        <Table class="business-data-table table-fixed" :style="{ '--purchase-table-width': `${measuredTableWidth}px` }" :inert="queryBusy ? '' : undefined" scroll-label="库存流水列表">
+          <colgroup><col v-for="(width, index) in measuredWidths" :key="columnDefinitions[index]?.key" :style="{ width: `${width}px` }" /></colgroup>
           <TableHeader><TableRow><TableHead class="stock-ledger-key-column sticky left-0 z-20 border-r border-border/60 bg-muted" data-table-sticky-edge="start">流水号</TableHead><TableHead class="text-center">出入库类型</TableHead><TableHead>录入方式</TableHead><TableHead>来源业务类型</TableHead><TableHead>来源业务单号</TableHead><TableHead>仓库</TableHead><TableHead>确认人</TableHead><TableHead>确认时间</TableHead><TableHead>创建时间</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-if="records.length === 0"><TableCell colspan="9" class="h-28 text-center text-muted-foreground">暂无符合条件的库存流水</TableCell></TableRow>
@@ -307,8 +315,8 @@ onMounted(() => {
                 <TableCell><OverflowTooltip :text="row.sourceNo" fallback="-" class="block rounded bg-muted px-1.5 py-0.5 text-xs font-medium" data-stock-ledger-source-no /></TableCell>
                 <TableCell><span class="block truncate" :title="row.warehouseName">{{ row.warehouseName }}</span></TableCell>
                 <TableCell>{{ row.confirmedByName || '-' }}</TableCell>
-                <TableCell class="text-xs text-muted-foreground">{{ row.confirmedAt }}</TableCell>
-                <TableCell class="text-xs text-muted-foreground">{{ row.createTime }}</TableCell>
+                <TableCell class="text-xs text-muted-foreground"><span>{{ row.confirmedAt?.slice(0, 10) || '-' }}</span><span class="block text-xs text-muted-foreground">{{ row.confirmedAt?.slice(11) }}</span></TableCell>
+                <TableCell class="text-xs text-muted-foreground"><span>{{ row.createTime.slice(0, 10) }}</span><span class="block text-xs text-muted-foreground">{{ row.createTime.slice(11) }}</span></TableCell>
               </TableRow>
               <TableRow class="stock-ledger-detail-host-row bg-background" :data-stock-ledger-detail-host-id="row.stockLedgerId">
                 <TableCell colspan="9" class="h-0 px-4 py-0">
@@ -369,7 +377,6 @@ onMounted(() => {
           </TableBody>
         </Table>
         </div>
-      </ScrollArea>
 
       <DataTablePagination :total="total" :page-num="query.pageNum" :page-size="query.pageSize" :loading="queryBusy" @update:page-num="handlePageChange" @update:page-size="handlePageSizeChange" />
     </div>

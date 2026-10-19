@@ -24,6 +24,7 @@ const props = defineProps<{
   supplierName?: string;
   supplierProductId?: string | null;
   productName?: string;
+  placement?: 'viewport' | 'app-content';
 }>();
 const emit = defineEmits<{ 'update:open': [value: boolean] }>();
 const dialogOpen = computed({ get: () => props.open, set: value => emit('update:open', value) });
@@ -253,7 +254,7 @@ watch(() => props.open, open => {
 
 <template>
   <Dialog v-model:open="dialogOpen">
-    <DialogContent data-score-change-log-dialog class="flex !h-[min(820px,calc(100dvh-2rem))] !max-h-[calc(100dvh-2rem)] !w-[min(1152px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)] flex-col overflow-hidden">
+    <DialogContent :placement="props.placement || 'viewport'" data-score-change-log-dialog class="flex !h-[min(820px,calc(100dvh-2rem))] !max-h-[calc(100dvh-2rem)] flex-col overflow-hidden" :class="props.placement === 'app-content' ? 'supplier-score-log-pilot-dialog' : '!w-[min(1152px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]'">
       <DialogHeader>
         <DialogTitle>评分变更记录</DialogTitle>
         <DialogDescription>查询实际发生的指标分变化。未生成的评分与快照显示为“—”。</DialogDescription>

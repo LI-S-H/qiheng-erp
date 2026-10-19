@@ -10,6 +10,7 @@ import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import DataTablePagination from "@/components/common/DataTablePagination.vue";
 import ListFilterActions from "@/components/common/ListFilterActions.vue";
 import ListFilterPanel from "@/components/common/ListFilterPanel.vue";
+import ListLoadingOverlay from "@/components/common/ListLoadingOverlay.vue";
 import ListSummaryStrip from "@/components/common/ListSummaryStrip.vue";
 import OverflowTooltip from "@/components/common/OverflowTooltip.vue";
 import RowActionsMenu, {
@@ -45,6 +46,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useListRefresh } from "@/shared/composables/use-list-refresh";
+import { useTextTableColumns } from "@/shared/composables/use-text-table-columns";
 import {
   useTableColumnPreferences,
   type TableColumnPreferenceDefinition,
@@ -92,7 +94,6 @@ const {
   isVisible,
   reset: resetColumns,
   setVisible,
-  tableMinWidth,
 } = useTableColumnPreferences(
   "erp.purchase.suppliers.table-columns.v2",
   columns,
@@ -107,6 +108,19 @@ const columnSettings = computed(() =>
 );
 
 const rows = ref<SupplierListItem[]>([]);
+const pageRoot = ref<HTMLElement | null>(null);
+const visibleColumnDefinitions = computed(() => [
+  { key: 'selection', fixedWidth: 44 },
+  ...columns.filter(column => isVisible(column.key)).map(column => ({
+    key: column.key,
+    minWidth: column.key === 'actions' ? 128 : undefined,
+  })),
+]);
+const { columns: measuredWidths, tableWidth: measuredTableWidth } = useTextTableColumns(
+  pageRoot,
+  () => [rows.value, visibleColumnDefinitions.value],
+  { definitions: () => visibleColumnDefinitions.value },
+);
 const total = ref(0);
 const loading = ref(false);
 const queryPending = ref(false);
@@ -606,7 +620,7 @@ onMounted(load);
 </script>
 
 <template>
-  <section class="page-shell space-y-4">
+  <section ref="pageRoot" class="page-shell purchase-pilot-page supplier-pilot-page space-y-4" :data-list-page-size="query.pageSize">
     <div class="page-heading">
       <div>
         <h1 class="page-title">供应商管理</h1>
@@ -709,7 +723,8 @@ onMounted(load);
       /></template>
     </ListFilterPanel>
 
-    <div class="data-panel relative">
+    <div class="data-panel purchase-list-body relative">
+      <ListLoadingOverlay :visible="queryBusy" :initial-delay="0" />
       <div class="table-toolbar supplier-toolbar">
         <div class="table-toolbar__title">
           <strong class="text-sm">供应商列表</strong>
@@ -816,6 +831,7 @@ onMounted(load);
         </div>
         <div class="table-toolbar__actions supplier-toolbar__settings">
           <TableColumnPreferencesCanvas
+            content-class="!max-h-[min(520px,var(--reka-popover-content-available-height),calc(100dvh-1rem))]"
             v-model:open="columnSettingsOpen"
             :columns="columnSettings"
             @toggle-visible="setVisible"
@@ -830,20 +846,16 @@ onMounted(load);
         </div>
       </div>
       <Table
-        class="supplier-table table-fixed"
-        :style="{ width: `${tableMinWidth}px`, minWidth: `${tableMinWidth}px` }"
+        class="supplier-table business-data-table table-fixed"
+        :style="{ '--purchase-table-width': `${measuredTableWidth}px` }"
+        :inert="queryBusy ? '' : undefined"
         scroll-label="供应商列表"
         ><colgroup>
-          <col class="w-[44px]" />
-          <template v-for="column in columns" :key="column.key"
-            ><col
-              v-if="isVisible(column.key)"
-              :style="{ width: `${column.width}px` }"
-          /></template>
+          <col v-for="(width, index) in measuredWidths" :key="visibleColumnDefinitions[index]?.key || index" :style="{ width: `${width}px` }" />
         </colgroup>
         <TableHeader
           ><TableRow
-            ><TableHead
+            ><TableHead data-table-sticky-edge="start"
               ><Checkbox
                 :model-value="allSelected"
                 aria-label="全选供应商"
@@ -909,7 +921,7 @@ onMounted(load);
             v-else
             :key="row.supplierId"
             class="group"
-            ><TableCell
+            ><TableCell data-table-sticky-edge="start"
               ><Checkbox
                 :model-value="selectedIds.has(row.supplierId)"
                 :aria-label="`选择供应商：${row.supplierName}`"
@@ -1007,6 +1019,7 @@ onMounted(load);
     </div>
   </section>
   <SupplierScoreChangeLogDialog
+    placement="app-content"
     v-model:open="scoreLogVisible"
     :supplier-id="scoreLogTarget?.supplierId"
     :supplier-name="scoreLogTarget?.supplierName"
@@ -1014,6 +1027,7 @@ onMounted(load);
   <Dialog v-model:open="editVisible"
     ><DialogContent
       placement="app-content"
+      data-supplier-form-dialog
       class="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-2xl"
       ><DialogHeader
         ><DialogTitle>{{ editing ? "编辑供应商" : "新增供应商" }}</DialogTitle
@@ -1106,7 +1120,7 @@ onMounted(load);
     ></Dialog
   >
   <Dialog v-model:open="scoreVisible"
-    ><DialogContent placement="app-content"
+    ><DialogContent placement="app-content" data-supplier-score-dialog
       ><DialogHeader
         ><DialogTitle>调整服务分</DialogTitle
         ><DialogDescription
@@ -1141,7 +1155,7 @@ onMounted(load);
     ></Dialog
   >
   <Dialog v-model:open="detailVisible">
-    <DialogContent placement="app-content" data-supplier-detail-workbench class="supplier-detail-workbench flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden !bg-[#f6f8fb] !p-4 sm:max-w-5xl">
+    <DialogContent placement="app-content" data-order-workbench data-supplier-detail-workbench class="supplier-detail-workbench flex !h-[min(780px,calc(100dvh-var(--app-shell-header-height)-2rem))] !max-h-[calc(100dvh-var(--app-shell-header-height)-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-5xl">
       <DialogHeader class="sr-only"><DialogTitle>供应商详情</DialogTitle><DialogDescription>供应商基础信息、评分状态与维护记录。</DialogDescription></DialogHeader>
       <DialogScrollArea content-class="px-5 py-5 pr-6">
         <div v-if="detailLoading" class="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><span class="page-loading-spinner" />详情加载中…</div>
@@ -1170,6 +1184,7 @@ onMounted(load);
   <Dialog v-model:open="failureVisible"
     ><DialogContent
       placement="app-content"
+      data-supplier-failure-dialog
       class="flex max-h-[min(520px,calc(100dvh-2rem))] flex-col overflow-hidden sm:max-w-md"
       ><DialogHeader
         ><DialogTitle>{{ failureTitle }}</DialogTitle
@@ -1225,8 +1240,7 @@ onMounted(load);
   min-width: 0 !important;
 }
 .data-panel :deep(table.supplier-table) {
-  width: max-content !important;
-  min-width: 100%;
+  width: var(--purchase-table-width);
 }
 .supplier-toolbar {
   justify-content: space-between;

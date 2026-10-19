@@ -349,7 +349,7 @@ function cleanListParams(query: ReturnOrderQuery) {
 export async function listPurchaseReturns(query: ReturnOrderQuery): Promise<ReturnOrderPage> {
   const params = cleanListParams(query);
   if (!useMockApi) {
-    const page = await getResult<ReturnOrderPage>(RETURN_API, params);
+    const page = await getResult<ReturnOrderPage>(RETURN_API, params, { skipPageLoading: true, timeout: 5_000 });
     return { ...page, records: page.records.map(normalizeReturn) };
   }
   const rows = await ensureMockReturns();

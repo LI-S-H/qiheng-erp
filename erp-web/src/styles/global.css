@@ -5,38 +5,15 @@
 
 @import "shadcn-vue/tailwind.css";
 @import "vue-sonner/style.css";
-
-@font-face {
-  font-family: "HarmonyOS Sans SC";
-  src: url("../assets/fonts/HarmonyOS_Sans_SC_Regular.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "HarmonyOS Sans SC";
-  src: url("../assets/fonts/HarmonyOS_Sans_SC_Medium.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "HarmonyOS Sans SC";
-  src: url("../assets/fonts/HarmonyOS_Sans_SC_Semibold.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 600 700;
-  font-display: swap;
-}
+@import "@fontsource-variable/noto-sans-sc/index.css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
   font-family:
-    "HarmonyOS Sans SC",
-    "PingFang SC",
+    "Noto Sans SC Variable",
     "Noto Sans SC",
+    "PingFang SC",
     "Noto Sans CJK SC",
     "Microsoft YaHei",
     system-ui,
@@ -289,7 +266,7 @@ a {
     0 0 10px color-mix(in srgb, var(--ring) 14%, transparent);
 }
 
-/* HarmonyOS Sans 的左侧字面略窄，筛选触发器统一使用 11px 左留白做光学校正。 */
+/* 筛选输入保留统一的左留白，避免页面和弹窗各自偏移。 */
 [data-list-filter-panel] [data-slot="input"],
 [data-list-filter-panel] [data-slot="select-trigger"],
 [data-list-filter-panel] [role="combobox"] {
@@ -317,14 +294,14 @@ a {
     0 4px 10px rgb(15 23 42 / 10%) !important;
 }
 
-/* HarmonyOS Sans 的可视字面偏上，按钮保留更自然的行高并向下校正 1px。 */
+/* 使用新字体的自然基线与对称内边距，文字和图标共同居中。 */
 [data-slot="button"],
 [data-slot="select-trigger"] {
   line-height: 1.45;
 }
 
 [data-slot="button"] {
-  padding-top: 2px;
+  padding-top: 0;
   padding-bottom: 0;
 }
 
@@ -843,7 +820,7 @@ a {
 
 @theme inline {
   --font-sans:
-    "HarmonyOS Sans SC", "PingFang SC", "Noto Sans SC", "Noto Sans CJK SC",
+    "Noto Sans SC Variable", "Noto Sans SC", "PingFang SC", "Noto Sans CJK SC",
     "Microsoft YaHei", system-ui, sans-serif;
   --font-heading:
     var(--font-sans);

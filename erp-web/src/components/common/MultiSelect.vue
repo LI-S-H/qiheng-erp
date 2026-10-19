@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useExclusiveDropdown } from '@/shared/composables/use-exclusive-dropdown';
 import { ChevronDown, X } from 'lucide-vue-next';
 
 interface Option {
@@ -27,6 +28,7 @@ const emit = defineEmits<{
 }>();
 
 const isOpen = ref(false);
+const { setOpen } = useExclusiveDropdown(isOpen);
 
 const selectedLabels = computed(() => {
   return props.modelValue
@@ -57,11 +59,12 @@ function isChecked(value: string) {
 </script>
 
 <template>
-  <Popover v-model:open="isOpen">
+  <Popover :open="isOpen" @update:open="setOpen">
     <PopoverTrigger as-child>
       <Button
         variant="outline"
         role="combobox"
+        data-multi-select-trigger
         :aria-expanded="isOpen"
         class="w-full justify-between px-[11px] font-normal leading-none min-h-[36px] h-auto py-1"
       >
@@ -90,7 +93,7 @@ function isChecked(value: string) {
         <ChevronDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </Button>
     </PopoverTrigger>
-    <PopoverContent class="w-[--reka-popover-trigger-width] p-0" align="start">
+    <PopoverContent data-multi-select-content class="w-[--reka-popover-trigger-width] p-0" align="start">
       <ScrollArea class="h-[200px] p-2">
         <div
           v-for="option in props.options"

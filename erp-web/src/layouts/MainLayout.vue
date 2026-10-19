@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import '@/styles/purchase-pilot.css';
 import {
   Home,
   Lock,
@@ -257,7 +258,7 @@ watch(
 </script>
 
 <template>
-  <div class="app-shell flex h-screen bg-background text-foreground">
+  <div class="app-shell flex h-screen bg-background text-foreground" :class="{ 'purchase-pilot-theme': ['/dashboard', '/purchase/orders', '/purchase/returns', '/purchase/suppliers', '/purchase/supplier-products', '/sales/customers', '/sales/orders', '/sales/returns', '/warehouse/warehouses', '/warehouse/stocks', '/warehouse/inbound-bills', '/warehouse/outbound-bills', '/warehouse/stock-bills', '/product/categories', '/product/products', '/system/users', '/system/roles', '/system/depts', '/system/permissions', '/ai/assistant'].includes(route.path), 'ai-pilot-theme': route.path === '/ai/assistant', 'dashboard-pilot-theme': route.path === '/dashboard' }">
     <!-- Sidebar -->
     <aside class="app-sidebar flex shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
       <!-- Brand -->
@@ -336,7 +337,7 @@ watch(
             <PopoverTrigger v-if="bellReady" as-child>
               <button class="relative flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer" type="button" :aria-label="`待处理通知，当前有 ${bellPendingCount} 项`" data-notification-trigger>
                 <Bell class="h-4 w-4" />
-                <span v-if="bellPendingCount" class="absolute -right-1 -top-1 min-w-4 rounded-full bg-destructive px-1 text-center text-[10px] font-bold leading-4 text-destructive-foreground ring-2 ring-sidebar">
+                <span v-if="bellPendingCount" data-notification-count class="absolute -right-1 -top-1 min-w-4 rounded-full bg-destructive px-1 text-center text-[10px] font-bold leading-4 text-destructive-foreground ring-2 ring-sidebar">
                   {{ bellPendingCount > 99 ? '99+' : bellPendingCount }}
                 </span>
               </button>

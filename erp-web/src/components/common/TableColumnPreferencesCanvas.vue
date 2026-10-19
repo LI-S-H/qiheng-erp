@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Columns3, Eye, Pin, RotateCcw } from "lucide-vue-next";
 import { computed } from "vue";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -22,6 +23,7 @@ const props = withDefaults(
     open: boolean;
     columns: readonly TableColumnPreferenceCanvasItem[];
     pinningEnabled?: boolean;
+    contentClass?: string;
   }>(),
   { pinningEnabled: false },
 );
@@ -47,7 +49,7 @@ const pinnedCount = computed(
     <PopoverContent
       align="end"
       :side-offset="8"
-      class="column-preferences-canvas !w-[min(360px,calc(100vw-1rem))] !max-h-[min(520px,calc(100dvh-9rem))] !gap-0 !overflow-hidden !rounded-xl !p-0"
+      :class="cn('column-preferences-canvas !w-[min(360px,calc(100vw-1rem))] !max-h-[min(520px,calc(100dvh-9rem))] !gap-0 !overflow-hidden !rounded-xl !p-0', props.contentClass)"
       aria-label="表格列设置"
     >
       <header class="column-preferences-canvas__header">
@@ -55,7 +57,7 @@ const pinnedCount = computed(
           <div class="column-preferences-canvas__icon"><Columns3 /></div>
           <div class="min-w-0">
             <h2>表格列设置</h2>
-            <p>按需显示字段，固定选择仅影响所选列。</p>
+            <p>{{ pinningEnabled ? '按需显示字段，固定选择仅影响所选列。' : '按需显示字段，设置仅影响当前表格。' }}</p>
           </div>
         </div>
       </header>

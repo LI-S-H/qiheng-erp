@@ -23,6 +23,7 @@ interface Props {
   confirmText?: string;
   cancelText?: string;
   loading?: boolean;
+  overlayClass?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -33,6 +34,7 @@ const props = withDefaults(defineProps<Props>(), {
   confirmText: '确认',
   cancelText: '取消',
   loading: false,
+  overlayClass: '!z-[70] !bg-slate-950/30 !backdrop-blur-[3px]',
 });
 
 const emit = defineEmits<{
@@ -77,7 +79,7 @@ function handleKeydown(e: KeyboardEvent) {
   <Dialog :open="props.open" @update:open="emit('update:open', $event)">
     <DialogContent
       placement="app-content"
-      overlay-class="!z-[70] !bg-slate-950/30 !backdrop-blur-[3px]"
+      :overlay-class="props.overlayClass"
       data-prompt-dialog
       class="!z-[80] sm:max-w-[425px]"
     >

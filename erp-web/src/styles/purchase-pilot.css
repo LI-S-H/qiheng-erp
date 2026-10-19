@@ -1,0 +1,518 @@
+/* 路由隔离的视觉试点；Teleport 浮层必须从当前应用壳判断主题，离开采购页即恢复。 */
+.app-shell.purchase-pilot-theme,
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='dialog-content'], [data-slot='alert-dialog-content'], [data-slot='popover-content'], [data-slot='select-content'], [data-slot='dropdown-menu-content'], .order-date-picker__content) {
+  --background: #fff;
+  --foreground: #253041;
+  --card: #fff;
+  --card-foreground: #253041;
+  --popover: #fff;
+  --popover-foreground: #253041;
+  --primary: #3267e5;
+  --primary-foreground: #fff;
+  --secondary: #f4f6f9;
+  --secondary-foreground: #46546a;
+  --muted: #f4f6f9;
+  --muted-foreground: #667185;
+  --accent: #edf3ff;
+  --accent-foreground: #2857bc;
+  --border: #e6eaf0;
+  --input: #e6eaf0;
+  --ring: #3267e5;
+  --destructive: #ad5261;
+  --radius: 6px;
+  --sidebar: #f7f8fa;
+  --sidebar-foreground: #526177;
+  --sidebar-primary: #3267e5;
+  --sidebar-primary-foreground: #fff;
+  --sidebar-accent: #edf3ff;
+  --sidebar-border: #e6eaf0;
+  --sidebar-ring: #3267e5;
+  color: var(--foreground);
+}
+
+.app-shell.purchase-pilot-theme { --app-shell-header-height: 56px; }
+.app-shell.purchase-pilot-theme main { background: #fff; }
+.app-shell.purchase-pilot-theme .app-shell__header { background: #fff; padding-inline: 32px; }
+.app-shell.purchase-pilot-theme .app-shell__header > div:first-child { display: flex; align-items: center; gap: 12px; }
+.app-shell.purchase-pilot-theme .app-shell__header > div:first-child > div { margin: 0; font-size: 13px; font-weight: 400; color: #667185; }
+.app-shell.purchase-pilot-theme .app-shell__header > div:first-child > div + div::before { content: '/'; padding-right: 12px; color: #a7b0be; }
+.app-shell.purchase-pilot-theme .app-shell__brand { height: 86px; border-bottom: 0; padding-inline: 24px; }
+.app-shell.purchase-pilot-theme .app-shell__brand img { width: 32px; height: 32px; border-radius: 0; }
+.app-shell.purchase-pilot-theme .app-shell__brand .font-bold { color: #253041; font-weight: 600; }
+.app-shell.purchase-pilot-theme .app-shell__brand .mt-1 { font-size: 11px; color: #667185; }
+.app-shell.purchase-pilot-theme .app-shell__header [data-slot='avatar-fallback'] { background: #e9edf3; color: #526177; }
+.app-shell.purchase-pilot-theme .app-shell__header [data-notification-trigger] { width: 36px; height: 36px; border: 0; border-radius: 6px; background: transparent; color: #46546a; }
+.app-shell.purchase-pilot-theme .app-shell__header [data-notification-trigger]:is(:hover, :focus-visible, [data-state='open']) { background: #edf1f7; color: #253041; }
+.app-shell.purchase-pilot-theme .app-shell__header [data-notification-trigger] > svg { width: 18px; height: 18px; stroke-width: 1.8; }
+.app-shell.purchase-pilot-theme .app-shell__header [data-notification-count] { display: inline-flex; align-items: center; justify-content: center; top: -3px; right: -4px; min-width: 20px; height: 18px; padding: 0 3px; border: 2px solid #fff; border-radius: 9px; background: #3267e5; color: #fff; font-size: 10px; font-weight: 600; line-height: 14px; box-shadow: none; }
+.app-shell.purchase-pilot-theme .app-shell__header [data-notification-trigger]:focus-visible { outline: 2px solid #b6c2d2; outline-offset: 2px; }
+.app-shell.purchase-pilot-theme .app-sidebar nav { padding: 14px 16px; }
+.app-shell.purchase-pilot-theme .app-sidebar nav button { height: 44px; font-size: 15px; font-weight: 500; }
+.app-shell.purchase-pilot-theme .app-sidebar__submenu-link { height: 36px; padding-left: 38px; font-size: 14px; font-weight: 400; }
+.app-shell.purchase-pilot-theme .app-sidebar__submenu-link[aria-current='page'] { color: #2857bc; background: #e9f0ff; font-weight: 500; }
+.app-shell.purchase-pilot-theme .app-sidebar__submenu-link > span.absolute { display: none; }
+
+.app-shell.purchase-pilot-theme .purchase-pilot-page { width: 100%; max-width: none; margin-inline: 0; padding: 30px 32px 24px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page > :not(:last-child) { margin-bottom: 24px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .page-title { color: var(--foreground); font-weight: 600; line-height: 34px; letter-spacing: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .page-description { margin-top: 7px; font-size: 13px; color: var(--muted-foreground); }
+
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  padding: 16px 0;
+  border: 1px solid #eef1f5;
+  border-radius: 8px;
+  background: #f8fafd;
+  box-shadow: none;
+}
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  gap: 12px;
+  padding: 0 22px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item:last-child { border-right: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item::after,
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__head > i { display: none; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item dt { font-size: 13px; font-weight: 400; line-height: 20px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item dd { align-self: auto; color: #2e3d55; font-size: 24px; font-weight: 600; line-height: 32px; letter-spacing: 0; }
+
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel__grid--content { display: grid; grid-template-columns: 1.1fr 1.2fr 1.1fr .9fr auto; gap: 16px; align-items: end; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel__grid--content > [data-filter-size] { width: 100%; max-width: none; min-width: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel__actions { grid-column: auto; margin: 0; padding: 0; gap: 8px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel [data-slot='label'] { margin-bottom: 6px; color: #526177; font-size: 13px; font-weight: 400; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel :is([data-slot='input'], [role='combobox']) { height: 36px; min-height: 36px; border: 1px solid transparent; border-radius: 6px; background: #f4f6f9; box-shadow: none; font-size: 14px; font-weight: 400; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel__actions [data-slot='button'] { min-width: 72px; }
+
+.app-shell.purchase-pilot-theme [data-slot='button'],
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='dialog-content'], [data-slot='alert-dialog-content']) [data-slot='button'] { height: 36px; border-radius: 6px; font-size: 13px; font-weight: 500; box-shadow: none; }
+.app-shell.purchase-pilot-theme [data-slot='button'][data-variant='default'] { background: var(--primary); color: #fff; }
+.app-shell.purchase-pilot-theme :is([role='combobox'], [data-slot='select-trigger']):not(:disabled):not([aria-invalid='true']):is(:hover, [aria-expanded='true']),
+body:has(.app-shell.purchase-pilot-theme) :is([role='combobox'], [data-slot='select-trigger']):not(:disabled):not([aria-invalid='true']):is(:hover, [aria-expanded='true']) { border-color: #cbd7ea !important; background: #f4f7fc; box-shadow: none !important; }
+
+/* 聚焦以中性细边框为主，单层极淡柔光只补充键盘定位，避免蓝色外扩光晕。 */
+.app-shell.purchase-pilot-theme :is(input, textarea, [role='combobox'], [data-slot='select-trigger'], [data-slot='button']):focus-visible,
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='dialog-content'], [data-slot='alert-dialog-content'], [data-slot='popover-content'], [data-slot='select-content']) :is(input, textarea, [role='combobox'], [data-slot='select-trigger'], button):focus-visible {
+  border-color: #b6c2d2 !important;
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(82 103 135 / 3%) !important;
+}
+.app-shell.purchase-pilot-theme :is(input, textarea):focus-visible,
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='dialog-content'], [data-slot='popover-content']) :is(input, textarea):focus-visible { background: #fff; }
+.app-shell.purchase-pilot-theme input::placeholder { color: #707e92; }
+
+.app-shell.purchase-pilot-theme .purchase-pilot-page .data-panel { border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .table-toolbar { align-items: center; min-height: 44px; margin-bottom: 18px; padding: 0; border: 0; gap: 18px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .table-toolbar__title { display: grid; gap: 6px; min-width: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .table-toolbar__title strong { font-size: 14px; font-weight: 600; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .table-toolbar__title > span { font-size: 12px; line-height: 18px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .table-toolbar__actions { flex-wrap: nowrap; flex-shrink: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .purchase-list-body > .table-scroll-viewport {
+  max-height: max(234px, calc(100dvh - 520px));
+  max-height: calc(42px + round(down, max(192px, calc(100dvh - 530px)), 64px));
+  overflow: auto;
+  isolation: isolate;
+  scrollbar-gutter: stable;
+  --table-scroll-shadow-size: 10px;
+  --table-scroll-shadow-offset: -10px;
+  --table-scroll-shadow-color: rgb(35 55 85 / 8%);
+}
+.app-shell.purchase-pilot-theme .purchase-pilot-page [data-list-loading] { z-index: 40; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page [data-list-loading] { background: rgb(255 255 255 / 80%); backdrop-filter: none; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .page-loading-enter-active { transition: opacity 120ms ease-out; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .page-loading-enter-from { opacity: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .page-loading-leave-active { transition: opacity 220ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell.purchase-pilot-theme .purchase-pilot-page :is(.page-loading-enter-active, .page-loading-leave-active) { transition-duration: 0.01ms; }
+}
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table { width: var(--purchase-table-width); table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table > :is(thead, tbody) > tr > :is(th, td) { padding: 10px 14px; text-align: center; vertical-align: middle; border-bottom: 1px solid #eef1f5; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table > thead > tr > th { position: sticky; top: 0; z-index: 20; height: 42px; padding-block: 0; background: #f5f7fa; color: #667185; font-size: 14px; font-weight: 500; line-height: 22px; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='table-head'] { text-align: center; font-size: 14px; font-weight: 500; line-height: 22px; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='table-cell'] { text-align: center; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table > tbody > tr > td { height: 64px; background: #fff; color: #253041; font-size: 14px; font-weight: 400; line-height: 22px; white-space: nowrap; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table tbody tr:hover > td { background: #f8faff; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table [data-pilot-status-column] { padding-inline: 6px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table [data-pilot-party-column] > .truncate { max-width: 240px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table [data-slot='table-cell'] > * { margin-inline: auto; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table .purchase-supplier-code { display: block; margin-top: 3px; padding: 0; border: 0; background: transparent; color: #667185; font-family: inherit; font-size: 12px; line-height: 18px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .purchase-update-date { display: block; font-size: 14px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .purchase-update-time { display: block; margin-top: 3px; color: #667185; font-size: 12px; line-height: 18px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page [data-slot='badge'] { min-height: 24px; padding: 2px 8px; border-color: transparent; border-radius: 5px; font-size: 12px; font-weight: 400; line-height: 18px; box-shadow: none; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table [data-slot='button'] { height: 32px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .order-number-link { max-width: 180px; overflow: hidden; padding-inline: 0; font-size: 14px; font-weight: 400; line-height: 22px; text-overflow: ellipsis; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table [data-table-sticky-edge] { position: sticky; z-index: 10; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table [data-table-sticky-edge='start'] { left: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table [data-table-sticky-edge='end'] { right: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page .business-data-table th[data-table-sticky-edge] { z-index: 30; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page [data-table-pagination] { min-height: 64px; padding-inline: 0; border-top: 0; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page [data-table-pagination] [data-current-page] { color: #2857bc; border: 1px solid #d9e5ff; border-radius: 5px; background: #edf3ff; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page [data-table-pagination] [data-slot='select-trigger'] { height: 32px; background: #fff; box-shadow: none; }
+
+/* 下拉保持原搜索、选择和互斥行为；仅替换视觉，覆盖传送到 body 的选项。 */
+body:has(.app-shell.purchase-pilot-theme) :is([data-anchored-select-content], [data-remote-search-select-content], [data-slot='select-content'], [data-slot='popover-content']) {
+  border: 1px solid #e6eaf0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgb(28 45 76 / 10%), 0 2px 5px rgb(28 45 76 / 3%);
+  font-size: 13px;
+}
+body:has(.app-shell.purchase-pilot-theme) [data-remote-search-select-content] { width: var(--reka-popover-trigger-width); }
+body:has(.app-shell.purchase-pilot-theme) [data-remote-search-select-content] > .border-b { padding: 10px; }
+body:has(.app-shell.purchase-pilot-theme) [data-remote-search-select-content] input { height: 34px; border-color: #e6eaf0; border-radius: 5px; background: #f7f9fc; font-size: 13px; box-shadow: none; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='command-item'], [data-slot='select-item'], [data-select-option]) { min-height: 34px; margin-block: 2px; padding: 7px 10px; border-radius: 5px; color: #46546a; font-size: 13px; line-height: 20px; transform: none; box-shadow: none; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='command-item'], [data-slot='select-item'], [data-select-option]):is(:hover, :focus-visible, [data-highlighted]) { background: #f0f4fa !important; color: #253041 !important; transform: none; box-shadow: none !important; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='command-item'][data-state='checked'], [data-slot='command-item'][data-checked='true'], [data-slot='select-item'][data-state='checked'], [data-select-option][aria-current='true']) { background: #edf3ff; color: #2857bc; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='command-group'] { padding: 2px; }
+
+/* 保留 Reka 动画、焦点约束及原有正文滚动结构，仅统一弹窗表面。 */
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='dialog-overlay'], [data-slot='alert-dialog-overlay']) { background: rgb(34 43 58 / 22%); backdrop-filter: none; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-slot='dialog-content'], [data-slot='alert-dialog-content']) { border: 1px solid #e6eaf0; border-radius: 10px; background: #fff; color: #253041; box-shadow: 0 12px 40px rgb(23 38 64 / 9%); }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-order-workbench]) { width: calc(100vw - var(--app-shell-sidebar-width) - 48px); max-width: 1080px; padding: 0 !important; gap: 0; background: #fff !important; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-header']:not(.sr-only) { padding: 24px 28px 18px; border-bottom: 1px solid #eef1f5; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-title'] { font-size: 18px; font-weight: 600; line-height: 26px; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-description'] { color: #667185; font-size: 13px; line-height: 22px; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-footer'] { flex-shrink: 0; margin: 0; padding: 18px 28px; border-top: 1px solid #eef1f5; border-radius: 0 0 10px 10px; background: #fff; }
+body:has(.app-shell.purchase-pilot-theme) .dialog-scroll-area { margin: 0; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog]) [data-slot='dialog-scroll-content'] { padding: 22px 28px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-order-workbench], [data-prompt-dialog]) :is([data-slot='input'], [data-slot='textarea'], [role='combobox']) { border-color: #e6eaf0; border-radius: 6px; background: #f7f9fc; box-shadow: none; font-size: 14px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-order-workbench]) [data-slot='label'] { color: #526177; font-size: 13px; font-weight: 500; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog]) [data-slot='table-head'] { height: 40px; background: #f5f7fa; color: #667185; font-size: 14px; font-weight: 500; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .business-detail-hero { padding: 0 0 24px; border-bottom: 1px solid #e6eaf0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .business-detail-hero__title { font-family: inherit; font-size: 22px; font-weight: 600; letter-spacing: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .business-detail-hero__eyebrow { letter-spacing: 0; font-weight: 400; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] [data-slot='dialog-scroll-content'] { padding: 28px; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] [data-slot='dialog-scroll-content'] > .space-y-5 { display: grid; gap: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] [data-slot='dialog-scroll-content'] > .space-y-5 > * { margin: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .business-detail-workbench-card { overflow: hidden; border: 0; border-bottom: 1px solid #eef1f5; border-radius: 0; box-shadow: none !important; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .business-detail-workbench-card:last-child { border-bottom: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-workbench-record__section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-workbench-record__section--progress { padding: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-workbench-record__section--progress > section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-fulfillment-overview { border-color: #eef1f5; border-radius: 6px; background: #f8fafd; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-fulfillment-overview__headline strong { color: #2e3d55; font-size: 24px; font-weight: 600; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-fulfillment-overview__track { height: 5px; background: #e9edf3; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-fulfillment-overview__facts { border-color: #eef1f5; background: transparent; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-fulfillment-overview__facts > div + div { border-color: #e6eaf0; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-fulfillment-overview__facts dt { color: #667185; font-size: 12px; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-fulfillment-overview__facts dd { color: #253041; font-weight: 500; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-detail-timeline { border-color: #eef1f5; border-radius: 6px; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .purchase-detail-timeline li + li { border-color: #eef1f5; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog]) [data-slot='dialog-scroll-content'] > .space-y-4 > .bg-muted\/30 { border-color: #eef1f5; border-radius: 6px; background: #f8fafd; }
+body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] [data-slot='badge'] { border-color: transparent; border-radius: 5px; padding: 3px 8px; font-size: 12px; font-weight: 400; }
+body:has(.app-shell.purchase-pilot-theme) [data-confirm-dialog] { max-width: 440px; }
+body:has(.app-shell.purchase-pilot-theme) [data-confirm-dialog-icon] { border-radius: 8px; box-shadow: none; }
+body:has(.app-shell.purchase-pilot-theme) .order-date-picker { border-color: #e6eaf0; border-radius: 6px; background: #f7f9fc; }
+body:has(.app-shell.purchase-pilot-theme) .order-date-picker:focus-within { border-color: #b6c2d2; background: #fff; box-shadow: 0 0 0 2px rgb(82 103 135 / 3%); }
+body:has(.app-shell.purchase-pilot-theme) .order-date-picker__content { border-radius: 8px; box-shadow: 0 8px 28px rgb(28 45 76 / 10%); }
+body:has(.app-shell.purchase-pilot-theme) :is(input, textarea, [role='combobox'])[aria-invalid='true'],
+body:has(.app-shell.purchase-pilot-theme) .order-date-picker[data-invalid] { border-color: #cf9aa2 !important; }
+body:has(.app-shell.purchase-pilot-theme) :is(input, textarea, [role='combobox']).border-destructive { border-color: #cf9aa2 !important; }
+body:has(.app-shell.purchase-pilot-theme) :is(input, textarea, [role='combobox'])[aria-invalid='true']:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--destructive) 4%, transparent) !important; }
+
+/* 客户延续已确认的业务主题，双行资料与组合操作按各自实际字宽留白。 */
+.app-shell.purchase-pilot-theme .customer-pilot-page .table-toolbar { flex-wrap: wrap; }
+.app-shell.purchase-pilot-theme .customer-pilot-page .table-toolbar__actions { flex-wrap: wrap; flex-shrink: 1; }
+.app-shell.purchase-pilot-theme .customer-pilot-page .business-data-table :is(th, td):first-child { padding-inline: 8px; }
+.app-shell.purchase-pilot-theme .customer-pilot-page .business-data-table td code { padding: 0; border: 0; background: transparent; font-family: inherit; font-size: 14px; }
+.app-shell.purchase-pilot-theme .customer-pilot-page .business-data-table td > .truncate { max-width: 240px; font-weight: 400; }
+body:has(.app-shell.purchase-pilot-theme) [data-customer-detail-dialog] .business-detail-section { padding: 22px 0; border: 0; border-bottom: 1px solid #eef1f5; border-radius: 0; background: transparent; box-shadow: none; }
+body:has(.app-shell.purchase-pilot-theme) [data-customer-detail-dialog] .business-detail-section :is(.business-detail-section__header, .business-detail-section__content) { padding-inline: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-customer-detail-dialog] [data-slot='dialog-scroll-content'] > .space-y-6 { display: grid; gap: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-customer-detail-dialog] [data-slot='dialog-scroll-content'] > .space-y-6 > * { margin: 0; }
+
+.app-shell.purchase-pilot-theme .sales-order-pilot-page :is([data-sales-status='DRAFT'], [data-sales-status='CANCELLED']) { background: #f4f6f9; color: #526177; }
+.app-shell.purchase-pilot-theme .sales-order-pilot-page [data-sales-status='SUBMITTED'] { background: #fffaeb; color: #b65b0b; }
+.app-shell.purchase-pilot-theme .sales-order-pilot-page :is([data-sales-status='APPROVED'], [data-sales-status='PARTIAL_OUTBOUND']) { background: #edf5ff; color: #3267e5; }
+.app-shell.purchase-pilot-theme .sales-order-pilot-page [data-sales-status='OUTBOUND_DONE'] { background: #edf8f1; color: #2c8056; }
+body:has(.app-shell.purchase-pilot-theme) .sales-order-workbench .sales-workbench-section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) .sales-order-workbench .sales-workbench-section--progress { padding: 0; }
+body:has(.app-shell.purchase-pilot-theme) .sales-order-workbench .sales-workbench-section--progress > section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) .sales-order-workbench .sales-workbench-info__fact { grid-template-columns: 112px minmax(0, 1fr); }
+
+/* 第二页仅补充退回业务的布局差异，字号、表面与交互沿用已确认的采购主题。 */
+.app-shell.purchase-pilot-theme .purchase-return-pilot-page .list-filter-panel__grid--content { grid-template-columns: 1fr 1fr 1.1fr 1.1fr .9fr auto; }
+.app-shell.purchase-pilot-theme .purchase-return-pilot-page [data-return-status='DRAFT'],
+.app-shell.purchase-pilot-theme .purchase-return-pilot-page [data-return-status='CANCELLED'] { background: #f4f6f9; color: #526177; }
+.app-shell.purchase-pilot-theme .purchase-return-pilot-page [data-return-status='SUBMITTED'] { background: #fffaeb; color: #b65b0b; }
+.app-shell.purchase-pilot-theme .purchase-return-pilot-page :is([data-return-status='APPROVED'], [data-return-status='PARTIAL_EXECUTED']) { background: #edf5ff; color: #3267e5; }
+.app-shell.purchase-pilot-theme .purchase-return-pilot-page [data-return-status='COMPLETED'] { background: #edf8f1; color: #2c8056; }
+body:has(.app-shell.purchase-pilot-theme) [data-return-form-dialog] { width: calc(100vw - var(--app-shell-sidebar-width) - 48px); max-width: 1080px; padding: 0; gap: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-return-detail-dialog] .return-workbench-section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-return-detail-dialog] .return-workbench-section--progress { padding: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-return-detail-dialog] .return-workbench-section--progress > section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-prompt-dialog] { padding: 0; gap: 0; overflow: hidden; }
+body:has(.app-shell.purchase-pilot-theme) [data-prompt-dialog] > .grid { padding: 20px 28px; }
+
+/* 供应商保留全部范围筛选和可隐藏列；勾选列不参与宽屏余量分配。 */
+.app-shell.purchase-pilot-theme .supplier-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(20, minmax(0, 1fr)); }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .list-filter-panel__grid--content > [data-filter-size] { grid-column: span 4; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .list-filter-panel__grid--content > [data-filter-size='wide'] { grid-column: span 5; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .list-filter-panel__actions { grid-column: 1 / -1; justify-content: flex-end; margin-top: 14px; border-top: 0; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .supplier-toolbar { flex-wrap: wrap; gap: 14px; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .supplier-toolbar__right { flex-shrink: 1; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .supplier-toolbar__main { flex-wrap: wrap; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .purchase-list-body > .table-scroll-viewport { overflow: auto; max-height: calc(42px + round(down, max(128px, calc(100dvh - 660px)), 64px)); }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .supplier-table__actions { width: auto; min-width: 0; border-left: 0; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .business-data-table :is(th, td):first-child { padding-inline: 8px; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .business-data-table td > .min-w-0 { max-width: 240px; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .business-data-table td :is(p, strong) { font-weight: 400; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .business-data-table td code { display: block; margin-top: 3px; padding: 0; background: transparent; font-family: inherit; font-size: 12px; line-height: 18px; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page .business-data-table td .text-xs { font-size: 12px; line-height: 18px; }
+.app-shell.purchase-pilot-theme .supplier-pilot-page [data-variant='destructive'] { border: 1px solid #f0dce0; background: #fff; color: #b54c61; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-supplier-form-dialog], [data-supplier-score-dialog], [data-supplier-failure-dialog], .supplier-score-log-pilot-dialog) { padding: 0; gap: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-form-dialog] { width: calc(100vw - var(--app-shell-sidebar-width) - 48px); max-width: 720px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-supplier-form-dialog], [data-supplier-detail-workbench], .supplier-score-log-pilot-dialog) [data-slot='dialog-scroll-content'] { padding: 22px 28px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-supplier-form-dialog], [data-supplier-score-dialog], .supplier-score-log-pilot-dialog) :is(input, textarea, [role='combobox']) { border-color: #e6eaf0; border-radius: 6px; background: #f7f9fc; box-shadow: none; font-size: 14px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-supplier-form-dialog], [data-supplier-score-dialog], .supplier-score-log-pilot-dialog) [data-slot='label'] { margin-bottom: 6px; color: #526177; font-size: 13px; font-weight: 500; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-score-dialog] > .space-y-3 { padding: 22px 28px; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-failure-dialog] > ul { margin: 20px 28px; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-detail-workbench] .supplier-detail-section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-detail-workbench] .supplier-detail-facts > div { grid-template-columns: 112px minmax(0, 1fr); }
+body:has(.app-shell.purchase-pilot-theme) .supplier-score-log-pilot-dialog { width: calc(100vw - var(--app-shell-sidebar-width) - 48px); max-width: 1080px; }
+body:has(.app-shell.purchase-pilot-theme) .supplier-score-log-pilot-dialog .list-filter-panel { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+body:has(.app-shell.purchase-pilot-theme) .supplier-score-log-pilot-dialog .list-filter-panel__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+body:has(.app-shell.purchase-pilot-theme) .supplier-score-log-pilot-dialog .list-filter-panel__grid--content > [data-filter-size] { width: auto; max-width: none; min-width: 0; }
+body:has(.app-shell.purchase-pilot-theme) .supplier-score-log-pilot-dialog .list-filter-panel__actions { grid-column: 1 / -1; margin: 14px 0 0; padding: 0; border-top: 0; }
+body:has(.app-shell.purchase-pilot-theme) .supplier-score-log-pilot-dialog [data-slot='table-head'] { background: #f5f7fa; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dropdown-menu-content'] { border-color: #e6eaf0; border-radius: 8px; background: #fff; box-shadow: 0 8px 28px rgb(28 45 76 / 10%); }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dropdown-menu-item'] { min-height: 34px; border-radius: 5px; font-size: 13px; }
+body:has(.app-shell.purchase-pilot-theme) .column-preferences-canvas { box-shadow: 0 8px 28px rgb(28 45 76 / 10%); }
+body:has(.app-shell.purchase-pilot-theme) .column-preferences-canvas__icon { border: 0; background: #f4f6f9; color: #667185; }
+body:has(.app-shell.purchase-pilot-theme) .column-preferences-canvas__summary { display: block; padding: 8px 16px; background: #f8fafd; }
+body:has(.app-shell.purchase-pilot-theme) .column-preferences-canvas__stat { padding: 4px 0; border: 0; background: transparent; }
+body:has(.app-shell.purchase-pilot-theme) .column-preferences-canvas__row { min-height: 40px; padding-block: 7px; }
+body:has(.app-shell.purchase-pilot-theme) .column-preferences-canvas__note { border-color: #eef1f5; border-radius: 6px; background: #f8fafd; }
+
+/* 供货产品复用供应商表面，独立排布原有基本与高级筛选，保留用户自选固定列。 */
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .list-filter-panel__grid--content > [data-filter-size] { grid-column: auto; }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .list-filter-panel__footer { margin-top: 16px; padding: 0; border: 0; }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page [aria-label='供货产品高级范围筛选'] { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .supplier-product-toolbar { flex-wrap: wrap; gap: 14px; }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .supplier-product-toolbar__right { flex-shrink: 1; }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .supplier-product-toolbar__main { flex-wrap: wrap; }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .supplier-product-table__actions { width: auto; min-width: 0; border-left: 0; }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .supplier-product-table__pinned-left { position: sticky; z-index: 11; border-right: 0; background: #fff; }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page th.supplier-product-table__pinned-left { z-index: 31; background: #f5f7fa; }
+.app-shell.purchase-pilot-theme .supplier-product-pilot-page .business-data-table small { display: block; margin-top: 3px; font-size: 12px; line-height: 18px; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-quote-dialog] { padding: 0; gap: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-quote-dialog] > .space-y-3 { padding: 22px 28px; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-quote-dialog] :is(input, textarea) { border-color: #e6eaf0; border-radius: 6px; background: #f7f9fc; box-shadow: none; font-size: 14px; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-quote-dialog] [data-slot='label'] { margin-bottom: 6px; color: #526177; font-size: 13px; font-weight: 500; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-product-detail-workbench] .supplier-product-detail-section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-supplier-product-detail-workbench] .supplier-product-detail-facts > div { grid-template-columns: 112px minmax(0, 1fr); }
+
+/* 仓储逐页共用同一阅读密度，保留风险与方向等业务语义色。 */
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .table-toolbar { flex-wrap: wrap; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .table-toolbar__actions { flex-wrap: wrap; flex-shrink: 1; }
+.app-shell.purchase-pilot-theme .warehouse-master-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(5, minmax(0, 1fr)) auto; }
+.app-shell.purchase-pilot-theme .warehouse-master-pilot-page .business-data-table :is(th, td):first-child { padding-inline: 8px; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .business-data-table td code { padding: 0; background: transparent; font-family: inherit; font-size: 14px; font-weight: 400; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .business-data-table td .font-medium { font-weight: 400; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .business-data-table td :is(.truncate, .flex-col) { max-width: 240px; margin-inline: auto; }
+.app-shell.purchase-pilot-theme .warehouse-master-pilot-page .business-data-table td > .flex-col { align-items: center; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page [data-variant='destructive'] { border: 1px solid #f0dce0; background: #fff; color: #ad5261; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .list-filter-panel__actions { grid-column: 1 / -1; justify-content: flex-end; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .stock-risk-shortcut { max-width: none !important; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table td > .flex-col { flex-direction: column-reverse; gap: 3px; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table td code { font-size: 12px; line-height: 18px; color: #667185; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table [data-stock-risk='warning'] > td { background: #fffdf7; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table [data-stock-risk='critical'] > td { background: #fff8f9; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table [data-stock-risk='normal']:hover > td { background: #f8faff !important; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table [data-stock-risk='warning']:hover > td { background: #fffbef !important; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table [data-stock-risk='critical']:hover > td { background: #fff1f4 !important; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table td.text-blue-700 { color: #3267e5; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table td.text-rose-700 { color: #ad5261; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .business-data-table td.text-emerald-700 { color: #2c8056; }
+
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .list-filter-panel__actions { grid-column: 1 / -1; justify-content: flex-end; }
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .stock-bill-table-scroll > .table-scroll-viewport { min-height: 0; max-height: 362px; padding-bottom: 0; overflow: auto; isolation: isolate; scrollbar-gutter: stable; }
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .business-data-table [data-stock-bill-id] > td:first-child > .flex { justify-content: center; }
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .business-data-table [data-stock-bill-source-no] { padding: 0; border-radius: 0; background: transparent; font-size: 14px; }
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .business-data-table td [data-slot='button'][data-variant='ghost'] { color: #3267e5; }
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .business-data-table > tbody > .stock-bill-detail-host-row > td { height: 0; padding: 0 14px; border: 0; white-space: normal; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .warehouse-detail-table-frame { max-width: min(1060px, calc(100cqi - 32px)); border: 1px solid #e6eaf0; box-shadow: none; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .warehouse-detail-table-frame__header { min-height: 36px; padding: 6px 12px; background: #fafbfc; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .warehouse-detail-table-frame__heading { font-size: 13px; line-height: 20px; font-weight: 500; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .warehouse-detail-metrics__item { font-size: 12px; line-height: 20px; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .warehouse-detail-metrics__value { font-size: 13px; font-weight: 500; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .warehouse-detail-table-scroll :is(th, td) { height: 38px; padding: 6px 10px; font-size: 13px; line-height: 20px; text-align: center; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .warehouse-detail-table-scroll th { background: #f5f7fa; color: #667185; font-weight: 500 !important; }
+.app-shell.purchase-pilot-theme .warehouse-pilot-page .warehouse-detail-table-scroll td code { font-size: 13px; }
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .business-data-table .stock-bill-key-column[data-slot='table-head'],
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page .business-data-table .stock-bill-actions-column[data-slot='table-head'] { z-index: 31; background: #f5f7fa; }
+body:has(.app-shell.purchase-pilot-theme) .stock-bill-workbench .stock-workbench-section { padding: 22px 0; }
+body:has(.app-shell.purchase-pilot-theme) .stock-bill-workbench .stock-workbench-info__fact { grid-template-columns: 112px minmax(0, 1fr); }
+body:has(.app-shell.purchase-pilot-theme) .stock-bill-workbench .stock-bill-dialog-table-scroll :is(th, td) { height: 38px; padding: 6px 10px; font-size: 13px; line-height: 20px; }
+body:has(.app-shell.purchase-pilot-theme) [data-stock-bill-form-dialog][data-purchase-form-dialog] .stock-bill-form-quantity-control input { max-width: 80px; text-align: center; }
+
+/* 数值仍使用number保留精度和校验，只移除浏览器自带的微调箭头。 */
+.app-shell.purchase-pilot-theme input[type='number'],
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-content'] input[type='number'] { appearance: textfield; -moz-appearance: textfield; }
+.app-shell.purchase-pilot-theme input[type='number']::-webkit-inner-spin-button,
+.app-shell.purchase-pilot-theme input[type='number']::-webkit-outer-spin-button,
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-content'] input[type='number']::-webkit-inner-spin-button,
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-content'] input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; display: none; margin: 0; }
+body:has(.app-shell.purchase-pilot-theme) .order-line-table .flex:has(> input[type='number']) { justify-content: center; }
+body:has(.app-shell.purchase-pilot-theme) .order-line-table input[type='number']:not(.price-input) { width: 80px; max-width: 100%; flex: 0 1 80px; text-align: center; }
+body:has(.app-shell.purchase-pilot-theme) .order-line-table .relative:has(> input.price-input) { width: 104px; max-width: 100%; margin-inline: auto; }
+/* 币种作为输入框外的单位显示；保留原数值绑定与金额校验。 */
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-content'] .relative:has(> input[type='number']):has(> span) { display: flex; align-items: center; gap: 8px; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-content'] .relative:has(> input[type='number']) > span { position: static; inset: auto; transform: none; translate: none; flex: none; }
+body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-content'] .relative:has(> span) > input[type='number'] { width: 0; min-width: 0; flex: 1; padding-inline: 11px; }
+
+/* 新增及编辑表单统一紧凑字号，列表与只读详情不受影响。 */
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) { font-size: 13px; line-height: 20px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) [data-slot='dialog-title'] { font-size: 16px; line-height: 24px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) :is(.text-sm, input, textarea, [role='combobox'], [data-slot='table-head'], [data-slot='table-cell'], .order-date-picker__segment) { font-size: 13px; line-height: 20px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) [data-slot='label'] { font-size: 13px; line-height: 20px; font-weight: 400; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) :is([data-slot='dialog-description'], p.text-muted-foreground.text-sm) { font-size: 12px; line-height: 20px; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) :is(input[data-slot='input'], [role='combobox'], textarea, .order-date-picker):not([aria-invalid='true']):not([data-invalid]):not(.border-destructive) { border-color: transparent; border-radius: 6px; background: #f4f6f9; box-shadow: none; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) :is(input[data-slot='input'], [role='combobox']) { height: 36px; min-height: 36px; font-weight: 400; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) :is(input, textarea, [role='combobox']):focus-visible { background: #fff; }
+body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-supplier-form-dialog], [data-supplier-quote-dialog], [data-master-form-dialog]) [role='combobox']:not([aria-invalid='true']):is(:hover, [aria-expanded='true']) { border-color: #c7cfdc !important; background: #f4f6f9; }
+
+@media (min-width: 1700px) {
+  .app-shell.purchase-pilot-theme .purchase-pilot-page { padding-inline: 40px; }
+}
+@media (max-width: 1250px) {
+  .app-shell.purchase-pilot-theme .warehouse-master-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page.customer-pilot-page .list-summary-strip__item { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page.customer-pilot-page .list-summary-strip__item dd { align-self: stretch; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel__actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item { padding-inline: 16px; }
+  .app-shell.purchase-pilot-theme .purchase-return-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .purchase-return-pilot-page .list-filter-panel__actions { grid-column: auto; }
+  .app-shell.purchase-pilot-theme .purchase-return-pilot-page .purchase-list-body > .table-scroll-viewport { max-height: calc(42px + round(down, max(128px, calc(100dvh - 600px)), 64px)); }
+  .app-shell.purchase-pilot-theme .supplier-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .supplier-pilot-page .list-filter-panel__grid--content > [data-filter-size] { grid-column: auto; }
+  .app-shell.purchase-pilot-theme .supplier-pilot-page .purchase-list-body > .table-scroll-viewport { max-height: calc(42px + round(down, max(64px, calc(100dvh - 760px)), 64px)); }
+  .app-shell.purchase-pilot-theme .supplier-product-pilot-page .list-filter-panel__grid--content,
+  .app-shell.purchase-pilot-theme .supplier-product-pilot-page [aria-label='供货产品高级范围筛选'] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1000px) {
+  .app-shell.purchase-pilot-theme .warehouse-work-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .inventory-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .warehouse-master-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .table-toolbar { align-items: flex-start; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .purchase-list-body > .table-scroll-viewport { max-height: 298px; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .app-shell.purchase-pilot-theme .purchase-return-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .purchase-return-pilot-page .list-filter-panel__actions { grid-column: auto; }
+  .app-shell.purchase-pilot-theme .supplier-pilot-page .list-filter-panel__grid--content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell.purchase-pilot-theme .supplier-product-pilot-page [aria-label='供货产品高级范围筛选'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .app-shell.purchase-pilot-theme .app-shell__header { padding-inline: 18px; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page { padding: 24px 18px; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item { flex-direction: row; align-items: center; min-height: 66px; padding: 12px 15px; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item:nth-child(2) { border-right: 0; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item:nth-child(-n+2) { border-bottom: 1px solid #e6eaf0; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .list-summary-strip__item dd { font-size: 22px; line-height: 28px; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page.customer-pilot-page .list-summary-strip__item { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page.customer-pilot-page .list-summary-strip__item dd { align-self: stretch; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .table-toolbar { flex-wrap: wrap; }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .table-toolbar__actions { margin-left: auto; }
+  /* 手机限制固定单号列的内容长度，完整值仍可通过原有提示与复制操作获取。 */
+  .app-shell.purchase-pilot-theme .purchase-pilot-page .order-number-link { max-width: 140px; }
+  body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog], [data-order-workbench]) { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-header']:not(.sr-only) { padding: 20px 18px 16px; }
+  body:has(.app-shell.purchase-pilot-theme) [data-slot='dialog-footer'] { padding: 16px 18px; }
+  body:has(.app-shell.purchase-pilot-theme) :is([data-purchase-form-dialog], [data-return-form-dialog]) [data-slot='dialog-scroll-content'] { padding: 18px; }
+  body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] .business-detail-hero { align-items: start; }
+  body:has(.app-shell.purchase-pilot-theme) [data-order-workbench] [data-slot='dialog-scroll-content'] { padding: 22px 18px; }
+  body:has(.app-shell.purchase-pilot-theme) :is([data-supplier-form-dialog], .supplier-score-log-pilot-dialog) { width: calc(100vw - 24px); }
+  body:has(.app-shell.purchase-pilot-theme) :is([data-supplier-form-dialog], .supplier-score-log-pilot-dialog) [data-slot='dialog-scroll-content'] { padding: 18px; }
+  body:has(.app-shell.purchase-pilot-theme) .supplier-score-log-pilot-dialog .list-filter-panel__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* 默认10条随页面展开；较大分页才沿用各页面、各断点的内部滚动高度。 */
+.app-shell.purchase-pilot-theme .purchase-pilot-page[data-list-page-size='10'] .purchase-list-body > .table-scroll-viewport { max-height: none; }
+.app-shell.purchase-pilot-theme .warehouse-work-pilot-page[data-list-page-size='10'] .stock-bill-table-scroll > .table-scroll-viewport { max-height: none; }
+.app-shell.purchase-pilot-theme .warehouse-ledger-pilot-page .stock-ledger-table-scroll > .table-scroll-viewport { min-height: 0; max-height: 362px; overflow: auto; isolation: isolate; scrollbar-gutter: stable; }
+.app-shell.purchase-pilot-theme .warehouse-ledger-pilot-page[data-list-page-size='10'] .stock-ledger-table-scroll > .table-scroll-viewport { max-height: none; }
+.app-shell.purchase-pilot-theme .warehouse-ledger-pilot-page .business-data-table > tbody > .stock-ledger-detail-host-row > td { height: 0; padding: 0 14px; border: 0; white-space: normal; }
+.app-shell.purchase-pilot-theme .warehouse-ledger-pilot-page .business-data-table [data-stock-ledger-id] > td:first-child > .flex { justify-content: center; }
+.app-shell.purchase-pilot-theme .warehouse-ledger-pilot-page .business-data-table [data-stock-ledger-source-no] { padding: 0; border-radius: 0; background: transparent; font-size: 14px; }
+.app-shell.purchase-pilot-theme .warehouse-ledger-pilot-page .stock-ledger-key-column[data-slot='table-head'] { z-index: 31; background: #f5f7fa; }
+
+/* 仓储筛选按字段宽度排列，操作紧随末项，避免大屏等分拉伸和按钮远离条件。 */
+.app-shell.purchase-pilot-theme .purchase-pilot-page:is(.warehouse-pilot-page, .catalog-pilot-page) .list-filter-panel__grid--content { display: flex; flex-wrap: wrap; gap: 14px 16px; align-items: flex-end; }
+.app-shell.purchase-pilot-theme :is(.warehouse-pilot-page, .catalog-pilot-page) .list-filter-panel__grid--content > [data-filter-size] { --warehouse-filter-width: 200px; flex: 0 0 var(--warehouse-filter-width); width: var(--warehouse-filter-width); max-width: 100%; }
+.app-shell.purchase-pilot-theme :is(.warehouse-pilot-page, .catalog-pilot-page) .list-filter-panel__grid--content > [data-filter-size='compact'] { --warehouse-filter-width: 160px; }
+.app-shell.purchase-pilot-theme :is(.warehouse-pilot-page, .catalog-pilot-page) .list-filter-panel__grid--content > [data-filter-size='wide'] { --warehouse-filter-width: 240px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page:is(.warehouse-pilot-page, .catalog-pilot-page) .list-filter-panel__actions { flex: 0 0 auto; width: auto; margin: 0; padding: 0; align-self: flex-end; justify-content: flex-start; }
+.app-shell.purchase-pilot-theme :is(.warehouse-pilot-page, .catalog-pilot-page) .warehouse-filter-action-group { display: flex; align-items: flex-end; gap: 16px; }
+.app-shell.purchase-pilot-theme .inventory-pilot-page .stock-risk-shortcut { flex: 0 0 118px !important; width: 118px; min-width: 118px; }
+@media (max-width: 760px) {
+  .app-shell.purchase-pilot-theme :is(.warehouse-pilot-page, .catalog-pilot-page) .list-filter-panel__grid--content > [data-filter-size] { --warehouse-filter-width: calc(50% - 8px); }
+  .app-shell.purchase-pilot-theme .purchase-pilot-page:is(.warehouse-pilot-page, .catalog-pilot-page) .list-filter-panel__actions { flex-basis: 100%; }
+}
+
+/* 产品与系统配置延续已确认的业务主题；树的缩进、行高动画仍由原组件控制。 */
+.app-shell.purchase-pilot-theme .catalog-pilot-page .table-toolbar { flex-wrap: wrap; }
+.app-shell.purchase-pilot-theme .catalog-pilot-page .table-toolbar__actions { flex-wrap: wrap; flex-shrink: 1; }
+.app-shell.purchase-pilot-theme .catalog-pilot-page .business-data-table > :is(thead, tbody) > tr > :is(th, td):first-child { padding-inline: 8px; }
+.app-shell.purchase-pilot-theme .catalog-pilot-page .business-data-table > tbody > tr > td :is(strong, .font-medium, .font-semibold) { font-weight: 400; }
+.app-shell.purchase-pilot-theme .role-master-pilot-page .business-data-table td > .flex-col { align-items: center; }
+.app-shell.purchase-pilot-theme .permission-master-pilot-page .business-data-table td > .flex-col { align-items: center; margin-inline: auto; }
+.app-shell.purchase-pilot-theme .catalog-pilot-page .business-data-table > tbody > tr > td code { padding: 0; border: 0; background: transparent; font-family: inherit; font-size: 14px; }
+.app-shell.purchase-pilot-theme .catalog-pilot-page .business-data-table td [data-slot='button'][data-variant='ghost'] { color: #3267e5; }
+.app-shell.purchase-pilot-theme .product-master-pilot-page .product-products-table { min-width: var(--purchase-table-width); }
+.app-shell.purchase-pilot-theme .product-master-pilot-page .business-data-table td > .flex-col { align-items: center; }
+.app-shell.purchase-pilot-theme .product-master-pilot-page .business-data-table td > .flex-col.text-xs { font-size: 13px; line-height: 20px; }
+.app-shell.purchase-pilot-theme .purchase-pilot-page.product-master-pilot-page .list-filter-panel__actions { margin-left: auto; justify-content: flex-end; }
+.app-shell.purchase-pilot-theme .catalog-pilot-page .business-data-table > tbody > tr > td .truncate { max-width: 240px; }
+.app-shell.purchase-pilot-theme .catalog-tree-page .purchase-list-body > .table-scroll-viewport { max-height: none; }
+/* 树行折叠由内联高度动画归零，分隔线不能留下边框占位。 */
+.app-shell.purchase-pilot-theme .catalog-tree-page .business-data-table > tbody > tr > td { border-bottom: 0; box-shadow: inset 0 -1px #eef1f5; }
+.app-shell.purchase-pilot-theme .catalog-tree-page .tree-table-cell-reveal > .flex { text-align: left; }
+.app-shell.purchase-pilot-theme .catalog-tree-page .tree-table-cell-reveal > .flex > strong { font-size: 14px; }
+body:has(.app-shell.purchase-pilot-theme) [data-tree-select-content] { width: var(--reka-popover-trigger-width); }
+body:has(.app-shell.purchase-pilot-theme) [data-multi-select-content] { width: var(--reka-popover-trigger-width); }
+.app-shell.purchase-pilot-theme .user-master-pilot-page .business-data-table td > .mx-auto { width: 150px; max-width: 100%; justify-content: flex-start; text-align: left !important; }
+.app-shell.purchase-pilot-theme .user-master-pilot-page .business-data-table td > .mx-auto :is(.min-w-0, .text-sm, .text-xs) { text-align: left !important; }
+.app-shell.purchase-pilot-theme .user-master-pilot-page .business-data-table td > .mx-auto > .min-w-0 { flex: 1; }
+.app-shell.purchase-pilot-theme .user-master-pilot-page .business-data-table td > .mx-auto > .min-w-0 > div { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.app-shell.purchase-pilot-theme .user-master-pilot-page .business-data-table [data-slot='avatar-fallback'] { background: #edf2f9; color: #667185; }
+body:has(.app-shell.purchase-pilot-theme .catalog-pilot-page) [data-prompt-dialog] { padding: 0; gap: 0; font-size: 13px; }
+body:has(.app-shell.purchase-pilot-theme .catalog-pilot-page) [data-prompt-dialog] [data-slot='dialog-title'] { font-size: 16px; }
+body:has(.app-shell.purchase-pilot-theme .catalog-pilot-page) [data-prompt-dialog] > .grid { padding: 22px 28px; }
+body:has(.app-shell.purchase-pilot-theme .catalog-pilot-page) [data-prompt-dialog] input { height: 36px; background: #f4f6f9; border-color: transparent; font-size: 13px; }
+body:has(.app-shell.purchase-pilot-theme .catalog-pilot-page) [data-prompt-dialog] :is(.text-sm, [data-slot='label']) { font-size: 13px; }
+body:has(.app-shell.purchase-pilot-theme) [data-master-form-dialog] [data-multi-select-trigger][role='combobox'] { height: auto; min-height: 36px; }
+body:has(.app-shell.purchase-pilot-theme) [data-master-form-dialog] { display: flex; flex-direction: column; width: calc(100vw - var(--app-shell-sidebar-width) - 48px); max-width: var(--master-dialog-width, 640px); height: var(--master-dialog-height, 600px); max-height: calc(100dvh - 96px); gap: 0; padding: 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-master-form-dialog] [data-slot='dialog-scroll-content'] { padding: 22px 28px; }
+body:has(.app-shell.purchase-pilot-theme) [data-master-form-dialog] [data-slot='dialog-footer'] { padding: 16px 28px; }
+body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-layout] { padding: 22px 28px; gap: 20px; }
+body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-slot='dialog-scroll-content'] { padding: 0 12px 0 0; }
+body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-sidebar] { border-color: #e6eaf0; border-radius: 6px; background: #f8fafd; }
+body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-sidebar] button { padding: 8px; font-size: 13px; box-shadow: none; }
+body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-sidebar] button.bg-primary { background: #edf3ff; color: #2857bc; }
+body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-sidebar] button.bg-primary > span { color: inherit; }
+body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-content] [data-slot='dialog-scroll-content'] .rounded-lg { border-color: #eef1f5; border-radius: 6px; background: #fafbfc; padding: 10px 12px; }
+@media (max-width: 760px) {
+  body:has(.app-shell.purchase-pilot-theme) [data-master-form-dialog] { width: calc(100vw - 24px); max-height: calc(100dvh - 80px); }
+  body:has(.app-shell.purchase-pilot-theme) [data-master-form-dialog] [data-slot='dialog-scroll-content'] { padding: 18px; }
+  body:has(.app-shell.purchase-pilot-theme) :is([data-role-form-dialog], [data-role-permissions-dialog]) .grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-layout] { flex-direction: column; padding: 18px; gap: 14px; }
+  body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-sidebar] { width: 100%; }
+  body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-sidebar] > div { display: flex; gap: 6px; overflow-x: auto; }
+  body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-permission-preview-sidebar] button { width: auto; flex: none; margin: 0; white-space: nowrap; }
+  body:has(.app-shell.purchase-pilot-theme) [data-role-preview-dialog] [data-slot='dialog-scroll-content'] { padding: 0 12px 0 0; }
+}

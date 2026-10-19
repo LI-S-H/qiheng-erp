@@ -168,6 +168,7 @@ watch(keyword, () => {
           v-if="clearable"
           data-select-option
           type="button"
+          :aria-current="normalizedValue === String(clearValue) ? 'true' : undefined"
           class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
           :class="compact ? 'min-h-8 text-xs' : 'min-h-9 text-sm'"
           @click="selectClear"
@@ -187,6 +188,7 @@ watch(keyword, () => {
           :key="String(option.value)"
           type="button"
           data-select-option
+          :aria-current="normalizedValue === String(option.value) ? 'true' : undefined"
             class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             :class="compact ? 'min-h-8 text-xs' : 'min-h-9 text-sm'"
             :disabled="option.disabled"

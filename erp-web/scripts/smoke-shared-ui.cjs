@@ -104,9 +104,12 @@ async function assertSharedTableBehavior(page, reducedMotion) {
     throw new Error(`固定列在中段滚动时未显示双向边缘层次：${JSON.stringify({ middleStartEdge, middleEndEdge })}`);
   }
 
-  const stickyRow = startEdge.locator('xpath=parent::tr');
   const beforeHover = await Promise.all([readEdgeState(startEdge), readEdgeState(endEdge)]);
-  await stickyRow.hover();
+  // locator.hover 会先 scrollIntoView，即使固定列可见也可能横滚到边界。
+  // 直接在当前可见单元格移动鼠标，保持已设定的中段滚动位置。
+  const hoverBox = await startEdge.boundingBox();
+  if (!hoverBox) throw new Error('固定列不可见，无法核验悬停');
+  await page.mouse.move(hoverBox.x + hoverBox.width / 2, hoverBox.y + hoverBox.height / 2);
   await page.waitForTimeout(reducedMotion ? 5 : 180);
   const afterHover = await Promise.all([readEdgeState(startEdge), readEdgeState(endEdge)]);
   if (afterHover.some(edge => edge.opacity < 0.95)) {

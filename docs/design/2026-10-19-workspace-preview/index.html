@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>工作台与智能助手 · 设计预览</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="refinements.css" />
+</head>
+<body>
+  <header class="preview-bar">
+    <div class="preview-title"><span class="preview-mark"></span>页面设计预览 <span class="preview-note">示例数据 · 未接业务接口</span></div>
+    <nav class="preview-tabs" aria-label="预览页面"><button data-view="dashboard">工作台</button><button data-view="assistant">智能助手</button></nav>
+    <div class="preview-tools"><a class="text-button" href="http://127.0.0.1:9071/ai/assistant" target="_blank" rel="noopener">打开实际助手</a><label id="state-picker-label" hidden>预览状态 <select id="state-picker"><option value="plan">计划已生成</option><option value="welcome">欢迎页</option><option value="clarify">补充条件</option><option value="running">生成计划中</option><option value="error">请求失败</option></select></label><button class="text-button" data-action="compare">对照现有页面</button></div>
+  </header>
+  <div class="app-shell">
+    <aside class="app-sidebar" aria-label="业务导航">
+      <div class="brand"><img src="logo.png" alt="云仓标志"/><div><strong>云仓 <span>ERP</span></strong><small>云端仓储智能管理平台</small></div></div>
+      <nav id="app-nav"></nav>
+      <div class="sidebar-foot"><span class="avatar">系</span><div>系统管理员<small>业务管理工作区</small></div></div>
+    </aside>
+    <div class="workspace">
+      <header class="app-header"><div class="breadcrumb" id="breadcrumb">工作台</div><div class="header-actions"><button class="icon-button notification-trigger" data-action="notifications" aria-label="查看13条通知"><span data-icon="Bell"></span><b>13</b></button><span class="avatar">系</span><span class="profile-name">系统管理员</span></div></header>
+      <div id="view-stage" tabindex="-1"></div>
+    </div>
+  </div>
+  <dialog id="detail-dialog"><header><div><h2 id="modal-title"></h2><p id="modal-description"></p></div><button class="icon-button" data-action="close-modal" aria-label="关闭详情"><span data-icon="X"></span></button></header><div id="modal-body"></div><footer id="modal-footer"></footer></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+  <script src="refinements.js"></script>
+</body>
+</html>

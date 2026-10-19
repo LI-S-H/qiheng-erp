@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import '@/styles/ai-pilot.css';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { Bot, CalendarDays, ChevronDown, ChevronsDown, ChevronsUp, History, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, UserRound } from 'lucide-vue-next';
 import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';

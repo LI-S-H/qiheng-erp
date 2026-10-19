@@ -1,0 +1,201 @@
+{
+  "status": "通过",
+  "checks": [
+    {
+      "name": "1440/dashboard外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 1440,
+        "width": 1440
+      }
+    },
+    {
+      "name": "1440/purchase外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 1440,
+        "width": 1440
+      }
+    },
+    {
+      "name": "1440/inventory外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 1440,
+        "width": 1440
+      }
+    },
+    {
+      "name": "1440/assistant外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 1440,
+        "width": 1440
+      }
+    },
+    {
+      "name": "1440/canvas外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 1440,
+        "width": 1440
+      }
+    },
+    {
+      "name": "1440/system外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 1440,
+        "width": 1440
+      }
+    },
+    {
+      "name": "六个导航页面均可点击渲染",
+      "status": "通过"
+    },
+    {
+      "name": "Ctrl+K导航筛选与Esc关闭",
+      "status": "通过"
+    },
+    {
+      "name": "采购供应商与状态按AND筛选",
+      "status": "通过"
+    },
+    {
+      "name": "采购重置、上一页、下一页",
+      "status": "通过"
+    },
+    {
+      "name": "采购详情打开、Esc关闭并恢复焦点",
+      "status": "通过"
+    },
+    {
+      "name": "采购详情携带演示单号进入AI",
+      "status": "通过"
+    },
+    {
+      "name": "用户消息靠右、蓝色气泡、宽度受限",
+      "status": "通过",
+      "details": {
+        "left": 830,
+        "right": 1186,
+        "rowLeft": 486,
+        "rowRight": 1186,
+        "radius": 12,
+        "background": "rgb(237, 242, 252)",
+        "width": 356,
+        "rowWidth": 700
+      }
+    },
+    {
+      "name": "澄清范围生成计划、依据切换、本地Markdown导出",
+      "status": "通过"
+    },
+    {
+      "name": "1115计划抽屉、Esc关闭",
+      "status": "通过"
+    },
+    {
+      "name": "390/AI计划外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 390,
+        "width": 390
+      }
+    },
+    {
+      "name": "方案画布模式/区域切换、现状截图入口",
+      "status": "通过"
+    },
+    {
+      "name": "52/44行高切换、错误和重试恢复",
+      "status": "通过",
+      "details": {
+        "standard": 52,
+        "compact": 44
+      }
+    },
+    {
+      "name": "1366/采购外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 1366,
+        "width": 1366
+      }
+    },
+    {
+      "name": "1366采购表头位置",
+      "status": "通过",
+      "details": {
+        "y": 353.78125
+      }
+    },
+    {
+      "name": "390/dashboard外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 390,
+        "width": 390
+      }
+    },
+    {
+      "name": "390/purchase外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 390,
+        "width": 390
+      }
+    },
+    {
+      "name": "390/inventory外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 390,
+        "width": 390
+      }
+    },
+    {
+      "name": "390/assistant外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 390,
+        "width": 390
+      }
+    },
+    {
+      "name": "390/canvas外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 390,
+        "width": 390
+      }
+    },
+    {
+      "name": "390/system外层无横向溢出",
+      "status": "通过",
+      "details": {
+        "viewport": 390,
+        "width": 390
+      }
+    },
+    {
+      "name": "390移动导航可打开、切页并关闭",
+      "status": "通过"
+    },
+    {
+      "name": "长连续字符自动换行，用户输入按纯文本呈现",
+      "status": "通过",
+      "details": {
+        "width": 298,
+        "scrollWidth": 298,
+        "height": 251
+      }
+    },
+    {
+      "name": "无浏览器未捕获异常、无业务API请求",
+      "status": "通过"
+    }
+  ],
+  "errors": [],
+  "apiCalls": []
+}

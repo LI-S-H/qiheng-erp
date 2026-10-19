@@ -1,0 +1,121 @@
+/* 助手独立工作区复用已确认的应用壳；所有规则限定于本页与本页侧栏浮层。 */
+.app-shell.ai-pilot-theme .graph-workspace{--ai-line:#e9edf3;--ai-subtle:#8a98aa;--ai-panel:#fbfcfe;background:#fff;color:#34465e}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .conversation-sidebar{background:#fbfcfe;border-color:#e9edf3}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .sidebar-head{border-bottom:0;height:56px;padding:0 13px 0 16px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .sidebar-head h2{font-size:12px;font-weight:500;color:#7a899d}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .sidebar-create{padding:2px 12px 17px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .create-button{justify-content:flex-start;gap:9px;min-height:39px;padding:0 10px;border-color:#e2e8f1;border-radius:8px;background:#fff;color:#536985;font-size:13px;font-weight:500;box-shadow:0 2px 3px #26384f04;transition:background 180ms,border-color 180ms,box-shadow 180ms}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .create-button:hover:not(:disabled){background:#f8fafd;border-color:#cedaeb;box-shadow:0 3px 10px #314d7308;color:#365a89}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .create-symbol{display:grid;place-items:center;width:24px;height:24px;border-radius:5px;background:#edf2f9;color:#7a92b0}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .create-arrow{margin-left:auto;color:#a6b5ca}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .sidebar-list{padding:0 9px 16px;scrollbar-color:#c8d1de transparent}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .group-head{font-size:13px;font-weight:500;color:#647791;letter-spacing:0;padding:9px 8px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .group-chevron{width:12px;height:12px;order:2;margin-left:auto}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .group-count{font-size:10px;color:#9ca8b9;margin-left:5px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .conversation-row{border-radius:5px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .conversation-row.is-active{background:#edf2fc}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .conversation-row:hover{background:#f0f4fa}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .conversation-main{padding:9px 8px;gap:3px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .conversation-title{font-size:13px;font-weight:400;color:#5d718f}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .conversation-main time{font-size:10px;color:#98a5b7}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .conversation-actions button{border-radius:4px;color:#91a1b6}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) :is(.head-button,.rail-button){color:#7c8da5;border-radius:5px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) :is(.head-button,.rail-button):hover{background:#eef3fa;color:#5677a3}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) :is(.create-button,.head-button,.rail-button,.group-head,.conversation-main,.conversation-actions button):focus-visible{outline:1px solid #b6c2d2;outline-offset:-1px;box-shadow:0 0 0 2px #52678708}
+.app-shell.ai-pilot-theme .graph-workspace .workspace-header{background:#fff;border-color:#e9edf3;padding-inline:23px}
+.app-shell.ai-pilot-theme .graph-workspace .workspace-title>svg{color:#8198ba;width:16px;height:16px}
+.app-shell.ai-pilot-theme .graph-workspace .workspace-title h1{font-size:14px;font-weight:500;color:#425a78}
+.app-shell.ai-pilot-theme .graph-workspace .task-status{font-size:11px;color:#8796ab;gap:6px}
+.app-shell.ai-pilot-theme .graph-workspace .status-dot{width:5px;height:5px;background:#7ca58e}
+.app-shell.ai-pilot-theme .graph-workspace .workspace-actions [data-slot='button']{height:29px;padding-inline:9px;gap:6px;font-size:12px;border-color:#e3e9f2;background:#fff;color:#6a7e9b}
+.app-shell.ai-pilot-theme .graph-workspace .workspace-actions [data-slot='button'] svg{width:14px;height:14px}
+.app-shell.ai-pilot-theme .graph-workspace .conversation-scroll{padding:27px 28px 30px 38px;background:#fff;scrollbar-color:#c8d1de transparent;scrollbar-gutter:stable}
+.app-shell.ai-pilot-theme .graph-workspace .conversation-stream{gap:25px;max-width:720px}
+.app-shell.ai-pilot-theme .graph-workspace .message-list{gap:28px}
+.app-shell.ai-pilot-theme .graph-workspace .message{gap:10px}
+.app-shell.ai-pilot-theme .graph-workspace .message-avatar{background:#e8f0ff;border-color:#cbdcf7;border-radius:6px;color:#4169ad}
+.app-shell.ai-pilot-theme .graph-workspace .message.is-user .message-avatar{background:#e6f3ee;border-color:#c5e1d5;color:#357861}
+.app-shell.ai-pilot-theme .graph-workspace .message-meta{font-size:11px;color:#8999ad;gap:8px;min-height:26px}
+.app-shell.ai-pilot-theme .graph-workspace .message-bubble{font-size:14px;line-height:1.85;background:#f5f7fa;border-radius:7px;padding:11px 14px;color:#405772}
+.app-shell.ai-pilot-theme .graph-workspace .message.is-user .message-bubble{background:#f4f6f9;border-radius:8px}
+.app-shell.ai-pilot-theme .graph-workspace .message-content .ai-markdown-content{font-size:14px;line-height:1.85;color:#405772}
+.app-shell.ai-pilot-theme .graph-workspace .historic-questions{background:#fafbfd;border-color:#e7edf5;font-size:13px}
+.app-shell.ai-pilot-theme .graph-workspace .plan-artifact{border-color:#e5ecf6;background:#fbfcff;box-shadow:none;border-radius:7px;padding:14px 16px;color:#7994bb}
+.app-shell.ai-pilot-theme .graph-workspace .plan-artifact:hover{background:#f5f8fd;border-color:#d8e3f2}
+.app-shell.ai-pilot-theme .graph-workspace .plan-artifact strong{font-size:13px;font-weight:500;color:#4c678a}
+.app-shell.ai-pilot-theme .graph-workspace .plan-artifact small{font-size:11px;color:#8b9bb1}
+.app-shell.ai-pilot-theme .graph-workspace .message-navigator{left:2px;width:26px;max-height:calc(100% - 40px)}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker{width:26px;height:25px;border-radius:5px}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker>span{width:9px;height:2px;background:#b9c7da;opacity:.65}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker[aria-current]>span{width:14px;background:#8ba5c8;opacity:1}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker:is(:hover,:focus-visible){background:#f1f5fa;outline:0;box-shadow:inset 0 0 0 1px #e3eaf4}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker:is(:hover,:focus-visible)>span{width:17px;background:#7396c6;opacity:1}
+body:has(.app-shell.ai-pilot-theme) .ai-turn-preview{border-color:#e1e8f2!important;background:#fff!important;color:#536b8c!important;box-shadow:0 5px 20px #283c5810!important;border-radius:7px!important}
+body:has(.app-shell.ai-pilot-theme) .ai-turn-preview .turn-preview-label{font-size:11px;color:#91a0b5}
+body:has(.app-shell.ai-pilot-theme) .ai-turn-preview .turn-preview-text{font-size:13px;line-height:1.75}
+.app-shell.ai-pilot-theme .graph-workspace .welcome-state{width:100%;max-width:490px;margin-inline:auto;padding:40px 0}
+.app-shell.ai-pilot-theme .graph-workspace .welcome-symbol{width:38px;height:38px;border-radius:10px;background:#f0f4fa;color:#7c94b8;margin-bottom:25px}
+.app-shell.ai-pilot-theme .graph-workspace .welcome-symbol svg{width:21px;height:21px}
+.app-shell.ai-pilot-theme .graph-workspace .welcome-state h2{font-size:25px;font-weight:500;color:#3e5674;line-height:1.5;letter-spacing:-.4px}
+.app-shell.ai-pilot-theme .graph-workspace .welcome-state>p{font-size:14px;color:#8c9cb2;line-height:1.85}
+.app-shell.ai-pilot-theme .graph-workspace .example-list{margin-top:30px}
+.app-shell.ai-pilot-theme .graph-workspace .example-list button{padding:15px 0;font-size:13px;color:#6b83a4;border-color:#edf1f6}
+.app-shell.ai-pilot-theme .graph-workspace .example-list button:hover{color:#3568af}
+.app-shell.ai-pilot-theme .graph-workspace .example-list svg{color:#9aacc4}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer-dock{background:#fff;border-color:#edf1f5;padding:14px 28px 14px 38px}
+.app-shell.ai-pilot-theme .graph-workspace .composer-inner{max-width:720px}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer{background:#f7f9fc;border-color:#e5ecf5;box-shadow:none;border-radius:8px;padding:9px 10px}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer:focus-within{background:#fff;border-color:#b6c2d2;box-shadow:0 0 0 2px #52678708}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer__input{background:transparent;font-size:13px;line-height:22px;min-height:49px;padding:6px;resize:vertical;border:0;box-shadow:none!important}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer__input:focus-visible{background:transparent;outline:0;box-shadow:none!important}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer__input::placeholder{color:#9ba9bc}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer__send[data-slot='button']{height:31px;padding-inline:10px;font-size:12px;gap:6px;border-radius:6px;margin:0 0 2px}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer__send svg{width:14px;height:14px}
+.app-shell.ai-pilot-theme .graph-workspace .composer-hint{font-size:10px;color:#9fadc0;gap:4px 8px}
+.app-shell.ai-pilot-theme .graph-workspace .composer-mode{font-size:12px;color:#6e87a9}
+.app-shell.ai-pilot-theme .graph-workspace .composer-mode span{font-size:11px;color:#93a1b4}
+.app-shell.ai-pilot-theme .graph-workspace .composer-error{font-size:12px;color:#ad6877}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-panel{background:#fcfdff;border-color:#e9edf3}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-panel>header{padding:0 18px;border-color:#edf1f6}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-panel>header>span{font-size:13px;color:#637b9d;font-weight:500;gap:8px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-scroll{padding:23px 21px;scrollbar-color:#c8d1de transparent;scrollbar-width:thin}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-state{display:inline-flex;padding:2px 7px;border-radius:4px;background:#eef7f2;color:#518b71;font-size:11px;margin-bottom:13px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-panel h2{font-size:17px;line-height:1.6;font-weight:600;color:#465f7d}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-objective{font-size:13px;line-height:1.8;color:#7a8ea9;margin-top:10px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-scroll h3{font-size:12px;color:#91a1b6;font-weight:400;margin:25px 0 17px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-scroll ol{gap:0;margin-left:9px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-scroll li{border-left:1px solid #e2eaf5;padding:0 0 23px 24px;position:relative}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-scroll li:last-child{padding-bottom:0;border-color:transparent}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .step-heading{gap:6px;font-size:12px;line-height:21px;color:#7b93b5}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .step-number{position:absolute;left:-10px;top:1px;width:19px;height:19px;border:1px solid #dce5f2;border-radius:50%;background:#fcfdff;font-size:10px;color:#8198ba}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-scroll li p{margin:7px 0 0;font-size:13px;line-height:1.8;color:#7189ab}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-note{font-size:12px;line-height:1.8;color:#8a9bb2;border-color:#e8eef6;margin-top:25px;padding-top:15px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-empty{padding:32px 23px;font-size:12px;line-height:1.8;color:#92a2b8;gap:13px}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .plan-empty h2{font-size:14px;font-weight:500;color:#7b90ae}
+.app-shell.ai-pilot-theme .graph-workspace .clarification{border-color:#e5ecf5;border-radius:7px;background:#fff;padding:18px}
+.app-shell.ai-pilot-theme .graph-workspace .clarification-intro h2{font-size:14px;font-weight:500;color:#486180}
+.app-shell.ai-pilot-theme .graph-workspace .clarification-intro p{font-size:12px;color:#899ab0}
+.app-shell.ai-pilot-theme .graph-workspace .clarification-field{margin-top:18px}
+.app-shell.ai-pilot-theme .graph-workspace .clarification-field legend{font-size:13px;font-weight:400;color:#657d9e}
+.app-shell.ai-pilot-theme .graph-workspace .answer-option{min-height:33px;padding:5px 10px;font-size:12px;border-radius:5px;gap:7px;border-color:#e1e8f3}
+.app-shell.ai-pilot-theme .graph-workspace .answer-option:is(:hover,.is-selected){background:#f2f6fd;border-color:#c9d9f1;color:#5279aa}
+.app-shell.ai-pilot-theme .graph-workspace .answer-text{font-size:13px;line-height:1.8;border-color:#e4ebf5;background:#f8fafc;min-height:65px}
+.app-shell.ai-pilot-theme .graph-workspace .field-error{font-size:12px;color:#ad6877}
+.app-shell.ai-pilot-theme .graph-workspace .progress-feed{border:0;border-top:1px solid #edf1f6;border-bottom:1px solid #edf1f6;border-radius:0;background:#fff;padding:14px 0;color:#8da0b9}
+.app-shell.ai-pilot-theme .graph-workspace .progress-feed summary{font-size:12px;color:#8b9db6}
+.app-shell.ai-pilot-theme .graph-workspace .progress-steps li{font-size:12px;color:#8b9db6}
+.app-shell.ai-pilot-theme .graph-workspace .progress-hint{font-size:11px;color:#9aa9be;border-color:#edf1f6}
+.app-shell.ai-pilot-theme .graph-workspace .request-error{border-color:#eedfe3;background:#fdfafb;color:#ac7180;font-size:13px}
+.app-shell.ai-pilot-theme .graph-workspace .request-warning{border-color:#e7edf4;background:#fafcfe;color:#8c9cb2;font-size:12px}
+.app-shell.ai-pilot-theme .graph-workspace .state-note{font-size:12px;color:#8f9eb2}
+.app-shell.ai-pilot-theme .graph-workspace .panel-resizer::after{background:#b0c2dc}
+.app-shell.ai-pilot-theme .graph-workspace .panel-resizer:is(:hover,:focus-visible)::after{opacity:.65}
+.app-shell.ai-pilot-theme .graph-workspace .panel-resizer:focus-visible{box-shadow:none}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) [data-list-loading]{background:rgb(255 255 255 / 86%);backdrop-filter:none}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .page-loading-enter-active{transition:opacity 120ms ease-out}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .page-loading-enter-from{opacity:0}
+:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) .page-loading-leave-active{transition:opacity 220ms ease-out}
+@media(min-width:1700px){.app-shell.ai-pilot-theme .graph-workspace .conversation-stream,.app-shell.ai-pilot-theme .graph-workspace .composer-inner{max-width:780px}}
+@media(max-width:1250px){.app-shell.ai-pilot-theme .graph-workspace .task-status{display:none}.app-shell.ai-pilot-theme .graph-workspace .workspace-header{padding-inline:18px}}
+@media(max-width:640px){.app-shell.ai-pilot-theme .graph-workspace .workspace-header{padding-inline:12px}.app-shell.ai-pilot-theme .graph-workspace .workspace-title{gap:6px}.app-shell.ai-pilot-theme .graph-workspace .workspace-title h1{font-size:13px}.app-shell.ai-pilot-theme .graph-workspace .workspace-title>svg{display:none}.app-shell.ai-pilot-theme .graph-workspace .conversation-scroll{padding:22px 14px 25px 25px}.app-shell.ai-pilot-theme .graph-workspace .ai-composer-dock{padding:12px 14px 12px 25px}.app-shell.ai-pilot-theme .graph-workspace .message-navigator{left:0;width:17px}.app-shell.ai-pilot-theme .graph-workspace .turn-marker{width:17px}.app-shell.ai-pilot-theme .graph-workspace .turn-marker>span{width:7px}.app-shell.ai-pilot-theme .graph-workspace .turn-marker:is([aria-current],:hover,:focus-visible)>span{width:12px}.app-shell.ai-pilot-theme .graph-workspace .message-avatar{width:26px;height:26px}.app-shell.ai-pilot-theme .graph-workspace .message{gap:8px}.app-shell.ai-pilot-theme .graph-workspace .welcome-state{padding:28px 0}.app-shell.ai-pilot-theme .graph-workspace .welcome-state h2{font-size:23px}.app-shell.ai-pilot-theme .graph-workspace .welcome-state>p{font-size:13px}.app-shell.ai-pilot-theme .graph-workspace .composer-hint{font-size:9px}.app-shell.ai-pilot-theme .graph-workspace .ai-composer__send[data-slot='button']{min-width:30px;padding-inline:8px}.app-shell.ai-pilot-theme .graph-workspace .message-bubble{font-size:13px}}
+@media(prefers-reduced-motion:reduce){:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) :is(.page-loading-enter-active,.page-loading-leave-active){transition-duration:.01ms}}

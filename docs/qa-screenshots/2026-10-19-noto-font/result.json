@@ -1,0 +1,22 @@
+{
+  "status": "NOTO_FONT_PASSED",
+  "checks": [
+    "中文字形实际使用自托管Noto，表头数据14px居中",
+    "新字体按钮自然基线与上下对称内边距",
+    "新增表单与窄屏字体、文字和控件无溢出",
+    "助手正文和管理区继承统一字体，原布局保持",
+    "字体按Unicode分片同源加载，无404、远程字体请求或业务写入"
+  ],
+  "fontFiles": 17,
+  "platformFonts": [
+    {
+      "familyName": "Noto Sans SC Thin",
+      "postScriptName": "Noto-Sans-SC-Thin-Medium",
+      "isCustomFont": true,
+      "glyphCount": 4
+    }
+  ],
+  "errors": [],
+  "failedFonts": [],
+  "writes": []
+}

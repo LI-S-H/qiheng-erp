@@ -1,0 +1,13 @@
+{
+  "status": "通过",
+  "newConversationScope": {
+    "warehouse": "全部仓库",
+    "budget": "",
+    "period": "未来 30 天"
+  },
+  "stickyFirstColumn": {
+    "before": 21,
+    "after": 21
+  },
+  "minimumVisibleFont": 12
+}

@@ -1,0 +1,69 @@
+/* 沿用用户指定演示的字体、色彩和组件，仅适配现有 ERP 的完整字段。 */
+.sidebar { padding-top: 24px; overflow-y: auto; }
+.brand small { letter-spacing: .4px; }
+#navigation { margin-top: 10px; }
+#navigation button { font-weight: 400; }
+#navigation button.active { font-weight: 400; }
+.nav-group { margin-top: 8px; }
+.nav-group summary { display: flex; align-items: center; gap: 11px; padding: 10px 13px; cursor: pointer; color: #575e69; font-size: 13px; list-style: none; }
+.nav-group summary::-webkit-details-marker { display: none; }
+.nav-group summary .nav-chevron { margin-left: auto; width: 13px; height: 13px; transition: transform .15s; }
+.nav-group[open] summary .nav-chevron { transform: rotate(90deg); }
+.nav-children { padding-left: 28px; }
+.nav-children button { min-height: 34px; padding-block: 7px; margin-block: 1px; }
+.sidebar-bottom { padding-top: 20px; }
+.topbar { padding-inline: 32px; }
+.notification { position: relative; }
+.notification-count { position: absolute; right: -4px; top: -3px; padding: 0 3px; min-width: 16px; line-height: 16px; border-radius: 8px; background: #edf2ff; color: #315dce; font-size: 10px; }
+main { padding: 30px 32px 40px; max-width: 1700px; }
+.page-heading { margin-bottom: 18px; }
+h1 { font-size: 24px; font-weight: 600; }
+.subtitle { max-width: 900px; font-size: 12px; line-height: 1.8; }
+.summary-line { display: flex; flex-wrap: wrap; gap: 10px 26px; margin: 0 0 21px; color: #626873; font-size: 12px; }
+.summary-line div { display: flex; gap: 10px; align-items: baseline; }
+.summary-line dt,.summary-line dd { margin: 0; }
+.summary-line dd { font-weight: 400; color: #20242c; font-variant-numeric: tabular-nums; }
+.filter-bar { gap: 12px 14px; padding: 17px 18px; }
+.filter-bar .field { min-width: 120px; }
+.filter-bar .field.compact { flex: .72; }
+.filter-bar .field.wide { flex: 1.25; }
+.filter-bar input,.filter-bar select { height: 36px; font-size: 13px; }
+.filter-bar .button,.table-title .button { min-height: 34px; font-size: 13px; }
+.filter-actions { display: flex; gap: 8px; align-items: center; }
+.stock-filters .field { min-width: 145px; }
+.stock-filters .risk-field { flex: 0 0 auto; min-width: 118px; }
+.table-title { padding: 15px 18px; }
+.table-heading { min-width: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.table-heading h2 { font-size: 13px; font-weight: 600; }
+.table-heading p { color: #626873; font-size: 12px; line-height: 1.7; max-width: 780px; }
+.table-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.data-table { table-layout: fixed; min-width: 1060px; font-size: 14px; }
+.data-table th { padding-inline: 14px; height: 40px; font-size: 12px; font-weight: 400; text-align: left; }
+.data-table td { padding: 9px 14px; height: 57px; font-weight: 400; }
+.data-table .numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table .secondary { display: block; margin-top: 2px; font-size: 12px; color: #626873; }
+.data-table .primary-text { overflow: hidden; display: block; text-overflow: ellipsis; }
+.data-table .tag { border: 0; padding: 2px 7px; border-radius: 4px; font-weight: 400; line-height: 1.5; }
+.data-table .action-cell { position: sticky; right: 0; background: white; border-left: 1px solid #eff0f3; text-align: center; }
+.data-table th.action-cell { background: #fafbfc; }
+.data-table tbody tr:hover .action-cell { background: #fafbfe; }
+.table-scroll { max-height: min(620px, max(260px, calc(100dvh - 480px))); }
+.data-table thead th { position: sticky; top: 0; z-index: 2; }
+.data-table thead th.action-cell { z-index: 3; }
+.table-link { font-size: 12px; }
+.stock-table { min-width: 1180px; }
+.stock-table .risk-number { color: #906412; }
+.stock-table .critical-number { color: #a24e49; }
+.pagination select { border: 1px solid var(--line); border-radius: 4px; height: 28px; background: white; color: #626873; margin-left: 8px; font-size: 12px; }
+.pagination-left { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pagination .pages { margin-left: auto; }
+.preview-boundary { margin-top: 12px; font-size: 12px; color: #626873; }
+.info-dialog { max-height: calc(100dvh - 40px); overflow-y: auto; width: 580px; }
+.dialog-heading { display: flex; justify-content: space-between; align-items: center; }
+#dialog-body p { margin-block: 10px; }
+#dialog-body dl { display: grid; grid-template-columns: 100px 1fr; gap: 12px; font-size: 13px; }
+#dialog-body dt { color: #626873; }
+#dialog-body dd { margin: 0; }
+::selection { background: #e4ebfc; }
+@media(max-width:1115px) { main { padding-inline: 24px; } .filter-bar .field { flex-basis: 150px; } .table-heading p { max-width: 520px; } }
+@media(max-width:760px) { main { padding: 23px 16px; } .topbar { padding-inline: 16px; } .sidebar { padding-top: 20px; } .filter-bar .field { flex-basis: calc(50% - 14px); min-width: 110px; } .filter-actions { width: 100%; justify-content: flex-end; } .table-title { gap: 12px; } .table-heading p { max-width: 100%; } .summary-line { gap: 8px 18px; } .button { min-height: 40px; } .pagination .pages { margin-left: 0; } }

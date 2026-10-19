@@ -729,7 +729,7 @@ for (const action of ["submit", "approve", "cancel"]) {
 }
 for (const fragment of [
   "const RETURN_API = '/returns'",
-  "getResult<ReturnOrderPage>(RETURN_API, params)",
+  "getResult<ReturnOrderPage>(RETURN_API, params",
   "postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request)",
   "http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload)",
   "http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })",
@@ -945,7 +945,7 @@ for (const action of ["submit", "approve", "cancel"]) {
 }
 for (const fragment of [
   "const RETURN_API = '/returns'",
-  "getResult<ReturnOrderPage>(RETURN_API, params)",
+  "getResult<ReturnOrderPage>(RETURN_API, params",
   "postResult<ReturnOrderDetail, ReturnOrderCreateRequest>(RETURN_API, request)",
   "http.put<Result<ReturnOrderDetail>>(`${RETURN_API}/${returnOrderId}`, payload)",
   "http.delete(`${RETURN_API}/${returnOrderId}`, { data: { version } })",
@@ -2001,8 +2001,12 @@ if (
 ) {
   throw new Error("工作台供应商表现必须使用最终评分字段，不能依赖旧准时率");
 }
-if (returnViewSource.includes("ListLoadingOverlay")) {
-  throw new Error("通用退货页面不得保留表格局部加载遮罩");
+// 已确认的新主题要求分页平滑过渡；仅主题分支显示列表遮罩，原全局请求加载器保留。
+if (
+  !returnViewSource.includes('<ListLoadingOverlay v-if="isRefinedTheme" :visible="queryBusy" :initial-delay="0"') ||
+  !returnViewSource.includes(':inert="isRefinedTheme && queryBusy')
+) {
+  throw new Error("新主题退货分页须即时显示列表加载过渡并锁定数据操作");
 }
 for (const fragment of [
   "beginPageLoading",

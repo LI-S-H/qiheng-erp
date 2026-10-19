@@ -1,0 +1,420 @@
+{
+  "cases": [
+    "待办悬停铺满面板左右边缘，文字留白不变，背景柔和加深",
+    "白底四指标、业务待办sortWeight排序、趋势汇总居中、默认7个日期与数值全显",
+    "Tooltip同日期跟随、竖线与三点、键盘定位、30天密集刻度与完整矩阵",
+    "八类待办所有原字段与resolveHint保留，系统TRACKED仅查看，抽屉开合与Esc焦点恢复",
+    "七类业务精确status/from/riskOnly导航，todoId深链接、关闭清参和无效ID安全降级",
+    "综合评分位于最右列且按综合分排序，两排行整行悬停与入口留白一致",
+    "销售图形排行与供应商五项评分、交期和依据金额完整呈现",
+    "订单阶段采购销售切换保留取消状态与当前状态口径",
+    "1920/1440/1115/390响应式无页面溢出，日期不重叠，抽屉字段与底栏可达",
+    "1115/390在15/30天首末日期保留、刻度与原日期一致、Tooltip四角跟随且不越界",
+    "仓库远程搜索10条、明确仓库名参数与warehouseId接口刷新",
+    "刷新只复用局部加载、按钮锁定、失败保留旧数据",
+    "趋势与订单维度权限裁剪",
+    "供应商同分并列、NOT_READY不排名且不误显示零分",
+    "denied状态不暴露业务数值与操作",
+    "empty状态不暴露业务数值与操作"
+  ],
+  "errors": [],
+  "requests": [
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/purchase/suppliers",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "1"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/warehouse/warehouses",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "1"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/products",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "1"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/purchase/orders",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "SUBMITTED"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/sales/customers",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "1"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/warehouse/warehouses",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "1"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/products",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "1"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/sales/orders",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "SUBMITTED"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/returns",
+      "query": {
+        "returnType": "PURCHASE_RETURN",
+        "status": "SUBMITTED",
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/returns",
+      "query": {
+        "returnType": "SALES_RETURN",
+        "status": "SUBMITTED",
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/warehouse/warehouses",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/products",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "1"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/warehouse/warehouses",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/products",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "status": "1"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/warehouse/warehouses",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/warehouse/stocks",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "riskOnly": "true"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/warehouse/warehouses",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {
+        "warehouseId": "1900000000000000301"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/warehouse/warehouses",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "10",
+        "warehouseName": "华东"
+      },
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/auth/me",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/overview",
+      "query": {},
+      "method": "GET"
+    },
+    {
+      "path": "/dashboard/inventory-status",
+      "query": {},
+      "method": "GET"
+    }
+  ]
+}

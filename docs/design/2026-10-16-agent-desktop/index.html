@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#F7F8FA"><title>云仓 ERP · 桌面工作区设计原型</title>
+  <link rel="stylesheet" href="prototype.css"><script defer src="icons.js"></script><script defer src="prototype.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="主导航">
+      <a href="#dashboard" class="brand"><img src="../../../erp-web/src/assets/brand/yuncang-logo.png" alt=""><span>云仓 <b>ERP</b><small>企业经营工作空间</small></span></a>
+      <button class="workspace-switch" id="workspace-info"><span class="workspace-symbol">云</span><span>云仓科技<small>演示工作空间</small></span><i data-icon="chevrons"></i></button>
+      <button class="command-trigger" id="command-open"><i data-icon="search"></i><span>快速前往</span><kbd>Ctrl K</kbd></button>
+      <nav id="navigation">
+        <div class="nav-caption">工作空间</div>
+        <button data-route="dashboard"><i data-icon="home"></i>工作台</button>
+        <button data-route="assistant"><i data-icon="sparkles"></i>智能助手<span class="nav-label">AI</span></button>
+        <div class="nav-caption">业务管理</div>
+        <button data-route="purchase"><i data-icon="shopping"></i>采购订单</button>
+        <button data-route="inventory"><i data-icon="boxes"></i>库存管理</button>
+        <div class="nav-caption">设计提案</div>
+        <button data-route="canvas"><i data-icon="layout"></i>方案画布</button>
+        <button data-route="system"><i data-icon="palette"></i>设计规范</button>
+      </nav>
+      <div class="conversation-nav" id="conversation-nav" hidden><div class="nav-caption">最近会话 <button id="new-chat" aria-label="新建会话"><i data-icon="plus"></i></button></div><button id="recent-chat"><span class="history-dot"></span>库存补货分析计划</button><p>仅当前页面演示，刷新后清空</p></div>
+      <div class="sidebar-bottom"><button id="settings-open"><i data-icon="settings"></i>系统设置</button><div class="profile"><span class="avatar">林</span><span>林经理<small>运营负责人 · 演示角色</small></span><i data-icon="chevrons"></i></div></div>
+    </aside>
+    <div class="sidebar-shade" id="sidebar-shade"></div>
+    <div class="workspace">
+      <header class="topbar"><div class="breadcrumb"><button class="icon-button mobile-menu" id="mobile-menu" aria-label="打开导航"><i data-icon="menu"></i></button><span>工作空间</span><span class="breadcrumb-separator">/</span><strong id="page-title">工作台</strong></div><div class="topbar-actions"><span class="prototype-label"><span></span>交互原型 · 演示数据</span><button class="icon-button" id="notifications-open" aria-label="查看今日待办"><i data-icon="bell"></i></button><span class="topbar-avatar">林</span></div></header>
+      <main id="main" tabindex="-1"></main>
+      <footer class="workspace-footer"><span>云仓 ERP · 桌面工作区提案</span><span>所有业务数据均为演示数据</span></footer>
+    </div>
+  </div>
+  <dialog id="detail-dialog" class="detail-dialog" aria-label="采购订单详情"><div id="detail-content"></div></dialog>
+  <dialog id="command-dialog" class="command-dialog" aria-label="导航命令"><div class="command-input"><i data-icon="search"></i><input id="command-input" aria-label="筛选导航页面" placeholder="前往哪个页面？"><kbd>Esc</kbd></div><p class="dialog-caption">导航命令 · 仅查找本原型页面</p><div id="command-results"></div></dialog>
+  <dialog id="info-dialog" class="info-dialog" aria-label="工作区说明"><div id="info-content"></div></dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>

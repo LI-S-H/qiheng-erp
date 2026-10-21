@@ -1,0 +1,24 @@
+ARG MAVEN_IMAGE=maven:3.9-eclipse-temurin-21
+ARG JAVA_IMAGE=eclipse-temurin:21-jre
+FROM ${MAVEN_IMAGE} AS build
+WORKDIR /build
+ARG MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public
+ENV MAVEN_MIRROR_URL=${MAVEN_MIRROR_URL}
+COPY deploy/docker/maven-settings.xml /build/settings.xml
+COPY erp-server/ /build/server/
+WORKDIR /build/server
+RUN --mount=type=cache,id=qiheng-maven,target=/root/.m2 \
+    mvn --batch-mode --no-transfer-progress --settings /build/settings.xml \
+    -Dmaven.test.skip=true -pl erp-admin -am package
+
+FROM ${JAVA_IMAGE}
+WORKDIR /app
+RUN mkdir -p /app/config /app/logs && chown -R 10001:10001 /app
+COPY --from=build --chown=10001:10001 /build/server/erp-admin/target/erp-admin-*.jar /app/app.jar
+COPY --chown=10001:10001 deploy/docker/application-container.yaml /app/config/application-container.yaml
+ENV SPRING_PROFILES_ACTIVE=container SERVER_PORT=8081 TZ=Asia/Shanghai
+USER 10001:10001
+EXPOSE 8081
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 \
+    CMD bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8081'
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

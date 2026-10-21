@@ -1,0 +1,57 @@
+services:
+  server:
+    image: qiheng-erp-server:${APP_VERSION:?请由部署脚本指定提交版本}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.server
+      args:
+        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9-eclipse-temurin-21}
+        JAVA_IMAGE: ${JAVA_IMAGE:-eclipse-temurin:21-jre}
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment:
+      SPRING_PROFILES_ACTIVE: container
+      TZ: Asia/Shanghai
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-erp}
+      MYSQL_USER: ${MYSQL_USER:-erp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请配置数据库密码}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请配置Redis密码}
+      ERP_AI_ENABLED: ${ERP_AI_ENABLED:-false}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-https://api.deepseek.com}
+    networks:
+      - erp
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+  web:
+    image: qiheng-erp-web:${APP_VERSION:?请由部署脚本指定提交版本}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.web
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:stable-alpine}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8088}:80"
+    networks:
+      - erp
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  erp:
+    external: true
+    name: qiheng-erp-net

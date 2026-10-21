@@ -1,0 +1,18 @@
+ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NGINX_IMAGE=nginx:stable-alpine
+FROM ${NODE_IMAGE} AS build
+WORKDIR /build
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+COPY erp-web/package.json erp-web/package-lock.json ./
+RUN --mount=type=cache,id=qiheng-npm,target=/root/.npm \
+    npm ci --registry="${NPM_REGISTRY}" --no-audit --no-fund
+COPY erp-web/ ./
+ENV VITE_API_BASE_URL=/api VITE_USE_MOCK_AUTH=false VITE_USE_MOCK_API=false
+RUN npm run build
+
+FROM ${NGINX_IMAGE}
+COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /build/dist/ /usr/share/nginx/html/
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1/healthz || exit 1
+EXPOSE 80

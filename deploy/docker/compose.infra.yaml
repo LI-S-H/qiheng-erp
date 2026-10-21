@@ -1,0 +1,159 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.0}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请配置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-erp}
+      MYSQL_USER: ${MYSQL_USER:-erp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请配置 MYSQL_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      erp:
+        aliases:
+          - erp-mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'MYSQL_PWD="$${MYSQL_ROOT_PASSWORD}" mysql --protocol=TCP --host=127.0.0.1 --user=root --silent --execute="SELECT 1" > /dev/null'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    logging: *default-logging
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请配置 REDIS_PASSWORD}
+    command:
+      - sh
+      - -ec
+      - exec docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    volumes:
+      - redis-data:/data
+    networks:
+      erp:
+        aliases:
+          - erp-redis
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -qx PONG'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    logging: *default-logging
+
+  mq-storage-init:
+    image: ${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}
+    user: "0:0"
+    restart: "no"
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        mkdir -p /storage/namesrv-logs /storage/broker-logs /storage/broker-store
+        chown -R 3000:3000 /storage/namesrv-logs /storage/broker-logs /storage/broker-store
+    volumes:
+      - namesrv-logs:/storage/namesrv-logs
+      - broker-logs:/storage/broker-logs
+      - broker-data:/storage/broker-store
+    networks:
+      - erp
+    logging: *default-logging
+
+  namesrv:
+    image: ${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    command: [sh, mqnamesrv]
+    depends_on:
+      mq-storage-init:
+        condition: service_completed_successfully
+    volumes:
+      - namesrv-logs:/home/rocketmq/logs
+    networks:
+      erp:
+        aliases:
+          - erp-namesrv
+    healthcheck:
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/9876"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *default-logging
+
+  broker:
+    image: ${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      BROKER_IP: ${BROKER_IP:-172.30.21.10}
+      NAMESRV_ADDR: erp-namesrv:9876
+    command:
+      - sh
+      - -ec
+      - |
+        cat > /tmp/erp-broker.conf <<EOF
+        brokerName=erp-broker
+        brokerClusterName=DefaultCluster
+        brokerId=0
+        brokerIP1=$${BROKER_IP}
+        brokerRole=ASYNC_MASTER
+        flushDiskType=ASYNC_FLUSH
+        autoCreateTopicEnable=false
+        storePathRootDir=/home/rocketmq/store
+        messageDelayLevel=1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h
+        EOF
+        exec sh mqbroker -n erp-namesrv:9876 -c /tmp/erp-broker.conf
+    depends_on:
+      mq-storage-init:
+        condition: service_completed_successfully
+      namesrv:
+        condition: service_healthy
+    volumes:
+      - broker-data:/home/rocketmq/store
+      - broker-logs:/home/rocketmq/logs
+    networks:
+      erp:
+        ipv4_address: ${BROKER_IP:-172.30.21.10}
+        aliases:
+          - erp-broker
+    healthcheck:
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/10911"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    logging: *default-logging
+
+networks:
+  erp:
+    name: qiheng-erp-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${INFRA_SUBNET:-172.30.21.0/24}
+
+volumes:
+  mysql-data:
+  redis-data:
+  namesrv-logs:
+  broker-data:
+  broker-logs:

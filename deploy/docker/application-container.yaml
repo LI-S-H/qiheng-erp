@@ -1,0 +1,21 @@
+server:
+  port: 8081
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://erp-mysql:3306/${MYSQL_DATABASE:erp}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: ${MYSQL_USER:erp}
+    password: ${MYSQL_PASSWORD}
+  data:
+    redis:
+      host: erp-redis
+      port: 6379
+      database: 0
+      password: ${REDIS_PASSWORD}
+
+rocketmq:
+  name-server: erp-namesrv:9876

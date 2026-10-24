@@ -6,4 +6,8 @@ public class ServiceUnavailableBizException extends BizException {
     public ServiceUnavailableBizException(ErrorCode errorCode) {
         super(errorCode);
     }
+    /** 保留503分类，允许依赖模块提供已过滤的具体错误提示，禁止直接传供应商错误正文。 */
+    public ServiceUnavailableBizException(ErrorCode errorCode, String safeMessage) {
+        super(errorCode.getCode(), safeMessage);
+    }
 }

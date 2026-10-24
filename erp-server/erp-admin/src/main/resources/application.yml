@@ -66,6 +66,8 @@ springdoc:
       packages-to-scan: com.qiheng.erp.purchase.controller
     - group: 销售管理
       packages-to-scan: com.qiheng.erp.sales.controller
+    - group: AI 图任务
+      packages-to-scan: com.qiheng.erp.ai.controller
 
 # RocketMQ 配置
 rocketmq:

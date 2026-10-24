@@ -65,6 +65,11 @@ public enum ErrorCode {
     // AI 模块 8xxxx
     AI_CONVERSATION_NOT_FOUND(80001, "AI 会话不存在"),
     AI_SERVICE_UNAVAILABLE(80002, "AI 服务尚未启用"),
+    AI_TOOL_FORBIDDEN(80010, "无权限调用该 AI 工具"),
+    AI_TOOL_NOT_FOUND(80011, "AI 工具不存在"),
+    AI_AUDIT_FAILED(80012, "AI 审计写入失败"),
+    AI_LLM_UNAVAILABLE(80013, "AI 大模型调用失败"),
+    AI_TOOL_TIMEOUT(80014, "AI 工具调用超时"),
 
     UNKNOWN(99999, "系统内部错误");
 

@@ -1,11 +1,37 @@
-# 本地启动以 erp-server 为工作目录，自动读取该目录中不入库的 .env.ai.yaml。
-# 两个模型可共用一个 Key；环境变量方式仍兼容，但不设置全局模型选择。
+# 本地密钥文件不入库；没有启用 AI 或没有 Key 时不装配模型与图。
 spring:
   config:
     import: optional:file:./.env.ai.yaml
+
 erp:
   ai:
     enabled: ${ERP_AI_ENABLED:false}
     api-key: ${DEEPSEEK_API_KEY:${OPENAI_COMPAT_API_KEY:}}
     base-url: ${OPENAI_COMPAT_BASE_URL:https://api.deepseek.com}
     temperature: ${ERP_AI_TEMPERATURE:0.2}
+    model:
+      # 模型名：换供应商时只改这里（或同名环境变量），不用改代码
+      pro: ${OPENAI_COMPAT_MODEL_PRO:deepseek-v4-pro}
+      flash: ${OPENAI_COMPAT_MODEL_FLASH:deepseek-flash}
+      # 是否允许模型先思考：空=不传（OpenAI/DeepSeek 不认这个参数），false=显式关闭（通义系建议关）
+      enable-thinking: ${OPENAI_COMPAT_ENABLE_THINKING:}
+      read-timeout-seconds: 300
+      flash-read-timeout-seconds: 60
+    graph:
+      # 首次生成不占重试额度，默认最多生成三次。
+      max-format-retries: 2
+      # 需求上限：同时未完成的需求数。需求跑完释放名额。
+      max-user-needs: 3
+      max-derived-needs: 6
+      # 业务完整性审阅的回流轮次：一次修不完是常态，真实模型实测要两轮才能补齐。
+      max-review-rounds: 6
+    # Planner 读取节点工作记忆；超过阈值时摘要早期历史，保留最近消息。
+    # 工作记忆按会话累积（跨任务），阈值决定模型还能看到多少历史，不是纯技术参数。
+    memory:
+      summary-trigger-tokens: ${ERP_AI_SUMMARY_TRIGGER_TOKENS:200000}
+      messages-to-keep: 20
+      # 摘要长度按待压缩历史的固定比例给，同时受下面两个硬上限约束。
+      summary-max-history-ratio: 0.10
+      summary-max-tokens: 50000
+      summary-provider-max-output-tokens: ${ERP_AI_SUMMARY_PROVIDER_MAX_OUTPUT_TOKENS:50000}
+      summary-timeout-seconds: 300

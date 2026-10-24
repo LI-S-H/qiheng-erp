@@ -141,8 +141,7 @@ const menus: MenuItem[] = [
     index: '/ai',
     title: '智能助手',
     icon: MessageCircle,
-    anyPermissions: ['ai:query:stock', 'ai:query:sales', 'ai:query:purchase'],
-    anyRoleCodes: ['SALES_STAFF', 'PURCHASE_STAFF'],
+    permission: 'ai:assistant:use',
     children: [
       { index: '/ai/assistant', title: '智能经营助手' },
     ],

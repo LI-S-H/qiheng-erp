@@ -471,7 +471,6 @@ const allSql = fs
 const requiredPaths = [
   "/auth/login:",
   "/auth/me:",
-  "/ai/assistant/conversations/{conversationId}/messages:",
   "/system/users:",
   "/system/roles:",
   "/system/depts:",
@@ -1726,19 +1725,22 @@ if (
 
 const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)]
   .length;
-if (tableCount !== 31)
+if (tableCount !== 34)
   throw new Error(
-    `数据库设计文档声明 31 张表，当前 DDL 实际为 ${tableCount} 张`,
+    `数据库设计文档声明 34 张表，当前 DDL 实际为 ${tableCount} 张`,
   );
 if (
-  !databaseOverview.includes("共设计并已落 DDL 31 张表") ||
+  !databaseOverview.includes("共设计并已落 DDL 34 张表") ||
   !databaseOverview.includes("`sys_permission`") ||
   !databaseOverview.includes("`supplier_score_change_log`") ||
+  !databaseOverview.includes("`ai_node_memory`") ||
+  !databaseOverview.includes("`ai_node_working_memory`") ||
+  !databaseOverview.includes("`ai_node_experience`") ||
   !returnSchema.includes("表：return_order（退货单主表）") ||
   !returnSchema.includes("表：return_order_item（退货单明细表）")
 ) {
   throw new Error(
-    "数据库总览必须同步 31 张已落 DDL 的表，并包含 sys_permission、评分变化日志与两张退货表",
+    "数据库总览必须同步 34 张已落 DDL 的表，并包含 sys_permission、评分变化日志、三张 AI 节点记忆表与两张退货表",
   );
 }
 for (const [name, apiSource, typeSource, viewSource] of [
@@ -1807,18 +1809,55 @@ for (const forbidden of [
 if (aiApiSource.includes("VITE_USE_MOCK_API") || aiApiSource.includes("mockMessages")) {
   throw new Error("AI 基础对话不得使用业务 Mock 替代真实接口");
 }
-if (
-  !aiApiSource.includes(
-    "/ai/assistant/conversations/${conversationId}/messages",
-  ) ||
-  !aiApiSource.includes("signal") ||
-  !aiViewSource.includes("historySequence") ||
-  !aiApiSource.includes("/ai/assistant/messages/stream") ||
-  !aiApiSource.includes("text/event-stream") ||
-  !aiApiSource.includes("MESSAGE_FINAL") ||
-  !aiApiSource.includes("readSseStream")
-) {
-  throw new Error("AI 真实历史请求、竞态保护或 SSE 消费未完整接入");
+// /ai/assistant/* 现在是会话管理与会话历史的正式入口，取代已删除的旧聊天路由。
+for (const required of [
+  "  /ai/assistant/overview:",
+  "  /ai/assistant/conversations:",
+  "  /ai/assistant/conversations/{conversationId}:",
+  "  /ai/assistant/conversations/{conversationId}/messages:",
+  "  /ai/assistant/conversations/{conversationId}/progress/stream:",
+  "  /ai/graph/stream:",
+  "  /ai/graph/resume/stream:",
+]) {
+  if (!source.includes(required))
+    throw new Error(`OpenAPI 缺少 AI 助手路由：${required}`);
+}
+for (const removed of [
+  "  /ai/assistant/messages:",
+  "  /ai/assistant/messages/stream:",
+]) {
+  if (source.includes(removed))
+    throw new Error(`OpenAPI 不得保留已下线的聊天路由：${removed}`);
+}
+const graphSchemaNames = [
+  "GraphStartRequest", "GraphResumeRequest", "Plan", "PlanStep",
+];
+const graphSchema = (name) => {
+  const match = source.match(new RegExp(`^    ${name}:\\r?\\n([\\s\\S]*?)(?=^    [A-Za-z0-9_]+:|$(?![\\s\\S]))`, "m"));
+  if (!match) throw new Error(`OpenAPI 缺少 Graph 契约模型：${name}`);
+  return match[0];
+};
+for (const schemaName of graphSchemaNames) graphSchema(schemaName);
+for (const [name, fields] of [
+  ["GraphStartRequest", "required: [conversationId, query]"],
+  ["GraphResumeRequest", "required: [threadId, pauseId, answer]"],
+  ["Plan", "required: [title, objective, needs_clarification, clarification_questions, steps]"],
+  ["PlanStep", "required: [step, type, instruction]"],
+]) {
+  if (!graphSchema(name).includes(fields)) {
+    throw new Error(`Graph 契约必填字段不完整：${name}`);
+  }
+}
+for (const name of ["GraphStartRequest", "GraphResumeRequest"]) {
+  if (!graphSchema(name).includes("maxLength: 10000") ||
+      !graphSchema(name).includes("pattern: '\\S'")) {
+    throw new Error(`Graph 文本输入必须限制长度并拒绝纯空白：${name}`);
+  }
+}
+if (!graphSchema("GraphResumeRequest").includes("maxLength: 64") ||
+    !graphSchema("PlanStep").includes("[SQL_QUERY, PYTHON_ANALYSIS]") ||
+    !graphSchema("AiRunStopped").includes("[FORMAT_RETRY_EXHAUSTED, FAILED]")) {
+  throw new Error("Graph 暂停点、步骤类型或未完成终态契约不完整");
 }
 
 const stalePermissionDescriptions = [
@@ -2148,5 +2187,5 @@ for (const schemaName of [
 }
 
 console.log(
-  `OPENAPI_OK: ${references.length} 个引用完整，31 张表已落 DDL，供应商评分、采购、工作台与基础契约已对齐`,
+  `OPENAPI_OK: ${references.length} 个引用完整，34 张表已落 DDL，供应商评分、采购、工作台与基础契约已对齐`,
 );

@@ -48,11 +48,7 @@ const initialRows: PermissionSeed[] = [
   ['2013', 'sales:query', '销售查询', 'sales', 'query', 1, 130, '查看销售订单', '2026-06-08 10:00:00', '2026-06-10 09:30:00'],
   ['2070', 'sales:manage', '销售管理', 'sales', 'manage', 1, 135, '编辑、删除和审核销售订单', '2026-07-16 10:00:00', '2026-07-16 10:00:00'],
   ['2014', 'sales:create', '销售创建', 'sales', 'create', 1, 140, '创建销售订单', '2026-06-08 10:00:00', '2026-06-10 09:30:00'],
-  ['2015', 'ai:query:stock', '库存问答', 'ai', 'query', 1, 150, '使用库存知识问答', '2026-06-08 10:00:00', '2026-06-10 09:30:00'],
-  ['2016', 'ai:query:sales', '销售问答', 'ai', 'query', 1, 160, '使用销售经营问答', '2026-06-08 10:00:00', '2026-06-10 09:30:00'],
-  ['2017', 'ai:query:purchase', '采购问答', 'ai', 'query', 1, 170, '使用采购经营问答', '2026-06-08 10:00:00', '2026-06-10 09:30:00'],
-  ['2018', 'ai:ops:suggest', '运维建议', 'ai', 'execute', 1, 180, '获取系统运维建议', '2026-06-08 10:00:00', '2026-06-10 09:30:00'],
-  ['2019', 'ai:decision:suggest', '决策建议', 'ai', 'execute', 1, 190, '获取经营决策建议', '2026-06-08 10:00:00', '2026-06-26 20:00:25'],
+  ['2015', 'ai:assistant:use', 'AI 智能助手', 'ai', 'execute', 1, 200, '进入 AI 智能助手页面并使用其全部功能', '2026-06-08 10:00:00', '2026-10-15 10:00:00'],
 ].map(([suffix, permissionCode, permissionName, moduleCode, actionType, status, sortOrder, description, createTime, updateTime]) => ({
   permissionId: `190000000000000${suffix}`,
   permissionCode: permissionCode as string,
@@ -76,8 +72,7 @@ export function createInitialPermissions(): SystemPermissionListItem[] {
     'purchase:query': 4, 'purchase:create': 3, 'purchase:manage': 3,
     'customer:query': 4, 'customer:create': 3, 'customer:manage': 1,
     'sales:query': 4, 'sales:create': 3, 'sales:manage': 3,
-    'ai:query:stock': 3, 'ai:query:sales': 3, 'ai:query:purchase': 3,
-    'ai:ops:suggest': 3, 'ai:decision:suggest': 2,
+    'ai:assistant:use': 6,
   };
   return initialRows.map(row => ({ ...row, roleCount: roleCounts[row.permissionCode] ?? 0 }));
 }

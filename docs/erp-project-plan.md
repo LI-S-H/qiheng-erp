@@ -2,7 +2,7 @@
 
 ## 1. 项目介绍
 
-> 本文及 [供应商评分模块化交付计划](supplier-score-module-delivery-plan.md) 保留历史分期规划，不作为当前功能完成清单。评分实际口径以 [采购库表设计](database/mvp-purchase-schema.md) 为准，剩余事项与验收状态见 [当前未完成事项](project-open-items.md)。
+> 本文及 [供应商评分改造计划](supplier-score-plan.md) 保留历史分期规划，不作为当前功能完成清单。评分实际口径以 [采购库表设计](database/mvp-purchase-schema.md) 为准，剩余事项与验收状态见 [当前未完成事项](project-open-items.md)。
 
 本项目计划搭建一个面向企业内部管理的 ERP 系统，覆盖产品、仓库、采购、销售、供应商、客户等核心业务模块，并在传统 ERP 能力之上接入 AI 智能体。
 
@@ -21,8 +21,8 @@ AI 不能绕过权限体系直接查询或修改数据。
 
 ```text
 docs/erp-core-architecture-thinking.md        传统 ERP 核心架构设计思考
-docs/ai-agent-architecture-thinking.md        AI Agent 架构设计思考
-docs/ai-module-final-design.md                AI 模块最终设计方案
+docs/feature-spec.md                          项目功能与架构说明书(含 AI 章节)
+docs/ai-graph-mvp.md                          AI Graph MVP 当前实现说明
 ```
 
 ## 2. 项目目标
@@ -233,8 +233,7 @@ purchase:approve
 sales:create
 sales:view
 ai:rag:chat
-ai:query:stock
-ai:query:sales
+ai:assistant:use
 ```
 
 ### 6.3 erp-system

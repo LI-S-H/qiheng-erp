@@ -4,7 +4,7 @@
 >
 > 读者:产品 / 后端 / 前端 / AI 开发 / 测试 / 面试者。
 >
-> 关联文档:`docs/project-introduction.md`、`docs/erp-core-architecture-thinking.md`、`docs/backend-development-guide.md`、`docs/ai-module-final-design.md`、`docs/ai-agent-architecture-thinking.md`、`docs/database/database-design-conventions.md`、`docs/supplier-score-module-delivery-plan.md`、`docs/api/erp-openapi.yaml`。
+> 关联文档:`docs/project-introduction.md`、`docs/erp-core-architecture-thinking.md`、`docs/backend-development-guide.md`、`docs/ai-graph-mvp.md`、`docs/database/database-design-conventions.md`、`docs/supplier-score-plan.md`、`docs/api/erp-openapi.yaml`。
 
 ---
 
@@ -717,18 +717,18 @@ DataAnalysis 子智能体意图:
 
 ## 十三、erp-ai 智能体系统
 
-### 14.1 模块定位
+### 13.1 模块定位
 
 RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入口和分析辅助层,不直接修改业务数据。
 
-### 14.2 设计目标与边界
+### 13.2 设计目标与边界
 
 - AI 是自然语言入口和分析建议层,业务主链路必须稳定。
 - AI 不直接操作数据库,不绕过权限体系。
 - 重要业务动作必须由用户确认后执行,AI 只提供建议或生成草稿。
 - 复杂分析场景必须由结构化工作流或子智能体执行,AI 自身不做重型计算。
 
-### 14.3 总体架构:三层 + 三智能体
+### 13.3 总体架构:三层 + 三智能体
 
 **OrchestratorAgent(主智能体)**:对话入口、任务规划、子智能体调度、反思、上下文注入控制。
 
@@ -756,7 +756,7 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 - DataAnalysis 子智能体的 system prompt 显式声明"不查库不写表",工具列表里只有纯计算函数。
 - AI 层不重复承诺业务规则,具体状态机 / 乐观锁 / 字段白名单 / 权限码校验全部由 ERP Service 在代码层强制。
 
-### 14.4 上下文注入与回流流程
+### 13.4 上下文注入与回流流程
 
 主智能体对每个任务的执行都遵循以下循环:
 
@@ -785,14 +785,14 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 - 用户中途插入新需求 → 把当前任务清单中 PENDING 任务标记为 `ABORTED`,重新生成清单。
 - 关键写操作被请求 → 直接拒绝,并在总结中提示用户到 ERP 页面操作。
 
-### 14.5 多模型路由
+### 13.5 多模型路由
 
 - 主智能体:大模型(规划 / 自然语言),擅长多步骤推理和长上下文。
 - DataQuery 子智能体:轻量模型(参数映射),擅长意图分发和参数转换。
 - DataAnalysis 子智能体:**不同厂商或不同尺寸模型**,避免与主智能体同倾向性错误。
 - 模型选型策略:按场景切换、可配置、降级方案(主模型不可用时降级到备用模型)。
 
-### 14.6 主智能体工具
+### 13.6 主智能体工具
 
 任务管理 4 个工具:
 
@@ -808,7 +808,7 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 - `DataQuerySubAgent`:把任务委派给数据查询子智能体。
 - `DataAnalysisSubAgent`:把任务委派给数据分析子智能体。
 
-### 14.7 DataQuery 子智能体工具集
+### 13.7 DataQuery 子智能体工具集
 
 18 个查询 Tool,全部 `StpUtil.checkPermission` 细粒度权限:
 
@@ -829,7 +829,7 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 - 记录:`records` 字段。
 - 数据质量:`desensitized` / `truncated` / `notes`。
 
-### 14.8 DataAnalysis 子智能体工具集
+### 13.8 DataAnalysis 子智能体工具集
 
 纯计算 Tool 6 个:
 
@@ -842,7 +842,7 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 
 约束:不查库、不写表、不调外部 HTTP,单次输入记录数 ≤ 5000,超出需主智能体缩小窗口。
 
-### 14.9 反思机制
+### 13.9 反思机制
 
 主智能体在每个子任务返回后自动进入反思步骤:
 
@@ -851,7 +851,7 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 - 若不满足,根据错误类型触发不同的处理路径(见 14.4 节"反思触发条件")。
 - 反思信息写入 `ai_interaction_log`,`interaction_type = REFLECTION`。
 
-### 14.10 审计
+### 13.10 审计
 
 `ai_interaction_log` 五类交互:
 
@@ -863,27 +863,54 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 
 每次调用写入 `parent_request_id`,把一次用户请求的所有节点串起来,支持从任意节点反向追溯。
 
-### 14.11 会话与消息
+### 13.11 会话与消息
 
 - `ai_conversation`:会话表,按用户隔离,跨用户访问按不存在处理。
 - `ai_message`:消息表,按 `conversation_id` 关联,含 `charts_json` / `action_cards_json` / `workbench_json` / `sources_json` / `agent_traces_json` / `task_card_json`。
 - 流式输出:SSE 流式事件,前端按事件类型渲染文本 / 图表 / 草稿。
 - AI 服务未启用时消息发送接口返回能力不可用,不返回固定回复。
 
-### 14.12 RAG 能力
+### 13.12 RAG 能力
 
 - `ai_document` / `ai_document_chunk` 存储文档与切片。
 - Embedding 写入 RedisStack,`vector_key` 关联切片。
 - RAG 回答必须返回引用来源,引用切片 ID 写入 `cited_chunk_ids`。
-- RAG 问答独立于业务 Tool 调用,不需要细粒度业务权限,但需要 `ai:query:*` 入口权限。
+- RAG 问答独立于业务 Tool 调用,不需要细粒度业务权限,但需要 `ai:assistant:use` 入口权限。
 
-### 14.13 与各业务模块协作边界
+### 13.13 与各业务模块协作边界
 
 - DataQuery 子智能体的 Tool 是业务 Service 的**只读封装**,与 Controller 走相同的权限码。
 - DataAnalysis 子智能体**不持有**任何业务 Tool,只能接收主智能体注入的 JSON。
 - 主智能体**不直接持有**任何业务 Tool,只能通过子智能体中转。
 - AI 草稿(`draft_created` 事件)不是写操作,而是建议产物,由用户在 ERP 页面预览 / 编辑 / 提交。
 - AI 永远不会触发采购下单、销售出库、库存调整等写操作,这些操作必须用户在 ERP 页面完成。
+
+---
+
+## 十四、AI 当前实现与演进
+
+第十三章描述的是 AI 的目标能力边界。本章说明当前已经落地到哪一步，以及后续设计的归属。
+
+### 14.1 当前实现：Graph 规划闭环
+
+当前运行的是 Graph 规划最小闭环（`PlannerNode → PlanCheckNode → HumanFeedbackNode`）：生成结构化 Plan、自动修复格式错误、人工补充后重新规划，有效计划返回后结束，不执行 SQL、Python、报告生成或业务单据创建。
+
+会话管理挂在 `/ai/assistant/*`，规划通过 `/ai/graph/*` 发起，运行时状态以 Redis 检查点为唯一来源，会话表不保存"当前节点"或活动轮次标识。
+
+实现细节、协议、验证记录见 [AI Graph MVP 设计与运行说明](ai-graph-mvp.md)。
+
+### 14.2 设计文件分工
+
+| 文档 | 作用 |
+|---|---|
+| [AI Agent 架构设计](ai-agent-architecture.md) | **目标架构的权威依据**（v4）：需求驱动的轮次式 ReAct——需求拆解、代码判定完成、多轮取数、证据链、报告溯源；附录含演进论证与被否决方案 |
+| [AI 图架构融合方案](ai-graph-architecture-proposal.md) | 三层图架构的讨论稿 |
+| [Agent 与上下文完整设计](ai-agent-context-design.md) | 上下文分类、状态持久化与恢复的讨论稿 |
+| [State 管理的最小实现](ai-state-management-guide.md) | OverAllState、KeyStrategy、Saver 的落地方式与可运行示例 |
+| [图产物发布拍改造方案](ai-graph-artifact-persistence.md) | 落库与推送前移的施工方案 |
+| [AI Graph MVP 设计与运行说明](ai-graph-mvp.md) | 当前实现的权威说明 |
+
+上述设计文件按性质分三类：现状说明只有 `ai-graph-mvp.md` 一份；`ai-agent-architecture.md` 是目标架构的唯一权威依据；其余为讨论稿与配套施工方案，实施前需与当前代码和契约核对。
 
 ---
 
@@ -1033,7 +1060,7 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 
 **主智能体制定计划**:单任务 RAG 检索 → 命中 `ai_document_chunk` → 拼装回答。
 
-**分发**:`RAGRetrieverTool` 走 `ai:query:*` 入口权限,返回引用切片。
+**分发**:`RAGRetrieverTool` 走 `ai:assistant:use` 入口权限,返回引用切片。
 
 **合成汇报**:自然语言回答 + 引用来源切片(可点击查看原文)。
 
@@ -1132,13 +1159,13 @@ ERP 业务系统是主干,AI 是自然语言入口和分析辅助层。
 
 | 章节 | 落盘路径 |
 |---|---|
-| 一 ~ 二 | `docs/product/feature-spec.md`(本文档) |
+| 一 ~ 二 | `docs/feature-spec.md`(本文档) |
 | 三(技术架构总览) | 已分散至 `erp-core-architecture-thinking.md` / `backend-development-guide.md` |
 | 四 ~ 七(基础模块) | 模块设计点见 `backend-development-guide.md` 与各模块 `mvp-*-schema.md` |
-| 八(采购与评分) | 评分细节见 `supplier-score-module-delivery-plan.md` / `supplier-score-phase-1-detailed-plan.md` |
+| 八(采购与评分) | 评分细节见 `supplier-score-plan.md`,实施与验证记录见 `supplier-score-review.md` |
 | 九 ~ 十一(进销存主链路) | 数据模型见各模块 `mvp-*-schema.md` |
 | 十二(工作台缓存) | 设计思想见 `erp-core-architecture-thinking.md` |
-| 十四(AI 智能体) | 多智能体细节见 `ai-module-final-design.md` / `ai-agent-architecture-thinking.md` |
+| 十三 ~ 十四(AI 智能体) | 现状见 `ai-graph-mvp.md`,设计与演进分工见本章 14.2 |
 | 十五(典型场景) | 端到端流程见本文档 |
 | 十六(数据模型) | 表结构见各模块 `mvp-*-schema.md` |
 

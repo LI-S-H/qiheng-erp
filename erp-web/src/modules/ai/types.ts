@@ -1,3 +1,5 @@
+import type { ClarificationQuestion, PlanningArtifact } from './graph-types';
+
 export type AiTone = 'neutral' | 'good' | 'watch' | 'risk';
 
 export type AiMessageRole = 'assistant' | 'user';
@@ -60,6 +62,64 @@ export interface AiConversationSummary {
   title: string;
   description: string;
   updatedAt: string;
+}
+
+export type AiRunStatus =
+  | 'IDLE'
+  | 'RUNNING'
+  | 'WAITING_HUMAN'
+  | 'PLAN_READY'
+  | 'NEEDS_READY'
+  | 'FORMAT_RETRY_EXHAUSTED'
+  | 'FAILED'
+  | 'INTERRUPTED';
+
+export interface AiConversationDetail extends AiConversationSummary {
+  running: boolean;
+  runStatus: AiRunStatus;
+  runNode: string | null;
+  runLabel: string | null;
+}
+
+export type AiMessageContent =
+  | { type: 'TEXT'; data: { text: string; replyToMessageId?: string } }
+  | {
+      type: 'ERROR';
+      data: {
+        text: string;
+        /** 仅作消息展示分类，不能替代会话详情的当前运行状态。 */
+        status?: string;
+        threadId?: string;
+      };
+    }
+  | {
+      type: 'CLARIFICATION';
+      data: {
+        text: string;
+        questions: ClarificationQuestion[];
+        threadId?: string;
+        /** 暂停拍生成的恢复/草稿锚点；旧消息缺省时只读不可恢复。 */
+        pauseId?: string;
+      };
+    }
+  | PlanningArtifact;
+
+/** 用户可见流水与节点工作记忆分离；seq 始终保留为字符串。 */
+export interface AiConversationMessage {
+  messageId: string;
+  requestId: string;
+  seq: string;
+  role: AiMessageRole;
+  kind: 'USER_INPUT' | 'ASSISTANT_FINAL';
+  content: AiMessageContent;
+  createdAt: string;
+}
+
+export interface AiProgressStep {
+  node: string;
+  label: string;
+  status: 'running' | 'done' | 'failed' | 'interrupted';
+  durationMs: number | null;
 }
 
 export interface AiTaskCard {
@@ -150,7 +210,12 @@ export interface AiChatRequest {
 
 export type AiChatStreamEvent =
   | { eventType: 'MESSAGE_DELTA'; requestId: string; conversationId: string; contentDelta: string }
-  | { eventType: 'MESSAGE_FINAL'; requestId: string; conversationId: string; message: AiChatMessage }
+  | {
+      eventType: 'MESSAGE_FINAL';
+      requestId: string;
+      conversationId: string;
+      message: AiChatMessage;
+    }
   | { eventType: 'ERROR'; requestId: string; conversationId: string; errorMessage: string };
 
 export interface AiChatResponse {
@@ -159,7 +224,7 @@ export interface AiChatResponse {
 }
 
 export interface AiConversationMessagePage {
-  records: AiChatMessage[];
+  records: AiConversationMessage[];
   pageNum: number;
   pageSize: number;
   total: number;

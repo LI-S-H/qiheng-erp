@@ -44,12 +44,12 @@
 .app-shell.ai-pilot-theme .graph-workspace .plan-artifact:hover{background:#f5f8fd;border-color:#d8e3f2}
 .app-shell.ai-pilot-theme .graph-workspace .plan-artifact strong{font-size:13px;font-weight:500;color:#4c678a}
 .app-shell.ai-pilot-theme .graph-workspace .plan-artifact small{font-size:11px;color:#8b9bb1}
-.app-shell.ai-pilot-theme .graph-workspace .message-navigator{left:2px;width:26px;max-height:calc(100% - 40px)}
-.app-shell.ai-pilot-theme .graph-workspace .turn-marker{width:26px;height:25px;border-radius:5px}
-.app-shell.ai-pilot-theme .graph-workspace .turn-marker>span{width:9px;height:2px;background:#b9c7da;opacity:.65}
-.app-shell.ai-pilot-theme .graph-workspace .turn-marker[aria-current]>span{width:14px;background:#8ba5c8;opacity:1}
+.app-shell.ai-pilot-theme .graph-workspace .message-navigator{left:0;width:20px;max-height:calc(100% - 40px)}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker{width:20px;height:25px;border-radius:5px}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker>span{width:6px;height:2px;background:#b9c7da;opacity:.65}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker[aria-current]>span{width:9px;background:#8ba5c8;opacity:1}
 .app-shell.ai-pilot-theme .graph-workspace .turn-marker:is(:hover,:focus-visible){background:#f1f5fa;outline:0;box-shadow:inset 0 0 0 1px #e3eaf4}
-.app-shell.ai-pilot-theme .graph-workspace .turn-marker:is(:hover,:focus-visible)>span{width:17px;background:#7396c6;opacity:1}
+.app-shell.ai-pilot-theme .graph-workspace .turn-marker:is(:hover,:focus-visible)>span{width:10px;background:#7396c6;opacity:1}
 body:has(.app-shell.ai-pilot-theme) .ai-turn-preview{border-color:#e1e8f2!important;background:#fff!important;color:#536b8c!important;box-shadow:0 5px 20px #283c5810!important;border-radius:7px!important}
 body:has(.app-shell.ai-pilot-theme) .ai-turn-preview .turn-preview-label{font-size:11px;color:#91a0b5}
 body:has(.app-shell.ai-pilot-theme) .ai-turn-preview .turn-preview-text{font-size:13px;line-height:1.75}
@@ -66,10 +66,10 @@ body:has(.app-shell.ai-pilot-theme) .ai-turn-preview .turn-preview-text{font-siz
 .app-shell.ai-pilot-theme .graph-workspace .composer-inner{max-width:720px}
 .app-shell.ai-pilot-theme .graph-workspace .ai-composer{background:#f7f9fc;border-color:#e5ecf5;box-shadow:none;border-radius:8px;padding:9px 10px}
 .app-shell.ai-pilot-theme .graph-workspace .ai-composer:focus-within{background:#fff;border-color:#b6c2d2;box-shadow:0 0 0 2px #52678708}
-.app-shell.ai-pilot-theme .graph-workspace .ai-composer__input{background:transparent;font-size:13px;line-height:22px;min-height:49px;padding:6px;resize:vertical;border:0;box-shadow:none!important}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer__input{background:transparent;font-size:13px;line-height:22px;min-height:49px;padding:13px 6px;resize:none;border:0;box-shadow:none!important}
 .app-shell.ai-pilot-theme .graph-workspace .ai-composer__input:focus-visible{background:transparent;outline:0;box-shadow:none!important}
 .app-shell.ai-pilot-theme .graph-workspace .ai-composer__input::placeholder{color:#9ba9bc}
-.app-shell.ai-pilot-theme .graph-workspace .ai-composer__send[data-slot='button']{height:31px;padding-inline:10px;font-size:12px;gap:6px;border-radius:6px;margin:0 0 2px}
+.app-shell.ai-pilot-theme .graph-workspace .ai-composer__send[data-slot='button']{height:31px;padding-inline:10px;font-size:12px;gap:6px;border-radius:6px;margin:0;align-self:center}
 .app-shell.ai-pilot-theme .graph-workspace .ai-composer__send svg{width:14px;height:14px}
 .app-shell.ai-pilot-theme .graph-workspace .composer-hint{font-size:10px;color:#9fadc0;gap:4px 8px}
 .app-shell.ai-pilot-theme .graph-workspace .composer-mode{font-size:12px;color:#6e87a9}
@@ -119,3 +119,4 @@ body:has(.app-shell.ai-pilot-theme) .ai-turn-preview .turn-preview-text{font-siz
 @media(max-width:1250px){.app-shell.ai-pilot-theme .graph-workspace .task-status{display:none}.app-shell.ai-pilot-theme .graph-workspace .workspace-header{padding-inline:18px}}
 @media(max-width:640px){.app-shell.ai-pilot-theme .graph-workspace .workspace-header{padding-inline:12px}.app-shell.ai-pilot-theme .graph-workspace .workspace-title{gap:6px}.app-shell.ai-pilot-theme .graph-workspace .workspace-title h1{font-size:13px}.app-shell.ai-pilot-theme .graph-workspace .workspace-title>svg{display:none}.app-shell.ai-pilot-theme .graph-workspace .conversation-scroll{padding:22px 14px 25px 25px}.app-shell.ai-pilot-theme .graph-workspace .ai-composer-dock{padding:12px 14px 12px 25px}.app-shell.ai-pilot-theme .graph-workspace .message-navigator{left:0;width:17px}.app-shell.ai-pilot-theme .graph-workspace .turn-marker{width:17px}.app-shell.ai-pilot-theme .graph-workspace .turn-marker>span{width:7px}.app-shell.ai-pilot-theme .graph-workspace .turn-marker:is([aria-current],:hover,:focus-visible)>span{width:12px}.app-shell.ai-pilot-theme .graph-workspace .message-avatar{width:26px;height:26px}.app-shell.ai-pilot-theme .graph-workspace .message{gap:8px}.app-shell.ai-pilot-theme .graph-workspace .welcome-state{padding:28px 0}.app-shell.ai-pilot-theme .graph-workspace .welcome-state h2{font-size:23px}.app-shell.ai-pilot-theme .graph-workspace .welcome-state>p{font-size:13px}.app-shell.ai-pilot-theme .graph-workspace .composer-hint{font-size:9px}.app-shell.ai-pilot-theme .graph-workspace .ai-composer__send[data-slot='button']{min-width:30px;padding-inline:8px}.app-shell.ai-pilot-theme .graph-workspace .message-bubble{font-size:13px}}
 @media(prefers-reduced-motion:reduce){:is(.graph-workspace.ai-pilot-workspace,[data-ai-panel][data-slot]) :is(.page-loading-enter-active,.page-loading-leave-active){transition-duration:.01ms}}
+@media(max-width:640px){.app-shell.ai-pilot-theme .graph-workspace .turn-marker>span{width:5px}.app-shell.ai-pilot-theme .graph-workspace .turn-marker:is([aria-current],:hover,:focus-visible)>span{width:8px}}

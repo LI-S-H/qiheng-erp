@@ -76,17 +76,16 @@ paths:
   /ai/assistant/overview:
     get:
       tags: [AIAssistant]
-      summary: 获取智能经营助手概览
+      summary: 获取当前用户的会话列表
       description: |
-        返回当前用户的真实会话列表；基础交互阶段 quickPrompts 返回空数组，不展示尚未实现的业务分析入口。
-        当前注册 deepseek-v4-pro 和 deepseek-flash 两个 ChatModel，当前 OrchestratorAgent 显式注入 Pro，未来其他智能体可同时注入 Flash，支持文本对话。完整架构以 docs/feature-spec.md 的 AI 章节为准，后续由 DataQuerySubAgent 查询业务数据、DataAnalysisSubAgent 分析注入的数据。
-        本阶段不注册业务 Tool，不生成业务草稿，不返回虚构图表或协同轨迹。
+        返回当前登录用户最近的会话摘要，按最近一次活动倒序，最多 50 条。
+        刚建好、还没有消息的会话按创建时间参与排序，不会沉到列表底部。
+        权限码 `ai:assistant:use`，AI 助手页面所有接口共用这一个入口权限。
       operationId: aiAssistantOverview
-      security:
-        - SaTokenAuth: []
+      security: [{ SaTokenAuth: [] }]
       responses:
         "200":
-          description: 查询成功
+          description: 获取成功
           content:
             application/json:
               schema:
@@ -98,99 +97,15 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
 
-  /ai/assistant/messages:
-    post:
-      tags: [AIAssistant]
-      summary: 发送智能经营助手消息(非流式,直接拿最终回复)
-      description: |
-        文本对话入口,返回完整 Result<AiChatResponse>。客户端先新建或选择会话,conversationId 必须为当前登录用户所属的有效会话 ID；不存在、已删除或他人的会话统一返回 404。
-        如需边推边渲染请使用 `/ai/assistant/messages/stream`(SSE 端点),与本端点路径不同,需客户端自行选择。
-        同一请求的 requestId、conversationId 保持一致,BIGINT ID 使用字符串。基础阶段 charts、actionCards、sources、agentTraces 均为空数组,taskCard 和 workbench 为空。
-        服务端从当前用户的数据库历史构建有序上下文,保存用户消息后调用 Agent；完成才保存助手消息。模型失败或超时时保留已保存的用户消息,不把部分回复保存为完整助手消息。
-        模型未配置或未启用时返回 503,不返回固定回复；JSON 请求失败后客户端重新读取历史，不以页面回滚判断消息未保存。
-      operationId: aiAssistantSendMessage
-      security:
-        - SaTokenAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AiChatRequest'
-            example:
-              conversationId: "1970000000000000001"
-              message: 我叫小李，请记住这个称呼
-      responses:
-        "200":
-          description: 回复成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Result'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/AiChatResponse' }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "503": { $ref: '#/components/responses/ServiceUnavailable' }
-
-  /ai/assistant/messages/stream:
-    post:
-      tags: [AIAssistant]
-      summary: 发送智能经营助手消息(SSE 流式,边推边渲染)
-      description: |
-        流式对话入口,produces 为 `text/event-stream`。客户端先新建或选择会话,conversationId 必须为当前登录用户所属的有效会话 ID；不存在、已删除或他人的会话统一返回 404。
-        前端通过携带动态 Sa-Token 请求头的 fetch POST 消费流,不使用原生 EventSource。
-        SSE 的 event 名称与 data JSON 中 eventType 一致：MESSAGE_DELTA 仅含文本增量；MESSAGE_FINAL 在助手消息保存成功后返回完整消息；ERROR 返回安全的 errorMessage 并结束流。
-        同一请求的 requestId、conversationId 保持一致,BIGINT ID 使用字符串。基础阶段 charts、actionCards、sources、agentTraces 均为空数组,taskCard 和 workbench 为空。
-        服务端从当前用户的数据库历史构建有序上下文,保存用户消息后调用 Agent；完成才保存助手消息。模型失败、超时或客户端取消时保留已保存的用户消息,不把部分回复保存为完整助手消息。
-        发送前校验失败使用常规 HTTP 错误；流建立后的失败使用 ERROR 事件。缺少 MESSAGE_FINAL 的断流不能视为成功；前端失败或取消后重新读取历史。模型未配置或未启用时返回 503,不返回固定回复。
-      operationId: aiAssistantSendMessageStream
-      security:
-        - SaTokenAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AiChatRequest'
-            example:
-              conversationId: "1970000000000000001"
-              message: 我叫小李，请记住这个称呼
-      responses:
-        "200":
-          description: SSE 流式响应
-          content:
-            text/event-stream:
-              schema:
-                type: string
-              examples:
-                delta:
-                  summary: 流式事件示例
-                  value: |
-                    event: MESSAGE_DELTA
-                    data: {"eventType":"MESSAGE_DELTA","requestId":"req-001","conversationId":"1970000000000000001","contentDelta":"你好，小李。"}
-
-                    event: MESSAGE_FINAL
-                    data: {"eventType":"MESSAGE_FINAL","requestId":"req-001","conversationId":"1970000000000000001","message":{"messageId":"1970000000000000002","role":"assistant","content":"你好，小李。","createdAt":"2026-10-08 20:00:00","charts":[],"actionCards":[],"sources":[],"agentTraces":[],"taskCard":null,"workbench":null}}
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "503": { $ref: '#/components/responses/ServiceUnavailable' }
-
-
   /ai/assistant/conversations:
     post:
       tags: [AIAssistant]
-      summary: 新建经营助手会话
-      description: 创建一个空会话。后端返回会话摘要，前端切换到该会话并显示过渡加载。
+      summary: 新建会话
+      description: |
+        为当前登录用户创建一个新会话，标题与摘要使用系统默认值。
+        用户发出第一条需求后，服务端会用需求的前 20 个字自动命名会话。
       operationId: aiAssistantConversationCreate
-      security:
-        - SaTokenAuth: []
+      security: [{ SaTokenAuth: [] }]
       responses:
         "200":
           description: 创建成功
@@ -201,33 +116,24 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/AiConversationSummary' }
+                      data: { $ref: '#/components/schemas/AiConversationDetail' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
 
   /ai/assistant/conversations/{conversationId}:
-    patch:
+    parameters:
+      - $ref: '#/components/parameters/AiConversationId'
+    get:
       tags: [AIAssistant]
-      summary: 修改经营助手会话名称
-      operationId: aiAssistantConversationUpdate
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema: { type: string }
-          description: 会话 ID
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AiConversationUpdateRequest' }
-            example:
-              title: 今日补货讨论
+      summary: 获取会话详情
+      description: |
+        返回会话基本信息与当前执行状态；只有实际活动执行才返回 running=true，残留检查点不能证明仍在执行。
+        页面内容来自 MySQL 消息流水，详情不从 State 重建历史；运行中可接续订阅进度流。
+      operationId: aiAssistantConversationDetail
+      security: [{ SaTokenAuth: [] }]
       responses:
         "200":
-          description: 修改成功
+          description: 获取成功
           content:
             application/json:
               schema:
@@ -235,61 +141,67 @@ paths:
                   - $ref: '#/components/schemas/Result'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/AiConversationSummary' }
+                      data: { $ref: '#/components/schemas/AiConversationDetail' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [AIAssistant]
+      summary: 重命名会话
+      operationId: aiAssistantConversationRename
+      security: [{ SaTokenAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiConversationUpdateRequest' }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
     delete:
       tags: [AIAssistant]
-      summary: 删除经营助手会话
+      summary: 删除会话
+      description: 运行中禁止删除；逻辑删除会话及其可见消息，在同一会话锁保护下完成短事务，不联动删除节点记忆或经验。
       operationId: aiAssistantConversationDelete
-      security:
-        - SaTokenAuth: []
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema: { type: string }
-          description: 会话 ID
+      security: [{ SaTokenAuth: [] }]
       responses:
         "200":
           description: 删除成功
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Result'
+              schema: { $ref: '#/components/schemas/EmptyResult' }
         "401": { $ref: '#/components/responses/Unauthorized' }
-        "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
 
   /ai/assistant/conversations/{conversationId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/AiConversationId'
     get:
       tags: [AIAssistant]
-      summary: 分页查询经营助手会话消息
+      summary: 分页查询用户可见消息
       description: |
-        只返回当前登录用户所属且未删除会话的真实持久化消息。不存在、已删除和属于其他用户的会话统一返回 404，避免通过错误差异枚举会话。
-        消息按 `create_time ASC, id ASC` 稳定排序。前端从第 1 页开始拉取并根据总数加载全部分页，跨页按 `messageId` 去重；切换会话时必须取消或丢弃旧会话请求结果。
+        只返回用户输入与最终回复，节点内部步骤、工具结果和模型原文不出现在这里。
+        按会话内序号升序分页。content 为 type + data JSON，前端按 TEXT、CLARIFICATION、NEEDS、ERROR 渲染，PLAN 仅兼容历史记录。
+        问题与需求数组在产出时保存，重开会话直接读取 MySQL；用户回答通过 replyToMessageId 关联问题。
       operationId: aiAssistantConversationMessages
-      security:
-        - SaTokenAuth: []
+      security: [{ SaTokenAuth: [] }]
       parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema: { type: string }
-          description: 当前用户会话 ID
         - name: pageNum
           in: query
-          required: false
+          required: true
           schema: { type: integer, minimum: 1, default: 1 }
         - name: pageSize
           in: query
-          required: false
-          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
       responses:
         "200":
-          description: 查询成功；空会话返回空 records
+          description: 查询成功
           content:
             application/json:
               schema:
@@ -298,9 +210,88 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/AiConversationMessagePage' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /ai/assistant/conversations/{conversationId}/progress/stream:
+    parameters:
+      - $ref: '#/components/parameters/AiConversationId'
+    get:
+      tags: [AIAssistant]
+      summary: 接续订阅会话正在执行的进度
+      description: |
+        页面重新进入或其它标签页发起任务时，用它接续订阅节点进度。
+        没有正在执行的任务时连接立即正常关闭，调用方据此回到常规刷新。
+        事件体为对象，由消息转换器序列化，不是手工拼接的 JSON 字符串。
+      operationId: aiAssistantConversationProgressStream
+      security: [{ SaTokenAuth: [] }]
+      responses:
+        "200":
+          description: SSE 事件流；事件名为 node-start、node-end、artifact、clarification_required、run_finished、run_stopped（artifact 与澄清事件仅在任务执行过程中出现，中途接续订阅也会收到后续内容）
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /ai/graph/stream:
+    post:
+      tags: [AIAssistant]
+      summary: 流式执行一轮规划并推送节点进度
+      description: |
+        唯一对外入口。边执行边推送 SSE 事件：
+        `node-start` 与 `node-end` 携带节点编码、展示文案和耗时；
+        需求数组定稿拍推送 `artifact` 事件（载荷为 AiRunArtifact，type 为 NEEDS），随后以 `run_finished` 收尾（载荷为 AiRunFinished，status 为 NEEDS_READY）；
+        人工暂停轮以 `clarification_required` 收尾（载荷形状同 AiRunArtifact，type 固定为 CLARIFICATION，恢复所需暂停点在展示内容 content.data.pauseId，事件顶层 checkpointId 仅作诊断）；
+        本轮未完成时以 `run_stopped` 收尾（载荷为 AiRunStopped，reason 为可直接展示的说明）。
+        每次执行只有一个终态事件（run_finished、run_stopped 或 clarification_required）；
+        消息正文与澄清卡统一以 MySQL 消息流水为准，页面在终态后重新拉取，不在事件里重复推送。
+        事件体由消息转换器序列化，前端按 JSON 对象解析。
+      operationId: aiGraphStream
+      security: [{ SaTokenAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GraphStartRequest' }
+      responses:
+        "200":
+          description: SSE 事件流；事件名为 node-start、node-end、artifact、clarification_required、run_finished、run_stopped
+          content:
+            text/event-stream:
+              schema: { type: string }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "404": { $ref: '#/components/responses/NotFound' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /ai/graph/resume/stream:
+    post:
+      tags: [AIAssistant]
+      summary: 流式提交人工补充并恢复 AI 任务图
+      description: |
+        恢复场景唯一入口。使用最近一次澄清消息内容中的 threadId 和暂停标识 pauseId 提交非空回答，
+        服务端校验登录用户归属、任务确实暂停于 Human、pauseId 为最新暂停点后更新 State 并恢复图；
+        回答仍有歧义、需求变化或新旧条件冲突时可以再次暂停询问，已结束任务、过期暂停点和重复提交不能直接重放。
+        事件体与 /ai/graph/stream 相同，以 run_finished、run_stopped 或 clarification_required 收尾。
+      operationId: aiGraphResumeStream
+      security: [{ SaTokenAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GraphResumeRequest' }
+      responses:
+        "200":
+          description: SSE 事件流；事件名为 node-start、node-end、artifact、clarification_required、run_finished、run_stopped
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
+
   /ai/scheduled-tasks:
     get:
       tags: [AIAssistant]
@@ -4696,6 +4687,13 @@ components:
       name: satoken
       description: Sa-Token 原始 token。当前默认请求头为 satoken，实际调用以前端登录响应中的 tokenName 为准
   parameters:
+    AiConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: AI 会话 ID，对应 `ai_conversation.id`；BIGINT 在 JSON 中按字符串传输
     UserId:
       name: userId
       in: path
@@ -4858,6 +4856,147 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResult'
   schemas:
+    GraphStartRequest:
+      type: object
+      required: [conversationId, query]
+      properties:
+        conversationId:
+          type: string
+          minLength: 1
+          description: 本轮的归属会话；服务端校验会话属于当前登录用户
+        query:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          pattern: '\S'
+          description: 本次任务需求；必须包含非空白字符，不传登录用户身份
+
+    GraphResumeRequest:
+      type: object
+      required: [threadId, pauseId, answer]
+      properties:
+        threadId: { type: string, minLength: 1, maxLength: 160, description: 最近一次澄清消息内容中的任务标识 }
+        pauseId: { type: string, minLength: 1, maxLength: 64, description: 最近一次澄清消息 content.data.pauseId 中的暂停标识，不得使用旧暂停点；恢复提交后旧值即失效 }
+        answer:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          pattern: '\S'
+          description: 本轮全部题目与回答归并后的字符串，也可以明确修改需求；必须包含非空白字符。逐题填写仅为前端交互，不逐题请求，不提交结构化答案数组
+
+    AiNeed:
+      type: object
+      required: [id, intent, need, depends, evidence_plan, status]
+      description: 已审阅的需求及代码维护的运行状态；当前需求完成要求为全部证据项齐备，不再输出 done_when。模型协议不含 status。NEEDS_READY 只表示需求就绪，不表示证据已产出或需求已完成
+      properties:
+        id: { type: string, minLength: 1, description: 需求标识，N 前缀为用户需求，D 前缀为派生需求 }
+        intent: { type: string, enum: [DATA, ADVICE] }
+        need: { type: string, minLength: 1, description: 需求正文 }
+        depends:
+          type: array
+          items: { type: string, minLength: 1 }
+          description: 依赖的需求标识
+        condition:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AiNeedCondition'
+          description: 条件开关，无条件时为 null 或因服务端 non_null 配置省略；前端归一为 null，只展示，不执行比较
+        evidence_plan:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/AiEvidenceItem' }
+          description: 待产出证据清单，包含原始数据与计算产物；不是执行结果
+        done_when:
+          allOf:
+            - $ref: '#/components/schemas/AiDoneWhen'
+          deprecated: true
+          description: 仅兼容旧历史需求，当前后端已移除此字段，不得要求新 NEEDS 提供
+        status:
+          type: string
+          enum: [PENDING, RUNNING, DONE, SKIPPED, BLOCKED, INFEASIBLE]
+          description: 代码节点维护，前端不得由就绪事件推算为 DONE
+
+    AiEvidenceItem:
+      type: object
+      required: [id, label, instruction, source, depends]
+      properties:
+        id: { type: string, minLength: 1, description: 全局唯一证据项标识，以所属需求标识为前缀，如 N1-E1 }
+        label: { type: string, minLength: 1, description: 证据项业务含义 }
+        instruction: { type: string, minLength: 1, description: 取数口径或计算要求 }
+        source: { type: string, enum: [SQL, PYTHON] }
+        depends:
+          type: array
+          items: { type: string, minLength: 1 }
+          description: 依赖的证据项标识，原始数据通常为空数组
+
+    AiNeedCondition:
+      type: object
+      required: [left, op, right]
+      properties:
+        left: { type: string, minLength: 1, description: 证据项引用，如 evidence.N1-E5 }
+        op: { type: string, enum: [GT, GTE, LT, LTE, EQ, NEQ] }
+        right:
+          oneOf:
+            - { type: number }
+            - { type: boolean }
+            - { type: string }
+          description: 比较右值，只允许数字、布尔或字符串字面量
+
+    AiDoneWhen:
+      type: object
+      required: [type, keys]
+      properties:
+        type: { type: string, enum: [EVIDENCE_KEYS_PRESENT] }
+        keys:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+          description: 完成判据所需的证据项标识，必须是本需求 evidence_plan 标识的子集
+
+    Plan:
+      type: object
+      deprecated: true
+      required: [title, objective, needs_clarification, clarification_questions, steps]
+      description: |
+        历史 PLAN 消息兼容协议，当前模型与新消息使用 NEEDS；新 CLARIFICATION 不依赖此对象。
+        旧协议使用 snake_case；needs_clarification 必须显式提供。
+        为 true 时 clarification_questions 非空、steps 为空；为 false 时问题列表为空、steps 为有效有序步骤。
+        这里只规划分析步骤，不包含执行状态、执行结果、报告节点或订单创建。
+      properties:
+        title: { type: string, minLength: 1 }
+        objective: { type: string, minLength: 1 }
+        needs_clarification: { type: boolean }
+        clarification_questions:
+          type: array
+          items: { $ref: '#/components/schemas/ClarificationQuestion' }
+          description: 本轮问题 id 必须唯一，允许用户选择建议或自行补充
+        steps:
+          type: array
+          description: 按 step 连续编号 1..n 顺序执行；上限由 erp.ai.graph.max-plan-steps 配置，默认6
+          items: { $ref: '#/components/schemas/PlanStep' }
+
+    ClarificationQuestion:
+      type: object
+      required: [id, question, options]
+      description: 人工澄清问题；候选项只提供建议，前端始终允许自定义补充
+      properties:
+        id: { type: string, minLength: 1, pattern: '\S', description: 本轮唯一问题标识，不充当数据库业务ID }
+        question: { type: string, minLength: 1, pattern: '\S', description: 问题正文 }
+        options:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, pattern: '\S' }
+          description: 非空时提供单选候选，空数组使用自由输入；不得杜撰没有可信授权来源的仓库或商品候选
+
+    PlanStep:
+      type: object
+      required: [step, type, instruction]
+      properties:
+        step: { type: integer, minimum: 1, description: 从1开始的连续序号 }
+        type: { type: string, enum: [SQL_QUERY, PYTHON_ANALYSIS] }
+        instruction: { type: string, minLength: 1, description: 本步目标和对前序结果的使用要求，不编造数据库结构或结果 }
+
+    # 会话与消息 Schema 对应当前 AI 助手页面；聊天卡片类 Schema 保留供后续功能设计引用。
     AiAssistantOverview:
       type: object
       required: [refreshedAt, quickPrompts, conversations]
@@ -4865,11 +5004,11 @@ components:
         refreshedAt: { type: string, description: 概览刷新时间，后端生成 }
         quickPrompts:
           type: array
-          description: 后续参数化快捷任务预留字段；基础对话阶段返回空数组，不展示未实现的业务分析入口。
+          description: 后续参数化快捷任务预留字段；当前固定返回空数组，前端也不补本地兜底数据。
           items: { $ref: '#/components/schemas/AiQuickPrompt' }
         conversations:
           type: array
-          description: 当前用户最近的会话摘要，用于左侧会话管理
+          description: 当前用户最近的会话摘要，按最近一次活动倒序，最多 50 条
           items: { $ref: '#/components/schemas/AiConversationSummary' }
 
     AiConversationSummary:
@@ -4877,9 +5016,87 @@ components:
       required: [conversationId, title, description, updatedAt]
       properties:
         conversationId: { type: string, description: 会话 ID }
+        title: { type: string, description: 会话标题；默认「新的经营会话」，发出第一条需求后自动改为需求前 20 个字 }
+        description: { type: string, description: 会话摘要 }
+        updatedAt: { type: string, description: 最近消息时间；还没有消息时取创建时间 }
+
+    AiConversationDetail:
+      type: object
+      required: [conversationId, title, description, updatedAt, running, runNode, runLabel, runStatus]
+      description: |
+        会话基本信息加当前执行状态。活动执行、最新请求收尾状态及检查点共同用于判断，
+        不向会话表增加运行字段；历史展示只读取独立的 MySQL 消息流水。
+      properties:
+        conversationId: { type: string, description: 会话 ID }
         title: { type: string, description: 会话标题 }
         description: { type: string, description: 会话摘要 }
         updatedAt: { type: string, description: 最近更新时间 }
+        running: { type: boolean, description: 当前是否存在实际活动执行 }
+        runStatus:
+          type: string
+          enum: [IDLE, RUNNING, WAITING_HUMAN, NEEDS_READY, PLAN_READY, FORMAT_RETRY_EXHAUSTED, FAILED, INTERRUPTED]
+          description: 当前会话执行状态，人工暂停不持有执行锁；当前就绪状态为 NEEDS_READY，PLAN_READY 仅兼容历史响应
+        runNode:
+          nullable: true
+          type: string
+          description: 当前运行节点编码；无运行时为 null
+        runLabel:
+          nullable: true
+          type: string
+          description: 当前节点展示文案；无运行时为 null
+
+    AiRunNodeEvent:
+      type: object
+      required: [node, label]
+      description: 进度流中 node-start 与 node-end 的事件体；由消息转换器序列化为 JSON 对象
+      properties:
+        node: { type: string, description: 节点编码，前端不硬编码节点名 }
+        label: { type: string, description: 节点展示文案，如「正在规划」 }
+        durationMs:
+          nullable: true
+          type: integer
+          description: 节点耗时毫秒；node-start 时为 null。使用整数而非 Long，避免被序列化成字符串
+
+    AiRunArtifact:
+      type: object
+      required: [type, content]
+      description: 进度流中 artifact 与 clarification_required 共用的事件体；产物定稿（或暂停）即推送，content 与可见消息展示协议同构
+      properties:
+        type: { type: string, description: 事件内容类型，与可见消息 content.type 同源；artifact 当前为 NEEDS，澄清事件固定为 CLARIFICATION，PLAN 仅兼容历史 }
+        content: { $ref: '#/components/schemas/AiVisibleMessageContent' }
+        checkpointId:
+          nullable: true
+          type: string
+          description: 事件对应拍次的检查点标识，由服务器补齐；不可得时为 null。仅作诊断：恢复所需暂停点在澄清事件的 content.data.pauseId，NEEDS 与历史 PLAN 产物不可用于恢复
+
+    AiRunFinished:
+      type: object
+      required: [status]
+      description: 进度流中 run_finished 事件的事件体；薄载荷只带状态与告警，消息正文以流水为准
+      properties:
+        status: { type: string, enum: [NEEDS_READY, PLAN_READY], description: 当前为 NEEDS_READY（需求已就绪，执行器尚未接入）；PLAN_READY 仅兼容历史事件 }
+        warning:
+          nullable: true
+          type: string
+          description: 展示流水保存失败提示的预留字段；当前保存失败告警链路尚未完整实现，不能据此承诺保存失败必定有 warning
+
+    AiRunStopped:
+      type: object
+      required: [status]
+      description: 进度流中 run_stopped 事件的事件体；薄载荷表示本轮未完成，正文以流水为准
+      properties:
+        status:
+          type: string
+          enum: [FORMAT_RETRY_EXHAUSTED, FAILED]
+          description: 停止分类；FORMAT_RETRY_EXHAUSTED 表示格式重试耗尽，FAILED 表示执行失败
+        reason:
+          nullable: true
+          type: string
+          description: 可直接展示的失败说明；能力性终止（如格式耗尽）为 null，正文看流水里的 ERROR 消息
+        warning:
+          nullable: true
+          type: string
+          description: 展示流水保存失败提示的预留字段；当前告警链路尚未完整实现
 
     AiConversationUpdateRequest:
       type: object
@@ -4887,15 +5104,50 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 40, description: 会话标题；前端提交前 trim }
 
+    AiConversationMessage:
+      type: object
+      required: [messageId, requestId, seq, role, kind, content, createdAt]
+      description: MySQL 中保存的用户可见流水；不含内部模型原文、格式错误、提示词或完整 State
+      properties:
+        messageId: { type: string, description: 消息 ID }
+        requestId: { type: string, description: 服务端请求标识，用于关联一轮请求及其回复 }
+        seq: { type: string, pattern: '^\d+$', description: 会话内消息顺序，BIGINT 按字符串传输 }
+        role: { type: string, enum: [user, assistant] }
+        kind: { type: string, enum: [USER_INPUT, ASSISTANT_FINAL] }
+        content: { $ref: '#/components/schemas/AiVisibleMessageContent' }
+        createdAt: { type: string, description: 创建时间 }
+
+    AiVisibleMessageContent:
+      type: object
+      required: [type, data]
+      properties:
+        type: { type: string, enum: [TEXT, CLARIFICATION, NEEDS, PLAN, ERROR] }
+        data:
+          type: object
+          required: [text]
+          description: 展示数据，按 type 校验；新 CLARIFICATION 包含 text、questions、threadId、pauseId，不含 plan；NEEDS 包含 text、needs、threadId（不可用于恢复）；PLAN 的 plan 仅兼容旧历史；ERROR 可携带 status 标记（FORMAT_RETRY_EXHAUSTED 表示规划未完成提示）；旧澄清历史缺少恢复标识时只读展示，不允许恢复
+          properties:
+            text: { type: string, description: 用户可见正文或摘要 }
+            replyToMessageId: { type: string, description: 用户补充回答所对应的问题消息 ID }
+            plan: { $ref: '#/components/schemas/Plan' }
+            needs:
+              type: array
+              items: { $ref: '#/components/schemas/AiNeed' }
+            questions:
+              type: array
+              items: { $ref: '#/components/schemas/ClarificationQuestion' }
+            threadId: { type: string, description: 恢复时原样提交，前端不作为业务内容展示 }
+            pauseId: { type: string, description: 本条人工问题的暂停标识；恢复时原样提交，消费后即失效，服务端核对最新暂停点 }
+            status: { type: string, description: ERROR 专用状态标记：FORMAT_RETRY_EXHAUSTED 表示规划未完成提示，无标记表示运行失败提示 }
+
     AiConversationMessagePage:
       type: object
       required: [records, total, pageNum, pageSize]
       properties:
         records:
           type: array
-          items: { $ref: '#/components/schemas/AiChatMessage' }
-        total: { type: integer, minimum: 0, description: 当前用户该会话的未删除消息总数 }
-        hasNext: { type: boolean, description: 可选兼容字段；未返回时前端根据 total、pageNum 和 pageSize 判断 }
+          items: { $ref: '#/components/schemas/AiConversationMessage' }
+        total: { type: integer, minimum: 0, description: 当前用户该会话的未删除可见消息总数 }
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1, maximum: 100 }
 
@@ -5004,22 +5256,55 @@ components:
             additionalProperties: true
 
     AiChatStreamEvent:
-      type: object
-      required: [requestId, eventType, conversationId]
       description: |
-        智能经营助手流式响应事件。SSE event 名称必须与 JSON eventType 一致。MESSAGE_DELTA 必须包含 contentDelta；MESSAGE_FINAL 必须包含已持久化的完整 AiChatMessage；ERROR 必须包含 errorMessage。
-        流必须以 MESSAGE_FINAL 或 ERROR 终止；连接直接关闭不能当作生成完成。基础阶段只返回文本，结构化数组为空。
+        单个 SSE data JSON，按 eventType 严格匹配三种事件之一；SSE event 名称必须与 eventType 一致。
+        正常完成以 MESSAGE_FINAL 终止，服务端可报告的生成失败以 ERROR 终止；主动取消或网络异常可能直接断流，不能当作生成完成。
+      oneOf:
+        - $ref: '#/components/schemas/AiChatDeltaEvent'
+        - $ref: '#/components/schemas/AiChatFinalEvent'
+        - $ref: '#/components/schemas/AiChatErrorEvent'
+      discriminator:
+        propertyName: eventType
+        mapping:
+          MESSAGE_DELTA: '#/components/schemas/AiChatDeltaEvent'
+          MESSAGE_FINAL: '#/components/schemas/AiChatFinalEvent'
+          ERROR: '#/components/schemas/AiChatErrorEvent'
+
+    AiChatDeltaEvent:
+      type: object
+      additionalProperties: false
+      required: [requestId, eventType, conversationId, contentDelta]
       properties:
-        requestId: { type: string, description: 本次请求 ID }
-        eventType: { type: string, enum: [MESSAGE_DELTA, MESSAGE_FINAL, ERROR], description: 流式事件类型 }
-        conversationId: { type: string, description: 会话 ID }
-        contentDelta: { type: string, description: 文本增量，仅 MESSAGE_DELTA 使用 }
+        requestId: { type: string, minLength: 1, description: 本次生成请求 ID，同一条流保持一致 }
+        eventType: { type: string, enum: [MESSAGE_DELTA] }
+        conversationId: { type: string, pattern: '^[1-9][0-9]*$', description: 消息所属会话 ID }
+        contentDelta: { type: string, description: 本次新增文本，追加到正在生成的助手消息 }
+
+    AiChatFinalEvent:
+      type: object
+      additionalProperties: false
+      required: [requestId, eventType, conversationId, message]
+      properties:
+        requestId: { type: string, minLength: 1, description: 本次生成请求 ID，同一条流保持一致 }
+        eventType: { type: string, enum: [MESSAGE_FINAL] }
+        conversationId: { type: string, pattern: '^[1-9][0-9]*$', description: 消息所属会话 ID }
         message:
-          nullable: true
           allOf:
             - $ref: '#/components/schemas/AiChatMessage'
-          description: 完整助手消息，仅 MESSAGE_FINAL 使用
-        errorMessage: { type: string, description: 错误信息，仅 ERROR 使用 }
+            - type: object
+              properties:
+                role: { type: string, enum: [assistant] }
+          description: 已成功持久化的完整助手消息，不可为 null
+
+    AiChatErrorEvent:
+      type: object
+      additionalProperties: false
+      required: [requestId, eventType, conversationId, errorMessage]
+      properties:
+        requestId: { type: string, minLength: 1, description: 本次生成请求 ID，同一条流保持一致 }
+        eventType: { type: string, enum: [ERROR] }
+        conversationId: { type: string, pattern: '^[1-9][0-9]*$', description: 消息所属会话 ID }
+        errorMessage: { type: string, minLength: 1, description: 可安全展示的错误说明，不包含密钥或内部异常堆栈 }
 
     AiChatRequest:
       type: object
@@ -5044,38 +5329,41 @@ components:
 
     AiChatMessage:
       type: object
-      required: [messageId, role, content, createdAt, charts, actionCards, sources, agentTraces, taskCard]
+      required: [messageId, role, content, createdAt]
+      description: |
+        messageId、role、content、createdAt 为核心字段。结构化扩展字段均可省略；当前基础实现仍兼容返回空数组及 null，不代表相关业务能力已实现。
+        调用方应将省略的数组字段按空数组处理，将省略的对象字段按 null 处理；有真实业务结果时再返回对应扩展。
       properties:
         messageId: { type: string, description: 消息 ID }
         role: { type: string, enum: [assistant, user], description: 消息角色 }
-        content: { type: string, description: 消息正文；后端应返回经过权限裁剪和必要脱敏后的内容 }
+        content: { type: string, description: 原始消息正文，可包含 Markdown；后端应返回经过权限裁剪和必要脱敏后的内容，前端负责安全渲染 }
         createdAt: { type: string, description: 消息创建时间 }
         charts:
           type: array
-          description: 随消息附带的图表规格；后端返回数据和字段映射，前端负责渲染。没有图表时返回空数组。流式场景下只在 `MESSAGE_FINAL` 返回完整数组
+          description: 可选图表规格；后端返回可信数据和字段映射，前端负责绘图。有图表时随最终消息返回，无图表时可省略或返回空数组；与正文中的 Markdown 图片分别处理
           items: { $ref: '#/components/schemas/AiChartSpec' }
         actionCards:
           type: array
-          description: 助手建议的可执行动作。写业务数据的动作只能是草稿、预览或跳转，不能直接提交正式业务单据；调拨建议在独立调拨单接口接入前可落到调出/调入库存草稿
+          description: 可选操作入口，当前基础聊天不展示；无动作时可省略或返回空数组。写业务数据的动作只能是草稿、预览或跳转，不能直接提交正式业务单据；调拨建议在独立调拨单接口接入前可落到调出/调入库存草稿
           items: { $ref: '#/components/schemas/AiActionCard' }
         sources:
           type: array
-          description: 本轮回复实际使用的 Tool、知识库或任务上下文来源；页面可不展示，但后端应保留用于追溯
+          description: 可选来源，本轮回复实际使用的 Tool、知识库或任务上下文依据；无来源时可省略或返回空数组，不得伪造来源。有真实来源时后端应保留用于追溯
           items: { $ref: '#/components/schemas/AiContextSource' }
         agentTraces:
           type: array
-          description: 后续主智能体调度 DataQuerySubAgent 和 DataAnalysisSubAgent 的协同轨迹；基础交互阶段返回空数组
+          description: 可选协同轨迹，后续需要用户查看主智能体调度进度时接入；基础阶段可省略或返回空数组，技术调试细节不作为用户展示字段
           items: { $ref: '#/components/schemas/AiAgentTrace' }
         taskCard:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/AiTaskCard'
-          description: 用户通过常用任务发起分析时的对话卡片；普通文本消息返回 `null`
+          description: 可选任务参数摘要，当前基础聊天不展示；普通文本消息可省略或返回 null，待任务入口需求确定后收敛
         workbench:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/AiAssistantWorkbench'
-          description: 后端业务 Tool 生成并校验的只读工作框；未接入真实 Tool 时返回 `null` 或不返回，前端不得从自然语言补造
+          description: 可选只读工作框，当前基础聊天不展示；未接入真实 Tool 时可省略或返回 null，前端不得从自然语言补造；创建和编辑业务单据使用对应业务接口
 
     AiTaskCard:
       type: object

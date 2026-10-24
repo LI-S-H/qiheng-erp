@@ -20,9 +20,7 @@ const mockUser: CurrentUser = {
     'purchase:create',
     'sales:query',
     'sales:create',
-    'ai:query:stock',
-    'ai:query:sales',
-    'ai:query:purchase',
+    'ai:assistant:use',
   ],
   lastLoginAt: '2026-06-06 01:10:00',
 };

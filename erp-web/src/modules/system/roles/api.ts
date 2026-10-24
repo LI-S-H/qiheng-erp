@@ -24,13 +24,13 @@ let mockRoles: SystemRoleListItem[] = [
   },
   {
     roleId: '1900000000000001002', roleCode: 'PURCHASE_STAFF', roleName: '采购员',
-    permissionCodes: ['product:query', 'warehouse:query', 'supplier:query', 'supplier:create', 'purchase:query', 'purchase:create', 'purchase:manage', 'ai:query:purchase'],
+    permissionCodes: ['product:query', 'warehouse:query', 'supplier:query', 'supplier:create', 'purchase:query', 'purchase:create', 'purchase:manage', 'return:query', 'dashboard:overview:query', 'ai:assistant:use'],
     status: 1, remark: '负责供应商维护和采购订单操作',
     userCount: 2, createTime: '2026-06-05 20:35:00', updateTime: '2026-07-16 10:00:00',
   },
   {
     roleId: '1900000000000001003', roleCode: 'SALES_STAFF', roleName: '销售员',
-    permissionCodes: ['product:query', 'warehouse:query', 'customer:query', 'customer:create', 'sales:query', 'sales:create', 'sales:manage', 'ai:query:sales'],
+    permissionCodes: ['product:query', 'warehouse:query', 'customer:query', 'customer:create', 'sales:query', 'sales:create', 'sales:manage', 'return:query', 'dashboard:overview:query', 'ai:assistant:use'],
     status: 1, remark: '负责客户维护和销售订单操作',
     userCount: 2, createTime: '2026-06-05 20:36:00', updateTime: '2026-07-16 10:00:00',
   },
@@ -42,13 +42,13 @@ let mockRoles: SystemRoleListItem[] = [
   },
   {
     roleId: '1900000000000001005', roleCode: 'BUSINESS_MANAGER', roleName: '业务主管',
-    permissionCodes: ['product:query', 'product:manage', 'warehouse:query', 'warehouse:manage', 'supplier:query', 'supplier:create', 'purchase:query', 'purchase:create', 'purchase:manage', 'customer:query', 'customer:create', 'sales:query', 'sales:create', 'sales:manage', 'ai:query:stock', 'ai:query:sales', 'ai:query:purchase', 'ai:ops:suggest'],
+    permissionCodes: ['product:query', 'product:manage', 'warehouse:query', 'warehouse:manage', 'supplier:query', 'supplier:create', 'purchase:query', 'purchase:create', 'purchase:manage', 'customer:query', 'customer:create', 'sales:query', 'sales:create', 'sales:manage', 'return:query', 'dashboard:overview:query', 'dashboard:exception:query', 'ai:assistant:use'],
     status: 1, remark: '查看全链路业务数据和AI分析建议',
     userCount: 1, createTime: '2026-06-05 20:38:00', updateTime: '2026-07-16 10:00:00',
   },
   {
     roleId: '1900000000000001006', roleCode: 'AI_ANALYST', roleName: 'AI分析师',
-    permissionCodes: ['product:query', 'warehouse:query', 'supplier:query', 'purchase:query', 'customer:query', 'sales:query', 'ai:query:stock', 'ai:query:sales', 'ai:query:purchase', 'ai:ops:suggest', 'ai:decision:suggest'],
+    permissionCodes: ['product:query', 'warehouse:query', 'supplier:query', 'purchase:query', 'customer:query', 'sales:query', 'return:query', 'ai:assistant:use'],
     status: 1, remark: '仅查询业务数据和AI问答，当前停用',
     userCount: 0, createTime: '2026-06-05 20:39:00', updateTime: '2026-07-03 17:00:43',
   },

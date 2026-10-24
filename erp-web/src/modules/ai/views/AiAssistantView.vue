@@ -1,1063 +1,1364 @@
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import '@/styles/ai-pilot.css';
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { Bot, CalendarDays, ChevronDown, ChevronsDown, ChevronsUp, History, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, UserRound } from 'lucide-vue-next';
-import { CollapsibleContent, CollapsibleRoot } from 'reka-ui';
-import { toast } from 'vue-sonner';
+import { useMediaQuery } from '@vueuse/core';
+import { useRouter } from 'vue-router';
+import {
+  ArrowRight,
+  MessageSquare,
+  ClipboardList,
+  Home,
+  LoaderCircle,
+  Menu,
+  TriangleAlert,
+} from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import RowActionsMenu from '@/components/common/RowActionsMenu.vue';
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { getApiErrorMessage } from '@/api/http';
-import AiChartCard from '../components/AiChartCard.vue';
+import ListLoadingOverlay from '@/components/common/ListLoadingOverlay.vue';
+import { useAuthStore } from '@/modules/auth/stores/authStore';
+import AiClarificationForm from '../components/AiClarificationForm.vue';
 import AiComposerDock from '../components/AiComposerDock.vue';
-import AiFadeSwitch from '../components/AiFadeSwitch.vue';
-import AiMarkdownContent from '../components/AiMarkdownContent.vue';
-import { createAiConversation, deleteAiConversation, getAiAssistantOverview, getAiConversationHistory, sendAiAssistantMessage, updateAiConversation } from '../api';
-import type { AiAssistantOverview, AiChatMessage } from '../types';
+import AiConversationSidebar from '../components/AiConversationSidebar.vue';
+import AiMessageList from '../components/AiMessageList.vue';
+import AiMessageNavigator from '../components/AiMessageNavigator.vue';
+import AiPlanPanel from '../components/AiPlanPanel.vue';
+import AiProgressFeed from '../components/AiProgressFeed.vue';
+import { usePanelResize } from '../composables/use-panel-resize';
+import { useConversationRuns, type ConversationRun } from '../composables/use-conversation-runs';
+import type { ClarificationDraft, PlanningArtifact } from '../graph-types';
+import {
+  resumeGraphStream,
+  startGraphStream,
+  subscribeConversationProgress,
+  type AiRunHandlers,
+} from '../graph-stream';
+import { useAiConversationStore } from '../stores/aiConversationStore';
+import type { AiConversationMessage } from '../types';
 
-interface ConversationHistoryState {
-  status: 'idle' | 'loading' | 'success' | 'error';
-  error: string | null;
-}
-const loading = ref(false);
-const overview = ref<AiAssistantOverview | null>(null);
-const overviewError = ref('');
-const conversationId = ref<string | null>(null);
+const router = useRouter();
+const auth = useAuthStore();
+const store = useAiConversationStore();
+const runs = useConversationRuns();
+const currentRun = computed(() => runs.get(store.activeId));
+const runtimeField = <K extends keyof ConversationRun>(key: K) => computed({
+  get: () => currentRun.value[key],
+  set: (value: ConversationRun[K]) => { currentRun.value[key] = value; },
+});
+const query = ref('');
+const queryError = ref('');
+const error = runtimeField('error');
+const warning = runtimeField('warning');
+const querying = runtimeField('querying');
+const watching = runtimeField('watching');
+const creating = ref(false);
+const switching = ref(false);
+const steps = runtimeField('steps');
+const pendingText = runtimeField('pendingText');
+const clarificationDraft = ref<ClarificationDraft>({ answers: {}, note: '' });
+const clarificationForm = ref<InstanceType<typeof AiClarificationForm> | null>(null);
+const questionDock = ref<HTMLElement | null>(null);
+const scrollArea = ref<HTMLElement | null>(null);
+const workspaceElement = ref<HTMLElement | null>(null);
 const sidebarCollapsed = ref(false);
-const conversationListExpanded = ref(false);
-const conversationListCollapsed = ref(false);
-const selectedConversationDate = ref<string | null>(null);
-const switchingConversationId = ref<string | null>(null);
-const renameDialogOpen = ref(false);
-const renamingConversationId = ref<string | null>(null);
-const renameTitle = ref('');
-const renameError = ref('');
-const renaming = ref(false);
-const deletingConversationId = ref<string | null>(null);
-const deleteDialogOpen = ref(false);
-const pendingDeleteConversation = ref<{ id: string; title: string } | null>(null);
-const messageScroll = ref<HTMLElement | null>(null);
-const messagesByConversation = reactive<Record<string, AiChatMessage[]>>({});
-const historyStateByConversation = reactive<Record<string, ConversationHistoryState>>({});
-const sendingByConversation = reactive<Record<string, boolean>>({});
-const errorsByConversation = reactive<Record<string, string>>({});
-const draftsByConversation = reactive<Record<string, string>>({});
-const generationControllers = new Map<string, AbortController>();
-const recoveryControllers = new Map<string, AbortController>();
-let historySequence = 0;
-let historyController: AbortController | null = null;
-let generationSequence = 0;
+const mobileSidebarOpen = ref(false);
+const planOpen = ref(false);
+const selectedPlan = runtimeField('selectedPlan');
+const livePlan = runtimeField('livePlan');
+/** 仅在同账号切换期间显示旧内容；请求失败或账号切换立即丢弃，不能当作新会话数据。 */
+const switchSnapshot = ref<{ messages: AiConversationMessage[]; plan: PlanningArtifact | null } | null>(null);
+/** 未落库的暂停轮数据：澄清卡在库内出现前先行渲染表单，字段与落库卡 data 同构。 */
+const pendingClarification = runtimeField('pendingClarification');
+const wide = useMediaQuery('(min-width: 1360px)');
+const small = useMediaQuery('(max-width: 900px)');
+const phone = useMediaQuery('(max-width: 640px)');
+const conversationResize = usePanelResize({
+  storageKey: 'erp-ai-conversation-width', min: 200, max: 320, initial: 224,
+});
+// 两栏最大宽度之和保留桌面断点下至少 400px 的对话正文。
+const planResize = usePanelResize({
+  storageKey: 'erp-ai-plan-width', min: 280, max: 416, initial: 352, invert: true,
+});
+const workspaceStyle = computed(() => ({
+  '--conversation-width': `${conversationResize.width.value}px`,
+  '--plan-width': `${planResize.width.value}px`,
+}));
+let requestEpoch = 0;
 let disposed = false;
+const refreshes = new Map<string, Promise<void>>();
 
-const sending = computed(() => Boolean(conversationId.value && sendingByConversation[conversationId.value]));
-const streamError = computed(() => conversationId.value ? errorsByConversation[conversationId.value] || '' : '');
-const inputMessage = computed({
-  get: () => conversationId.value ? draftsByConversation[conversationId.value] || '' : '',
-  set: (value: string) => { if (conversationId.value) draftsByConversation[conversationId.value] = value; },
-});
-
-const conversationDateGroups = computed(() => {
-  const groups = new Map<string, number>();
-  (overview.value?.conversations || []).forEach(conversation => {
-    const date = conversation.updatedAt.slice(0, 10);
-    groups.set(date, (groups.get(date) || 0) + 1);
-  });
-  return Array.from(groups.entries()).sort(([left], [right]) => right.localeCompare(left)).map(([date, count]) => ({ date, count }));
-});
-const selectedConversationDateLabel = computed(() => selectedConversationDate.value || '全部日期');
-const filteredConversations = computed(() => (overview.value?.conversations || []).filter(item => !selectedConversationDate.value || item.updatedAt.startsWith(selectedConversationDate.value)));
-const pinnedConversations = computed(() => filteredConversations.value.slice(0, 5));
-const extraConversations = computed(() => filteredConversations.value.slice(5));
-const hiddenConversationCount = computed(() => extraConversations.value.length);
-const currentMessages = computed(() => conversationId.value ? messagesByConversation[conversationId.value] || [] : []);
-const currentHistoryState = computed<ConversationHistoryState>(() => conversationId.value ? historyStateByConversation[conversationId.value] || { status: 'idle', error: null } : { status: 'idle', error: null });
-const transitionLoading = computed(() => currentHistoryState.value.status === 'loading');
-
-function nowText() {
-  return new Date().toLocaleString('sv-SE');
-}
-function isRequestCancelled(error: unknown) {
-  return Boolean(error && typeof error === 'object' && (
-    ('name' in error && (error.name === 'AbortError' || error.name === 'CanceledError')) || ('code' in error && error.code === 'ERR_CANCELED')
-  ));
-}
-function stopGeneration() {
-  if (!conversationId.value) return;
-  generationControllers.get(conversationId.value)?.abort();
-  recoveryControllers.get(conversationId.value)?.abort();
-}
-function discardGeneration(id: string) {
-  const controller = generationControllers.get(id);
-  // 先让运行实例失效，再中断网络，删除后的旧回调不能重新建立会话状态。
-  generationControllers.delete(id);
-  controller?.abort();
-  recoveryControllers.get(id)?.abort();
-  recoveryControllers.delete(id);
-  sendingByConversation[id] = false;
-  historyStateByConversation[id] = { status: 'idle', error: null };
-}
-async function scrollToLatest(id = conversationId.value) {
-  await nextTick();
-  if (conversationId.value === id && messageScroll.value) messageScroll.value.scrollTop = messageScroll.value.scrollHeight;
-}
-function cancelHistoryLoad() {
-  historySequence += 1;
-  historyController?.abort();
-  historyController = null;
-  const previous = switchingConversationId.value;
-  if (previous && historyStateByConversation[previous]?.status === 'loading') {
-    historyStateByConversation[previous] = { status: 'idle', error: null };
+const busy = computed(() => creating.value || querying.value || watching.value);
+const runningConversationIds = computed(() => Array.from(runs.states.entries())
+  .filter(([id, state]) => id !== 'new' && (state.querying || state.watching || state.runStatus === 'RUNNING'))
+  .map(([id]) => id));
+const locked = computed(
+  () =>
+    busy.value ||
+    switching.value ||
+    store.historyLoading ||
+    Boolean(store.activeId && !store.detail),
+);
+const runStatus = computed(() => currentRun.value.runStatus || store.detail?.runStatus || 'IDLE');
+const latestQuestion = computed(() => {
+  // 当前有未落库的暂停数据时，它比历史流水新，不能让上一轮问题占用可提交插槽。
+  if (runStatus.value !== 'WAITING_HUMAN' || pendingClarification.value) {
+    return null;
   }
-  switchingConversationId.value = null;
-}
-async function loadConversationHistory(id: string) {
-  cancelHistoryLoad();
-  const sequence = ++historySequence;
-  const controller = new AbortController();
-  historyController = controller;
-  switchingConversationId.value = id;
-  historyStateByConversation[id] = { status: 'loading', error: null };
-  try {
-    const messages = await getAiConversationHistory(id, controller.signal);
-    if (disposed || sequence !== historySequence || conversationId.value !== id) return;
-    messagesByConversation[id] = messages;
-    historyStateByConversation[id] = { status: 'success', error: null };
-    await scrollToLatest(id);
-  } catch (error) {
-    if (isRequestCancelled(error) || disposed || sequence !== historySequence || conversationId.value !== id) return;
-    historyStateByConversation[id] = { status: 'error', error: getApiErrorMessage(error) || '会话历史加载失败，请重试' };
-  } finally {
-    if (sequence === historySequence && conversationId.value === id) {
-      switchingConversationId.value = null;
-      if (historyController === controller) historyController = null;
+  const messages = store.messages;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const item = messages[i];
+    if (item.role === 'assistant') {
+      if (
+        item.content.type !== 'CLARIFICATION' ||
+        !item.content.data.threadId ||
+        !item.content.data.pauseId
+      ) {
+        return null;
+      }
+      const answered = messages
+        .slice(i + 1)
+        .some(
+          (message) =>
+            message.content.type === 'TEXT' &&
+            message.content.data.replyToMessageId === item.messageId,
+        );
+      return answered ? null : item;
     }
   }
+  return null;
+});
+const currentQuestionData = computed(() => {
+  // 未落库暂停数据只在等待补充状态可用：暂停点消费后再失败时表单必须退出
+  if (pendingClarification.value && runStatus.value === 'WAITING_HUMAN') {
+    return pendingClarification.value;
+  }
+  return latestQuestion.value?.content.type === 'CLARIFICATION'
+    ? latestQuestion.value.content.data
+    : null;
+});
+const waiting = computed(() => Boolean(currentQuestionData.value));
+const activePlan = computed(
+  // 计划面板展示优先级：人工打开的历史计划 > 预渲染的当轮计划
+  () => selectedPlan.value || livePlan.value || null,
+);
+const readingConversation = computed(() => switching.value || (store.historyLoading && !busy.value));
+const displayedMessages = computed(() => switching.value && switchSnapshot.value ? switchSnapshot.value.messages : store.messages);
+const displayedPlan = computed(() => switching.value && switchSnapshot.value ? switchSnapshot.value.plan : activePlan.value);
+const showWelcome = computed(
+  () => !store.messages.length && !store.historyLoading && !pendingText.value && !busy.value && !switching.value && !error.value,
+);
+const statusLabel = computed(() => {
+  if (busy.value) {
+    return steps.value.find((step) => step.status === 'running')?.label || '正在规划';
+  }
+  return (
+    {
+      WAITING_HUMAN: '等待补充',
+      PLAN_READY: '计划已生成',
+      NEEDS_READY: '需求已拆解',
+      FAILED: '执行失败',
+      INTERRUPTED: '执行已中断',
+      FORMAT_RETRY_EXHAUSTED: '规划未完成',
+      IDLE: '准备就绪',
+      RUNNING: '等待连接',
+    } as Record<string, string>
+  )[runStatus.value];
+});
+const composerValue = computed({
+  get: () => (waiting.value ? clarificationDraft.value.note : query.value),
+  set: (value: string) => {
+    if (waiting.value) {
+      clarificationDraft.value = { ...clarificationDraft.value, note: value };
+    } else {
+      query.value = value;
+    }
+  },
+});
+const examples = [
+  { title: '库存与补货', text: '请分析库存情况，给出补货建议' },
+  { title: '销售趋势', text: '分析最近30天的销售趋势，找出值得关注的商品' },
+  { title: '采购分析', text: '帮我规划一次供应商供货表现分析' },
+];
+
+function scopedDraftKey(userId: string | undefined, id: string | null, kind: string, checkpoint = '') {
+  return `erp.ai.draft.v2:${userId}:${id || 'new'}:${kind}:${checkpoint}`;
 }
-async function switchConversation(id: string, force = false) {
-  cancelHistoryLoad();
-  conversationId.value = id;
-  // 正在生成或同步的会话由自己的请求更新缓存，切回时不能用数据库快照覆盖增量。
-  if (sendingByConversation[id] || (!force && historyStateByConversation[id]?.status === 'success')) {
-    await scrollToLatest(id);
+function draftKey(kind: string, checkpoint = '') {
+  return scopedDraftKey(auth.user?.userId, store.activeId, kind, checkpoint);
+}
+function storageSet(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // 存储受限仍保留当前页面的输入。
+  }
+}
+function storageRead(key: string): unknown {
+  try {
+    return JSON.parse(localStorage.getItem(key) || 'null');
+  } catch {
+    return null;
+  }
+}
+interface SubmittedDraft {
+  text: string;
+  afterSeq: string;
+  pauseId: string | null;
+  fromNew: boolean;
+}
+function clearSubmittedDraft(userId: string | undefined, id: string, submission: SubmittedDraft) {
+  if (submission.pauseId) {
+    storageSet(scopedDraftKey(userId, id, 'clarification', submission.pauseId), null);
+  } else {
+    for (const key of [scopedDraftKey(userId, id, 'query'), ...(submission.fromNew ? [scopedDraftKey(userId, null, 'query')] : [])]) {
+      const cached = storageRead(key);
+      if (typeof cached === 'string' && cached.trim() === submission.text) storageSet(key, '');
+    }
+    if (store.activeId === id && !switching.value && query.value.trim() === submission.text) query.value = '';
+  }
+  storageSet(scopedDraftKey(userId, id, 'inflight'), null);
+}
+/** 页面卸载只断开订阅。重进后用新增用户消息确认受理，再清草稿，不能凭终态猜测曾提交成功。 */
+function reconcileSubmittedDraft(id: string) {
+  if (!store.detail || !['WAITING_HUMAN', 'NEEDS_READY', 'PLAN_READY'].includes(store.detail.runStatus)) return;
+  const value = storageRead(draftKey('inflight'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const item = value as Partial<SubmittedDraft>;
+  if (typeof item.text !== 'string' || typeof item.afterSeq !== 'string' || !/^\d+$/.test(item.afterSeq) ||
+    !(item.pauseId === null || typeof item.pauseId === 'string') || typeof item.fromNew !== 'boolean') return;
+  const accepted = [...store.messages].reverse().find(message => message.role === 'user' && message.content.type === 'TEXT');
+  if (accepted?.content.type === 'TEXT' && accepted.content.data.text === item.text &&
+    BigInt(accepted.seq) > BigInt(item.afterSeq)) {
+    clearSubmittedDraft(auth.user?.userId, id, item as SubmittedDraft);
+    return true;
+  }
+  return false;
+}
+function restoreQuery() {
+  const value = storageRead(draftKey('query'));
+  query.value = typeof value === 'string' && value.length <= 10000 ? value : '';
+}
+function restoreClarification() {
+  const data = currentQuestionData.value;
+  clarificationDraft.value = { answers: {}, note: '' };
+  if (!data?.pauseId) {
     return;
   }
-  await loadConversationHistory(id);
-}
-async function retryConversationHistory() {
-  if (conversationId.value) await switchConversation(conversationId.value, true);
-}
-async function loadOverview() {
-  if (loading.value) return;
-  loading.value = true;
-  overviewError.value = '';
-  try {
-    const data = await getAiAssistantOverview();
-    if (disposed) return;
-    overview.value = data;
-    const firstId = overview.value.conversations[0]?.conversationId || null;
-    conversationId.value = firstId;
-    if (firstId) await switchConversation(firstId, true);
-  } catch (error) {
-    if (!disposed) overviewError.value = getApiErrorMessage(error) || '会话列表加载失败，请重试';
-  } finally {
-    loading.value = false;
+  const cached = storageRead(draftKey('clarification', data.pauseId));
+  if (!cached || typeof cached !== 'object' || Array.isArray(cached)) {
+    return;
   }
+  const value = cached as Record<string, unknown>;
+  const answers = value.answers;
+  if (
+    !answers ||
+    typeof answers !== 'object' ||
+    Array.isArray(answers) ||
+    typeof value.note !== 'string' ||
+    value.note.length > 10000
+  ) {
+    return;
+  }
+  const safe: ClarificationDraft = { answers: {}, note: value.note };
+  if (value.currentQuestionId === null || data.questions.some(question => question.id === value.currentQuestionId)) {
+    safe.currentQuestionId = value.currentQuestionId as string | null;
+  }
+  for (const question of data.questions) {
+    const item = (answers as Record<string, unknown>)[question.id];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      continue;
+    }
+    const entry = item as Record<string, unknown>;
+    if (
+      typeof entry.selected === 'string' &&
+      typeof entry.custom === 'string' &&
+      entry.custom.length <= 10000 &&
+      ['', '__custom_answer__', ...question.options].includes(entry.selected)
+    ) {
+      safe.answers[question.id] = { selected: entry.selected, custom: entry.custom };
+    }
+  }
+  clarificationDraft.value = safe;
 }
-async function selectConversation(id: string) {
-  if (id === conversationId.value && historyStateByConversation[id]?.status !== 'error') return;
-  await switchConversation(id, historyStateByConversation[id]?.status === 'error');
+watch(query, (value) => {
+  if (!switching.value && auth.user) {
+    storageSet(draftKey('query'), value);
+  }
+});
+watch(
+  clarificationDraft,
+  (value) => {
+    const data = currentQuestionData.value;
+    if (!switching.value && data?.pauseId && auth.user) {
+      storageSet(draftKey('clarification', data.pauseId), value);
+    }
+  },
+  { deep: true },
+);
+watch(() => currentQuestionData.value?.pauseId, restoreClarification);
+
+function isCurrent(epoch: number, userId: string | undefined, id?: string) {
+  return (
+    !disposed &&
+    requestEpoch === epoch &&
+    auth.user?.userId === userId &&
+    (!id || store.activeId === id)
+  );
 }
-async function createConversation() {
-  if (loading.value) return;
-  loading.value = true;
-  try {
-    const conversation = await createAiConversation();
-    if (disposed) return;
-    if (!overview.value) overview.value = { refreshedAt: nowText(), quickPrompts: [], conversations: [] };
-    overview.value.conversations = [conversation, ...overview.value.conversations];
-    overviewError.value = '';
-    await switchConversation(conversation.conversationId, true);
-    toast.success('新会话已创建');
-  } catch (error) {
-    if (!disposed) toast.warning(getApiErrorMessage(error) || '新建会话失败');
-  } finally { loading.value = false; }
+function cancelTransient() {
+  requestEpoch += 1;
+  // 这里只结束旧视图的读取资格；运行连接和暂停数据仍属于原会话。
+  queryError.value = '';
 }
-function openRename(id: string, title: string) {
-  renamingConversationId.value = id;
-  renameTitle.value = title;
-  renameError.value = '';
-  renameDialogOpen.value = true;
-}
-async function saveRename() {
-  if (renaming.value) return;
-  const id = renamingConversationId.value;
-  const title = renameTitle.value.trim();
-  if (!id || !title || title.length > 40) { renameError.value = '请填写 1 到 40 字的会话名称'; return; }
-  renaming.value = true;
-  renameError.value = '';
-  try {
-    const updated = await updateAiConversation(id, { title });
-    if (disposed) return;
-    if (overview.value) overview.value.conversations = overview.value.conversations.map(item => item.conversationId === id ? updated : item);
-    renameDialogOpen.value = false;
-    toast.success('会话名称已更新');
-  } catch (error) { renameError.value = getApiErrorMessage(error) || '会话改名失败'; }
-  finally { renaming.value = false; }
-}
-function openDeleteConfirmation(id: string) {
-  if (deletingConversationId.value) return;
-  const conversation = overview.value?.conversations.find(item => item.conversationId === id);
-  if (!conversation) return;
-  pendingDeleteConversation.value = { id, title: conversation.title };
-  deleteDialogOpen.value = true;
-}
-function updateDeleteDialogOpen(open: boolean) {
-  // 确认组件会自动请求关闭；删除完成前保持弹窗与提交锁，失败后可以重试。
-  if (open) { deleteDialogOpen.value = true; return; }
-  void nextTick(() => {
-    if (deletingConversationId.value) return;
-    deleteDialogOpen.value = false;
-    pendingDeleteConversation.value = null;
+function stopSteps(state: ConversationRun, status: 'done' | 'failed' | 'interrupted') {
+  state.steps.forEach((step) => {
+    if (step.status === 'running') {
+      step.status = status;
+    }
   });
 }
-async function removeConversation() {
-  if (deletingConversationId.value) return;
-  const id = pendingDeleteConversation.value?.id;
-  if (!id) return;
-  const conversation = overview.value?.conversations.find(item => item.conversationId === id);
-  if (!conversation) { updateDeleteDialogOpen(false); return; }
-  if (generationControllers.has(id)) discardGeneration(id);
-  deletingConversationId.value = id;
-  try {
-    await deleteAiConversation(id);
-    if (disposed) return;
-    deleteDialogOpen.value = false;
-    pendingDeleteConversation.value = null;
-    if (overview.value) overview.value.conversations = overview.value.conversations.filter(item => item.conversationId !== id);
-    delete messagesByConversation[id];
-    delete historyStateByConversation[id];
-    delete sendingByConversation[id];
-    delete errorsByConversation[id];
-    delete draftsByConversation[id];
-    if (conversationId.value === id) {
-      cancelHistoryLoad();
-      const next = overview.value?.conversations[0]?.conversationId || null;
-      conversationId.value = next;
-      if (next) await switchConversation(next, true);
+function handlers(
+  state: ConversationRun,
+  valid: () => boolean,
+  id: string,
+): AiRunHandlers {
+  const settle = () => {
+    state.refreshNeeded = true;
+    state.settleSuccess?.();
+    state.settleSuccess = null;
+  };
+  const syncDetail = () => {
+    if (store.activeId === id && store.detail?.conversationId === id && state.runStatus) {
+      store.detail = { ...store.detail, running: state.runStatus === 'RUNNING', runStatus: state.runStatus };
     }
-    toast.success('会话已删除');
-  } catch (error) {
-    if (!disposed) {
-      toast.warning(getApiErrorMessage(error) || '删除会话失败');
-      if (conversationId.value === id && historyStateByConversation[id]?.status === 'idle') await switchConversation(id, true);
+  };
+  return {
+    onNodeStart: (progress) => {
+      if (valid()) {
+        // 节点已开始代表旧暂停点已消费，不能再用上一轮未落库数据覆盖新终态。
+        state.pendingClarification = null;
+        state.runStatus = 'RUNNING';
+        state.error = '';
+        state.steps.push({ ...progress, status: 'running' });
+        syncDetail();
+      }
+    },
+    onNodeEnd: (progress) => {
+      if (!valid()) {
+        return;
+      }
+      const step = [...state.steps]
+        .reverse()
+        .find((item) => item.node === progress.node && item.status === 'running');
+      if (step) {
+        Object.assign(step, progress, { status: 'done' });
+      }
+    },
+    onArtifact: (artifact) => {
+      if (!valid()) {
+        return;
+      }
+      // 产物定稿即提前渲染：计划内容先于 run_finished 到达面板
+      if (artifact.content.type === 'PLAN' || artifact.content.type === 'NEEDS') {
+        state.livePlan = artifact.content;
+        state.selectedPlan = null;
+      }
+    },
+    onClarification: (clarification) => {
+      if (!valid()) {
+        return;
+      }
+      const data = clarification.content.type === 'CLARIFICATION' ? clarification.content.data : null;
+      if (data && data.pauseId && data.threadId) {
+        // 澄清卡入库前先用事件数据渲染表单；reload 后库内卡片出现即交回流水
+        state.pendingClarification = {
+          threadId: data.threadId,
+          pauseId: data.pauseId,
+          questions: data.questions,
+        };
+      }
+      state.runStatus = 'WAITING_HUMAN';
+      state.error = '';
+      syncDetail();
+      stopSteps(state, 'done');
+      settle();
+    },
+    onRunFinished: (ending) => {
+      if (!valid()) {
+        return;
+      }
+      state.runStatus = ending.status;
+      state.error = '';
+      syncDetail();
+      // 提前渲染的当轮计划转正；未收到产物时以库内最新计划为准（刷新后回填）
+      if (state.livePlan) {
+        state.selectedPlan = state.livePlan;
+        state.livePlan = null;
+      } else {
+        // 中途订阅可能错过产物帧，完成后让历史刷新回填本次最新产物。
+        state.selectedPlan = null;
+      }
+      state.warning = ending.warning || '';
+      if (store.activeId === id && state.selectedPlan && wide.value) {
+        planOpen.value = true;
+      }
+      stopSteps(state, 'done');
+      settle();
+    },
+    onStopped: (ending) => {
+      if (!valid()) {
+        return;
+      }
+      state.runStatus = ending.status;
+      state.refreshNeeded = true;
+      syncDetail();
+      state.warning = ending.warning || '';
+      if (ending.reason) {
+        state.error = ending.reason;
+      }
+      stopSteps(state, 'failed');
+    },
+  };
+}
+async function scrollToLatest() {
+  await nextTick();
+  if (scrollArea.value) {
+    scrollArea.value.scrollTop = scrollArea.value.scrollHeight;
+  }
+}
+/** 库内澄清卡片出现后，实时暂停数据交回流水渲染，避免两个表单同时占用插槽。 */
+function clearSavedPendingClarification() {
+  const pending = pendingClarification.value;
+  if (!pending) {
+    return;
+  }
+  const saved = store.messages.some(
+    (message) =>
+      message.content.type === 'CLARIFICATION' &&
+      message.content.data.pauseId === pending.pauseId,
+  );
+  if (saved) {
+    pendingClarification.value = null;
+  }
+}
+async function reload(id: string, epoch: number, userId: string | undefined) {
+  const key = `${epoch}:${id}`;
+  const pending = refreshes.get(key);
+  if (pending) return pending;
+  const request = performReload(id, epoch, userId);
+  refreshes.set(key, request);
+  try {
+    await request;
+  } finally {
+    if (refreshes.get(key) === request) refreshes.delete(key);
+  }
+}
+async function performReload(id: string, epoch: number, userId: string | undefined) {
+  if (!isCurrent(epoch, userId, id)) {
+    return;
+  }
+  try {
+    await store.loadConversation(id);
+    if (isCurrent(epoch, userId, id)) {
+      clearSavedPendingClarification();
+      const state = runs.get(id);
+      if (!state.streaming && store.detail) state.runStatus = store.detail.runStatus;
+      if (reconcileSubmittedDraft(id)) state.error = '';
+      state.refreshNeeded = false;
+      if (!selectedPlan.value && !livePlan.value) {
+        const saved = [...store.messages].reverse().find(message => message.content.type === 'NEEDS' || message.content.type === 'PLAN');
+        if (saved?.content.type === 'NEEDS' || saved?.content.type === 'PLAN') selectedPlan.value = saved.content;
+      }
+    }
+    if (isCurrent(epoch, userId, id)) {
+      await store.loadConversations();
+    }
+  } catch (cause) {
+    if (isCurrent(epoch, userId, id)) {
+      warning.value = `历史刷新失败：${getApiErrorMessage(cause) || '请重新打开会话确认'}`;
     }
   }
-  finally { deletingConversationId.value = null; }
 }
-function localMessage(messageId: string, role: 'user' | 'assistant', content: string): AiChatMessage {
-  return { messageId, role, content, createdAt: nowText(), charts: [], sources: [], actionCards: [], agentTraces: [], taskCard: null, workbench: null };
-}
-async function submitMessage() {
-  const message = inputMessage.value.trim();
-  const id = conversationId.value;
-  if (!message || sending.value || !id || currentHistoryState.value.status !== 'success') return;
-  if (message.length > 2000) { errorsByConversation[id] = '消息不能超过 2000 字'; return; }
-  const sequence = ++generationSequence;
-  const controller = new AbortController();
-  generationControllers.set(id, controller);
-  const placeholderId = `local-assistant-${sequence}`;
-  messagesByConversation[id] = [...(messagesByConversation[id] || []), localMessage(`local-user-${sequence}`, 'user', message), localMessage(placeholderId, 'assistant', '')];
-  draftsByConversation[id] = '';
-  errorsByConversation[id] = '';
-  sendingByConversation[id] = true;
-  await scrollToLatest(id);
-  const isCurrent = () => !disposed && generationControllers.get(id) === controller;
-  if (!isCurrent()) return;
+async function run(answer?: string) {
+  if (locked.value || runStatus.value === 'RUNNING' || (!answer && waiting.value)) {
+    return;
+  }
+  const text = answer || query.value.trim();
+  if (!text || text.length > 10000) {
+    queryError.value = '请填写 1 到 10000 字的需求';
+    return;
+  }
+  // 尚未取得会话 ID 时暂时锁住创建；取得后只锁当前会话，不限制切换和并行会话。
+  const epoch = requestEpoch;
+  const userId = auth.user?.userId;
+  const authToken = auth.token;
+  const question = currentQuestionData.value;
+  const submittedDraft: ClarificationDraft = {
+    ...clarificationDraft.value,
+    answers: Object.fromEntries(Object.entries(clarificationDraft.value.answers).map(([key, value]) => [key, { ...value }])),
+  };
+  const fromNew = !store.activeId;
+  let id = store.activeId;
+  queryError.value = '';
   try {
-    const response = await sendAiAssistantMessage({ conversationId: id, message }, delta => {
-      if (!isCurrent()) return;
-      const placeholder = messagesByConversation[id]?.find(item => item.messageId === placeholderId);
-      if (placeholder) placeholder.content += delta;
-      void scrollToLatest(id);
-    }, controller.signal);
-    if (!isCurrent()) return;
-    messagesByConversation[id] = messagesByConversation[id].map(item => item.messageId === placeholderId ? response.message : item);
-    // 最终消息替换临时气泡后再回读，取回真实用户消息 ID，刷新后的历史与当前页面一致。
-    try {
-      const persisted = await getAiConversationHistory(id, controller.signal);
-      if (!isCurrent()) return;
-      messagesByConversation[id] = persisted;
-    } catch (error) {
-      if (!isCurrent()) return;
-      // FINAL 已确认回复成功，历史同步失败不能把已完成的提问恢复到输入框诱导重复发送。
-      errorsByConversation[id] = '回复已完成，但历史同步失败，可刷新页面重试同步。';
+    if (!id) {
+      creating.value = true;
+      try {
+        id = (await store.createConversation()).conversationId;
+      } finally {
+        if (auth.user?.userId === userId && auth.token === authToken) creating.value = false;
+      }
     }
-    const conversation = overview.value?.conversations.find(item => item.conversationId === id);
-    if (conversation) { conversation.updatedAt = response.message.createdAt; conversation.description = message.slice(0, 80); }
-    await scrollToLatest(id);
-  } catch (error) {
-    if (!isCurrent()) return;
-    if (!draftsByConversation[id]) draftsByConversation[id] = message;
-    errorsByConversation[id] = isRequestCancelled(error) ? '生成已停止，可重新发送问题。' : getApiErrorMessage(error) || 'AI 响应失败，请重试';
-    // 失败或停止时后端可能已经保存用户消息，按持久化历史恢复，避免乐观回滚造成错乱。
-    const recoveryController = new AbortController();
-    recoveryControllers.set(id, recoveryController);
-    historyStateByConversation[id] = { status: 'loading', error: null };
+    if (!isCurrent(epoch, userId, id)) {
+      return;
+    }
+    const connection = runs.connect(id, 'querying');
+    if (!connection) return;
+    const { state, controller: currentController, version } = connection;
+    const valid = () => !disposed && auth.user?.userId === userId && auth.token === authToken &&
+      runs.states.get(id!) === state && state.version === version;
+    const submittedKey = question?.pauseId ? draftKey('submitted', question.pauseId) : '';
+    const submission: SubmittedDraft = {
+      text, afterSeq: store.messages[store.messages.length - 1]?.seq || '0', pauseId: answer ? question?.pauseId ?? null : null, fromNew,
+    };
+    state.pendingText = text;
+    state.error = '';
+    state.warning = '';
+    state.steps = [];
+    state.livePlan = null;
+    state.runStatus = 'RUNNING';
+    // 清理范围固定在发送时的账号和会话；后台 A 完成不能修改 B 的输入。
+    state.settleSuccess = () => clearSubmittedDraft(userId, id!, submission);
+    storageSet(draftKey('inflight'), submission);
+    store.touchActivity(id);
+    await scrollToLatest();
+    if (!valid()) return;
+    const callbacks = handlers(state, valid, id);
     try {
-      const persisted = await getAiConversationHistory(id, recoveryController.signal);
-      if (!isCurrent()) return;
-      messagesByConversation[id] = persisted;
-      historyStateByConversation[id] = { status: 'success', error: null };
-      await scrollToLatest(id);
-    } catch (historyError) {
-      if (!isCurrent()) return;
-      historyStateByConversation[id] = { status: 'error', error: getApiErrorMessage(historyError) || '会话历史加载失败，请重试' };
+    if (answer && question?.threadId && question.pauseId) {
+      // 只有与服务端关联回答原文完全相符的快照才能增强历史标签展示。
+      storageSet(submittedKey, {
+        text: answer,
+        note: submittedDraft.note.trim(),
+        answers: question.questions.map(item => {
+          const value = submittedDraft.answers[item.id];
+          const usesText = !item.options.length || value?.selected === '__custom_answer__';
+          return { id: item.id, question: item.question, answer: usesText ? value?.custom.trim() : value?.selected };
+        }),
+      });
+      await resumeGraphStream(
+        { threadId: question.threadId, pauseId: question.pauseId, answer },
+        callbacks,
+        currentController.signal,
+      );
+    } else {
+      await startGraphStream(id, text, callbacks, currentController.signal);
+    }
+    } catch (cause) {
+      if (valid() && !currentController.signal.aborted) {
+        state.error = getApiErrorMessage(cause) || '请求失败，请重试';
+        stopSteps(state, 'failed');
+      }
     } finally {
-      if (recoveryControllers.get(id) === recoveryController) recoveryControllers.delete(id);
+      if (valid()) {
+        state.streaming = false;
+        state.refreshNeeded = true;
+        if (store.activeId === id && !switching.value) await reload(id, requestEpoch, userId);
+        if (valid()) {
+          stopSteps(state, state.error ? 'failed' : 'interrupted');
+          runs.disconnect(id, version);
+          void store.loadConversations().catch(() => undefined);
+          if (store.activeId === id && !switching.value) {
+            await scrollToLatest();
+            if (store.detail?.running) void watchIfRunning(id, requestEpoch, userId);
+          }
+        }
+      }
+    }
+  } catch (cause) {
+    if (isCurrent(epoch, userId, id || undefined)) error.value = getApiErrorMessage(cause) || '会话创建失败';
+  }
+}
+async function watchIfRunning(id: string, epoch: number, userId: string | undefined) {
+  if (!store.detail?.running || !isCurrent(epoch, userId, id)) {
+    return;
+  }
+  const connection = runs.connect(id, 'watching');
+  if (!connection) return;
+  const { state, controller: currentController, version } = connection;
+  const authToken = auth.token;
+  const valid = () => !disposed && auth.user?.userId === userId && auth.token === authToken &&
+    runs.states.get(id) === state && state.version === version;
+  state.runStatus = 'RUNNING';
+  if (store.detail.runNode) {
+    state.steps = [
+      {
+        node: store.detail.runNode,
+        label: store.detail.runLabel || store.detail.runNode,
+        status: 'running',
+        durationMs: null,
+      },
+    ];
+  }
+  try {
+    await subscribeConversationProgress(
+      id,
+      handlers(state, valid, id),
+      currentController.signal,
+    );
+  } catch (cause) {
+    if (valid() && !currentController.signal.aborted) {
+      state.error = `进度连接中断：${getApiErrorMessage(cause) || '请重新读取会话'}`;
     }
   } finally {
-    if (generationControllers.get(id) === controller) {
-      sendingByConversation[id] = false;
-      generationControllers.delete(id);
+    if (valid()) {
+      state.streaming = false;
+      state.refreshNeeded = true;
+      if (store.activeId === id && !switching.value) await reload(id, requestEpoch, userId);
+      if (valid()) {
+        stopSteps(state, 'interrupted');
+        runs.disconnect(id, version);
+        void store.loadConversations().catch(() => undefined);
+      }
     }
   }
 }
-onMounted(loadOverview);
+async function openConversation(id: string, force = false) {
+  if (creating.value || switching.value || (!force && id === store.activeId && store.detail)) {
+    return;
+  }
+  switchSnapshot.value = { messages: [...store.messages], plan: activePlan.value };
+  cancelTransient();
+  switching.value = true;
+  // 面板宽度与开合由用户控制；切换只更新内容，不让工作区先收起再展开。
+  const epoch = requestEpoch;
+  const userId = auth.user?.userId;
+  try {
+    const loaded = await store.loadConversation(id);
+    if (!loaded || !isCurrent(epoch, userId, id)) {
+      return;
+    }
+    const state = runs.get(id);
+    // 切换读取期间后台可能刚好收尾；再取一次最新流水，避免用旧 RUNNING 快照覆盖终态。
+    if (state.refreshNeeded && !state.streaming) await reload(id, epoch, userId);
+    if (!isCurrent(epoch, userId, id)) return;
+    if (!state.streaming && store.detail) state.runStatus = store.detail.runStatus;
+    if (reconcileSubmittedDraft(id)) state.error = '';
+    clearSavedPendingClarification();
+    restoreQuery();
+    restoreClarification();
+    const latestPlan = [...store.messages]
+      .reverse()
+      .find((message) => message.content.type === 'PLAN' || message.content.type === 'NEEDS');
+    if (!state.livePlan && !state.selectedPlan && (latestPlan?.content.type === 'PLAN' || latestPlan?.content.type === 'NEEDS')) {
+      selectedPlan.value = latestPlan.content;
+    }
+    mobileSidebarOpen.value = false;
+    // 仍保持读取锁与遮罩，但滚动高度必须来自新会话，不能使用旧快照的高度。
+    switchSnapshot.value = null;
+    await scrollToLatest();
+    void watchIfRunning(id, epoch, userId);
+  } catch (cause) {
+    if (isCurrent(epoch, userId, id)) {
+      error.value = getApiErrorMessage(cause) || '会话读取失败，请重试';
+    }
+  } finally {
+    if (isCurrent(epoch, userId)) {
+      switching.value = false;
+      switchSnapshot.value = null;
+      // 终态也可能恰好落在上面的检查与切换遮罩退出之间，解除切换锁后补取一次。
+      const state = runs.get(id);
+      if (store.activeId === id && state.refreshNeeded && !state.streaming) await reload(id, epoch, userId);
+    }
+  }
+}
+async function createConversation() {
+  if (creating.value || switching.value) {
+    return;
+  }
+  switchSnapshot.value = { messages: [...store.messages], plan: activePlan.value };
+  cancelTransient();
+  switching.value = true;
+  creating.value = true;
+  const epoch = requestEpoch;
+  const userId = auth.user?.userId;
+  try {
+    await store.createConversation();
+    if (isCurrent(epoch, userId)) {
+      query.value = '';
+      clarificationDraft.value = { answers: {}, note: '' };
+      selectedPlan.value = null;
+      livePlan.value = null;
+      planOpen.value = false;
+      mobileSidebarOpen.value = false;
+    }
+  } catch (cause) {
+    if (isCurrent(epoch, userId)) {
+      error.value = getApiErrorMessage(cause) || '会话创建失败';
+    }
+  } finally {
+    if (isCurrent(epoch, userId)) {
+      creating.value = false;
+      switching.value = false;
+      switchSnapshot.value = null;
+    }
+  }
+}
+async function renameConversation(id: string, title: string) {
+  const epoch = requestEpoch;
+  const userId = auth.user?.userId;
+  try {
+    await store.renameConversation(id, title);
+  } catch (cause) {
+    if (isCurrent(epoch, userId)) {
+      error.value = getApiErrorMessage(cause) || '重命名失败';
+    }
+  }
+}
+async function removeConversation(id: string) {
+  const epoch = requestEpoch;
+  const userId = auth.user?.userId;
+  const authToken = auth.token;
+  try {
+    await store.removeConversation(id);
+    if (!disposed && auth.user?.userId === userId && auth.token === authToken) runs.remove(id);
+    if (isCurrent(epoch, userId) && !store.activeId) {
+      cancelTransient();
+      selectedPlan.value = null;
+      livePlan.value = null;
+      planOpen.value = false;
+      restoreQuery();
+    }
+  } catch (cause) {
+    if (isCurrent(epoch, userId)) {
+      error.value = getApiErrorMessage(cause) || '删除失败';
+    }
+  }
+}
+async function loadOlder() {
+  const epoch = requestEpoch;
+  const userId = auth.user?.userId;
+  const id = store.activeId || undefined;
+  const before = scrollArea.value?.scrollHeight || 0;
+  try {
+    await store.loadOlder();
+    await nextTick();
+    if (isCurrent(epoch, userId, id) && scrollArea.value) {
+      scrollArea.value.scrollTop += scrollArea.value.scrollHeight - before;
+    }
+  } catch (cause) {
+    if (isCurrent(epoch, userId, id)) {
+      error.value = getApiErrorMessage(cause) || '较早消息加载失败';
+    }
+  }
+}
+function openPlan(plan: PlanningArtifact) {
+  const sameArtifact = activePlan.value && JSON.stringify(activePlan.value) === JSON.stringify(plan);
+  selectedPlan.value = plan;
+  void setPlanOpen(!(planOpen.value && sameArtifact));
+}
+async function focusQuestion() {
+  await nextTick();
+  questionDock.value?.querySelector<HTMLElement>('[data-question-title], [data-summary-title]')?.focus({ preventScroll: true });
+}
+
+function setQuestionInert(element: Element, inert: boolean) {
+  // 离场动画会短暂保留旧表单，避免其与恢复后的普通输入同时接收操作。
+  (element as HTMLElement).inert = inert;
+}
+async function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value;
+  await nextTick();
+  const label = sidebarCollapsed.value ? '展开会话列表' : '收起会话列表';
+  workspaceElement.value?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)?.focus({ preventScroll: true });
+}
+async function setPlanOpen(open: boolean) {
+  planOpen.value = open;
+  if (wide.value) {
+    await nextTick();
+    workspaceElement.value?.querySelector<HTMLButtonElement>('.desktop-plan button')?.focus({ preventScroll: true });
+  }
+}
+function submit() {
+  if (waiting.value) {
+    clarificationForm.value?.submit();
+  } else {
+    void run();
+  }
+}
+watch(
+  () => [auth.user?.userId, auth.token] as const,
+  async ([userId]) => {
+    cancelTransient();
+    runs.reset();
+    creating.value = false;
+    switchSnapshot.value = null;
+    switching.value = true;
+    store.reset();
+    selectedPlan.value = null;
+    livePlan.value = null;
+    clarificationDraft.value = { answers: {}, note: '' };
+    query.value = '';
+    const epoch = requestEpoch;
+    if (!userId) {
+      switching.value = false;
+      return;
+    }
+    try {
+      await store.loadConversations();
+      if (!isCurrent(epoch, userId)) {
+        return;
+      }
+      const first = store.conversations[0];
+      if (first) {
+        switching.value = false;
+        await openConversation(first.conversationId);
+      } else {
+        restoreQuery();
+        switching.value = false;
+      }
+    } catch (cause) {
+      if (isCurrent(epoch, userId)) {
+        error.value = getApiErrorMessage(cause) || '会话列表读取失败';
+        switching.value = false;
+      }
+    }
+  },
+  { immediate: true },
+);
 onBeforeUnmount(() => {
   disposed = true;
-  for (const id of generationControllers.keys()) discardGeneration(id);
-  cancelHistoryLoad();
+  runs.reset();
 });
 </script>
 
 <template>
-  <section class="ai-agent-shell" :class="{ 'is-collapsed': sidebarCollapsed }">
-    <div class="ai-agent-body">
-      <aside class="ai-agent-sidebar">
-        <div class="ai-agent-sidebar__head">
-          <div v-if="!sidebarCollapsed">
-            <strong>会话管理</strong>
-          </div>
-          <Tooltip :disable-hoverable-content="true">
-            <TooltipTrigger as-child>
-              <Button size="sm" variant="outline" class="ai-icon-button" :aria-label="sidebarCollapsed ? '展开会话' : '折叠会话'" @click="sidebarCollapsed = !sidebarCollapsed">
-                <PanelLeftOpen v-if="sidebarCollapsed" class="h-4 w-4" />
-                <PanelLeftClose v-else class="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{{ sidebarCollapsed ? '展开会话' : '折叠会话' }}</TooltipContent>
-          </Tooltip>
+  <section ref="workspaceElement" class="graph-workspace ai-pilot-workspace" :style="workspaceStyle" :class="{ 'is-resizing': conversationResize.dragging.value || planResize.dragging.value }" data-testid="ai-graph-workspace">
+    <AiConversationSidebar
+      v-if="!small"
+      :conversations="store.conversations"
+      :active-id="store.activeId"
+      :loading="store.listLoading"
+      :busy="creating || switching"
+      :running-ids="runningConversationIds"
+      :switching="switching"
+      :collapsed="sidebarCollapsed"
+      @create="createConversation"
+      @select="openConversation"
+      @rename="renameConversation"
+      @remove="removeConversation"
+      @toggle-collapse="toggleSidebar"
+    />
+    <div
+      v-if="!small && !sidebarCollapsed"
+      class="panel-resizer"
+      role="separator"
+      tabindex="0"
+      aria-label="调整会话栏宽度"
+      aria-orientation="vertical"
+      :aria-valuenow="conversationResize.width.value"
+      :aria-valuemin="200"
+      :aria-valuemax="320"
+      @pointerdown="conversationResize.startResize"
+      @keydown.left.prevent="conversationResize.nudge(-16)"
+      @keydown.right.prevent="conversationResize.nudge(16)"
+    />
+    <main class="conversation-panel" :aria-busy="locked">
+      <header class="workspace-header">
+        <div class="workspace-title">
+          <Button
+            v-if="phone"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="返回工作台"
+            @click="router.push('/dashboard')"
+            ><Home class="size-4" /></Button
+          ><Button
+            v-if="small"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="打开会话列表"
+            @click="mobileSidebarOpen = true"
+            ><Menu class="size-4" /></Button
+          ><MessageSquare class="size-4 text-primary" />
+          <h1>{{ store.activeSummary?.title || '智能经营助手' }}</h1>
         </div>
-
-        <Button v-if="!sidebarCollapsed" size="sm" class="ai-new-chat" :disabled="loading" @click="createConversation">
-          <LoaderCircle v-if="loading" class="h-4 w-4 animate-spin" />
-          <Plus v-else class="h-4 w-4" />
-          {{ loading ? '创建中' : '新建会话' }}
-        </Button>
-        <Tooltip v-else :disable-hoverable-content="true">
-          <TooltipTrigger as-child>
-            <Button size="sm" variant="outline" class="ai-icon-button" :aria-label="loading ? '正在创建会话' : '新建会话'" :disabled="loading" @click="createConversation">
-              <LoaderCircle v-if="loading" class="h-4 w-4 animate-spin" />
-              <Plus v-else class="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">{{ loading ? '正在创建会话' : '新建会话' }}</TooltipContent>
-        </Tooltip>
-
-        <CollapsibleRoot :open="!conversationListCollapsed" :unmount-on-hide="false" class="ai-conversation-list" :class="{ 'is-conversation-collapsed': conversationListCollapsed }">
-          <div v-if="!sidebarCollapsed" class="ai-conversation-list__toolbar">
-            <button class="ai-conversation-list__toggle" type="button" :aria-expanded="!conversationListCollapsed" @click="conversationListCollapsed = !conversationListCollapsed">
-              <span>会话记录</span>
-              <ChevronDown class="h-3.5 w-3.5" />
-            </button>
-            <Popover>
-              <PopoverTrigger as-child>
-                <Button type="button" size="sm" variant="outline" class="ai-conversation-date">
-                  <CalendarDays class="h-3.5 w-3.5" />
-                  {{ selectedConversationDateLabel }}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" class="w-64 p-2">
-                <div class="ai-conversation-calendar">
-                  <button type="button" :class="{ 'is-active': !selectedConversationDate }" @click="selectedConversationDate = null">
-                    <span>全部日期</span>
-                    <small>{{ overview?.conversations.length || 0 }} 条</small>
-                  </button>
-                  <button
-                    v-for="group in conversationDateGroups"
-                    :key="group.date"
-                    type="button"
-                    :class="{ 'is-active': selectedConversationDate === group.date }"
-                    @click="selectedConversationDate = group.date"
-                  >
-                    <span>{{ group.date }}</span>
-                    <small>{{ group.count }} 条</small>
-                  </button>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <Tooltip v-else :disable-hoverable-content="true">
-            <TooltipTrigger as-child>
-              <button type="button" class="ai-conversation-row" :aria-label="conversationListCollapsed ? '展开会话记录' : '收起会话记录'" :aria-expanded="!conversationListCollapsed" @click="conversationListCollapsed = !conversationListCollapsed">
-                <ChevronsDown v-if="conversationListCollapsed" class="h-4 w-4" />
-                <ChevronsUp v-else class="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{{ conversationListCollapsed ? '展开会话记录' : '收起会话记录' }}</TooltipContent>
-          </Tooltip>
-
-          <CollapsibleContent class="ai-conversation-list__drawer">
-            <AiFadeSwitch :switch-key="selectedConversationDate || 'all'" content-class="ai-conversation-list__items">
-              <div
-                v-for="conversation in pinnedConversations"
-                :key="conversation.conversationId"
-                class="ai-conversation-row"
-                :class="{ 'is-active': conversationId === conversation.conversationId, 'is-switching': switchingConversationId === conversation.conversationId }"
-              >
-                <Tooltip :disabled="!sidebarCollapsed" :disable-hoverable-content="true">
-                  <TooltipTrigger as-child>
-                    <button type="button" class="ai-conversation-row__main" :aria-label="conversation.title" @click="selectConversation(conversation.conversationId)">
-                      <LoaderCircle v-if="sendingByConversation[conversation.conversationId]" class="h-4 w-4 animate-spin" aria-label="正在生成或同步回复" />
-                      <History v-else class="h-4 w-4" />
-                      <span v-if="!sidebarCollapsed">
-                        <strong>{{ conversation.title }}</strong>
-                        <small>{{ conversation.updatedAt.slice(0, 16) }} · {{ conversation.description }}</small>
-                      </span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" class="flex-col items-start break-words">
-                    <strong>{{ conversation.title }}</strong>
-                    <span>{{ conversation.updatedAt.slice(0, 16) }}</span>
-                  </TooltipContent>
-                </Tooltip>
-                <span v-if="!sidebarCollapsed" class="ai-row-actions">
-                  <RowActionsMenu
-                    trigger-text="更多"
-                    :label="`更多 ${conversation.title} 操作`"
-                    :actions="[{ key: 'rename', label: '重命名' }, { key: 'delete', label: '删除会话', variant: 'destructive', separated: true }]"
-                    @select="key => key === 'rename' ? openRename(conversation.conversationId, conversation.title) : openDeleteConfirmation(conversation.conversationId)"
-                  />
-                </span>
-              </div>
-              <CollapsibleRoot
-                v-if="hiddenConversationCount > 0 && !sidebarCollapsed"
-                :open="conversationListExpanded"
-                :unmount-on-hide="false"
-                class="ai-conversation-extra"
-              >
-                <CollapsibleContent class="ai-conversation-extra__drawer">
-                  <div class="ai-conversation-extra__items">
-                    <div
-                      v-for="conversation in extraConversations"
-                      :key="conversation.conversationId"
-                      class="ai-conversation-row"
-                      :class="{ 'is-active': conversationId === conversation.conversationId, 'is-switching': switchingConversationId === conversation.conversationId }"
-                    >
-                      <button type="button" class="ai-conversation-row__main" @click="selectConversation(conversation.conversationId)">
-                        <LoaderCircle v-if="sendingByConversation[conversation.conversationId]" class="h-4 w-4 animate-spin" aria-label="正在生成或同步回复" />
-                        <History v-else class="h-4 w-4" />
-                        <span v-if="!sidebarCollapsed">
-                          <strong>{{ conversation.title }}</strong>
-                          <small>{{ conversation.updatedAt.slice(0, 16) }} · {{ conversation.description }}</small>
-                        </span>
-                      </button>
-                      <span v-if="!sidebarCollapsed" class="ai-row-actions">
-                        <RowActionsMenu
-                          trigger-text="更多"
-                          :label="`更多 ${conversation.title} 操作`"
-                          :actions="[{ key: 'rename', label: '重命名' }, { key: 'delete', label: '删除会话', variant: 'destructive', separated: true }]"
-                          @select="key => key === 'rename' ? openRename(conversation.conversationId, conversation.title) : openDeleteConfirmation(conversation.conversationId)"
-                        />
-                      </span>
-                    </div>
-                  </div>
-                </CollapsibleContent>
-              </CollapsibleRoot>
-            </AiFadeSwitch>
-            <button
-              v-if="hiddenConversationCount > 0 && !sidebarCollapsed"
-              type="button"
-              class="ai-conversation-more"
-              @click="conversationListExpanded = !conversationListExpanded"
-            >
-              {{ conversationListExpanded ? '收起到最近 5 条' : `展开全部（还有 ${hiddenConversationCount} 条）` }}
-            </button>
-          </CollapsibleContent>
-        </CollapsibleRoot>
-
-      </aside>
-
-      <main class="ai-agent-main">
-        <div class="ai-mobile-toolbar">
-          <Button size="sm" variant="outline" :disabled="loading" @click="createConversation">新建会话</Button>
+        <div class="workspace-actions">
+          <span class="task-status" role="status"
+            ><LoaderCircle v-if="busy" class="size-3.5 animate-spin" /><span
+              v-else
+              class="status-dot"
+            />{{ statusLabel }}</span
+          ><Button
+            variant="outline"
+            size="sm"
+            aria-label="查看任务计划"
+            :aria-expanded="planOpen"
+            @click="setPlanOpen(!planOpen)"
+            ><ClipboardList class="size-4" /><span>计划</span></Button
+          >
         </div>
-        <section class="ai-chat-stage" :class="{ 'is-switching': transitionLoading }" :aria-busy="sending || transitionLoading">
-          <div ref="messageScroll" class="ai-chat-scroll">
-            <div :key="conversationId || 'empty-conversation'" class="ai-chat-stream" aria-live="polite" aria-relevant="additions text">
-              <div v-if="overviewError" class="ai-history-state is-error" role="alert">
-                <span>{{ overviewError }}</span><Button size="sm" variant="outline" :disabled="loading" @click="loadOverview">重试</Button>
-              </div>
-              <div v-else-if="loading || currentHistoryState.status === 'loading'" class="ai-history-state" role="status">
-                <LoaderCircle class="h-5 w-5 animate-spin" /><span>正在加载会话记录...</span>
-              </div>
-              <div v-else-if="currentHistoryState.status === 'error'" class="ai-history-state is-error" role="alert">
-                <span>{{ currentHistoryState.error }}</span><Button size="sm" variant="outline" @click="retryConversationHistory">重试</Button>
-              </div>
-              <div v-else-if="currentMessages.length === 0" class="ai-history-state is-empty">
-                <Bot class="h-5 w-5" /><span>{{ conversationId ? '暂无消息，可以开始提问。' : '创建会话后开始提问。' }}</span>
-                <Button v-if="!conversationId" size="sm" :disabled="loading" @click="createConversation">开始新会话</Button>
-              </div>
-              <article v-for="message in currentHistoryState.status === 'success' ? currentMessages : []" :key="message.messageId" class="ai-chat-message" :class="`is-${message.role}`" :data-message-id="message.messageId">
-                <div class="ai-chat-avatar"><UserRound v-if="message.role === 'user'" class="h-4 w-4" /><Bot v-else class="h-4 w-4" /></div>
-                <div class="ai-chat-bubble">
-                  <div class="ai-chat-meta"><strong>{{ message.role === 'user' ? '我' : '智能经营助手' }}</strong><span>{{ message.createdAt }}</span></div>
-                  <AiMarkdownContent v-if="message.content && message.role === 'assistant'" :content="message.content" />
-                  <p v-else-if="message.content">{{ message.content }}</p>
-                  <div v-if="message.charts.length" class="ai-message-charts"><AiChartCard v-for="chart in message.charts" :key="chart.chartId" :chart="chart" /></div>
-                </div>
-              </article>
-              <div v-if="sending" class="ai-generation-status" role="status"><LoaderCircle class="h-4 w-4 animate-spin" />正在生成回复...</div>
-              <div v-if="streamError" class="ai-stream-error" role="alert">{{ streamError }}</div>
+      </header>
+      <div class="conversation-body" :aria-busy="readingConversation" data-ai-conversation-region>
+      <AiMessageNavigator :messages="displayedMessages" :scroll-container="scrollArea" :inert="readingConversation || undefined" />
+      <div ref="scrollArea" class="conversation-scroll" :inert="readingConversation || undefined">
+        <div class="conversation-stream">
+          <div v-if="error" class="request-error" role="alert" data-testid="graph-request-error">
+            <TriangleAlert class="size-4" />
+            <div>
+              <strong>暂时未能完成请求</strong>
+              <p>{{ error }}</p>
+              <Button
+                v-if="store.activeId && !busy && !switching"
+                variant="ghost"
+                size="sm"
+                @click="openConversation(store.activeId, true)"
+                >重新读取会话</Button
+              >
             </div>
           </div>
-          <AiComposerDock v-model="inputMessage" :sending="sending" :disabled="loading || currentHistoryState.status !== 'success'" @submit="submitMessage" @stop="stopGeneration" />
-        </section>
-      </main>
-    </div>
-    <ConfirmDialog
-      :open="deleteDialogOpen"
-      title="删除会话"
-      :description="`确认删除会话「${pendingDeleteConversation?.title || ''}」吗？删除后无法恢复。`"
-      confirm-text="删除会话"
-      placement="app-content"
-      variant="destructive"
-      :loading="Boolean(deletingConversationId)"
-      @update:open="updateDeleteDialogOpen"
-      @confirm="removeConversation"
-    />
-    <Dialog v-model:open="renameDialogOpen">
-      <DialogContent class="ai-rename-dialog">
-        <DialogHeader>
-          <DialogTitle>修改会话名称</DialogTitle>
-          <DialogDescription>只修改当前会话在左侧列表中的显示名称。</DialogDescription>
-        </DialogHeader>
-        <div class="ai-field">
-          <Label for="renameTitle">会话名称 <span class="text-destructive">*</span></Label>
-          <Input id="renameTitle" v-model="renameTitle" maxlength="40" :disabled="renaming" :aria-invalid="Boolean(renameError)" aria-describedby="rename-error" />
+          <div v-if="warning" class="request-warning" role="status">{{ warning }}</div>
+          <div v-if="showWelcome" class="welcome-state">
+            <span class="welcome-symbol"><MessageSquare class="size-7" stroke-width="1.5" /></span>
+            <h2>今天，你想分析什么？</h2>
+            <p>说说你的目标，我会帮你确认范围和条件，<br />整理成清晰的分析计划。</p>
+            <div class="example-list">
+              <button
+                v-for="example in examples"
+                :key="example.title"
+                type="button"
+                @click="query = example.text"
+              >
+                <span>{{ example.title }}</span
+                ><ArrowRight class="size-3.5" />
+              </button>
+            </div>
+          </div>
+          <Button
+            v-if="store.hasOlder"
+            variant="ghost"
+            size="sm"
+            :disabled="store.olderLoading || switching"
+            class="older-button"
+            @click="loadOlder"
+            >{{ store.olderLoading ? '正在读取…' : '加载较早消息' }}</Button
+          >
+          <AiMessageList
+            :messages="displayedMessages"
+            :loading="store.historyLoading"
+            :pending-text="pendingText"
+            :active-question-id="latestQuestion?.messageId"
+            :user-id="auth.user?.userId"
+            :conversation-id="store.activeId || undefined"
+            :active-artifact="planOpen ? activePlan : null"
+            @open-plan="openPlan"
+          >
+            <template #clarification>
+              <button type="button" class="question-status" data-testid="clarification-pending-status" aria-label="继续回答补充问题" :disabled="switching" @click="focusQuestion">
+                <MessageSquare class="size-3.5" aria-hidden="true" />
+                <span>等待你补充 {{ currentQuestionData?.questions.length }} 项信息</span>
+                <span class="question-status-action">继续回答<ArrowRight class="size-3" aria-hidden="true" /></span>
+              </button>
+            </template>
+          </AiMessageList>
+          <AiProgressFeed v-if="steps.length" :steps="steps" :finished="!busy" />
+          <p v-if="runStatus === 'INTERRUPTED' && !busy" class="state-note">
+            上次执行已中断。可以重新描述需求后再试。
+          </p>
+          <p v-if="runStatus === 'FAILED' && !error && !busy" class="state-note">
+            上次执行失败，可以调整需求后再次提交。
+          </p>
         </div>
-        <p v-if="renameError" id="rename-error" class="text-sm text-destructive" role="alert">{{ renameError }}</p>
-        <DialogFooter>
-          <Button variant="outline" :disabled="renaming" @click="renameDialogOpen = false">取消</Button>
-          <Button :disabled="renaming" @click="saveRename">{{ renaming ? '保存中' : '保存' }}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+      <ListLoadingOverlay :visible="readingConversation" :initial-delay="0" label="正在读取会话" />
+      </div>
+      <AiComposerDock
+        v-model="composerValue"
+        :awaiting-answer="waiting && Boolean(currentQuestionData) && !switching"
+        :sending="busy"
+        :disabled="
+          switching ||
+          store.historyLoading ||
+          Boolean(store.activeId && !store.detail) ||
+          (runStatus === 'RUNNING' && !watching)
+        "
+        :error="queryError"
+        @submit="submit"
+      >
+        <template #question>
+          <Transition name="question-dock" appear @before-leave="setQuestionInert($event, true)" @before-enter="setQuestionInert($event, false)">
+            <div v-if="waiting && currentQuestionData && !switching" ref="questionDock" class="agent-question-dock" data-ai-question-dock>
+              <AiClarificationForm
+                :key="currentQuestionData.pauseId"
+                ref="clarificationForm"
+                v-model="clarificationDraft"
+                :questions="currentQuestionData.questions"
+                :busy="locked"
+                @submit="run"
+              />
+            </div>
+          </Transition>
+        </template>
+      </AiComposerDock>
+    </main>
+    <div
+      v-if="wide && planOpen"
+      class="panel-resizer"
+      role="separator"
+      tabindex="0"
+      aria-label="调整计划栏宽度"
+      aria-orientation="vertical"
+      :aria-valuenow="planResize.width.value"
+      :aria-valuemin="280"
+      :aria-valuemax="416"
+      @pointerdown="planResize.startResize"
+      @keydown.left.prevent="planResize.nudge(16)"
+      @keydown.right.prevent="planResize.nudge(-16)"
+    />
+    <AiPlanPanel
+      v-if="wide"
+      class="desktop-plan"
+      :class="{ 'is-collapsed': !planOpen }"
+      :artifact="displayedPlan"
+      :loading="readingConversation && planOpen"
+      :collapsed="!planOpen"
+      @close="setPlanOpen(false)"
+      @expand="setPlanOpen(true)"
+    />
+    <Dialog :open="planOpen && !wide" @update:open="planOpen = $event"
+      ><DialogContent
+        data-ai-panel="plan"
+        class="ai-panel-dialog !fixed !left-auto !right-0 !top-0 !bottom-0 !m-0 !h-dvh !max-h-dvh !w-[min(100vw,420px)] !max-w-none !translate-x-0 !translate-y-0 !rounded-none !p-0 !gap-0"
+        :show-close-button="false"
+        ><DialogTitle class="sr-only">任务计划</DialogTitle
+        ><DialogDescription class="sr-only">查看分析目标与规划步骤</DialogDescription
+        ><AiPlanPanel
+          :artifact="displayedPlan"
+          :loading="readingConversation"
+          @close="planOpen = false" /></DialogContent
+    ></Dialog>
+    <Dialog :open="mobileSidebarOpen" @update:open="mobileSidebarOpen = $event"
+      ><DialogContent
+        data-ai-panel="conversations"
+        class="!fixed !left-0 !right-auto !top-0 !bottom-0 !m-0 !h-dvh !max-h-dvh !w-[min(86vw,300px)] !max-w-none !translate-x-0 !translate-y-0 !rounded-none !p-0 !gap-0"
+        :show-close-button="false"
+        ><DialogTitle class="sr-only">会话列表</DialogTitle
+        ><DialogDescription class="sr-only">选择已有会话或创建新会话</DialogDescription
+        ><AiConversationSidebar
+          :conversations="store.conversations"
+          :active-id="store.activeId"
+          :loading="store.listLoading"
+          :busy="creating || switching"
+          :running-ids="runningConversationIds"
+          :switching="switching"
+          :collapsed="false"
+          @create="createConversation"
+          @select="openConversation"
+          @rename="renameConversation"
+          @remove="removeConversation"
+          @toggle-collapse="mobileSidebarOpen = false" /></DialogContent
+    ></Dialog>
   </section>
 </template>
 
 <style scoped>
-.ai-agent-shell {
-  position: relative;
+.graph-workspace {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  background: var(--background);
+  font-size: 14px;
+}
+.graph-workspace > .conversation-sidebar {
+  width: var(--conversation-width);
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width var(--motion-duration-slow) var(--motion-ease-standard);
+}
+.graph-workspace > .conversation-sidebar.is-collapsed {
+  width: 52px;
+}
+.conversation-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr) auto;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.agent-question-dock {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  height: calc(100dvh - 64px);
   min-height: 0;
-  overflow: hidden;
-  background: #f4f6f8;
+  margin-bottom: 10px;
 }
-
-.ai-agent-body {
-  display: grid;
-  grid-template-columns: 286px minmax(0, 1fr);
-  min-height: 0;
-  transition: grid-template-columns var(--motion-duration-base) var(--motion-ease-standard);
+.question-dock-enter-active,
+.question-dock-leave-active { transition: grid-template-rows 280ms cubic-bezier(0.38, 0, 0.24, 1), opacity 240ms cubic-bezier(0.38, 0, 0.24, 1), transform 280ms cubic-bezier(0.38, 0, 0.24, 1); }
+.question-dock-enter-from,
+.question-dock-leave-to { grid-template-rows: minmax(0, 0fr); opacity: 0; transform: translateY(6px); }
+@media (prefers-reduced-motion: reduce) {
+  .question-dock-enter-active, .question-dock-leave-active { transition: none; }
 }
-
-.ai-agent-shell.is-collapsed .ai-agent-body {
-  grid-template-columns: 60px minmax(0, 1fr);
-}
-
-.ai-agent-sidebar {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  min-height: 0;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  padding: 16px 12px;
-}
-
-.ai-agent-sidebar__head,
-.ai-prompt-list__toggle span {
-  color: #667085;
-  font-size: 12px;
-}
-
-.ai-agent-sidebar__head {
+.question-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  min-height: 34px;
-}
-
-.ai-agent-sidebar__head strong {
-  display: block;
-  color: #172033;
-  font-size: 15px;
-}
-
-.ai-icon-button {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-}
-
-.ai-new-chat {
-  justify-content: center;
-  gap: 7px;
-  height: 36px;
-  box-shadow: 0 6px 14px rgb(37 99 235 / 14%);
-}
-
-.ai-conversation-list,
-.ai-prompt-list {
-  display: grid;
-  gap: 6px;
-}
-
-.ai-conversation-list {
-  gap: 7px;
-}
-
-.ai-conversation-list__toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: center;
-}
-
-.ai-conversation-list__toggle {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  border: 0;
-  background: transparent;
-  padding: 0 2px;
-  color: #667085;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.ai-conversation-list__toggle svg,
-.ai-prompt-list__toggle svg {
-  color: #667085;
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.ai-conversation-list.is-conversation-collapsed .ai-conversation-list__toggle svg,
-.ai-prompt-list.is-prompt-collapsed .ai-prompt-list__toggle svg {
-  transform: rotate(-90deg);
-}
-
-.ai-conversation-date {
-  max-width: 118px;
-  height: 27px;
-  gap: 5px;
-  overflow: hidden;
-  padding-inline: 7px;
-  font-size: 11px;
-}
-
-.ai-conversation-calendar {
-  display: grid;
-  gap: 5px;
-}
-
-.ai-conversation-calendar button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: white;
-  padding: 7px 8px;
-  color: #475467;
-  font-size: 12px;
-  cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, transform 150ms ease;
-}
-
-.ai-conversation-calendar button:hover,
-.ai-conversation-calendar button.is-active {
-  transform: translateY(-1px);
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.ai-conversation-calendar small {
-  color: #667085;
-  font-size: 11px;
-}
-
-.ai-conversation-list__drawer,
-.ai-prompt-list__drawer,
-.ai-conversation-extra__drawer {
-  overflow: hidden;
-  will-change: height;
-}
-
-.ai-conversation-list__drawer[data-state="open"],
-.ai-prompt-list__drawer[data-state="open"],
-.ai-conversation-extra__drawer[data-state="open"] {
-  animation: ai-sidebar-collapsible-down 220ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.ai-conversation-list__drawer[data-state="closed"],
-.ai-prompt-list__drawer[data-state="closed"],
-.ai-conversation-extra__drawer[data-state="closed"] {
-  animation: ai-sidebar-collapsible-up 180ms cubic-bezier(0.4, 0, 1, 1);
-}
-
-:deep(.ai-conversation-list__items) {
-  display: grid;
-  gap: 10px;
-  padding-top: 6px;
-  user-select: none;
-}
-
-.ai-conversation-extra__items {
-  display: grid;
-  gap: 10px;
-  padding-top: 0;
-}
-
-.ai-conversation-row,
-.ai-prompt-card {
-  display: grid;
-  width: 100%;
-  gap: 8px;
-  align-items: center;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: white;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
-  padding: 10px 9px;
-  color: #475467;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.ai-conversation-row {
-  position: relative;
-  grid-template-columns: minmax(0, 1fr);
-  padding: 0;
-  box-shadow: none;
-}
-
-.ai-prompt-card {
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-}
-
-.ai-conversation-row__main {
-  display: grid;
-  width: 100%;
-  min-height: 58px;
-  min-width: 0;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  padding: 10px 64px 10px 9px;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.ai-conversation-row__main > span {
-  min-width: 0;
-}
-
-.ai-conversation-row > .ai-row-actions {
-  position: absolute;
-  right: 9px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.ai-prompt-card:hover {
-  border-color: #d1d5db;
-  box-shadow: 0 8px 18px rgb(15 23 42 / 6%);
-}
-
-.ai-prompt-card:hover {
-  transform: translateY(-1px);
-}
-
-.is-collapsed .ai-conversation-row {
-  padding: 0;
-  min-height: 36px;
-  justify-items: center;
-}
-
-.is-collapsed .ai-conversation-row__main {
-  grid-template-columns: 20px;
-  justify-content: center;
-  min-height: 36px;
-  padding: 9px 0;
-}
-
-.ai-conversation-row.is-active {
-  border-color: color-mix(in srgb, var(--primary) 20%, var(--border));
-  background: linear-gradient(180deg, #f2f7ff 0%, #eaf3ff 100%);
-  box-shadow: inset 3px 0 0 var(--primary);
-}
-
-.ai-conversation-row:hover,
-.ai-conversation-row:focus-within {
-  border-color: #98a2b3;
-  background: #f2f4f7;
-  box-shadow: none;
-}
-
-.ai-conversation-row.is-active:hover,
-.ai-conversation-row.is-active:focus-within {
-  background: linear-gradient(180deg, #f2f7ff 0%, #eaf3ff 100%);
-  box-shadow: inset 3px 0 0 var(--primary);
-}
-
-.ai-conversation-row.is-switching {
-  transform: translateX(2px);
-}
-
-.ai-conversation-row strong,
-.ai-prompt-list strong {
-  display: block;
-  overflow: hidden;
-  color: #172033;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-conversation-row small,
-.ai-prompt-list small {
-  display: block;
-  overflow: hidden;
-  margin-top: 2px;
-  color: #667085;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-prompt-list em {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   max-width: 100%;
-  margin-top: 6px;
-  border: 1px solid #dbeafe;
-  border-radius: 999px;
-  background: #eff6ff;
-  padding: 2px 7px;
-  color: #1d4ed8;
-  font-size: 11px;
-  font-style: normal;
-}
-
-.ai-row-actions {
-  display: inline-flex;
-  gap: 2px;
-  align-items: center;
-}
-
-.ai-conversation-more {
-  width: 100%;
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-  background: #f8fafc;
-  padding: 8px;
-  color: #475467;
+  color: var(--muted-foreground);
   font-size: 12px;
-  cursor: pointer;
+  text-align: left;
+  border-radius: 6px;
+  padding: 5px 0;
 }
-
-.ai-conversation-more:hover {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.ai-prompt-list {
-  margin-top: 18px;
-}
-
-.ai-prompt-list__toggle {
+.question-status:hover { color: var(--foreground); }
+.question-status:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.question-status-action { display: inline-flex; align-items: center; gap: 4px; color: var(--primary); }
+.workspace-header {
   display: flex;
-  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  padding: 0 24px;
+}
+.workspace-title,
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+}
+.workspace-title > svg {
+  flex-shrink: 0;
+}
+.workspace-actions {
+  flex-shrink: 0;
+}
+.task-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.status-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--primary);
+  border-radius: 50%;
+}
+.conversation-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+.conversation-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  padding: 24px 28px;
+  scrollbar-width: thin;
+}
+.conversation-stream {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+  max-width: 820px;
+  min-width: 0;
+  min-height: 100%;
+  margin: 0 auto;
+}
+.welcome-state {
+  align-self: center;
+  padding: 56px 12px;
+}
+.welcome-symbol {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: var(--primary);
+  margin-bottom: 24px;
+}
+.welcome-state h2 {
+  font-size: 24px;
+  line-height: 1.5;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.welcome-state > p {
+  margin-top: 12px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.9;
+}
+.example-list {
+  display: grid;
+  max-width: 480px;
+  margin-top: 28px;
+}
+.example-list button {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  border: 0;
-  background: transparent;
-  padding: 0 2px 2px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
 }
-
-.ai-prompt-list__items {
-  display: grid;
-  gap: 6px;
-  padding-top: 6px;
-}
-
-.ai-prompt-card {
-  grid-template-columns: 18px minmax(0, 1fr);
-  border-color: var(--border);
-  background: white;
-}
-
-.ai-agent-main {
-  position: relative;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  min-height: 0;
-  min-width: 0;
-  max-width: 1120px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 18px 28px 20px;
-}
-
-.ai-chat-stage {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: linear-gradient(180deg, rgb(255 255 255 / 97%), rgb(250 252 255 / 96%));
-}
-
-.ai-chat-scroll {
-  min-height: 0;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 22px;
-  scroll-padding-bottom: 22px;
-}
-
-.ai-chat-stream {
-  display: grid;
-  /* 代码块的最小内容宽度不能反向撑开消息列，横向滚动交给正文组件。 */
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  gap: 18px;
-  min-height: 100%;
-  transition: padding-top var(--motion-duration-base) var(--motion-ease-standard);
-}
-
-.ai-chat-stage.is-welcome-stage .ai-chat-stream {
-  padding-top: 0;
-}
-
-.ai-conversation-panel-enter-active,
-.ai-conversation-panel-leave-active {
-  transition: opacity var(--motion-duration-slow) var(--motion-ease-standard);
-}
-
-.ai-conversation-panel-enter-from,
-.ai-conversation-panel-leave-to {
-  opacity: 0;
-}
-
-.ai-chat-message {
-  display: flex;
-  gap: 10px;
-}
-
-.ai-chat-message.is-user {
-  flex-direction: row-reverse;
-}
-
-.ai-chat-avatar {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: white;
+.example-list button:hover {
   color: var(--primary);
 }
-
-.ai-chat-message.is-user .ai-chat-avatar {
-  background: #111827;
-  color: white;
+.desktop-plan {
+  flex: 0 0 var(--plan-width);
+  width: var(--plan-width);
+  min-width: 0;
+  overflow: hidden;
+  transition:
+    flex-basis var(--motion-duration-slow) var(--motion-ease-standard),
+    width var(--motion-duration-slow) var(--motion-ease-standard);
 }
-
-.ai-chat-bubble {
-  max-width: min(780px, 84%);
+.desktop-plan.is-collapsed {
+  flex-basis: 52px;
+  width: 52px;
+}
+.panel-resizer {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 0px;
+  width: 0;
+  cursor: col-resize;
+  touch-action: none;
+}
+.panel-resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0 -4px;
+}
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 -1px;
+  background: var(--primary);
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.panel-resizer:hover::after,
+.panel-resizer:focus-visible::after {
+  opacity: 0.65;
+}
+.panel-resizer:focus-visible {
+  outline: none;
+}
+.graph-workspace.is-resizing,
+.graph-workspace.is-resizing * {
+  cursor: col-resize;
+  user-select: none;
+}
+.graph-workspace.is-resizing > .conversation-sidebar,
+.graph-workspace.is-resizing > .desktop-plan {
+  transition: none;
+}
+.graph-workspace > .conversation-sidebar :deep(.sidebar-rail),
+.graph-workspace > .conversation-sidebar :deep(.sidebar-create),
+.graph-workspace > .conversation-sidebar :deep(.sidebar-list),
+.desktop-plan :deep(.plan-rail),
+.desktop-plan :deep(.plan-scroll),
+.desktop-plan :deep(.plan-empty) {
+  animation: ai-panel-reveal var(--motion-duration-base) ease-out both;
+}
+@keyframes ai-panel-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .graph-workspace > .conversation-sidebar,
+  .desktop-plan {
+    transition: none;
+  }
+  .graph-workspace :deep(.sidebar-rail),
+  .graph-workspace :deep(.sidebar-create),
+  .graph-workspace :deep(.sidebar-list),
+  .desktop-plan :deep(.plan-rail),
+  .desktop-plan :deep(.plan-scroll),
+  .desktop-plan :deep(.plan-empty) {
+    animation: none;
+  }
+}
+.request-error,
+.request-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: white;
-  box-shadow: 0 12px 28px rgb(15 23 42 / 5%);
-  padding: 13px 15px;
-}
-
-.ai-chat-message.is-user .ai-chat-bubble {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  box-shadow: none;
-}
-
-.ai-chat-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #667085;
-  font-size: 12px;
-}
-
-.ai-chat-bubble > p {
-  margin: 8px 0 0;
-  color: #344054;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.8;
-  white-space: pre-line;
+  background: var(--card);
 }
-
-
-.ai-history-state { display: flex; min-height: 180px; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; color: #667085; }
-.ai-history-state.is-error, .ai-stream-error { color: var(--destructive); }
-.ai-generation-status { display: flex; align-items: center; gap: 8px; color: #667085; font-size: 13px; }
-.ai-stream-error { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
-.ai-message-charts { display: grid; gap: 12px; margin-top: 12px; }
-.ai-chat-bubble { min-width: 0; overflow-wrap: anywhere; }
-.ai-mobile-toolbar { display: none; }
-@keyframes ai-sidebar-collapsible-down { from { height: 0; } to { height: var(--reka-collapsible-content-height); } }
-@keyframes ai-sidebar-collapsible-up { from { height: var(--reka-collapsible-content-height); } to { height: 0; } }
-@media (max-width: 980px) {
-  .ai-agent-body, .ai-agent-shell.is-collapsed .ai-agent-body { grid-template-columns: minmax(0, 1fr); }
-  .ai-agent-sidebar { display: none; }
-  .ai-agent-main { padding: 12px; grid-template-rows: auto minmax(0, 1fr); gap: 8px; }
-  .ai-mobile-toolbar { display: flex; justify-content: flex-end; }
-  .ai-chat-scroll { padding: 14px; }
-  .ai-chat-bubble { max-width: calc(100% - 42px); }
+.request-error {
+  color: var(--destructive);
+}
+.request-error > svg {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.request-error strong {
+  font-weight: 500;
+}
+.request-error p {
+  overflow-wrap: anywhere;
+}
+.request-warning {
+  color: var(--muted-foreground);
+}
+.state-note {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.older-button {
+  justify-self: center;
+}
+@media (max-width: 640px) {
+  .workspace-header {
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .workspace-title {
+    gap: 6px;
+  }
+  .workspace-title > svg {
+    display: none;
+  }
+  .task-status {
+    max-width: 94px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .conversation-scroll {
+    padding: 24px 14px;
+  }
+  .welcome-state {
+    padding: 32px 0;
+  }
+  .welcome-state h2 {
+    font-size: 22px;
+  }
 }
 </style>

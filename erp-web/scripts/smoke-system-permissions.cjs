@@ -23,7 +23,7 @@ runSmoke({
     await page.locator('[data-anchored-select-content][data-state="open"]').getByText('智能助手', { exact: true }).click();
     await clickQueryAndAssertLoading(page, path.resolve(__dirname, '..', 'smoke-query-loading.png'));
     await tableRow(page, 'system:user:query').waitFor({ state: 'detached' });
-    await tableRow(page, 'ai:query:stock').waitFor();
+    await tableRow(page, 'ai:assistant:use').waitFor();
     await clickResetAndAssertLoading(page, 'smoke-system-permissions-reset-loading.png');
     await tableRow(page, 'system:user:query').waitFor();
 

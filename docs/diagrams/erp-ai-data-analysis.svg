@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1575" viewBox="0 0 1440 1575">
+<rect width="100%" height="100%" fill="white"/>
+<text x="720.0" y="52" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#1e293b">DataAnalysisNode · 数据分析子图</text>
+<text x="720.0" y="101" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="22" font-weight="400" fill="#65748a">授权数据结构 → SQL 查询 → Python 代码分析 → 分析结果</text>
+<rect x="120" y="690" width="1200" height="353" rx="18" fill="#fafbfd" stroke="#e0e5ec" stroke-width="1.7"/>
+<polyline points="720,178 720,213" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,213 724.5,203.0 715.5,203.0" fill="#8493a7"/>
+<polyline points="720,297 720,323" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,323 724.5,313.0 715.5,313.0" fill="#8493a7"/>
+<polyline points="720,407 720,433" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,433 724.5,423.0 715.5,423.0" fill="#8493a7"/>
+<polyline points="720,517 720,543" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,543 724.5,533.0 715.5,533.0" fill="#8493a7"/>
+<polyline points="720,1322 720,1367" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,1367 724.5,1357.0 715.5,1357.0" fill="#8493a7"/>
+<polyline points="720,627 720,660 390,660 390,723" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="390,723 394.5,713.0 385.5,713.0" fill="#8493a7"/>
+<polyline points="390,807 390,833" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="390,833 394.5,823.0 385.5,823.0" fill="#8493a7"/>
+<polyline points="390,917 390,943" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="390,943 394.5,933.0 385.5,933.0" fill="#8493a7"/>
+<polyline points="390,1027 390,1063 720,1063 720,1088" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,1088 724.5,1078.0 715.5,1078.0" fill="#8493a7"/>
+<polyline points="720,627 720,660 1050,660 1050,723" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="1050,723 1054.5,713.0 1045.5,713.0" fill="#8493a7"/>
+<polyline points="1050,807 1050,833" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="1050,833 1054.5,823.0 1045.5,823.0" fill="#8493a7"/>
+<polyline points="1050,917 1050,943" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="1050,943 1054.5,933.0 1045.5,933.0" fill="#8493a7"/>
+<polyline points="1050,1027 1050,1063 720,1063 720,1088" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,1088 724.5,1078.0 715.5,1078.0" fill="#8493a7"/>
+<polyline points="485,1130 65,1130 65,585 485,585" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="485,585 475.0,580.5 475.0,589.5" fill="#8493a7"/>
+<polyline points="955,585 1380,585 1380,1280 955,1280" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="955,1280 965.0,1284.5 965.0,1275.5" fill="#8493a7"/>
+<polyline points="187.5,875 145,875 145,765 187.5,765" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="187.5,765 177.5,760.5 177.5,769.5" fill="#8493a7"/>
+<polyline points="1252.5,875 1292,875 1292,765 1252.5,765" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="1252.5,765 1262.5,769.5 1262.5,760.5" fill="#8493a7"/>
+<rect x="650.0" y="132.0" width="140" height="46" rx="23" fill="#f4f6f9" stroke="#a9b3c2" stroke-width="1.7"/>
+<text x="720" y="155" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="700" fill="#42526a">START</text>
+<rect x="485.0" y="213.0" width="470" height="84" rx="12" fill="#fff5e9" stroke="#dcb583" stroke-width="1.7" stroke-dasharray="8 5"/>
+<rect x="857.0" y="199.0" width="108" height="28" rx="7" fill="#fff5e9" stroke="#dcb583" stroke-width="1.7"/>
+<text x="911.0" y="213.0" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="16" font-weight="400" fill="#986a2e">规划新增</text>
+<text x="720" y="238" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">DataAccessNode</text>
+<text x="720" y="274" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">返回当前用户可见的表 / 字段 / 关联</text>
+<rect x="485.0" y="323.0" width="470" height="84" rx="12" fill="#edf5ff" stroke="#87afe0" stroke-width="1.7"/>
+<text x="720" y="348" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">SchemaRecallNode</text>
+<text x="720" y="384" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">在授权结构中召回表与指标口径</text>
+<rect x="485.0" y="433.0" width="470" height="84" rx="12" fill="#edf5ff" stroke="#87afe0" stroke-width="1.7"/>
+<text x="720" y="458" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">AnalysisPlannerNode</text>
+<text x="720" y="494" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">规划查询、计算与图表步骤</text>
+<rect x="485.0" y="543.0" width="470" height="84" rx="12" fill="#edf5ff" stroke="#87afe0" stroke-width="1.7"/>
+<text x="720" y="568" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">PlanExecutorNode</text>
+<text x="720" y="604" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">选择下一分析步骤</text>
+<rect x="187.5" y="723.0" width="405" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="390" y="748" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">SqlGenerateNode</text>
+<text x="390" y="784" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">生成 SQL</text>
+<rect x="187.5" y="833.0" width="405" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="390" y="858" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">SqlValidateNode</text>
+<text x="390" y="894" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">校验语义与实际访问权限</text>
+<rect x="187.5" y="943.0" width="405" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="390" y="968" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">SqlExecuteNode</text>
+<text x="390" y="1004" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">受控只读执行，返回数据集</text>
+<rect x="847.5" y="723.0" width="405" height="84" rx="12" fill="#f4f0fc" stroke="#b3a0d2" stroke-width="1.7"/>
+<text x="1050" y="748" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">PythonGenerateNode</text>
+<text x="1050" y="784" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">生成分析代码</text>
+<rect x="847.5" y="833.0" width="405" height="84" rx="12" fill="#f4f0fc" stroke="#b3a0d2" stroke-width="1.7"/>
+<text x="1050" y="858" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">PythonExecuteNode</text>
+<text x="1050" y="894" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">沙箱运行；仅访问授权数据集</text>
+<rect x="847.5" y="943.0" width="405" height="84" rx="12" fill="#f4f0fc" stroke="#b3a0d2" stroke-width="1.7"/>
+<text x="1050" y="968" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">PythonAnalyzeNode</text>
+<text x="1050" y="1004" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">校验结果，整理指标与图表</text>
+<rect x="485.0" y="1088.0" width="470" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="720" y="1113" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ResultStoreNode</text>
+<text x="720" y="1149" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">保存数据集、图表与证据引用</text>
+<rect x="485.0" y="1238.0" width="470" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="720" y="1263" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">AnalysisSummaryNode</text>
+<text x="720" y="1299" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">返回分析结论与结构化结果</text>
+<rect x="650.0" y="1367.0" width="140" height="46" rx="23" fill="#f4f6f9" stroke="#a9b3c2" stroke-width="1.7"/>
+<text x="720" y="1390" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="700" fill="#42526a">END</text>
+<rect x="340.75" y="661" width="98.5" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="390" y="675" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">SQL 步骤</text>
+<rect x="986.25" y="661" width="127.5" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="1050" y="675" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">Python 步骤</text>
+<rect x="209.0" y="1097" width="134.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="276" y="1111" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">执行下一步骤</text>
+<rect x="1103.0" y="552" width="134.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="1170" y="566" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">全部步骤完成</text>
+<text x="720" y="1450" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#69798f">DataAccessNode 为规划新增；过滤 schema 后，执行阶段仍强制校验权限。</text>
+<text x="720" y="1490" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#69798f">校验 / 执行失败：有限修复 SQL 或 Python；不可恢复及信息缺口返回父图。</text>
+<text x="720" y="1530" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#69798f">Python 是正式分析链路：代码生成 → 沙箱执行 → 结果分析，按任务需要启用。</text>
+</svg>

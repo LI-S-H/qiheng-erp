@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP Agent 修订架构 v3 总览</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg2: #F7F7F5; --border: #E0DFD9;
+    --text: #2C2C2A; --text2: #5F5E5A; --text3: #888780;
+  }
+  body { font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--text); margin: 0; padding: 28px 32px 60px; line-height: 1.6; }
+  h1 { font-size: 19px; font-weight: 500; margin: 0 0 6px; }
+  h2 { font-size: 15px; font-weight: 500; margin: 38px 0 6px; }
+  p  { font-size: 13px; color: var(--text2); margin: 0 0 16px; }
+  .card { border: 1px solid var(--border); border-radius: 12px; background: #FCFCFB; padding: 20px; overflow-x: auto; }
+  svg { display: block; }
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; color: var(--text2); margin: 0 0 18px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  table { border-collapse: collapse; font-size: 13px; margin-top: 4px; width: 100%; }
+  th, td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--bg2); font-weight: 500; }
+  .note { font-size: 12px; color: var(--text3); margin-top: 12px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--bg2); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>ERP Agent 修订架构 v3：需求驱动的轮次式 ReAct</h1>
+<p>
+  Planner 只做需求拆解；真正的 <code>plan</code> 节点每次只回答「当前需求完成了吗？没完成就给下一步」，
+  执行后回到 plan 再问一次，直到所有需求进入终态。<br>
+  <b>指导思想：凡是能由代码判定的，绝不让模型回忆。</b>
+</p>
+
+<div style="border:1px solid #E0DFD9;border-left:3px solid #854F0B;border-radius:8px;background:#FAEEDA;color:#633806;padding:12px 16px;margin:0 0 20px;font-size:13px;line-height:1.7">
+  <b>本页为 v3 归档图（2026-10-19），已被 v4 取代，不再代表当前设计。</b><br>
+  v4（2026-10-20）已合并进 <code>docs/最终规划表.md</code>：完成判定移交代码节点 <code>done_when_checker</code>
+  （plan 不再有 <code>satisfied</code>）、待查清单由 planner 一次列全、溯源 <code>fact_check</code> 前移到
+  <code>reflection</code> 之前、<code>condition</code> 结构化、新增 <code>INFEASIBLE</code> 终态、进展判定改用证据指纹、
+  需求上限拆两级。本页保留 v3 形态用于回溯演进过程，<b>实施请以《最终规划表》为准</b>。
+</div>
+
+<div class="legend">
+  <span><i class="sw" style="background:#FAEEDA;border:1px solid #854F0B"></i>本次新增</span>
+  <span><i class="sw" style="background:#E6F1FB;border:1px solid #185FA5"></i>本次改造</span>
+  <span><i class="sw" style="background:#FBEAF0;border:1px solid #993556"></i>人工暂停点</span>
+  <span><i class="sw" style="background:#FCEBEB;border:1px solid #A32D2D"></i>停止</span>
+  <span><i class="sw" style="background:#F1EFE8;border:1px solid #B4B2A9"></i>沿用不变</span>
+</div>
+
+<h2>图一 · 主循环</h2>
+<p>
+  主干从上往下，最左侧那条回边是循环本体。<code>evidence_commit</code> 写完证据链就回到 <code>plan</code> 重新判断，
+  直到选不出未完成的需求才退出到 reporter。<br>
+  右侧粉色是人工暂停点：<code>plan_dispatch</code> 产出候选骨架后先暂停给用户过目——
+  <b>此时信息已充分（用户知道缺口多少），但填充的大钱还没花，纠偏最便宜</b>；
+  且用户知道系统查不到的事（如"华南仓下个月检修"）。
+</p>
+<div class="card">
+<svg viewBox="0 0 680 852" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>v3 主循环流程图</title>
+<desc>授权 Schema 与知识检索之后，planner 做需求拆解，need_check 校验，plan 判断当前需求是否完成并生成下一步，plan_dispatch 由代码更新状态与路由，任务经校验与分派进入 SQL、Python 或方案参考子图，结果写入证据链后回到 plan，全部需求终态后进入 reporter。</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<rect x="120" y="40" width="300" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="270" y="60" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">data_access</text>
+<text x="270" y="78" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">授权表 / 列 / 行范围</text>
+
+<rect x="120" y="114" width="300" height="52" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="270" y="134" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">knowledge ★</text>
+<text x="270" y="152" font-family="system-ui, sans-serif" font-size="12" fill="#854F0B" text-anchor="middle" dominant-baseline="central">场景匹配 + 业务口径 + 表字段</text>
+
+<rect x="120" y="188" width="300" height="52" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="270" y="208" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#0C447C" text-anchor="middle" dominant-baseline="central">planner ★</text>
+<text x="270" y="226" font-family="system-ui, sans-serif" font-size="12" fill="#185FA5" text-anchor="middle" dominant-baseline="central">只做需求拆解（依赖 · 条件 · 完成判据）</text>
+
+<rect x="120" y="262" width="300" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="270" y="282" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">need_check</text>
+<text x="270" y="300" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">格式 · 无环 · 依赖完备</text>
+
+<rect x="120" y="336" width="300" height="52" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="270" y="356" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#0C447C" text-anchor="middle" dominant-baseline="central">plan ★</text>
+<text x="270" y="374" font-family="system-ui, sans-serif" font-size="12" fill="#185FA5" text-anchor="middle" dominant-baseline="central">一次调用：是否完成 + 下一步</text>
+
+<rect x="120" y="410" width="300" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="270" y="430" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">plan_dispatch</text>
+<text x="270" y="448" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">代码：更新需求状态 · 骨架转需求 · 路由</text>
+
+<rect x="120" y="484" width="300" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="270" y="504" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">task_check</text>
+<text x="270" y="522" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">步骤校验 · 同轮步骤互不依赖</text>
+
+<rect x="120" y="558" width="300" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="270" y="578" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">task_router</text>
+<text x="270" y="596" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">按类型分派</text>
+
+<rect x="120" y="632" width="93" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="166" y="658" font-family="system-ui, sans-serif" font-size="13" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">sql_task</text>
+<rect x="223" y="632" width="93" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="269" y="658" font-family="system-ui, sans-serif" font-size="13" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">python_task</text>
+<rect x="326" y="632" width="94" height="52" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="373" y="658" font-family="system-ui, sans-serif" font-size="13" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">solution_ref ★</text>
+
+<rect x="120" y="706" width="300" height="52" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="270" y="726" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">evidence_commit ★</text>
+<text x="270" y="744" font-family="system-ui, sans-serif" font-size="12" fill="#854F0B" text-anchor="middle" dominant-baseline="central">写证据链（FACT / REFERENCE 分开）</text>
+
+<rect x="120" y="780" width="300" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="270" y="800" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">reporter</text>
+<text x="270" y="818" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">只组装叙述，不产出方案与数字</text>
+
+<rect x="450" y="188" width="190" height="52" rx="8" fill="#FBEAF0" stroke="#993556" stroke-width="0.5"/>
+<text x="545" y="208" font-family="system-ui, sans-serif" font-size="13" font-weight="500" fill="#72243E" text-anchor="middle" dominant-baseline="central">澄清 human</text>
+<text x="545" y="226" font-family="system-ui, sans-serif" font-size="12" fill="#993556" text-anchor="middle" dominant-baseline="central">拆不出来时问用户</text>
+
+<rect x="450" y="410" width="190" height="52" rx="8" fill="#FBEAF0" stroke="#993556" stroke-width="0.5"/>
+<text x="545" y="430" font-family="system-ui, sans-serif" font-size="13" font-weight="500" fill="#72243E" text-anchor="middle" dominant-baseline="central">proposal_human ★</text>
+<text x="545" y="448" font-family="system-ui, sans-serif" font-size="12" fill="#993556" text-anchor="middle" dominant-baseline="central">确认 · 调整 · 取消</text>
+
+<path d="M270 92 L270 110" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M270 166 L270 184" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M270 240 L270 258" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M270 314 L270 332" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M270 388 L270 406" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M270 462 L270 480" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M270 536 L270 554" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M250 610 L250 625 L166 625 L166 628" fill="none" stroke="#888780" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M270 610 L270 628" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M290 610 L290 625 L373 625 L373 628" fill="none" stroke="#888780" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M166 684 L166 699 L270 699 L270 702" fill="none" stroke="#888780" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M373 684 L373 699 L270 699" fill="none" stroke="#888780" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M270 758 L270 776" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<path d="M420 214 L446 214" fill="none" stroke="#993556" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<path d="M420 436 L446 436" fill="none" stroke="#993556" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<text x="452" y="378" font-family="system-ui, sans-serif" font-size="12" fill="#993556" dominant-baseline="central">填充数据前先纠偏</text>
+
+<path d="M120 732 L50 732 L50 362 L116 362" fill="none" stroke="#185FA5" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="54" y="350" font-family="system-ui, sans-serif" font-size="12" fill="#185FA5" dominant-baseline="central">回到 plan</text>
+</svg>
+</div>
+
+<h2>图二 · 输出层（reporter 之后）</h2>
+<p>
+  关键是 reflection 的<b>四分类</b>：只有「真的缺数据」才回主循环补，其余各自走最省的路。
+</p>
+<div class="card">
+<svg viewBox="0 0 680 614" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>v3 输出层流程图</title>
+<desc>reporter 生成的报告进入 reflection 做四分类核对，缺证据的转成新需求回主循环，报告错的回 reporter 重写，需澄清的暂停问用户，受阻的停止；通过后由 fact_check 先做代码溯源再做模型语义核对，最后进入业务决策与人工链路。</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<rect x="240" y="40" width="200" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="340" y="60" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">reporter</text>
+<text x="340" y="78" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">报告 v1</text>
+
+<rect x="240" y="114" width="200" height="52" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="340" y="134" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#0C447C" text-anchor="middle" dominant-baseline="central">reflection ★</text>
+<text x="340" y="152" font-family="system-ui, sans-serif" font-size="12" fill="#185FA5" text-anchor="middle" dominant-baseline="central">四分类核对</text>
+
+<rect x="80" y="200" width="118" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="139" y="222" font-family="system-ui, sans-serif" font-size="12" fill="#791F1F" text-anchor="middle" dominant-baseline="central">缺证据</text>
+<rect x="208" y="200" width="118" height="44" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="267" y="222" font-family="system-ui, sans-serif" font-size="12" fill="#633806" text-anchor="middle" dominant-baseline="central">报告写错</text>
+<rect x="336" y="200" width="118" height="44" rx="8" fill="#FBEAF0" stroke="#993556" stroke-width="0.5"/>
+<text x="395" y="222" font-family="system-ui, sans-serif" font-size="12" fill="#72243E" text-anchor="middle" dominant-baseline="central">需澄清</text>
+<rect x="464" y="200" width="118" height="44" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="523" y="222" font-family="system-ui, sans-serif" font-size="12" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">受阻</text>
+
+<rect x="208" y="268" width="256" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="336" y="288" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">revise_prepare</text>
+<text x="336" y="306" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">代码分支 · 计数 +1 · 报告升版本</text>
+
+<rect x="80" y="344" width="118" height="44" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="139" y="366" font-family="system-ui, sans-serif" font-size="12" fill="#0C447C" text-anchor="middle" dominant-baseline="central">回 plan 补</text>
+<rect x="208" y="344" width="118" height="44" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="267" y="366" font-family="system-ui, sans-serif" font-size="12" fill="#0C447C" text-anchor="middle" dominant-baseline="central">reporter 重写</text>
+<rect x="336" y="344" width="118" height="44" rx="8" fill="#FBEAF0" stroke="#993556" stroke-width="0.5"/>
+<text x="395" y="366" font-family="system-ui, sans-serif" font-size="12" fill="#72243E" text-anchor="middle" dominant-baseline="central">暂停问用户</text>
+<rect x="464" y="344" width="118" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="523" y="366" font-family="system-ui, sans-serif" font-size="12" fill="#791F1F" text-anchor="middle" dominant-baseline="central">stop</text>
+
+<rect x="240" y="426" width="200" height="52" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="340" y="446" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">fact_check</text>
+<text x="340" y="464" font-family="system-ui, sans-serif" font-size="12" fill="#854F0B" text-anchor="middle" dominant-baseline="central">代码先溯源，模型再核语义</text>
+
+<rect x="240" y="502" width="200" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="340" y="522" font-family="system-ui, sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">business_decision</text>
+<text x="340" y="540" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">无动作 → END ／ 有动作 → 人工</text>
+
+<rect x="500" y="502" width="160" height="52" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="580" y="522" font-family="system-ui, sans-serif" font-size="13" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">报告审阅暂停</text>
+<text x="580" y="540" font-family="system-ui, sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">选方案 → 草稿 → 提交</text>
+
+<path d="M340 92 L340 110" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M300 166 L300 187 L139 187 L139 196" fill="none" stroke="#888780" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M320 166 L320 187 L267 187 L267 196" fill="none" stroke="#888780" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M360 166 L360 187 L395 187 L395 196" fill="none" stroke="#888780" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M380 166 L380 187 L523 187 L523 196" fill="none" stroke="#888780" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M336 244 L336 264" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M336 320 L336 340" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M336 388 L336 422" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M340 478 L340 498" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M440 528 L496 528" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+</svg>
+</div>
+
+<h2>节点职责速查</h2>
+<table>
+  <tr><th style="width:140px">节点</th><th>职责</th><th style="width:200px">关键约束</th></tr>
+  <tr><td><code>planner</code></td><td>只做需求拆解</td><td>上限 3 个需求；拆不出来可请求澄清</td></tr>
+  <tr><td><code>need_check</code></td><td>格式、无环、依赖完备</td><td>条件表达式必须可解析</td></tr>
+  <tr><td><code>plan</code></td><td>判断当前需求是否完成 + 生成下一步</td><td><b>一次调用</b>；不产出任何数字</td></tr>
+  <tr><td><code>plan_dispatch</code></td><td>更新需求状态、骨架落盘、路由</td><td>纯代码，路由可单测</td></tr>
+  <tr><td><code>proposal_human</code></td><td>候选骨架确认（人工暂停点）</td><td><b>确认 / 调整 / 取消</b>，调整是一等公民</td></tr>
+  <tr><td><code>task_check</code></td><td>步骤校验</td><td>同轮步骤必须互不依赖</td></tr>
+  <tr><td><code>python_task</code></td><td>沙箱计算</td><td><b>所有数值的唯一产出者</b></td></tr>
+  <tr><td><code>solution_reference</code></td><td>查手段、适用条件、历史采用率</td><td>产出 REFERENCE，不进报告数据源</td></tr>
+  <tr><td><code>evidence_commit</code></td><td>写证据链</td><td>同名 key 覆盖；总量上限 20</td></tr>
+  <tr><td><code>reporter</code></td><td>组装叙述</td><td><b>不新增方案、不新增数字</b></td></tr>
+  <tr><td><code>reflection</code></td><td>四分类核对</td><td>只有缺数据才回 plan 补</td></tr>
+  <tr><td><code>fact_check</code></td><td>数字溯源</td><td>代码先查，语义问题再上模型</td></tr>
+</table>
+
+<p class="note">
+  硬约束：max-needs=3、max-rounds=8、max-round-steps=3、max-proposals=3、
+  max-report-revisions=2、max-evidence-items=20；每轮必须产生新证据，否则停止。<br>
+  最容易被破坏的三条：让模型自己算数、让 plan 一轮排有依赖的步骤、让 reporter 顺手"完善"方案。
+</p>
+
+</body>
+</html>

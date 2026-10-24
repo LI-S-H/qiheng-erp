@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1635" viewBox="0 0 1440 1635">
+<rect width="100%" height="100%" fill="white"/>
+<text x="720.0" y="52" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#1e293b">ERP Agent 主图</text>
+<text x="720.0" y="101" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="22" font-weight="400" fill="#65748a">Node 编排视图 · 规划 → 执行 → 报告 → 反思</text>
+<rect x="75" y="650" width="1290" height="118" rx="18" fill="#fafbfd" stroke="#e0e5ec" stroke-width="1.7"/>
+<polyline points="720,178 720,208" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,208 724.5,198.0 715.5,198.0" fill="#8493a7"/>
+<polyline points="720,292 720,318" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,318 724.5,308.0 715.5,308.0" fill="#8493a7"/>
+<polyline points="720,402 720,428" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,428 724.5,418.0 715.5,418.0" fill="#8493a7"/>
+<polyline points="720,512 720,538" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,538 724.5,528.0 715.5,528.0" fill="#8493a7"/>
+<polyline points="720,892 720,918" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,918 724.5,908.0 715.5,908.0" fill="#8493a7"/>
+<polyline points="720,1002 720,1028" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,1028 724.5,1018.0 715.5,1018.0" fill="#8493a7"/>
+<polyline points="720,1112 720,1138" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,1138 724.5,1128.0 715.5,1128.0" fill="#8493a7"/>
+<polyline points="720,1222 720,1248" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,1248 724.5,1238.0 715.5,1238.0" fill="#8493a7"/>
+<polyline points="720,1332 720,1362" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,1362 724.5,1352.0 715.5,1352.0" fill="#8493a7"/>
+<polyline points="525,360 430,360" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="430,360 440.0,364.5 440.0,355.5" fill="#8493a7"/>
+<polyline points="255,318 255,232 525,232" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="525,232 515.0,227.5 515.0,236.5" fill="#8493a7"/>
+<polyline points="915,360 1395,360 1395,960 1345,960" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="1345,960 1355.0,964.5 1355.0,955.5" fill="#8493a7"/>
+<polyline points="720,622 720,639 270,639 270,678" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="270,678 274.5,668.0 265.5,668.0" fill="#8493a7"/>
+<polyline points="270,762 270,789 720,789 720,808" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,808 724.5,798.0 715.5,798.0" fill="#8493a7"/>
+<polyline points="720,622 720,639 720,639 720,678" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,678 724.5,668.0 715.5,668.0" fill="#8493a7"/>
+<polyline points="720,762 720,789 720,789 720,808" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,808 724.5,798.0 715.5,798.0" fill="#8493a7"/>
+<polyline points="720,622 720,639 1170,639 1170,678" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="1170,678 1174.5,668.0 1165.5,668.0" fill="#8493a7"/>
+<polyline points="1170,762 1170,789 720,789 720,808" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="720,808 724.5,798.0 715.5,798.0" fill="#8493a7"/>
+<polyline points="525,960 70,960 70,470 525,470" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="525,470 515.0,465.5 515.0,474.5" fill="#8493a7"/>
+<polyline points="915,960 995,960" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="995,960 985.0,955.5 985.0,964.5" fill="#8493a7"/>
+<polyline points="525,1180 430,1180" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="430,1180 440.0,1184.5 440.0,1175.5" fill="#8493a7"/>
+<polyline points="80,1180 28,1180 28,268 525,268" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="525,268 515.0,263.5 515.0,272.5" fill="#8493a7"/>
+<polyline points="1170,1002 1395,1002 1395,1385 790,1385" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="790,1385 800.0,1389.5 800.0,1380.5" fill="#8493a7"/>
+<polyline points="487.5,1520 532.5,1520" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="532.5,1520 522.5,1515.5 522.5,1524.5" fill="#8493a7"/>
+<polyline points="927.5,1520 980,1520" fill="none" stroke="#8493a7" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="980,1520 970.0,1515.5 970.0,1524.5" fill="#8493a7"/>
+<rect x="650.0" y="132.0" width="140" height="46" rx="23" fill="#f4f6f9" stroke="#a9b3c2" stroke-width="1.7"/>
+<text x="720" y="155" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="700" fill="#42526a">START</text>
+<rect x="525.0" y="208.0" width="390" height="84" rx="12" fill="#edf5ff" stroke="#87afe0" stroke-width="1.7"/>
+<text x="720" y="233" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">PlannerNode</text>
+<text x="720" y="269" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">拆解需求，生成任务计划</text>
+<rect x="525.0" y="318.0" width="390" height="84" rx="12" fill="#edf5ff" stroke="#87afe0" stroke-width="1.7"/>
+<text x="720" y="343" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">PlanCheckNode</text>
+<text x="720" y="379" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">检查计划与必填业务信息</text>
+<rect x="80.0" y="318.0" width="350" height="84" rx="12" fill="#fff5e9" stroke="#dcb583" stroke-width="1.7"/>
+<text x="255" y="343" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">HumanNode</text>
+<text x="255" y="379" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">暂停，等待用户补充</text>
+<rect x="525.0" y="428.0" width="390" height="84" rx="12" fill="#edf5ff" stroke="#87afe0" stroke-width="1.7"/>
+<text x="720" y="453" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">TeamNode</text>
+<text x="720" y="489" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">持有计划，选择就绪任务</text>
+<rect x="525.0" y="538.0" width="390" height="84" rx="12" fill="#edf5ff" stroke="#87afe0" stroke-width="1.7"/>
+<text x="720" y="563" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ParallelExecutorNode</text>
+<text x="720" y="599" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">分发子任务，控制并发</text>
+<rect x="95.0" y="678.0" width="350" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="270" y="703" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">DataAnalysisNode</text>
+<text x="270" y="739" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">数据查询、Python 分析</text>
+<rect x="525.0" y="678.0" width="390" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="720" y="703" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">BusinessToolNode</text>
+<text x="720" y="739" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">调用工具：创建订单 / 查询</text>
+<rect x="995.0" y="678.0" width="350" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="1170" y="703" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">KnowledgeNode</text>
+<text x="1170" y="739" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">检索业务规则与知识</text>
+<rect x="525.0" y="808.0" width="390" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="720" y="833" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ResultCollectNode</text>
+<text x="720" y="869" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">合并结果、证据与工具回执</text>
+<rect x="525.0" y="918.0" width="390" height="84" rx="12" fill="#edf5ff" stroke="#87afe0" stroke-width="1.7"/>
+<text x="720" y="943" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">TaskCheckNode</text>
+<text x="720" y="979" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">判断任务完成情况</text>
+<rect x="995.0" y="918.0" width="350" height="84" rx="12" fill="#fff0f0" stroke="#d49a9a" stroke-width="1.7"/>
+<text x="1170" y="943" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">StopNode</text>
+<text x="1170" y="979" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">记录原因，结束任务</text>
+<rect x="525.0" y="1028.0" width="390" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="720" y="1053" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ReporterNode</text>
+<text x="720" y="1089" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">汇总结果，生成回复或报告</text>
+<rect x="525.0" y="1138.0" width="390" height="84" rx="12" fill="#f4f0fc" stroke="#b3a0d2" stroke-width="1.7"/>
+<text x="720" y="1163" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ReflectionNode</text>
+<text x="720" y="1199" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">核对需求、结论与数据依据</text>
+<rect x="80.0" y="1138.0" width="350" height="84" rx="12" fill="#fff5e9" stroke="#dcb583" stroke-width="1.7"/>
+<text x="255" y="1163" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ReplanNode</text>
+<text x="255" y="1199" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">定位缺口，生成修复计划</text>
+<rect x="525.0" y="1248.0" width="390" height="84" rx="12" fill="#eef9f4" stroke="#8dbfa8" stroke-width="1.7"/>
+<text x="720" y="1273" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ResponseNode</text>
+<text x="720" y="1309" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">交付最终回复或报告</text>
+<rect x="650.0" y="1362.0" width="140" height="46" rx="23" fill="#f4f6f9" stroke="#a9b3c2" stroke-width="1.7"/>
+<text x="720" y="1385" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="700" fill="#42526a">END</text>
+<rect x="132.5" y="1483.0" width="355" height="74" rx="12" fill="#f4f0fc" stroke="#b3a0d2" stroke-width="1.7"/>
+<text x="310" y="1503" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ExperienceExtractNode</text>
+<text x="310" y="1539" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">提取经验候选</text>
+<rect x="532.5" y="1483.0" width="395" height="74" rx="12" fill="#f4f0fc" stroke="#b3a0d2" stroke-width="1.7"/>
+<text x="730" y="1503" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ExperienceValidateNode</text>
+<text x="730" y="1539" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">校验来源、有效性与冲突</text>
+<rect x="980.0" y="1483.0" width="370" height="74" rx="12" fill="#f4f0fc" stroke="#b3a0d2" stroke-width="1.7"/>
+<text x="1165" y="1503" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" fill="#24364c">ExperienceStoreNode</text>
+<text x="1165" y="1539" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" fill="#526379">保存经验；规则候选待审核</text>
+<rect x="440.0" y="327" width="74.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="477" y="341" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">缺信息</text>
+<rect x="328.0" y="199" width="114.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="385" y="213" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">补充后恢复</text>
+<rect x="1113.0" y="327" width="94.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="1160" y="341" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">不可执行</text>
+<rect x="213.0" y="927" width="154.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="290" y="941" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">仍有待执行任务</text>
+<rect x="908.0" y="896" width="94.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="955" y="910" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">关键失败</text>
+<rect x="751.0" y="1001" width="94.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="798" y="1015" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">全部完成</text>
+<rect x="440.0" y="1147" width="74.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="477" y="1161" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">未通过</text>
+<rect x="773.0" y="1222" width="54.0" height="28" rx="4" fill="white" stroke="white" stroke-width="1.7"/>
+<text x="800" y="1236" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#6b7b90">通过</text>
+<text x="720" y="1450" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#69798f">交付后异步执行：经验沉淀；下次任务按需召回</text>
+<text x="720" y="1597" text-anchor="middle" dominant-baseline="central" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#69798f">虚线表示回退 / 终止路径；修复不重复执行已成功的创建订单工具。</text>
+</svg>

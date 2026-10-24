@@ -1,0 +1,36 @@
+%%{init: {"theme":"base","flowchart":{"curve":"linear","nodeSpacing":45,"rankSpacing":35},"themeVariables":{"fontFamily":"Microsoft YaHei, sans-serif","fontSize":"16px","lineColor":"#8493a7"}}}%%
+flowchart TD
+    START([START]) --> PlannerNode[PlannerNode<br/>拆解需求，生成任务计划]
+    PlannerNode --> PlanCheckNode[PlanCheckNode<br/>检查计划与必填业务信息]
+    PlanCheckNode -->|信息充分| TeamNode[TeamNode<br/>持有计划，选择就绪任务]
+    PlanCheckNode -->|缺信息| HumanNode[HumanNode<br/>暂停，等待用户补充]
+    HumanNode -.->|补充后恢复| PlannerNode
+    PlanCheckNode -.->|不可执行或预算耗尽| StopNode[StopNode<br/>记录原因，结束任务]
+    TeamNode --> ParallelExecutorNode[ParallelExecutorNode<br/>分发子任务，控制并发]
+    ParallelExecutorNode --> DataAnalysisNode[DataAnalysisNode<br/>数据查询、Python 分析]
+    ParallelExecutorNode --> BusinessToolNode[BusinessToolNode<br/>调用工具：创建订单、查询]
+    ParallelExecutorNode --> KnowledgeNode[KnowledgeNode<br/>业务规则与知识检索]
+    DataAnalysisNode --> ResultCollectNode[ResultCollectNode<br/>合并结果、证据与工具回执]
+    BusinessToolNode --> ResultCollectNode
+    KnowledgeNode --> ResultCollectNode
+    ResultCollectNode --> TaskCheckNode[TaskCheckNode<br/>判断任务完成情况]
+    TaskCheckNode -.->|仍有待执行任务| TeamNode
+    TaskCheckNode -->|关键失败| StopNode
+    TaskCheckNode -->|满足交付条件| ReporterNode[ReporterNode<br/>汇总结果，生成回复或报告]
+    ReporterNode --> ReflectionNode[ReflectionNode<br/>核对需求、结论与数据依据]
+    ReflectionNode -->|通过| ResponseNode[ResponseNode<br/>交付最终回复或报告]
+    ReflectionNode -->|未通过| ReplanNode[ReplanNode<br/>定位缺口，生成有限修复计划]
+    ReplanNode -.-> PlannerNode
+    ResponseNode --> END([END])
+    StopNode -.-> END
+
+    classDef plan fill:#edf5ff,stroke:#87afe0,color:#24364c;
+    classDef action fill:#eef9f4,stroke:#8dbfa8,color:#24364c;
+    classDef human fill:#fff5e9,stroke:#dcb583,color:#24364c;
+    classDef review fill:#f4f0fc,stroke:#b3a0d2,color:#24364c;
+    classDef stop fill:#fff0f0,stroke:#d49a9a,color:#24364c;
+    class PlannerNode,PlanCheckNode,TeamNode,ParallelExecutorNode,TaskCheckNode plan;
+    class DataAnalysisNode,BusinessToolNode,KnowledgeNode,ResultCollectNode,ReporterNode,ResponseNode action;
+    class HumanNode,ReplanNode human;
+    class ReflectionNode review;
+    class StopNode stop;

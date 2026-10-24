@@ -14,7 +14,7 @@
 
 ## 当前表清单
 
-MVP 阶段共设计并已落 DDL 31 张表。
+MVP 阶段共设计并已落 DDL 34 张表。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
@@ -48,6 +48,9 @@ MVP 阶段共设计并已落 DDL 31 张表。
 | AI | `ai_interaction_log` | AI 问答、Tool 调用和权限审计 |
 | AI | `ai_conversation` | 当前用户的经营助手会话摘要 |
 | AI | `ai_message` | 经营助手完整消息历史和结构化结果 |
+| AI | `ai_node_memory` | 各节点私有记忆原文，只增不改，供审计与重压缩取材 |
+| AI | `ai_node_working_memory` | 节点实际读取的工作记忆，纯文本转写，可压缩为摘要条目 |
+| AI | `ai_node_experience` | 由多轮运行提炼的节点长期经验，按状态生效 |
 | 系统 | `system_exception` | AI/MCP、消息队列、第三方回调、定时任务和补偿任务异常记录 |
 
 ## 系统异常记录表扩展建议
@@ -267,7 +270,7 @@ warehouse:query
 supplier:query
 purchase:query
 sales:query
-ai:query:stock
+ai:assistant:use
 ```
 
 后续如果需要动态菜单、复杂角色授权关系或字段权限，再扩展：

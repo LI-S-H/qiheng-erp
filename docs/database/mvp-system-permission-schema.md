@@ -207,13 +207,26 @@ WHERE FIND_IN_SET(id, REPLACE('0,1900000000000000103,1900000000000000108', ',', 
   "purchase:create",
   "sales:query",
   "sales:create",
-  "ai:query:stock",
-  "ai:query:sales",
-  "ai:query:purchase"
+  "ai:assistant:use"
 ]
 ```
 
 关系说明：普通用户的候选权限来自所有启用角色 `permission_codes` 的并集，再与 `sys_permission` 中启用且未删除的权限码取交集。MVP 不设计动态按钮资源和字段级权限。
+
+### 内置角色与授权（真实库现状，2026-10-22）
+
+| 角色 | role_code | 权限码 |
+|---|---|---|
+| 超级管理员 | `SUPER_ADMIN` | `["*"]`（通配，可见全部） |
+| 采购员 | `PURCHASE_STAFF` | `product:query`、`warehouse:query`、`supplier:query`、`supplier:create`、`purchase:query`、`purchase:create`、`purchase:manage`、`return:query`、`dashboard:overview:query`、`ai:assistant:use` |
+| 销售员 | `SALES_STAFF` | `product:query`、`warehouse:query`、`customer:query`、`customer:create`、`sales:query`、`sales:create`、`sales:manage`、`return:query`、`dashboard:overview:query`、`ai:assistant:use` |
+| 仓管员 | `WAREHOUSE_STAFF` | `product:query`、`warehouse:query`、`warehouse:manage`、`return:query`、`dashboard:overview:query`、`ai:assistant:use` |
+| 业务主管 | `BUSINESS_MANAGER` | 上述业务模块的 query/create/manage 全集 + `dashboard:exception:query` + `ai:assistant:use` |
+| AI 分析师 | `AI_ANALYST` | 各业务模块的 `*:query` + `ai:assistant:use`（只读） |
+
+**仓管员的 `ai:assistant:use` 是 2026-10-22 补上的**（`025_add_ai_permission_warehouse_staff.sql`）。`020_ai_assistant_permission.sql` 只给"原本就引用过 ai 权限码"的角色追加新权限码，仓管员当时没有 ai 权限码，因此被漏掉——它进不了 AI 智能助手页面。而仓管员恰恰是 AI 的主要用户之一：他最需要问的就是"这个仓还剩多少可用库存"这类问题。
+
+**角色与 AI 可见数据的关系**：角色的权限码决定 AI 能看到哪些表与哪些业务口径。`ai:assistant:use` 只是页面入口（`module_code = ai`，登记表里没有 `ai` 模块的行），**它本身不带来任何数据可见性**；真正决定可见范围的是同一角色里的 `*:query` 权限码。
 
 ## 表：sys_permission（权限码目录表）
 
@@ -273,7 +286,7 @@ WHERE FIND_IN_SET(id, REPLACE('0,1900000000000000103,1900000000000000108', ',', 
   - 客户：`customer:query`
   - 采购：`purchase:query`
   - 销售：`sales:query`
-- AI Tool 也先复用粗粒度权限码，例如 `ai:query:stock`、`ai:query:sales`、`ai:query:purchase`。
+- AI 助手只保留一个页面级入口权限 `ai:assistant:use`：能进入 AI 智能助手页面即可使用其全部功能，不再按库存、销售、采购拆分问答权限。页面级权限不等于数据权限，后续接入业务 Tool 时仍按所在模块校验。
 - 部门级、仓库级、本人数据范围这些细粒度数据权限暂不实现，后续业务稳定后再补。
 
 ## 登录态与 Session 规则
@@ -300,5 +313,5 @@ Redis session 建议保存：
 - 用户可以登录并获取角色、权限码、部门信息。
 - 无权限用户可以看到页面入口，但进入页面或查询接口会被拒绝。
 - 有 `purchase:query` 的用户可以查询采购大表，没有该权限则不能查询。
-- AI 查询库存时必须具备 `ai:query:stock`。
+- 进入 AI 智能助手页面必须具备 `ai:assistant:use`。
 - 粗粒度权限通过后，接口可以查询对应模块数据。

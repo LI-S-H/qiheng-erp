@@ -261,4 +261,4 @@
 - 已确认入库单、出库单和库存流水都不能编辑或取消。
 - 草稿和待确认入库单/出库单的实际库存变动数量为 0；库存流水只保留已确认事实。
 - 库存列表可以按仓库、产品编码、产品名称、库存健康和占用情况组合查询。
-- AI 查询库存时读取 `warehouse_stock`，并校验 `ai:query:stock` 或 `warehouse:query` 权限。
+- AI 查询库存时读取 `warehouse_stock`，并校验 `ai:assistant:use` 页面入口权限与 `warehouse:query` 数据权限。

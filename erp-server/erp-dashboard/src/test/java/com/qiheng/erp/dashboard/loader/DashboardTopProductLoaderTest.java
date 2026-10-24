@@ -1,11 +1,11 @@
 package com.qiheng.erp.dashboard.loader;
 
 import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
-import com.qiheng.erp.dashboard.cache.RankDataCorruptedException;
 import com.qiheng.erp.dashboard.cache.TopProductRankCache;
 import com.qiheng.erp.dashboard.cache.TopProductRankCache.RebuildOutcome;
 import com.qiheng.erp.dashboard.cache.TopProductRankRefresher;
-import com.qiheng.erp.dashboard.cache.TopRankRebuildFailedException;
+import com.qiheng.erp.dashboard.exception.RankDataCorruptedException;
+import com.qiheng.erp.dashboard.exception.TopRankRebuildFailedException;
 import com.qiheng.erp.dashboard.domain.topproduct.vo.DashboardTopProductVO;
 import com.qiheng.erp.product.mapper.ProductMapper;
 import com.qiheng.erp.warehouse.mapper.WarehouseStockMapper;

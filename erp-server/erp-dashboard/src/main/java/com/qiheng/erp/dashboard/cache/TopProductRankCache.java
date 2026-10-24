@@ -361,19 +361,24 @@ public class TopProductRankCache {
         // 先清空临时 key，避免上次异常残留
         redisTemplate.delete(amountNew);
         redisTemplate.delete(qtyNew);
-        // 构建临时 key：HashMap/HashSet 按负载因子 0.75 反推容量
-        if (entries != null && !entries.isEmpty()) {
-            int capacity = (int) (entries.size() / 0.75f) + 1;
-            Set<ZSetOperations.TypedTuple<String>> tuples = new HashSet<>(capacity);
-            Map<String, String> qtyMap = new HashMap<>(capacity);
-            for (RankEntry entry : entries) {
-                tuples.add(ZSetOperations.TypedTuple.of(
-                        String.valueOf(entry.productId()), (double) entry.amount()));
-                qtyMap.put(String.valueOf(entry.productId()), String.valueOf(entry.quantity()));
-            }
-            redisTemplate.opsForZSet().add(amountNew, tuples);
-            redisTemplate.opsForHash().putAll(qtyNew, qtyMap);
+        // 零数据合法场景：清空正式榜单直接返回，不走 SWAP_SCRIPT 双 EXISTS 校验
+        if (entries == null || entries.isEmpty()) {
+            redisTemplate.delete(AMOUNT_KEY);
+            redisTemplate.delete(QTY_KEY);
+            log.info("工作台 TOP 商品排行零数据，已清空正式榜单");
+            return;
         }
+        // 构建临时 key：HashMap/HashSet 按负载因子 0.75 反推容量
+        int capacity = (int) (entries.size() / 0.75f) + 1;
+        Set<ZSetOperations.TypedTuple<String>> tuples = new HashSet<>(capacity);
+        Map<String, String> qtyMap = new HashMap<>(capacity);
+        for (RankEntry entry : entries) {
+            tuples.add(ZSetOperations.TypedTuple.of(
+                    String.valueOf(entry.productId()), (double) entry.amount()));
+            qtyMap.put(String.valueOf(entry.productId()), String.valueOf(entry.quantity()));
+        }
+        redisTemplate.opsForZSet().add(amountNew, tuples);
+        redisTemplate.opsForHash().putAll(qtyNew, qtyMap);
         // Lua 原子切换：双 EXISTS 校验后切换，任一缺失则放弃切换并清残留
         Long swapped = redisTemplate.execute(SWAP_SCRIPT,
                 List.of(amountNew, qtyNew, AMOUNT_KEY, QTY_KEY));

@@ -156,6 +156,24 @@ class TopProductRankCacheTest {
     }
 
     @Test
+    void shouldReturnSuccessAndSkipSwapWhenEntriesEmpty() throws InterruptedException {
+        // 近 30 天零数据：rebuild 必须返回 SUCCESS 而非抛 IllegalStateException，
+        // 避免刷新工作台概览时反复触发重建失败上报。
+        TopProductRankCache.RebuildOutcome outcome = cache.rebuild(List::of);
+
+        assertThat(outcome).isEqualTo(TopProductRankCache.RebuildOutcome.SUCCESS);
+        // 清空临时 key 与正式榜单
+        verify(redisTemplate).delete("dashboard:top-product:sales-amount:new");
+        verify(redisTemplate).delete("dashboard:top-product:sales-qty:new");
+        verify(redisTemplate).delete("dashboard:top-product:sales-amount");
+        verify(redisTemplate).delete("dashboard:top-product:sales-qty");
+        // 不走 SWAP_SCRIPT：execute 调用次数等于 REPLAY_AND_CLOSE_REBUILD_SCRIPT 一次
+        verify(redisTemplate, times(1)).execute(any(RedisScript.class), anyList());
+        // 锁释放
+        verify(lock).unlock();
+    }
+
+    @Test
     void shouldCallSwapAndReplayScriptsOnRebuildSuccess() throws InterruptedException {
         TopProductRankCache.RebuildOutcome outcome = cache.rebuild(
                 () -> List.of(new TopProductRankCache.RankEntry(1L, 1000L, 5L)));

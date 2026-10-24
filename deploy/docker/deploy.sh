@@ -25,10 +25,10 @@ fail() {
 CONFIG_DIR="$DEPLOY_ROOT/config"
 STATE_DIR="$DEPLOY_ROOT/state"
 RELEASES_DIR="$DEPLOY_ROOT/releases"
-REPOSITORY_DIR="$DEPLOY_ROOT/repository.git"
 CONFIG_FILE="$CONFIG_DIR/.env"
+REPOSITORY_DIR="$DEPLOY_ROOT/gitcode-repository.git"
 
-for required_command in docker git flock timeout tar sha256sum; do
+for required_command in docker git python3 flock timeout tar sha256sum; do
     command -v "$required_command" >/dev/null || fail "缺少命令：$required_command"
 done
 docker compose version >/dev/null
@@ -79,8 +79,6 @@ for secret_name in MYSQL_ROOT_PASSWORD MYSQL_PASSWORD REDIS_PASSWORD; do
 done
 [[ "${MYSQL_DATABASE:-erp}" =~ ^[a-zA-Z0-9_]+$ ]] || fail '数据库名只允许字母、数字和下划线。'
 [[ "${WEB_PORT:-8088}" =~ ^[0-9]+$ ]] || fail 'WEB_PORT 必须是端口数字。'
-git check-ref-format --branch "${DEPLOY_BRANCH:-main}" >/dev/null
-
 infra() {
     docker compose --env-file "$CONFIG_FILE" -p qiheng-erp-infra \
         -f "$CONFIG_DIR/compose.infra.yaml" "$@"
@@ -139,20 +137,94 @@ create_topics() {
     touch "$STATE_DIR/infra-ready"
 }
 
-fetch_release() {
+gitcode_git() {
+    local request_timeout=600
+    if [[ "${1:-}" == ls-remote ]]; then
+        request_timeout=40
+    fi
+    local credential_helper='!f() {
+        [ "$1" = get ] || exit 0
+        protocol= host= path=
+        while IFS= read -r line && [ -n "$line" ]; do
+            case "$line" in
+                protocol=*) protocol=${line#protocol=} ;;
+                host=*) host=${line#host=} ;;
+                path=*) path=${line#path=} ;;
+            esac
+        done
+        [ "$protocol" = https ] && [ "$host" = gitcode.com ] && [ "$path" = "$DEPLOY_GITCODE_PATH" ] || exit 1
+        printf "username=%s\n" "$DEPLOY_GITCODE_USER"
+        printf "password=%s\n" "$(tr -d "\r\n" < "$DEPLOY_GITCODE_TOKEN_FILE")"
+    }; f'
+    DEPLOY_GITCODE_USER="${GITCODE_USERNAME:-LI_124301012}" \
+    DEPLOY_GITCODE_PATH="$repository_slug.git" \
+    DEPLOY_GITCODE_TOKEN_FILE="${GITCODE_TOKEN_FILE:-$CONFIG_DIR/gitcode.token}" \
+    GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false \
+    GIT_TRACE=0 GIT_TRACE_CURL=0 GIT_TRACE_REDACT=1 \
+    env -u GIT_CURL_VERBOSE timeout -k 10s "$request_timeout" git --git-dir="$REPOSITORY_DIR" \
+        -c http.proxy= -c http.followRedirects=false \
+        -c credential.helper= -c credential.helper="$credential_helper" -c credential.useHttpPath=true \
+        -c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 "$@" </dev/null
+}
+
+configure_source() {
+    local source_metadata configured_remote
+    source_metadata=$(python3 - "$DEPLOY_REPO" "${DEPLOY_BRANCH:-main}" <<'PY'
+import re
+import sys
+from urllib.parse import urlsplit
+
+url = urlsplit(sys.argv[1])
+path = url.path.removesuffix(".git")
+if (url.scheme != "https" or url.netloc != "gitcode.com" or url.query
+        or url.fragment or not re.fullmatch(r"/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", path)):
+    raise SystemExit("DEPLOY_REPO 必须是 GitCode 仓库的 HTTPS 地址，不能包含账号或令牌。")
+if any(part in (".", "..") for part in path.split("/")[1:]):
+    raise SystemExit("仓库地址无效。")
+branch = sys.argv[2]
+if not branch or any(ord(character) < 32 for character in branch):
+    raise SystemExit("分支名无效。")
+print(path.lstrip("/"))
+PY
+    ) || fail '无法解析 GitCode 仓库和分支配置。'
+    repository_slug=$source_metadata
+    git check-ref-format --branch "${DEPLOY_BRANCH:-main}" >/dev/null || fail '分支名无效。'
+    [[ "${GITCODE_USERNAME:-LI_124301012}" =~ ^[A-Za-z0-9_.-]+$ ]] || fail 'GitCode 用户名格式无效。'
+    python3 - "${GITCODE_TOKEN_FILE:-$CONFIG_DIR/gitcode.token}" <<'PY'
+import os
+import stat
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if path.is_symlink() or not path.is_file():
+    raise SystemExit("缺少 GitCode 令牌文件，或文件是符号链接。")
+metadata = path.stat()
+if metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077:
+    raise SystemExit("令牌文件必须属于执行用户，且权限为 600 或更严格。")
+if path.parent.stat().st_mode & 0o022:
+    raise SystemExit("令牌所在目录不能允许组或其他用户写入。")
+token = path.read_text(encoding="utf-8").rstrip("\r\n")
+if not token or len(token) > 4096 or not token.isascii() or any(character.isspace() for character in token):
+    raise SystemExit("令牌文件应只包含一个有效令牌，不要添加引号或其他配置。")
+PY
     if [[ ! -d "$REPOSITORY_DIR" ]]; then
         git init --bare --quiet "$REPOSITORY_DIR"
-        git --git-dir="$REPOSITORY_DIR" remote add origin "$DEPLOY_REPO"
+        git --git-dir="$REPOSITORY_DIR" remote add origin "https://gitcode.com/$repository_slug.git"
     fi
-    local configured_remote
     configured_remote=$(git --git-dir="$REPOSITORY_DIR" remote get-url origin)
-    [[ "$configured_remote" == "$DEPLOY_REPO" ]] || fail '缓存仓库地址与配置不一致，请人工检查，脚本不会覆盖它。'
-    log "检查 ${DEPLOY_BRANCH:-main} 分支。"
-    GIT_TERMINAL_PROMPT=0 timeout -k 10s 180 git --git-dir="$REPOSITORY_DIR" \
-        -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=30 fetch --quiet --depth=1 origin \
-        "+refs/heads/${DEPLOY_BRANCH:-main}:refs/heads/deployment"
+    [[ "$configured_remote" == "https://gitcode.com/$repository_slug.git" ]] || fail 'GitCode 缓存仓库地址与配置不一致，请人工检查。'
+}
+
+fetch_release() {
+    configure_source
+    log "通过 GitCode 检查并获取 ${DEPLOY_BRANCH:-main} 分支，最多等待十分钟。"
+    gitcode_git fetch --progress --depth=1 origin \
+        "+refs/heads/${DEPLOY_BRANCH:-main}:refs/heads/deployment" \
+        || fail 'GitCode 拉取失败；请检查网络、令牌有效期和仓库读取权限，不会更改现有应用。'
     candidate_version=$(git --git-dir="$REPOSITORY_DIR" rev-parse refs/heads/deployment)
     [[ "$candidate_version" =~ ^[0-9a-f]{40}$ ]] || fail '没有获取到合法提交编号。'
+    log "GitCode 版本：$candidate_version。"
 }
 
 prepare_release() {
@@ -160,10 +232,65 @@ prepare_release() {
     if [[ -f "$release_dir/.complete" ]]; then
         return
     fi
-    mkdir -p "$release_dir"
-    git --git-dir="$REPOSITORY_DIR" archive "$candidate_version" \
-        erp-server erp-web deploy/docker .dockerignore | tar -x -C "$release_dir"
-    touch "$release_dir/.complete"
+    [[ ! -e "$release_dir" ]] || fail "发现未完成的版本目录，请先人工检查：$release_dir"
+    local archive_file stage_dir
+    mkdir -p "$DEPLOY_ROOT/downloads"
+    archive_file="$DEPLOY_ROOT/downloads/$candidate_version.tar.gz"
+    log '从 GitCode 缓存提取固定提交的前后端和部署文件。'
+    timeout -k 5s 60s git --git-dir="$REPOSITORY_DIR" archive --format=tar.gz \
+        --prefix="${repository_slug##*/}-$candidate_version/" "$candidate_version" \
+        erp-server erp-web deploy/docker .dockerignore > "$archive_file.part" \
+        || fail '源码归档失败，现有应用和数据库未修改。'
+    mv -- "$archive_file.part" "$archive_file"
+    stage_dir=$(mktemp -d "$RELEASES_DIR/.prepare-$candidate_version.XXXXXX")
+    log '检查源码包并提取部署所需文件。'
+    if ! python3 - "$archive_file" "$stage_dir" "${repository_slug##*/}-$candidate_version" <<'PY'
+import shutil
+import sys
+import tarfile
+from pathlib import Path, PurePosixPath
+
+archive, destination, expected_root = sys.argv[1:]
+destination = Path(destination)
+with tarfile.open(archive, "r:gz") as source:
+    selected = []
+    seen = set()
+    for member in source.getmembers():
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] != expected_root:
+            raise SystemExit("源码包包含不符合预期的路径。")
+        relative = path.parts[1:]
+        if not relative:
+            continue
+        allowed = (relative[0] in ("erp-server", "erp-web")
+                   or relative[:2] == ("deploy", "docker")
+                   or relative == (".dockerignore",))
+        if not allowed:
+            continue
+        if not (member.isfile() or member.isdir()) or path in seen:
+            raise SystemExit("部署目录包含链接、特殊文件或重复路径。")
+        seen.add(path)
+        selected.append((member, relative))
+    for member, relative in selected:
+        target = destination.joinpath(*relative)
+        if member.isdir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with source.extractfile(member) as reader, target.open("xb") as writer:
+                shutil.copyfileobj(reader, writer)
+            target.chmod(member.mode & 0o777)
+required = (".dockerignore", "erp-server/pom.xml", "erp-web/package.json", "erp-web/package-lock.json",
+            "deploy/docker/compose.app.yaml", "deploy/docker/Dockerfile.server", "deploy/docker/Dockerfile.web")
+if any(not (destination / path).is_file() for path in required):
+    raise SystemExit("源码包缺少必要构建或部署文件。")
+PY
+    then
+        fail "源码包检查或提取失败，不会启用该版本；临时目录保留供检查：$stage_dir"
+    fi
+    sha256sum "$archive_file" > "$stage_dir/.source.sha256"
+    touch "$stage_dir/.complete"
+    mv -- "$stage_dir" "$release_dir"
 }
 
 activate() {
@@ -183,6 +310,17 @@ save_version() {
 }
 
 case "$ACTION" in
+    check-source)
+        configure_source
+        log '检查 GitCode 私有仓库读取权限，最多约 50 秒，不下载完整代码、不更新容器。'
+        source_reference=$(gitcode_git ls-remote --exit-code origin "refs/heads/${DEPLOY_BRANCH:-main}") \
+            || fail '仓库检查失败，请检查网络、令牌权限、有效期和分支是否存在。'
+        source_version=${source_reference%%$'\t'*}
+        [[ "$source_version" =~ ^[0-9a-f]{40}$ && "$source_reference" == "$source_version"$'\t'"refs/heads/${DEPLOY_BRANCH:-main}" ]] \
+            || fail 'GitCode 返回的分支或提交编号无效。'
+        log "GitCode 版本：$source_version。"
+        log 'GitCode 仓库读取检查通过。'
+        ;;
     pull-images)
         for image_variable in MYSQL_IMAGE REDIS_IMAGE ROCKETMQ_IMAGE NODE_IMAGE NGINX_IMAGE MAVEN_IMAGE JAVA_IMAGE; do
             image_reference=${!image_variable:-}
@@ -275,6 +413,6 @@ case "$ACTION" in
         application "$current_version" logs --tail 100
         ;;
     *)
-        fail '用法：deploy.sh init|pull-images|infra-up|import-db SQL文件|deploy|retry|rollback|pause|resume|status|logs'
+        fail '用法：deploy.sh init|check-source|pull-images|infra-up|import-db SQL文件|deploy|retry|rollback|pause|resume|status|logs'
         ;;
 esac

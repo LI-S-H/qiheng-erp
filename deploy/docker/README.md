@@ -1,8 +1,33 @@
 # 实验室内网 Docker 自动部署
 
-适用于 Ubuntu 22.04、Docker Compose、宝塔面板。只通过向日葵管理服务器；服务器主动访问 GitHub，无需公网 IP、WebHook 或 GitHub Runner。
+适用于 Ubuntu 22.04、Docker Compose、宝塔面板。只通过向日葵管理服务器；服务器主动读取 GitCode 私有仓库，无需公网 IP、WebHook 或 GitHub Runner。
 
-本地测试通过后推送 `main`，宝塔每分钟调用一次部署脚本；发现新提交才打包和更新。服务器不执行单元测试、浏览器测试或交付测试。前端仍需要执行生产构建及其类型检查，后端通过 `-Dmaven.test.skip=true` 跳过测试编译和执行。
+本地测试通过后推送 GitCode `main`，宝塔每五分钟调用一次部署脚本。通过 HTTPS 和专用只读令牌获取分支完整提交 SHA，再归档该 SHA 的前后端源码，发现新提交才打包和更新。不再依赖 GitHub API 或 codeload，不使用代理或第三方源码镜像。服务器不执行单元测试、浏览器测试或交付测试。前端仍需要执行生产构建及其类型检查，后端通过 `-Dmaven.test.skip=true` 跳过测试编译和执行。
+
+## 已部署服务器切换到 GitCode
+
+先暂停宝塔自动部署任务，保持现有容器运行。确认 GitCode 仓库设为私有，并已推送准备部署的 `main`。GitHub 可以作为另一个私有远程保留，但不再是服务器部署来源。两个仓库都不能提交实际密码、令牌和数据库导出。
+
+为服务器创建专用只读 PAT，将令牌本身保存到 `/opt/qiheng-erp/config/gitcode.token`，root 所有，权限 `600`，不加引号、不放进 Git URL 或 `.env`。令牌到期后单独更换，不要复用开发电脑的写入令牌。若平台无法限定到单仓库，应由维护者确认授权范围，必要时使用仅有该仓库读取权限的专用账号。
+
+替换 `/opt/qiheng-erp/bin/deploy.sh` 后，仅修改服务器 `.env` 中以下字段，保留其他原有配置：
+
+```dotenv
+DEPLOY_REPO=https://gitcode.com/LI_124301012/qiheng-erp.git
+DEPLOY_BRANCH=main
+GITCODE_USERNAME=LI_124301012
+```
+
+然后执行：
+
+```bash
+sudo bash /opt/qiheng-erp/bin/deploy.sh check-source
+sudo bash /opt/qiheng-erp/bin/deploy.sh deploy
+```
+
+`check-source` 只查询指定分支并校验完整 SHA，不下载完整代码、不更改应用。成功后再执行 `deploy`，首次拉取最多等待十分钟，显示 Git 进度；同一 SHA 已部署时不会重新构建。确认成功后恢复宝塔每五分钟任务。迁移不需要重新运行 `init`、`infra-up` 或 `import-db`。
+
+令牌由每次 Git 调用专用的临时 credential helper 读取，仅响应 HTTPS、`gitcode.com` 和精确仓库路径。禁用其他凭据 helper、交互、跟踪日志、代理及 HTTP 重定向；令牌不进入 URL、命令参数或镜像。若认证、重定向或权限检查失败，先人工排查，不关闭 TLS 校验或放宽凭据目标范围。
 
 ## 组件与数据边界
 
@@ -30,24 +55,28 @@ Docker Hub 在该实验室的直连已超时，不能直接假定默认镜像能
 
 ## 2. 将部署文件推送到仓库
 
-这批文件最初只在开发电脑中，必须先由维护者提交并推送到 `main`，Ubuntu 才能通过 Git 获取。请单独检查部署文件，不要把本机密钥和其他未完成改动混入此次提交。本工具不会自动替你提交或推送工作区。也可以先通过向日葵传输部署准备包来初始化基础环境；正式应用发布前，GitHub `main` 仍必须包含相同部署文件和准备发布的完整业务版本。
+这批文件最初只在开发电脑中，必须先由维护者提交并推送到 GitCode `main`，Ubuntu 才能获取。请单独检查部署文件，不要把本机密钥和其他未完成改动混入此次提交。本工具不会自动替你提交或推送工作区。通过向日葵传输部署准备包来初始化基础环境；正式应用发布前，GitCode `main` 仍必须包含部署文件和准备发布的完整业务版本。
 
 然后在 Ubuntu 通过向日葵终端操作。以下示例为首次安装目录；已有同名目录时应先确认内容，不覆盖已有业务目录。
 
 ```bash
-git clone --depth 1 --branch main https://github.com/LI-S-H/qiheng-erp.git ~/qiheng-erp-bootstrap
-cd ~/qiheng-erp-bootstrap
+sudo apt install -y ca-certificates git python3
+mkdir -p ~/qiheng-erp-setup
+tar -xzf ~/qiheng-erp-deploy.tar.gz -C ~/qiheng-erp-setup
+cd ~/qiheng-erp-setup
 sudo bash deploy/docker/deploy.sh init
 ```
 
-`init` 只创建 `/opt/qiheng-erp` 下的配置与脚本，不启动容器。首次生成三个独立随机密码，已有配置不会被重置。
+上述 `qiheng-erp-deploy.tar.gz` 是维护者从本仓库 `.dockerignore` 与 `deploy/docker/` 打包并通过向日葵传入的准备包，不含业务源码或真实密钥。`init` 只创建 `/opt/qiheng-erp` 下的配置与脚本，不启动容器。首次生成三个独立随机密码，已有配置不会被重置。已经完成基础服务启动和数据库导入时，只替换固定入口脚本，不重复初始化或导入。
 
 | 目录 | 用途 |
 |---|---|
 | `/opt/qiheng-erp/config/.env` | 私有密码、镜像地址、分支、AI 配置；仅在服务器保存 |
 | `/opt/qiheng-erp/config/compose.infra.yaml` | 首次复制的基础设施配置，普通发布不覆盖 |
 | `/opt/qiheng-erp/bin/deploy.sh` | 固定的任务入口，普通发布不替换 |
-| `/opt/qiheng-erp/repository.git` | 专用 Git 缓存，不操作开发者工作区 |
+| `/opt/qiheng-erp/config/gitcode.token` | 仅 root 读取的 GitCode 专用令牌，不进入仓库 |
+| `/opt/qiheng-erp/gitcode-repository.git` | 专用 GitCode 浅克隆缓存，不操作开发者工作区 |
+| `/opt/qiheng-erp/downloads` | 固定 SHA 的本地源码归档；旧 GitHub 缓存和压缩包不会自动删除 |
 | `/opt/qiheng-erp/releases/<完整SHA>` | 每次发布的不可变源码与应用 Compose |
 | `/opt/qiheng-erp/state` | 已部署版本、失败版本、暂停及互斥锁 |
 
@@ -57,7 +86,7 @@ sudo bash deploy/docker/deploy.sh init
 sudo nano /opt/qiheng-erp/config/.env
 ```
 
-保持 `DEPLOY_BRANCH=main`，填写确认可用的镜像来源。默认数据库名为 `erp`，应与本地导出的数据库一致。`.env` 会由 Bash 和 Compose 共同读取，使用简单 `KEY=value` 或单引号字符串，不添加命令；密码与密钥不要放入公开仓库，不在共享日志中打印此文件。
+保持 `DEPLOY_BRANCH=main`，填写确认可用的镜像来源。按上面的 GitCode 切换说明保存专用令牌。默认数据库名为 `erp`，应与本地导出的数据库一致。`.env` 会由 Bash 和 Compose 共同读取，使用简单 `KEY=value` 或单引号字符串，不添加命令；密码与密钥不要放入代码仓库，不在共享日志中打印此文件。
 
 Docker 子网默认 `172.30.21.0/24`，Broker 默认 `172.30.21.10`。若与本机已有网络冲突，在首次启动前一起调整 `INFRA_SUBNET` 与 `BROKER_IP`；数据产生后更改网络应视为单独维护。
 
@@ -107,7 +136,9 @@ sudo bash /opt/qiheng-erp/bin/deploy.sh import-db /home/cosinelab/erp.sql
 sudo bash /opt/qiheng-erp/bin/deploy.sh deploy
 ```
 
-脚本获取 `main` 最新完整提交编号，将对应源码提取到版本目录，构建两个应用镜像，再等待容器启动。前端 `/api/` 代理会去掉 `/api` 前缀并转发到后端 `8081`，与 Vite 开发代理保持一致；AI SSE 禁用代理缓冲。
+脚本从 GitCode HTTPS 拉取指定分支，锁定完整提交 SHA，再从本地缓存归档该 SHA，而不是在构建期间重新读取可能已变化的分支。Git 调用最多等待十分钟，显示进度。仅提取前后端与部署文件，拒绝路径穿越、链接和特殊文件；临时目录验证成功后才发布为完整版本，失败保留临时目录供人工检查，不覆盖已有完整版本。构建两个应用镜像后等待容器启动。前端 `/api/` 代理会去掉 `/api` 前缀并转发到后端 `8081`，与 Vite 开发代理保持一致；AI SSE 禁用代理缓冲。
+
+首次 Git 拉取会包含该提交需要的其他仓库文件；源码归档只包含构建所需目录。不保证首次完整拉取速度，网站返回 HTTP 200 或读取分支成功，也不等于完整代码已下载成功。网络失败时不改变当前应用、基础设施或数据库。
 
 在 Ubuntu 浏览器打开：
 
@@ -127,12 +158,14 @@ Maven 默认使用阿里云公共仓库，npm 默认使用项目 lockfile 中已
 |---|---|
 | 名称 | 启衡 ERP 自动部署 |
 | 任务类型 | Shell 脚本 |
-| 周期 | 每 N 分钟，N 为 1 |
+| 周期 | 每 N 分钟，N 为 5 |
 | 执行内容 | `/bin/bash /opt/qiheng-erp/bin/deploy.sh deploy` |
 
 该固定入口需要具备 Docker 管理和 `/opt/qiheng-erp` 目录访问权限。按本指南以管理员初始化时，宝塔任务使用 root 执行，只读取受维护者控制的 `main` 分支；它不接收外部 WebHook，也不执行 PR 分支。不要把脚本、配置目录的写权限开放给无关用户。公开仓库的 `.env`、开发数据库配置和 AI 本地密钥文件均不进入 Docker 构建上下文。
 
-只将经过本地验证、确实准备发布的提交合并到 `main`，其他开发分支不会触发部署。没有新提交时不构建；上次尚未结束时跳过本次任务；失败的同一提交不每分钟重复构建。正常使用只需要 `git push origin main`，不需要保持向日葵窗口打开，服务器须保持开机联网。
+只将经过本地验证、确实准备发布的提交合并到 GitCode `main`，其他开发分支不会触发部署。没有新提交时不构建；上次尚未结束时跳过本次任务；失败的同一提交不反复构建。本项目开发电脑的 `origin` 仍指向 GitHub，`gitcode` 指向 GitCode，因此使用 `git push gitcode main` 发布；需要两边同步时另执行 `git push origin main`，两次推送分别检查结果。GitHub 也必须保持私有，避免另一边仍然公开代码。服务器须保持开机联网，不需要保持向日葵窗口打开。
+
+不再使用 GitHub API，也不依赖其公开接口限额。仍建议每五分钟检查一次，避免频繁 Git 请求；平台限流、令牌失效或网络错误时应人工处理，不持续高频重试。修改 README 不会自动修改宝塔设置。首次部署成功前不要启用计划任务。
 
 ## 7. 日常维护
 

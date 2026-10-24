@@ -64,6 +64,7 @@ docs/erp-project-plan.md
 | 接口 | `docs/api/erp-openapi.yaml` | OpenAPI 接口契约 |
 | 架构 | `docs/erp-core-architecture-thinking.md` | 模块边界和依赖关系 |
 | 项目计划 | `docs/erp-project-plan.md` | 整体计划和阶段划分 |
+| 功能与架构 | `docs/feature-spec.md` | 各模块做什么、如何协作、AI 与业务的边界 |
 
 前端开发规范和后端开发规范各自独立维护，不得混入对方内容。
 

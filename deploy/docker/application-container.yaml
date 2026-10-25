@@ -19,3 +19,13 @@ spring:
 
 rocketmq:
   name-server: erp-namesrv:9876
+
+# AI 取数专用只读账号：与业务账号分开，只有 SELECT 权限。
+# 口令由部署环境注入，不写进镜像或仓库。
+erp:
+  ai:
+    sql:
+      datasource:
+        url: jdbc:mysql://erp-mysql:3306/${MYSQL_DATABASE:erp}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&allowMultiQueries=false
+        username: ${ERP_AI_SQL_USERNAME:erp_ai_ro}
+        password: ${ERP_AI_SQL_PASSWORD}

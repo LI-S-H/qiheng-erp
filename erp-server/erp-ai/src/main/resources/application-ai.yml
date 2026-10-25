@@ -25,6 +25,37 @@ erp:
       max-derived-needs: 6
       # 业务完整性审阅的回流轮次：一次修不完是常态，真实模型实测要两轮才能补齐。
       max-review-rounds: 6
+    # AI 取数底座：独立只读连接池 + SQL 守卫 + 执行器。
+    # 与模型配置分开：取数底座不依赖模型密钥，模型没配也不影响底座开关。
+    sql:
+      # 取数能力总开关：AI 模块打开时默认启用，可单独关掉。
+      enabled: true
+      datasource:
+        # 开发默认值在 application-dev.yml 覆盖；生产走 deploy/docker/application-container.yaml 的环境变量。
+        # allowMultiQueries 必须为 false：多语句由 wall 过滤器与驱动两层拦。
+        url: ${ERP_AI_SQL_URL:jdbc:mysql://localhost:13307/erp?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&allowMultiQueries=false}
+        username: ${ERP_AI_SQL_USERNAME:erp_ai_ro}
+        password: ${ERP_AI_SQL_PASSWORD:}
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        pool-name: erp-ai-readonly
+        initial-size: 1
+        min-idle: 1
+        # 取数池独立于业务池：慢查询与大结果不占业务连接。
+        max-active: 2
+        max-wait-ms: 3000
+        validation-query: SELECT 1
+        # 慢 SQL 观察阈值（毫秒），超过即记入 Druid 统计。
+        slow-sql-millis: 1000
+      # 会话级只读保险：账号本身只读时这行冗余，账号还没建时靠它兜底。
+      session-read-only: true
+      # 每页行数，同时也是"没写 LIMIT 时要不要让模型补声明"的阈值。
+      page-size: 200
+      # 单个证据项允许的最大行数（超过就明确失败，不静默截断）。
+      max-total-rows: 5000
+      # 最多翻几页。
+      max-pages: 10
+      # 单条查询超时（秒）。
+      query-timeout-seconds: 10
     # Planner 读取节点工作记忆；超过阈值时摘要早期历史，保留最近消息。
     # 工作记忆按会话累积（跨任务），阈值决定模型还能看到多少历史，不是纯技术参数。
     memory:

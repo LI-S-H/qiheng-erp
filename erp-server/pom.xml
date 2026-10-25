@@ -37,6 +37,8 @@
         <mybatis-plus.version>3.5.15</mybatis-plus.version>
         <mybatis-plus-join.version>1.5.7</mybatis-plus-join.version>
         <mybatis-plus.jsqlparser.version>3.5.15</mybatis-plus.jsqlparser.version>
+        <!-- AI 取数专用连接池：只引核心包，自己建池不进 Spring 容器。 -->
+        <druid.version>1.2.28</druid.version>
         <sa-token.version>1.45.0</sa-token.version>
         <knife4j.version>4.5.0</knife4j.version>
         <rocketmq-spring.version>2.3.6</rocketmq-spring.version>
@@ -146,6 +148,13 @@
                 <groupId>com.github.yulichang</groupId>
                 <artifactId>mybatis-plus-join-boot-starter</artifactId>
                 <version>${mybatis-plus-join.version}</version>
+            </dependency>
+
+            <!-- ===== Druid（AI 取数专用连接池） ===== -->
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>druid</artifactId>
+                <version>${druid.version}</version>
             </dependency>
 
             <!-- ===== Sa-Token ===== -->

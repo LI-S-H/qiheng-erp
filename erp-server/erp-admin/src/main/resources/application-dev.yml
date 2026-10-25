@@ -22,6 +22,17 @@ mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
+# AI 取数专用只读账号（开发环境）。
+# 口令与上面的 root 一样放在开发配置里；生产走 deploy/docker/application-container.yaml 的环境变量。
+# 也可以改用本地 .env.ai.yaml 里的 ERP_AI_SQL_PASSWORD 环境变量形式，两者取其一。
+erp:
+  ai:
+    sql:
+      datasource:
+        url: jdbc:mysql://localhost:13307/erp?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&allowMultiQueries=false
+        username: erp_ai_ro
+        password: erp_ai_ro_2026
+
 # Spring AI Alibaba（开发 AI 模块时启用）
 # spring:
 #   ai:

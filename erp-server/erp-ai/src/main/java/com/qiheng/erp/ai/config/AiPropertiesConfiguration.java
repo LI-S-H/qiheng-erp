@@ -3,6 +3,7 @@ package com.qiheng.erp.ai.config;
 import com.qiheng.erp.ai.config.properties.AiChatProperties;
 import com.qiheng.erp.ai.config.properties.AiGraphProperties;
 import com.qiheng.erp.ai.config.properties.AiMemoryProperties;
+import com.qiheng.erp.ai.config.properties.AiSchemaProperties;
 import com.qiheng.erp.ai.config.properties.AiSqlProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
@@ -26,7 +27,8 @@ import org.springframework.context.annotation.Configuration;
         AiSqlProperties.class,
         AiGraphProperties.class,
         AiMemoryProperties.class,
-        AiChatProperties.class
+        AiChatProperties.class,
+        AiSchemaProperties.class
 })
 public class AiPropertiesConfiguration {
 }

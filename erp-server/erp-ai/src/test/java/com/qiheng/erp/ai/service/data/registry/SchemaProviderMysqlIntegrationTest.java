@@ -1,5 +1,6 @@
 package com.qiheng.erp.ai.service.data.registry;
 
+import com.qiheng.erp.ai.config.properties.AiSchemaProperties;
 import com.qiheng.erp.ai.service.data.schema.AuthorizedSchemaProvider;
 import com.qiheng.erp.ai.service.data.schema.SchemaRenderer;
 import com.qiheng.erp.ai.service.data.schema.SchemaCache;
@@ -192,7 +193,7 @@ class SchemaProviderMysqlIntegrationTest {
 
         @Bean
         SchemaCache schemaCache() {
-            return new SchemaCache(300);
+            return new SchemaCache(new AiSchemaProperties(300));
         }
     }
 }

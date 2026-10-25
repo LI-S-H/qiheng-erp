@@ -1,8 +1,7 @@
 package com.qiheng.erp.ai.service.data.schema;
 
+import com.qiheng.erp.ai.config.properties.AiSchemaProperties;
 import com.qiheng.erp.ai.domain.model.AuthorizedSchemaSnapshot;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -25,7 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author Li
  * @since 2026-10-21
  */
-@Component
 public class SchemaCache {
 
     /** 缓存条目上限。ERP 模块组合数量有限，TTL 与 get 时的惰性删除已能控制内存，上限仅作极端兜底。 */
@@ -34,7 +32,16 @@ public class SchemaCache {
     private final Map<String, Entry> entries = new ConcurrentHashMap<>();
     private final long ttlMillis;
 
-    public SchemaCache(@Value("${erp.ai.schema.cache-ttl-seconds:300}") long ttlSeconds) {
+    public SchemaCache(AiSchemaProperties properties) {
+        this(properties.cacheTtlSeconds());
+    }
+
+    /**
+     * 测试用：直接给 TTL。
+     *
+     * @param ttlSeconds 缓存有效期（秒）
+     */
+    SchemaCache(long ttlSeconds) {
         // 0 表示立即过期，负数按 0 处理
         this.ttlMillis = Math.max(0, ttlSeconds) * 1000L;
     }

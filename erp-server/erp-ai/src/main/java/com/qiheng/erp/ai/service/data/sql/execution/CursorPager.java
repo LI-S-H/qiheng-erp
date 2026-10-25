@@ -1,6 +1,8 @@
 package com.qiheng.erp.ai.service.data.sql.execution;
 
-import com.qiheng.erp.ai.service.data.sql.guard.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionLimits;
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlQueryColumn;
 import com.alibaba.druid.DbType;
 import com.alibaba.druid.sql.SQLUtils;
 import com.alibaba.druid.sql.ast.SQLExpr;

@@ -1,4 +1,4 @@
-package com.qiheng.erp.ai.service.data.sql.execution;
+package com.qiheng.erp.ai.service.data.sql.execution.model;
 
 /**
  * 执行错误分类。

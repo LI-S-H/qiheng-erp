@@ -1,6 +1,11 @@
 package com.qiheng.erp.ai.service.data.sql.execution;
 
-import com.qiheng.erp.ai.service.data.sql.guard.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionRequest;
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.execution.model.ExecutionOutcome;
+import com.qiheng.erp.ai.service.data.sql.execution.model.QueryResult;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlErrorKind;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionLimits;
 import com.alibaba.druid.pool.DruidPooledConnection;
 import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPool;
 import org.junit.jupiter.api.Test;
@@ -20,6 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -31,6 +40,8 @@ import static org.mockito.Mockito.when;
 class ReadOnlySqlExecutorExecuteTest {
 
     private static final SqlExecutionLimits LIMITS = new SqlExecutionLimits(2, 10, 5, 5);
+
+    private final SqlGuardGapReporter guardGapReporter = mock(SqlGuardGapReporter.class);
 
     @Test
     void limitPathReturnsExactlyWhatWasAsked() throws SQLException {
@@ -103,6 +114,8 @@ class ReadOnlySqlExecutorExecuteTest {
                 .execute(request(guardedSql("SELECT id FROM t", 2)));
 
         assertThat(failed(outcome).kind()).isEqualTo(SqlErrorKind.WALL_REJECTED);
+        verify(guardGapReporter).reportWallRejected(eq("run"), eq("step"), anyString(),
+                contains("sql injection"));
     }
 
     @Test
@@ -123,7 +136,7 @@ class ReadOnlySqlExecutorExecuteTest {
         when(pool.open()).thenReturn(connection);
         when(connection.prepareStatement(anyString())).thenReturn(statement);
         when(statement.executeQuery()).thenReturn(resultSet);
-        return new ReadOnlySqlExecutor(pool, LIMITS);
+        return new ReadOnlySqlExecutor(pool, LIMITS, guardGapReporter);
     }
 
     private ReadOnlySqlExecutor executorThrowing(SQLException error) throws SQLException {
@@ -133,7 +146,7 @@ class ReadOnlySqlExecutorExecuteTest {
         when(pool.open()).thenReturn(connection);
         when(connection.prepareStatement(anyString())).thenReturn(statement);
         when(statement.executeQuery()).thenThrow(error);
-        return new ReadOnlySqlExecutor(pool, LIMITS);
+        return new ReadOnlySqlExecutor(pool, LIMITS, guardGapReporter);
     }
 
     private SqlExecutionRequest request(GuardedSql guardedSql) {

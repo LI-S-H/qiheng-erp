@@ -1,4 +1,4 @@
-package com.qiheng.erp.ai.service.data.sql.guard;
+package com.qiheng.erp.ai.service.data.sql.guard.model;
 
 /**
  * 守卫的上限参数。

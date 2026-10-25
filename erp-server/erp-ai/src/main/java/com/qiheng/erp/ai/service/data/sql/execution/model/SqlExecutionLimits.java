@@ -1,4 +1,4 @@
-package com.qiheng.erp.ai.service.data.sql.execution;
+package com.qiheng.erp.ai.service.data.sql.execution.model;
 
 /**
  * 取数执行的上限参数。

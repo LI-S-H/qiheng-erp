@@ -1,7 +1,13 @@
 package com.qiheng.erp.ai.service.data.sql.execution;
 
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.execution.model.ExecutionOutcome;
+import com.qiheng.erp.ai.service.data.sql.execution.model.QueryResult;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlErrorKind;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionRequest;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionLimits;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlQueryColumn;
 import com.qiheng.erp.ai.config.AiSqlEnabledCondition;
-import com.qiheng.erp.ai.service.data.sql.guard.GuardedSql;
 import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPool;
 import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPoolSettings;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +55,8 @@ public class ReadOnlySqlExecutor implements DisposableBean {
 
     private final CursorPager pager;
 
+    private final SqlGuardGapReporter guardGapReporter;
+
     public ReadOnlySqlExecutor(
             @Value("${erp.ai.sql.datasource.url:}") String url,
             @Value("${erp.ai.sql.datasource.username:}") String username,
@@ -65,11 +73,13 @@ public class ReadOnlySqlExecutor implements DisposableBean {
             @Value("${erp.ai.sql.page-size:200}") int pageSize,
             @Value("${erp.ai.sql.max-total-rows:5000}") int maxTotalRows,
             @Value("${erp.ai.sql.max-pages:10}") int maxPages,
-            @Value("${erp.ai.sql.query-timeout-seconds:10}") int timeoutSeconds) {
+            @Value("${erp.ai.sql.query-timeout-seconds:10}") int timeoutSeconds,
+            SqlGuardGapReporter guardGapReporter) {
         this(new ReadOnlySqlPool(new ReadOnlySqlPoolSettings(url, username, password, driverClassName,
                         poolName, initialSize, minIdle, maxActive, maxWaitMs, validationSql,
                         slowSqlMillis, sessionReadOnly)),
-                new SqlExecutionLimits(pageSize, maxTotalRows, maxPages, timeoutSeconds));
+                new SqlExecutionLimits(pageSize, maxTotalRows, maxPages, timeoutSeconds),
+                guardGapReporter);
         log.info("AI 取数连接池已就绪 poolName={} maxActive={} 只读账号={}", poolName, maxActive, username);
     }
 
@@ -79,10 +89,12 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      * @param pool   只读池
      * @param limits 取数上限
      */
-    ReadOnlySqlExecutor(ReadOnlySqlPool pool, SqlExecutionLimits limits) {
+    ReadOnlySqlExecutor(ReadOnlySqlPool pool, SqlExecutionLimits limits,
+                        SqlGuardGapReporter guardGapReporter) {
         this.pool = pool;
         this.limits = limits;
         this.pager = new CursorPager(limits);
+        this.guardGapReporter = guardGapReporter;
     }
 
     /**
@@ -94,17 +106,22 @@ public class ReadOnlySqlExecutor implements DisposableBean {
     public ExecutionOutcome execute(SqlExecutionRequest request) {
         GuardedSql guardedSql = request.guardedSql();
         long started = System.nanoTime();
+        // 对 SQL 文本做 SHA-256 哈希，用于日志脱敏——日志里不打印完整 SQL（可能含业务数据），只打印哈希前 8 位
         String sqlHash = hash(guardedSql.sql());
         try (Connection connection = openConnection()) {
             if (guardedSql.limit() != null) {
+                // 路径 A：SQL 自带 LIMIT
                 return executeWithLimit(connection, guardedSql, started, sqlHash);
             }
             if (request.needFullData()) {
+                // 路径 B：声明要全量明细
                 return executePaged(connection, guardedSql, request, started, sqlHash);
             }
+            // 路径 C：没写 LIMIT 又没声明全量
             return executeProbe(connection, guardedSql, started, sqlHash);
         } catch (SQLException error) {
-            return failure(error, guardedSql, request);
+            // SQL 异常 → 分类处理
+            return failure(error, guardedSql, request, sqlHash);
         } catch (RuntimeException error) {
             // 守卫已经解析过同一条 SQL，走到这里说明改写或读取出了意料之外的问题
             log.error("取数执行异常 runId={} stepId={}", request.runId(), request.stepId(), error);
@@ -156,8 +173,11 @@ public class ReadOnlySqlExecutor implements DisposableBean {
     private ExecutionOutcome executeWithLimit(Connection connection, GuardedSql guardedSql,
                                               long started, String sqlHash) throws SQLException {
         int limit = guardedSql.limit();
+        // 预编译，多次执行更高效
         try (PreparedStatement statement = connection.prepareStatement(guardedSql.sql())) {
+            // 设置查询超时时间
             statement.setQueryTimeout(limits.timeoutSeconds());
+            // 设置最大返回行数，避免全表扫描
             statement.setMaxRows(limit + 1);
             try (ResultSet resultSet = statement.executeQuery()) {
                 QueryResult result = readAll(resultSet, limit + 1, started, sqlHash);
@@ -178,6 +198,7 @@ public class ReadOnlySqlExecutor implements DisposableBean {
     private ExecutionOutcome executePaged(Connection connection, GuardedSql guardedSql,
                                           SqlExecutionRequest request, long started,
                                           String sqlHash) throws SQLException {
+        // 游标页：按游标翻页
         CursorPager.PagingResult paging = pager.fetch(connection, guardedSql);
         log.info("取数完成（全量） runId={} stepId={} pages={} rows={} completed={} elapsedMs={}",
                 request.runId(), request.stepId(), paging.pages(), paging.rows().size(),
@@ -214,19 +235,26 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      */
     private QueryResult readAll(ResultSet resultSet, int maxRows, long started,
                                 String sqlHash) throws SQLException {
+        // 1. 读取列元数据(ResultSetMetaData 提供结果集的列信息：列名、列类型、是否可空等
         ResultSetMetaData meta = resultSet.getMetaData();
         int count = meta.getColumnCount();
+        // 1.1 读取每列的 JDBC 类型码
         int[] types = new int[count + 1];
         List<SqlQueryColumn> columns = new ArrayList<>(count);
         for (int i = 1; i <= count; i++) {
             types[i] = meta.getColumnType(i);
-            columns.add(new SqlQueryColumn(meta.getColumnName(i), meta.getColumnLabel(i), types[i],
-                    meta.getColumnTypeName(i), meta.isNullable(i) != ResultSetMetaData.columnNoNulls));
+            columns.add(new SqlQueryColumn(meta.getColumnName(i),  // 列名（如 "price"）
+                    meta.getColumnLabel(i), // 列标签（如 SELECT price AS p 中的 "p"）
+                    types[i], // 列类型（如 "DECIMAL(10,2)"）
+                    meta.getColumnTypeName(i), // JDBC 类型码(Types.VARCHAR、Types.INTEGER 等)
+                    meta.isNullable(i) != ResultSetMetaData.columnNoNulls)); // 是否可空
         }
+        // 2.读取行数据
         List<List<Object>> rows = new ArrayList<>();
         while (resultSet.next() && rows.size() < maxRows) {
             List<Object> row = new ArrayList<>(count);
             for (int i = 1; i <= count; i++) {
+                // 根据列类型安全地读取值
                 row.add(JdbcValueMapper.read(resultSet, i, types[i]));
             }
             rows.add(row);
@@ -238,9 +266,14 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      * 错误分类 + 双消息（模型能改的、用户能看的）。
      */
     private ExecutionOutcome failure(SQLException error, GuardedSql guardedSql,
-                                     SqlExecutionRequest request) {
+                                     SqlExecutionRequest request, String sqlHash) {
+        // 1. 错误分类
         SqlErrorKind kind = classify(error);
+        // 2. 截断错误详情,把错误信息压缩到 300 字符以内，防止超长信息
         String detail = safeDetail(error.getMessage());
+        // 3. 给模型看的说明（可带数据库细节，能指导改写）
+        // 语法错误 → 把具体错误信息告诉模型，让它修正 SQL（如 "SQL 语法错误：Unknown column 'pricee' in field list"）
+        // 其他错误 → 只告诉类别，不暴露细节（如权限错误不告诉模型具体缺什么权限）
         String modelMessage = kind == SqlErrorKind.SYNTAX
                 ? kind.userMessage() + "：" + detail
                 : kind.userMessage();
@@ -248,6 +281,7 @@ public class ReadOnlySqlExecutor implements DisposableBean {
             // 守卫放过、墙拦住：说明守卫有缺口，要报警而不是让模型重试
             log.warn("wall 拦下了守卫放行的 SQL runId={} stepId={} sql={}",
                     request.runId(), request.stepId(), guardedSql.sql());
+            guardGapReporter.reportWallRejected(request.runId(), request.stepId(), sqlHash, detail);
         } else {
             log.warn("取数失败 runId={} stepId={} kind={} detail={}",
                     request.runId(), request.stepId(), kind, detail);
@@ -270,16 +304,21 @@ public class ReadOnlySqlExecutor implements DisposableBean {
             return SqlErrorKind.WALL_REJECTED;
         }
         int code = error.getErrorCode();
+        // 权限错误
+        // 1044=DB级权限, 1045=认证失败, 1142=表级权限
         if (code == 1044 || code == 1045 || code == 1142) {
             return SqlErrorKind.PERMISSION;
         }
+        // SQLState 以 28 开头	ANSI 标准：认证/权限	PERMISSION
         String state = error.getSQLState();
         if (state != null && state.startsWith("28")) {
             return SqlErrorKind.PERMISSION;
         }
+        // SQLState 以 08 开头	ANSI 标准：连接异常
         if (state != null && state.startsWith("08")) {
             return SqlErrorKind.CONNECTION;
         }
+        // 语法错误
         if (error instanceof SQLSyntaxErrorException) {
             return SqlErrorKind.SYNTAX;
         }
@@ -291,22 +330,35 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      */
     private String needsDeclarationMessage() {
         return "查询结果超过 " + limits.pageSize() + " 行。"
-                + "如果你要的是全部数据，请把「需要全量」标记为 true，并且不要写 LIMIT；"
+                + "如果你要的是全部数据，请把「需要全量」(needFullData)标记为 true，并且不要写 LIMIT；"
                 + "如果你要的是固定条数，请在查询末尾拼上 LIMIT（例如 LIMIT 20）。";
     }
 
+    /**
+     * 执行耗时：单位毫秒。
+     */
     private long elapsed(long startedNanos) {
         return (System.nanoTime() - startedNanos) / 1_000_000L;
     }
 
+    /**
+     * 安全的错误详情：去空格、截断。
+     */
     private static String safeDetail(String message) {
         if (message == null) {
             return "";
         }
-        String text = message.replaceAll("[\\s]+", " ").trim();
+        // 1. 去空格
+        String text = message.replaceAll("\\s+", " ").trim();
+        // 2. 截断
         return text.length() <= MAX_ERROR_DETAIL ? text : text.substring(0, MAX_ERROR_DETAIL) + "…";
     }
 
+    /**
+     * SQL 哈希值：用于缓存与日志。
+     * @param sql
+     * @return
+     */
     private static String hash(String sql) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -324,7 +376,6 @@ public class ReadOnlySqlExecutor implements DisposableBean {
 
     /**
      * 连接身份信息：自检与审计用。
-     *
      * @param user          当前会话用户（含主机名）
      * @param database      当前库名
      * @param serverVersion 服务端版本

@@ -1,6 +1,10 @@
 package com.qiheng.erp.ai.service.data.sql.execution;
 
-import com.qiheng.erp.ai.service.data.sql.guard.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.execution.model.ExecutionOutcome;
+import com.qiheng.erp.ai.service.data.sql.execution.model.QueryResult;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionRequest;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlQueryColumn;
 import com.alibaba.druid.pool.DruidDataSource;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
@@ -24,6 +28,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -247,7 +252,8 @@ class ReadOnlySqlExecutorIT {
         ReadOnlySqlExecutor readOnlySqlExecutor() {
             return new ReadOnlySqlExecutor(URL, USERNAME, PASSWORD, "com.mysql.cj.jdbc.Driver",
                     "erp-ai-readonly-it", 1, 1, 2, 3000L, "SELECT 1", 1000L, true,
-                    200, 5000, 10, 10);
+                    200, 5000, 10, 10,
+                    new SqlGuardGapReporter(mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class)));
         }
     }
 
@@ -261,7 +267,8 @@ class ReadOnlySqlExecutorIT {
         ReadOnlySqlExecutor aiSqlExecutor() {
             return new ReadOnlySqlExecutor(URL, USERNAME, PASSWORD, "com.mysql.cj.jdbc.Driver",
                     "erp-ai-readonly-it", 1, 1, 2, 3000L, "SELECT 1", 1000L, true,
-                    200, 5000, 10, 10);
+                    200, 5000, 10, 10,
+                    new SqlGuardGapReporter(mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class)));
         }
     }
 }

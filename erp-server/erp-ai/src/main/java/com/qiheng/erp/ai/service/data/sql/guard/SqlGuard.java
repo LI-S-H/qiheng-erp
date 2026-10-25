@@ -1,5 +1,8 @@
 package com.qiheng.erp.ai.service.data.sql.guard;
 
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardResult;
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.guard.model.SqlGuardLimits;
 import com.qiheng.erp.ai.domain.model.AuthorizedSchemaSnapshot;
 
 /**

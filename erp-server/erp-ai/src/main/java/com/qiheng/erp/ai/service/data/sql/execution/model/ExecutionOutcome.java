@@ -1,6 +1,4 @@
-package com.qiheng.erp.ai.service.data.sql.execution;
-
-import java.util.List;
+package com.qiheng.erp.ai.service.data.sql.execution.model;
 
 /**
  * 取数结局：成功、要模型补声明、失败。

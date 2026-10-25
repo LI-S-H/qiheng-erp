@@ -1,5 +1,9 @@
 package com.qiheng.erp.ai.service.data.sql.guard;
 
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardResult;
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.guard.model.SqlGuardLimits;
+import com.qiheng.erp.ai.service.data.sql.guard.model.SqlGuardRejectCode;
 import com.alibaba.druid.DbType;
 import com.alibaba.druid.sql.SQLUtils;
 import com.alibaba.druid.sql.ast.SQLExpr;
@@ -416,7 +420,7 @@ public class DruidSqlGuard implements SqlGuard {
             return null;
         }
         return reject(SqlGuardRejectCode.COLUMN_NOT_ALLOWED, Map.of(
-                "column", unknown.get(0),
+                "column", unknown.getFirst(),
                 "columns", String.join(", ", snapshot.columnNames(table))));
     }
 
@@ -507,24 +511,24 @@ public class DruidSqlGuard implements SqlGuard {
      * <p>子查询表源不在这里展开：它内部是另一个查询块，由 {@link #collectBlocks} 单独检查。</p>
      */
     private void collectFrom(SQLTableSource source, List<TableRef> refs, List<SQLExpr> conditions) {
-        if (source == null) {
-            return;
-        }
-        if (source instanceof SQLExprTableSource table) {
-            String text = normalize(table.getName() == null ? "" : table.getName().toString());
-            String name = text;
-            int dot = text.indexOf('.');
-            if (dot > 0) {
-                name = text.substring(dot + 1);
+        switch (source) {
+            case SQLExprTableSource table -> {
+                String text = normalize(table.getName() == null ? "" : table.getName().toString());
+                String name = text;
+                int dot = text.indexOf('.');
+                if (dot > 0) {
+                    name = text.substring(dot + 1);
+                }
+                refs.add(new TableRef(name, normalize(table.getAlias())));
             }
-            refs.add(new TableRef(name, normalize(table.getAlias())));
-            return;
-        }
-        if (source instanceof SQLJoinTableSource join) {
-            collectFrom(join.getLeft(), refs, conditions);
-            collectFrom(join.getRight(), refs, conditions);
-            if (join.getCondition() != null) {
-                conditions.add(join.getCondition());
+            case SQLJoinTableSource join -> {
+                collectFrom(join.getLeft(), refs, conditions);
+                collectFrom(join.getRight(), refs, conditions);
+                if (join.getCondition() != null) {
+                    conditions.add(join.getCondition());
+                }
+            }
+            case null, default -> {
             }
         }
     }
@@ -572,7 +576,7 @@ public class DruidSqlGuard implements SqlGuard {
             column = normalize(property.getName());
             owner = property.getOwner() == null ? null : normalize(property.getOwner().toString());
         }
-        if (column == null || !LOGICAL_DELETE_COLUMN.equalsIgnoreCase(column)) {
+        if (!LOGICAL_DELETE_COLUMN.equalsIgnoreCase(column)) {
             return false;
         }
         if (!(valueSide instanceof SQLIntegerExpr integer) || integer.getNumber().intValue() != 0) {

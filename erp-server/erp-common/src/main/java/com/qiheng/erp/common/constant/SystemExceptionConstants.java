@@ -44,6 +44,14 @@ public final class SystemExceptionConstants {
      */
     public static final String TYPE_DATA_SCHEMA_INVALID = "DATA_SCHEMA_INVALID";
 
+    /**
+     * 异常类型：AI SQL 守卫放行了本应拦下的 SQL（被 Druid wall 兜住，说明守卫有缺口）。
+     *
+     * <p>这不是模型的错，是守卫规则漏了：一条本该在应用层被拒绝的 SQL 跑到了连接层。
+     * 必须人工补规则，所以走系统异常通道而不是只打日志。</p>
+     */
+    public static final String TYPE_SQL_GUARD_GAP = "SQL_GUARD_GAP";
+
     /** 严重级别：高，需要人工尽快介入 */
     public static final String SEVERITY_HIGH = "HIGH";
 
@@ -64,6 +72,9 @@ public final class SystemExceptionConstants {
 
     /** 元数据表间关系失效错误码 */
     public static final String CODE_DATA_RELATION_INVALID = "DATA_RELATION_INVALID";
+
+    /** AI SQL 守卫缺口错误码 */
+    public static final String CODE_SQL_GUARD_GAP = "SQL_GUARD_GAP";
 
     private SystemExceptionConstants() {
     }

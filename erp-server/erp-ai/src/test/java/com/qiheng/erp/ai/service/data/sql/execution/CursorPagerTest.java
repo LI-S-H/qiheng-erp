@@ -1,6 +1,11 @@
 package com.qiheng.erp.ai.service.data.sql.execution;
 
-import com.qiheng.erp.ai.service.data.sql.guard.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionRequest;
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.execution.model.ExecutionOutcome;
+import com.qiheng.erp.ai.service.data.sql.execution.model.QueryResult;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionLimits;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlQueryColumn;
 import com.alibaba.druid.pool.DruidPooledConnection;
 import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPool;
 import org.junit.jupiter.api.Test;
@@ -116,7 +121,7 @@ class CursorPagerTest {
         when(first.executeQuery()).thenReturn(page1);
         when(second.executeQuery()).thenReturn(page2);
 
-        ReadOnlySqlExecutor executor = new ReadOnlySqlExecutor(pool, LIMITS);
+        ReadOnlySqlExecutor executor = new ReadOnlySqlExecutor(pool, LIMITS, mock(SqlGuardGapReporter.class));
         ExecutionOutcome outcome = executor.execute(new SqlExecutionRequest("run", "step",
                 guardedSql("SELECT purchase_no FROM purchase_order WHERE deleted = 0 "
                         + "ORDER BY total_amount DESC", List.of(new GuardedSql.SortKey("total_amount", true))),
@@ -155,7 +160,7 @@ class CursorPagerTest {
         when(second.executeQuery()).thenReturn(page2);
 
         ReadOnlySqlExecutor executor = new ReadOnlySqlExecutor(pool,
-                new SqlExecutionLimits(2, 3, 5, 5));
+                new SqlExecutionLimits(2, 3, 5, 5), mock(SqlGuardGapReporter.class));
         ExecutionOutcome outcome = executor.execute(new SqlExecutionRequest("run", "step",
                 guardedSql("SELECT purchase_no FROM purchase_order WHERE deleted = 0 "
                         + "ORDER BY total_amount DESC", List.of(new GuardedSql.SortKey("total_amount", true))),

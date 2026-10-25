@@ -1,6 +1,6 @@
-package com.qiheng.erp.ai.service.data.sql.execution;
+package com.qiheng.erp.ai.service.data.sql.execution.model;
 
-import com.qiheng.erp.ai.service.data.sql.guard.GuardedSql;
+import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
 
 /**
  * 一次取数请求。

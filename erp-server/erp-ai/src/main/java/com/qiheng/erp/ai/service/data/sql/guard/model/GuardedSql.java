@@ -1,4 +1,4 @@
-package com.qiheng.erp.ai.service.data.sql.guard;
+package com.qiheng.erp.ai.service.data.sql.guard.model;
 
 import java.util.List;
 import java.util.Set;

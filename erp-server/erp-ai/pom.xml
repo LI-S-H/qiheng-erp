@@ -46,6 +46,16 @@
             <artifactId>druid</artifactId>
         </dependency>
 
+        <!--
+          生成 erp.ai.* 的配置元数据，IDE 里写 yml 时有补全与跳转。
+          只在编译期用，打进产物的东西没有额外运行时依赖。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

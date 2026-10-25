@@ -8,11 +8,10 @@ import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionRequest;
 import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionLimits;
 import com.qiheng.erp.ai.service.data.sql.execution.model.SqlQueryColumn;
 import com.qiheng.erp.ai.config.AiSqlEnabledCondition;
+import com.qiheng.erp.ai.config.properties.AiSqlProperties;
 import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPool;
-import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPoolSettings;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
@@ -57,30 +56,14 @@ public class ReadOnlySqlExecutor implements DisposableBean {
 
     private final SqlGuardGapReporter guardGapReporter;
 
-    public ReadOnlySqlExecutor(
-            @Value("${erp.ai.sql.datasource.url:}") String url,
-            @Value("${erp.ai.sql.datasource.username:}") String username,
-            @Value("${erp.ai.sql.datasource.password:}") String password,
-            @Value("${erp.ai.sql.datasource.driver-class-name:com.mysql.cj.jdbc.Driver}") String driverClassName,
-            @Value("${erp.ai.sql.datasource.pool-name:erp-ai-readonly}") String poolName,
-            @Value("${erp.ai.sql.datasource.initial-size:1}") int initialSize,
-            @Value("${erp.ai.sql.datasource.min-idle:1}") int minIdle,
-            @Value("${erp.ai.sql.datasource.max-active:2}") int maxActive,
-            @Value("${erp.ai.sql.datasource.max-wait-ms:3000}") long maxWaitMs,
-            @Value("${erp.ai.sql.datasource.validation-query:SELECT 1}") String validationSql,
-            @Value("${erp.ai.sql.datasource.slow-sql-millis:1000}") long slowSqlMillis,
-            @Value("${erp.ai.sql.session-read-only:true}") boolean sessionReadOnly,
-            @Value("${erp.ai.sql.page-size:200}") int pageSize,
-            @Value("${erp.ai.sql.max-total-rows:5000}") int maxTotalRows,
-            @Value("${erp.ai.sql.max-pages:10}") int maxPages,
-            @Value("${erp.ai.sql.query-timeout-seconds:10}") int timeoutSeconds,
-            SqlGuardGapReporter guardGapReporter) {
-        this(new ReadOnlySqlPool(new ReadOnlySqlPoolSettings(url, username, password, driverClassName,
-                        poolName, initialSize, minIdle, maxActive, maxWaitMs, validationSql,
-                        slowSqlMillis, sessionReadOnly)),
-                new SqlExecutionLimits(pageSize, maxTotalRows, maxPages, timeoutSeconds),
+    public ReadOnlySqlExecutor(AiSqlProperties properties, SqlGuardGapReporter guardGapReporter) {
+        this(new ReadOnlySqlPool(properties.toSettings()),
+                new SqlExecutionLimits(properties.pageSize(), properties.maxTotalRows(),
+                        properties.maxPages(), properties.queryTimeoutSeconds()),
                 guardGapReporter);
-        log.info("AI 取数连接池已就绪 poolName={} maxActive={} 只读账号={}", poolName, maxActive, username);
+        log.info("AI 取数连接池已就绪 poolName={} maxActive={} 只读账号={}",
+                properties.datasource().poolName(), properties.datasource().maxActive(),
+                properties.datasource().username());
     }
 
     /**

@@ -3,8 +3,11 @@ package com.qiheng.erp.ai.service.data.sql.execution;
 import com.qiheng.erp.ai.service.data.sql.guard.model.GuardedSql;
 import com.qiheng.erp.ai.service.data.sql.execution.model.ExecutionOutcome;
 import com.qiheng.erp.ai.service.data.sql.execution.model.QueryResult;
+import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionLimits;
 import com.qiheng.erp.ai.service.data.sql.execution.model.SqlExecutionRequest;
 import com.qiheng.erp.ai.service.data.sql.execution.model.SqlQueryColumn;
+import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPool;
+import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPoolSettings;
 import com.alibaba.druid.pool.DruidDataSource;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
@@ -243,17 +246,14 @@ class ReadOnlySqlExecutorIT {
     }
 
     /**
-     * 显式建执行器：@Value 走不到，参数直接给。
+     * 显式建执行器：不经过属性绑定，池与上限直接给。
      */
     @TestConfiguration
     static class SqlExecutorConfiguration {
 
         @Bean
         ReadOnlySqlExecutor readOnlySqlExecutor() {
-            return new ReadOnlySqlExecutor(URL, USERNAME, PASSWORD, "com.mysql.cj.jdbc.Driver",
-                    "erp-ai-readonly-it", 1, 1, 2, 3000L, "SELECT 1", 1000L, true,
-                    200, 5000, 10, 10,
-                    new SqlGuardGapReporter(mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class)));
+            return executor("erp-ai-readonly-it");
         }
     }
 
@@ -265,10 +265,15 @@ class ReadOnlySqlExecutorIT {
 
         @Bean
         ReadOnlySqlExecutor aiSqlExecutor() {
-            return new ReadOnlySqlExecutor(URL, USERNAME, PASSWORD, "com.mysql.cj.jdbc.Driver",
-                    "erp-ai-readonly-it", 1, 1, 2, 3000L, "SELECT 1", 1000L, true,
-                    200, 5000, 10, 10,
-                    new SqlGuardGapReporter(mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class)));
+            return executor("erp-ai-readonly-it");
         }
+    }
+
+    private static ReadOnlySqlExecutor executor(String poolName) {
+        ReadOnlySqlPoolSettings settings = new ReadOnlySqlPoolSettings(URL, USERNAME, PASSWORD,
+                "com.mysql.cj.jdbc.Driver", poolName, 1, 1, 2, 3000L, "SELECT 1", 1000L, true);
+        return new ReadOnlySqlExecutor(new ReadOnlySqlPool(settings),
+                new SqlExecutionLimits(200, 5000, 10, 10),
+                new SqlGuardGapReporter(mock(com.qiheng.erp.common.mq.SystemExceptionMqPublisher.class)));
     }
 }

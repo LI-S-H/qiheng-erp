@@ -113,9 +113,32 @@ class ReadOnlySqlExecutorExecuteTest {
                 new SQLSyntaxErrorException("sql injection violation, comment not allow", "42000", 1000))
                 .execute(request(guardedSql("SELECT id FROM t", 2)));
 
-        assertThat(failed(outcome).kind()).isEqualTo(SqlErrorKind.WALL_REJECTED);
+        ExecutionOutcome.Failed failed = failed(outcome);
+        assertThat(failed.kind()).isEqualTo(SqlErrorKind.WALL_REJECTED);
+        // 模型要看到翻译后的原因，不能只看到"触发了安全拦截"
+        assertThat(failed.modelMessage()).contains("不能写注释");
         verify(guardGapReporter).reportWallRejected(eq("run"), eq("step"), anyString(),
                 contains("sql injection"));
+    }
+
+    @Test
+    void authenticationFailureIsItsOwnKind() throws SQLException {
+        // 1045 是认证失败，不是"没权限查这张表"；SQLState 也是 28000
+        ExecutionOutcome outcome = executorThrowing(
+                new SQLSyntaxErrorException("Access denied for user 'erp_ai_ro'", "28000", 1045))
+                .execute(request(guardedSql("SELECT id FROM t", 2)));
+
+        assertThat(failed(outcome).kind()).isEqualTo(SqlErrorKind.AUTHENTICATION);
+        assertThat(failed(outcome).userMessage()).contains("认证失败");
+    }
+
+    @Test
+    void columnLevelPermissionIsClassifiedAsPermission() throws SQLException {
+        ExecutionOutcome outcome = executorThrowing(
+                new SQLSyntaxErrorException("SELECT command denied for column", "42000", 1143))
+                .execute(request(guardedSql("SELECT id FROM t", 2)));
+
+        assertThat(failed(outcome).kind()).isEqualTo(SqlErrorKind.PERMISSION);
     }
 
     @Test

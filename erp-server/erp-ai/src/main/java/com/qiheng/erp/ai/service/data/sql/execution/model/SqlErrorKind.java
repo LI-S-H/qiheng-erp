@@ -21,6 +21,9 @@ public enum SqlErrorKind {
     /** 权限不足：改 SQL 也修不了。 */
     PERMISSION("当前账号没有访问这张表的权限"),
 
+    /** 认证失败：账号或口令配置错了，改 SQL 更修不了。 */
+    AUTHENTICATION("数据库账号认证失败（配置问题，请联系管理员）"),
+
     /** 连接异常：与 SQL 无关。 */
     CONNECTION("数据库连接异常"),
 

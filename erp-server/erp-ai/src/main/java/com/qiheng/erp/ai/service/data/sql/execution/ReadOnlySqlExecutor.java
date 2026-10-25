@@ -139,9 +139,9 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      */
     public ConnectionInfo probe() throws SQLException {
         try (Connection connection = openConnection();
-             Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(
-                     "SELECT CURRENT_USER(), DATABASE(), VERSION()")) {
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT CURRENT_USER(), DATABASE(), VERSION()");
+             ResultSet resultSet = statement.executeQuery()) {
             resultSet.next();
             return new ConnectionInfo(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3));
         }
@@ -274,14 +274,22 @@ public class ReadOnlySqlExecutor implements DisposableBean {
         // 3. 给模型看的说明（可带数据库细节，能指导改写）
         // 语法错误 → 把具体错误信息告诉模型，让它修正 SQL（如 "SQL 语法错误：Unknown column 'pricee' in field list"）
         // 其他错误 → 只告诉类别，不暴露细节（如权限错误不告诉模型具体缺什么权限）
-        String modelMessage = kind == SqlErrorKind.SYNTAX
-                ? kind.userMessage() + "：" + detail
-                : kind.userMessage();
+        String modelMessage = switch (kind) {
+            // 语法错要把数据库原话给模型，它才能改对
+            case SYNTAX -> kind.userMessage() + "：" + detail;
+            // wall 拒因是英文，翻译成能直接照做的中文
+            case WALL_REJECTED -> "查询被安全策略拦截：" + WallRejectionReasons.explain(error.getMessage());
+            default -> kind.userMessage();
+        };
         if (kind == SqlErrorKind.WALL_REJECTED) {
             // 守卫放过、墙拦住：说明守卫有缺口，要报警而不是让模型重试
             log.warn("wall 拦下了守卫放行的 SQL runId={} stepId={} sql={}",
                     request.runId(), request.stepId(), guardedSql.sql());
             guardGapReporter.reportWallRejected(request.runId(), request.stepId(), sqlHash, detail);
+        } else if (kind == SqlErrorKind.AUTHENTICATION) {
+            // 认证失败是配置问题，重试无意义，用 ERROR 级别让它进告警
+            log.error("取数认证失败（检查只读账号配置） runId={} stepId={} detail={}",
+                    request.runId(), request.stepId(), detail);
         } else {
             log.warn("取数失败 runId={} stepId={} kind={} detail={}",
                     request.runId(), request.stepId(), kind, detail);
@@ -304,9 +312,12 @@ public class ReadOnlySqlExecutor implements DisposableBean {
             return SqlErrorKind.WALL_REJECTED;
         }
         int code = error.getErrorCode();
-        // 权限错误
-        // 1044=DB级权限, 1045=认证失败, 1142=表级权限
-        if (code == 1044 || code == 1045 || code == 1142) {
+        // 认证失败：账号/口令/主机配置错了，不是"没权限查这张表"
+        if (code == 1045) {
+            return SqlErrorKind.AUTHENTICATION;
+        }
+        // 权限错误：1044=DB级, 1142=表级, 1143=列级, 1227=特定权限, 1370=存储过程
+        if (code == 1044 || code == 1142 || code == 1143 || code == 1227 || code == 1370) {
             return SqlErrorKind.PERMISSION;
         }
         // SQLState 以 28 开头	ANSI 标准：认证/权限	PERMISSION

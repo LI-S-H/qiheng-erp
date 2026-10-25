@@ -51,6 +51,30 @@ public interface AiDataTableColumnMapper extends MPJBaseMapper<AiDataTableColumn
     }
 
     /**
+     * 取指定表集合里某一列的登记，含 {@code status=0} 的列。
+     *
+     * <p>用于判断"这张表有没有软删除列"——这是表结构事实，与该列是否下发给模型无关：
+     * 软删除列即使被屏蔽，查询不带过滤条件也照样会读到已删除的行。</p>
+     */
+    default List<AiDataTableColumn> selectByTablesAndColumn(List<String> tables, String columnName) {
+        return selectList(Wrappers.<AiDataTableColumn>lambdaQuery()
+                .in(AiDataTableColumn::getTableName, tables)
+                .eq(AiDataTableColumn::getColumnName, columnName));
+    }
+
+    /**
+     * 取指定表集合的主键列，含 {@code status=0} 的列。
+     *
+     * <p>主键是表结构事实：翻页游标要靠它定位，即使这一列被人工屏蔽，
+     * 代码也知道它是主键（模型仍然看不到、也查不了这一列）。</p>
+     */
+    default List<AiDataTableColumn> selectPrimaryKeys(List<String> tables) {
+        return selectList(Wrappers.<AiDataTableColumn>lambdaQuery()
+                .in(AiDataTableColumn::getTableName, tables)
+                .eq(AiDataTableColumn::getPrimaryKey, 1));
+    }
+
+    /**
      * 查一个列的登记，含已软删的行。
      *
      * <p>只取标识与开关字段，不涉及 JSON 列，因此不受自定义查询的 typeHandler 限制。

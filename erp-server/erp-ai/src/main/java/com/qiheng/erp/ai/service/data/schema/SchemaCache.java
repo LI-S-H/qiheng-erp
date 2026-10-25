@@ -1,5 +1,6 @@
 package com.qiheng.erp.ai.service.data.schema;
 
+import com.qiheng.erp.ai.domain.model.AuthorizedSchemaSnapshot;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -9,11 +10,14 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Schema 文本缓存。
+ * 授权 Schema 快照缓存。
  *
  * <p>组装一次要查三张登记表并渲染出几 KB 到二十 KB 的文本，同一个用户多轮任务反复组装
  * 就是纯浪费。缓存键是「可见范围」而不是用户或权限码——可见范围只取决于模块，
  * 同一模块下的不同权限码看到的是同一批表，用模块做键条目更少、命中率更高。</p>
+ *
+ * <p>缓存的是快照而不是文本：文本只是快照的一部分，两者必须同源，
+ * 分开缓存会出现「模型看到的表」与「守卫放行的表」不是同一批。</p>
  *
  * <p>用进程内缓存而不是 Redis：登记数据只有几百行，进程内没有序列化开销；
  * 多实例部署时各自缓存各自的也没问题——元数据是同一份。真要跨实例共享再换实现不迟。</p>
@@ -36,12 +40,12 @@ public class SchemaCache {
     }
 
     /**
-     * 取缓存的 Schema 文本；不存在或已过期返回空。
+     * 取缓存的授权快照；不存在或已过期返回空。
      *
      * @param key 缓存键
-     * @return Schema 文本
+     * @return 授权快照
      */
-    public Optional<String> get(String key) {
+    public Optional<AuthorizedSchemaSnapshot> get(String key) {
         Entry entry = entries.get(key);
         if (entry == null) {
             return Optional.empty();
@@ -51,20 +55,20 @@ public class SchemaCache {
             entries.remove(key, entry);
             return Optional.empty();
         }
-        return Optional.of(entry.schema());
+        return Optional.of(entry.snapshot());
     }
 
     /**
      * 写入缓存。
      *
-     * @param key    缓存键
-     * @param schema Schema 文本
+     * @param key      缓存键
+     * @param snapshot 授权快照
      */
-    public void put(String key, String schema) {
+    public void put(String key, AuthorizedSchemaSnapshot snapshot) {
         if (entries.size() >= MAX_ENTRIES) {
             evictExpired();
         }
-        entries.put(key, new Entry(schema, System.currentTimeMillis() + ttlMillis));
+        entries.put(key, new Entry(snapshot, System.currentTimeMillis() + ttlMillis));
     }
 
     /**
@@ -93,9 +97,9 @@ public class SchemaCache {
     /**
      * 缓存条目。
      *
-     * @param schema          Schema 文本
+     * @param snapshot        授权快照
      * @param expiresAtMillis 过期时刻
      */
-    private record Entry(String schema, long expiresAtMillis) {
+    private record Entry(AuthorizedSchemaSnapshot snapshot, long expiresAtMillis) {
     }
 }

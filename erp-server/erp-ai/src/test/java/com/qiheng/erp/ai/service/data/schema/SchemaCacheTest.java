@@ -1,5 +1,6 @@
 package com.qiheng.erp.ai.service.data.schema;
 
+import com.qiheng.erp.ai.domain.model.AuthorizedSchemaSnapshot;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -12,6 +13,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SchemaCacheTest {
 
+    private AuthorizedSchemaSnapshot snapshot(String text) {
+        return AuthorizedSchemaSnapshot.of(text, java.util.List.of(), java.util.Map.of());
+    }
+
     @Test
     void missingKeyReturnsEmpty() {
         assertThat(new SchemaCache(300).get("none")).isEmpty();
@@ -20,16 +25,16 @@ class SchemaCacheTest {
     @Test
     void storedValueIsReturned() {
         SchemaCache cache = new SchemaCache(300);
-        cache.put("product", "schema-text");
+        cache.put("product", snapshot("schema-text"));
 
-        assertThat(cache.get("product")).contains("schema-text");
+        assertThat(cache.get("product")).map(AuthorizedSchemaSnapshot::schemaText).contains("schema-text");
         assertThat(cache.size()).isEqualTo(1);
     }
 
     @Test
     void expiredEntryIsTreatedAsMissing() throws InterruptedException {
         SchemaCache cache = new SchemaCache(0);
-        cache.put("product", "schema-text");
+        cache.put("product", snapshot("schema-text"));
         Thread.sleep(5);
 
         assertThat(cache.get("product")).isEmpty();
@@ -38,8 +43,8 @@ class SchemaCacheTest {
     @Test
     void clearRemovesEverything() {
         SchemaCache cache = new SchemaCache(300);
-        cache.put("product", "a");
-        cache.put("warehouse", "b");
+        cache.put("product", snapshot("a"));
+        cache.put("warehouse", snapshot("b"));
 
         cache.clear();
 

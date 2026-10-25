@@ -453,15 +453,21 @@ public class NeedCheckNode implements NodeAction {
     /**
      * 从授权表结构里取出真实存在的表名与字段名。
      *
-     * <p>没有表结构（如未鉴权的调用路径）时返回空集，措辞守卫自然跳过。</p>
+     * <p>优先读 State 里的结构化清单（表名 + 列名）；清单缺失时（例如旧检查点里
+     * 只有渲染文本的快照）回退到从文本正则抠。清单是权威来源——渲染文本的格式一改，
+     * 正则就会跟着失效。</p>
      */
     private Set<String> schemaIdentifiers(OverAllState state) {
         Map<String, Object> schemaRef = state.value(GraphStateKeys.AUTHORIZED_SCHEMA_REF, Map.of());
+        Set<String> names = structuredIdentifiers(schemaRef);
+        if (!names.isEmpty()) {
+            return names;
+        }
         Object raw = schemaRef.get("schema");
         if (raw == null) {
             return Set.of();
         }
-        Set<String> names = new HashSet<>();
+        names = new HashSet<>();
         Matcher table = SCHEMA_TABLE.matcher(raw.toString());
         while (table.find()) {
             names.add(table.group(1));
@@ -469,6 +475,37 @@ public class NeedCheckNode implements NodeAction {
         Matcher column = SCHEMA_COLUMN.matcher(raw.toString());
         while (column.find()) {
             names.add(column.group(1));
+        }
+        return names;
+    }
+
+    /**
+     * 结构化清单里的表名与列名。
+     */
+    private Set<String> structuredIdentifiers(Map<String, Object> schemaRef) {
+        Set<String> names = new LinkedHashSet<>();
+        Object rawTables = schemaRef.get("tables");
+        if (rawTables instanceof List<?> tables) {
+            for (Object item : tables) {
+                if (item instanceof Map<?, ?> table && table.get("name") != null) {
+                    names.add(table.get("name").toString());
+                }
+            }
+        }
+        Object rawColumns = schemaRef.get("columns");
+        if (rawColumns instanceof Map<?, ?> columns) {
+            for (Object value : columns.values()) {
+                if (value instanceof List<?> columnItems) {
+                    for (Object item : columnItems) {
+                        // 新结构是列对象 {name, nullable, primaryKey}；旧检查点里是纯列名
+                        if (item instanceof Map<?, ?> column && column.get("name") != null) {
+                            names.add(column.get("name").toString());
+                        } else if (item != null) {
+                            names.add(item.toString());
+                        }
+                    }
+                }
+            }
         }
         return names;
     }

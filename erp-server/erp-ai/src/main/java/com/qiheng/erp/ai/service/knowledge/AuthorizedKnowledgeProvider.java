@@ -1,5 +1,6 @@
 package com.qiheng.erp.ai.service.knowledge;
 
+import com.qiheng.erp.ai.service.data.scope.DataScope;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -15,8 +16,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 授权业务知识提供者：按权限码决定注入哪些业务规则文档。
  *
- * <p>推导逻辑与 {@code AuthorizedSchemaProvider} 完全一致——权限码取冒号前的模块前缀，
- * 模块前缀就是登记表里的 {@code module_code}：</p>
+ * <p>推导逻辑与 {@code AuthorizedSchemaProvider} 完全同源（共用 {@link DataScope}）——
+ * 权限码的动作必须是 query 或 manage，模块前缀就是登记表里的 {@code module_code}：</p>
  *
  * <pre>
  *   purchase:query  → purchase  → knowledge/purchase.md
@@ -37,9 +38,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Component
 public class AuthorizedKnowledgeProvider implements KnowledgeProvider {
-
-    /** 超管权限码，可见全部业务模块。 */
-    private static final String ADMIN_CODE = "*";
 
     /** 业务规则文档的 classpath 目录。 */
     private static final String KNOWLEDGE_DIR = "knowledge/";
@@ -81,25 +79,13 @@ public class AuthorizedKnowledgeProvider implements KnowledgeProvider {
     /**
      * 权限码 → 业务模块集合。
      *
-     * <p>与 Schema 的模块推导同源：取冒号前的模块前缀；没有对应业务规则文档的模块
-     * （{@code ai}、{@code system}、{@code dashboard}）自然被过滤掉。</p>
+     * <p>与 Schema 的模块推导同源（{@link DataScope}）：动作必须是 query 或 manage；
+     * 没有对应业务规则文档的模块（{@code ai}、{@code system}、{@code dashboard}）自然被过滤掉。</p>
      */
     private Set<String> resolveModules(List<String> permissionCodes) {
-        Set<String> modules = new LinkedHashSet<>();
-        boolean admin = false;
-        for (String code : permissionCodes == null ? List.<String>of() : permissionCodes) {
-            if (code.isBlank()) {
-                continue;
-            }
-            String trimmed = code.trim();
-            if (ADMIN_CODE.equals(trimmed)) {
-                admin = true;
-                break;
-            }
-            int colon = trimmed.indexOf(':');
-            modules.add(colon > 0 ? trimmed.substring(0, colon) : trimmed);
-        }
-        if (admin) {
+        DataScope scope = DataScope.of(permissionCodes);
+        Set<String> modules = new LinkedHashSet<>(scope.modules());
+        if (scope.admin()) {
             modules.addAll(MODULE_ORDER);
         }
         // 公共口径是读懂任何一张表的前提，人人注入

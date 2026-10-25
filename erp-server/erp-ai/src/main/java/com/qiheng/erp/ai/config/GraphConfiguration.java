@@ -3,6 +3,8 @@ package com.qiheng.erp.ai.config;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qiheng.erp.ai.config.properties.AiGraphProperties;
+import com.qiheng.erp.ai.config.properties.AiMemoryProperties;
 import com.qiheng.erp.ai.graph.GraphTopology;
 import com.qiheng.erp.ai.graph.node.DataAccessNode;
 import com.qiheng.erp.ai.graph.node.KnowledgeNode;
@@ -25,7 +27,6 @@ import jakarta.validation.Validator;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
@@ -52,15 +53,11 @@ public class GraphConfiguration {
     @Bean
     public ContextCompressor plannerContextCompressor(
             @Qualifier("deepseekContextSummaryChatModel") ChatModel model,
-            @Value("${erp.ai.memory.summary-trigger-tokens:200000}") int trigger,
-            @Value("${erp.ai.memory.messages-to-keep:20}") int messagesToKeep,
-            @Value("${erp.ai.memory.summary-max-tokens:50000}") int maxTokens,
-            @Value("${erp.ai.memory.summary-max-history-ratio:0.10}") double maxHistoryRatio,
-            @Value("${erp.ai.memory.summary-provider-max-output-tokens:50000}") int providerMaxTokens,
-            @Value("${erp.ai.memory.summary-timeout-seconds:300}") long timeoutSeconds) {
-        SummaryChatModel summary = new SummaryChatModel(model, maxTokens, maxHistoryRatio,
-                providerMaxTokens, Duration.ofSeconds(timeoutSeconds));
-        return new ContextCompressor(summary, trigger, messagesToKeep);
+            AiMemoryProperties memory) {
+        SummaryChatModel summary = new SummaryChatModel(model, memory.summaryMaxTokens(),
+                memory.summaryMaxHistoryRatio(), memory.summaryProviderMaxOutputTokens(),
+                Duration.ofSeconds(memory.summaryTimeoutSeconds()));
+        return new ContextCompressor(summary, memory.summaryTriggerTokens(), memory.messagesToKeep());
     }
 
     /**
@@ -84,25 +81,23 @@ public class GraphConfiguration {
                                   VisibleResultFactory visibleResults,
                                   SchemaProvider schemaProvider,
                                   KnowledgeProvider knowledgeProvider,
-                                  @Value("${erp.ai.graph.max-format-retries:2}") int maxFormatRetries,
-                                  @Value("${erp.ai.graph.max-user-needs:3}") int maxUserNeeds,
-                                  @Value("${erp.ai.graph.max-derived-needs:6}") int maxDerivedNeeds,
-                                  @Value("${erp.ai.graph.max-review-rounds:4}") int maxReviewRounds) throws Exception {
+                                  AiGraphProperties graph) throws Exception {
         String plannerPrompt = new ClassPathResource("prompts/planner.md").getContentAsString(StandardCharsets.UTF_8);
         String reviewPrompt = new ClassPathResource("prompts/need_review.md").getContentAsString(StandardCharsets.UTF_8);
         PlannerMemoryContext context = new PlannerMemoryContext(nodeMemoryStore, plannerContextCompressor, mapper);
         // 上限是代码约束，不进提示词：planner 拿不到这个数，也不会被它干扰拆几条
         PlannerNode planner = new PlannerNode(ChatClient.create(model), plannerPrompt, Clock.systemDefaultZone(),
                 nodeMemoryRecorder, mapper, context, progressPublisher);
-        NeedCheckNode needCheck = new NeedCheckNode(mapper, validator, maxFormatRetries, maxUserNeeds,
-                maxDerivedNeeds, nodeMemoryRecorder, messageStore, threads, visibleResults);
+        NeedCheckNode needCheck = new NeedCheckNode(mapper, validator, graph.maxFormatRetries(),
+                graph.maxUserNeeds(), graph.maxDerivedNeeds(), nodeMemoryRecorder, messageStore,
+                threads, visibleResults);
         NeedReviewNode needReview = new NeedReviewNode(ChatClient.create(model), reviewPrompt, mapper,
-                maxFormatRetries, maxReviewRounds, nodeMemoryRecorder, messageStore, threads, visibleResults,
-                Clock.systemDefaultZone());
+                graph.maxFormatRetries(), graph.maxReviewRounds(), nodeMemoryRecorder, messageStore,
+                threads, visibleResults, Clock.systemDefaultZone());
         NeedSelectorNode needSelector = new NeedSelectorNode(mapper);
         DataAccessNode dataAccess = new DataAccessNode(schemaProvider);
         KnowledgeNode knowledge = new KnowledgeNode(knowledgeProvider);
         return GraphTopology.compile(planner, needCheck, needReview, needSelector, dataAccess, knowledge,
-                saver, maxFormatRetries);
+                saver, graph.maxFormatRetries());
     }
 }

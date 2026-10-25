@@ -1,5 +1,7 @@
 package com.qiheng.erp.ai.config;
 
+import com.qiheng.erp.ai.config.properties.AiGraphProperties;
+import com.qiheng.erp.ai.config.properties.AiMemoryProperties;
 import com.qiheng.erp.ai.config.properties.AiSqlProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +21,10 @@ import org.springframework.context.annotation.Configuration;
  * @since 2026-10-26
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(AiSqlProperties.class)
+@EnableConfigurationProperties({
+        AiSqlProperties.class,
+        AiGraphProperties.class,
+        AiMemoryProperties.class
+})
 public class AiPropertiesConfiguration {
 }

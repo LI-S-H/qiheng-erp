@@ -395,7 +395,7 @@ schema 事实只在系统提示里出现一次（子图自己读），不会被 
 
 `knowledge` 按**同一套模块推导**装配业务口径（`business_knowledge`），**不裁剪 Schema**。装配失败时降级为空串，流程继续——它是增强不是依赖。
 
-**"能查什么"与"该知道什么"必须同源。** 权限码取冒号前的模块前缀，模块前缀就是登记表里的 `module_code`：
+**"能查什么"与"该知道什么"必须同源。** 权限码取冒号前的模块前缀，**且动作必须是 `query` 或 `manage`**——`create` 之类的只是功能权限，不给数据（ERP 列表页本身要的就是 query 权限，只有 create 的用户看不到该模块的列表页，AI 也不该替他查）；模块前缀就是登记表里的 `module_code`：
 
 | 权限码前缀 | 可见表（`ai_data_table.status = 1`） | 注入的业务口径 |
 |---|---|---|
@@ -422,6 +422,8 @@ schema 事实只在系统提示里出现一次（子图自己读），不会被 
 **没有对应口径文档的模块自然被过滤掉**，不会拼出空标题。
 
 SQL 执行前按 `authorized_schema_ref` 校验实际引用的表与列，不以模型看到的 Schema 为准。行范围（部门数据权限）由代码在 SQL 上强制，不依赖提示词。
+
+`authorized_schema_ref` 里是**同一份快照的两副面孔**：`schema` 文本给模型看，`tables` / `columns` 结构化清单给 SQL 守卫看（可见表、可见列、某张表有没有软删除列、可见范围指纹）。守卫不靠正则从渲染文本里抠表名——渲染格式一改，守卫就跟着失效。
 
 ---
 
@@ -1905,6 +1907,21 @@ ERP extensions 为 1.1.2.1，AssistantAgent extensions 为 1.1.0.0。实施前�
 | 借鉴思路自建 | 参考其提示词、校验工具与节点流程，在 ERP 内按本架构实现 | 需自建 Schema 供给、只读数据源、结果检查 | 工作量集中在 ERP 侧，但不产生版本漂移与依赖污染 |
 
 两条路径下**都必须由 ERP 自己实现**的部分：授权 Schema 供给与执行前校验、只读数据源、State 契约适配、暂停恢复协议、结果充分性检查。DataAgent 自身不做"是不是 SELECT"、不做表白名单、不做多语句拦截，这些一律由 ERP 侧承担。
+
+> **定稿（2026-10-25）**：走**借鉴思路自建**。不引用上游 jar——它的自动装配与 Sa-Token 权限体系冲突，12 张自有表与 ERP 现有 AI 表并存，版本漂移要回归。
+>
+> 只借鉴三样结构：基础层与节点层分离（基础层不认 Agent/LLM/State）、受控执行器（`maxRows` + `queryTimeout` + 结果 DTO）、节点侧的重试状态机。**不借鉴**它的安全模型：DataAgent 无 SELECT-only 强制、无表/列白名单、无只读连接、`allowMultiQueries=true`、解析失败放行、结果全转 String、全量结果进 State/Checkpoint。
+>
+> 已在 ERP 侧落地（取数底座第一期）：`ReadOnlySqlExecutor` 用 Druid 1.2.28 自建**独立只读连接池**（独立账号 `erp_ai_ro`、独立池参数、`wall` + `stat` 过滤器），该池**不是容器里的 `DataSource` bean**——Spring Boot 的 `DataSourceAutoConfiguration.PooledDataSourceConfiguration` 带 `@ConditionalOnMissingBean({DataSource.class, XADataSource.class})`，容器里出现第二个 `DataSource` 会让主数据源不再自动创建，MyBatis-Plus 随即启动失败。表/列白名单由下一期的 SQL 守卫（JSqlParser）承担，见 [ai-graph-mvp.md](ai-graph-mvp.md)。
+
+> **SQL 守卫落地约定（2026-10-25）**：
+> - 解析器用 **Druid**，不用 JSqlParser：5.2 的 AST 不建模裸 `FOR UPDATE`、`LOCK IN SHARE MODE`、`SKIP LOCKED`、`INTO OUTFILE`，而这些正是要拦的子句。
+> - **解析失败即拒绝**，不放行——解析不了就等于不知道它要干什么。
+> - 表/列白名单只认 `authorized_schema_ref` 的结构化清单，不靠正则抠渲染文本；列白名单只做单表查询（JOIN 的别名/函数误杀成本高于收益）。
+> - **一次只返回第一个拒因**：一次甩五个错误，模型会改乱。
+> - 规则与"给模型的话"的**唯一副本是代码**（`SqlGuardRejectCode`），提示词引用同一套码，不另写文档。
+> - 守卫产出 `GuardedSql`，执行器只接受它——"检查过的 SQL"与"没检查过的 SQL"在类型上分开。
+> - **不要求按主键排序**：模型的 ORDER BY 原样保留，主键只作并列兜底；没写 ORDER BY 时由执行器补。取全量的形态边界（单表、非 DISTINCT、非聚合）在守卫里判。
 
 ---
 

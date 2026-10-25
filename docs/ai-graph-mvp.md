@@ -56,6 +56,11 @@ com.qiheng.erp.ai/
     ├── progress/               进度事件发布
     └── data/                   ★ 受控数据底座
         ├── registry/           元数据登记与同步（启动时跑一次）
+        ├── scope/              权限码 → 可见模块（Schema 与口径共用）
+        ├── sql/                ★ 取数底座（本次新增）
+        │   ├── pool/           独立只读连接池（Druid + wall/stat）
+        │   ├── guard/          SQL 守卫（能不能跑）
+        │   └── execution/      执行器（怎么跑、翻页、错误分类）
         └── schema/             Schema 组装与渲染（每轮请求）
 ```
 
@@ -76,27 +81,96 @@ com.qiheng.erp.ai/
 
 ```text
 登录用户权限码（会话快照，与 ERP 现有权限校验同源）
-  → 模块前缀（product:query → product；"*" 是超管）
+  → 模块前缀 + 动作口径（product:query → product；动作必须是 query 或 manage；
+     "*" 是超管。create 之类的功能权限不给数据——列表页本身就要 query 权限）
   → ai_data_table 中 status=1 且模块命中 → 可见表
   → ai_data_table_column 中 status=1 → 可见列（噪声列与敏感列挡在下发之外）
   → ai_data_table_relation 只保留两端表都可见的关系
-  → 渲染成 Schema 文本，写入 State 的 authorized_schema_ref
+  → 渲染成 Schema 文本 + 结构化清单，写入 State 的 authorized_schema_ref
 ```
 
 **关系两端都可见才下发**：只看销售模块时 `sales_order_item → product` 这条关系不给模型，否则它会去 JOIN 一个 Schema 里不存在的表。
 
 Schema 文本固定在一轮任务内：任务暂停后恢复，看到的仍是当初那份，不因中途改了权限而漂移。
 
+**快照是两副面孔，同源**：`schema` 文本给模型看；`tables` / `columns` / `fingerprint` 给代码看——SQL 守卫要判断"这张表在不在可见范围""这个列是不是被屏蔽的敏感列""这张表有没有软删除列"，靠正则从渲染文本里抠不可靠，渲染格式一改守卫就跟着失效。`logicalDelete` 标记来自完整列登记，与该列是否下发给模型无关：软删除列即使被屏蔽，查询不带过滤条件照样会读到已删除的行。
+
+**动作口径是收紧过的**：权限码只有 query / manage 才带数据可见性，与 `docs/database/sql/022_ai_data_schema_seed.sql` 的口径一致。Schema 与业务口径共用同一份推导（`service/data/scope/DataScope`），"能查什么"与"该知道什么"不会错配。现有角色不受影响：每个带 `X:create` 的角色同时都带 `X:query` 或 `X:manage`。
+
 | 组件 | 职责 |
 |---|---|
 | `SchemaSyncService` | 启动时把库里的真实结构刷新到登记表的结构字段；只更新结构字段，语义字段一个字不动 |
 | `SchemaLibraryReader` | 从 `information_schema` 读列与索引的事实 |
 | `SchemaIssueReporter` | 失效的表间关系不会自愈，送到系统异常通道，工作台出现待办由人工修正 |
-| `AuthorizedSchemaProvider` | 权限码 → 可见表列关系 → Schema 文本，带进程内缓存 |
+| `AuthorizedSchemaProvider` | 权限码 → 可见表列关系 → Schema 文本 + 结构化清单，带进程内缓存 |
+| `DataScope` | 权限码 → 可见模块（动作口径的唯一出处，Schema 与业务口径共用） |
 | `SchemaRenderer` | 渲染契约：口径与列同行、字母编码给 Examples、索引紧凑渲染、主键与唯一键标记 |
-| `SchemaCache` | 按可见范围缓存 Schema 文本，元数据变更时清空 |
+| `SchemaCache` | 按可见范围缓存授权快照，元数据变更时清空 |
 
 登记表的清单与语义在 [mvp-ai-schema.md](database/mvp-ai-schema.md)，建表与种子脚本是 `docs/database/sql/021_ai_data_schema.sql` 与 `022_ai_data_schema_seed.sql`。真库验证用 `-Dai.mysql.it=true` 开启。
+
+
+## 取数底座第一期：独立只读连接池
+
+模型生成的 SQL 要真正送到数据库，这条路径必须与业务写路径分开。本期只把底座建起来，
+不接图、不接模型、不执行查询。
+
+```text
+业务查询   →  Spring Boot 自动装配的 Hikari 池  →  spring.datasource.*（root / erp，有写权限）
+AI 取数    →  ReadOnlySqlExecutor 私有持有的 Druid 池  →  erp.ai.sql.*（erp_ai_ro，只读）
+```
+
+| 维度 | 为什么分开 |
+|---|---|
+| 负载 | 业务查询短、命中索引；AI 查询是模型临时拼的，可能很慢、可能扫全表。共用一个池，一条慢 SQL 就能占满业务连接 |
+| 权限 | AI 用只读账号，写语句在数据库层就被拒绝；业务账号的写权限碰不到取数路径 |
+| 监控 | AI 池单独装 `stat` 过滤器，慢 SQL 与执行统计单独可见 |
+
+**两道防线，各管一段**：
+
+| 层 | 拦什么 | 不拦什么 |
+|---|---|---|
+| Druid `wall` 过滤器 | 写语句、多语句、`SELECT *`、注释、`INTO OUTFILE`、`WHERE 1=1` 等危险形态 | 不知道 ERP 的权限模型，拦不了"查了不该查的表" |
+| 只读账号 | 任何写操作 | 能读整个库，越权读要靠应用层拦 |
+| SQL 守卫（下一期） | 表白名单、列白名单、软删除条件 | — |
+
+**取数池不是容器里的 `DataSource` bean**。Spring Boot 的
+`DataSourceAutoConfiguration.PooledDataSourceConfiguration` 上挂着
+`@ConditionalOnMissingBean({DataSource.class, XADataSource.class})`：容器里一旦出现第二个
+`DataSource` bean，自动装配就不再创建主数据源，MyBatis-Plus 拿不到数据源，应用直接起不来。
+所以取数池只是 `ReadOnlySqlExecutor` 的一个私有字段，容器看不见它；容器里仍然只有主数据源
+一个 `DataSource`。这一点由 `ReadOnlySqlExecutorIT` 断言。
+
+连接参数（`erp.ai.sql.*`）：独立池 `max-active=2`、连接初始化执行
+`SET SESSION TRANSACTION READ ONLY`（账号本身只读时这行是冗余保险）。
+账号由 `docs/database/sql/027_ai_readonly_user.sql` 建立，口令生产走环境变量。
+
+真库验证：`mvn -pl erp-ai -am test -Dai.mysql.it=true`（`ReadOnlySqlExecutorIT`，8 项）。
+
+
+### 执行器（第二期）：三条取数路径
+
+守卫决定"能不能跑"，执行器决定"怎么跑、怎么取全"。三条路径，**都不静默截断**：
+
+| SQL 形态 | 路径 | 行为 |
+|---|---|---|
+| 模型写了 `LIMIT N`（≤5000） | A | 按 N 取，多取一行只为判断"还有没有" |
+| 没写 LIMIT + 声明需要全量 | B | 游标翻页，直到取完或撞上限 |
+| 没写 LIMIT + 没声明全量 | C | 先取 201 行探测；超过就让模型补声明（要全部 / 要固定条数） |
+
+**翻页的四条不变式**：
+
+1. **模型的 ORDER BY 原样保留**，主键只追加到末尾作并列兜底（`ORDER BY amount DESC, id ASC`）。不强迫按主键排序，否则会抹掉模型/用户的排序意图。
+2. **游标 = 排序键的值 + 主键的值**，谓词是 `(k < ?) OR (k = ? AND id > ?)`（DESC 用 `<`，ASC 用 `>`）。不用 `!=`——它没有方向，会把书签前面的行也带回来。也不用 OFFSET——越翻越慢，且翻页期间数据一变就重/漏。
+3. **游标列由执行器临时注入**（`__cursor_N`），读完书签再剥掉。模型可能没 SELECT 排序键和主键，但它不该知道翻页机制；返回给模型的列必须和它写的 SELECT 完全一致。
+4. **上限明确**：每页 200 行、单个证据项 5000 行、最多 10 页。撞上限就 `completed=false` 明确失败，不假装取完。
+
+**两个实现细节**（改这块之前先看）：
+
+- Druid 渲染嵌套逻辑表达式时**不会按优先级自动补括号**。`AND(原条件, OR谓词)` 会印成 `原条件 AND A OR B`，语义直接错。所以 AND 拼接前要对两边都调 `SQLExprImpl.setParenthesized(true)`。
+- 不做伴生 `COUNT(*)`：截断靠"多取一行"判断，取完靠"翻到空页"判断，不需要额外查总数。
+
+真库验证：`ReadOnlySqlExecutorIT` 会建一张 450 行、金额大量并列的临时表，翻 3 页取完并逐行断言 `(amount DESC, id ASC)` 严格有序，跑完自动删表。
 
 
 ## Plan 输出协议

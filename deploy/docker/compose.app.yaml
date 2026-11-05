@@ -23,6 +23,9 @@ services:
       ERP_AI_SQL_PASSWORD: ${ERP_AI_SQL_PASSWORD:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-https://api.deepseek.com}
+      OPENAI_COMPAT_MODEL_PRO: ${OPENAI_COMPAT_MODEL_PRO:-deepseek-v4-pro}
+      OPENAI_COMPAT_MODEL_FLASH: ${OPENAI_COMPAT_MODEL_FLASH:-deepseek-flash}
+      OPENAI_COMPAT_ENABLE_THINKING: ${OPENAI_COMPAT_ENABLE_THINKING:-}
     volumes:
       - ai-datasets:/app/data/ai-datasets
     networks:

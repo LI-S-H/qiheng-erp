@@ -45,6 +45,22 @@ class DashboardSystemExceptionLoaderTest {
     }
 
     @Test
+    void 最新五条均为低级别时仍应统计更早的高级别异常() {
+        SystemExceptionMapper mapper = mock(SystemExceptionMapper.class);
+        // 六条待处理异常：预览中的五条是 LOW，另一条较早的异常是 HIGH。
+        when(mapper.selectCount(any())).thenReturn(6L, 1L);
+        when(mapper.selectList(any())).thenReturn(java.util.stream.IntStream.range(0, 5)
+                .mapToObj(i -> new SystemException().setSeverity("LOW"))
+                .toList());
+
+        DashboardTodoItemVO todo = new DashboardSystemExceptionLoader(mapper).load();
+
+        assertThat(todo.getCount()).isEqualTo(6);
+        assertThat(todo.getPriority()).isEqualTo("HIGH");
+        assertThat(((DashboardTodoSystemExceptionDetailVO) todo.getDetail()).getItems()).hasSize(5);
+    }
+
+    @Test
     void 无待处理异常时不应返回零计数待办() {
         SystemExceptionMapper mapper = mock(SystemExceptionMapper.class);
         when(mapper.selectList(any())).thenReturn(List.of());

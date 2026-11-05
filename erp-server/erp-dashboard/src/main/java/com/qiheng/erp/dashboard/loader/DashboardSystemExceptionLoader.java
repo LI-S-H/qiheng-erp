@@ -16,7 +16,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -70,18 +69,14 @@ public class DashboardSystemExceptionLoader {
                 new LambdaQueryWrapper<SystemException>()
                         .eq(SystemException::getStatus, SystemExceptionStatus.PENDING.name()));
         int count = countObj == null ? 0 : countObj.intValue();
-        // 2. 统计 PENDING 根据发生时间升序，取前 DETAIL_ITEM_LIMIT 条
+        // 2. 最近发生的异常优先；同一秒内按 ID 倒序保持顺序稳定。
         List<SystemException> topPending = systemExceptionMapper.selectList(
                 new LambdaQueryWrapper<SystemException>()
                         .eq(SystemException::getStatus, SystemExceptionStatus.PENDING.name())
-                        .orderByAsc(SystemException::getOccurredAt)
+                        .orderByDesc(SystemException::getOccurredAt, SystemException::getId)
                         .last("LIMIT " + DETAIL_ITEM_LIMIT));
-        // 3. 计算最高优先级
-        String priority = topPending.stream()
-                .map(SystemException::getSeverity)
-                .map(this::priorityForSeverity)
-                .min(Comparator.comparingInt(DashboardSystemExceptionLoader::priorityRank))
-                .orElse("LOW");
+        // 预览仅包含最新五条，整体优先级仍需覆盖所有待处理异常。
+        String priority = highestPendingPriority();
         // 4. 组装待办项
         DashboardTodoType type = DashboardTodoType.SYSTEM_EXCEPTION;
         DashboardTodoItemVO todo = new DashboardTodoItemVO();
@@ -139,12 +134,16 @@ public class DashboardSystemExceptionLoader {
     /**
      * 计算待办优先级的排序权重
      */
-    private static int priorityRank(String priority) {
-        return switch (priority) {
-            case "HIGH" -> 0;
-            case "MEDIUM" -> 1;
-            default -> 2;
-        };
+    private String highestPendingPriority() {
+        for (String severity : List.of("HIGH", "MEDIUM")) {
+            Long count = systemExceptionMapper.selectCount(new LambdaQueryWrapper<SystemException>()
+                    .eq(SystemException::getStatus, SystemExceptionStatus.PENDING.name())
+                    .eq(SystemException::getSeverity, severity));
+            if (count != null && count > 0) {
+                return severity;
+            }
+        }
+        return "LOW";
     }
 
     /**

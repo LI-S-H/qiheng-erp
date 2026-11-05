@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS ai_dataset (
     description VARCHAR(500) NOT NULL,
     source_sql TEXT NOT NULL,
     columns_json TEXT NOT NULL,
-    data_description_json TEXT NULL COMMENT '检查通过后的数据集说明',
+    data_description_json JSON NULL COMMENT '检查通过后的数据集说明',
     row_count INT NOT NULL,
     completed BOOLEAN NOT NULL,
     truncation_reason VARCHAR(16) NULL COMMENT '截断原因：ROW_LIMIT / PAGE_LIMIT；历史数据可为空',

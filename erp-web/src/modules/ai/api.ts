@@ -1,4 +1,4 @@
-import { normalizeMessage, compareMessages } from './message-contract';
+import { normalizeHistoryMessage, compareMessages } from './contracts/message-contract';
 import { http } from '@/api/http';
 import { normalizeStringId } from '@/shared/utils/api-normalizers';
 import type { Result } from '@/shared/types/api';
@@ -36,32 +36,8 @@ function normalizeConversationSummary(value: unknown): AiConversationSummary {
   };
 }
 
-function normalizeRunStatus(value: unknown): AiConversationDetail['runStatus'] {
-  const allowed = [
-    'IDLE',
-    'RUNNING',
-    'WAITING_HUMAN',
-    'PLAN_READY',
-    'NEEDS_READY',
-    'FORMAT_RETRY_EXHAUSTED',
-    'FAILED',
-    'INTERRUPTED',
-  ];
-  if (typeof value !== 'string' || !allowed.includes(value)) {
-    throw new Error('会话运行状态不符合接口契约');
-  }
-  return value as AiConversationDetail['runStatus'];
-}
-
 function normalizeConversationDetail(value: unknown): AiConversationDetail {
-  const item = record(value, 'conversation');
-  return {
-    ...normalizeConversationSummary(item),
-    running: item.running === true,
-    runStatus: normalizeRunStatus(item.runStatus),
-    runNode: optionalText(item.runNode),
-    runLabel: optionalText(item.runLabel),
-  };
+  return normalizeConversationSummary(value);
 }
 
 function normalizeMessagePage(value: unknown): AiConversationMessagePage {
@@ -82,7 +58,7 @@ function normalizeMessagePage(value: unknown): AiConversationMessagePage {
   ) {
     throw new Error('会话历史分页字段不符合约束');
   }
-  return { records: item.records.map(normalizeMessage), pageNum, pageSize, total };
+  return { records: item.records.map(normalizeHistoryMessage).filter(message => message !== null), pageNum, pageSize, total };
 }
 
 /** 快捷任务入口尚未落地，后端固定返回空数组，前端不补本地兜底数据。 */
@@ -105,6 +81,20 @@ export async function getAiAssistantOverview(signal?: AbortSignal) {
     suppressErrorToast: true,
   });
   return normalizeOverview(response.data.data);
+}
+
+/** 按活动时间和 ID 获取一批会话；游标只由服务端生成。 */
+export async function getAiConversationPage(cursor?: { time: string; id: string }, signal?: AbortSignal) {
+  const response = await http.get<Result<unknown>>('/ai/assistant/conversations', {
+    params: cursor ? { beforeTime: cursor.time, beforeId: cursor.id } : undefined,
+    signal, skipPageLoading: true, suppressErrorToast: true,
+  });
+  const page = record(response.data.data, 'conversationPage');
+  if (!Array.isArray(page.records) || typeof page.hasMore !== 'boolean') throw new Error('会话分页结构不符合接口契约');
+  const nextTime = optionalText(page.nextBeforeTime);
+  const nextId = page.nextBeforeId == null ? null : normalizeStringId(page.nextBeforeId, 'nextBeforeId');
+  if (page.hasMore && (!nextTime || !nextId)) throw new Error('会话分页缺少下一页游标');
+  return { records: page.records.map(normalizeConversationSummary), hasMore: page.hasMore, nextTime, nextId };
 }
 
 export async function createAiConversation() {

@@ -400,7 +400,10 @@ watch(
       <!-- Page content -->
       <main class="relative min-w-0 flex-1 overflow-auto bg-background">
         <RouterView v-slot="{ Component, route: viewRoute }">
-          <component :is="Component" :key="viewRoute.path === '/dashboard' ? viewRoute.path : viewRoute.fullPath" />
+          <!-- 保留智能体运行视图，切换其他业务页面时不中断当前流式请求。 -->
+          <KeepAlive include="AiAssistantView">
+            <component :is="Component" :key="viewRoute.path === '/dashboard' ? viewRoute.path : viewRoute.fullPath" />
+          </KeepAlive>
         </RouterView>
         <Transition name="page-loading">
           <div v-if="isPageLoading" class="page-loading-mask" data-page-loading aria-live="polite" aria-label="页面加载中">

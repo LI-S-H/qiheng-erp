@@ -43,8 +43,8 @@
     "smoke:purchase-score-preview": "node scripts/smoke-purchase-score-preview.cjs",
     "smoke:dashboard-states": "node scripts/smoke-dashboard-states.cjs",
     "smoke:dashboard-inventory-status": "node scripts/smoke-dashboard-inventory-status.cjs",
-    "smoke:ai": "node scripts/test-ai-graph-integration.cjs",
-    "test:ai-graph": "node scripts/test-ai-graph-integration.cjs",
+    "smoke:ai": "node scripts/test-mainagent-ui.cjs",
+    "test:ai-agent": "node scripts/test-mainagent-ui.cjs",
     "test:ai-sse": "node scripts/test-ai-sse.cjs",
     "smoke:purchase": "node scripts/smoke-purchase.cjs",
     "smoke:purchase-returns": "node scripts/smoke-purchase-returns.cjs",
@@ -53,11 +53,10 @@
     "smoke:sales-returns": "node scripts/smoke-sales-returns.cjs",
     "smoke:sales-returns-contract": "node scripts/smoke-sales-returns-contract.cjs",
     "check:openapi": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs && node scripts/check-return-contract.cjs",
-    "test:delivery": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs && node scripts/check-return-contract.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-list-page-components.cjs && node scripts/smoke-overflow-tooltip.cjs && node scripts/smoke-shared-ui.cjs && node scripts/smoke-auth.cjs && node scripts/smoke-dashboard.cjs && node scripts/smoke-dashboard-inventory-status.cjs && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-precision.cjs && node scripts/smoke-product-precision.cjs && node scripts/smoke-stock-ledger-precision.cjs && node scripts/smoke-sales-order-precision.cjs && node scripts/smoke-purchase-order-precision.cjs && node scripts/smoke-stock-bill-precision.cjs && node scripts/smoke-warehouse-stock-bills.cjs && node scripts/smoke-warehouse-stock-ledgers.cjs && node scripts/smoke-warehouse-stock-ledger-detail.cjs && node scripts/smoke-purchase.cjs && node scripts/smoke-purchase-returns.cjs && node scripts/smoke-purchase-returns-contract.cjs && node scripts/smoke-sales.cjs && node scripts/smoke-sales-returns.cjs && node scripts/smoke-sales-returns-contract.cjs && node scripts/test-ai-sse.cjs && node scripts/test-ai-conversation-state.cjs && node scripts/test-ai-graph-integration.cjs",
+    "test:delivery": "node scripts/validate-openapi.cjs && node scripts/check-openapi.cjs && node scripts/check-return-contract.cjs && vue-tsc --noEmit && vite build . && node scripts/smoke-list-page-components.cjs && node scripts/smoke-overflow-tooltip.cjs && node scripts/smoke-shared-ui.cjs && node scripts/smoke-auth.cjs && node scripts/smoke-dashboard.cjs && node scripts/smoke-dashboard-inventory-status.cjs && node scripts/smoke-system-users.cjs && node scripts/smoke-system-roles.cjs && node scripts/smoke-system-depts.cjs && node scripts/smoke-system-permissions.cjs && node scripts/smoke-product-categories.cjs && node scripts/smoke-product-products.cjs && node scripts/smoke-warehouse-warehouses.cjs && node scripts/smoke-warehouse-stocks.cjs && node scripts/smoke-warehouse-stock-precision.cjs && node scripts/smoke-product-precision.cjs && node scripts/smoke-stock-ledger-precision.cjs && node scripts/smoke-sales-order-precision.cjs && node scripts/smoke-purchase-order-precision.cjs && node scripts/smoke-stock-bill-precision.cjs && node scripts/smoke-warehouse-stock-bills.cjs && node scripts/smoke-warehouse-stock-ledgers.cjs && node scripts/smoke-warehouse-stock-ledger-detail.cjs && node scripts/smoke-purchase.cjs && node scripts/smoke-purchase-returns.cjs && node scripts/smoke-purchase-returns-contract.cjs && node scripts/smoke-sales.cjs && node scripts/smoke-sales-returns.cjs && node scripts/smoke-sales-returns-contract.cjs && node scripts/test-ai-sse.cjs && node scripts/test-ai-conversation-state.cjs && node scripts/test-mainagent-ui.cjs",
     "preview": "vite preview --host 0.0.0.0",
     "test:ai-state": "node scripts/test-ai-conversation-state.cjs",
-    "test:ai-parallel": "node scripts/test-ai-conversation-parallel.cjs",
-    "test:ai-graph-real": "node scripts/test-ai-graph-real-integration.cjs"
+    "test:ai-live": "node scripts/test-mainagent-live.cjs"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "^5.3.1",

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue';
-import { AlignLeft, LoaderCircle, MessageSquare, Pencil } from 'lucide-vue-next';
+import { AlignLeft, LoaderCircle, MessageSquare } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import type { ClarificationDraft, ClarificationQuestion } from '../graph-types';
+import type { ClarificationDraft, ClarificationQuestion } from './clarification-types';
 
 const props = defineProps<{
   questions: ClarificationQuestion[];
@@ -38,6 +38,7 @@ function fixedOptions(question: ClarificationQuestion) {
 
 function customText(question: ClarificationQuestion) {
   const answer = draft.value.answers[question.id];
+  if (question.type === 'MULTIPLE_CHOICE') return answer?.custom || '';
   // 旧草稿可能选过现已收进“其他”的候选，保留原答案供回看和修改。
   if (answer?.selected && answer.selected !== customValue && question.options.includes(answer.selected) && !fixedOptions(question).includes(answer.selected)) {
     return answer.selected;
@@ -47,6 +48,9 @@ function customText(question: ClarificationQuestion) {
 
 function answerText(question: ClarificationQuestion) {
   const answer = draft.value.answers[question.id];
+  if (question.type === 'MULTIPLE_CHOICE') {
+    return [...(answer?.selectedOptions || []), answer?.custom.trim() || ''].filter(Boolean).join('、');
+  }
   if (!question.options.length || answer?.selected === customValue) return answer?.custom.trim() || '';
   return answer && question.options.includes(answer.selected) ? answer.selected : '';
 }
@@ -66,11 +70,14 @@ const activeQuestion = computed(() => activeIndex.value === null ? undefined : p
 const currentOptions = computed(() => activeQuestion.value?.options.length
   ? [...fixedOptions(activeQuestion.value), customValue]
   : []);
-const usesCustom = computed(() => activeQuestion.value && (
-  !activeQuestion.value.options.length || draft.value.answers[activeQuestion.value.id]?.selected === customValue ||
-  Boolean(draft.value.answers[activeQuestion.value.id]?.selected &&
-    !fixedOptions(activeQuestion.value).includes(draft.value.answers[activeQuestion.value.id]!.selected))
-));
+const usesCustom = computed(() => {
+  const question = activeQuestion.value;
+  if (!question) return false;
+  const selected = draft.value.answers[question.id]?.selected;
+  if (question.type === 'MULTIPLE_CHOICE') return selected === customValue;
+  return !question.options.length || selected === customValue ||
+    Boolean(selected && !fixedOptions(question).includes(selected));
+});
 const stepKey = computed(() => activeQuestion.value ? `question:${activeQuestion.value.id}` : 'review');
 
 function focusCurrent() {
@@ -79,7 +86,7 @@ function focusCurrent() {
     const body = formElement.value.querySelector<HTMLElement>('[data-testid="clarification-body"]');
     if (body) body.scrollTop = 0;
     const selector = usesCustom.value ? '[data-question-answer]'
-      : activeQuestion.value ? '[role="radio"][aria-checked="true"], [role="radio"][tabindex="0"]'
+      : activeQuestion.value ? '[role="radio"][aria-checked="true"], [role="radio"][tabindex="0"], [role="checkbox"][tabindex="0"]'
         : '[data-question-title]';
     formElement.value.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
   });
@@ -109,6 +116,7 @@ function updateAnswer(field: 'selected' | 'custom', value: string) {
       [question.id]: {
         selected: draft.value.answers[question.id]?.selected || '',
         custom: draft.value.answers[question.id]?.custom || '',
+        selectedOptions: draft.value.answers[question.id]?.selectedOptions || [],
         ...(field === 'custom' ? { selected: customValue } : {}),
         ...(field === 'selected' && value === customValue ? { custom: customText(question) } : {}),
         [field]: value,
@@ -121,6 +129,7 @@ function updateAnswer(field: 'selected' | 'custom', value: string) {
 
 function questionError(question: ClarificationQuestion) {
   if (answerText(question)) return '';
+  if (question.type === 'MULTIPLE_CHOICE') return '请选择至少一项，或自行填写';
   return !question.options.length || draft.value.answers[question.id]?.selected === customValue
     ? '请填写这项信息'
     : '请选择一项，或自行填写';
@@ -133,7 +142,7 @@ function advance() {
   const error = questionError(question);
   if (error) {
     errors.value = { ...errors.value, [question.id]: error };
-    void nextTick(() => formElement.value?.querySelector<HTMLElement>('[data-question-answer], [role="radio"]')?.focus());
+    void nextTick(() => formElement.value?.querySelector<HTMLElement>('[data-question-answer], [role="radio"], [role="checkbox"]')?.focus());
     return;
   }
   // 回改已答问题后仍按题目顺序前进，不跳过其余已答题。
@@ -141,8 +150,24 @@ function advance() {
 }
 
 function confirmOption(value: string) {
-  const questionId = activeQuestion.value?.id;
-  if (controlsLocked.value || !questionId) return;
+  const question = activeQuestion.value;
+  const questionId = question?.id;
+  if (controlsLocked.value || !question || !questionId) return;
+  if (question.type === 'MULTIPLE_CHOICE') {
+    const previous = draft.value.answers[questionId] || { selected: '', custom: '', selectedOptions: [] };
+    const selected = previous.selectedOptions || [];
+    const options = value === customValue ? selected : selected.includes(value)
+      ? selected.filter(item => item !== value) : [...selected, value];
+    // 多选时保持当前题，直到用户主动确认，避免选中第一项后自动进入摘要。
+    draft.value = { ...draft.value, currentQuestionId: questionId, answers: { ...draft.value.answers, [questionId]: {
+      ...previous, selectedOptions: options,
+      selected: value === customValue ? (previous.selected === customValue ? '' : customValue) : previous.selected,
+      custom: value === customValue && previous.selected === customValue ? '' : previous.custom,
+    } } };
+    delete errors.value[questionId];
+    if (value === customValue) focusCurrent();
+    return;
+  }
   cancelAutomaticAdvance();
   updateAnswer('selected', value);
   const revision = selectionRevision;
@@ -172,7 +197,7 @@ function optionKeydown(event: KeyboardEvent, index: number) {
     event.preventDefault();
     const direction = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1;
     const next = (index + direction + currentOptions.value.length) % currentOptions.value.length;
-    updateAnswer('selected', currentOptions.value[next]!);
+    if (activeQuestion.value?.type !== 'MULTIPLE_CHOICE') updateAnswer('selected', currentOptions.value[next]!);
     void nextTick(() => formElement.value?.querySelector<HTMLElement>(`[data-option-index="${next}"]`)?.focus());
   } else if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
@@ -276,15 +301,15 @@ defineExpose({ submit });
         <h3 :id="`${formId}-question-title`" tabindex="-1" data-question-title>
           {{ activeQuestion.question }}
         </h3>
-        <div v-if="currentOptions.length" class="answer-options" role="radiogroup" aria-required="true"
+        <div v-if="currentOptions.length" class="answer-options" :role="activeQuestion.type === 'MULTIPLE_CHOICE' ? 'group' : 'radiogroup'" aria-required="true"
           :aria-labelledby="`${formId}-question-title`" :aria-invalid="Boolean(errors[activeQuestion.id])"
           :aria-describedby="errors[activeQuestion.id] ? `${formId}-error` : undefined">
           <div v-for="(option, index) in currentOptions" :key="option" class="answer-row"
             :class="{ 'is-custom': option === customValue, 'is-editing': option === customValue && usesCustom }">
-            <button type="button" role="radio"
-            class="question-option" :class="{ 'is-selected': option === customValue ? usesCustom : draft.answers[activeQuestion.id]?.selected === option }"
+            <button type="button" :role="activeQuestion.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'"
+            class="question-option" :class="{ 'is-selected': option === customValue ? usesCustom : activeQuestion.type === 'MULTIPLE_CHOICE' ? draft.answers[activeQuestion.id]?.selectedOptions?.includes(option) : draft.answers[activeQuestion.id]?.selected === option }"
             :aria-label="option === customValue ? '其他' : option"
-            :aria-checked="option === customValue ? usesCustom : draft.answers[activeQuestion.id]?.selected === option" :disabled="controlsLocked"
+            :aria-checked="option === customValue ? usesCustom : activeQuestion.type === 'MULTIPLE_CHOICE' ? Boolean(draft.answers[activeQuestion.id]?.selectedOptions?.includes(option)) : draft.answers[activeQuestion.id]?.selected === option" :disabled="controlsLocked"
             :tabindex="(option === customValue && usesCustom) || draft.answers[activeQuestion.id]?.selected === option || (!draft.answers[activeQuestion.id]?.selected && index === 0) ? 0 : -1"
             :data-option-index="index" :data-testid="`question-${activeIndex}-option-${index}`"
             @click="confirmOption(option)" @keydown="optionKeydown($event, index)">
@@ -302,7 +327,7 @@ defineExpose({ submit });
         </div>
         <div v-if="usesCustom && !currentOptions.length" class="response-editor" data-testid="clarification-response-editor">
           <div class="response-editor-top">
-            <label class="editor-label" :for="`${formId}-answer`"><AlignLeft class="size-3" aria-hidden="true" />补充说明</label>
+            <label class="editor-label" :for="`${formId}-answer`"><AlignLeft class="size-3" aria-hidden="true" />你的回答</label>
             <span class="editor-required">必填</span>
           </div>
           <Textarea :id="`${formId}-answer`" data-question-answer
@@ -322,16 +347,7 @@ defineExpose({ submit });
         </p>
       </template>
       <div v-else class="answer-review" data-testid="clarification-review">
-        <h3 :id="`${formId}-question-title`" tabindex="-1" data-question-title>确认回答</h3>
-        <div class="review-answers">
-          <button v-for="(question, index) in questions" :key="question.id" type="button" class="review-answer"
-            :disabled="controlsLocked" :data-testid="`question-${index}-review`" :aria-label="`修改第${index + 1}题：${question.question}`"
-            :title="`${question.question}\n${answerText(question) || '尚未回答'}`" @click="activate(index)">
-            <span class="review-copy"><span class="review-question">{{ question.question }}</span>
-              <span class="review-value" :class="{ 'is-missing': !answerText(question) }">{{ answerText(question) || '尚未回答，点击补充' }}</span></span>
-            <Pencil class="size-3.5 shrink-0" aria-hidden="true" />
-          </button>
-        </div>
+        <h3 :id="`${formId}-question-title`" tabindex="-1" data-question-title>补充信息</h3>
         <label :for="`${formId}-note`" class="note-label">其他补充 <span>（选填）</span></label>
         <Textarea :id="`${formId}-note`" aria-label="其他补充" :model-value="draft.note" :disabled="controlsLocked"
           placeholder="还有什么需要助手知道？" maxlength="10000" class="question-answer note-text"

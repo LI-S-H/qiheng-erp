@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, ref, watch, type CSSProperties } from 'vue';
 import { useEventListener, useNow } from '@vueuse/core';
 import {
   ChevronDown,
@@ -14,6 +14,9 @@ import {
 } from 'lucide-vue-next';
 import CollapseReveal from '@/components/common/CollapseReveal.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { AiConversationSummary } from '../types';
 import { conversationDateGroup } from '../conversation-time';
 
@@ -27,6 +30,11 @@ const props = defineProps<{
   /** 历史读取仍保留操作锁，但不把稳定的管理区呈现成正在刷新的状态。 */
   switching?: boolean;
   collapsed: boolean;
+  dialogStyle?: CSSProperties;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  loadMoreError?: boolean;
+  loadMoreRevision?: number;
 }>();
 
 const emit = defineEmits<{
@@ -35,6 +43,7 @@ const emit = defineEmits<{
   rename: [conversationId: string, title: string];
   remove: [conversationId: string];
   toggleCollapse: [];
+  loadMore: [];
 }>();
 
 /** 会话按最近活动时间分组，顺序固定为从近到远。 */
@@ -53,8 +62,10 @@ useEventListener(document, 'visibilitychange', () => {
   if (document.visibilityState === 'visible') now.value = new Date();
 });
 const editingTitle = ref('');
+const renameError = ref('');
 const openGroups = ref<Record<string, boolean>>({});
-const listElement = ref<HTMLElement | null>(null);
+const visibleCounts = ref<Record<string, number>>({});
+const pendingGroup = ref<string | null>(null);
 /** 确认弹窗的载荷：AlertDialog 会先关闭再触发 confirm，不能在中途把目标清空。 */
 const removeState = ref<{ open: boolean; conversationId: string; title: string }>({
   open: false,
@@ -75,6 +86,15 @@ const groups = computed(() => {
   );
 });
 
+// 账号切换或清空会话后，新的列表重新从每组五条开始。
+watch(() => props.conversations.length, count => {
+  if (count === 0) {
+    visibleCounts.value = {};
+    pendingGroup.value = null;
+    openGroups.value = {};
+  }
+});
+
 /** 比较本地日历日期，避免整点消息和夏令时导致日期分组偏移。 */
 function bucketOf(updatedAt: string): string {
   return conversationDateGroup(updatedAt, now.value);
@@ -87,6 +107,28 @@ function isOpen(key: string) {
 function toggleGroup(key: string) {
   openGroups.value = { ...openGroups.value, [key]: !isOpen(key) };
 }
+
+/** 先展开已加载的会话；最后一组用完时再读取下一批。 */
+function showMore(key: string) {
+  const group = groups.value.find(item => item.key === key);
+  if (!group || props.loadingMore) return;
+  const count = visibleCounts.value[key] || 5;
+  if (count < group.items.length) {
+    visibleCounts.value = { ...visibleCounts.value, [key]: Math.min(count + 5, group.items.length) };
+  } else if (props.hasMore) {
+    pendingGroup.value = key;
+    emit('loadMore');
+  }
+}
+
+// 只有服务端续页成功后才增加可见数量，失败重试不改变当前展开数量。
+watch(() => props.loadMoreRevision, () => {
+  if (!pendingGroup.value) return;
+  const key = pendingGroup.value;
+  pendingGroup.value = null;
+  const group = groups.value.find(item => item.key === key);
+  if (group) visibleCounts.value = { ...visibleCounts.value, [key]: Math.min((visibleCounts.value[key] || 5) + 5, group.items.length) };
+});
 
 // 默认只展开最近有记录的那一组，其余保持收起，列表不会一屏全是旧会话
 watch(
@@ -107,31 +149,37 @@ watch(
     () => groups.value.find((group) => group.items.some((item) => item.conversationId === props.activeId))?.key,
   ],
   ([, key]) => {
-    if (key) openGroups.value = { ...openGroups.value, [key]: true };
+    if (key) {
+      openGroups.value = { ...openGroups.value, [key]: true };
+      const index = groups.value.find(group => group.key === key)?.items.findIndex(item => item.conversationId === props.activeId) ?? -1;
+      if (index >= (visibleCounts.value[key] || 5)) {
+        visibleCounts.value = { ...visibleCounts.value, [key]: Math.ceil((index + 1) / 5) * 5 };
+      }
+    }
   },
   { immediate: true },
 );
 
-async function startRename(conversation: AiConversationSummary) {
+function startRename(conversation: AiConversationSummary) {
   if (props.busy) {
     return;
   }
   editingId.value = conversation.conversationId;
   editingTitle.value = conversation.title;
-  await nextTick();
-  // 同一时刻只有一行处于编辑态，直接从列表里取当前输入框，避免 v-for 内模板 ref 变成数组
-  const input = listElement.value?.querySelector<HTMLInputElement>('.rename-input');
-  input?.focus();
-  input?.select();
+  renameError.value = '';
 }
 
-/** 回车、失焦、Esc 都会走到这里，先清状态再判断，重复调用不会提交两次。 */
+/** 保存前校验标题，取消和关闭不会提交。 */
 function commitRename() {
   const conversationId = editingId.value;
   if (!conversationId) {
     return;
   }
   const title = editingTitle.value.trim();
+  if (!title) {
+    renameError.value = '请输入会话名称';
+    return;
+  }
   editingId.value = null;
   editingTitle.value = '';
   const current = props.conversations.find((item) => item.conversationId === conversationId);
@@ -143,6 +191,7 @@ function commitRename() {
 function cancelRename() {
   editingId.value = null;
   editingTitle.value = '';
+  renameError.value = '';
 }
 
 function askRemove(conversation: AiConversationSummary) {
@@ -205,7 +254,7 @@ function confirmRemove() {
           <span class="create-symbol" aria-hidden="true"><SquarePen class="size-3.5" /></span><span>新建会话</span><ArrowUpRight class="create-arrow size-3.5" aria-hidden="true" />
         </button>
       </div>
-      <div ref="listElement" class="sidebar-list">
+      <div class="sidebar-list">
         <p v-if="loading" class="sidebar-note" role="status">正在加载会话…</p>
         <p v-else-if="!conversations.length" class="sidebar-note">
           还没有会话，点击上方“新建会话”开始分析。
@@ -227,23 +276,11 @@ function confirmRemove() {
           <CollapseReveal :open="isOpen(group.key)">
             <div class="group-body">
               <div
-                v-for="item in group.items"
+                v-for="item in group.items.slice(0, visibleCounts[group.key] || 5)"
                 :key="item.conversationId"
                 class="conversation-row"
                 :class="{ 'is-active': item.conversationId === activeId }"
               >
-                <input
-                  v-if="editingId === item.conversationId"
-                  v-model="editingTitle"
-                  class="rename-input"
-                  type="text"
-                  maxlength="40"
-                  aria-label="会话名称"
-                  @keydown.enter.prevent="commitRename"
-                  @keydown.esc.prevent="cancelRename"
-                  @blur="commitRename"
-                />
-                <template v-else>
                   <button
                     type="button"
                     class="conversation-main"
@@ -274,13 +311,31 @@ function confirmRemove() {
                       <Trash2 class="size-3.5" />
                     </button>
                   </div>
-                </template>
               </div>
+              <button v-if="group.items.length > (visibleCounts[group.key] || 5) || (hasMore && groups[groups.length - 1]?.key === group.key)"
+                type="button" class="show-more" :disabled="loadingMore" @click="showMore(group.key)">
+                {{ loadingMore ? '正在加载…' : loadMoreError && groups[groups.length - 1]?.key === group.key ? '加载失败，点击重试' : '显示更多' }}
+              </button>
             </div>
           </CollapseReveal>
         </section>
       </div>
     </template>
+    <Dialog :open="Boolean(editingId)" @update:open="value => { if (!value) cancelRename(); }">
+      <DialogContent :style="dialogStyle" :show-close-button="false" class="conversation-rename-dialog" data-conversation-rename-dialog>
+        <form class="rename-form" @submit.prevent="commitRename">
+          <DialogTitle>重命名会话</DialogTitle>
+          <DialogDescription>为这个会话设置一个容易识别的名称。</DialogDescription>
+          <label for="conversation-rename-input" class="rename-label">会话名称</label>
+          <Input id="conversation-rename-input" v-model="editingTitle" maxlength="40" autofocus :aria-invalid="Boolean(renameError)" @input="renameError = ''" />
+          <p v-if="renameError" class="rename-error" role="alert">{{ renameError }}</p>
+          <div class="rename-actions">
+            <Button type="button" variant="outline" @click="cancelRename">取消</Button>
+            <Button type="submit" :disabled="busy">保存</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
     <ConfirmDialog
       :open="removeState.open"
       title="删除这个会话？"
@@ -288,6 +343,7 @@ function confirmRemove() {
       confirm-text="删除会话"
       variant="destructive"
       :loading="busy"
+      :content-style="dialogStyle"
       @update:open="
         (value) => {
           removeState = { ...removeState, open: value };
@@ -308,6 +364,10 @@ function confirmRemove() {
   border-right: 1px solid var(--border);
   background: var(--card);
 }
+.show-more { width: 100%; padding: 7px 8px; color: #64748b; font-size: 13px; text-align: left; cursor: pointer; }
+.show-more:hover:not(:disabled) { color: #2563eb; }
+.show-more:focus-visible { outline: 2px solid #7191c0; outline-offset: -2px; border-radius: 4px; }
+.show-more:disabled { cursor: wait; }
 .conversation-sidebar.is-collapsed {
   grid-template-rows: minmax(0, 1fr);
 }
@@ -408,6 +468,7 @@ function confirmRemove() {
 }
 .is-switching .create-button:disabled,
 .is-switching .rail-button:disabled,
+.is-switching .conversation-main:disabled,
 .is-switching .conversation-actions button:disabled {
   /* 切换只读取右侧内容，左侧按钮保留原样，disabled 继续阻止重复操作。 */
   cursor: default;
@@ -542,20 +603,10 @@ function confirmRemove() {
   cursor: wait;
   opacity: 0.5;
 }
-.rename-input {
-  width: 100%;
-  margin: 4px 6px;
-  border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border));
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: #fff;
-  color: #344054;
-  font-size: 13px;
-}
-.rename-input:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
-}
+.rename-form { display: grid; gap: 10px; }
+.rename-label { margin-top: 6px; color: #344054; font-size: 14px; font-weight: 500; }
+.rename-error { color: #b42318; font-size: 13px; }
+.rename-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 @media (hover: none) {
   .conversation-actions {
     display: flex;

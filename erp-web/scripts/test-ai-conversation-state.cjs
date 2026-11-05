@@ -19,6 +19,7 @@ const deferred = () => {
   return { promise, resolve };
 };
 let overview = async () => ({ conversations: [] });
+let cursorPage = null;
 let detail = async (id) => ({ conversationId: id, runStatus: 'IDLE' });
 let history = async () => ({ records: [], pageNum: 1 });
 let older = async () => ({ records: [], pageNum: 1 });
@@ -36,7 +37,7 @@ new Function('require', 'module', 'exports', code)(
     if (name.includes('storage')) {
       return { AUTH_TOKEN_STORAGE_KEY: 'token' };
     }
-    if (name === '../message-contract') {
+    if (name === '../contracts/message-contract') {
       return {
         compareMessages: (a, b) =>
           BigInt(a.seq) < BigInt(b.seq) ? -1 : BigInt(a.seq) > BigInt(b.seq) ? 1 : 0,
@@ -45,6 +46,7 @@ new Function('require', 'module', 'exports', code)(
     if (name === '../api') {
       return {
         getAiAssistantOverview: (...args) => overview(...args),
+        getAiConversationPage: async (...args) => cursorPage ? cursorPage(...args) : ({ records: (await overview(...args)).conversations, hasMore: false, nextTime: null, nextId: null }),
         getAiConversationDetail: (...args) => detail(...args),
         getAiConversationHistory: (...args) => history(...args),
         getAiConversationMessagePage: (...args) => older(...args),
@@ -72,6 +74,27 @@ async function main() {
     store.conversations.map((item) => item.conversationId),
     ['new-account'],
   );
+
+  store.reset();
+  let failNextPage = true;
+  cursorPage = async (cursor) => {
+    if (!cursor) return { records: [{ conversationId: '2', updatedAt: '2026-10-02 10:00:00' }], hasMore: true, nextTime: '2026-10-02 10:00:00', nextId: '2' };
+    if (failNextPage) { failNextPage = false; throw new Error('模拟续页失败'); }
+    return { records: [{ conversationId: '1', updatedAt: '2026-10-01 10:00:00' }], hasMore: false, nextTime: null, nextId: null };
+  };
+  await store.loadConversations();
+  assert.equal(store.hasMoreConversations, true);
+  await store.loadMoreConversations();
+  assert.equal(store.moreListError, true, '续页失败时保留重试入口');
+  assert.equal(store.moreListRevision, 0, '续页失败不能增加展开数量');
+  await store.loadMoreConversations();
+  assert.deepEqual(store.conversations.map(item => item.conversationId), ['2', '1']);
+  assert.equal(store.hasMoreConversations, false);
+  await store.loadConversations();
+  assert.equal(store.hasMoreConversations, false, '加载到末页后刷新首页不能重置游标');
+  assert.deepEqual(store.conversations.map(item => item.conversationId), ['2', '1']);
+  cursorPage = null;
+  store.reset();
 
   const slowDetail = deferred();
   detail = (id) =>
@@ -106,6 +129,18 @@ async function main() {
   await pendingOlder;
   assert.equal(store.olderLoading, false);
   assert.ok(!store.messages.some((item) => item.messageId === 'stale'));
+  store.oldestPage = 3;
+  const concurrentOlder = deferred();
+  let olderSignal;
+  older = (_id, _page, _size, signal) => { olderSignal = signal; return concurrentOlder.promise; };
+  const pendingConcurrentOlder = store.loadOlder();
+  await store.loadConversation('latest', { silent: true });
+  assert.equal(olderSignal.aborted, false, '同会话静默同步不能取消历史分页');
+  assert.equal(store.olderLoading, true, '历史分页应保持加载状态直至完成');
+  concurrentOlder.resolve({ records: [{ messageId: 'older-valid', seq: '1' }], pageNum: 2 });
+  await pendingConcurrentOlder;
+  assert.ok(store.messages.some(item => item.messageId === 'older-valid'), '静默同步与旧页应合并');
+  assert.equal(store.olderLoading, false);
   store.reset();
   const oldDate = '2026-10-01 09:00:00';
   const nowDate = '2026-10-23 10:00:00';

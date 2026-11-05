@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, type CSSProperties } from 'vue';
 import { CircleHelp, Trash2, TriangleAlert } from 'lucide-vue-next';
 import {
   AlertDialog,
@@ -21,6 +21,7 @@ interface Props {
   variant?: 'default' | 'destructive' | 'warning';
   loading?: boolean;
   placement?: 'viewport' | 'app-content';
+  contentStyle?: CSSProperties;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -62,7 +63,7 @@ function handleCancel() {
 
 <template>
   <AlertDialog :open="props.open" @update:open="emit('update:open', $event)">
-    <AlertDialogContent :placement="props.placement" data-confirm-dialog class="gap-0 overflow-hidden p-0 sm:max-w-[440px]">
+    <AlertDialogContent :placement="props.placement" :style="props.contentStyle" data-confirm-dialog class="gap-0 overflow-hidden p-0 sm:max-w-[440px]">
       <AlertDialogHeader class="flex-row items-start gap-4 px-6 pb-5 pt-6 text-left">
         <div
           data-confirm-dialog-icon

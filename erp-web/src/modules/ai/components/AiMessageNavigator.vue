@@ -7,7 +7,7 @@ const props = defineProps<{
   messages: AiConversationMessage[];
   scrollContainer: HTMLElement | null;
 }>();
-const turns = computed(() => props.messages.filter(message => message.role === 'user'));
+const turns = computed(() => props.messages.filter(message => message.kind === 'USER_INPUT'));
 const activeId = ref('');
 const navigation = ref<HTMLElement | null>(null);
 let pulse: Animation | undefined;
@@ -120,11 +120,12 @@ onBeforeUnmount(() => pulse?.cancel());
 }
 .turn-marker {
   display: grid;
-  place-items: center;
+  align-items: center;
+  justify-items: start;
   width: 20px;
-  height: 24px;
+  height: 15px;
+  padding-left: 4px;
   cursor: pointer;
-  border-radius: 4px;
 }
 .turn-marker > span {
   width: 6px;
@@ -132,18 +133,17 @@ onBeforeUnmount(() => pulse?.cancel());
   border-radius: 2px;
   background: var(--muted-foreground);
   opacity: 0.35;
-  transition: opacity 140ms, background-color 140ms;
+  transition: width 160ms ease, opacity 160ms ease, background-color 160ms ease;
 }
-.turn-marker[aria-current] > span,
+.turn-marker[aria-current] > span { opacity: 1; }
 .turn-marker:hover > span,
 .turn-marker:focus-visible > span {
-  width: 10px;
+  width: 14px;
   opacity: 1;
   background: var(--foreground);
 }
 .turn-marker:focus-visible {
-  outline: 1px solid var(--primary);
-  outline-offset: -2px;
+  outline: none;
 }
 .turn-preview-label {
   display: block;
@@ -169,8 +169,7 @@ onBeforeUnmount(() => pulse?.cancel());
   .message-navigator,
   .turn-marker { width: 14px; }
   .turn-marker > span { width: 6px; }
-  .turn-marker[aria-current] > span,
   .turn-marker:hover > span,
-  .turn-marker:focus-visible > span { width: 10px; }
+  .turn-marker:focus-visible > span { width: 11px; }
 }
 </style>

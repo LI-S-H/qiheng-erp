@@ -1,6 +1,11 @@
 import { reactive } from 'vue';
-import type { ClarificationQuestion, PlanningArtifact } from '../graph-types';
+import type { ClarificationQuestion } from '../clarification/clarification-types';
 import type { AiProgressStep, AiRunStatus } from '../types';
+
+export type LiveItem =
+  | { type: 'text'; id: string; text: string; completed?: boolean }
+  | { type: 'clarification'; id: string; questions: ClarificationQuestion[] }
+  | { type: 'tool'; id: string; label: string; durationMs: number | null; status: 'running' | 'done' | 'failed' };
 
 export interface ConversationRun {
   querying: boolean;
@@ -9,12 +14,18 @@ export interface ConversationRun {
   version: number;
   runStatus: AiRunStatus | null;
   pendingText: string;
+  liveText: string;
+  liveMessageId: string;
+  liveItems: LiveItem[];
+  completedTextIds: Set<string>;
+  eventSeq: number;
+  snapshotTruncated: boolean;
+  runId: string;
   error: string;
   warning: string;
   steps: AiProgressStep[];
-  selectedPlan: PlanningArtifact | null;
-  livePlan: PlanningArtifact | null;
-  pendingClarification: { threadId: string; pauseId: string; questions: ClarificationQuestion[] } | null;
+  pendingClarification: { questionRequestId: string; toolCallId?: string; questions: ClarificationQuestion[] } | null;
+  recentAnswers: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
   refreshNeeded: boolean;
   settleSuccess: (() => void) | null;
 }
@@ -28,8 +39,8 @@ export function useConversationRuns() {
     const key = id ?? 'new';
     if (!states.has(key)) states.set(key, {
       querying: false, watching: false, streaming: false, version: 0, runStatus: null,
-      pendingText: '', error: '', warning: '', steps: [], selectedPlan: null, livePlan: null,
-      pendingClarification: null, refreshNeeded: false, settleSuccess: null,
+      pendingText: '', liveText: '', liveMessageId: '', liveItems: [], completedTextIds: new Set(), eventSeq: 0, snapshotTruncated: false, runId: '', error: '', warning: '', steps: [],
+      pendingClarification: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
     });
     return states.get(key)!;
   }
@@ -52,6 +63,13 @@ export function useConversationRuns() {
     state.watching = false;
     state.streaming = false;
     state.pendingText = '';
+    state.liveText = '';
+    state.liveMessageId = '';
+    state.liveItems = [];
+    state.completedTextIds.clear();
+    state.eventSeq = 0;
+    state.snapshotTruncated = false;
+    state.runId = '';
     controllers.delete(id);
   }
 

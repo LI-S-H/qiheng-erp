@@ -98,6 +98,40 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
 
   /ai/assistant/conversations:
+    get:
+      tags: [AIAssistant]
+      summary: 游标分页查询会话
+      description: |
+        只返回当前登录用户的会话，每批最多 50 条，按最近活动时间和会话 ID 倒序。
+        首次不传游标；继续读取时同时传入上一批返回的 nextBeforeTime 和 nextBeforeId。
+        会话运行期间活动时间可能变化，分页不保证跨请求快照一致；客户端应按会话 ID 去重。
+      operationId: aiAssistantConversationPage
+      security: [{ SaTokenAuth: [] }]
+      parameters:
+        - name: beforeTime
+          in: query
+          required: false
+          schema: { type: string, example: '2026-11-03 00:32:28' }
+          description: 下一页游标时间，格式 yyyy-MM-dd HH:mm:ss，必须与 beforeId 同时提供
+        - name: beforeId
+          in: query
+          required: false
+          schema: { type: string }
+          description: 下一页游标中的会话 ID，必须与 beforeTime 同时提供
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AiConversationCursorPage' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [AIAssistant]
       summary: 新建会话
@@ -127,8 +161,7 @@ paths:
       tags: [AIAssistant]
       summary: 获取会话详情
       description: |
-        返回会话基本信息与当前执行状态；只有实际活动执行才返回 running=true，残留检查点不能证明仍在执行。
-        页面内容来自 MySQL 消息流水，详情不从 State 重建历史；运行中可接续订阅进度流。
+        返回当前用户的会话基本信息；用户可见历史由消息分页接口读取。运行期间的实时状态通过本轮 SSE 事件获取，本接口不提供断线恢复。
       operationId: aiAssistantConversationDetail
       security: [{ SaTokenAuth: [] }]
       responses:
@@ -185,9 +218,8 @@ paths:
       tags: [AIAssistant]
       summary: 分页查询用户可见消息
       description: |
-        只返回用户输入与最终回复，节点内部步骤、工具结果和模型原文不出现在这里。
-        按会话内序号升序分页。content 为 type + data JSON，前端按 TEXT、CLARIFICATION、NEEDS、ERROR 渲染，PLAN 仅兼容历史记录。
-        问题与需求数组在产出时保存，重开会话直接读取 MySQL；用户回答通过 replyToMessageId 关联问题。
+        按会话内序号升序读取 MySQL 用户可见消息，包括用户输入、助手说明与最终回复，以及 ask_user 的工具调用和结果；其他内部工具消息不返回。
+        content 为展示层转换后的 type/data 对象，工具调用和结果通过 callId 关联。
       operationId: aiAssistantConversationMessages
       security: [{ SaTokenAuth: [] }]
       parameters:
@@ -213,84 +245,131 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "404": { $ref: '#/components/responses/NotFound' }
 
-  /ai/assistant/conversations/{conversationId}/progress/stream:
+  /ai/assistant/conversations/{conversationId}/messages/stream:
+    parameters:
+      - $ref: '#/components/parameters/AiConversationId'
+    post:
+      tags: [AIAssistant]
+      summary: 发送消息并流式执行主智能体
+      description: |
+        仅处理当前登录用户所属会话；身份由 Sa-Token 会话取得。事件类型为 run_snapshot、run_started、text_delta、text_completed、tool_started、tool_finished、question、question_answered、run_completed、run_failed。
+        事件 data 是 JSON 对象。run_started 包含 runId、conversationId；text_delta 包含 messageId、delta；text_completed 包含 messageId、text，用完整文本校正对应片段，不应追加为新消息；
+        tool_started 包含 runId、toolCallId、tool、label；tool_finished 包含 runId、toolCallId、status、label、durationMs；
+        question 包含 runId、questionRequestId、questions，并在可获取时包含用于关联历史工具调用的 toolCallId；run_completed 包含 runId、status；run_failed 包含 runId、status、message。
+        工具状态 returned 仅表示调用已返回，不代表业务成功；invalid_arguments 表示参数格式错误、工具尚未执行；failed 表示调用异常终止。工具耗时摘要可用于运行过程展示。
+        连接断开不会取消后端任务；可通过运行状态和事件订阅接口恢复当前进程内仍在执行的任务。事件包含递增的 eventSeq，run_snapshot 包含当前已累积的可见内容；items 按发生顺序包含文本、工具和追问，追问项的 type 为 clarification，id 优先使用 toolCallId，附带 questionRequestId 和 questions。
+      operationId: aiAssistantMessageStream
+      security: [{ SaTokenAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1, pattern: '\S', description: 用户本轮真实输入 }
+      responses:
+        "200":
+          description: SSE 事件流；正常完成或失败时发送终态事件
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "503": { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /ai/assistant/conversations/{conversationId}/runtime:
     parameters:
       - $ref: '#/components/parameters/AiConversationId'
     get:
       tags: [AIAssistant]
-      summary: 接续订阅会话正在执行的进度
+      summary: 查询当前会话的运行状态
       description: |
-        页面重新进入或其它标签页发起任务时，用它接续订阅节点进度。
-        没有正在执行的任务时连接立即正常关闭，调用方据此回到常规刷新。
-        事件体为对象，由消息转换器序列化，不是手工拼接的 JSON 字符串。
-      operationId: aiAssistantConversationProgressStream
+        优先返回本进程内任务快照，包括 runId、status、items、question、eventSeq 和 snapshotTruncated。
+        没有运行对象时根据最近用户消息返回状态；进程已失去运行对象的未完成任务返回 INTERRUPTED。
+        快照是短期内存状态，不能用于跨进程恢复；snapshotTruncated 为 true 时内容可能不完整。
+      operationId: aiAssistantRuntime
       security: [{ SaTokenAuth: [] }]
       responses:
         "200":
-          description: SSE 事件流；事件名为 node-start、node-end、artifact、clarification_required、run_finished、run_stopped（artifact 与澄清事件仅在任务执行过程中出现，中途接续订阅也会收到后续内容）
+          description: 当前运行状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Result' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /ai/assistant/conversations/{conversationId}/events:
+    parameters:
+      - $ref: '#/components/parameters/AiConversationId'
+    get:
+      tags: [AIAssistant]
+      summary: 订阅当前会话已有任务的事件
+      description: |
+        不启动新任务；先收到 run_snapshot，之后收到同一任务的新事件。快照和订阅原子衔接，eventSeq 可用于识别已处理的事件。
+        用户关闭连接不会取消任务；任务结束后快照短暂保留，没有对应运行对象时返回空流。
+      operationId: aiAssistantRuntimeEvents
+      security: [{ SaTokenAuth: [] }]
+      responses:
+        "200":
+          description: SSE 快照及后续事件
           content:
             text/event-stream:
               schema: { type: string }
         "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
 
-  /ai/graph/stream:
+  /ai/assistant/conversations/{conversationId}/questions/{questionRequestId}/answer:
+    parameters:
+      - $ref: '#/components/parameters/AiConversationId'
+      - name: questionRequestId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+        description: question 事件中服务端生成的追问标识
     post:
       tags: [AIAssistant]
-      summary: 流式执行一轮规划并推送节点进度
-      description: |
-        唯一对外入口。边执行边推送 SSE 事件：
-        `node-start` 与 `node-end` 携带节点编码、展示文案和耗时；
-        需求数组定稿拍推送 `artifact` 事件（载荷为 AiRunArtifact，type 为 NEEDS），随后以 `run_finished` 收尾（载荷为 AiRunFinished，status 为 NEEDS_READY）；
-        人工暂停轮以 `clarification_required` 收尾（载荷形状同 AiRunArtifact，type 固定为 CLARIFICATION，恢复所需暂停点在展示内容 content.data.pauseId，事件顶层 checkpointId 仅作诊断）；
-        本轮未完成时以 `run_stopped` 收尾（载荷为 AiRunStopped，reason 为可直接展示的说明）。
-        每次执行只有一个终态事件（run_finished、run_stopped 或 clarification_required）；
-        消息正文与澄清卡统一以 MySQL 消息流水为准，页面在终态后重新拉取，不在事件里重复推送。
-        事件体由消息转换器序列化，前端按 JSON 对象解析。
-      operationId: aiGraphStream
+      summary: 提交当前追问的答案
+      description: 用户身份由 Sa-Token 会话取得；服务端校验会话归属、追问归属及每题答案。提交成功后等待中的工具返回，主智能体继续运行。
+      operationId: aiAssistantAnswerQuestion
       security: [{ SaTokenAuth: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/GraphStartRequest' }
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                answers:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [questionId, selectedOptions]
+                    properties:
+                      questionId: { type: string, minLength: 1 }
+                      selectedOptions:
+                        type: array
+                        items: { type: string }
+                        description: 从问题选项中选择的值，自由输入时为空数组
+                      customText: { type: string, nullable: true, description: 本题自定义回答 }
+                note: { type: string, nullable: true, description: 本轮额外补充 }
       responses:
         "200":
-          description: SSE 事件流；事件名为 node-start、node-end、artifact、clarification_required、run_finished、run_stopped
+          description: 已提交答案
           content:
-            text/event-stream:
-              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
         "400": { $ref: '#/components/responses/BadRequest' }
         "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
-        "503": { $ref: '#/components/responses/ServiceUnavailable' }
-
-  /ai/graph/resume/stream:
-    post:
-      tags: [AIAssistant]
-      summary: 流式提交人工补充并恢复 AI 任务图
-      description: |
-        恢复场景唯一入口。使用最近一次澄清消息内容中的 threadId 和暂停标识 pauseId 提交非空回答，
-        服务端校验登录用户归属、任务确实暂停于 Human、pauseId 为最新暂停点后更新 State 并恢复图；
-        回答仍有歧义、需求变化或新旧条件冲突时可以再次暂停询问，已结束任务、过期暂停点和重复提交不能直接重放。
-        事件体与 /ai/graph/stream 相同，以 run_finished、run_stopped 或 clarification_required 收尾。
-      operationId: aiGraphResumeStream
-      security: [{ SaTokenAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/GraphResumeRequest' }
-      responses:
-        "200":
-          description: SSE 事件流；事件名为 node-start、node-end、artifact、clarification_required、run_finished、run_stopped
-          content:
-            text/event-stream:
-              schema: { type: string }
-        "400": { $ref: '#/components/responses/BadRequest' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "404": { $ref: '#/components/responses/NotFound' }
-        "503": { $ref: '#/components/responses/ServiceUnavailable' }
 
   /ai/scheduled-tasks:
     get:
@@ -4856,146 +4935,6 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResult'
   schemas:
-    GraphStartRequest:
-      type: object
-      required: [conversationId, query]
-      properties:
-        conversationId:
-          type: string
-          minLength: 1
-          description: 本轮的归属会话；服务端校验会话属于当前登录用户
-        query:
-          type: string
-          minLength: 1
-          maxLength: 10000
-          pattern: '\S'
-          description: 本次任务需求；必须包含非空白字符，不传登录用户身份
-
-    GraphResumeRequest:
-      type: object
-      required: [threadId, pauseId, answer]
-      properties:
-        threadId: { type: string, minLength: 1, maxLength: 160, description: 最近一次澄清消息内容中的任务标识 }
-        pauseId: { type: string, minLength: 1, maxLength: 64, description: 最近一次澄清消息 content.data.pauseId 中的暂停标识，不得使用旧暂停点；恢复提交后旧值即失效 }
-        answer:
-          type: string
-          minLength: 1
-          maxLength: 10000
-          pattern: '\S'
-          description: 本轮全部题目与回答归并后的字符串，也可以明确修改需求；必须包含非空白字符。逐题填写仅为前端交互，不逐题请求，不提交结构化答案数组
-
-    AiNeed:
-      type: object
-      required: [id, intent, need, depends, evidence_plan, status]
-      description: 已审阅的需求及代码维护的运行状态；当前需求完成要求为全部证据项齐备，不再输出 done_when。模型协议不含 status。NEEDS_READY 只表示需求就绪，不表示证据已产出或需求已完成
-      properties:
-        id: { type: string, minLength: 1, description: 需求标识，N 前缀为用户需求，D 前缀为派生需求 }
-        intent: { type: string, enum: [DATA, ADVICE] }
-        need: { type: string, minLength: 1, description: 需求正文 }
-        depends:
-          type: array
-          items: { type: string, minLength: 1 }
-          description: 依赖的需求标识
-        condition:
-          nullable: true
-          allOf:
-            - $ref: '#/components/schemas/AiNeedCondition'
-          description: 条件开关，无条件时为 null 或因服务端 non_null 配置省略；前端归一为 null，只展示，不执行比较
-        evidence_plan:
-          type: array
-          minItems: 1
-          items: { $ref: '#/components/schemas/AiEvidenceItem' }
-          description: 待产出证据清单，包含原始数据与计算产物；不是执行结果
-        done_when:
-          allOf:
-            - $ref: '#/components/schemas/AiDoneWhen'
-          deprecated: true
-          description: 仅兼容旧历史需求，当前后端已移除此字段，不得要求新 NEEDS 提供
-        status:
-          type: string
-          enum: [PENDING, RUNNING, DONE, SKIPPED, BLOCKED, INFEASIBLE]
-          description: 代码节点维护，前端不得由就绪事件推算为 DONE
-
-    AiEvidenceItem:
-      type: object
-      required: [id, label, instruction, source, depends]
-      properties:
-        id: { type: string, minLength: 1, description: 全局唯一证据项标识，以所属需求标识为前缀，如 N1-E1 }
-        label: { type: string, minLength: 1, description: 证据项业务含义 }
-        instruction: { type: string, minLength: 1, description: 取数口径或计算要求 }
-        source: { type: string, enum: [SQL, PYTHON] }
-        depends:
-          type: array
-          items: { type: string, minLength: 1 }
-          description: 依赖的证据项标识，原始数据通常为空数组
-
-    AiNeedCondition:
-      type: object
-      required: [left, op, right]
-      properties:
-        left: { type: string, minLength: 1, description: 证据项引用，如 evidence.N1-E5 }
-        op: { type: string, enum: [GT, GTE, LT, LTE, EQ, NEQ] }
-        right:
-          oneOf:
-            - { type: number }
-            - { type: boolean }
-            - { type: string }
-          description: 比较右值，只允许数字、布尔或字符串字面量
-
-    AiDoneWhen:
-      type: object
-      required: [type, keys]
-      properties:
-        type: { type: string, enum: [EVIDENCE_KEYS_PRESENT] }
-        keys:
-          type: array
-          minItems: 1
-          items: { type: string, minLength: 1 }
-          description: 完成判据所需的证据项标识，必须是本需求 evidence_plan 标识的子集
-
-    Plan:
-      type: object
-      deprecated: true
-      required: [title, objective, needs_clarification, clarification_questions, steps]
-      description: |
-        历史 PLAN 消息兼容协议，当前模型与新消息使用 NEEDS；新 CLARIFICATION 不依赖此对象。
-        旧协议使用 snake_case；needs_clarification 必须显式提供。
-        为 true 时 clarification_questions 非空、steps 为空；为 false 时问题列表为空、steps 为有效有序步骤。
-        这里只规划分析步骤，不包含执行状态、执行结果、报告节点或订单创建。
-      properties:
-        title: { type: string, minLength: 1 }
-        objective: { type: string, minLength: 1 }
-        needs_clarification: { type: boolean }
-        clarification_questions:
-          type: array
-          items: { $ref: '#/components/schemas/ClarificationQuestion' }
-          description: 本轮问题 id 必须唯一，允许用户选择建议或自行补充
-        steps:
-          type: array
-          description: 按 step 连续编号 1..n 顺序执行；上限由 erp.ai.graph.max-plan-steps 配置，默认6
-          items: { $ref: '#/components/schemas/PlanStep' }
-
-    ClarificationQuestion:
-      type: object
-      required: [id, question, options]
-      description: 人工澄清问题；候选项只提供建议，前端始终允许自定义补充
-      properties:
-        id: { type: string, minLength: 1, pattern: '\S', description: 本轮唯一问题标识，不充当数据库业务ID }
-        question: { type: string, minLength: 1, pattern: '\S', description: 问题正文 }
-        options:
-          type: array
-          uniqueItems: true
-          items: { type: string, minLength: 1, pattern: '\S' }
-          description: 非空时提供单选候选，空数组使用自由输入；不得杜撰没有可信授权来源的仓库或商品候选
-
-    PlanStep:
-      type: object
-      required: [step, type, instruction]
-      properties:
-        step: { type: integer, minimum: 1, description: 从1开始的连续序号 }
-        type: { type: string, enum: [SQL_QUERY, PYTHON_ANALYSIS] }
-        instruction: { type: string, minLength: 1, description: 本步目标和对前序结果的使用要求，不编造数据库结构或结果 }
-
     # 会话与消息 Schema 对应当前 AI 助手页面；聊天卡片类 Schema 保留供后续功能设计引用。
     AiAssistantOverview:
       type: object
@@ -5020,83 +4959,24 @@ components:
         description: { type: string, description: 会话摘要 }
         updatedAt: { type: string, description: 最近消息时间；还没有消息时取创建时间 }
 
+    AiConversationCursorPage:
+      type: object
+      required: [records, hasMore, nextBeforeTime, nextBeforeId]
+      properties:
+        records: { type: array, items: { $ref: '#/components/schemas/AiConversationSummary' } }
+        hasMore: { type: boolean, description: 是否有更早的会话 }
+        nextBeforeTime: { type: string, nullable: true, description: 下一页游标时间；无下一页时为空 }
+        nextBeforeId: { type: string, nullable: true, description: 下一页游标会话 ID；无下一页时为空 }
+
     AiConversationDetail:
       type: object
-      required: [conversationId, title, description, updatedAt, running, runNode, runLabel, runStatus]
-      description: |
-        会话基本信息加当前执行状态。活动执行、最新请求收尾状态及检查点共同用于判断，
-        不向会话表增加运行字段；历史展示只读取独立的 MySQL 消息流水。
+      required: [conversationId, title, description, updatedAt]
+      description: 当前用户的会话基本信息，运行期间状态通过本轮实时事件提供。
       properties:
         conversationId: { type: string, description: 会话 ID }
         title: { type: string, description: 会话标题 }
         description: { type: string, description: 会话摘要 }
         updatedAt: { type: string, description: 最近更新时间 }
-        running: { type: boolean, description: 当前是否存在实际活动执行 }
-        runStatus:
-          type: string
-          enum: [IDLE, RUNNING, WAITING_HUMAN, NEEDS_READY, PLAN_READY, FORMAT_RETRY_EXHAUSTED, FAILED, INTERRUPTED]
-          description: 当前会话执行状态，人工暂停不持有执行锁；当前就绪状态为 NEEDS_READY，PLAN_READY 仅兼容历史响应
-        runNode:
-          nullable: true
-          type: string
-          description: 当前运行节点编码；无运行时为 null
-        runLabel:
-          nullable: true
-          type: string
-          description: 当前节点展示文案；无运行时为 null
-
-    AiRunNodeEvent:
-      type: object
-      required: [node, label]
-      description: 进度流中 node-start 与 node-end 的事件体；由消息转换器序列化为 JSON 对象
-      properties:
-        node: { type: string, description: 节点编码，前端不硬编码节点名 }
-        label: { type: string, description: 节点展示文案，如「正在规划」 }
-        durationMs:
-          nullable: true
-          type: integer
-          description: 节点耗时毫秒；node-start 时为 null。使用整数而非 Long，避免被序列化成字符串
-
-    AiRunArtifact:
-      type: object
-      required: [type, content]
-      description: 进度流中 artifact 与 clarification_required 共用的事件体；产物定稿（或暂停）即推送，content 与可见消息展示协议同构
-      properties:
-        type: { type: string, description: 事件内容类型，与可见消息 content.type 同源；artifact 当前为 NEEDS，澄清事件固定为 CLARIFICATION，PLAN 仅兼容历史 }
-        content: { $ref: '#/components/schemas/AiVisibleMessageContent' }
-        checkpointId:
-          nullable: true
-          type: string
-          description: 事件对应拍次的检查点标识，由服务器补齐；不可得时为 null。仅作诊断：恢复所需暂停点在澄清事件的 content.data.pauseId，NEEDS 与历史 PLAN 产物不可用于恢复
-
-    AiRunFinished:
-      type: object
-      required: [status]
-      description: 进度流中 run_finished 事件的事件体；薄载荷只带状态与告警，消息正文以流水为准
-      properties:
-        status: { type: string, enum: [NEEDS_READY, PLAN_READY], description: 当前为 NEEDS_READY（需求已就绪，执行器尚未接入）；PLAN_READY 仅兼容历史事件 }
-        warning:
-          nullable: true
-          type: string
-          description: 展示流水保存失败提示的预留字段；当前保存失败告警链路尚未完整实现，不能据此承诺保存失败必定有 warning
-
-    AiRunStopped:
-      type: object
-      required: [status]
-      description: 进度流中 run_stopped 事件的事件体；薄载荷表示本轮未完成，正文以流水为准
-      properties:
-        status:
-          type: string
-          enum: [FORMAT_RETRY_EXHAUSTED, FAILED]
-          description: 停止分类；FORMAT_RETRY_EXHAUSTED 表示格式重试耗尽，FAILED 表示执行失败
-        reason:
-          nullable: true
-          type: string
-          description: 可直接展示的失败说明；能力性终止（如格式耗尽）为 null，正文看流水里的 ERROR 消息
-        warning:
-          nullable: true
-          type: string
-          description: 展示流水保存失败提示的预留字段；当前告警链路尚未完整实现
 
     AiConversationUpdateRequest:
       type: object
@@ -5107,13 +4987,13 @@ components:
     AiConversationMessage:
       type: object
       required: [messageId, requestId, seq, role, kind, content, createdAt]
-      description: MySQL 中保存的用户可见流水；不含内部模型原文、格式错误、提示词或完整 State
+      description: MySQL 中保存的用户可见流水；普通工具参数及结果不返回
       properties:
         messageId: { type: string, description: 消息 ID }
         requestId: { type: string, description: 服务端请求标识，用于关联一轮请求及其回复 }
         seq: { type: string, pattern: '^\d+$', description: 会话内消息顺序，BIGINT 按字符串传输 }
-        role: { type: string, enum: [user, assistant] }
-        kind: { type: string, enum: [USER_INPUT, ASSISTANT_FINAL] }
+        role: { type: string, enum: [user, assistant, tool] }
+        kind: { type: string, enum: [USER_INPUT, ASSISTANT_STEP, TOOL_CALL, TOOL_RESULT, ASSISTANT_FINAL] }
         content: { $ref: '#/components/schemas/AiVisibleMessageContent' }
         createdAt: { type: string, description: 创建时间 }
 
@@ -5121,24 +5001,16 @@ components:
       type: object
       required: [type, data]
       properties:
-        type: { type: string, enum: [TEXT, CLARIFICATION, NEEDS, PLAN, ERROR] }
+        type: { type: string, enum: [TEXT, TOOL_CALL, TOOL_RESULT] }
         data:
           type: object
-          required: [text]
-          description: 展示数据，按 type 校验；新 CLARIFICATION 包含 text、questions、threadId、pauseId，不含 plan；NEEDS 包含 text、needs、threadId（不可用于恢复）；PLAN 的 plan 仅兼容旧历史；ERROR 可携带 status 标记（FORMAT_RETRY_EXHAUSTED 表示规划未完成提示）；旧澄清历史缺少恢复标识时只读展示，不允许恢复
+          description: 按 type 解释；TEXT 使用 text，ask_user 工具消息使用 callId、name、arguments 或 result。
           properties:
             text: { type: string, description: 用户可见正文或摘要 }
-            replyToMessageId: { type: string, description: 用户补充回答所对应的问题消息 ID }
-            plan: { $ref: '#/components/schemas/Plan' }
-            needs:
-              type: array
-              items: { $ref: '#/components/schemas/AiNeed' }
-            questions:
-              type: array
-              items: { $ref: '#/components/schemas/ClarificationQuestion' }
-            threadId: { type: string, description: 恢复时原样提交，前端不作为业务内容展示 }
-            pauseId: { type: string, description: 本条人工问题的暂停标识；恢复时原样提交，消费后即失效，服务端核对最新暂停点 }
-            status: { type: string, description: ERROR 专用状态标记：FORMAT_RETRY_EXHAUSTED 表示规划未完成提示，无标记表示运行失败提示 }
+            callId: { type: string, description: 工具调用标识 }
+            name: { type: string, description: 工具名称 }
+            arguments: { type: string, description: 工具调用的原始 JSON 参数字符串 }
+            result: { type: string, description: 工具原始结果字符串 }
 
     AiConversationMessagePage:
       type: object

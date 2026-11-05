@@ -1,4 +1,4 @@
-import type { ClarificationQuestion, PlanningArtifact } from './graph-types';
+import type { ClarificationQuestion } from './clarification/clarification-types';
 
 export type AiTone = 'neutral' | 'good' | 'watch' | 'risk';
 
@@ -64,45 +64,21 @@ export interface AiConversationSummary {
   updatedAt: string;
 }
 
-export type AiRunStatus =
-  | 'IDLE'
-  | 'RUNNING'
-  | 'WAITING_HUMAN'
-  | 'PLAN_READY'
-  | 'NEEDS_READY'
-  | 'FORMAT_RETRY_EXHAUSTED'
-  | 'FAILED'
-  | 'INTERRUPTED';
+export type AiRunStatus = 'IDLE' | 'RUNNING' | 'WAITING_USER' | 'COMPLETED' | 'FAILED' | 'INTERRUPTED';
 
-export interface AiConversationDetail extends AiConversationSummary {
-  running: boolean;
-  runStatus: AiRunStatus;
-  runNode: string | null;
-  runLabel: string | null;
-}
+export interface AiConversationDetail extends AiConversationSummary {}
 
 export type AiMessageContent =
-  | { type: 'TEXT'; data: { text: string; replyToMessageId?: string } }
-  | {
-      type: 'ERROR';
-      data: {
-        text: string;
-        /** 仅作消息展示分类，不能替代会话详情的当前运行状态。 */
-        status?: string;
-        threadId?: string;
-      };
-    }
+  | { type: 'TEXT'; data: { text: string; callId?: string; questionAnswers?: Record<string, string>; note?: string } }
   | {
       type: 'CLARIFICATION';
       data: {
         text: string;
+        callId: string;
         questions: ClarificationQuestion[];
-        threadId?: string;
-        /** 暂停拍生成的恢复/草稿锚点；旧消息缺省时只读不可恢复。 */
-        pauseId?: string;
       };
     }
-  | PlanningArtifact;
+  ;
 
 /** 用户可见流水与节点工作记忆分离；seq 始终保留为字符串。 */
 export interface AiConversationMessage {
@@ -110,7 +86,7 @@ export interface AiConversationMessage {
   requestId: string;
   seq: string;
   role: AiMessageRole;
-  kind: 'USER_INPUT' | 'ASSISTANT_FINAL';
+  kind: 'USER_INPUT' | 'ASSISTANT_STEP' | 'TOOL_CALL' | 'TOOL_RESULT' | 'ASSISTANT_FINAL';
   content: AiMessageContent;
   createdAt: string;
 }

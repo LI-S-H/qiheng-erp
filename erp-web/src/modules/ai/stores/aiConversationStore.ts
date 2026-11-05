@@ -3,18 +3,20 @@ import { AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
 import {
   createAiConversation,
   deleteAiConversation,
-  getAiAssistantOverview,
+  getAiConversationPage,
   getAiConversationDetail,
   getAiConversationHistory,
   getAiConversationMessagePage,
   renameAiConversation,
 } from '../api';
-import { compareMessages } from '../message-contract';
+import { compareMessages } from '../contracts/message-contract';
 import { compareConversationActivity, conversationTimestamp, localActivityTime } from '../conversation-time';
 import type { AiConversationDetail, AiConversationMessage, AiConversationSummary } from '../types';
 
 let listController: AbortController | null = null;
 let historyController: AbortController | null = null;
+let olderController: AbortController | null = null;
+let moreListController: AbortController | null = null;
 function token() {
   return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
 }
@@ -27,10 +29,17 @@ export const useAiConversationStore = defineStore('aiConversation', {
     detail: null as AiConversationDetail | null,
     messages: [] as AiConversationMessage[],
     listLoading: false,
+    moreListLoading: false,
+    moreListError: false,
+    hasMoreConversations: false,
+    nextConversationCursor: null as { time: string; id: string } | null,
+    loadedMoreConversations: false,
+    moreListRevision: 0,
     historyLoading: false,
     olderLoading: false,
     oldestPage: 0,
     loadSeq: 0,
+    historyGeneration: 0,
     listSeq: 0,
     accountEpoch: 0,
     activitySeq: 0,
@@ -45,6 +54,8 @@ export const useAiConversationStore = defineStore('aiConversation', {
   actions: {
     async loadConversations() {
       listController?.abort();
+      moreListController?.abort();
+      this.moreListLoading = false;
       const controller = new AbortController();
       listController = controller;
       const version = ++this.listSeq;
@@ -53,16 +64,20 @@ export const useAiConversationStore = defineStore('aiConversation', {
       const activityVersion = this.activitySeq;
       this.listLoading = true;
       try {
-        const overview = await getAiAssistantOverview(controller.signal);
+        const page = await getAiConversationPage(undefined, controller.signal);
         if (version !== this.listSeq || account !== this.accountEpoch || auth !== token()) {
           return;
         }
-        const rows = overview.conversations.map(item => this.mergeActivity(item, activityVersion));
+        const rows = page.records.map(item => this.mergeActivity(item, activityVersion));
         const included = new Set(rows.map(item => item.conversationId));
-        // 创建/发送后的旧列表可能尚不包含该会话，短暂保留明确有本地活动的行。
-        rows.push(...this.conversations.filter(item => !included.has(item.conversationId) &&
-          this.pendingActivity[item.conversationId] && Date.now() - this.pendingActivity[item.conversationId]!.touchedAt < 60_000));
+        // 已加载的更早会话保留在列表中；刷新首页不能丢掉用户展开的历史。
+        rows.push(...this.conversations.filter(item => !included.has(item.conversationId)));
         this.conversations = rows.sort(compareConversationActivity);
+        if (!this.loadedMoreConversations) {
+          this.nextConversationCursor = page.nextTime && page.nextId ? { time: page.nextTime, id: page.nextId } : null;
+          this.hasMoreConversations = page.hasMore;
+        }
+        this.moreListError = false;
       } finally {
         if (version === this.listSeq && account === this.accountEpoch) {
           this.listLoading = false;
@@ -70,11 +85,43 @@ export const useAiConversationStore = defineStore('aiConversation', {
       }
     },
 
-    async loadConversation(conversationId: string) {
+    /** 加载下一批历史会话，旧账号和过期请求不能写回当前列表。 */
+    async loadMoreConversations() {
+      if (!this.hasMoreConversations || !this.nextConversationCursor || this.moreListLoading) return;
+      const controller = new AbortController();
+      moreListController = controller;
+      const version = this.listSeq;
+      const account = this.accountEpoch;
+      const auth = token();
+      const activityVersion = this.activitySeq;
+      this.moreListLoading = true;
+      this.moreListError = false;
+      try {
+        const page = await getAiConversationPage(this.nextConversationCursor, controller.signal);
+        if (version !== this.listSeq || account !== this.accountEpoch || auth !== token()) return;
+        for (const item of page.records) this.upsertConversationSummary(item, activityVersion);
+        this.loadedMoreConversations = true;
+        this.moreListRevision += 1;
+        this.hasMoreConversations = page.hasMore;
+        this.nextConversationCursor = page.nextTime && page.nextId ? { time: page.nextTime, id: page.nextId } : null;
+      } catch (error) {
+        if (!controller.signal.aborted && version === this.listSeq && account === this.accountEpoch) this.moreListError = true;
+      } finally {
+        if (version === this.listSeq && account === this.accountEpoch) this.moreListLoading = false;
+      }
+    },
+
+    async loadConversation(conversationId: string, options?: { silent?: boolean }) {
       historyController?.abort();
       const controller = new AbortController();
       historyController = controller;
       const switched = this.activeId !== conversationId;
+      const silent = Boolean(options?.silent && !switched && this.detail);
+      if (!silent) {
+        olderController?.abort();
+        this.historyGeneration += 1;
+        this.olderLoading = false;
+      }
       this.activeId = conversationId;
       if (switched) {
         this.detail = null;
@@ -84,8 +131,8 @@ export const useAiConversationStore = defineStore('aiConversation', {
       const account = this.accountEpoch;
       const auth = token();
       const activityVersion = this.activitySeq;
-      this.historyLoading = true;
-      this.olderLoading = false;
+      // 同会话后台同步沿用已有内容；首次加载和切换仍显示遮罩并锁定操作。
+      this.historyLoading = !silent;
       try {
         const [detail, page] = await Promise.all([
           getAiConversationDetail(conversationId, controller.signal),
@@ -121,20 +168,22 @@ export const useAiConversationStore = defineStore('aiConversation', {
         return;
       }
       const id = this.activeId;
-      const version = this.loadSeq;
+      const version = this.historyGeneration;
       const account = this.accountEpoch;
       const auth = token();
+      const controller = new AbortController();
+      olderController = controller;
       this.olderLoading = true;
       try {
         const page = await getAiConversationMessagePage(
           id,
           this.oldestPage - 1,
           50,
-          historyController?.signal,
+          controller.signal,
         );
         if (
           id !== this.activeId ||
-          version !== this.loadSeq ||
+          version !== this.historyGeneration ||
           account !== this.accountEpoch ||
           auth !== token()
         ) {
@@ -142,8 +191,10 @@ export const useAiConversationStore = defineStore('aiConversation', {
         }
         this.messages = this.mergeMessages(this.messages, page.records);
         this.oldestPage = page.pageNum;
+      } catch (error) {
+        if (!controller.signal.aborted) throw error;
       } finally {
-        if (version === this.loadSeq && account === this.accountEpoch) {
+        if (version === this.historyGeneration && account === this.accountEpoch) {
           this.olderLoading = false;
         }
       }
@@ -251,26 +302,37 @@ export const useAiConversationStore = defineStore('aiConversation', {
 
     invalidateListRead() {
       listController?.abort();
+      moreListController?.abort();
+      this.moreListLoading = false;
       this.listSeq += 1;
       this.listLoading = false;
     },
 
     clearActive() {
       historyController?.abort();
+      olderController?.abort();
       this.activeId = null;
       this.detail = null;
       this.messages = [];
       this.oldestPage = 0;
       this.loadSeq += 1;
+      this.historyGeneration += 1;
       this.historyLoading = false;
       this.olderLoading = false;
     },
 
     reset() {
       listController?.abort();
+      moreListController?.abort();
       this.accountEpoch += 1;
       this.listSeq += 1;
       this.conversations = [];
+      this.hasMoreConversations = false;
+      this.nextConversationCursor = null;
+      this.loadedMoreConversations = false;
+      this.moreListRevision = 0;
+      this.moreListLoading = false;
+      this.moreListError = false;
       this.pendingActivity = {};
       this.confirmedActivity = {};
       this.activitySeq = 0;

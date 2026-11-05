@@ -93,9 +93,9 @@ function handleImageError(event: Event) {
 .ai-markdown-content :deep(pre) { max-width: 100%; overflow-x: auto; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--muted); white-space: pre; overflow-wrap: normal; }
 .ai-markdown-content :deep(pre code) { padding: 0; background: transparent; }
 .ai-markdown-content :deep(.ai-markdown-table) { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
-.ai-markdown-content :deep(table) { width: 100%; border-collapse: collapse; white-space: nowrap; }
+.ai-markdown-content :deep(table) { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 13px; line-height: 1.55; }
 .ai-markdown-content :deep(th),
-.ai-markdown-content :deep(td) { padding: 7px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+.ai-markdown-content :deep(td) { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; }
 .ai-markdown-content :deep(th) { background: var(--muted); font-weight: 600; }
 .ai-markdown-content :deep(tr:last-child td) { border-bottom: 0; }
 .ai-markdown-content :deep(hr) { margin: 14px 0; border: 0; border-top: 1px solid var(--border); }

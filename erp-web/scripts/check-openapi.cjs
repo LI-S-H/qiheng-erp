@@ -467,6 +467,12 @@ const allSql = fs
   .filter((fileName) => fileName.endsWith(".sql"))
   .map((fileName) => fs.readFileSync(path.join(sqlDirectory, fileName), "utf8"))
   .join("\n");
+// 34 张表对应历史 MVP 基线；后续 AI 取数与数据集迁移单独检查。
+const baselineSql = fs
+  .readdirSync(sqlDirectory)
+  .filter((fileName) => /^(00[1-8]|018)_.*\.sql$/.test(fileName))
+  .map((fileName) => fs.readFileSync(path.join(sqlDirectory, fileName), "utf8"))
+  .join("\n");
 
 const requiredPaths = [
   "/auth/login:",
@@ -1400,7 +1406,7 @@ if (
   !warehouseStockViewSource.includes('data-filter-size="wide"') ||
   !warehouseStockViewSource.includes("库存健康") ||
   !warehouseStockViewSource.includes("占用情况") ||
-  !pageDesign.includes("## 15. 仓库库存模块：库存管理")
+  !pageDesign.includes("各业务页面的逐页设计稿已移除")
 ) {
   throw new Error("库存管理页面边界、响应式布局或页面设计文档不完整");
 }
@@ -1622,8 +1628,7 @@ if (
   !stockBillViewSource.includes("<dt>作业单号</dt>") ||
   !stockBillViewSource.includes("本次入库数量") ||
   !stockBillViewSource.includes("本次出库数量") ||
-  !pageDesign.includes("## 16. 仓库库存模块：入库单与出库单") ||
-  !pageDesign.includes("DRAFT -> PENDING_CONFIRM") ||
+  !warehouseSchema.includes("`DRAFT`、`PENDING_CONFIRM`、`CONFIRMED`、`CANCELLED`") ||
   !warehouseSchema.includes("CONFIRMED` 后不允许任何修改或取消") ||
   !warehouseSchema.includes("100 倍整数存储")
 ) {
@@ -1723,12 +1728,17 @@ if (
   throw new Error("权限更新请求不得包含创建后不可修改的 permissionCode");
 }
 
-const tableCount = [...allSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)]
+const tableCount = [...baselineSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)]
   .length;
 if (tableCount !== 34)
   throw new Error(
     `数据库设计文档声明 34 张表，当前 DDL 实际为 ${tableCount} 张`,
   );
+for (const table of ["ai_data_table", "ai_data_table_column", "ai_data_table_relation", "ai_dataset"]) {
+  if (!allSql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`)) {
+    throw new Error(`AI 数据底座缺少建表语句：${table}`);
+  }
+}
 if (
   !databaseOverview.includes("共设计并已落 DDL 34 张表") ||
   !databaseOverview.includes("`sys_permission`") ||
@@ -1815,9 +1825,8 @@ for (const required of [
   "  /ai/assistant/conversations:",
   "  /ai/assistant/conversations/{conversationId}:",
   "  /ai/assistant/conversations/{conversationId}/messages:",
-  "  /ai/assistant/conversations/{conversationId}/progress/stream:",
-  "  /ai/graph/stream:",
-  "  /ai/graph/resume/stream:",
+  "  /ai/assistant/conversations/{conversationId}/messages/stream:",
+  "  /ai/assistant/conversations/{conversationId}/questions/{questionRequestId}/answer:",
 ]) {
   if (!source.includes(required))
     throw new Error(`OpenAPI 缺少 AI 助手路由：${required}`);
@@ -1825,39 +1834,15 @@ for (const required of [
 for (const removed of [
   "  /ai/assistant/messages:",
   "  /ai/assistant/messages/stream:",
+  "  /ai/assistant/conversations/{conversationId}/progress/stream:",
+  "  /ai/graph/stream:",
+  "  /ai/graph/resume/stream:",
 ]) {
   if (source.includes(removed))
     throw new Error(`OpenAPI 不得保留已下线的聊天路由：${removed}`);
 }
-const graphSchemaNames = [
-  "GraphStartRequest", "GraphResumeRequest", "Plan", "PlanStep",
-];
-const graphSchema = (name) => {
-  const match = source.match(new RegExp(`^    ${name}:\\r?\\n([\\s\\S]*?)(?=^    [A-Za-z0-9_]+:|$(?![\\s\\S]))`, "m"));
-  if (!match) throw new Error(`OpenAPI 缺少 Graph 契约模型：${name}`);
-  return match[0];
-};
-for (const schemaName of graphSchemaNames) graphSchema(schemaName);
-for (const [name, fields] of [
-  ["GraphStartRequest", "required: [conversationId, query]"],
-  ["GraphResumeRequest", "required: [threadId, pauseId, answer]"],
-  ["Plan", "required: [title, objective, needs_clarification, clarification_questions, steps]"],
-  ["PlanStep", "required: [step, type, instruction]"],
-]) {
-  if (!graphSchema(name).includes(fields)) {
-    throw new Error(`Graph 契约必填字段不完整：${name}`);
-  }
-}
-for (const name of ["GraphStartRequest", "GraphResumeRequest"]) {
-  if (!graphSchema(name).includes("maxLength: 10000") ||
-      !graphSchema(name).includes("pattern: '\\S'")) {
-    throw new Error(`Graph 文本输入必须限制长度并拒绝纯空白：${name}`);
-  }
-}
-if (!graphSchema("GraphResumeRequest").includes("maxLength: 64") ||
-    !graphSchema("PlanStep").includes("[SQL_QUERY, PYTHON_ANALYSIS]") ||
-    !graphSchema("AiRunStopped").includes("[FORMAT_RETRY_EXHAUSTED, FAILED]")) {
-  throw new Error("Graph 暂停点、步骤类型或未完成终态契约不完整");
+for (const required of ["run_started", "text_delta", "tool_started", "tool_finished", "question", "run_completed", "run_failed", "questionRequestId", "selectedOptions"]) {
+  if (!source.includes(required)) throw new Error(`主智能体事件契约缺少字段：${required}`);
 }
 
 const stalePermissionDescriptions = [

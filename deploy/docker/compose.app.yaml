@@ -19,8 +19,12 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请配置数据库密码}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?请配置Redis密码}
       ERP_AI_ENABLED: ${ERP_AI_ENABLED:-false}
+      ERP_AI_SQL_USERNAME: ${ERP_AI_SQL_USERNAME:-erp_ai_ro}
+      ERP_AI_SQL_PASSWORD: ${ERP_AI_SQL_PASSWORD:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-https://api.deepseek.com}
+    volumes:
+      - ai-datasets:/app/data/ai-datasets
     networks:
       - erp
     logging:
@@ -55,3 +59,6 @@ networks:
   erp:
     external: true
     name: qiheng-erp-net
+
+volumes:
+  ai-datasets:

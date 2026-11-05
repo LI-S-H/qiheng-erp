@@ -39,7 +39,7 @@ sudo bash /opt/qiheng-erp/bin/deploy.sh deploy
 
 MySQL、Redis、MQ 消息和日志使用固定 project 下的命名卷，不随应用发布删除。基础服务不映射主机端口。ERP 默认只在 Ubuntu 本机的 `http://127.0.0.1:8088` 提供访问，通过向日葵里的浏览器使用；更改网络访问范围需另行配置。
 
-当前代码无需 MinIO；普通 Redis 满足会话、锁、缓存和 AI 检查点，规划中的 RedisStack 向量检索不属于这次部署。AI 默认关闭，之后在服务器配置中启用并填写自己的密钥。
+当前代码无需 MinIO；普通 Redis 满足会话、锁、缓存和 AI 检查点，规划中的 RedisStack 向量检索不属于这次部署。AI 默认关闭，启用前须在服务器私有配置中设置模型密钥、`ERP_AI_SQL_USERNAME` 和独立的 `ERP_AI_SQL_PASSWORD`，并在数据库中建立仅有 SELECT 权限的对应账号。不要直接使用 `027_ai_readonly_user.sql` 中的示例密码。后端容器将 `ai-datasets` 命名卷挂载到 `/app/data/ai-datasets`，数据集文件随容器重建保留；数据库和此数据卷都需要备份。
 
 ## 1. 先确定镜像来源
 

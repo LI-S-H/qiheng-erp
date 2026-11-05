@@ -18,8 +18,8 @@ import java.time.LocalDateTime;
  * AI 会话消息表
  * </p>
  *
- * <p>会话消息及其结构化展示数据，对应 {@code ai_message} 表。
- * 用户可见 content 保存 type/data 展示 JSON，历史框架消息在读取边界兼容，节点记忆独立保存。</p>
+ * <p>会话消息对应 {@code ai_message} 表。文本以 JSON 字符串保存，工具消息以 JSON 对象保存；
+ * 历史展示格式在读取时兼容，节点记忆独立保存。</p>
  *
  * @author Li
  * @since 2026-10-08
@@ -53,6 +53,14 @@ public class AiMessage implements Serializable {
     @TableField("seq")
     private Long seq;
 
+    @Schema(description = "会话内消息幂等标识，历史消息可为空")
+    @TableField("message_key")
+    private String messageKey;
+
+    @Schema(description = "是否在用户历史中展示")
+    @TableField("visible")
+    private Boolean visible;
+
     @Schema(description = "消息种类：USER_INPUT / ASSISTANT_STEP / TOOL_RESULT / ASSISTANT_FINAL")
     @TableField("kind")
     private String kind;
@@ -61,7 +69,7 @@ public class AiMessage implements Serializable {
     @TableField("role")
     private String role;
 
-    @Schema(description = "用户可见 type/data JSON；旧框架消息只在读取边界兼容")
+    @Schema(description = "文本的 JSON 字符串或工具消息的 JSON 对象；旧格式在读取时兼容")
     @TableField("content")
     private String content;
 

@@ -20,9 +20,7 @@ import java.util.List;
 public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
 
     /**
-     * 用户可见消息分页：只返回 USER_INPUT 与 ASSISTANT_FINAL。
-     *
-     * <p>节点中间步骤和工具结果不会出现在这里。</p>
+     * 用户可见消息分页：依据展示标记返回，包括追问工具调用和回答。
      *
      * @param conversationId 会话 ID
      * @param userId         用户 ID
@@ -36,7 +34,7 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
         WHERE conversation_id = #{conversationId}
           AND user_id = #{userId}
           AND deleted = 0
-          AND kind IN ('USER_INPUT', 'ASSISTANT_FINAL')
+          AND visible = 1
         ORDER BY seq ASC
         LIMIT #{offset}, #{limit}
         """)
@@ -55,27 +53,18 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
         WHERE conversation_id = #{conversationId}
           AND user_id = #{userId}
           AND deleted = 0
-          AND kind IN ('USER_INPUT', 'ASSISTANT_FINAL')
+          AND visible = 1
         """)
     @Options(timeout = 30)
     long countVisibleMessages(@Param("conversationId") Long conversationId,
                               @Param("userId") Long userId);
 
-    /**
-     * 取全部已占用序号，包括旧工具消息及软删除行；调用方已持有会话锁。
-     */
-    @Select("""
-        SELECT COALESCE(MAX(seq), 0)
-        FROM ai_message
-        WHERE conversation_id = #{conversationId}
-          AND user_id = #{userId}
-        """)
-    @Options(timeout = 30)
-    long selectVisibleMaxSeq(@Param("conversationId") Long conversationId,
-                             @Param("userId") Long userId);
+    /** 最近一轮的持久状态；与进程内运行对象分别判断。 */
+    @Select("SELECT run_status FROM ai_message WHERE conversation_id=#{conversationId} AND user_id=#{userId} AND kind='USER_INPUT' AND deleted=0 ORDER BY seq DESC LIMIT 1")
+    String latestRunStatus(@Param("conversationId") long conversationId, @Param("userId") long userId);
 
     /**
-     * 只软删除用户可见消息，不联动节点记忆与内部工具记录。
+     * 只软删除用户可见消息，不联动内部工具记录。
      */
     @Update("""
         UPDATE ai_message
@@ -83,54 +72,46 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
         WHERE conversation_id = #{conversationId}
           AND user_id = #{userId}
           AND deleted = 0
-          AND kind IN ('USER_INPUT', 'ASSISTANT_FINAL')
+          AND visible = 1
         """)
     @Options(timeout = 30)
     int softDeleteByConversation(@Param("conversationId") Long conversationId,
                                 @Param("userId") Long userId);
 
-    /** 最近输入只用于判定当前轮次，展示历史仍由独立分页接口读取。 */
-    @Select("""
-        SELECT * FROM ai_message
-        WHERE conversation_id = #{conversationId} AND user_id = #{userId}
-          AND kind = 'USER_INPUT' AND deleted = 0
-        ORDER BY seq DESC LIMIT 1
-        """)
-    @Options(timeout = 30)
-    AiMessage selectLatestInput(@Param("conversationId") long conversationId, @Param("userId") long userId);
+    /** 锁定所属会话，使序号分配和消息写入在同一事务中串行。 */
+    @Select("SELECT id FROM ai_conversation WHERE id = #{conversationId} AND user_id = #{userId} AND deleted = 0 FOR UPDATE")
+    Long lockOwnedConversation(@Param("conversationId") long conversationId, @Param("userId") long userId);
 
-    @Select("""
-        SELECT * FROM ai_message
-        WHERE conversation_id = #{conversationId} AND user_id = #{userId}
-          AND request_id = #{requestId} AND kind = 'ASSISTANT_FINAL' AND deleted = 0
-        ORDER BY seq DESC LIMIT 1
-        """)
-    @Options(timeout = 30)
-    AiMessage selectFinalByRequest(@Param("conversationId") long conversationId,
-                                 @Param("userId") long userId, @Param("requestId") String requestId);
+    /** 序号必须包含逻辑删除的消息，以满足会话内唯一索引。 */
+    @Select("SELECT COALESCE(MAX(seq), 0) FROM ai_message WHERE conversation_id = #{conversationId}")
+    long maxSequence(@Param("conversationId") long conversationId);
 
-    /** 新协议问题直接按 pauseId 查找；旧消息未保存暂停标识时不猜测关联。 */
-    @Select("""
-        SELECT * FROM ai_message
-        WHERE conversation_id = #{conversationId} AND user_id = #{userId}
-          AND kind = 'ASSISTANT_FINAL' AND deleted = 0
-          AND JSON_UNQUOTE(JSON_EXTRACT(content, '$.type')) = 'CLARIFICATION'
-          AND JSON_UNQUOTE(JSON_EXTRACT(content, '$.data.pauseId')) = #{pauseId}
-        ORDER BY seq DESC LIMIT 1
-        """)
-    @Options(timeout = 30)
-    AiMessage selectClarification(@Param("conversationId") long conversationId,
-                                  @Param("userId") long userId, @Param("pauseId") String pauseId);
+    @Select("SELECT * FROM ai_message WHERE conversation_id = #{conversationId} AND message_key = #{messageKey} LIMIT 1")
+    AiMessage selectByMessageKey(@Param("conversationId") long conversationId, @Param("messageKey") String messageKey);
 
-    /** 只改变用户输入行的轮次终态，避免失败处理覆盖已经提交的成功状态。 */
+    /** 新消息和会话活动时间在同一个事务中更新。 */
+    @Update("UPDATE ai_conversation SET last_message_at = NOW() WHERE id = #{conversationId} AND user_id = #{userId} AND deleted = 0")
+    int touchActivity(@Param("conversationId") long conversationId, @Param("userId") long userId);
+
+    /** 仅首条输入可以替换默认标题，避免覆盖用户手动修改。 */
+    @Update("""
+        UPDATE ai_conversation SET title = #{title}, version = version + 1
+        WHERE id = #{conversationId} AND user_id = #{userId} AND deleted = 0
+          AND title = #{defaultTitle}
+          AND (SELECT COUNT(*) FROM ai_message WHERE conversation_id = #{conversationId}
+               AND kind = 'USER_INPUT' AND deleted = 0) = 1
+        """)
+    int nameFirstInput(@Param("userId") long userId, @Param("conversationId") long conversationId,
+                       @Param("title") String title, @Param("defaultTitle") String defaultTitle);
+
+    /** 本轮状态仅写入对应的用户输入行。 */
     @Update("""
         UPDATE ai_message SET run_status = #{status}, error_code = #{errorCode}
         WHERE conversation_id = #{conversationId} AND user_id = #{userId}
-          AND request_id = #{requestId} AND kind = 'USER_INPUT'
-          AND deleted = 0 AND run_status = 'RUNNING'
+          AND request_id = #{requestId} AND kind = 'USER_INPUT' AND deleted = 0
         """)
-    @Options(timeout = 30)
-    int finishRequest(@Param("conversationId") long conversationId, @Param("userId") long userId,
-                      @Param("requestId") String requestId, @Param("status") String status,
-                      @Param("errorCode") String errorCode);
+    int updateRunStatus(@Param("userId") long userId, @Param("conversationId") long conversationId,
+                        @Param("requestId") String requestId, @Param("status") String status,
+                        @Param("errorCode") String errorCode);
+
 }

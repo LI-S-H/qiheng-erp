@@ -1,4 +1,4 @@
-# 本地密钥文件不入库；没有启用 AI 或没有 Key 时不装配模型与图。
+# 本地密钥文件不入库；模型按开关和密钥装配，旧规划入口保持停用。
 spring:
   config:
     import: optional:file:./.env.ai.yaml
@@ -17,14 +17,6 @@ erp:
       enable-thinking: ${OPENAI_COMPAT_ENABLE_THINKING:}
       read-timeout-seconds: 300
       flash-read-timeout-seconds: 60
-    graph:
-      # 首次生成不占重试额度，默认最多生成三次。
-      max-format-retries: 2
-      # 需求上限：同时未完成的需求数。需求跑完释放名额。
-      max-user-needs: 3
-      max-derived-needs: 6
-      # 业务完整性审阅的回流轮次：一次修不完是常态，真实模型实测要两轮才能补齐。
-      max-review-rounds: 6
     # AI 取数底座：独立只读连接池 + SQL 守卫 + 执行器。
     # 与模型配置分开：取数底座不依赖模型密钥，模型没配也不影响底座开关。
     sql:
@@ -50,14 +42,14 @@ erp:
       session-read-only: true
       # 每页行数，同时也是"没写 LIMIT 时要不要让模型补声明"的阈值。
       page-size: 200
-      # 单个证据项允许的最大行数（超过就明确失败，不静默截断）。
-      max-total-rows: 5000
+      # 单次查询允许的最大行数（超过就明确失败，不静默截断）。
+      max-total-rows: 2000
       # 最多翻几页。
       max-pages: 10
       # 单条查询超时（秒）。
       query-timeout-seconds: 10
-    # Planner 读取节点工作记忆；超过阈值时摘要早期历史，保留最近消息。
-    # 工作记忆按会话累积（跨任务），阈值决定模型还能看到多少历史，不是纯技术参数。
+    # 独立摘要能力保留；不再绑定旧 Planner 或节点工作记忆表。
+    # 新 Agent 的消息作用域与保存方式在后续接入时确定。
     memory:
       summary-trigger-tokens: ${ERP_AI_SUMMARY_TRIGGER_TOKENS:200000}
       messages-to-keep: 20

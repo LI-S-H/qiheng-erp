@@ -6,11 +6,8 @@ package com.qiheng.erp.ai.constant;
  * <p>状态更新不覆盖消息原文；轮次失败时只允许
  * {@link #RUNNING} 转为 {@link #FAILED} / {@link #CANCELLED} / {@link #INTERRUPTED}。</p>
  *
- * <p>与 {@link RunStatuses} 刻意区分：那是<b>对外</b>的运行态（给前端看，含
- * {@code PLAN_READY}、{@code WAITING_HUMAN} 等图语义），本类是<b>落库</b>的
- * 轮次状态（{@code ai_message.run_status} 列的取值）。两个类名相近、且都有
- * {@code RUNNING}、{@code FAILED}、{@code INTERRUPTED}，历史上极易混用，
- * 因此本类改名为 {@code MessageRunStatus} 以示区分。</p>
+ * <p>本类保留历史消息的落库状态，不承担新研究的状态模型。
+ * 旧规划的对外运行态已随编排退役；新研究状态将在后续模块中单独设计。</p>
  *
  * @author Li
  * @since 2026-10-15

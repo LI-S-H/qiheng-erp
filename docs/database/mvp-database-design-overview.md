@@ -14,7 +14,9 @@
 
 ## 当前表清单
 
-MVP 阶段共设计并已落 DDL 34 张表。
+历史基础脚本在 MVP 阶段共设计并已落 DDL 34 张表；执行 [028 迁移](sql/028_retire_ai_node_working_memory.sql) 后，本清单对应的现行表数为 33 张。后续受控取数元数据表另见 [AI 库表设计](mvp-ai-schema.md)，不混入这份历史 MVP 基线计数。
+
+工作记忆表 `ai_node_working_memory` 退役；`ai_node_experience` 保留原名，原始记忆 `ai_node_memory` 保留结构。下表保留退役标记，避免将历史建表记录误认为当前仍在使用。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
@@ -48,9 +50,9 @@ MVP 阶段共设计并已落 DDL 34 张表。
 | AI | `ai_interaction_log` | AI 问答、Tool 调用和权限审计 |
 | AI | `ai_conversation` | 当前用户的经营助手会话摘要 |
 | AI | `ai_message` | 经营助手完整消息历史和结构化结果 |
-| AI | `ai_node_memory` | 各节点私有记忆原文，只增不改，供审计与重压缩取材 |
-| AI | `ai_node_working_memory` | 节点实际读取的工作记忆，纯文本转写，可压缩为摘要条目 |
-| AI | `ai_node_experience` | 由多轮运行提炼的节点长期经验，按状态生效 |
+| AI | `ai_node_memory` | 表结构暂时保留，本地旧测试流水已清空，新原文保存模型后续设计 |
+| AI（已退役） | `ai_node_working_memory` | 028 迁移移除，不计入迁移后的 33 张表 |
+| AI | `ai_node_experience` | 原表及历史分类字段暂不调整 |
 | 系统 | `system_exception` | AI/MCP、消息队列、第三方回调、定时任务和补偿任务异常记录 |
 
 ## 系统异常记录表扩展建议

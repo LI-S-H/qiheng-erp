@@ -30,7 +30,7 @@
             <artifactId>spring-ai-openai</artifactId>
         </dependency>
 
-        <!-- Graph 编排和独立摘要 Hook，沿用当前已验证的框架版本。 -->
+        <!-- 保留 Agent、检查点与独立摘要能力，沿用当前框架版本。 -->
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-agent-framework</artifactId>
@@ -44,6 +44,14 @@
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>druid</artifactId>
+        </dependency>
+
+        <!--
+          授权 Schema 快照缓存；旧证据缓存已随旧编排退役。
+        -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
         </dependency>
 
         <!--

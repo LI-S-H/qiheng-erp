@@ -5,8 +5,7 @@ import com.qiheng.erp.ai.domain.dto.ConversationUpdateRequest;
 import com.qiheng.erp.ai.domain.vo.AssistantOverviewVO;
 import com.qiheng.erp.ai.domain.vo.ConversationDetailVO;
 import com.qiheng.erp.ai.domain.vo.ConversationMessagePageVO;
-import com.qiheng.erp.ai.service.AiAssistantService;
-import com.qiheng.erp.ai.service.GraphService;
+import com.qiheng.erp.ai.conversation.AiAssistantService;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.common.util.IdUtil;
 import com.qiheng.erp.security.context.UserContext;
@@ -14,8 +13,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.MediaType;
-import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -25,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Flux;
 
 /**
  * AI 助手 HTTP 接口：会话管理与会话历史查询。
@@ -44,7 +40,6 @@ import reactor.core.publisher.Flux;
 public class AiAssistantController {
 
     private final AiAssistantService aiAssistantService;
-    private final GraphService graphService;
 
     /**
      * AI 助手概览：当前用户最近的会话列表。
@@ -54,6 +49,17 @@ public class AiAssistantController {
     public Result<AssistantOverviewVO> overview() {
         Long userId = UserContext.requireCurrentUser().getUserId();
         return Result.ok(aiAssistantService.overview(userId));
+    }
+
+    /** 按最近活动时间查询会话，每次最多返回 50 条。 */
+    @GetMapping("/conversations")
+    @Operation(summary = "会话游标分页")
+    public Result<com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO> pageConversations(
+            @RequestParam(value = "beforeTime", required = false) String beforeTime,
+            @RequestParam(value = "beforeId", required = false) String beforeId) {
+        Long userId = UserContext.requireCurrentUser().getUserId();
+        return Result.ok(aiAssistantService.pageConversations(userId, beforeTime,
+                beforeId == null ? null : IdUtil.parseRequiredLongId(beforeId, "beforeId")));
     }
 
     /**
@@ -68,11 +74,11 @@ public class AiAssistantController {
     }
 
     /**
-     *  会话详情，含运行进度快照。
+     *  会话详情。
      * @return
      */
     @GetMapping("/conversations/{id}")
-    @Operation(summary = "会话详情，含运行进度快照")
+    @Operation(summary = "会话详情")
     public Result<ConversationDetailVO> detail(@PathVariable("id") String id) {
         Long userId = UserContext.requireCurrentUser().getUserId();
         Long conversationId = IdUtil.parseRequiredLongId(id, "id");
@@ -118,13 +124,4 @@ public class AiAssistantController {
         return Result.ok(aiAssistantService.pageMessages(conversationId, userId, pageNum, pageSize));
     }
 
-    /**
-     *  订阅会话正在执行的进度；没有在跑的任务时立即结束。
-     */
-    @GetMapping(value = "/conversations/{id}/progress/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @Operation(summary = "订阅会话正在执行的进度；没有在跑的任务时立即结束")
-    public Flux<ServerSentEvent<Object>> progressStream(@PathVariable("id") String id) {
-        Long conversationId = IdUtil.parseRequiredLongId(id, "id");
-        return graphService.subscribeProgress(conversationId);
-    }
 }

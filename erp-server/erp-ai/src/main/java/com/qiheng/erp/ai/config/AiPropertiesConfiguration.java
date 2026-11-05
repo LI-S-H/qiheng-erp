@@ -1,7 +1,6 @@
 package com.qiheng.erp.ai.config;
 
 import com.qiheng.erp.ai.config.properties.AiChatProperties;
-import com.qiheng.erp.ai.config.properties.AiGraphProperties;
 import com.qiheng.erp.ai.config.properties.AiMemoryProperties;
 import com.qiheng.erp.ai.config.properties.AiSchemaProperties;
 import com.qiheng.erp.ai.config.properties.AiSqlProperties;
@@ -12,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
  * 配置属性类的统一注册入口。
  *
  * <p><b>刻意不带 {@code @Conditional}</b>：属性 Bean 必须无条件存在。
- * 如果把它挂在 {@link DeepSeekChatModelConfig} 这类"模型可用才装配"的类上，
+ * 如果把它挂在 {@link ChatModelConfiguration} 这类"模型可用才装配"的类上，
  * 没配 API Key 的环境里属性 Bean 就不会创建，而取数执行器只看
  * {@link AiSqlEnabledCondition}，启动时直接找不到依赖。</p>
  *
@@ -25,7 +24,6 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({
         AiSqlProperties.class,
-        AiGraphProperties.class,
         AiMemoryProperties.class,
         AiChatProperties.class,
         AiSchemaProperties.class

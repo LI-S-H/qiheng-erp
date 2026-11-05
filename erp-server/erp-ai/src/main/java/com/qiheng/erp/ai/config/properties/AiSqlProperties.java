@@ -1,6 +1,6 @@
 package com.qiheng.erp.ai.config.properties;
 
-import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPoolSettings;
+import com.qiheng.erp.ai.sql.pool.ReadOnlySqlPoolSettings;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -27,7 +27,7 @@ public record AiSqlProperties(
         Datasource datasource,
         @DefaultValue("true") boolean sessionReadOnly,
         @DefaultValue("200") int pageSize,
-        @DefaultValue("5000") int maxTotalRows,
+        @DefaultValue("2000") int maxTotalRows,
         @DefaultValue("10") int maxPages,
         @DefaultValue("10") int queryTimeoutSeconds) {
 

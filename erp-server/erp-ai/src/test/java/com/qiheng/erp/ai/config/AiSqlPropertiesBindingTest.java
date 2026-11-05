@@ -1,7 +1,7 @@
 package com.qiheng.erp.ai.config;
 
 import com.qiheng.erp.ai.config.properties.AiSqlProperties;
-import com.qiheng.erp.ai.service.data.sql.pool.ReadOnlySqlPoolSettings;
+import com.qiheng.erp.ai.sql.pool.ReadOnlySqlPoolSettings;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -74,7 +74,7 @@ class AiSqlPropertiesBindingTest {
                     assertThat(properties.datasource().slowSqlMillis()).isEqualTo(1000L);
                     assertThat(properties.sessionReadOnly()).isTrue();
                     assertThat(properties.pageSize()).isEqualTo(200);
-                    assertThat(properties.maxTotalRows()).isEqualTo(5000);
+                    assertThat(properties.maxTotalRows()).isEqualTo(2000);
                     assertThat(properties.maxPages()).isEqualTo(10);
                     assertThat(properties.queryTimeoutSeconds()).isEqualTo(10);
                 });

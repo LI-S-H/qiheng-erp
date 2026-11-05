@@ -1,7 +1,7 @@
 package com.qiheng.erp.ai.config;
 
 import com.qiheng.erp.ai.config.properties.AiSchemaProperties;
-import com.qiheng.erp.ai.service.data.schema.SchemaCache;
+import com.qiheng.erp.ai.sql.schema.SchemaCache;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 

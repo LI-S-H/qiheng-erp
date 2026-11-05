@@ -891,26 +891,29 @@ RAG、AI Tool、SubAgent、任务管理、AI 审计。是 ERP 的自然语言入
 
 第十三章描述的是 AI 的目标能力边界。本章说明当前已经落地到哪一步，以及后续设计的归属。
 
-### 14.1 当前实现：Graph 规划闭环
+### 14.1 当前实现：旧编排退役，保留底座与历史
 
-当前运行的是 Graph 规划最小闭环（`PlannerNode → PlanCheckNode → HumanFeedbackNode`）：生成结构化 Plan、自动修复格式错误、人工补充后重新规划，有效计划返回后结束，不执行 SQL、Python、报告生成或业务单据创建。
+2026-10-27：旧 Planner/Need/Step 主图和节点工作记忆写入链路已移除，新研究能力尚未接入。旧规划启动与恢复接口保留路径和请求格式，但合法请求在建立事件流前返回 HTTP 503，不新建任务、消息或检查点。
 
-会话管理挂在 `/ai/assistant/*`，规划通过 `/ai/graph/*` 发起，运行时状态以 Redis 检查点为唯一来源，会话表不保存"当前节点"或活动轮次标识。
+会话 CRUD 与历史分页继续可用，历史 PLAN、NEEDS、CLARIFICATION 等内容保留；详情不再根据旧检查点显示运行中或可恢复状态。SQL、Schema、权限、业务知识、模型接入和独立摘要能力保留。
 
-实现细节、协议、验证记录见 [AI Graph MVP 设计与运行说明](ai-graph-mvp.md)。
+旧工作记忆表删除由 028 迁移承载，经验表保持 ai_node_experience 原名；原始记忆表结构保留，开发库旧测试流水已清空。
+
+实现与验证记录见 [AI Graph MVP 设计与运行说明](ai-graph-mvp.md)，整体目标见下方架构入口。
 
 ### 14.2 设计文件分工
 
 | 文档 | 作用 |
 |---|---|
-| [AI Agent 架构设计](ai-agent-architecture.md) | **目标架构的权威依据**（v4）：需求驱动的轮次式 ReAct——需求拆解、代码判定完成、多轮取数、证据链、报告溯源；附录含演进论证与被否决方案 |
-| [AI 图架构融合方案](ai-graph-architecture-proposal.md) | 三层图架构的讨论稿 |
-| [Agent 与上下文完整设计](ai-agent-context-design.md) | 上下文分类、状态持久化与恢复的讨论稿 |
-| [State 管理的最小实现](ai-state-management-guide.md) | OverAllState、KeyStrategy、Saver 的落地方式与可运行示例 |
-| [图产物发布拍改造方案](ai-graph-artifact-persistence.md) | 落库与推送前移的施工方案 |
-| [AI Graph MVP 设计与运行说明](ai-graph-mvp.md) | 当前实现的权威说明 |
+| [AI Agent 架构设计](ai-agent-architecture.md) | **整体目标架构的现行依据**（2026-10-27）：MainAgent 动态研究、SQL Graph 可靠取数、AnalysisAgent 持续分析、ReportGraph 审核交付，以及研究状态与数据管理；具体交互和实现细节按模块补充 |
+| [v4.1 架构历史归档](ai-agent-architecture-v4.1-archive-2026-10-27.md) | 旧主架构的工作区完整快照，供历史追溯，不约束新开发 |
+| [AI 图架构融合方案](ai-graph-architecture-proposal.md) | 早期融合方案的历史讨论稿 |
+| [Agent 与上下文完整设计](ai-agent-context-design.md) | 早期上下文和恢复方案的历史讨论稿 |
+| [State 管理的最小实现](ai-state-management-guide.md) | Graph State 机制的教学参考，具体接入方式以模块实施时的框架验证为准 |
+| [图产物发布拍改造方案](ai-graph-artifact-persistence.md) | 旧图发布与落库的历史施工记录，有效原则在新模块实施时核对 |
+| [AI Graph MVP 设计与运行说明](ai-graph-mvp.md) | 当前代码的实现说明与历史验证记录；新架构能力只有实施并验证后才能记为已完成 |
 
-上述设计文件按性质分三类：现状说明只有 `ai-graph-mvp.md` 一份；`ai-agent-architecture.md` 是目标架构的唯一权威依据；其余为讨论稿与配套施工方案，实施前需与当前代码和契约核对。
+整体设计以 ai-agent-architecture.md 为准；ai-graph-mvp.md 记录实现与验证。旧稿中与现行设计冲突的调度、状态和恢复规则不再约束新开发。具体接口和数据库契约在对应模块实施时同步，不在整体架构阶段预先冻结。
 
 ---
 

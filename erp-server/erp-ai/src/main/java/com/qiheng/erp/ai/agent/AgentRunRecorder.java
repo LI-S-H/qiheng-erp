@@ -3,6 +3,7 @@ package com.qiheng.erp.ai.agent;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qiheng.erp.ai.constant.AiToolLabels;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
 import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
@@ -14,14 +15,14 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
 
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
  * 按图状态顺序保存本轮已形成的消息，不将流式分片重复写入。
  *
- * <p>消息表保存前端要渲染的内容，智能体流水保存本次执行的原文与调用过程；
- * 两者内容不同、用途不同，各自写入。</p>
+ * <p>这里的每一行都是前端要渲染的内容：模型思考文字是 {@code ASSISTANT_STEP}，
+ * 工具执行是带耗时与状态的 {@code TOOL_CALL}，追问另有一行 {@code TOOL_RESULT} 承载回答。
+ * 工具的参数与返回原文不在本类保存，由 {@link AiAgentTraceRecorder} 写入流水表。</p>
  *
  * @author Li
  * @since 2026-10-27
@@ -42,6 +43,9 @@ final class AgentRunRecorder {
     /** 本轮是否以模型调用失败结束；失败时不写最终答复，只记流水。 */
     private boolean modelFailed;
 
+    /** 本轮各工具调用的名称；结束时据此补全展示行。 */
+    private final Map<String, String> toolNames = new LinkedHashMap<>();
+
     AgentRunRecorder(ConversationMessageStore store, ObjectMapper mapper, AiAgentTraceRecorder traces,
                      long userId, long conversationId, String runId) {
         this.store = store;
@@ -54,7 +58,7 @@ final class AgentRunRecorder {
 
     /** 保存用户输入并创建本轮状态。 */
     void start(String input) {
-        save("input", "user", "USER_INPUT", true, input, "RUNNING");
+        save("input", "user", "USER_INPUT", input, "RUNNING");
         store.nameFirstInput(userId, conversationId, input);
         traces.recordText("INPUT", input);
     }
@@ -71,30 +75,37 @@ final class AgentRunRecorder {
         }
         if (messages.getLast() instanceof ToolResponseMessage response) {
             for (var item : response.getResponses()) {
-                save("result:" + item.id(), "tool", "TOOL_RESULT", "ask_user".equals(item.name()),
-                        Map.of("callId", item.id(), "name", item.name(), "result", item.responseData()), null);
-                if ("ask_user".equals(item.name())) {
-                    status("RUNNING", null);
-                }
                 Map<String, Object> content = new LinkedHashMap<>();
                 content.put("callId", item.id());
                 content.put("name", item.name());
                 content.put("text", item.responseData());
                 traces.record("TOOL_RESULT", content);
+                // 只有追问的回答需要展示；其他工具的返回只留在流水里。
+                if (!"ask_user".equals(item.name())) {
+                    continue;
+                }
+                save("result:" + item.id(), "tool", "TOOL_RESULT",
+                        Map.of("callId", item.id(), "name", item.name(), "result", item.responseData()), null);
+                status("RUNNING", null);
             }
         }
     }
 
     /** 工具执行前保存调用，并以调用 ID 作为稳定标识。 */
     synchronized void toolCall(String id, String name, String arguments, AssistantMessage assistant) {
-        if (assistant != null && assistant.getText() != null && !assistant.getText().isBlank()) {
+        toolNames.put(id, name);
+        // 模型这一轮的思考文字必须先于工具展示行写入，顺序由 seq 保证。
+        if (assistant != null && assistant.getText() != null && !assistant.getText().isBlank()
+                && !assistant.getToolCalls().isEmpty()) {
             String firstId = assistant.getToolCalls().getFirst().id();
-            save("step:" + firstId, "assistant", "ASSISTANT_STEP", true,
+            save("step:" + firstId, "assistant", "ASSISTANT_STEP",
                     assistant.getText(), null);
             recordModelOutput(firstId, assistant.getText());
         }
-        save("call:" + id, "assistant", "TOOL_CALL", "ask_user".equals(name),
-                Map.of("callId", id, "name", name, "arguments", arguments), null);
+        // 追问要在开始时写，前端才能立刻显示问题；其他工具等结束时补耗时。
+        if ("ask_user".equals(name)) {
+            save("call:" + id, "assistant", "TOOL_CALL", askUserContent(id, name, arguments), null);
+        }
         Map<String, Object> content = new LinkedHashMap<>();
         content.put("callId", id);
         content.put("name", name);
@@ -102,17 +113,44 @@ final class AgentRunRecorder {
         traces.record("TOOL_CALL", content);
     }
 
-    /** 保存可展示的工具耗时摘要，不记录参数或查询结果。 */
-    synchronized void toolFinished(String id, String label, long durationMs) {
-        String duration = String.format(Locale.ROOT, "%.1f", durationMs / 1000.0) + " 秒";
-        save("tool-summary:" + id, "assistant", "ASSISTANT_STEP", true,
-                label.replaceFirst("^正在", "") + " · " + duration, null);
+    /**
+     * 工具结束后写入展示行；一行包含工具名、文案、状态与耗时。
+     *
+     * @param id 工具调用编号
+     * @param label 结束时的文案，可带失败说明
+     * @param status 工具状态：returned / failed / invalid_arguments
+     * @param durationMs 工具执行耗时，毫秒
+     */
+    synchronized void toolFinished(String id, String label, String status, long durationMs) {
+        String name = toolNames.get(id);
+        // 追问的展示行在调用开始时已写，这里不重复。
+        if (name == null || "ask_user".equals(name)) {
+            return;
+        }
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("callId", id);
+        content.put("name", name);
+        content.put("label", label == null ? AiToolLabels.label(name) : label.replaceFirst("^正在", ""));
+        content.put("status", "failed".equals(status) ? "failed" : "done");
+        content.put("durationMs", durationMs);
+        save("tool:" + id, "assistant", "TOOL_CALL", content, null);
+    }
+
+    /** 追问调用行：问题内容供前端渲染追问卡片。 */
+    private Map<String, Object> askUserContent(String id, String name, String arguments) {
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("callId", id);
+        content.put("name", name);
+        content.put("label", AiToolLabels.label(name));
+        content.put("status", "done");
+        content.put("arguments", arguments);
+        return content;
     }
 
     /** 保存分析子智能体的完整过程；内容与实时事件一致，供回看时重建分析面板。 */
     synchronized void analysis(Map<String, Object> data) {
         try {
-            save("analysis:" + data.get("toolCallId"), "assistant", "ANALYSIS_STEP", true, data, null);
+            save("analysis:" + data.get("toolCallId"), "assistant", "ANALYSIS_STEP", data, null);
         } catch (RuntimeException error) {
             // 展示行写入失败不能吞掉已经算好的结论，与流水表保持同样的降级策略。
             log.error("分析过程写入失败 runId={} toolCallId={} errorType={}", runId, data.get("toolCallId"),
@@ -137,7 +175,7 @@ final class AgentRunRecorder {
             traces.recordText("MODEL_FAILURE", assistant.getText());
             return;
         }
-        save("final", "assistant", "ASSISTANT_FINAL", true, assistant.getText(), null);
+        save("final", "assistant", "ASSISTANT_FINAL", assistant.getText(), null);
         traces.recordText("FINAL", assistant.getText());
     }
 
@@ -166,10 +204,10 @@ final class AgentRunRecorder {
     }
 
     /** 按运行内唯一键追加一条消息；键已存在时由存储层保证不重复写入。 */
-    private void save(String key, String role, String kind, boolean visible, Object content, String status) {
+    private void save(String key, String role, String kind, Object content, String status) {
         try {
             store.append(new AiMessage().setUserId(userId).setConversationId(conversationId).setRequestId(runId)
-                    .setMessageKey(runId + ":" + key).setRole(role).setKind(kind).setVisible(visible)
+                    .setMessageKey(runId + ":" + key).setRole(role).setKind(kind)
                     .setContent(mapper.writeValueAsString(content)).setRunStatus(status));
         } catch (JsonProcessingException error) {
             throw new IllegalStateException("消息序列化失败", error);

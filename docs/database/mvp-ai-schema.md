@@ -120,17 +120,20 @@ AI 模块先支撑经营助手的会话、分析与取数。当前不让 AI 直�
 | seq | bigint | 会话内全局递增序号，逻辑删除后也不复用 |
 | message_key | varchar(192), nullable | 会话内完整消息的幂等标识；历史消息可为空 |
 | role | varchar(16) | `user` / `assistant` / `tool` |
-| kind | varchar(32) | `USER_INPUT` / `ASSISTANT_STEP` / `TOOL_CALL` / `TOOL_RESULT` / `ASSISTANT_FINAL` / `ANALYSIS_STEP` / `ERROR` |
-| visible | tinyint | 1 为用户历史可见，0 为内部流水；ask_user 的调用和结果可见，其他工具默认不可见 |
+| kind | varchar(32) | `USER_INPUT` / `ASSISTANT_STEP` / `TOOL_CALL` / `TOOL_RESULT` / `ASSISTANT_FINAL` / `ANALYSIS_STEP` |
 | content | longtext + JSON_VALID CHECK | 文本以 JSON 字符串保存，工具调用与结果以 JSON 对象保存；按 kind 解释，不再解析旧规划结构，旧记录原文不改写 |
 | run_status / error_code | varchar(32) / varchar(80), nullable | 仅本轮 USER_INPUT 行承载运行状态及失败原因；包括 RUNNING、WAITING_USER、COMPLETED、FAILED、INTERRUPTED、CANCELLED。状态更新不改写正文 |
 | history_summary | text, nullable | 只用于 `ASSISTANT_FINAL` 的历史导航摘要；一般150–300 Unicode码点，长文最多500码点，短原文可更短。NULL表示尚未生成或生成失败；不覆盖content、不替代证据原文 |
 | create_time / update_time | datetime | 审计时间 |
 | deleted | tinyint | 逻辑删除 |
 
-`(conversation_id, seq)` 与 `(conversation_id, message_key)` 为唯一索引；历史分页按 `visible=1` 和 `seq ASC` 读取，使用 `(conversation_id, deleted, visible, seq)` 索引；轮次查询使用 `(conversation_id, request_id, seq)`。内部工具消息不混入普通历史；ask_user 调用和结果可作为追问与用户回答展示。历史消息不改写内容，旧的用户输入与最终回复保持可见。
+`(conversation_id, seq)` 与 `(conversation_id, message_key)` 为唯一索引；历史分页按 `seq ASC` 读取，使用 `(conversation_id, deleted, seq)` 索引；轮次查询使用 `(conversation_id, request_id, seq)`。
 
-`ANALYSIS_STEP` 保存一次分析任务的完整过程，`visible=1`：content 为 JSON 对象，含父级工具调用编号 `toolCallId`、目标 `goal`、步骤 `steps`（每步含思路文字 `text` 与工具 `tools`）、完成情况 `completion` 和结论 `summary`；一次任务只写一行，`message_key` 为 `runId:analysis:toolCallId`，重跑同一编号不会重复写入。该行不进入聊天消息流，由分析面板按 `toolCallId` 回看。
+**表内每一行都是前端要渲染的内容**：模型思考文字是 `ASSISTANT_STEP`；普通工具执行是一行 `TOOL_CALL`，content 为 `{callId, name, label, status, durationMs}`；追问另有一行 `TOOL_RESULT` 承载用户回答。工具的参数与返回原文不进本表，由 `ai_agent_trace` 保存。
+
+`040` 迁移删除了展示标记 `visible` 列，并把历史上不可见的工具行先归位到 `ai_agent_trace` 再删除。
+
+`ANALYSIS_STEP` 保存一次分析任务的完整过程：content 为 JSON 对象，含父级工具调用编号 `toolCallId`、目标 `goal`、步骤 `steps`（每步含思路文字 `text` 与工具 `tools`）、完成情况 `completion` 和结论 `summary`；一次任务只写一行，`message_key` 为 `runId:analysis:toolCallId`，重跑同一编号不会重复写入。该行不进入聊天消息流，由分析面板按 `toolCallId` 回看。
 
 每轮先保存用户输入及 `run_status=RUNNING`；按实际形成顺序保存完整助手消息、工具调用与工具结果，不将 SSE Token 分片作为独立消息。追问等待及回答分别更新同一轮状态；正常结束保存最终回复并标记 `COMPLETED`，异常状态如实标记。
 
@@ -143,7 +146,7 @@ AI 模块先支撑经营助手的会话、分析与取数。当前不让 AI 直�
 - 页面历史通过消息分页读取 MySQL 中的可见消息，包括用户输入、助手文本和 ask_user 的调用与回答；不从检查点重建，不将历史问题当作当前恢复授权。
 - 旧规划消息保留数据库原文，但不按旧协议解码或续接。
 - 删除会话继续在原会话锁内，以短事务软删除会话及可见消息；不联动原始记忆或经验。
-- 原始记忆表与工作窗口表已退出；经验表保留占位。Agent 消息、检查点、执行流水和数据产物分别保存。
+- 原始记忆表与工作窗口表已退出；经验表保留占位。消息表只存前端可见内容，执行流水单独入表。Agent 消息、检查点、执行流水和数据产物分别保存。
 
 ## 表：ai_agent_trace（智能体执行流水表）
 

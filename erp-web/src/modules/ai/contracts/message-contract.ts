@@ -34,8 +34,22 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
   const data = object(source.data);
   let content: AiMessageContent;
   if (source.type === 'TOOL_CALL') {
-    const args = typeof data.arguments === 'string' ? JSON.parse(data.arguments) : data.arguments;
-    content = { type: 'CLARIFICATION', data: { text: '', callId: requiredText(data.callId, 'callId'), questions: normalizeQuestions(object(args).questions, 'questions') } };
+    // 追问带问题参数，渲染成问答卡片；普通工具只展示工具名、文案与耗时。
+    if (data.arguments !== undefined) {
+      const args = typeof data.arguments === 'string' ? JSON.parse(data.arguments) : data.arguments;
+      content = { type: 'CLARIFICATION', data: { text: '', callId: requiredText(data.callId, 'callId'), questions: normalizeQuestions(object(args).questions, 'questions') } };
+    } else {
+      content = {
+        type: 'TOOL_STEP',
+        data: {
+          callId: requiredText(data.callId, 'callId'),
+          name: typeof data.name === 'string' ? data.name : '',
+          label: requiredText(data.label, 'label'),
+          status: data.status === 'failed' ? 'failed' : 'done',
+          durationMs: typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) ? data.durationMs : 0,
+        },
+      };
+    }
   } else if (source.type === 'TOOL_RESULT') {
     let result = data.result;
     if (typeof result === 'string') result = JSON.parse(result);

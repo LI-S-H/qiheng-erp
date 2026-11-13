@@ -1,5 +1,8 @@
 -- 经验表跟随新的智能体分层改名：旧节点记忆链路退出后，经验按智能体类型分类。
 -- 可重复执行：表名与列名已改过时只补注释和索引名。
+-- 显式声明连接字符集，避免客户端默认 latin1 导致中文注释乱码。
+SET NAMES utf8mb4;
+
 USE erp;
 
 SET @old_table = (SELECT COUNT(*) FROM information_schema.tables
@@ -43,3 +46,10 @@ SET @index_sql = IF(@old_index > 0,
 PREPARE index_stmt FROM @index_sql;
 EXECUTE index_stmt;
 DEALLOCATE PREPARE index_stmt;
+
+-- 6) 无论是否发生改名，都重新写入注释，便于修复历史乱码。
+ALTER TABLE ai_agent_experience
+    MODIFY COLUMN agent_type VARCHAR(32) NOT NULL
+        COMMENT '智能体类型：MAIN 主智能体 / ANALYSIS 分析智能体 / SQL_GENERATE SQL 生成 / SQL_INSPECT 结果校验',
+    MODIFY COLUMN evidence_refs JSON DEFAULT NULL
+        COMMENT '经验依据的智能体流水编号（ai_agent_trace.id）列表';

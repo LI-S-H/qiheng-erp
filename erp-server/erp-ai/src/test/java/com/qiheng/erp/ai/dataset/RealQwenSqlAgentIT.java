@@ -213,8 +213,9 @@ class RealQwenSqlAgentIT {
                     .flatMap(message -> message.getResponses().stream()).map(ToolResponseMessage.ToolResponse::id).toList();
             System.out.println("MAIN_REAL_SHAPE calls=" + actualCalls + " savedCalls=" + savedCalls
                     + " results=" + actualResults + " savedResults=" + savedResults);
+            // 普通工具只在消息表留一行展示记录，返回内容只进流水；这里没有追问，因此不应有回答行。
+            assertThat(savedResults).isEmpty();
             assertThat(savedCalls).containsExactlyElementsOf(actualCalls);
-            assertThat(savedResults).containsExactlyElementsOf(actualResults);
             System.out.println("真实模型工具调用与 SQL 取数完成，行数=" + rows.size() + "，数据集=" + datasetId);
 
             // 真实模型跑完后核对流水：三个智能体都要留下原文。

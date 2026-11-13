@@ -40,15 +40,27 @@ const stepsByRun = computed(() => {
   return result;
 });
 const expandedRuns = ref(new Set<string>());
-/** 已有分析工具耗时摘要的轮次不再重复渲染分析过程行。 */
+/** 已有分析工具展示行的轮次不再重复渲染分析过程行。 */
 const analysisToolRuns = computed(() => new Set(props.messages
-  .filter(message => message.kind === 'ASSISTANT_STEP' && message.content.type === 'TEXT'
-    && /^子智能体分析\s*·/.test(message.content.data.text))
+  .filter(message => (message.kind === 'ASSISTANT_STEP' && message.content.type === 'TEXT'
+      && /^子智能体分析\s*·/.test(message.content.data.text))
+    || isAnalysisToolStep(message))
   .map(message => message.requestId)));
 
 /** 分析工具的耗时摘要直接作为打开面板的入口。 */
 function isAnalysisSummary(step: AiConversationMessage) {
   return toolSummary(step)?.[1] === '子智能体分析';
+}
+
+/** 分析工具的结构化展示行；点击同样打开分析面板。 */
+function isAnalysisToolStep(step: AiConversationMessage) {
+  return step.kind === 'TOOL_CALL' && step.content.type === 'TOOL_STEP'
+    && step.content.data.name === 'analyzeData';
+}
+
+/** 工具展示行右侧的耗时文案。 */
+function toolDuration(durationMs: number) {
+  return `${(durationMs / 1000).toFixed(1)} 秒`;
 }
 
 /** 按运行记录控制折叠，保留每一轮独立的展开状态。 */
@@ -105,6 +117,18 @@ function toolSummary(step: AiConversationMessage) {
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
+                <button v-else-if="isAnalysisToolStep(step) && step.content.type === 'TOOL_STEP'" type="button" class="work-tool work-analysis" @click="emit('open-analysis')">
+                  <Bot class="work-tool-icon" aria-hidden="true" />
+                  <span>{{ step.content.data.label }}</span>
+                  <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
+                  <span class="work-analysis-hint">查看过程</span>
+                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                </button>
+                <p v-else-if="step.content.type === 'TOOL_STEP'" class="work-tool" :class="{ 'is-failed': step.content.data.status === 'failed' }">
+                  <component :is="toolIcon(step.content.data.name)" class="work-tool-icon" aria-hidden="true" />
+                  <span>{{ step.content.data.label }}</span>
+                  <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
+                </p>
                 <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.content.type === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis')">
                   <Bot class="work-tool-icon" aria-hidden="true" />
                   <span>子智能体分析</span>
@@ -186,6 +210,7 @@ function toolSummary(step: AiConversationMessage) {
 .work-reveal.is-open { grid-template-rows: 1fr; opacity: 1; }
 .work-reveal-inner { min-height: 0; overflow: hidden; }
 .work-tool { display: flex; align-items: center; gap: 7px; margin: 10px 0; font-size: 13px; line-height: 1.5; color: #4b5e73; }
+.work-tool.is-failed { color: #b45309; }
 .work-tool-icon { width: 14px; height: 14px; flex: none; }
 .work-duration { color: #64748b; font-variant-numeric: tabular-nums; }
 .tool-progress { display: flex; align-items: center; gap: 7px; margin: 10px 0; font-size: 14px; color: #526276; }

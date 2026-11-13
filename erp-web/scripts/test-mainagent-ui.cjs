@@ -112,8 +112,9 @@ async function main() {
           record('2', 'TOOL_RESULT', 'tool', { callId: 'c1', result: JSON.stringify({ answers: answer.answers, note: '补充说明' }) }),
           { ...record('3', 'ASSISTANT_STEP', 'assistant', {}), content: { type: 'TEXT', data: { text: '先确认查询范围。' } } },
           { ...record('4', 'ASSISTANT_STEP', 'assistant', {}), content: { type: 'TEXT', data: { text: '查询业务数据 · 2.5 秒' } } },
-          { ...record('5', 'ASSISTANT_STEP', 'assistant', {}), content: { type: 'TEXT', data: { text: '接下来分析查询结果。' } } },
-          { ...record('6', 'ASSISTANT_FINAL', 'assistant', {}), content: { type: 'TEXT', data: { text: '| 商品 | 数量 |\n|---|---|\n| A | 10 |' } } },
+          record('5', 'TOOL_CALL', 'assistant', { callId: 'c2', name: 'readDataset', label: '读取数据', status: 'done', durationMs: 3500 }),
+          { ...record('6', 'ASSISTANT_STEP', 'assistant', {}), content: { type: 'TEXT', data: { text: '接下来分析查询结果。' } } },
+          { ...record('7', 'ASSISTANT_FINAL', 'assistant', {}), content: { type: 'TEXT', data: { text: '| 商品 | 数量 |\n|---|---|\n| A | 10 |' } } },
         ] : [{ ...record('1', 'USER_INPUT', 'user', {}), content: { type: 'TEXT', data: { text: '请分析数据' } } }];
         data = { records, pageNum: 1, pageSize: 50, total: records.length };
       }
@@ -285,9 +286,13 @@ async function main() {
     assert.ok(animationHeights.some(height => height > 0) && animationHeights.every((height, index) => index === 0 || height + 1 >= animationHeights[index - 1]), '展开时高度应平滑递增');
     await work.getByText('查询业务数据', { exact: true }).waitFor();
     await work.getByText('2.5 秒', { exact: true }).waitFor();
+    // 新写入的工具行是结构化数据，不依赖文本正则。
+    await work.getByText('读取数据', { exact: true }).waitFor();
+    await work.getByText('3.5 秒', { exact: true }).waitFor();
     assert.equal(await work.locator(':scope > .work-tool').count(), 0, '展开后不能重复展示工具摘要');
     const orderedWork = await work.locator('.work-reveal-inner').innerText();
     const positions = ['先确认查询范围。', '查询业务数据', '接下来分析查询结果。'].map(text => orderedWork.indexOf(text));
+    assert.ok(orderedWork.indexOf('读取数据') > positions[1], '结构化工具行应紧随其模型思考文字');
     assert.ok(positions.every(position => position >= 0) && positions[0] < positions[1] && positions[1] < positions[2], '工作过程文字和工具调用应保持原始顺序');
     assert.equal(await work.getByRole('button', { name: '收起工作过程' }).getAttribute('aria-expanded'), 'true');
     const reveal = work.locator('.work-reveal');

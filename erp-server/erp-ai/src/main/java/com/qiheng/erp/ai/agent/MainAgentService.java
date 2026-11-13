@@ -276,7 +276,7 @@ public final class MainAgentService {
                     if ("tool_finished".equals(event.node())) {
                         var data = event.state().data();
                         recorder.toolFinished((String) data.get("toolCallId"), (String) data.get("label"),
-                                ((Number) data.get("durationMs")).longValue());
+                                (String) data.get("status"), ((Number) data.get("durationMs")).longValue());
                     } else if ("analysis_summary".equals(event.node())) {
                         // 分析过程只在总结事件里携带完整步骤，一次写入即可保证回看内容完整。
                         recorder.analysis(event.state().data());

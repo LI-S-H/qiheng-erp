@@ -34,7 +34,6 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
         WHERE conversation_id = #{conversationId}
           AND user_id = #{userId}
           AND deleted = 0
-          AND visible = 1
         ORDER BY seq ASC
         LIMIT #{offset}, #{limit}
         """)
@@ -53,7 +52,6 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
         WHERE conversation_id = #{conversationId}
           AND user_id = #{userId}
           AND deleted = 0
-          AND visible = 1
         """)
     @Options(timeout = 30)
     long countVisibleMessages(@Param("conversationId") Long conversationId,
@@ -72,7 +70,6 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
         WHERE conversation_id = #{conversationId}
           AND user_id = #{userId}
           AND deleted = 0
-          AND visible = 1
         """)
     @Options(timeout = 30)
     int softDeleteByConversation(@Param("conversationId") Long conversationId,

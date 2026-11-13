@@ -46,8 +46,8 @@ class ConversationCursorMySqlIT {
             assertThat(first.subList(0, 50)).noneMatch(c -> c.getId() == base + 53);
             // 旧会话可能已有过期活动时间，应使用更晚的历史消息时间。
             jdbc.update("UPDATE ai_conversation SET last_message_at=? WHERE id=?", timestamp, base + 1);
-            jdbc.update("INSERT INTO ai_message (id,conversation_id,user_id,request_id,seq,message_key,visible,role,kind,content,create_time) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    base + 500, base + 1, user, "cursor-test", 1, "cursor-test", true, "user", "USER_INPUT", "\"测试\"", timestamp.plusMinutes(1));
+            jdbc.update("INSERT INTO ai_message (id,conversation_id,user_id,request_id,seq,message_key,role,kind,content,create_time) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    base + 500, base + 1, user, "cursor-test", 1, "cursor-test", "user", "USER_INPUT", "\"测试\"", timestamp.plusMinutes(1));
             var refreshed = mapper.selectPage(user, null, null);
             assertThat(refreshed.getFirst().getId()).isEqualTo(base + 1);
             assertThat(refreshed.getFirst().getLastMessageAt()).isEqualTo(timestamp.plusMinutes(1));

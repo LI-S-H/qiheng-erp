@@ -57,10 +57,6 @@ public class AiMessage implements Serializable {
     @TableField("message_key")
     private String messageKey;
 
-    @Schema(description = "是否在用户历史中展示")
-    @TableField("visible")
-    private Boolean visible;
-
     @Schema(description = "消息种类：USER_INPUT / ASSISTANT_STEP / TOOL_CALL / TOOL_RESULT / ASSISTANT_FINAL / ANALYSIS_STEP")
     @TableField("kind")
     private String kind;

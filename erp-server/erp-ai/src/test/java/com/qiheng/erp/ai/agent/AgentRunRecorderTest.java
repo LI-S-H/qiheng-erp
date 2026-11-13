@@ -40,34 +40,54 @@ class AgentRunRecorderTest {
         verify(store, times(4)).append(saved.capture());
         assertThat(saved.getAllValues()).extracting(AiMessage::getKind)
                 .containsExactly("USER_INPUT", "ASSISTANT_STEP", "TOOL_CALL", "TOOL_RESULT");
-        assertThat(saved.getAllValues()).extracting(AiMessage::getVisible).containsOnly(true);
         assertThat(saved.getAllValues().get(2).getContent()).contains("c1", "ask_user");
         verify(store).updateRunStatus(1, 2, "run", "RUNNING", null);
     }
+    /** 工具返回只在流水里，消息表只写追问的回答。 */
     @Test
-    void recordsEveryResponseFromOneToolMessage() {
+    void writesOnlyAskUserResultsToMessages() {
         var store = mock(ConversationMessageStore.class);
         var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
         var result = ToolResponseMessage.builder().responses(List.of(
-                new ToolResponseMessage.ToolResponse("a", "first", "A"),
-                new ToolResponseMessage.ToolResponse("b", "second", "B"))).build();
+                new ToolResponseMessage.ToolResponse("a", "query_sql_data", "{\"rows\":[]}"),
+                new ToolResponseMessage.ToolResponse("b", "ask_user", "{\"answer\":\"一号仓\"}"))).build();
         recorder.beforeModel(List.of(result));
         var saved = ArgumentCaptor.forClass(AiMessage.class);
-        verify(store, times(2)).append(saved.capture());
-        assertThat(saved.getAllValues()).extracting(AiMessage::getMessageKey)
-                .containsExactly("run:result:a", "run:result:b");
+        verify(store).append(saved.capture());
+        assertThat(saved.getValue().getMessageKey()).isEqualTo("run:result:b");
+        assertThat(saved.getValue().getKind()).isEqualTo("TOOL_RESULT");
     }
 
+    /** 普通工具结束时写一行结构化展示：工具名、文案、状态与耗时。 */
     @Test
-    void storesOnlyTheReadableToolDuration() {
+    void storesFinishedToolAsStructuredRow() {
         var store = mock(ConversationMessageStore.class);
         var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
-        recorder.toolFinished("call-1", "正在查询业务数据", 1250);
+        var call = new AssistantMessage.ToolCall("call-1", "function", "query_sql_data", "{}");
+        recorder.toolCall("call-1", "query_sql_data", "{}",
+                AssistantMessage.builder().toolCalls(List.of(call)).build());
+        recorder.toolFinished("call-1", "查询业务数据", "returned", 1250);
         var saved = ArgumentCaptor.forClass(AiMessage.class);
         verify(store).append(saved.capture());
-        assertThat(saved.getValue().getKind()).isEqualTo("ASSISTANT_STEP");
-        assertThat(saved.getValue().getContent()).contains("查询业务数据", "1.3 秒");
-        assertThat(saved.getValue().getVisible()).isTrue();
+        assertThat(saved.getValue().getKind()).isEqualTo("TOOL_CALL");
+        assertThat(saved.getValue().getMessageKey()).isEqualTo("run:tool:call-1");
+        assertThat(saved.getValue().getContent())
+                .contains("query_sql_data", "查询业务数据", "1250", "done");
+    }
+
+    /** 追问在调用开始时写一行，结束时不再重复。 */
+    @Test
+    void writesAskUserOnceAtCallTime() {
+        var store = mock(ConversationMessageStore.class);
+        var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
+        var call = new AssistantMessage.ToolCall("ask-1", "function", "ask_user", "{\"questions\":[]}");
+        recorder.toolCall("ask-1", "ask_user", "{\"questions\":[]}",
+                AssistantMessage.builder().toolCalls(List.of(call)).build());
+        recorder.toolFinished("ask-1", "补充信息", "returned", 900);
+        var saved = ArgumentCaptor.forClass(AiMessage.class);
+        verify(store).append(saved.capture());
+        assertThat(saved.getValue().getKind()).isEqualTo("TOOL_CALL");
+        assertThat(saved.getValue().getContent()).contains("ask_user", "questions");
     }
 
     @Test
@@ -81,7 +101,6 @@ class AgentRunRecorderTest {
         verify(store).append(saved.capture());
         assertThat(saved.getValue().getKind()).isEqualTo("ANALYSIS_STEP");
         assertThat(saved.getValue().getMessageKey()).isEqualTo("run:analysis:call-1");
-        assertThat(saved.getValue().getVisible()).isTrue();
         assertThat(saved.getValue().getContent()).contains("分析库存", "库存充足");
     }
 

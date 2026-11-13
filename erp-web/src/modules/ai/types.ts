@@ -79,6 +79,18 @@ export type AiMessageContent =
       };
     }
   | {
+      type: 'TOOL_STEP';
+      data: {
+        callId: string;
+        /** 工具注册名，用于选择图标 */
+        name: string;
+        /** 用户可见文案，如「查询业务数据」 */
+        label: string;
+        status: 'done' | 'failed';
+        durationMs: number;
+      };
+    }
+  | {
       type: 'ANALYSIS';
       data: {
         callId: string;

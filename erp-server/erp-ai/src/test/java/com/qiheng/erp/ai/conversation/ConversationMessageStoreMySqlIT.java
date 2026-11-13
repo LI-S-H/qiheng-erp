@@ -85,7 +85,7 @@ class ConversationMessageStoreMySqlIT {
 
     private AiMessage message(long conversation, long user, String key) {
         return new AiMessage().setConversationId(conversation).setUserId(user).setRequestId("test-run")
-                .setMessageKey(key).setRole("user").setKind("USER_INPUT").setVisible(true)
+                .setMessageKey(key).setRole("user").setKind("USER_INPUT")
                 .setContent("{\"type\":\"TEXT\",\"data\":{\"text\":\"测试\"}}");
     }
 }

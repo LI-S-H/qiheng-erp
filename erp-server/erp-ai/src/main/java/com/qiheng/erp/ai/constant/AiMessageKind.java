@@ -3,8 +3,10 @@ package com.qiheng.erp.ai.constant;
 /**
  * AI 消息种类：与 {@code ai_message.kind} 取值一致。
  *
- * <p>用户可见分页包含 {@link #USER_INPUT}、{@link #ASSISTANT_FINAL} 以及展示用的过程行
- * {@link #ASSISTANT_STEP} 与 {@link #ANALYSIS_STEP}；工具原始调用与结果默认只进节点记忆。</p>
+ * <p>用户可见分页只读取 {@code visible=1} 的行：{@link #USER_INPUT}、{@link #ASSISTANT_FINAL}，
+ * 展示用的过程行 {@link #ASSISTANT_STEP} 与 {@link #ANALYSIS_STEP}，以及 ask_user 的调用与结果。
+ * 其他工具的调用与结果以 {@code visible=0} 保存，页面不渲染；它们的完整原文记在
+ * {@code ai_agent_trace} 流水里。</p>
  *
  * @author Li
  * @since 2026-10-15

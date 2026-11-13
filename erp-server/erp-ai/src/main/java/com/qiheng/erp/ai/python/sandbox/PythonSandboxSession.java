@@ -27,6 +27,7 @@ import java.util.regex.Pattern;
  */
 public final class PythonSandboxSession implements AutoCloseable {
     public static final String OUTPUT_DIRECTORY = "/tmp/erp-analysis/output";
+    public static final String INPUT_DIRECTORY = "/tmp/erp-analysis/input";
     private final BaseSandbox sandbox;
     private final PythonSandboxClient client;
     private final PythonExecutionProtocol protocol;
@@ -84,6 +85,38 @@ public final class PythonSandboxSession implements AutoCloseable {
         return artifacts;
     }
 
+    /** 列出沙箱输入目录中的文件；用于确认已准备的数据集是否还在。 */
+    public synchronized List<SandboxArtifact> listInputs() throws IOException {
+        return listArtifacts(INPUT_DIRECTORY);
+    }
+
+    /**
+     * 判断沙箱输入目录中是否仍有指定文件；只查存在性，不读取内容。
+     *
+     * @param fileName 输入文件名
+     * @return 文件仍在返回 true
+     * @throws IOException 沙箱不可用或读取失败
+     */
+    public synchronized boolean hasInput(String fileName) throws IOException {
+        if (!fileName.matches("[A-Za-z0-9_.-]+") || fileName.equals(".") || fileName.equals("..")) {
+            throw new IllegalArgumentException("沙箱文件名无效");
+        }
+        String encodedName = Base64.getEncoder()
+                .encodeToString(fileName.getBytes(StandardCharsets.UTF_8));
+        String script = """
+                import os, base64
+                name = base64.b64decode('%s').decode('utf-8')
+                path = os.path.join('%s', name)
+                present = os.path.isfile(path) and not os.path.islink(path)
+                print('__ERP_EXISTS__:' + ('1' if present else '0'))
+                """.formatted(encodedName, INPUT_DIRECTORY);
+        var match = Pattern.compile("__ERP_EXISTS__:([01])").matcher(runBootstrap(script));
+        if (!match.find()) {
+            throw new IOException("沙箱输入文件状态读取失败");
+        }
+        return "1".equals(match.group(1));
+    }
+
     /** 分块取回本次目录下的普通文件，不跟随符号链接。 */
     public synchronized void readArtifact(String directory, SandboxArtifact artifact, OutputStream target) throws IOException {
         validateArtifactDirectory(directory);
@@ -128,10 +161,10 @@ public final class PythonSandboxSession implements AutoCloseable {
         }
     }
 
-    /** 只允许读取本次沙箱约定的结果目录。 */
+    /** 只允许读取本次沙箱约定的输入与结果目录。 */
     private void validateArtifactDirectory(String directory) {
-        if (!OUTPUT_DIRECTORY.equals(directory)) {
-            throw new IllegalArgumentException("沙箱输出目录无效");
+        if (!OUTPUT_DIRECTORY.equals(directory) && !INPUT_DIRECTORY.equals(directory)) {
+            throw new IllegalArgumentException("沙箱目录无效");
         }
     }
 

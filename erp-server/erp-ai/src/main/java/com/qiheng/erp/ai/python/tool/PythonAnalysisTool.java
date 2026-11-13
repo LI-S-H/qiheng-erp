@@ -65,13 +65,25 @@ public final class PythonAnalysisTool {
             var identity = task.identity();
             List<Map<String, Object>> files = new ArrayList<>();
             for (String id : datasetIds) {
-                if (prepared.containsKey(id)) {
+                Map<String, Object> file = prepared.get(id);
+                boolean reprepared = false;
+                if (file != null) {
                     preparer.verify(id, identity);
+                    // 沙箱容器可能被回收重建：内存里的记录不代表文件还在，核对后按需重写。
+                    if (!task.sandbox().hasInput(preparer.inputFileName(id))) {
+                        prepared.remove(id);
+                        file = preparer.prepare(task.sandbox(), identity, id);
+                        prepared.put(id, file);
+                        reprepared = true;
+                    }
                 } else {
                     // 首次准备时 openReady 已经检查归属和当前权限。
-                    prepared.put(id, preparer.prepare(task.sandbox(), identity, id));
+                    file = preparer.prepare(task.sandbox(), identity, id);
+                    prepared.put(id, file);
                 }
-                files.add(prepared.get(id));
+                Map<String, Object> item = new LinkedHashMap<>(file);
+                item.put("reprepared", reprepared);
+                files.add(item);
             }
             return Map.of("status", "SUCCESS", "files", files);
         }
@@ -117,18 +129,107 @@ public final class PythonAnalysisTool {
             var scope = new ExecutionScope(identity, taskId, UUID.randomUUID().toString(),
                     List.copyOf(prepared.keySet()), sandbox);
             var before = readArtifactsBefore(scope);
-            PythonExecutionResult execution = sandbox.execute(code, 60, 8000);
+            PythonExecutionResult execution;
+            try {
+                execution = sandbox.execute(code, 60, 8000);
+            } catch (RuntimeException error) {
+                // 沙箱不可用：容器丢失或通信失败，本次没有任何文件产出。
+                log.warn("Python 沙箱不可用 taskId={} errorType={}", taskId, error.getClass().getName());
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("status", "FAILED");
+                response.put("errorType", "SANDBOX_UNAVAILABLE");
+                response.put("message", "运行环境不可用，沙箱内文件与未交付结果全部丢失；已登记的结果不受影响。"
+                        + "如需继续，请重新调用 prepareAnalysisData 准备数据后再执行。");
+                response.put("sandboxFiles", sandboxFiles(task, identity));
+                return response;
+            }
             var textOutput = new LinkedHashMap<String, Object>();
             var response = buildResponse(execution, textOutput);
             if (!execution.success()) {
                 response.put("errorType", execution.errorType());
                 response.put("stderr", execution.stderr());
                 response.put("message", "执行失败，本次生成的文件不会保存；请根据错误修正代码并使用新文件名。");
+                response.put("sandboxFiles", sandboxFiles(task, identity));
                 return response;
             }
             var run = new ExecutionRun(scope, execution, before);
             return collectResults(response, textOutput, run, saveResult, outputTextName);
         }
+    }
+
+    /**
+     * 汇总沙箱现状：输入文件、输出文件与已登记结果。
+     *
+     * <p>沙箱是临时的，重建后里面的文件全部丢失；已登记的结果文件保存在服务端，不受影响。
+     * 模型据此判断该重新准备数据，还是可以直接引用已登记的结果。</p>
+     *
+     * @param task 当前分析任务
+     * @param identity 可信身份
+     * @return 三类文件的现状
+     */
+    private Map<String, Object> sandboxFiles(AnalysisTaskContext task, AgentToolContext identity) {
+        Map<String, Object> files = new LinkedHashMap<>();
+        files.put("inputs", inputFiles(task));
+        files.put("outputs", outputFiles(task));
+        files.put("registeredResults", registeredResults(task, identity));
+        return files;
+    }
+
+    /** 输入文件的现状；沙箱重建后已准备的数据集会显示为不在。 */
+    private List<Map<String, Object>> inputFiles(AnalysisTaskContext task) {
+        List<Map<String, Object>> inputs = new ArrayList<>();
+        for (var entry : task.preparedDatasets().entrySet()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("datasetId", entry.getKey());
+            item.put("filePath", entry.getValue().get("filePath"));
+            item.put("present", inputPresent(task, entry.getKey()));
+            inputs.add(item);
+        }
+        return inputs;
+    }
+
+    /** 判断沙箱里该数据集的文件是否还在；读不到时按不在处理。 */
+    private boolean inputPresent(AnalysisTaskContext task, String datasetId) {
+        try {
+            return task.sandbox().hasInput(preparer.inputFileName(datasetId));
+        } catch (IOException | RuntimeException error) {
+            log.warn("沙箱输入文件状态读取失败 taskId={} datasetId={}", task.taskId(), datasetId);
+            return false;
+        }
+    }
+
+    /** 沙箱输出目录里的文件；读不到时返回空列表，不让失败路径再抛一次。 */
+    private List<Map<String, Object>> outputFiles(AnalysisTaskContext task) {
+        List<Map<String, Object>> outputs = new ArrayList<>();
+        try {
+            for (var artifact : task.sandbox().listArtifacts(PythonSandboxSession.OUTPUT_DIRECTORY)) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("fileName", artifact.name());
+                item.put("size", artifact.size());
+                outputs.add(item);
+            }
+        } catch (IOException | RuntimeException error) {
+            log.warn("沙箱输出目录读取失败 taskId={}", task.taskId(), error);
+        }
+        return outputs;
+    }
+
+    /** 已登记的服务端结果；沙箱重建不影响它们。 */
+    private List<Map<String, Object>> registeredResults(AnalysisTaskContext task, AgentToolContext identity) {
+        List<Map<String, Object>> registered = new ArrayList<>();
+        try {
+            for (var record : results.list(identity, task.taskId())) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("resultId", record.getResultId());
+                item.put("name", record.getName());
+                item.put("fileType", record.getFileType());
+                item.put("size", record.getFileSize());
+                registered.add(item);
+            }
+        } catch (IOException | RuntimeException error) {
+            log.warn("已登记结果读取失败 taskId={}", task.taskId(), error);
+        }
+        return registered;
     }
 
     /** 读取执行前的输出目录；读取失败时仍允许运行修复代码，但不再登记文件。 */

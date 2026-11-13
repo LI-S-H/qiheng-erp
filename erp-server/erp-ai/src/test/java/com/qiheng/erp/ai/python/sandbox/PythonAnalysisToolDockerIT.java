@@ -192,6 +192,61 @@ class PythonAnalysisToolDockerIT {
         }
     }
 
+    /**
+     * 沙箱容器被回收重建后，已准备的数据集文件随之消失；重建后的会话必须重新写入。
+     */
+    @Test
+    void losesPreparedFilesWhenSandboxIsRecreated() throws Exception {
+        var sdkLogger = (Logger) LoggerFactory.getLogger("io.agentscope.runtime.sandbox.manager.SandboxService");
+        Level originalLevel = sdkLogger.getLevel();
+        sdkLogger.setLevel(Level.WARN);
+        var mapper = new ObjectMapper();
+        var datasets = mock(DatasetManager.class);
+        var record = new DatasetRecord("ds_test", "run", 10, 20, "库存",
+                List.of(new SqlQueryColumn("product", "商品", Types.VARCHAR, "VARCHAR", false)),
+                2, false, "READY", null, null, "ROW_LIMIT");
+        when(datasets.openReady("ds_test", 10, 20)).thenAnswer(call -> new DatasetInput(record,
+                new ByteArrayInputStream("[\"A\",3]\n".getBytes(StandardCharsets.UTF_8))));
+        when(datasets.get("ds_test", 10, 20)).thenReturn(record);
+        var runtime = new PythonSandboxRuntime(mapper, "erp-ai-sandbox-probe:local");
+        try (var task = new AnalysisTaskContext(new AgentToolContext(10, 20), "task-rebuild", runtime)) {
+            var tool = new PythonAnalysisTool(new PythonDatasetPreparer(datasets), mock(AnalysisResultStore.class));
+            var taskContext = new ToolContext(java.util.Map.of(AnalysisTaskContext.CONTEXT_KEY, task));
+
+            var prepared = tool.prepareAnalysisData(List.of("ds_test"), taskContext);
+            var file = (java.util.Map<?, ?>) ((List<?>) prepared.get("files")).getFirst();
+            assertEquals(Boolean.FALSE, file.get("reprepared"));
+            // 文件确实写进了沙箱，重复准备时不需要重写。
+            assertTrue(task.sandbox().hasInput("ds_test.jsonl"));
+            var again = tool.prepareAnalysisData(List.of("ds_test"), taskContext);
+            assertEquals(Boolean.FALSE,
+                    ((java.util.Map<?, ?>) ((List<?>) again.get("files")).getFirst()).get("reprepared"));
+
+            // 执行失败时把沙箱现状一并交给模型。
+            var failure = tool.executePython("raise ValueError('expected')", List.of("ds_test"), false, null, taskContext);
+            assertEquals("FAILED", failure.get("status"));
+            var files = (java.util.Map<?, ?>) failure.get("sandboxFiles");
+            var inputs = (List<?>) files.get("inputs");
+            assertEquals(1, inputs.size());
+            var input = (java.util.Map<?, ?>) inputs.getFirst();
+            assertEquals("ds_test", input.get("datasetId"));
+            assertEquals(Boolean.TRUE, input.get("present"));
+            assertTrue(files.containsKey("outputs"));
+            assertTrue(files.containsKey("registeredResults"));
+        } finally {
+            runtime.close();
+            sdkLogger.setLevel(originalLevel);
+        }
+        // 重建后的沙箱是空的：同样的文件名查不到，这正是需要重新准备的原因。
+        try (var runtime2 = new PythonSandboxRuntime(mapper, "erp-ai-sandbox-probe:local")) {
+            try (var fresh = runtime2.openSession()) {
+                assertFalse(fresh.hasInput("ds_test.jsonl"));
+            } finally {
+                runtime2.close();
+            }
+        }
+    }
+
     @Test
     void limitsOutputAndStopsChildProcessesOnTimeout() throws Exception {
         var sdkLogger = (Logger) LoggerFactory.getLogger("io.agentscope.runtime.sandbox.manager.SandboxService");

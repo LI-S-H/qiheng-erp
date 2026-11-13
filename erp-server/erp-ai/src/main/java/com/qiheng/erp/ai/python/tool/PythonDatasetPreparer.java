@@ -7,6 +7,7 @@ import com.qiheng.erp.ai.context.AgentToolContext;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -31,15 +32,35 @@ public final class PythonDatasetPreparer {
         }
     }
 
-    /** 以授权数据集 ID 命名沙箱输入文件；宿主机路径不会交给模型。 */
+    /**
+     * 以授权数据集 ID 命名沙箱输入文件；宿主机路径不会交给模型。
+     *
+     * @param sandbox 当前任务沙箱
+     * @param identity 可信身份
+     * @param datasetId 数据集编号
+     * @return 数据集编号与沙箱内文件路径
+     * @throws IOException 写入沙箱失败
+     */
     public Map<String, Object> prepare(PythonSandboxSession sandbox, AgentToolContext identity,
                                        String datasetId) throws IOException {
         try (var dataset = datasets.openReady(datasetId, identity.userId(), identity.conversationId())) {
             DatasetRecord record = dataset.record();
-            String fileName = record.datasetId() + ".jsonl";
+            String fileName = inputFileName(record.datasetId());
             sandbox.writeFile(fileName, dataset.stream());
-            return Map.of("datasetId", record.datasetId(),
-                    "filePath", "/tmp/erp-analysis/input/" + fileName);
+            Map<String, Object> prepared = new LinkedHashMap<>();
+            prepared.put("datasetId", record.datasetId());
+            prepared.put("filePath", PythonSandboxSession.INPUT_DIRECTORY + "/" + fileName);
+            return prepared;
         }
+    }
+
+    /**
+     * 沙箱输入文件名；数据集编号即文件名，便于核对文件是否还在。
+     *
+     * @param datasetId 数据集编号
+     * @return 沙箱内的文件名
+     */
+    public String inputFileName(String datasetId) {
+        return datasetId + ".jsonl";
     }
 }

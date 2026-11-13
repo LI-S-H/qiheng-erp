@@ -120,6 +120,8 @@ class PythonAnalysisToolTest {
         String directory = "/tmp/erp-analysis/output";
         when(preparer.prepare(session, identity, "ds_1")).thenReturn(Map.of("datasetId", "ds_1"));
         when(preparer.prepare(session, identity, "ds_2")).thenReturn(Map.of("datasetId", "ds_2"));
+        when(preparer.inputFileName(anyString())).thenAnswer(call -> call.getArgument(0) + ".jsonl");
+        when(session.hasInput(anyString())).thenReturn(true);
         when(session.execute(anyString(), anyInt(), anyInt())).thenReturn(
                 new PythonExecutionResult(true, "ok", "", 2, false, "output", null));
         when(session.listArtifacts(directory)).thenReturn(List.of(), List.of(new PythonSandboxSession.SandboxArtifact("结果.csv", 2, "changed")));
@@ -162,6 +164,99 @@ class PythonAnalysisToolTest {
         assertThrows(IllegalArgumentException.class, () -> tool.executePython("print('again')", List.of(), false, null, context));
         verify(session, times(1)).execute(anyString(), anyInt(), anyInt());
     }
+    /** 沙箱容器被回收重建后，已准备的数据集要重新写入，不能返回失效路径。 */
+    @Test
+    void rewritesPreparedDatasetWhenSandboxFileIsGone() throws Exception {
+        var session = mock(PythonSandboxSession.class);
+        var preparer = mock(PythonDatasetPreparer.class);
+        var identity = new AgentToolContext(10, 20);
+        when(preparer.inputFileName("ds_1")).thenReturn("ds_1.jsonl");
+        when(preparer.prepare(session, identity, "ds_1"))
+                .thenReturn(Map.of("datasetId", "ds_1", "filePath", "/tmp/erp-analysis/input/ds_1.jsonl"));
+        // 第一次准备后沙箱被重建，文件已经不在。
+        when(session.hasInput("ds_1.jsonl")).thenReturn(false);
+        var tool = new PythonAnalysisTool(preparer, mock(AnalysisResultStore.class));
+        var context = context(identity, session);
+
+        tool.prepareAnalysisData(List.of("ds_1"), context);
+        var response = tool.prepareAnalysisData(List.of("ds_1"), context);
+
+        var files = (List<?>) response.get("files");
+        var file = (Map<?, ?>) files.getFirst();
+        assertEquals(Boolean.TRUE, file.get("reprepared"));
+        verify(preparer, times(2)).prepare(session, identity, "ds_1");
+    }
+
+    /** 沙箱文件仍在时复用旧路径，不重复写入。 */
+    @Test
+    void reusesPreparedDatasetWhenSandboxFileStillExists() throws Exception {
+        var session = mock(PythonSandboxSession.class);
+        var preparer = mock(PythonDatasetPreparer.class);
+        var identity = new AgentToolContext(10, 20);
+        when(preparer.inputFileName("ds_1")).thenReturn("ds_1.jsonl");
+        when(preparer.prepare(session, identity, "ds_1"))
+                .thenReturn(Map.of("datasetId", "ds_1", "filePath", "/tmp/erp-analysis/input/ds_1.jsonl"));
+        when(session.hasInput("ds_1.jsonl")).thenReturn(true);
+        var tool = new PythonAnalysisTool(preparer, mock(AnalysisResultStore.class));
+        var context = context(identity, session);
+
+        tool.prepareAnalysisData(List.of("ds_1"), context);
+        var response = tool.prepareAnalysisData(List.of("ds_1"), context);
+
+        var files = (List<?>) response.get("files");
+        var file = (Map<?, ?>) files.getFirst();
+        assertEquals(Boolean.FALSE, file.get("reprepared"));
+        verify(preparer, times(1)).prepare(session, identity, "ds_1");
+    }
+
+    /** 沙箱不可用时返回专用错误，并说明已登记结果不受影响。 */
+    @Test
+    void reportsSandboxUnavailableWithRegisteredResults() throws Exception {
+        var session = mock(PythonSandboxSession.class);
+        var results = mock(AnalysisResultStore.class);
+        var identity = new AgentToolContext(10, 20);
+        when(session.execute(anyString(), anyInt(), anyInt()))
+                .thenThrow(new IllegalStateException("沙箱连接失败"));
+        var saved = new AiAnalysisResult();
+        saved.setResultId("result_1");
+        saved.setName("库存明细");
+        saved.setFileType("csv");
+        saved.setFileSize(12L);
+        when(results.list(identity, "task-1")).thenReturn(List.of(saved));
+        var tool = new PythonAnalysisTool(mock(PythonDatasetPreparer.class), results);
+        var context = context(identity, session);
+
+        var response = tool.executePython("print('ok')", List.of(), false, null, context);
+
+        assertEquals("FAILED", response.get("status"));
+        assertEquals("SANDBOX_UNAVAILABLE", response.get("errorType"));
+        assertTrue(((String) response.get("message")).contains("已登记的结果不受影响"));
+        var files = (Map<?, ?>) response.get("sandboxFiles");
+        var registered = (List<?>) files.get("registeredResults");
+        assertEquals(1, registered.size());
+        assertEquals("result_1", ((Map<?, ?>) registered.getFirst()).get("resultId"));
+    }
+
+    /** 执行失败时把沙箱现状一并告诉模型，让它知道哪些数据还需要重新准备。 */
+    @Test
+    void returnsSandboxFilesWhenExecutionFails() throws Exception {
+        var session = mock(PythonSandboxSession.class);
+        var identity = new AgentToolContext(10, 20);
+        when(session.execute(anyString(), anyInt(), anyInt())).thenReturn(
+                new PythonExecutionResult(false, "", "NameError: 未定义", 0, false, null, "PYTHON_ERROR"));
+        var tool = new PythonAnalysisTool(mock(PythonDatasetPreparer.class), mock(AnalysisResultStore.class));
+        var context = context(identity, session);
+
+        var response = tool.executePython("print('x')", List.of(), false, null, context);
+
+        assertEquals("FAILED", response.get("status"));
+        assertEquals("PYTHON_ERROR", response.get("errorType"));
+        var files = (Map<?, ?>) response.get("sandboxFiles");
+        assertTrue(files.containsKey("inputs"));
+        assertTrue(files.containsKey("outputs"));
+        assertTrue(files.containsKey("registeredResults"));
+    }
+
     private ToolContext context(AgentToolContext identity, PythonSandboxSession session) {
         var runtime = mock(PythonSandboxRuntime.class);
         when(runtime.openSession()).thenReturn(session);

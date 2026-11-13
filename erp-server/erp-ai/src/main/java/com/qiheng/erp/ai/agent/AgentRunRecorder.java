@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
 import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
@@ -25,6 +27,8 @@ import java.util.Map;
  * @since 2026-10-27
  */
 final class AgentRunRecorder {
+    private static final Logger log = LoggerFactory.getLogger(AgentRunRecorder.class);
+
     private final ConversationMessageStore store;
     private final ObjectMapper mapper;
     private final AiAgentTraceRecorder traces;
@@ -34,6 +38,9 @@ final class AgentRunRecorder {
 
     /** 已记录过模型原文的助手消息标识，避免同一条消息按工具调用重复记录。 */
     private String recordedModelOutputKey;
+
+    /** 本轮是否以模型调用失败结束；失败时不写最终答复，只记流水。 */
+    private boolean modelFailed;
 
     AgentRunRecorder(ConversationMessageStore store, ObjectMapper mapper, AiAgentTraceRecorder traces,
                      long userId, long conversationId, String runId) {
@@ -104,7 +111,13 @@ final class AgentRunRecorder {
 
     /** 保存分析子智能体的完整过程；内容与实时事件一致，供回看时重建分析面板。 */
     synchronized void analysis(Map<String, Object> data) {
-        save("analysis:" + data.get("toolCallId"), "assistant", "ANALYSIS_STEP", true, data, null);
+        try {
+            save("analysis:" + data.get("toolCallId"), "assistant", "ANALYSIS_STEP", true, data, null);
+        } catch (RuntimeException error) {
+            // 展示行写入失败不能吞掉已经算好的结论，与流水表保持同样的降级策略。
+            log.error("分析过程写入失败 runId={} toolCallId={} errorType={}", runId, data.get("toolCallId"),
+                    error.getClass().getName());
+        }
     }
 
     /** 图结束后保存最终回复；该回复之后不会再进入 beforeModel。 */
@@ -113,12 +126,24 @@ final class AgentRunRecorder {
         if (!(raw instanceof List<?> messages) || messages.isEmpty()) {
             return;
         }
-        if (output.isEND() && messages.getLast() instanceof AssistantMessage assistant
-                && assistant.getToolCalls().isEmpty() && assistant.getText() != null && !assistant.getText().isBlank()) {
-            save("final", "assistant", "ASSISTANT_FINAL", true,
-                    assistant.getText(), null);
-            traces.recordText("FINAL", assistant.getText());
+        if (!output.isEND() || !(messages.getLast() instanceof AssistantMessage assistant)
+                || !assistant.getToolCalls().isEmpty()
+                || assistant.getText() == null || assistant.getText().isBlank()) {
+            return;
         }
+        // 模型调用失败时框架返回错误文本，不能作为最终答复展示给用户，只留在流水里。
+        if (AgentModelFailure.isFailure(assistant.getText())) {
+            modelFailed = true;
+            traces.recordText("MODEL_FAILURE", assistant.getText());
+            return;
+        }
+        save("final", "assistant", "ASSISTANT_FINAL", true, assistant.getText(), null);
+        traces.recordText("FINAL", assistant.getText());
+    }
+
+    /** 本轮是否以模型调用失败结束。 */
+    boolean modelFailed() {
+        return modelFailed;
     }
 
     /** 更新用户输入行上的本轮状态。 */

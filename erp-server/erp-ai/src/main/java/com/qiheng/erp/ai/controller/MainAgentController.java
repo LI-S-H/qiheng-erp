@@ -5,6 +5,7 @@ import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.qiheng.erp.ai.clarification.ClarificationService;
+import com.qiheng.erp.ai.agent.AgentModelFailure;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.RunEventChannel;
 import com.qiheng.erp.security.context.UserContext;
@@ -82,6 +83,7 @@ public class MainAgentController {
             var runId = new AtomicReference<>(requestedRunId);
             var messageId = new AtomicReference<>(UUID.randomUUID().toString());
             var finalText = new AtomicReference<String>();
+            var modelFailure = new AtomicInteger();
             var completed = new AtomicInteger();
             return outputs.<ServerSentEvent<Object>>handle((output, sink) -> {
                 String node = output.node();
@@ -122,13 +124,23 @@ public class MainAgentController {
                     if (messages instanceof List<?> list && !list.isEmpty()
                             && list.getLast() instanceof AssistantMessage last
                             && last.getToolCalls().isEmpty() && last.getText() != null && !last.getText().isBlank()) {
-                        finalText.set(last.getText());
+                        // 模型调用失败时框架返回错误文本，不能当作答复展示，改发失败事件。
+                        if (AgentModelFailure.isFailure(last.getText())) {
+                            modelFailure.set(1);
+                        } else {
+                            finalText.set(last.getText());
+                        }
                     }
                     completed.set(1);
                 }
             }).concatWith(Flux.defer(() -> {
                 if (completed.get() != 1) {
                     return Flux.empty();
+                }
+                if (modelFailure.get() == 1) {
+                    return Flux.just(event("run_failed", Map.of(
+                            "runId", runId.get() == null ? "" : runId.get(), "status", "FAILED",
+                            "code", AgentModelFailure.ERROR_CODE, "message", AgentModelFailure.RESULT_MESSAGE)));
                 }
                 var end = event("run_completed", Map.of("runId", runId.get(), "status", "COMPLETED"));
                 return finalText.get() == null ? Flux.just(end) : Flux.just(

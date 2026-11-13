@@ -348,6 +348,13 @@ public final class MainAgentService {
                             finish(lock, owner, sink, new IllegalStateException("主智能体运行流未到达结束节点"));
                             return;
                         }
+                        // 模型调用失败时图仍然跑到结束节点，但本轮必须记为失败，不能算完成。
+                        if (recorder.modelFailed()) {
+                            recorder.status("FAILED", "MODEL_CALL_FAILED");
+                            runs.put(runKey, new RuntimeSnapshot(runId, "FAILED", null));
+                            finish(lock, owner, sink, null);
+                            return;
+                        }
                         recorder.status("COMPLETED", null);
                         runs.put(runKey, new RuntimeSnapshot(runId, "COMPLETED", null));
                         finish(lock, owner, sink, null);

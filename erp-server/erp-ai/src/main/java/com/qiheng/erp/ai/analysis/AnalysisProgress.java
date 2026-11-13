@@ -68,6 +68,15 @@ public final class AnalysisProgress {
     }
 
     /**
+     * 已完成的模型轮数；用于失败时说明卡在第几轮。
+     *
+     * @return 已记录的步骤数
+     */
+    public synchronized int stepCount() {
+        return steps.size();
+    }
+
+    /**
      * 发布分析结论与完整过程；结论由服务层解析交接结果后给出，与交还主智能体的内容一致。
      *
      * @param completion 完成情况

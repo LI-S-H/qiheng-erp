@@ -195,6 +195,31 @@ class MainAgentControllerTest {
         assertThat(before.get("messageId")).isNotEqualTo(after.get("messageId"));
     }
 
+    /** 模型调用失败时不能把框架错误文本当作答复，改发带错误码的失败事件。 */
+    @Test
+    void modelFailureEmitsRunFailedWithCodeInsteadOfAnswer() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r")), null);
+        var end = mock(NodeOutput.class);
+        when(end.isEND()).thenReturn(true);
+        when(end.state()).thenReturn(new OverAllState(Map.of("messages",
+                List.of(new org.springframework.ai.chat.messages.AssistantMessage("Exception: 上游超时")))));
+        when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.just(start, end));
+
+        var events = new MainAgentController(agents, clarifications)
+                .stream("1", new MainAgentController.MessageRequest("查询"))
+                .filter(e -> !"run_snapshot".equals(e.event())).collectList().block();
+
+        assertThat(events).extracting(e -> e.event()).containsExactly("run_started", "run_failed");
+        var failure = (Map<?, ?>) events.get(1).data();
+        assertThat(failure.get("code")).isEqualTo("MODEL_CALL_FAILED");
+        assertThat(failure.get("message")).isEqualTo("模型服务暂时不可用，请稍后重试。");
+        assertThat(failure.get("message").toString()).doesNotContain("Exception");
+    }
+
     private NodeOutput modelHook(String text) {
         var call = new org.springframework.ai.chat.messages.AssistantMessage.ToolCall("call", "function", "query_sql_data", "{}");
         var assistant = org.springframework.ai.chat.messages.AssistantMessage.builder().content(text).toolCalls(List.of(call)).build();

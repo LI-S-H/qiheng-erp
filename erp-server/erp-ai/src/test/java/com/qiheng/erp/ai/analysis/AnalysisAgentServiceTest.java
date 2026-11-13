@@ -31,6 +31,27 @@ import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mock;
 
 class AnalysisAgentServiceTest {
+    /** 模型返回失败文本时给出可读说明，并把原始原因记入流水。 */
+    @Test
+    void modelFailureProducesReadableSummaryAndTrace() throws Exception {
+        var model = mock(ChatModel.class);
+        when(model.call(any(Prompt.class))).thenReturn(
+                new ChatResponse(List.of(new Generation(new AssistantMessage("Exception: 上游超时")))));
+        var traces = mock(AiAgentTraceMapper.class);
+        var mapper = new ObjectMapper();
+        var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class),
+                mock(PythonSandboxRuntime.class), "分析", traces, mapper, null, null,
+                new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null);
+
+        String summary = service.analyze("分析库存", new AgentToolContext(10, 20));
+
+        assertThat(summary).contains("分析未完成：模型调用失败", "原始原因：上游超时", "建议：");
+        assertThat(summary).doesNotContain("Exception:");
+        verify(traces).insert(eq(10L), eq(20L), anyString(), eq("ANALYSIS"), eq("MODEL_FAILURE"),
+                argThat(content -> content.contains("Exception: 上游超时")));
+        verify(traces, never()).insert(eq(10L), eq(20L), anyString(), eq("ANALYSIS"), eq("FINAL"), anyString());
+    }
+
     /** 多轮分析应每次收到一份图谱和当前任务的业务日期。 */
     @Test
     void injectsBusinessGraphAndDateAcrossModelCalls() throws Exception {

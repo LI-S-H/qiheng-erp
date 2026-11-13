@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.Mockito.*;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import static org.mockito.Mockito.mock;
@@ -84,9 +85,47 @@ class AgentRunRecorderTest {
         assertThat(saved.getValue().getContent()).contains("分析库存", "库存充足");
     }
 
+    /** 模型失败时框架的错误文本不能作为最终答复落库，只留在流水里。 */
+    @Test
+    void modelFailureIsRecordedAsFailureWithoutVisibleAnswer() throws Exception {
+        var store = mock(ConversationMessageStore.class);
+        var traces = mock(AiAgentTraceMapper.class);
+        var mapper = new ObjectMapper();
+        var recorder = new AgentRunRecorder(store, mapper,
+                traceRecorder(traces), 1, 2, "run");
+        var output = NodeOutput.of("__END__", "main_agent", new OverAllState(Map.of("messages",
+                List.of(new AssistantMessage("Exception: 上游超时")))), null);
+
+        recorder.capture(output);
+
+        org.mockito.Mockito.verifyNoInteractions(store);
+        var content = ArgumentCaptor.forClass(String.class);
+        var eventType = ArgumentCaptor.forClass(String.class);
+        verify(traces).insert(eq(1L), eq(2L), eq("run"), eq("MAIN"), eventType.capture(), content.capture());
+        assertThat(eventType.getValue()).isEqualTo("MODEL_FAILURE");
+        assertThat(content.getValue()).contains("Exception: 上游超时");
+        assertThat(recorder.modelFailed()).isTrue();
+    }
+
+    /** 分析过程行写入失败只记日志，不能把已经算好的结论一起丢掉。 */
+    @Test
+    void analysisWriteFailureDoesNotPropagate() {
+        var store = mock(ConversationMessageStore.class);
+        when(store.append(any())).thenThrow(new IllegalStateException("写入失败"));
+        var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
+
+        assertDoesNotThrow(() -> recorder.analysis(Map.of("toolCallId", "call-1", "goal", "分析库存")));
+    }
+
     /** 建立只写不校验的流水记录器；单元测试不连库。 */
     private static AiAgentTraceRecorder traceRecorder() {
         return new AiAgentTraceRecorder(mock(AiAgentTraceMapper.class), new ObjectMapper(),
+                new AiAgentTraceRecorder.Scope(1, 2, "run", "MAIN"));
+    }
+
+    /** 使用指定流水通道建立记录器，便于校验写入内容。 */
+    private static AiAgentTraceRecorder traceRecorder(AiAgentTraceMapper traces) {
+        return new AiAgentTraceRecorder(traces, new ObjectMapper(),
                 new AiAgentTraceRecorder.Scope(1, 2, "run", "MAIN"));
     }
 }

@@ -5,6 +5,7 @@ import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qiheng.erp.ai.agent.AgentModelFailure;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
 import com.qiheng.erp.ai.context.AgentToolContext;
@@ -44,6 +45,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class AnalysisAgentService {
     private static final Logger log = LoggerFactory.getLogger(AnalysisAgentService.class);
+
+    /** 模型调用失败时的错误码，前端据此区分瞬时故障与业务失败。 */
+    private static final String ANALYSIS_MODEL_FAILED = "ANALYSIS_MODEL_FAILED";
 
     private final ReactAgent agent;
     private final PythonSandboxRuntime sandboxRuntime;
@@ -246,6 +250,11 @@ public final class AnalysisAgentService {
         try (task) {
             var config = buildConfig(run, task, recorder);
             String answer = agent.call(run.modelInput(), config).getText();
+            // 模型调用失败时框架返回错误文本，它不是结论；单独记录并给出可读说明。
+            if (AgentModelFailure.isFailure(answer)) {
+                recorder.recordText("MODEL_FAILURE", answer);
+                return modelFailed(task, run, answer);
+            }
             // 先保存模型原始答复，格式校验失败时仍可追溯。
             recorder.recordText("FINAL", answer);
             AnalysisHandoff handoff = handoffValidation.parse(answer);
@@ -262,6 +271,56 @@ public final class AnalysisAgentService {
             }
             throw error;
         }
+    }
+
+    /**
+     * 模型调用失败时返回可读说明，并保留中断前已取得的数据和结果。
+     *
+     * @param task 本次任务上下文
+     * @param run 本次运行参数
+     * @param answer 框架返回的失败文本
+     * @return 标注失败的分析结果
+     */
+    private AnalysisResult modelFailed(AnalysisTaskContext task, AnalysisRun run, String answer) {
+        String summary = modelFailureSummary(run, AgentModelFailure.reason(answer), task);
+        if (!run.includeResults()) {
+            return new AnalysisResult("FAILED", task.taskId(), summary, List.of(), List.of(), List.of(),
+                    ANALYSIS_MODEL_FAILED);
+        }
+        try {
+            var partial = assemble(task, new AnalysisHandoff("FAILED", summary), run.provided());
+            return new AnalysisResult("FAILED", task.taskId(), summary, partial.datasets(),
+                    partial.providedDatasets(), partial.analysisResults(), ANALYSIS_MODEL_FAILED);
+        } catch (IOException | RuntimeException error) {
+            return new AnalysisResult("FAILED", task.taskId(), summary, List.of(), List.of(), List.of(),
+                    ANALYSIS_MODEL_FAILED);
+        }
+    }
+
+    /**
+     * 组装失败说明：失败轮次、原始原因、已完成的内容与建议。
+     *
+     * @param run 本次运行参数
+     * @param reason 模型失败的原始原因
+     * @param task 本次任务上下文
+     * @return 面向用户与主智能体的说明
+     */
+    private String modelFailureSummary(AnalysisRun run, String reason, AnalysisTaskContext task) {
+        var lines = new ArrayList<String>();
+        lines.add("分析未完成：模型调用失败");
+        lines.add("");
+        var progress = run.command().progress();
+        int steps = progress == null ? 0 : progress.stepCount();
+        if (steps > 0) {
+            lines.add("· 失败位置：第 " + (steps + 1) + " 轮，前面 " + steps + " 轮已完成");
+        }
+        lines.add("· 原始原因：" + reason);
+        var used = task.usedDatasetIds();
+        if (!used.isEmpty()) {
+            lines.add("· 已经完成：已读取 " + used.size() + " 个数据集（" + String.join("、", used) + "）");
+        }
+        lines.add("· 建议：稍后重试；若目标不变可直接重新发起，本次会重新准备数据。");
+        return String.join("\n", lines);
     }
 
     /**

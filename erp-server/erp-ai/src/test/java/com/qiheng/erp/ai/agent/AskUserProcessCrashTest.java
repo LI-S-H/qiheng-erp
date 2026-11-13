@@ -40,6 +40,8 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 强杀独立 JVM，验证未完成工具调用后接收新消息。 */
 @EnabledIfEnvironmentVariable(named = "ERP_SQL_GRAPH_REDIS_TEST", matches = "true")
@@ -110,8 +112,8 @@ class AskUserProcessCrashTest {
             });
             var business = mock(BusinessGraphProvider.class); when(business.render()).thenReturn("业务图");
             var agent = new MainAgentConfiguration().mainAgent(model, saver, new SqlQueryTool(mock(SqlGraphService.class)),
-                    new ReadDatasetTool(mock(DatasetManager.class)), business, questions);
-            var main = new MainAgentService(agent, saver, conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+                    new ReadDatasetTool(mock(DatasetManager.class)), business, questions, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+            var main = new MainAgentService(agent, saver, conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
             String input = "first".equals(phase) ? "查询仓库" : "再分析销售";
             main.streamForUser(1, conversation, input).doOnNext(event -> {
                 if (!"ask_user".equals(event.node())) return;

@@ -30,7 +30,7 @@ import com.qiheng.erp.ai.sql.execution.SqlGuardGapReporter;
 import com.qiheng.erp.ai.sql.guard.DruidSqlGuard;
 import com.qiheng.erp.ai.knowledge.KnowledgeProvider;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.junit.jupiter.api.Test;
@@ -54,6 +54,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import com.qiheng.erp.ai.agent.MainAgentService;
 
 /** 隔离数据库、真实模型、工具和两级图的端到端实验。 */
 @EnabledIfEnvironmentVariable(named = "ERP_REAL_QWEN_IT", matches = "true")
@@ -81,13 +83,17 @@ class RealQwenSqlAgentIT {
         String url = "jdbc:mysql://127.0.0.1:13327/erp_ai_test?useSSL=false&allowPublicKeyRetrieval=true&allowMultiQueries=false";
         var jdbc = new JdbcTemplate(new DriverManagerDataSource(url, "root", "isolated_test_password"));
         jdbc.execute(Files.readString(Path.of("..", "..", "docs", "database", "sql", "029_ai_dataset.sql")));
-        jdbc.execute(Files.readString(Path.of("..", "sql", "030_ai_dataset_description.sql")));
+        // 智能体流水表同样建在隔离库，验证真实模型链路上的流水真的落库。
+        jdbc.execute(Files.readString(Path.of("..", "..", "docs", "database", "sql", "035_ai_agent_trace.sql")));
+        // 正式建表脚本已包含数据集说明字段，隔离新库无需旧的本地补丁。
         jdbc.execute("CREATE TABLE ai_stock_probe (id BIGINT PRIMARY KEY, warehouse_id BIGINT NOT NULL, quantity DECIMAL(16,2) NOT NULL, unit_snapshot VARCHAR(32) NOT NULL)");
         jdbc.update("INSERT INTO ai_stock_probe VALUES (1,1,30.25,'千克'),(2,1,8.50,'件'),(3,2,9.75,'千克')");
         Config redisConfig = new Config();
         redisConfig.useSingleServer().setAddress("redis://127.0.0.1:16327");
         var redis = Redisson.create(redisConfig);
         ReadOnlySqlExecutor executor = null;
+        var traceSession = openTraceSession(jdbc.getDataSource());
+        var traceMapper = traceSession.getMapper(AiAgentTraceMapper.class);
         try {
             var saver = RedisSaver.builder().redisson(redis).stateSerializer(new SpringAIJacksonStateSerializer(OverAllState::new)).build();
             var columns = List.of(new AuthorizedSchemaSnapshot.Column("id", false, true), new AuthorizedSchemaSnapshot.Column("warehouse_id", false, false), new AuthorizedSchemaSnapshot.Column("quantity", false, false), new AuthorizedSchemaSnapshot.Column("unit_snapshot", false, false));
@@ -127,7 +133,7 @@ class RealQwenSqlAgentIT {
             executor = new ReadOnlySqlExecutor(properties, mock(SqlGuardGapReporter.class));
             var graph = new SqlGraphConfiguration().sqlGraph(saver, schemas, knowledge, mainModel,
                     mapper, guard, executor, properties, users, datasets,
-                    mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class), 3);
+                    mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class), traceMapper, 3);
             var conversations = mock(AiConversationMapper.class); when(conversations.selectOwned(2001L, 1001L)).thenReturn(new AiConversation());
             var service = new SqlGraphService(graph, saver, conversations, redis, users, datasets);
             var businessGraph = mock(com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider.class);
@@ -136,10 +142,11 @@ class RealQwenSqlAgentIT {
                     + "- id：商品编号\n- warehouse_id：仓库编号\n- quantity：库存数量\n- unit_snapshot：库存单位快照\n");
             var agent = new com.qiheng.erp.ai.config.MainAgentConfiguration().mainAgent(
                     planningModel, saver, new SqlQueryTool(service), new com.qiheng.erp.ai.dataset.tool.ReadDatasetTool(datasets),
-                    businessGraph, mock(com.qiheng.erp.ai.clarification.ClarificationService.class));
-            var mainService = new com.qiheng.erp.ai.agent.MainAgentService(agent, saver, conversations, users,
+                    businessGraph, mock(com.qiheng.erp.ai.clarification.ClarificationService.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+            var messageStore = mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class);
+            var mainService = new MainAgentService(agent, saver, conversations, users,
                     new com.qiheng.erp.ai.conversation.ConversationExecutionLock(redis),
-                    mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), mapper);
+                    messageStore, mapper, traceMapper);
             var config = RunnableConfig.builder().threadId("main:1001:2001").build();
             var outputs = com.qiheng.erp.ai.agent.AgentTestAccess.stream(mainService, 1001L, 2001L,
                     "请查询一号仓库的每个商品库存，返回商品编号、库存数量及对应单位。")
@@ -186,10 +193,64 @@ class RealQwenSqlAgentIT {
                                     && response.responseData().contains(datasetId)
                                     && response.responseData().contains("dataDescription")
                                     && response.responseData().contains("preview"))).isTrue();
+            var saved = org.mockito.ArgumentCaptor.forClass(com.qiheng.erp.ai.domain.entity.AiMessage.class);
+            org.mockito.Mockito.verify(messageStore, org.mockito.Mockito.atLeastOnce()).append(saved.capture());
+            var savedCalls = new java.util.ArrayList<String>();
+            var savedResults = new java.util.ArrayList<String>();
+            for (var message : saved.getAllValues()) {
+                if ("TOOL_CALL".equals(message.getKind())) {
+                    savedCalls.add(mapper.readTree(message.getContent()).path("callId").asText());
+                }
+                if ("TOOL_RESULT".equals(message.getKind())) {
+                    savedResults.add(mapper.readTree(message.getContent()).path("callId").asText());
+                }
+            }
+            var actualCalls = messages.stream().filter(AssistantMessage.class::isInstance).map(AssistantMessage.class::cast)
+                    .flatMap(message -> message.getToolCalls().stream()).map(AssistantMessage.ToolCall::id).toList();
+            var actualResults = messages.stream().filter(ToolResponseMessage.class::isInstance).map(ToolResponseMessage.class::cast)
+                    .flatMap(message -> message.getResponses().stream()).map(ToolResponseMessage.ToolResponse::id).toList();
+            System.out.println("MAIN_REAL_SHAPE calls=" + actualCalls + " savedCalls=" + savedCalls
+                    + " results=" + actualResults + " savedResults=" + savedResults);
+            assertThat(savedCalls).containsExactlyElementsOf(actualCalls);
+            assertThat(savedResults).containsExactlyElementsOf(actualResults);
             System.out.println("真实模型工具调用与 SQL 取数完成，行数=" + rows.size() + "，数据集=" + datasetId);
+
+            // 真实模型跑完后核对流水：三个智能体都要留下原文。
+            var traceRows = jdbc.queryForList("SELECT agent_type, event_type, content FROM ai_agent_trace ORDER BY id");
+            var byAgent = new java.util.LinkedHashMap<String, java.util.List<String>>();
+            for (var row : traceRows) {
+                byAgent.computeIfAbsent((String) row.get("agent_type"), ignored -> new java.util.ArrayList<>())
+                        .add((String) row.get("event_type"));
+            }
+            System.out.println("智能体流水分布：" + byAgent);
+            assertThat(byAgent).containsKeys("MAIN", "SQL_GENERATE", "SQL_INSPECT");
+            assertThat(byAgent.get("MAIN")).contains("INPUT", "MODEL_OUTPUT", "TOOL_CALL", "TOOL_RESULT", "FINAL");
+            assertThat(byAgent.get("SQL_GENERATE")).contains("INPUT", "MODEL_OUTPUT");
+            assertThat(byAgent.get("SQL_INSPECT")).contains("INPUT", "MODEL_OUTPUT");
+            // 生成节点的产出必须带真实 SQL，校验节点的产出必须带检查结论。
+            var generateOutput = jdbc.queryForList(
+                    "SELECT content FROM ai_agent_trace WHERE agent_type='SQL_GENERATE' AND event_type='MODEL_OUTPUT'");
+            assertThat(generateOutput).isNotEmpty();
+            assertThat(mapper.readTree((String) generateOutput.getFirst().get("content")).path("sql").asText())
+                    .contains("ai_stock_probe");
+            // 主智能体的工具调用原文要保留参数，便于回看它到底查了什么。
+            var mainCall = jdbc.queryForList(
+                    "SELECT content FROM ai_agent_trace WHERE agent_type='MAIN' AND event_type='TOOL_CALL'");
+            assertThat(mainCall).isNotEmpty();
+            assertThat((String) mainCall.getFirst().get("content")).contains("query_sql_data");
         } finally {
             if (executor != null) executor.destroy();
+            traceSession.close();
             redis.shutdown();
         }
+    }
+
+    /** 建立指向隔离库的 MyBatis 会话，用于写入智能体流水。 */
+    private static org.apache.ibatis.session.SqlSession openTraceSession(javax.sql.DataSource source) throws Exception {
+        var configuration = new org.apache.ibatis.session.Configuration();
+        configuration.setEnvironment(new org.apache.ibatis.mapping.Environment("trace-it",
+                new org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory(), source));
+        configuration.addMapper(AiAgentTraceMapper.class);
+        return new org.apache.ibatis.session.SqlSessionFactoryBuilder().build(configuration).openSession(true);
     }
 }

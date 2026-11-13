@@ -8,6 +8,7 @@ interface DatasetRepository {
     Optional<DatasetRecord> find(String datasetId, long userId, long conversationId);
     Optional<DatasetRecord> findAttempt(String sqlRunId, int attempt, long userId, long conversationId);
     Optional<DatasetRecord> findReady(String sqlRunId, long userId, long conversationId);
+    List<DatasetRecord> findReadyByConversation(long userId, long conversationId);
     List<DatasetRecord> findStagedByRun(String sqlRunId, long userId, long conversationId);
     Optional<String> findSourceSql(String datasetId, long userId, long conversationId);
     void insert(DatasetRequest request, DatasetRecord record);

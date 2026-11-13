@@ -16,12 +16,15 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
+import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 
 class AgentRunRecorderTest {
     @Test
     void recordsCompleteMessagesOnceAndExposesOnlyQuestionTool() {
         var store = mock(ConversationMessageStore.class);
-        var recorder = new AgentRunRecorder(store, new ObjectMapper(), 1, 2, "run");
+        var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
         recorder.start("查询库存");
         var call = new AssistantMessage.ToolCall("c1", "function", "ask_user", "{\"questions\":[]}");
         var toolCall = AssistantMessage.builder().content("请先确认仓库").toolCalls(List.of(call)).build();
@@ -43,7 +46,7 @@ class AgentRunRecorderTest {
     @Test
     void recordsEveryResponseFromOneToolMessage() {
         var store = mock(ConversationMessageStore.class);
-        var recorder = new AgentRunRecorder(store, new ObjectMapper(), 1, 2, "run");
+        var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
         var result = ToolResponseMessage.builder().responses(List.of(
                 new ToolResponseMessage.ToolResponse("a", "first", "A"),
                 new ToolResponseMessage.ToolResponse("b", "second", "B"))).build();
@@ -57,12 +60,33 @@ class AgentRunRecorderTest {
     @Test
     void storesOnlyTheReadableToolDuration() {
         var store = mock(ConversationMessageStore.class);
-        var recorder = new AgentRunRecorder(store, new ObjectMapper(), 1, 2, "run");
+        var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
         recorder.toolFinished("call-1", "正在查询业务数据", 1250);
         var saved = ArgumentCaptor.forClass(AiMessage.class);
         verify(store).append(saved.capture());
         assertThat(saved.getValue().getKind()).isEqualTo("ASSISTANT_STEP");
         assertThat(saved.getValue().getContent()).contains("查询业务数据", "1.3 秒");
         assertThat(saved.getValue().getVisible()).isTrue();
+    }
+
+    @Test
+    void storesAnalysisProcessAsVisibleBlock() {
+        var store = mock(ConversationMessageStore.class);
+        var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
+        recorder.analysis(Map.of("toolCallId", "call-1", "goal", "分析库存",
+                "steps", List.of(Map.of("text", "先看数据", "tools", List.of())),
+                "completion", "COMPLETED", "summary", "库存充足"));
+        var saved = ArgumentCaptor.forClass(AiMessage.class);
+        verify(store).append(saved.capture());
+        assertThat(saved.getValue().getKind()).isEqualTo("ANALYSIS_STEP");
+        assertThat(saved.getValue().getMessageKey()).isEqualTo("run:analysis:call-1");
+        assertThat(saved.getValue().getVisible()).isTrue();
+        assertThat(saved.getValue().getContent()).contains("分析库存", "库存充足");
+    }
+
+    /** 建立只写不校验的流水记录器；单元测试不连库。 */
+    private static AiAgentTraceRecorder traceRecorder() {
+        return new AiAgentTraceRecorder(mock(AiAgentTraceMapper.class), new ObjectMapper(),
+                new AiAgentTraceRecorder.Scope(1, 2, "run", "MAIN"));
     }
 }

@@ -8,7 +8,7 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
 import com.qiheng.erp.ai.sql.graph.SqlGraphService;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
@@ -48,18 +48,18 @@ class MainAgentToolContextTest {
             @Override
             public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
                 var run = request.getExecutionContext().orElseThrow().config();
-                var trusted = (SqlToolContext) run.metadata("trustedSqlContext").orElseThrow();
+                var trusted = (AgentToolContext) run.metadata("trustedSqlContext").orElseThrow();
                 return handler.call(ToolCallRequest.builder(request)
-                        .context(Map.of(SqlQueryTool.CONTEXT_KEY, trusted)).build());
+                        .context(Map.of(AgentToolContext.CONTEXT_KEY, trusted)).build());
             }
             @Override public String getName() { return "test_identity"; }
         };
         var agent = ReactAgent.builder().name("tool-context-test").model(model)
                 .methodTools(new SqlQueryTool(service)).interceptors(identity).build();
         var one = RunnableConfig.builder().threadId("user-1")
-                .addMetadata("trustedSqlContext", new SqlToolContext(1, 101, "2026-11-05")).build();
+                .addMetadata("trustedSqlContext", new AgentToolContext(1, 101, "2026-11-05")).build();
         var two = RunnableConfig.builder().threadId("user-2")
-                .addMetadata("trustedSqlContext", new SqlToolContext(2, 202, "2026-11-06")).build();
+                .addMetadata("trustedSqlContext", new AgentToolContext(2, 202, "2026-11-06")).build();
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first = executor.submit(() -> agent.stream("库存", one).collectList().block(Duration.ofSeconds(15)));
             var second = executor.submit(() -> agent.stream("库存", two).collectList().block(Duration.ofSeconds(15)));

@@ -5,6 +5,7 @@ import com.qiheng.erp.ai.domain.model.AuthorizedSchemaSnapshot;
 import com.qiheng.erp.ai.sql.schema.SchemaProvider;
 import com.qiheng.erp.ai.sql.scope.PermissionCodes;
 import com.qiheng.erp.ai.knowledge.KnowledgeProvider;
+import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.security.service.LoginUserService;
 
@@ -20,15 +21,29 @@ public final class SqlNodeSupport {
     private final LoginUserService users;
     private final int maxAttempts;
     private final SqlRetryReporter retryReporter;
+    private final SqlTraceSupport traceSupport;
 
     /** 准备授权依赖与生成、纠错共用的次数上限。 */
-    public SqlNodeSupport(SchemaProvider schemas, KnowledgeProvider knowledge, LoginUserService users, int maxAttempts, SqlRetryReporter retryReporter) {
+    public SqlNodeSupport(SchemaProvider schemas, KnowledgeProvider knowledge, LoginUserService users, int maxAttempts,
+            SqlRetryReporter retryReporter, SqlTraceSupport traceSupport) {
         if (maxAttempts < 1) throw new IllegalArgumentException("SQL 最大尝试次数必须大于零");
         this.schemas = schemas;
         this.knowledge = knowledge;
         this.users = users;
         this.maxAttempts = maxAttempts;
         this.retryReporter = retryReporter;
+        this.traceSupport = traceSupport;
+    }
+
+    /**
+     * 建立取数子图节点的流水记录器。
+     *
+     * @param work 当前取数工作状态
+     * @param agentType 智能体类型：SQL_GENERATE 或 SQL_INSPECT
+     * @return 该节点的流水记录器
+     */
+    public AiAgentTraceRecorder trace(Map<String, Object> work, String agentType) {
+        return traceSupport.create(work, agentType);
     }
 
     /** 每次恢复或查询时读取当前授权，避免使用已撤销的权限。 */

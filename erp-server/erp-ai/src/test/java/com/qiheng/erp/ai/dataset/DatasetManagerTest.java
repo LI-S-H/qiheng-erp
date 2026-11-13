@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.sql.Types;
@@ -24,6 +25,51 @@ import static org.mockito.Mockito.*;
 class DatasetManagerTest {
     @TempDir Path directory;
     private static final SqlDataDescription DESCRIPTION = new SqlDataDescription("库存", "每个商品一行", List.of(), "");
+
+    @Test
+    void listsOnlyAvailableDatasetsInTheRequestedConversation() throws Exception {
+        DatasetRepository repository = mock(DatasetRepository.class);
+        DatasetAccess access = mock(DatasetAccess.class);
+        DatasetManager manager = new DatasetManager(repository, access, new ObjectMapper(), directory.toString(), 0);
+        var ready = new DatasetRecord("ds_ok", "run-1", 10, 20, "库存", List.of(), 1, true, "READY", null, null);
+        var denied = new DatasetRecord("ds_denied", "run-2", 10, 20, "库存", List.of(), 1, true, "READY", null, null);
+        var expired = new DatasetRecord("ds_expired", "run-3", 10, 20, "库存", List.of(), 1, true, "READY", Instant.EPOCH, null);
+        var missing = new DatasetRecord("ds_missing", "run-4", 10, 20, "库存", List.of(), 1, true, "READY", null, null);
+        Files.writeString(directory.resolve("ds_ok.jsonl"), "[]\n");
+        Files.writeString(directory.resolve("ds_denied.jsonl"), "[]\n");
+        when(repository.findReadyByConversation(10, 20)).thenReturn(List.of(ready, denied, expired, missing));
+        doThrow(new IllegalStateException("权限不足")).when(access).verify(denied);
+
+        assertEquals(List.of(ready), manager.listReady(10, 20));
+        assertTrue(manager.listReady(11, 20).isEmpty());
+        verify(repository).findReadyByConversation(10, 20);
+    }
+
+    @Test
+    void opensOnlyAuthorizedPublishedDatasetWithoutChangingItsRows() throws Exception {
+        DatasetRepository repository = mock(DatasetRepository.class);
+        DatasetAccess access = mock(DatasetAccess.class);
+        DatasetManager manager = new DatasetManager(repository, access, new ObjectMapper(), directory.toString(), 0);
+        var record = new DatasetRecord("ds_ready", "run-1", 10, 20, "库存", List.of(), 1,
+                false, "READY", null, DESCRIPTION, "ROW_LIMIT");
+        String rows = "[\"商品A\",10]\n";
+        Files.writeString(directory.resolve("ds_ready.jsonl"), rows);
+        when(repository.find("ds_ready", 10, 20)).thenReturn(Optional.of(record));
+
+        try (var input = manager.openReady("ds_ready", 10, 20)) {
+            assertEquals(record, input.record());
+            assertEquals(rows, new String(input.stream().readAllBytes(), StandardCharsets.UTF_8));
+        }
+        verify(access).verify(record);
+        assertThrows(IllegalArgumentException.class,
+                () -> manager.openReady("ds_ready", 11, 20));
+
+        var staged = new DatasetRecord("ds_ready", "run-1", 10, 20, "库存", List.of(), 1,
+                true, "STAGED", null, null);
+        when(repository.find("ds_ready", 10, 20)).thenReturn(Optional.of(staged));
+        assertThrows(IllegalStateException.class,
+                () -> manager.openReady("ds_ready", 10, 20));
+    }
 
     @Test
     void duplicatePublicationKeepsStagedFileForCheckpointRecovery() throws Exception {

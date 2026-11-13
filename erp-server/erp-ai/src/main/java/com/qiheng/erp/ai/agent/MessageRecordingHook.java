@@ -20,5 +20,9 @@ public final class MessageRecordingHook extends MessagesModelHook {
     @Override public AgentCommand afterModel(List<Message> messages, RunnableConfig config) {
         return new AgentCommand(null);
     }
-    @Override public String getName() { return "message_recording"; }
+    /** 提供本 Hook 的名称。 */
+    @Override
+    public String getName() {
+        return "message_recording";
+    }
 }

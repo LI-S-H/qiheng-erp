@@ -13,7 +13,7 @@ import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.common.mq.SystemExceptionRecordMessage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 
 /** 在框架解析数据工具参数前，把 JSON 格式问题作为工具结果交给模型。 */
 public final class ToolJsonInterceptor extends ToolInterceptor {
@@ -41,7 +41,8 @@ public final class ToolJsonInterceptor extends ToolInterceptor {
 
     @Override
     public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
-        if (!Set.of("query_sql_data", "read_dataset").contains(request.getToolName())) {
+        if (!Set.of("query_sql_data", "readDataset", "listDatasets", "listAnalysisResults", "readAnalysisResult", "analyzeData")
+                .contains(request.getToolName())) {
             return handler.call(request);
         }
         try {
@@ -77,8 +78,8 @@ public final class ToolJsonInterceptor extends ToolInterceptor {
             var message = new SystemExceptionRecordMessage();
             var config = request.getExecutionContext().orElseThrow().config();
             String runId = String.valueOf(config.metadata("runId").orElse("unknown"));
-            Object raw = request.getContext().get(SqlQueryTool.CONTEXT_KEY);
-            String conversationId = raw instanceof SqlToolContext context
+            Object raw = request.getContext().get(AgentToolContext.CONTEXT_KEY);
+            String conversationId = raw instanceof AgentToolContext context
                     ? Long.toString(context.conversationId()) : "unknown";
             message.setEventId(IdWorker.getIdStr());
             message.setExceptionType("AI_TOOL_ARGUMENT_INVALID");

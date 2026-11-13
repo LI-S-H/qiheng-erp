@@ -30,6 +30,18 @@ class VisibleMessageCodecTest {
         assertThat(codec.toView(message).content().data()).containsEntry("result", "yes");
     }
 
+    @Test void readsAnalysisProcessWithGoalStepsAndSummary() {
+        var message = new AiMessage().setKind("ANALYSIS_STEP").setContent(
+                "{\"toolCallId\":\"c1\",\"goal\":\"分析库存\",\"steps\":[{\"text\":\"先看数据\","
+                        + "\"tools\":[{\"name\":\"query_sql_data\",\"label\":\"查询业务数据\"}]}],"
+                        + "\"completion\":\"COMPLETED\",\"summary\":\"库存充足\"}");
+        var content = codec.toView(message).content();
+        assertThat(content.type()).isEqualTo("ANALYSIS");
+        assertThat(content.data()).containsEntry("toolCallId", "c1").containsEntry("goal", "分析库存")
+                .containsEntry("completion", "COMPLETED").containsEntry("summary", "库存充足");
+        assertThat(content.data().get("steps").toString()).contains("查询业务数据");
+    }
+
     @Test void legacyObjectsAndOtherToolsDoNotExposeInternalContent() {
         var message = new AiMessage().setKind("ASSISTANT_FINAL").setContent("{\"type\":\"PLAN\",\"data\":{\"plan\":{}}}");
         assertThat(codec.toView(message).content().data()).containsEntry("text", "该历史消息暂时无法展示。");

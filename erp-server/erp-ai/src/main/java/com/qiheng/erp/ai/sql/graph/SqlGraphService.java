@@ -5,6 +5,7 @@ import cn.hutool.core.util.IdUtil;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.dataset.DatasetManager;
+import com.qiheng.erp.ai.dataset.DatasetReadLimitException;
 import com.qiheng.erp.ai.sql.scope.PermissionCodes;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.service.LoginUserService;
@@ -16,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /** SQL 图内部入口：按用户和会话隔离，并由调用方确认结果交接。 */
@@ -187,7 +189,7 @@ public final class SqlGraphService {
             throw new IllegalArgumentException("取数需求必须包含 goal 和 dataRequirement（FULL 或 LIMITED）");
         }
         Map<String, Object> validated = new LinkedHashMap<>(requirement);
-        validated.put("dataRequirement", choice.toUpperCase(java.util.Locale.ROOT));
+        validated.put("dataRequirement", choice.toUpperCase(Locale.ROOT));
         return validated;
     }
 
@@ -196,7 +198,9 @@ public final class SqlGraphService {
         Map<String, Object> result = new LinkedHashMap<>();
         for (String key : List.of("sqlRunId", "status", "code", "message", "guidance", "datasetId", "columns", "rowCount",
                 "completed", "truncated", "truncationReason", "businessFullResult", "limited", "summary", "limitations", "dataDescription")) {
-            if (work.containsKey(key)) result.put(key, work.get(key));
+            if (work.containsKey(key)) {
+                result.put(key, work.get(key));
+            }
         }
         if ("SUCCESS".equals(work.get("status")) || "PARTIAL".equals(work.get("status"))) {
             // 预览与正式数据共用权限和大小限制；主智能体无需额外调用即可理解小结果。
@@ -206,7 +210,7 @@ public final class SqlGraphService {
                 result.put("preview", Map.of("rows", preview.rows(), "returnedRows", preview.returnedRows(),
                         "datasetRows", preview.rowCount(), "containsAllRows", !preview.hasMore() && !preview.datasetTruncated(),
                         "message", preview.datasetTruncated() ? preview.completenessMessage() : preview.hasMore() ? "仅为部分预览，不能代表全部数据。" : "预览包含数据集全部行。"));
-            } catch (com.qiheng.erp.ai.dataset.DatasetReadLimitException error) {
+            } catch (DatasetReadLimitException error) {
                 // 可选预览超限不影响已发布数据交付；权限和存储错误仍由调用方处理。
                 result.put("preview", Map.of("rows", List.of(), "containsAllRows", false, "message", error.getMessage()));
             }

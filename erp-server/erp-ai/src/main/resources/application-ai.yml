@@ -3,6 +3,11 @@ spring:
   config:
     import: optional:file:./.env.ai.yaml
 
+logging:
+  level:
+    # 该版本沙箱库的 INFO 启动日志包含运行时认证令牌。
+    io.agentscope.runtime.sandbox.manager.SandboxService: WARN
+
 erp:
   ai:
     enabled: ${ERP_AI_ENABLED:false}

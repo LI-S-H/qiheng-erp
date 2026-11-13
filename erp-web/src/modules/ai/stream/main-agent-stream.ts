@@ -2,15 +2,17 @@ import { http } from '@/api/http';
 import { AUTH_TOKEN_NAME_STORAGE_KEY, AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
 import { readSseStream } from './sse';
 
-export type MainAgentEventName = 'run_snapshot' | 'run_started' | 'text_delta' | 'text_completed' | 'tool_started' | 'tool_finished' | 'question' | 'question_answered' | 'run_completed' | 'run_failed';
+export type MainAgentEventName = 'run_snapshot' | 'run_started' | 'text_delta' | 'text_completed' | 'tool_started' | 'tool_finished' | 'analysis_started' | 'analysis_step' | 'analysis_summary' | 'question' | 'question_answered' | 'run_completed' | 'run_failed';
 export interface MainAgentEvent { event: MainAgentEventName; data: Record<string, unknown> }
 export interface QuestionAnswer { questionId: string; selectedOptions: string[]; customText: string }
 
-const events = new Set<MainAgentEventName>(['run_snapshot', 'run_started', 'text_delta', 'text_completed', 'tool_started', 'tool_finished', 'question', 'question_answered', 'run_completed', 'run_failed']);
+const events = new Set<MainAgentEventName>(['run_snapshot', 'run_started', 'text_delta', 'text_completed', 'tool_started', 'tool_finished', 'analysis_started', 'analysis_step', 'analysis_summary', 'question', 'question_answered', 'run_completed', 'run_failed']);
 
 /** 事件序号与耗时可能由后端作为数字字符串传输，统一转换后再进入页面状态。 */
 function eventNumber(value: unknown): number | null {
-  if (typeof value !== 'number' && (typeof value !== 'string' || !/^\d+$/.test(value))) return null;
+  if (typeof value !== 'number' && (typeof value !== 'string' || !/^\d+$/.test(value))) {
+    return null;
+  }
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
@@ -58,18 +60,28 @@ async function receiveStream(conversationId: string, endpoint: string, onEvent: 
     const body = await response.json().catch(() => null);
     throw new Error(body?.message || `AI 请求失败（${response.status}）`);
   }
-  if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('AI 服务未返回约定的事件流');
+  if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
+    throw new Error('AI 服务未返回约定的事件流');
+  }
   let finished = false;
   await readSseStream(response.body, (frame) => {
-    if (token !== localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) throw new Error('登录会话已变更，请重新进入页面');
+    if (token !== localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) {
+      throw new Error('登录会话已变更，请重新进入页面');
+    }
     const name = frame.event as MainAgentEventName;
-    if (!events.has(name)) throw new Error(`未知 AI 事件：${frame.event}`);
+    if (!events.has(name)) {
+      throw new Error(`未知 AI 事件：${frame.event}`);
+    }
     const data: unknown = JSON.parse(frame.data);
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('AI 事件数据格式错误');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('AI 事件数据格式错误');
+    }
     if (name === 'run_completed' || name === 'run_failed') finished = true;
     onEvent({ event: name, data: normalizeEventData(data as Record<string, unknown>) });
   }, signal);
-  if (!finished && !signal?.aborted) throw new Error('连接已中断，本轮结果未知，请重新打开会话查看。');
+  if (!finished && !signal?.aborted) {
+    throw new Error('连接已中断，本轮结果未知，请重新打开会话查看。');
+  }
 }
 
 /** 提交追问答案；本轮运行流保持打开。 */

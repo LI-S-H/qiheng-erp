@@ -45,7 +45,7 @@ class ToolJsonInterceptorTest {
                         new ToolJsonInterceptor(new ObjectMapper(), publisher)).build();
         var config = RunnableConfig.builder().threadId("tool-chain")
                 .addMetadata("runId", "run-123")
-                .addMetadata("trustedSqlContext", new com.qiheng.erp.ai.sql.tool.SqlToolContext(7, 123))
+                .addMetadata("trustedSqlContext", new com.qiheng.erp.ai.context.AgentToolContext(7, 123))
                 .addMetadata("toolEvents", (java.util.function.Consumer<com.alibaba.cloud.ai.graph.NodeOutput>) events::add)
                 .addMetadata(ToolJsonInterceptor.ERROR_COUNT, new AtomicInteger()).build();
         assertThatThrownBy(() -> agent.stream("查询", config).blockLast(Duration.ofSeconds(20)))

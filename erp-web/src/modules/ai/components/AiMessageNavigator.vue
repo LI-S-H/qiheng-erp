@@ -8,6 +8,8 @@ const props = defineProps<{
   scrollContainer: HTMLElement | null;
 }>();
 const turns = computed(() => props.messages.filter(message => message.kind === 'USER_INPUT'));
+/** 用户输入只保存正文；分析过程不参与导航预览。 */
+const previewText = (message: AiConversationMessage) => message.content.type === 'TEXT' ? message.content.data.text : '';
 const activeId = ref('');
 const navigation = ref<HTMLElement | null>(null);
 let pulse: Animation | undefined;
@@ -96,9 +98,9 @@ onBeforeUnmount(() => pulse?.cancel());
             @click="jumpTo(message.messageId)"
           ><span aria-hidden="true" /></button>
         </TooltipTrigger>
-        <TooltipContent :aria-label="message.content.data.text" side="right" :side-offset="8" class="ai-turn-preview !block !max-w-[min(360px,calc(100vw-48px))] !bg-popover !text-popover-foreground border border-border !p-3 shadow-md">
+        <TooltipContent :aria-label="previewText(message)" side="right" :side-offset="8" class="ai-turn-preview !block !max-w-[min(360px,calc(100vw-48px))] !bg-popover !text-popover-foreground border border-border !p-3 shadow-md">
           <span class="turn-preview-label">用户消息 {{ index + 1 }}</span>
-          <p class="turn-preview-text">{{ message.content.data.text }}</p>
+          <p class="turn-preview-text">{{ previewText(message) }}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

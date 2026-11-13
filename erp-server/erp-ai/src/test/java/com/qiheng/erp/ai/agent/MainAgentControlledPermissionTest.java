@@ -29,6 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 可控模型下验证正式入口会话隔离及工具身份传递。 */
 class MainAgentControlledPermissionTest {
@@ -62,7 +64,7 @@ class MainAgentControlledPermissionTest {
         when(locks.of(anyLong())).thenReturn(lock);
         when(lock.tryLockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>(true));
         when(lock.unlockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>((Void) null));
-        var service = new MainAgentService(agent, mock(com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver.class), conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+        var service = new MainAgentService(agent, mock(com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver.class), conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
 
         assertThatThrownBy(() -> service.streamForUser(2L, 101L, "查询库存").blockLast(Duration.ofSeconds(15)))
                 .hasMessageContaining("无权访问");

@@ -55,6 +55,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 真实数据库和模型验证完整消息流；仅操作唯一测试会话。 */
 @EnabledIfEnvironmentVariable(named = "ERP_MESSAGE_MYSQL_IT", matches = "true")
@@ -94,8 +96,8 @@ class RealMessageFlowMysqlIT {
             var users = mock(LoginUserService.class); var user = new LoginUser(); user.setPermissionCodes(List.of("ai:assistant:use")); when(users.findByUserId(userId)).thenReturn(user);
             var mapper = new ObjectMapper(); var questions = new ClarificationService(conversations, users, mapper);
             var graph = mock(BusinessGraphProvider.class); when(graph.render()).thenReturn("ERP 仓库信息参考。");
-            var agent = new MainAgentConfiguration().mainAgent(model, saver, new SqlQueryTool(mock(SqlGraphService.class)), new ReadDatasetTool(mock(DatasetManager.class)), graph, questions);
-            var main = new MainAgentService(agent, saver, conversations, users, new ConversationExecutionLock(redis), store, mapper);
+            var agent = new MainAgentConfiguration().mainAgent(model, saver, new SqlQueryTool(mock(SqlGraphService.class)), new ReadDatasetTool(mock(DatasetManager.class)), graph, questions, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+            var main = new MainAgentService(agent, saver, conversations, users, new ConversationExecutionLock(redis), store, mapper, mock(AiAgentTraceMapper.class));
             var pending = new CompletableFuture<String>();
             var subscription = main.streamForUser(userId, conversationId, "询问仓库名称，收到答案后只确认。")
                     .subscribe(output -> { if ("ask_user".equals(output.node())) pending.complete((String) output.state().data().get("questionRequestId")); }, pending::completeExceptionally);

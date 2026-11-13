@@ -1,6 +1,6 @@
 package com.qiheng.erp.ai.sql.tool;
 
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.sql.tool.SqlDataRequirement;
 
 import com.alibaba.cloud.ai.graph.agent.tools.ToolContextHelper;
@@ -11,10 +11,10 @@ import org.springframework.ai.tool.annotation.ToolParam;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /** 提供单次 SQL 取数，身份由服务端工具上下文提供。 */
 public final class SqlQueryTool {
-    public static final String CONTEXT_KEY = "sqlToolContext";
     private final SqlGraphService service;
 
     public SqlQueryTool(SqlGraphService service) {
@@ -26,9 +26,11 @@ public final class SqlQueryTool {
     public Map<String, Object> query(
             @ToolParam(description = "取数需求：必填非空 goal 和 dataRequirement，可选 grain、expectedFields、purpose；包含用户已提供的条件。") SqlDataRequirement requirement,
             ToolContext toolContext) throws Exception {
-        SqlToolContext context = ToolContextHelper.getMetadata(toolContext, CONTEXT_KEY, SqlToolContext.class)
+        AgentToolContext context = ToolContextHelper.getMetadata(toolContext, AgentToolContext.CONTEXT_KEY, AgentToolContext.class)
                 .orElseThrow(() -> new IllegalStateException("缺少可信 SQL 工具上下文"));
-        if (requirement == null) throw new IllegalArgumentException("请提供取数需求");
+        if (requirement == null) {
+            throw new IllegalArgumentException("请提供取数需求");
+        }
         String runId = SqlGraphService.newRunId();
         Map<String, Object> result = new LinkedHashMap<>(context.businessDate() == null
                 ? service.startForUser(context.userId(), context.conversationId(), runId, requirement.toMap())
@@ -40,7 +42,7 @@ public final class SqlQueryTool {
             if (Boolean.FALSE.equals(result.get("recoveryRequired"))) {
                 service.acknowledgeForUser(context.userId(), context.conversationId(), (String) result.get("sqlRunId"));
             }
-        } else if (java.util.Set.of("SUCCESS", "PARTIAL", "FAILED", "NEED_INFO").contains(result.get("status"))) {
+        } else if (Set.of("SUCCESS", "PARTIAL", "FAILED", "NEED_INFO").contains(result.get("status"))) {
             // 采用简单交接：先清空当前工作状态，再返回工具结果。
             service.acknowledgeForUser(context.userId(), context.conversationId(), (String) result.get("sqlRunId"));
         }

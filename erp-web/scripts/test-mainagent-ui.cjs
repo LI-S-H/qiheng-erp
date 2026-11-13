@@ -145,11 +145,13 @@ async function main() {
     createCompleted = false;
     await page.getByRole('button', { name: '新建会话' }).click();
     await page.locator('.conversation-switching').waitFor();
+    assert.equal(await page.locator('.conversation-switch-progress').count(), 1, '切换时应显示顶部进度条');
+    assert.equal(await page.locator('.task-status').filter({ hasText: '正在切换会话' }).count(), 1, '切换时状态文案应明确');
     assert.equal(await page.locator('.welcome-state').isVisible(), true, '创建期间不能先隐藏欢迎内容');
     assert.equal(createCompleted, false, '接口未返回时必须保持切换状态');
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(300);
     const switchingOpacity = await page.locator('.conversation-switching').evaluate(el => Number(getComputedStyle(el).opacity));
-    assert.ok(switchingOpacity >= 0.35 && switchingOpacity <= 0.45, '切换时内容应明显变淡');
+    assert.ok(switchingOpacity >= 0.4 && switchingOpacity <= 0.5, '切换时内容应明显变淡');
     if (process.env.AI_QA_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.AI_QA_SCREENSHOT_DIR, 'new-conversation-switch.png') });
     await page.waitForFunction(() => !document.querySelector('.conversation-switching'));
     assert.equal(createCompleted, true, '接口返回前不能结束过渡');

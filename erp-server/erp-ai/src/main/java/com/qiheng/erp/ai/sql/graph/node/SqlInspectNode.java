@@ -6,6 +6,7 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.qiheng.erp.ai.sql.graph.model.output.InvalidSqlModelOutput;
+import com.qiheng.erp.ai.domain.model.AuthorizedSchemaSnapshot;
 import com.qiheng.erp.ai.sql.graph.model.output.SqlInspectionOutput;
 import com.qiheng.erp.ai.sql.graph.model.output.SqlInspectionDescription;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -80,11 +81,12 @@ public final class SqlInspectNode implements NodeAction {
             return update(approvedResult(work, stored, "已恢复通过检查的数据集，共 " + stored.rowCount() + " 行。"));
         }
         Map<String, Object> input = new LinkedHashMap<>();
+        var snapshot = schema(work);
         input.put("requirement", work.get("requirement"));
         input.put("supplements", work.get("supplements"));
         input.put("currentDate", work.get("currentDate"));
         input.put("timeZone", work.get("timeZone"));
-        input.put("schema", schema(work).schemaText());
+        input.put("schema", snapshot.schemaText());
         input.put("knowledge", work.get("knowledge"));
         input.put("sql", work.get("sql"));
         input.put("needFullData", work.get("needFullData"));
@@ -95,8 +97,11 @@ public final class SqlInspectNode implements NodeAction {
         // 样本仅作为本次检查的模型输入，不返回节点更新，不进入 Redis 检查点。
         input.put("sampleRows", datasets.readStaged(datasetId, userId, conversationId, INSPECTION_SAMPLE_ROWS));
         work.remove("retryDiagnostic");
+        var trace = support.trace(work, "SQL_INSPECT");
         try {
+            trace.record("INPUT", traceInput(input, snapshot));
             SqlInspectionOutput answer = modelClient.inspect(inspectPrompt, input);
+            trace.record("MODEL_OUTPUT", answer);
             String decision = answer.decision();
             String message = answer.message();
             if ("PASS".equals(decision)) {
@@ -116,12 +121,43 @@ public final class SqlInspectNode implements NodeAction {
             // 仅记录校验器产生的字段级原因，不记录模型原文和业务数据。
             String reason = error.getMessage();
             work.put("retryDiagnostic", reason);
+            trace.record("ERROR", failure("inspect", reason));
             return update(support.retry(work, "结果检查输出无效：" + reason, "查询结果未能通过业务检查。", "inspect"));
         } catch (JsonProcessingException error) {
             clearResult(work);
             work.put("retryDiagnostic", "检查输入序列化失败");
+            trace.record("ERROR", failure("inspect", "检查输入无法序列化。"));
             return update(support.retry(work, "结果检查输入无法序列化。", "查询结果未能通过业务检查。", "inspect"));
         }
+    }
+
+    /**
+     * 构造本轮输入的流水内容；授权 Schema 与业务口径体积大且每轮相同，改记可见范围指纹。
+     *
+     * @param input 本轮送入模型的输入
+     * @param snapshot 本轮生效的授权快照
+     * @return 可长期保存的输入内容
+     */
+    private Map<String, Object> traceInput(Map<String, Object> input, AuthorizedSchemaSnapshot snapshot) {
+        var content = new LinkedHashMap<>(input);
+        content.remove("schema");
+        content.remove("knowledge");
+        content.put("schemaFingerprint", snapshot.fingerprint());
+        return content;
+    }
+
+    /**
+     * 构造失败事件内容。
+     *
+     * @param stage 失败发生的阶段
+     * @param reason 失败原因
+     * @return 失败事件内容
+     */
+    private Map<String, Object> failure(String stage, String reason) {
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("stage", stage);
+        content.put("text", reason == null ? "" : reason);
+        return content;
     }
 
     /** 按实际结果补齐列标签，避免模型重复抄写名称导致误判。 */

@@ -62,4 +62,27 @@ class RunEventChannelTest {
         assertThat(items.get(1)).containsEntry("type", "clarification").containsEntry("questionRequestId", "q");
         assertThat(channel.snapshot()).containsEntry("status", "WAITING_USER");
     }
+
+    @Test
+    void analysisSnapshotKeepsBlockPositionAndCompletedSteps() {
+        var channel = new RunEventChannel("r");
+        channel.publish("analysis_started", Map.of("toolCallId", "c", "goal", "分析库存"));
+        channel.publish("analysis_step", Map.of("toolCallId", "c", "text", "先看数据",
+                "tools", List.of(Map.of("name", "query_sql_data", "label", "查询业务数据"))));
+        channel.publish("analysis_summary", Map.of("toolCallId", "c", "goal", "分析库存",
+                "steps", List.of(Map.of("text", "先看数据", "tools", List.of())), "completion", "COMPLETED", "summary", "库存充足"));
+        @SuppressWarnings("unchecked")
+        var items = (List<Map<String, Object>>) channel.snapshot().get("items");
+        assertThat(items).hasSize(1);
+        assertThat(items.getFirst()).containsEntry("type", "analysis").containsEntry("id", "c")
+                .containsEntry("goal", "分析库存").containsEntry("summary", "库存充足");
+        assertThat(items.getFirst().get("steps").toString()).contains("先看数据");
+    }
+
+    @Test
+    void analysisStepWithoutStartedEventIsIgnored() {
+        var channel = new RunEventChannel("r");
+        channel.publish("analysis_step", Map.of("toolCallId", "c", "text", "孤立步骤", "tools", List.of()));
+        assertThat(channel.snapshot()).containsEntry("items", List.of());
+    }
 }

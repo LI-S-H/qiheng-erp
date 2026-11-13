@@ -16,7 +16,7 @@ import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.sql.graph.SqlGraphService;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.junit.jupiter.api.Test;
@@ -40,6 +40,8 @@ import org.springframework.ai.chat.messages.Message;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 使用独立会话验证真实 Redis 检查点中的未完成 SQL 调用可以继续。 */
 @EnabledIfEnvironmentVariable(named = "ERP_REDIS_IT", matches = "true")
@@ -80,8 +82,8 @@ class InterruptedSqlRecoveryIT {
                 paired.set(result && input);
                 return Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage("继续处理")))));
             });
-            var next = factory.mainAgent(nextModel, saver, sql, dataset, graph, clarification);
-            var main = new MainAgentService(next, saver, conversations, users, new ConversationExecutionLock(redis), mock(ConversationMessageStore.class), new ObjectMapper());
+            var next = factory.mainAgent(nextModel, saver, sql, dataset, graph, clarification, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+            var main = new MainAgentService(next, saver, conversations, users, new ConversationExecutionLock(redis), mock(ConversationMessageStore.class), new ObjectMapper(), mock(AiAgentTraceMapper.class));
             assertThat(main.streamForUser(1L, conversation, "继续").collectList().block(Duration.ofSeconds(30))).isNotEmpty();
             assertThat(paired).isTrue();
             int responseIndex = -1; int userIndex = -1;

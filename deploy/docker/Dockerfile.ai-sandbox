@@ -1,0 +1,4 @@
+# 使用固定的沙箱基础镜像和常用分析库，避免任务运行时联网安装依赖。
+ARG SANDBOX_IMAGE=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-base@sha256:0923ab99a5a7367b314edd7c1c31d5639023913a8a87b1865113d5cb4930440a
+FROM ${SANDBOX_IMAGE}
+RUN python -m pip install --no-cache-dir 'numpy==1.26.4' 'pandas==2.2.3'

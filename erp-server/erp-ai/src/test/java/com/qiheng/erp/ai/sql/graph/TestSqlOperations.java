@@ -18,6 +18,9 @@ import com.qiheng.erp.security.service.LoginUserService;
 import org.springframework.ai.chat.model.ChatModel;
 
 import java.util.Map;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
+import com.qiheng.erp.ai.sql.graph.SqlTraceSupport;
 
 /** 为原有节点测试提供便捷入口，实际调用各节点的 apply。 */
 final class TestSqlOperations {
@@ -29,7 +32,16 @@ final class TestSqlOperations {
     TestSqlOperations(SchemaProvider schemas, KnowledgeProvider knowledge, ChatModel model, ObjectMapper mapper,
                       SqlGuard guard, ReadOnlySqlExecutor executor, AiSqlProperties properties,
                       LoginUserService users, DatasetManager datasets, int maxAttempts) {
-        var support = new SqlNodeSupport(schemas, knowledge, users, maxAttempts, org.mockito.Mockito.mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class));
+        this(schemas, knowledge, model, mapper, guard, executor, properties, users, datasets, maxAttempts,
+                mock(AiAgentTraceMapper.class));
+    }
+
+    TestSqlOperations(SchemaProvider schemas, KnowledgeProvider knowledge, ChatModel model, ObjectMapper mapper,
+                      SqlGuard guard, ReadOnlySqlExecutor executor, AiSqlProperties properties,
+                      LoginUserService users, DatasetManager datasets, int maxAttempts, AiAgentTraceMapper traces) {
+        var support = new SqlNodeSupport(schemas, knowledge, users, maxAttempts,
+                org.mockito.Mockito.mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class),
+                new SqlTraceSupport(traces, mapper));
         var client = new SqlModelClient(model, mapper);
         prepare = new SqlPrepareNode(support);
         generate = new SqlGenerateNode(support, client, properties);

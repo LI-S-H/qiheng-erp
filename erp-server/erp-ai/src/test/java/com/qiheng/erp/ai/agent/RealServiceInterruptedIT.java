@@ -1,5 +1,6 @@
 package com.qiheng.erp.ai.agent;
 
+import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
@@ -36,6 +37,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.assertj.core.api.Assertions.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 验证未配对工具调用后，用户新消息进入 ReactAgent 的实际路径。 */
 @EnabledIfEnvironmentVariable(named="ERP_REAL_QWEN_IT", matches="true")
@@ -53,14 +56,14 @@ class RealServiceInterruptedIT {
    var graph=mock(BusinessGraphProvider.class); when(graph.render()).thenReturn("ERP仓库"); var sqlService=mock(SqlGraphService.class); when(sqlService.startForUser(anyLong(),anyLong(),anyString(), anyMap())).thenReturn(Map.of("status","FAILED","sqlRunId","test","message","测试环境无数据，停止查询")); var sql=new SqlQueryTool(sqlService); var ds=new ReadDatasetTool(mock(DatasetManager.class)); var f=new MainAgentConfiguration();
    var oldModel=mock(ChatModel.class); var tool=new AssistantMessage.ToolCall("ask-old","function","ask_user","{\"questions\":[{\"id\":\"w\",\"question\":\"哪个仓库？\",\"type\":\"TEXT\",\"options\":[]}]}");
    when(oldModel.stream(any(Prompt.class))).thenReturn(Flux.just(new ChatResponse(List.of(new Generation(AssistantMessage.builder().toolCalls(List.of(tool)).build())))));
-   var q1=new ClarificationService(conv,users,new ObjectMapper(),Duration.ofMillis(150)); var old=f.mainAgent(oldModel,saver,sql,ds,graph,q1); var thread="main:1:"+id;
-   var config=RunnableConfig.builder().threadId(thread).addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT,new SqlToolContext(1L, id)).addMetadata(ClarificationService.EVENT_KEY,(java.util.function.Consumer<com.alibaba.cloud.ai.graph.NodeOutput>) e -> {}).build();
+   var q1=new ClarificationService(conv,users,new ObjectMapper(),Duration.ofMillis(150)); var old=f.mainAgent(oldModel,saver,sql,ds,graph,q1, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class)); var thread="main:1:"+id;
+   var config=RunnableConfig.builder().threadId(thread).addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT,new AgentToolContext(1L, id)).addMetadata(ClarificationService.EVENT_KEY,(java.util.function.Consumer<com.alibaba.cloud.ai.graph.NodeOutput>) e -> {}).build();
    assertThatThrownBy(()->old.stream("查询指定仓库库存",config).blockLast(Duration.ofSeconds(10))).hasMessageContaining("超时");
    var cp=saver.get(RunnableConfig.builder().threadId(thread).build()).orElseThrow();System.out.println("PROBE_OLD_NODE="+cp.getNextNodeId()+" OLD_MESSAGES="+cp.getState().get("messages"));
    var wrapped=mock(ChatModel.class); var count=new AtomicInteger(); var firstPrompt=new AtomicReference<List<Message>>(); when(wrapped.stream(any(Prompt.class))).thenAnswer(c->{Prompt in=c.getArgument(0); firstPrompt.compareAndSet(null, List.copyOf(in.getInstructions())); System.out.println("PROBE_MODEL_PROMPT="+in.getInstructions());count.incrementAndGet();return real.stream(in);});
    var q2 = new ClarificationService(conv, users, new ObjectMapper(), Duration.ofSeconds(3));
-   var next = f.mainAgent(wrapped, saver, sql, ds, graph, q2);
-   var main = new MainAgentService(next, saver, conv, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+   var next = f.mainAgent(wrapped, saver, sql, ds, graph, q2, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+   var main = new MainAgentService(next, saver, conv, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
    var earlyAsk = new AtomicInteger();
    var outputs = main.streamForUser(1L, id, newInput).doOnNext(event -> {
        if (count.get() == 0 && "ask_user".equals(event.node())) earlyAsk.incrementAndGet();

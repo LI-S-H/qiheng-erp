@@ -49,6 +49,15 @@ class MybatisDatasetRepository implements DatasetRepository {
                 .eq(AiDataset::getConversationId, conversationId)).stream().findFirst().map(this::record);
     }
 
+    /** 查询会话中已发布的数据集，按创建时间倒序排列。 */
+    @Override
+    public List<DatasetRecord> findReadyByConversation(long userId, long conversationId) {
+        return mapper.selectList(Wrappers.<AiDataset>lambdaQuery()
+                .eq(AiDataset::getUserId, userId).eq(AiDataset::getConversationId, conversationId)
+                .eq(AiDataset::getStatus, "READY").orderByDesc(AiDataset::getCreatedAt))
+                .stream().map(this::record).toList();
+    }
+
     /** 清理时仅列出同次执行和同一用户会话的暂存数据。 */
     @Override
     public List<DatasetRecord> findStagedByRun(String runId, long userId, long conversationId) {

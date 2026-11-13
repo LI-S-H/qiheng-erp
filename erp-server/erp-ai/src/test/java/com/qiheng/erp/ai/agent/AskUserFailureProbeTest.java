@@ -36,6 +36,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 观察框架对超时和参数解析错误的实际处理。 */
 @EnabledIfEnvironmentVariable(named = "ERP_SQL_GRAPH_REDIS_TEST", matches = "true")
@@ -71,9 +73,9 @@ class AskUserFailureProbeTest {
             var users = mock(LoginUserService.class); var user = new LoginUser(); user.setPermissionCodes(List.of("ai:assistant:use")); when(users.findByUserId(1L)).thenReturn(user);
             var service = new ClarificationService(conversations, users, new ObjectMapper(), Duration.ofMillis(80));
             var graph = mock(BusinessGraphProvider.class); when(graph.render()).thenReturn("业务图");
-            var agent = new MainAgentConfiguration().mainAgent(model, saver, new SqlQueryTool(mock(SqlGraphService.class)), new ReadDatasetTool(mock(DatasetManager.class)), graph, service);
+            var agent = new MainAgentConfiguration().mainAgent(model, saver, new SqlQueryTool(mock(SqlGraphService.class)), new ReadDatasetTool(mock(DatasetManager.class)), graph, service, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
             var locks = new ConversationExecutionLock(redis);
-            var main = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+            var main = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
             Throwable error = null;
             try { main.streamForUser(1, conversation, "测试").collectList().block(Duration.ofSeconds(15)); }
             catch (Throwable e) { error = e; }

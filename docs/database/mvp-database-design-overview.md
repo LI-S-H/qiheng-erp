@@ -14,9 +14,9 @@
 
 ## 当前表清单
 
-历史基础脚本在 MVP 阶段共设计并已落 DDL 34 张表；执行 [028 迁移](sql/028_retire_ai_node_working_memory.sql) 后，本清单对应的现行表数为 33 张。后续受控取数元数据表另见 [AI 库表设计](mvp-ai-schema.md)，不混入这份历史 MVP 基线计数。
+历史基础脚本在 MVP 阶段共设计并已落 DDL 34 张表；智能体流水表 `ai_agent_trace` 为后续新增，不混入这份历史 MVP 基线计数。本清单共列 35 张表；执行 [028 迁移](sql/028_retire_ai_node_working_memory.sql)、[038 迁移](sql/038_drop_ai_node_memory.sql) 与 [039 迁移](sql/039_drop_unused_ai_tables.sql) 后，本清单对应的现行表数为 30 张。后续受控取数元数据表另见 [AI 库表设计](mvp-ai-schema.md)，不混入这份历史 MVP 基线计数。
 
-工作记忆表 `ai_node_working_memory` 退役；`ai_node_experience` 保留原名，原始记忆 `ai_node_memory` 保留结构。下表保留退役标记，避免将历史建表记录误认为当前仍在使用。
+节点记忆表 `ai_node_working_memory` 已退役、`ai_node_memory` 已删除；经验表改名为 `ai_agent_experience`。早期设计的知识库与旧审计表从未建表。下表保留退役标记，避免将历史建表记录误认为当前仍在使用。
 
 | 模块 | 表 | 作用 |
 |---|---|---|
@@ -45,14 +45,15 @@
 | 销售 | `sales_order_item` | 销售订单明细 |
 | 退货 | `return_order` | 统一承接销售退货和采购退货申请、审核与执行状态 |
 | 退货 | `return_order_item` | 退货明细、来源订单明细快照和仓库累计处理数量 |
-| AI | `ai_document` | 知识库文档 |
-| AI | `ai_document_chunk` | 文档切片和向量 key |
-| AI | `ai_interaction_log` | AI 问答、Tool 调用和权限审计 |
+| AI（已退出） | `ai_document` | 早期知识库文档表，未实施 |
+| AI（已退出） | `ai_document_chunk` | 早期文档切片表，未实施 |
+| AI（已退出） | `ai_interaction_log` | 早期交互审计表，未实施；审计改由 `ai_agent_trace` 承担 |
 | AI | `ai_conversation` | 当前用户的经营助手会话摘要 |
 | AI | `ai_message` | 经营助手完整消息历史和结构化结果 |
-| AI | `ai_node_memory` | 表结构暂时保留，本地旧测试流水已清空，新原文保存模型后续设计 |
-| AI（已退役） | `ai_node_working_memory` | 028 迁移移除，不计入迁移后的 33 张表 |
-| AI | `ai_node_experience` | 原表及历史分类字段暂不调整 |
+| AI | `ai_agent_trace` | 四个智能体（主智能体、分析智能体、SQL 生成、结果校验）的执行流水与原文 |
+| AI（已删除） | `ai_node_memory` | 038 迁移移除，原始记录改由 `ai_agent_trace` 承载 |
+| AI（已退役） | `ai_node_working_memory` | 028 迁移移除，不计入现行表 |
+| AI | `ai_agent_experience` | 长期经验表（占位），分类按智能体类型 |
 | 系统 | `system_exception` | AI/MCP、消息队列、第三方回调、定时任务和补偿任务异常记录 |
 
 ## 系统异常记录表扩展建议
@@ -288,22 +289,17 @@ sys_role.permission_codes
 
 ### 8. AI 设计只保留必要落库点
 
-AI 模块共保留 5 张表；基础交互先使用会话与消息表，后续知识库和审计使用预留表。不额外拆 Prompt 模板表或节点日志表：
+AI 模块现行使用 5 张表，按「给用户看的」和「给机器看的」分开：
 
-- `ai_document`
-- `ai_document_chunk`
-- `ai_interaction_log`
-- `ai_conversation`
-- `ai_message`
+- `ai_conversation`：当前用户的经营助手会话
+- `ai_message`：用户可见的消息与过程文案
+- `ai_agent_trace`：四个智能体执行的原文流水与调用过程
+- `ai_agent_experience`：长期经验（占位）
+- `ai_dataset` / `ai_analysis_result`：取数结果与交付文件（详见 [AI 库表设计](mvp-ai-schema.md)）
 
-基础交互先保存当前用户的会话、完整消息和历史上下文；后续再落地两类能力：
+会话、消息、执行流水、数据产物分别保存，互不混用。流水写入失败只记日志，不阻断任务本身。
 
-- RAG 问答：需要保存文档、切片和向量 key。
-- AI Tool 查询：需要记录用户问题、Tool 名称、参数、权限校验结果和返回摘要。
-
-Embedding 向量本体不放 MySQL，而是放 RedisStack。MySQL 只保存 `vector_key`，用于把向量检索结果和业务文档切片关联起来。
-
-`ai_interaction_log` 同时记录 RAG 问答、AI Tool 调用和后续 Workflow 调用，先用一张审计表统一追溯，避免第一版日志表过多。
+早期设计的 `ai_document`、`ai_document_chunk`、`ai_interaction_log` 属于 RAG 与旧审计方案，从未建表、代码零引用，已由 039 迁移清理；`ai_node_memory` 与 `ai_node_working_memory` 属于旧节点记忆链路，已分别由 038 与 028 迁移删除。审计职责现由 `ai_agent_trace` 承担。
 
 更重要的是，AI 模块在架构上不能绕过 ERP 业务层：
 
@@ -328,7 +324,7 @@ sequenceDiagram
     AI-->>User: 总结回答
 ```
 
-这个设计可以防止 AI 直接生成 SQL 绕过权限，也能通过 `ai_interaction_log` 追溯每次调用的权限、参数和结果。
+这个设计可以防止 AI 直接生成 SQL 绕过权限，也能通过 `ai_agent_trace` 追溯每次调用的参数和结果。
 
 ### 9. 供应商评分为 AI 采购建议预留
 
@@ -595,7 +591,7 @@ update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMEST
 - `warehouse_stock`
 - `stock_bill`
 - `stock_bill_item`
-- `ai_interaction_log`
+- `ai_agent_trace`
 
 原因是这些表更偏事实记录或审计记录。库存流水、订单明细、AI 调用日志如果被软删除语义干扰，会影响追溯和对账。需要取消或作废时，优先通过主表 `status` 或业务状态表达。
 
@@ -697,18 +693,14 @@ flowchart LR
     role["sys_role<br/>角色表<br/>id 主键<br/>permission_codes 已授权权限码"]
     permission["sys_permission<br/>权限码目录表<br/>id 主键<br/>permission_code 权限码<br/>status 启用状态"]
     userRole["sys_user_role<br/>用户角色关系表<br/>user_id 用户ID<br/>role_id 角色ID"]
-    doc["ai_document<br/>AI文档表<br/>id 主键<br/>title 文档标题<br/>status 处理状态"]
-    chunk["ai_document_chunk<br/>AI文档切片表<br/>document_id 文档ID<br/>vector_key Redis向量键"]
-    log["ai_interaction_log<br/>AI交互审计表<br/>user_id 用户ID<br/>permission_code 权限码<br/>permission_passed 权限是否通过<br/>cited_chunk_ids 引用切片ID列表"]
-    redis["RedisStack<br/>向量索引<br/>vector_key<br/>embedding 向量"]
+    trace["ai_agent_trace<br/>智能体执行流水表<br/>id 主键<br/>task_id 任务ID<br/>agent_type 智能体类型<br/>event_type 事件类型<br/>content 事件原文JSON"]
+    redis["RedisStack<br/>检查点<br/>threadId 对话上下文<br/>快照状态"]
 
     dept -->|"dept_id"| user
     user -->|"user_id"| userRole
     role -->|"role_id"| userRole
     permission -.->|"permission_code 由业务层校验"| role
-    doc -->|"document_id"| chunk
-    chunk -.->|"vector_key 指向 RedisStack"| redis
-    log -.->|"cited_chunk_ids 引用切片ID列表"| chunk
+    trace -.->|"对话上下文与执行状态"| redis
     user -.->|"user_id，可空"| log
 ```
 
@@ -847,30 +839,28 @@ flowchart LR
 | 库存调整入库 | `inbound_bill.inbound_type = ADJUST_IN` | `STOCK_ADJUST` | 可空 | `stock_bill.bill_type = ADJUST_IN` |
 | 库存调整出库 | `outbound_bill.outbound_type = ADJUST_OUT` | `STOCK_ADJUST` | 可空 | `stock_bill.bill_type = ADJUST_OUT` |
 
-### AI / RAG ER 关系图
+### AI 关系图
 
 ```mermaid
 flowchart LR
-    document["ai_document AI知识库文档表<br/>id 主键<br/>title 文档标题<br/>file_name 原始文件名<br/>file_ext 文件扩展名<br/>storage_path 文件存储路径<br/>content_hash 文件内容哈希<br/>status 处理状态<br/>chunk_count 切片数量<br/>uploaded_by 上传人信息<br/>parsed_at 解析完成时间<br/>indexed_at 向量索引完成时间<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
-    chunk["ai_document_chunk AI文档切片表<br/>id 主键<br/>document_id 文档ID<br/>chunk_index 切片序号<br/>content 切片内容<br/>content_hash 切片哈希<br/>token_count token估算<br/>vector_key RedisStack向量key<br/>status 索引状态<br/>create_time / update_time 审计时间<br/>deleted 逻辑删除"]
-    log["ai_interaction_log AI交互审计表<br/>id 主键<br/>request_id 请求ID<br/>parent_request_id 父请求ID<br/>interaction_type 交互类型<br/>user_id / username 用户信息<br/>user_question 用户原始问题<br/>tool_name Tool或Workflow名称<br/>permission_code 权限码<br/>permission_passed 权限是否通过<br/>request_params 调用入参<br/>result_summary 返回摘要<br/>result_count 返回条数<br/>cited_chunk_ids 引用切片ID列表<br/>desensitized 是否脱敏<br/>success 是否成功<br/>error_message 错误信息<br/>duration_ms 调用耗时"]
     conversation["ai_conversation 会话表<br/>id 主键<br/>user_id 所属用户<br/>title / description<br/>last_message_at<br/>deleted / version"]
-    message["ai_message 消息表<br/>id 主键<br/>conversation_id / user_id<br/>role / content<br/>结构化 JSON<br/>create_time / update_time<br/>deleted"]
-    redis["RedisStack 向量索引<br/>vector_key 向量key<br/>embedding 向量本体"]
+    message["ai_message 消息表<br/>id 主键<br/>conversation_id / user_id<br/>role / kind / visible<br/>content 结构化 JSON<br/>create_time / update_time<br/>deleted"]
+    trace["ai_agent_trace 执行流水表<br/>id 主键<br/>user_id / conversation_id<br/>task_id 任务ID<br/>agent_type 智能体类型<br/>event_type 事件类型<br/>content 事件原文JSON"]
+    experience["ai_agent_experience 经验表<br/>id 主键<br/>agent_type 智能体类型<br/>experience_text 经验正文<br/>evidence_refs 流水编号列表<br/>status 状态"]
+    redis["RedisStack 检查点<br/>threadId 对话上下文<br/>图执行状态"]
     userRef["sys_user 用户表<br/>id 用户ID<br/>username 登录账号"]
 
-    document -->|"文档切片：document_id -> id"| chunk
-    chunk -.->|"向量索引：vector_key -> RedisStack.vector_key"| redis
-    log -.->|"RAG引用：cited_chunk_ids -> chunk.id 列表"| chunk
-    userRef -.->|"AI调用用户：user_id -> id，可空"| log
     userRef -.->|"会话所属用户：user_id -> id"| conversation
+    userRef -.->|"流水所属用户：user_id -> id"| trace
     conversation -->|"消息历史：conversation_id -> id"| message
+    trace -.->|"对话上下文与执行状态"| redis
+    experience -.->|"evidence_refs -> trace.id 列表"| trace
 ```
 
 AI 关系里有两个特殊点：
 
-- `ai_document_chunk.vector_key` 对应 RedisStack 中的向量 key，向量本体不存 MySQL。
-- `ai_interaction_log.cited_chunk_ids` 用 JSON 保存引用的切片 ID 列表，不单独拆引用关系表，避免 MVP 阶段增加过多日志明细表。
+- `ai_agent_trace` 只追加不软删，是排障与经验提取的事实来源；`ai_message` 里 `visible=0` 的行是内部工具调用与结果，页面不渲染。
+- `ai_agent_experience.evidence_refs` 用 JSON 保存流水编号列表，形成「流水 → 经验」的证据链，不单独拆引用关系表。
 
 </details>
 
@@ -890,8 +880,8 @@ AI 关系里有两个特殊点：
 | 库位、批次、序列号 | 先按仓库 + 产品管理库存 | 仓储精细化后扩展 |
 | 财务库存台账表 | `stock_bill` / `stock_bill_item` 先承担已确认库存凭证 | 财务台账复杂后扩展 |
 | 退货财务结算、退款单和换货订单关联 | `return_order.handling_type` 先记录处理意向 | 财务与换货流程落地后增加独立单据和关联 |
-| 通用业务审计表 | AI 先用 `ai_interaction_log`，普通业务靠状态和流水追溯 | 审计要求提高后新增 `audit_log` |
-| Prompt 表、Workflow 节点日志表 | Prompt 暂放配置，调用过程写 `ai_interaction_log` | AI 功能复杂后拆分 |
+| 通用业务审计表 | AI 先用 `ai_agent_trace`，普通业务靠状态和流水追溯 | 审计要求提高后新增 `audit_log` |
+| Prompt 表、Workflow 节点日志表 | Prompt 暂放配置，调用过程写 `ai_agent_trace` | AI 功能复杂后拆分 |
 
 ## 后续扩展方向
 

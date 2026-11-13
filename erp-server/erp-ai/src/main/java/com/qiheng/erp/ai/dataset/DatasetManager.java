@@ -46,9 +46,13 @@ public class DatasetManager {
     /** 将查询结果暂存；相同执行轮次恢复时复用已有文件和元信息。 */
     public DatasetRecord stage(DatasetRequest request, QueryResult result) {
         var ready = repository.findReady(request.sqlRunId(), request.userId(), request.conversationId());
-        if (ready.isPresent()) return available(ready.get());
+        if (ready.isPresent()) {
+            return available(ready.get());
+        }
         var existing = repository.findAttempt(request.sqlRunId(), request.attempt(), request.userId(), request.conversationId());
-        if (existing.isPresent()) return available(existing.get());
+        if (existing.isPresent()) {
+            return available(existing.get());
+        }
         String id = "ds_" + IdUtil.simpleUUID();
         DatasetRecord record = new DatasetRecord(id, request.sqlRunId(), request.userId(),
                 request.conversationId(), request.description(), result.columns(), result.rowCount(),
@@ -85,7 +89,9 @@ public class DatasetManager {
     /** 将已通过检查的暂存结果发布，数据库唯一约束保证同次执行只有一个正式结果。 */
     public DatasetRecord approve(String id, long userId, long conversationId, SqlDataDescription description) {
         DatasetRecord record = available(owned(id, userId, conversationId));
-        if ("READY".equals(record.status())) return record;
+        if ("READY".equals(record.status())) {
+            return record;
+        }
         try {
             repository.approve(id, userId, conversationId, description);
         } catch (DuplicateKeyException ex) {
@@ -95,7 +101,9 @@ public class DatasetManager {
             return existing;
         }
         DatasetRecord ready = owned(id, userId, conversationId);
-        if (!"READY".equals(ready.status())) throw new IllegalStateException("数据集未能发布");
+        if (!"READY".equals(ready.status())) {
+            throw new IllegalStateException("数据集未能发布");
+        }
         return ready;
     }
 
@@ -119,8 +127,19 @@ public class DatasetManager {
     /** 读取正式数据；数据集 ID 不是权限凭据，必须同时检查归属。 */
     public List<List<Object>> read(String id, long userId, long conversationId) {
         DatasetRecord record = available(owned(id, userId, conversationId));
-        if (!"READY".equals(record.status())) throw new IllegalStateException("数据集尚未发布");
+        if (!"READY".equals(record.status())) {
+            throw new IllegalStateException("数据集尚未发布");
+        }
         return readRows(record, Integer.MAX_VALUE);
+    }
+
+    /** 校验归属和当前权限后打开数据流，避免把宿主机路径交给调用方。 */
+    public DatasetInput openReady(String id, long userId, long conversationId) throws IOException {
+        DatasetRecord record = available(owned(id, userId, conversationId));
+        if (!"READY".equals(record.status())) {
+            throw new IllegalStateException("数据集尚未发布");
+        }
+        return new DatasetInput(record, Files.newInputStream(directory.resolve(record.datasetId() + ".jsonl")));
     }
 
     /** 按行分页读取正式数据，限制输出大小并重新检查当前权限。 */
@@ -129,26 +148,38 @@ public class DatasetManager {
             throw new IllegalArgumentException("offset 不得小于 0，limit 必须大于 0");
         }
         DatasetRecord record = available(owned(id, userId, conversationId));
-        if (!"READY".equals(record.status())) throw new IllegalStateException("数据集尚未发布");
+        if (!"READY".equals(record.status())) {
+            throw new IllegalStateException("数据集尚未发布");
+        }
         List<List<Object>> rows = new ArrayList<>();
         boolean budgetExceeded = false;
         try (BufferedReader reader = Files.newBufferedReader(directory.resolve(id + ".jsonl"), StandardCharsets.UTF_8)) {
             int used = mapper.writeValueAsString(record.columns()).length();
             // 预留结果字段和数值的 JSON 包装空间。
-            if (used > MAX_PAGE_CHARS - 1024) throw new DatasetReadLimitException("数据集列信息超出读取上限");
+            if (used > MAX_PAGE_CHARS - 1024) {
+                throw new DatasetReadLimitException("数据集列信息超出读取上限");
+            }
             for (long index = 0; index < (long) offset + limit; index++) {
                 // 逐字符限制单行长度，避免 readLine 一次装入超大字符串。
                 StringBuilder line = new StringBuilder();
                 int character;
                 while ((character = reader.read()) != -1 && character != '\n') {
-                    if (line.length() >= MAX_PAGE_CHARS) throw new DatasetReadLimitException("数据集单行超出读取上限");
+                    if (line.length() >= MAX_PAGE_CHARS) {
+                        throw new DatasetReadLimitException("数据集单行超出读取上限");
+                    }
                     line.append((char) character);
                 }
-                if (character == -1 && line.isEmpty()) break;
-                if (index < offset) continue;
+                if (character == -1 && line.isEmpty()) {
+                    break;
+                }
+                if (index < offset) {
+                    continue;
+                }
                 int next = used + line.length() + 1;
                 if (next > MAX_PAGE_CHARS - 1024) {
-                    if (rows.isEmpty()) throw new DatasetReadLimitException("数据集单行及列信息超出读取上限");
+                    if (rows.isEmpty()) {
+                        throw new DatasetReadLimitException("数据集单行及列信息超出读取上限");
+                    }
                     budgetExceeded = true;
                     break;
                 }
@@ -177,6 +208,19 @@ public class DatasetManager {
     /** 供结果检查节点读取已授权的数据集元信息。 */
     public DatasetRecord get(String id, long userId, long conversationId) {
         return available(owned(id, userId, conversationId));
+    }
+
+    /** 列出会话内当前可访问的已发布数据集。 */
+    public List<DatasetRecord> listReady(long userId, long conversationId) {
+        var result = new ArrayList<DatasetRecord>();
+        for (var record : repository.findReadyByConversation(userId, conversationId)) {
+            try {
+                result.add(available(record));
+            } catch (IllegalArgumentException | IllegalStateException ignored) {
+                // 过期、文件缺失或权限撤销的数据集不作为可用结果提供。
+            }
+        }
+        return result;
     }
 
     private DatasetRecord owned(String id, long userId, long conversationId) {

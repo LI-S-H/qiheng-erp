@@ -23,6 +23,7 @@ import org.redisson.api.RLock;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
 
@@ -60,7 +61,9 @@ public class AiAssistantServiceImpl implements AiAssistantService {
     /** 读取最近活动的会话，额外取一条判断是否存在下一页。 */
     @Override
     public com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO pageConversations(Long userId, String beforeTime, Long beforeId) {
-        if ((beforeTime == null) != (beforeId == null)) throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "会话分页游标不完整");
+        if ((beforeTime == null) != (beforeId == null)) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "会话分页游标不完整");
+        }
         LocalDateTime time;
         try {
             time = beforeTime == null ? null : LocalDateTime.parse(beforeTime, TIME_FORMATTER);

@@ -5,7 +5,7 @@ import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.qiheng.erp.ai.domain.entity.AiConversation;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.junit.jupiter.api.Test;
@@ -23,6 +23,8 @@ import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 验证会话归属和可信身份在流启动前被固定。 */
 class MainAgentServiceTest {
@@ -50,7 +52,7 @@ class MainAgentServiceTest {
         when(agent.getAndCompileGraph()).thenReturn(graph);
         var end = endOutput();
         when(agent.stream(anyString(), any(RunnableConfig.class))).thenReturn(Flux.just(end));
-        var service = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+        var service = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
 
         service.streamForUser(1, 101, "继续").blockLast();
         var update = ArgumentCaptor.forClass(Map.class);
@@ -82,7 +84,7 @@ class MainAgentServiceTest {
         when(lock.unlockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>((Void) null));
         var store = mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class);
         var saver = mock(RedisSaver.class);
-        var service = new MainAgentService(agent, saver, conversations, users, locks, store, new com.fasterxml.jackson.databind.ObjectMapper());
+        var service = new MainAgentService(agent, saver, conversations, users, locks, store, new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
 
         user.setUserId(1L);
         try (var context = mockStatic(com.qiheng.erp.security.context.UserContext.class)) {
@@ -98,7 +100,7 @@ class MainAgentServiceTest {
         var config = ArgumentCaptor.forClass(RunnableConfig.class);
         verify(agent).stream(eq("查询库存"), config.capture());
         assertThat(config.getValue().threadId()).hasValue("main:1:101");
-        var trusted = (SqlToolContext) config.getValue().metadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT).orElseThrow();
+        var trusted = (AgentToolContext) config.getValue().metadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT).orElseThrow();
         assertThat(trusted.userId()).isEqualTo(1);
         assertThat(trusted.conversationId()).isEqualTo(101);
         assertThat(trusted.businessDate()).isNotBlank();
@@ -145,7 +147,7 @@ class MainAgentServiceTest {
         when(agent.getAndCompileGraph()).thenReturn(mock(com.alibaba.cloud.ai.graph.CompiledGraph.class));
         var end = endOutput();
         when(agent.stream(anyString(), any(RunnableConfig.class))).thenReturn(Flux.just(end));
-        var service = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+        var service = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
 
         service.streamForUser(1, 101, "继续，查一号仓库").blockLast();
         verify(agent).stream(eq("继续，查一号仓库"), any(RunnableConfig.class));
@@ -176,7 +178,7 @@ class MainAgentServiceTest {
         var agent = mock(ReactAgent.class);
         var end = endOutput();
         when(agent.stream(anyString(), any(RunnableConfig.class))).thenReturn(Flux.just(end));
-        var service = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+        var service = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
 
         service.streamForUser(1, 101, "继续").blockLast();
         verify(agent).stream(eq("继续"), any(RunnableConfig.class));

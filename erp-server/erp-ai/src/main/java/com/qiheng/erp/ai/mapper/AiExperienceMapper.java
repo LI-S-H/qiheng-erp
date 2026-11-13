@@ -19,22 +19,22 @@ import java.util.List;
 public interface AiExperienceMapper extends MPJBaseMapper<AiExperience> {
 
     /**
-     * 按历史分类读取已发布经验，分类模型在后续经验设计时调整。
+     * 按智能体类型读取已发布经验，经验提炼与发布流程暂未实现。
      *
-     * @param nodeCode 暂沿用的历史分类编码
-     * @param limit    最多返回条数
+     * @param agentType 智能体类型
+     * @param limit     最多返回条数
      * @return 已发布经验
      */
     @Select("""
         SELECT *
-        FROM ai_node_experience
-        WHERE node_code = #{nodeCode}
+        FROM ai_agent_experience
+        WHERE agent_type = #{agentType}
           AND status = 'PUBLISHED'
           AND deleted = 0
         ORDER BY effective_from DESC
         LIMIT #{limit}
         """)
     @Options(timeout = 30)
-    List<AiExperience> selectPublished(@Param("nodeCode") String nodeCode,
-                                           @Param("limit") int limit);
+    List<AiExperience> selectPublished(@Param("agentType") String agentType,
+                                       @Param("limit") int limit);
 }

@@ -18,15 +18,15 @@ import java.time.LocalDateTime;
  * AI 长期经验表
  * </p>
  *
- * <p>经验不绑定具体会话或任务。本轮只调整表名与映射；原 node_code 分类字段
- * 暂时保留以承接历史数据，新的经验分类与保存方式后续设计。</p>
+ * <p>经验不绑定具体会话或任务，按智能体类型分类；证据引用指向 {@code ai_agent_trace} 的流水编号，
+ * 形成"流水 → 经验"的证据链。经验提炼与发布流程暂未实现。</p>
  *
  * @author Li
  * @since 2026-10-15
  */
 @Data
 @Accessors(chain = true)
-@TableName("ai_node_experience")
+@TableName("ai_agent_experience")
 @Schema(name = "AiExperience", description = "AI 长期经验表")
 public class AiExperience implements Serializable {
 
@@ -37,15 +37,15 @@ public class AiExperience implements Serializable {
     @TableId(value = "id", type = IdType.ASSIGN_ID)
     private Long id;
 
-    @Schema(description = "历史分类编码，暂沿用 node_code，后续分类方式待设计")
-    @TableField("node_code")
-    private String nodeCode;
+    @Schema(description = "智能体类型：MAIN / ANALYSIS / SQL_GENERATE / SQL_INSPECT")
+    @TableField("agent_type")
+    private String agentType;
 
     @Schema(description = "经验正文，高度精简")
     @TableField("experience_text")
     private String experienceText;
 
-    @Schema(description = "可选证据引用")
+    @Schema(description = "经验依据的智能体流水编号列表")
     @TableField("evidence_refs")
     private String evidenceRefs;
 

@@ -22,7 +22,7 @@ import com.qiheng.erp.ai.dataset.tool.ReadDatasetTool;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.security.service.LoginUserService;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.redisson.Redisson;
@@ -48,6 +48,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 观察真实 Agent 工具调用后的 Redis 消息与流输出，SQL 服务使用可控替身。 */
 @EnabledIfEnvironmentVariable(named = "ERP_SQL_GRAPH_REDIS_TEST", matches = "true")
@@ -72,7 +74,7 @@ class MainAgentToolRedisTest {
             var users = mock(LoginUserService.class);
             var user = new LoginUser(); user.setPermissionCodes(List.of("ai:assistant:use"));
             when(users.findByUserId(1L)).thenReturn(user);
-            var service = new MainAgentService(agent, mock(RedisSaver.class), conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+            var service = new MainAgentService(agent, mock(RedisSaver.class), conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
             var first = service.streamForUser(1, conversation, "查询").subscribe();
             assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
             first.dispose();
@@ -81,9 +83,13 @@ class MainAgentToolRedisTest {
             gate.tryEmitEmpty();
             var lock = new ConversationExecutionLock(redis).of(conversation);
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (lock.isLocked() && System.nanoTime() < deadline) Thread.sleep(20);
+            while (lock.isLocked() && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+            }
             assertThat(lock.isLocked()).isFalse();
-            service.streamForUser(1, conversation, "第三次查询").blockLast(Duration.ofSeconds(5));
+            // 模拟流不产生结束节点：应先成功重新获得锁，再按现有规则报告流未完成。
+            assertThatThrownBy(() -> service.streamForUser(1, conversation, "第三次查询")
+                    .blockLast(Duration.ofSeconds(5))).hasMessage("主智能体运行流未到达结束节点");
         } finally {
             redis.shutdown();
         }
@@ -98,7 +104,7 @@ class MainAgentToolRedisTest {
             var saver = RedisSaver.builder().redisson(redis)
                     .stateSerializer(new SpringAIJacksonStateSerializer(OverAllState::new)).build();
             var sql = mock(SqlGraphService.class);
-            when(sql.startForUser(anyLong(), anyLong(), anyString(), anyMap()))
+            when(sql.startForUserAtDate(anyLong(), anyLong(), anyString(), anyMap(), anyString()))
                     .thenReturn(Map.of("status", "SUCCESS", "datasetId", "ds-example"));
             ChatModel model = mock(ChatModel.class);
             when(model.stream(any(Prompt.class))).thenAnswer(call -> {
@@ -112,17 +118,17 @@ class MainAgentToolRedisTest {
             });
             var agent = new MainAgentConfiguration().mainAgent(model, saver,
                     new SqlQueryTool(sql), new ReadDatasetTool(mock(DatasetManager.class)),
-                    mock(com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider.class), mock(ClarificationService.class));
+                    mock(com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider.class), mock(ClarificationService.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
             var conversations = mock(AiConversationMapper.class);
             long conversation = Math.abs(UUID.randomUUID().getLeastSignificantBits() / 2);
             when(conversations.selectOwned(conversation, 1L)).thenReturn(new AiConversation());
             var users = mock(LoginUserService.class);
             var user = new LoginUser(); user.setPermissionCodes(List.of("ai:assistant:use"));
             when(users.findByUserId(1L)).thenReturn(user);
-            var service = new MainAgentService(agent, saver, conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+            var service = new MainAgentService(agent, saver, conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
             var outputs = service.streamForUser(1, conversation, "查询库存").collectList().block(Duration.ofSeconds(15));
             assertThat(outputs).isNotEmpty();
-            verify(sql).startForUser(eq(1L), eq(conversation), anyString(), anyMap());
+            verify(sql).startForUserAtDate(eq(1L), eq(conversation), anyString(), anyMap(), anyString());
             var own = RunnableConfig.builder().threadId("main:1:" + conversation).build();
             var other = RunnableConfig.builder().threadId("main:2:" + conversation).build();
             assertThat(saver.get(own)).isPresent();
@@ -160,7 +166,7 @@ class MainAgentToolRedisTest {
             ToolInterceptor identity = new ToolInterceptor() {
                 @Override public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
                     return handler.call(ToolCallRequest.builder(request)
-                            .context(Map.of(SqlQueryTool.CONTEXT_KEY, new SqlToolContext(1, 101))).build());
+                            .context(Map.of(AgentToolContext.CONTEXT_KEY, new AgentToolContext(1, 101))).build());
                 }
                 @Override public String getName() { return "test_identity"; }
             };
@@ -205,14 +211,14 @@ class MainAgentToolRedisTest {
                 @Override public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
                     var trusted = request.getExecutionContext().orElseThrow().config().metadata("trustedSqlContext").orElseThrow();
                     return handler.call(ToolCallRequest.builder(request)
-                            .context(Map.of(SqlQueryTool.CONTEXT_KEY, trusted)).build());
+                            .context(Map.of(AgentToolContext.CONTEXT_KEY, trusted)).build());
                 }
                 @Override public String getName() { return "test_identity"; }
             };
             var agent = ReactAgent.builder().name("tool-redis-test").model(model)
                     .methodTools(new SqlQueryTool(service)).interceptors(identity).saver(saver).releaseThread(false).build();
             var config = RunnableConfig.builder().threadId("tool-redis:" + UUID.randomUUID())
-                    .addMetadata("trustedSqlContext", new SqlToolContext(1, 101)).build();
+                    .addMetadata("trustedSqlContext", new AgentToolContext(1, 101)).build();
             var outputs = agent.stream("库存", config).collectList().block(Duration.ofSeconds(15));
             assertThat(outputs.stream().filter(StreamingOutput.class::isInstance)
                     .map(StreamingOutput.class::cast).map(StreamingOutput::chunk).toList())

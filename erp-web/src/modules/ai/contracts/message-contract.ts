@@ -27,7 +27,7 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
   if (item.role !== 'user' && item.role !== 'assistant' && item.role !== 'tool') {
     throw new Error('消息角色不符合接口契约');
   }
-  if (!['USER_INPUT', 'ASSISTANT_FINAL', 'ASSISTANT_STEP', 'TOOL_CALL', 'TOOL_RESULT'].includes(String(item.kind))) {
+  if (!['USER_INPUT', 'ASSISTANT_FINAL', 'ASSISTANT_STEP', 'TOOL_CALL', 'TOOL_RESULT', 'ANALYSIS_STEP'].includes(String(item.kind))) {
     throw new Error('消息种类不符合接口契约');
   }
   const source = object(item.content);
@@ -41,7 +41,9 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
     if (typeof result === 'string') result = JSON.parse(result);
     const resultData = object(result);
     const answers = resultData.answers;
-    if (!Array.isArray(answers)) throw new Error('追问结果缺少答案');
+    if (!Array.isArray(answers)) {
+      throw new Error('追问结果缺少答案');
+    }
     const rendered = Array.isArray(answers) ? answers.map(value => {
       const answer = object(value);
       return [...(Array.isArray(answer.selectedOptions) ? answer.selectedOptions : []), answer.customText].filter(Boolean).join('、');
@@ -53,7 +55,11 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
     });
     const questionAnswers = Object.fromEntries(entries);
     content = { type: 'TEXT', data: { text: [rendered, note].filter(Boolean).join('；') || '已补充信息', callId: requiredText(data.callId, 'callId'), questionAnswers, note } };
-  } else content = normalizeVisibleContent(item.content);
+  } else if (source.type === 'ANALYSIS') {
+    content = normalizeAnalysis(source);
+  } else {
+    content = normalizeVisibleContent(item.content);
+  }
   const seq = requiredText(item.seq, 'seq');
   if (!/^\d+$/.test(seq)) {
     throw new Error('消息序号必须是非负整数字符串');
@@ -72,12 +78,38 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
 /** 忽略未能形成有效追问或答案的工具记录，其他历史仍正常展示。 */
 export function normalizeHistoryMessage(value: unknown): AiConversationMessage | null {
   const item = object(value);
-  if (item.kind !== 'TOOL_CALL' && item.kind !== 'TOOL_RESULT') return normalizeMessage(value);
+  if (item.kind !== 'TOOL_CALL' && item.kind !== 'TOOL_RESULT') {
+    return normalizeMessage(value);
+  }
   try {
     return normalizeMessage(value);
   } catch {
     return null;
   }
+}
+
+/** 校验并归一化分析过程消息；步骤只保留思路文字与工具文案。 */
+function normalizeAnalysis(value: unknown): AiMessageContent {
+  const body = object(value);
+  const data = object(body.data);
+  const steps = (Array.isArray(data.steps) ? data.steps : []).map(step => {
+    const item = object(step);
+    const tools = (Array.isArray(item.tools) ? item.tools : []).map(tool => {
+      const entry = object(tool);
+      return { name: text(entry.name, 'name'), label: text(entry.label, 'label') };
+    });
+    return { text: text(item.text, 'text'), tools };
+  });
+  return {
+    type: 'ANALYSIS',
+    data: {
+      callId: requiredText(data.toolCallId, 'toolCallId'),
+      goal: text(data.goal, 'goal'),
+      steps,
+      completion: text(data.completion, 'completion'),
+      summary: text(data.summary, 'summary'),
+    },
+  };
 }
 
 /** 校验并归一化可见消息的展示内容（{type,data}），历史流水与实时产物事件共用。 */

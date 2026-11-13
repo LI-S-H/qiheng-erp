@@ -78,7 +78,39 @@ export type AiMessageContent =
         questions: ClarificationQuestion[];
       };
     }
+  | {
+      type: 'ANALYSIS';
+      data: {
+        callId: string;
+        goal: string;
+        steps: AiAnalysisStep[];
+        completion: string;
+        summary: string;
+      };
+    }
   ;
+
+/** 分析子智能体一次工具调用；只保留基础文案，不展示参数与结果原文。 */
+export interface AiAnalysisTool {
+  name: string;
+  label: string;
+}
+
+/** 分析子智能体的一步：思路文字与这一步将要调用的工具。 */
+export interface AiAnalysisStep {
+  text: string;
+  tools: AiAnalysisTool[];
+}
+
+/** 一次分析任务的完整过程；实时事件与历史消息使用同一结构。 */
+export interface AiAnalysisBlock {
+  id: string;
+  goal: string;
+  steps: AiAnalysisStep[];
+  completion: string;
+  summary: string;
+  status: 'running' | 'done' | 'failed';
+}
 
 /** 用户可见流水与节点工作记忆分离；seq 始终保留为字符串。 */
 export interface AiConversationMessage {
@@ -86,7 +118,7 @@ export interface AiConversationMessage {
   requestId: string;
   seq: string;
   role: AiMessageRole;
-  kind: 'USER_INPUT' | 'ASSISTANT_STEP' | 'TOOL_CALL' | 'TOOL_RESULT' | 'ASSISTANT_FINAL';
+  kind: 'USER_INPUT' | 'ASSISTANT_STEP' | 'TOOL_CALL' | 'TOOL_RESULT' | 'ASSISTANT_FINAL' | 'ANALYSIS_STEP';
   content: AiMessageContent;
   createdAt: string;
 }

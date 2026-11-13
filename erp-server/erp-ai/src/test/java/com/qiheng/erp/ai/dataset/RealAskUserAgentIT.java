@@ -30,7 +30,7 @@ import com.qiheng.erp.ai.sql.execution.SqlGuardGapReporter;
 import com.qiheng.erp.ai.sql.guard.DruidSqlGuard;
 import com.qiheng.erp.ai.knowledge.KnowledgeProvider;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.junit.jupiter.api.Test;
@@ -54,6 +54,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import com.qiheng.erp.ai.agent.MainAgentService;
 
 /** 隔离数据库、真实模型、工具和两级图的端到端实验。 */
 @EnabledIfEnvironmentVariable(named = "ERP_REAL_QWEN_IT", matches = "true")
@@ -127,7 +129,7 @@ class RealAskUserAgentIT {
             executor = new ReadOnlySqlExecutor(properties, mock(SqlGuardGapReporter.class));
             var graph = new SqlGraphConfiguration().sqlGraph(saver, schemas, knowledge, mainModel,
                     mapper, guard, executor, properties, users, datasets,
-                    mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class), 3);
+                    mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class), mock(AiAgentTraceMapper.class), 3);
             var conversations = mock(AiConversationMapper.class); when(conversations.selectOwned(2013L, 1001L)).thenReturn(new AiConversation());
             var service = new SqlGraphService(graph, saver, conversations, redis, users, datasets);
             var businessGraph = mock(com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider.class);
@@ -137,9 +139,9 @@ class RealAskUserAgentIT {
             var questionService = new com.qiheng.erp.ai.clarification.ClarificationService(conversations, users, mapper);
             var agent = new com.qiheng.erp.ai.config.MainAgentConfiguration().mainAgent(
                     planningModel, saver, new SqlQueryTool(service), new com.qiheng.erp.ai.dataset.tool.ReadDatasetTool(datasets),
-                    businessGraph, questionService);
+                    businessGraph, questionService, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
             var locks = new com.qiheng.erp.ai.conversation.ConversationExecutionLock(redis);
-            var mainService = new com.qiheng.erp.ai.agent.MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+            var mainService = new MainAgentService(agent, saver, conversations, users, locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
             var config = RunnableConfig.builder().threadId("main:1001:2013").build();
             var questionCount = new java.util.concurrent.atomic.AtomicInteger();
             var completed = com.qiheng.erp.ai.agent.AgentTestAccess.stream(mainService, 1001L, 2013L,

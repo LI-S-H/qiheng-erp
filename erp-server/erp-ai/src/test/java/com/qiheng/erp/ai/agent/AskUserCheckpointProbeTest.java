@@ -18,7 +18,7 @@ import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
 import com.qiheng.erp.ai.clarification.ClarificationAnswer;
 import com.qiheng.erp.ai.dataset.tool.ReadDatasetTool;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.security.domain.dto.LoginUser;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.junit.jupiter.api.Test;
@@ -41,6 +41,8 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 使用独立服务实例恢复旧检查点，模拟原等待线程消失。 */
 @EnabledIfEnvironmentVariable(named = "ERP_SQL_GRAPH_REDIS_TEST", matches = "true")
@@ -71,20 +73,20 @@ class AskUserCheckpointProbeTest {
             var oldService = new ClarificationService(conversations, users, new ObjectMapper(), Duration.ofMillis(250));
             var factory = new MainAgentConfiguration();
             var sql = new SqlQueryTool(mock(SqlGraphService.class)); var data = new ReadDatasetTool(mock(DatasetManager.class));
-            var oldAgent = factory.mainAgent(model, saver, sql, data, graph, oldService);
+            var oldAgent = factory.mainAgent(model, saver, sql, data, graph, oldService, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
             var thread = "main:1:" + conversation; var cp = new AtomicReference<String>();
             var oldRequest = new AtomicReference<String>();
             Consumer<NodeOutput> oldEvents = e -> { if ("ask_user".equals(e.node())) { oldRequest.set((String) e.state().data().get("questionRequestId")); cp.set(saver.get(RunnableConfig.builder().threadId(thread).build()).orElseThrow().getId()); } };
             var original = RunnableConfig.builder().threadId(thread)
-                    .addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT, new SqlToolContext(1L, conversation))
+                    .addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT, new AgentToolContext(1L, conversation))
                     .addMetadata(ClarificationService.EVENT_KEY, oldEvents).build();
             org.assertj.core.api.Assertions.assertThatThrownBy(
                     () -> oldAgent.stream("仓库", original).collectList().block(Duration.ofSeconds(10)))
                     .hasMessageContaining("等待用户回答超时");
             assertThat(cp.get()).isNotBlank();
             var newService = new ClarificationService(conversations, users, new ObjectMapper(), Duration.ofSeconds(3));
-            var newAgent = factory.mainAgent(model, saver, sql, data, graph, newService);
-            var main = new MainAgentService(newAgent, saver, conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+            var newAgent = factory.mainAgent(model, saver, sql, data, graph, newService, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+            var main = new MainAgentService(newAgent, saver, conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
             var output = main.streamForUser(1L, conversation, "查询一号仓库").collectList().block(Duration.ofSeconds(10));
             assertThat(output).isNotEmpty();
             assertThat(seen.get()).isNotNull();

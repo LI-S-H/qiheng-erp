@@ -4,6 +4,7 @@ import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.MessageRecordingHook;
+import com.qiheng.erp.ai.agent.interceptor.AnalysisProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolRecordingInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
 import com.qiheng.erp.ai.clarification.ClarificationService;
@@ -13,15 +14,20 @@ import com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor;
 import com.qiheng.erp.ai.clarification.AskUserArgumentsInterceptor;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
 import com.qiheng.erp.security.service.LoginUserService;
 import com.qiheng.erp.ai.dataset.tool.ReadDatasetTool;
+import com.qiheng.erp.ai.dataset.tool.ListDatasetsTool;
+import com.qiheng.erp.ai.python.tool.AnalysisResultTool;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
+import com.qiheng.erp.ai.analysis.AnalysisTool;
 import com.qiheng.erp.ai.clarification.AskUserTool;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -32,20 +38,45 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 
-/** 绑定现有工具与检查点，供内部应用服务流式调用。 */
+/**
+ * 绑定现有工具与检查点，供内部应用服务流式调用。
+ *
+ * @author Li
+ * @since 2026-10-27
+ */
 @Configuration(proxyBeanMethods = false)
 @Conditional({AiModelEnabledCondition.class, AiSqlEnabledCondition.class})
 public class MainAgentConfiguration {
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @Autowired(required = false)
     private SystemExceptionMqPublisher publisher;
+
+    /**
+     * 组装主智能体；工具、拦截器与检查点在这里一次性绑定。
+     *
+     * @param model 主智能体模型
+     * @param saver 检查点存储
+     * @param sql SQL 查询工具
+     * @param dataset 数据集读取工具
+     * @param businessGraph 业务图谱
+     * @param clarification 追问服务
+     * @param datasetList 数据集列表工具
+     * @param results 分析结果工具
+     * @param analysisTool 分析任务工具
+     * @return 主智能体图
+     * @throws IOException 提示词读取失败
+     */
     @Bean
     public ReactAgent mainAgent(@Qualifier("proChatModel") ChatModel model, RedisSaver saver,
-                                SqlQueryTool sql, ReadDatasetTool dataset, BusinessGraphProvider businessGraph, ClarificationService clarification) throws IOException {
+                                SqlQueryTool sql, ReadDatasetTool dataset, BusinessGraphProvider businessGraph,
+                                ClarificationService clarification, ListDatasetsTool datasetList,
+                                AnalysisResultTool results, AnalysisTool analysisTool) throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
         return ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
-                .methodTools(sql, dataset, new AskUserTool(clarification))
+                .methodTools(sql, dataset, datasetList, results, analysisTool, new AskUserTool(clarification))
                 .hooks(new MessageRecordingHook())
-                .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(), new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph))
+                .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
+                        new AnalysisProgressContextInterceptor(),
+                        new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph))
                 .saver(saver).releaseThread(false).build();
     }
 
@@ -59,13 +90,35 @@ public class MainAgentConfiguration {
         return openAi.mutate().defaultOptions(options).build();
     }
 
+    /**
+     * 组装主智能体服务。
+     *
+     * @param mainAgent 主智能体图
+     * @param saver 检查点存储
+     * @param conversations 会话数据访问
+     * @param users 用户数据访问
+     * @param locks 会话执行锁
+     * @param messages 消息存储
+     * @param mapper JSON 序列化组件
+     * @param traceMapper 智能体流水写入通道
+     * @return 主智能体服务
+     */
     @Bean
     public MainAgentService mainAgentService(ReactAgent mainAgent, RedisSaver saver, AiConversationMapper conversations,
                                              LoginUserService users, ConversationExecutionLock locks,
-                                             ConversationMessageStore messages, ObjectMapper mapper) {
-        return new MainAgentService(mainAgent, saver, conversations, users, locks, messages, mapper);
+                                             ConversationMessageStore messages, ObjectMapper mapper,
+                                             AiAgentTraceMapper traceMapper) {
+        return new MainAgentService(mainAgent, saver, conversations, users, locks, messages, mapper, traceMapper);
     }
 
+    /**
+     * 组装追问服务。
+     *
+     * @param conversations 会话数据访问
+     * @param users 用户数据访问
+     * @param mapper JSON 序列化组件
+     * @return 追问服务
+     */
     @Bean
     public ClarificationService clarificationService(AiConversationMapper conversations,
             LoginUserService users, ObjectMapper mapper) {

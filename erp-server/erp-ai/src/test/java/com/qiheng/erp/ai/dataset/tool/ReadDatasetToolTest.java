@@ -1,7 +1,7 @@
 package com.qiheng.erp.ai.dataset.tool;
 
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.dataset.tool.ReadDatasetTool;
 
 import com.qiheng.erp.ai.dataset.DatasetManager;
@@ -22,7 +22,7 @@ class ReadDatasetToolTest {
         when(manager.readPage("ds_a", 1, 2, 0, 5)).thenReturn(new DatasetPage(List.of(), List.of(List.of(12)), 1, 1, false));
         var callback = MethodToolCallbackProvider.builder().toolObjects(new ReadDatasetTool(manager)).build().getToolCallbacks()[0];
         assertThat(callback.getToolDefinition().inputSchema()).doesNotContain("userId", "conversationId", "toolContext");
-        var context = new ToolContext(Map.of(SqlQueryTool.CONTEXT_KEY, new SqlToolContext(1, 2)));
+        var context = new ToolContext(Map.of(AgentToolContext.CONTEXT_KEY, new AgentToolContext(1, 2)));
         assertThat(callback.call("{\"datasetId\":\"ds_a\",\"offset\":0,\"limit\":5}", context)).contains("12", "returnedRows");
         when(manager.readPage("ds_a", 1, 2, 0, Integer.MAX_VALUE)).thenReturn(new DatasetPage(List.of(), List.of(List.of(12)), 1, 1, false));
         assertThat(callback.call("{\"datasetId\":\"ds_a\"}", context)).contains("12", "truncated", "nextOffset");

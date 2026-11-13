@@ -14,7 +14,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-/** 按消息类型转换当前会话流水，不暴露其他工具的内部信息。 */
+/**
+ * 按消息类型转换当前会话流水，不暴露其他工具的内部信息。
+ *
+ * @author Li
+ * @since 2026-10-27
+ */
 @Service
 @RequiredArgsConstructor
 public class VisibleMessageCodec {
@@ -22,7 +27,12 @@ public class VisibleMessageCodec {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private final ObjectMapper mapper;
 
-    /** 序列化展示消息 */
+    /**
+     * 序列化展示消息。
+     *
+     * @param content 展示消息内容
+     * @return 序列化后的 JSON
+     */
     public String encode(VisibleMessageContent content) {
         try {
             return mapper.writeValueAsString(content);
@@ -31,12 +41,23 @@ public class VisibleMessageCodec {
         }
     }
 
-    /** 反序列化展示消息 */
+    /**
+     * 反序列化展示消息。
+     *
+     * @param raw 序列化的消息内容
+     * @return 展示消息内容
+     */
     public VisibleMessageContent decode(String raw) {
         return decode(raw, null);
     }
 
-    /** 读取当前消息及已保存的普通文本、追问工具消息。 */
+    /**
+     * 读取当前消息及已保存的普通文本、追问工具消息。
+     *
+     * @param raw 序列化的消息内容
+     * @param kind 消息种类；为空表示按普通可见消息处理
+     * @return 展示消息内容
+     */
     private VisibleMessageContent decode(String raw, String kind) {
         if (raw == null || raw.isBlank()) {
             return text("");
@@ -49,20 +70,36 @@ public class VisibleMessageCodec {
             // 早期流水采用 type/data 包装，保留普通文本和 ask_user 历史。
             if (root.isObject() && root.path("data").isObject()) {
                 String type = root.path("type").asText();
-                if ("TEXT".equals(type)) return text(root.path("data").path("text").asText(""));
+                if ("TEXT".equals(type)) {
+                    return text(root.path("data").path("text").asText(""));
+                }
                 if (("TOOL_CALL".equals(type) || "TOOL_RESULT".equals(type)) && type.equals(kind)) {
                     root = root.path("data");
                 }
             }
             if (("TOOL_CALL".equals(kind) || "TOOL_RESULT".equals(kind)) && root.isObject()) {
-                if (!"ask_user".equals(root.path("name").asText())) return text("");
+                if (!"ask_user".equals(root.path("name").asText())) {
+                    return text("");
+                }
                 Set<String> fields = "TOOL_CALL".equals(kind)
                         ? Set.of("callId", "name", "arguments") : Set.of("callId", "name", "result");
                 Map<String, Object> data = new LinkedHashMap<>();
                 for (String field : fields) {
-                    if (root.has(field)) data.put(field, mapper.convertValue(root.get(field), Object.class));
+                    if (root.has(field)) {
+                        data.put(field, mapper.convertValue(root.get(field), Object.class));
+                    }
                 }
                 return new VisibleMessageContent(kind, data);
+            }
+            if ("ANALYSIS_STEP".equals(kind) && root.isObject()) {
+                // 分析过程整块回看；字段与实时事件保持一致。
+                Map<String, Object> data = new LinkedHashMap<>();
+                for (String field : Set.of("toolCallId", "goal", "steps", "completion", "summary")) {
+                    if (root.has(field)) {
+                        data.put(field, mapper.convertValue(root.get(field), Object.class));
+                    }
+                }
+                return new VisibleMessageContent("ANALYSIS", data);
             }
             if (root.isObject() && !root.has("type") && root.path("text").isTextual()) {
                 return text(root.path("text").asText());
@@ -78,12 +115,22 @@ public class VisibleMessageCodec {
         }
     }
 
-    /** 纯文本消息 */
+    /**
+     * 构造纯文本展示消息。
+     *
+     * @param text 文本内容
+     * @return 展示消息内容
+     */
     public VisibleMessageContent text(String text) {
         return new VisibleMessageContent("TEXT", Map.of("text", text));
     }
 
-    /** 转换为视图模型 */
+    /**
+     * 转换为视图模型。
+     *
+     * @param message 数据库消息
+     * @return 视图模型
+     */
     public ChatMessageVO toView(AiMessage message) {
         return new ChatMessageVO(string(message.getId()), message.getRequestId() == null ? "" : message.getRequestId(),
                 string(message.getSeq()),
@@ -91,7 +138,7 @@ public class VisibleMessageCodec {
                 message.getCreateTime() == null ? null : message.getCreateTime().format(TIME));
     }
 
-    /** 转换为字符串 */
+    /** 转换为字符串；空值保持为空。 */
     private String string(Long value) {
         return value == null ? null : value.toString();
     }

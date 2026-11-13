@@ -50,6 +50,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
+import com.qiheng.erp.ai.sql.graph.SqlTraceSupport;
 
 /** 固定模型响应，连接隔离 MySQL 和 Redis 验证完整 SQL 子图链路。 */
 @EnabledIfEnvironmentVariable(named = "ERP_SQL_GRAPH_REDIS_TEST", matches = "true")
@@ -123,7 +126,7 @@ class SqlGraphMySqlRedisIT {
                     response(pass()),
                     response(mapper.writeValueAsString(Map.of("decision", "QUERY", "needFullData", false, "sql", sql2))),
                     response(pass()));
-            var support = new SqlNodeSupport(schemas, knowledge, users, 3, org.mockito.Mockito.mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class));
+            var support = new SqlNodeSupport(schemas, knowledge, users, 3, org.mockito.Mockito.mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class), traceSupport());
             var modelClient = new SqlModelClient(model, mapper);
             SqlGraph graph = new SqlGraph(saver, new SqlPrepareNode(support),
                     new SqlGenerateNode(support, modelClient, properties),
@@ -259,5 +262,10 @@ class SqlGraphMySqlRedisIT {
 
     private ChatResponse response(String text) {
         return new ChatResponse(List.of(new Generation(new AssistantMessage(text))));
+    }
+
+    /** 建立只写不校验的取数流水支持；单元测试不连库。 */
+    private static SqlTraceSupport traceSupport() {
+        return new SqlTraceSupport(mock(AiAgentTraceMapper.class), new ObjectMapper());
     }
 }

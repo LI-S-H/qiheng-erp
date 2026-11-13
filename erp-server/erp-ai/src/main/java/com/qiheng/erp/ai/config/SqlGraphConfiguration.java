@@ -6,6 +6,7 @@ import com.qiheng.erp.ai.config.properties.AiSqlProperties;
 import com.qiheng.erp.ai.sql.graph.SqlGraph;
 import com.qiheng.erp.ai.sql.graph.SqlNodeSupport;
 import com.qiheng.erp.ai.sql.graph.SqlRetryReporter;
+import com.qiheng.erp.ai.sql.graph.SqlTraceSupport;
 import com.qiheng.erp.ai.sql.graph.model.SqlModelClient;
 import com.qiheng.erp.ai.sql.graph.node.SqlPrepareNode;
 import com.qiheng.erp.ai.sql.graph.node.SqlGenerateNode;
@@ -13,8 +14,10 @@ import com.qiheng.erp.ai.sql.graph.node.SqlExecuteNode;
 import com.qiheng.erp.ai.sql.graph.node.SqlInspectNode;
 import com.qiheng.erp.ai.sql.graph.SqlGraphService;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
 import com.qiheng.erp.ai.dataset.tool.ReadDatasetTool;
+import com.qiheng.erp.ai.dataset.tool.ListDatasetsTool;
 import com.qiheng.erp.ai.dataset.DatasetManager;
 import com.qiheng.erp.ai.sql.schema.SchemaProvider;
 import com.qiheng.erp.ai.sql.execution.ReadOnlySqlExecutor;
@@ -47,8 +50,10 @@ public class SqlGraphConfiguration {
                              LoginUserService users,
                              DatasetManager datasets,
                              SqlRetryReporter retryReporter,
+                             AiAgentTraceMapper traces,
                              @Value("${erp.ai.sql.graph.max-attempts:5}") int maxAttempts) throws Exception {
-        var support = new SqlNodeSupport(schema, knowledge, users, maxAttempts, retryReporter);
+        var support = new SqlNodeSupport(schema, knowledge, users, maxAttempts, retryReporter,
+                new SqlTraceSupport(traces, mapper));
         var modelClient = new SqlModelClient(sqlModel(model), mapper);
         return new SqlGraph(saver,
                 new SqlPrepareNode(support),
@@ -74,6 +79,12 @@ public class SqlGraphConfiguration {
     @Bean
     public ReadDatasetTool readDatasetTool(DatasetManager datasets) {
         return new ReadDatasetTool(datasets);
+    }
+
+    /** 为智能体提供当前会话已发布的数据集说明。 */
+    @Bean
+    public ListDatasetsTool listDatasetsTool(DatasetManager datasets) {
+        return new ListDatasetsTool(datasets);
     }
 
     @Bean

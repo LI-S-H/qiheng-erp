@@ -44,6 +44,9 @@ public final class AskUserArgumentsInterceptor extends ToolInterceptor {
         return response;
     }
 
+    /** 提供拦截器在主智能体中的名称。 */
     @Override
-    public String getName() { return "ask_user_arguments"; }
+    public String getName() {
+        return "ask_user_arguments";
+    }
 }

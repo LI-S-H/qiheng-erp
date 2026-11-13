@@ -6,30 +6,32 @@
 
 - 会话 CRUD 和历史分页继续使用 ai_conversation、ai_message；旧规划协议不再展示为 PLAN、NEEDS 或旧追问结构，旧记录保留原文并显示统一提示，不删除历史数据。
 - 旧规划启动和恢复入口已删除；当前主智能体通过消息流和追问回答接口运行，会话详情仅返回会话基本信息。
-- 原始记忆 ai_node_memory 的表结构及 Java 映射保留；本地开发库的旧测试流水已清空，新原文保存方式后续讨论。
-- 执行 [028 迁移](sql/028_retire_ai_node_working_memory.sql) 后，旧工作窗口及其测试备份删除；ai_node_experience 保持原名和结构。
-- 经验提取和分类方案待 Python 侧功能完成后设计，当前未实现新节点流水采集。
+- 智能体执行流水统一写入 `ai_agent_trace`：主智能体、分析智能体、取数子图的两个模型节点各自成行，content 保存原文。
+- 节点记忆表 `ai_node_memory` 已由 [038 迁移](sql/038_drop_ai_node_memory.sql) 删除；[037 迁移](sql/037_ai_agent_experience_rename.sql) 把经验表改名为 `ai_agent_experience`，分类字段改为智能体类型。
+- 经验提取和分类方案待 Python 侧功能完成后设计；经验表目前只作占位，没有写入链路。
 - 受控取数底座的 ai_data_table、ai_data_table_column、ai_data_table_relation 以及 SQL、权限和模型基础能力已接入主智能体。
 
-018、023、026 等历史迁移和 erp.sql 旧导出保持原样，用于追溯或按序初始化；028 在旧迁移之后执行一次。仓库脚本更新不表示运行中的数据库已经迁移。
+018、023、026 等历史迁移和 erp.sql 旧导出保持原样，用于追溯或按序初始化；028 在旧迁移之后执行一次，036 至 039 依次执行。仓库脚本更新不表示运行中的数据库已经迁移。
 
 以下未实现的知识库、审计和定时任务内容属于早期设计参考；与现行研究架构冲突时，以架构总入口及对应模块实施时确认的契约为准。
 
 ## 设计目标
 
-AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI 调用审计。MVP 阶段不让 AI 直接查 SQL，不让 AI 绕过业务 Service 和权限校验；所有 AI 查询都必须通过受控 Tool，并写入审计日志。
+AI 模块先支撑经营助手的会话、分析与取数。当前不让 AI 直接查 SQL，不让 AI 绕过业务 Service 和权限校验；所有 AI 查询都必须通过受控 Tool。
 
 ## 简化原则
 
-- MVP 设计 5 张表：`ai_document`、`ai_document_chunk`、`ai_interaction_log`、`ai_conversation`、`ai_message`。
-- 向量数据不放 MySQL，Embedding 写入 RedisStack；MySQL 只保存文档、切片、向量 key 和审计信息。
-- 经营助手的会话和完整消息分别写入 `ai_conversation`、`ai_message`；`ai_interaction_log` 继续只承担模型、Tool 和 Workflow 审计，不能替代历史消息。
-- 暂不设计 Prompt 模板表，MVP 阶段 Prompt 先放代码或配置文件。
-- AI Tool 调用、RAG 问答、后续 Workflow 调用统一写入 `ai_interaction_log`，减少表数量。
+- 早期设计的 5 张表是 `ai_document`、`ai_document_chunk`、`ai_interaction_log`、`ai_conversation`、`ai_message`；其中前三张的 RAG 与审计部分未实施，已由 [039 迁移](sql/039_drop_unused_ai_tables.sql) 清理，不计入现行表。
+- 经营助手的会话和完整消息分别写入 `ai_conversation`、`ai_message`；智能体执行流水写入 `ai_agent_trace`，不与用户可见消息混用。
+- 暂不设计 Prompt 模板表，提示词先放代码或配置文件。
 - 评分和百分率字段如后续加入，统一遵守 `database-design-conventions.md`：用 `int` 存放大 100 倍后的整数。
-- `ai_interaction_log` 是审计日志表，不使用 `deleted`，避免审计记录被软删除影响追溯。
+- `ai_agent_trace` 是只追加的流水表，不使用 `deleted`，避免审计记录被软删除影响追溯。
 
-## 表：ai_document（AI 知识库文档表）
+## 已退出：知识库与旧审计表
+
+以下三张表属于早期 MVP 设计，开发库从未建表、代码零引用，由 [039 迁移](sql/039_drop_unused_ai_tables.sql) 统一清理，保留本节仅用于追溯早期设计意图。
+
+### ai_document（AI 知识库文档表）
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -50,9 +52,7 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 | deleted | tinyint | 逻辑删除 |
 | remark | varchar(500) | 备注 |
 
-关系说明：`ai_document_chunk.document_id` 关联本表。删除文档时需要同步删除 RedisStack 中对应向量索引。
-
-## 表：ai_document_chunk（AI 文档切片表）
+### ai_document_chunk（AI 文档切片表）
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -68,15 +68,13 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 | update_time | datetime | 更新时间 |
 | deleted | tinyint | 逻辑删除 |
 
-关系说明：RAG 检索命中后，通过 `vector_key` 和 `id` 反查切片内容，并在回答里返回引用来源。
-
-## 表：ai_interaction_log（AI 交互审计表）
+### ai_interaction_log（AI 交互审计表）
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | bigint PK | 日志ID |
 | request_id | varchar(64) | 请求ID，同一次用户请求保持一致 |
-| parent_request_id | varchar(64) | 父请求ID，后续 Workflow / Agent 编排时使用 |
+| parent_request_id | varchar(64) | 父请求ID |
 | interaction_type | varchar(32) | 交互类型：`RAG_CHAT`、`TOOL_CALL`、`WORKFLOW` |
 | user_id | bigint | 用户ID |
 | username | varchar(64) | 登录账号 |
@@ -94,8 +92,6 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 | duration_ms | int | 调用耗时，毫秒 |
 | create_time | datetime | 创建时间 |
 | update_time | datetime | 更新时间 |
-
-关系说明：AI Tool 必须记录权限校验结果、入参、返回摘要和是否脱敏。RAG 问答记录引用切片 ID，方便追溯回答来源。
 
 ## 表：ai_conversation（AI 经营助手会话表）
 
@@ -124,7 +120,7 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 | seq | bigint | 会话内全局递增序号，逻辑删除后也不复用 |
 | message_key | varchar(192), nullable | 会话内完整消息的幂等标识；历史消息可为空 |
 | role | varchar(16) | `user` / `assistant` / `tool` |
-| kind | varchar(32) | `USER_INPUT` / `ASSISTANT_STEP` / `TOOL_CALL` / `TOOL_RESULT` / `ASSISTANT_FINAL` / `ERROR` |
+| kind | varchar(32) | `USER_INPUT` / `ASSISTANT_STEP` / `TOOL_CALL` / `TOOL_RESULT` / `ASSISTANT_FINAL` / `ANALYSIS_STEP` / `ERROR` |
 | visible | tinyint | 1 为用户历史可见，0 为内部流水；ask_user 的调用和结果可见，其他工具默认不可见 |
 | content | longtext + JSON_VALID CHECK | 文本以 JSON 字符串保存，工具调用与结果以 JSON 对象保存；按 kind 解释，不再解析旧规划结构，旧记录原文不改写 |
 | run_status / error_code | varchar(32) / varchar(80), nullable | 仅本轮 USER_INPUT 行承载运行状态及失败原因；包括 RUNNING、WAITING_USER、COMPLETED、FAILED、INTERRUPTED、CANCELLED。状态更新不改写正文 |
@@ -133,6 +129,8 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 | deleted | tinyint | 逻辑删除 |
 
 `(conversation_id, seq)` 与 `(conversation_id, message_key)` 为唯一索引；历史分页按 `visible=1` 和 `seq ASC` 读取，使用 `(conversation_id, deleted, visible, seq)` 索引；轮次查询使用 `(conversation_id, request_id, seq)`。内部工具消息不混入普通历史；ask_user 调用和结果可作为追问与用户回答展示。历史消息不改写内容，旧的用户输入与最终回复保持可见。
+
+`ANALYSIS_STEP` 保存一次分析任务的完整过程，`visible=1`：content 为 JSON 对象，含父级工具调用编号 `toolCallId`、目标 `goal`、步骤 `steps`（每步含思路文字 `text` 与工具 `tools`）、完成情况 `completion` 和结论 `summary`；一次任务只写一行，`message_key` 为 `runId:analysis:toolCallId`，重跑同一编号不会重复写入。该行不进入聊天消息流，由分析面板按 `toolCallId` 回看。
 
 每轮先保存用户输入及 `run_status=RUNNING`；按实际形成顺序保存完整助手消息、工具调用与工具结果，不将 SSE Token 分片作为独立消息。追问等待及回答分别更新同一轮状态；正常结束保存最终回复并标记 `COMPLETED`，异常状态如实标记。
 
@@ -145,40 +143,56 @@ AI 模块先支撑公司知识库 RAG 问答、固定业务 Tool 查询和 AI �
 - 页面历史通过消息分页读取 MySQL 中的可见消息，包括用户输入、助手文本和 ask_user 的调用与回答；不从检查点重建，不将历史问题当作当前恢复授权。
 - 旧规划消息保留数据库原文，但不按旧协议解码或续接。
 - 删除会话继续在原会话锁内，以短事务软删除会话及可见消息；不联动原始记忆或经验。
-- 原始记忆结构暂不迁移；工作记忆表退出；经验表暂不调整。Agent 消息、检查点和数据产物分别保存。
+- 原始记忆表与工作窗口表已退出；经验表保留占位。Agent 消息、检查点、执行流水和数据产物分别保存。
 
-## 表：ai_node_memory（AI 节点记忆原文表）
+## 表：ai_agent_trace（智能体执行流水表）
 
-表结构和 Java 映射暂时保留，不与用户可见消息混用。本地开发库旧测试流水已清空；旧节点写入链路已退出，新 Agent 的原始记忆保存方式尚未确定。
+智能体每次执行的原文都追加到这里，是排障与后续经验提取的事实来源。只追加、不改写、不软删除。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| id | bigint PK | 记忆ID |
-| conversation_id / user_id | bigint | 归属会话与用户 |
-| node_code | varchar(32) | 节点编码：PLANNER、SQL_GENERATE、PYTHON_GENERATE、REPORTER、REFLECTION |
-| seq | bigint | 节点内递增序号，只增不改 |
-| content | longtext + JSON_VALID | JSON 原文，永不压缩改写；条目类别由其中 `eventType` 字段表示（USER_INPUT、MODEL_OUTPUT、CLARIFICATION_ASKED、CLARIFICATION_ANSWERED、ACCEPTED_PLAN、FORMAT_FEEDBACK、FORMAT_RETRY_EXHAUSTED），不落列 |
-| create_time / deleted | datetime / tinyint | 创建时间与逻辑删除 |
+| id | bigint PK | 流水ID，自增即写入顺序 |
+| user_id / conversation_id | bigint | 归属用户与会话 |
+| task_id | varchar(64) | 任务 ID：主智能体为 runId，分析智能体为分析任务 ID，取数子图为 sqlRunId |
+| agent_type | varchar(32) | 智能体类型：`MAIN` 主智能体 / `ANALYSIS` 分析智能体 / `SQL_GENERATE` SQL 生成 / `SQL_INSPECT` 结果校验 |
+| event_type | varchar(32) | 事件类型：`INPUT` / `MODEL_OUTPUT` / `TOOL_CALL` / `TOOL_RESULT` / `FINAL` / `MODEL_FAILURE` / `ERROR` |
+| content | json | 事件内容；模型原话、工具参数原文和工具返回原文都放在 `text` 字段 |
+| create_time | datetime(6) | 记录时间 |
 
-`(conversation_id, node_code, seq)` 唯一索引；序号取 `MAX(seq)` 时不过滤 `deleted`，因为逻辑删除行仍占用唯一索引。
+索引 `(user_id, conversation_id, task_id, id)` 支持按一次任务取完整时间线。
 
-## 已退役：ai_node_working_memory
+**四个智能体各记什么**：
 
-旧节点的可压缩工作窗口已退出设计。028 迁移删除该表及旧测试备份；原始流水表独立保留。
+| agent_type | INPUT | MODEL_OUTPUT | 其他 |
+|---|---|---|---|
+| `MAIN` | 用户输入原文 | 模型这一轮的原话 | `TOOL_CALL` 记工具名与参数原文，`TOOL_RESULT` 记返回原文，`FINAL` 记最终答复原文 |
+| `ANALYSIS` | 分析目标原文 | 模型原话 | 同上，另有 `ERROR` 与 `MODEL_FAILURE` |
+| `SQL_GENERATE` | 本轮送进模型的输入（需求、上一轮 SQL、收到的反馈、日期与取数上限） | 本轮生成的 SQL 与决定 | 授权范围只记 `schemaFingerprint`，不落 Schema 原文 |
+| `SQL_INSPECT` | 本轮送进模型的输入（需求、待校验 SQL、列、行数、样本） | 本轮的检查结论与反馈 | 同上 |
 
-## 表：ai_node_experience（AI 长期经验表）
+`INPUT` 只记这一轮特有的内容；每次都一样的运行时上下文（授权 Schema、业务口径）不落原文，改记范围指纹。取数子图的交付结果落在 `ai_dataset`，流水不重复保存。
 
-暂保留原表名及字段。本轮不实现经验提炼、发布或检索工作流；新的经验分类模型后续讨论。
+流水写入失败只记录错误日志，不阻断任务本身，因此流水可能不完整。当前不从流水提取经验，也不使用流水恢复图执行。
+
+## 已退役：ai_node_memory、ai_node_working_memory
+
+旧节点记忆链路已退出：[028 迁移](sql/028_retire_ai_node_working_memory.sql) 删除工作窗口表，[038 迁移](sql/038_drop_ai_node_memory.sql) 删除原始记忆表。智能体执行的原文改由 `ai_agent_trace` 承载。
+
+## 表：ai_agent_experience（AI 长期经验表）
+
+由 `ai_node_experience` 改名而来，分类字段从旧节点编码改为智能体类型。本轮不实现经验提炼、发布或检索工作流，表中暂无数据。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | bigint PK | 经验ID |
-| node_code | varchar(32) | 暂沿用的历史分类编码；新分类方式后续设计 |
+| agent_type | varchar(32) | 智能体类型：`MAIN` / `ANALYSIS` / `SQL_GENERATE` / `SQL_INSPECT`，与 `ai_agent_trace.agent_type` 同一套编码 |
 | experience_text | text | 经验正文，高度精简 |
-| evidence_refs | JSON, nullable | 可选证据引用 |
+| evidence_refs | JSON, nullable | 经验依据的智能体流水编号（`ai_agent_trace.id`）列表 |
 | status | varchar(16) | CANDIDATE、PUBLISHED、REVOKED |
 | effective_from | datetime, nullable | 生效时间 |
 | create_time / update_time / deleted | datetime / datetime / tinyint | 审计与逻辑删除 |
+
+索引 `(agent_type, status, deleted, effective_from)` 支持按智能体读取已发布经验。
 
 ## 表：ai_data_table（AI 可用数据表登记表）
 
@@ -235,35 +249,28 @@ ERP 全部 DDL 没有外键约束，关系无法从库结构推导，只能人�
 
 ## 表间关系
 
-- `ai_document_chunk.document_id` -> `ai_document.id`
-- `ai_interaction_log.cited_chunk_ids` -> `ai_document_chunk.id` 列表，JSON 形式保存
 - `ai_conversation.user_id` -> `sys_user.id`，弱外键
 - `ai_message.conversation_id` -> `ai_conversation.id`，由 Service 事务维护级联逻辑删除
 - `ai_message.user_id` -> `sys_user.id`，冗余保存用于归属过滤
+- `ai_agent_trace.conversation_id` -> `ai_conversation.id`，弱外键
+- `ai_agent_experience.evidence_refs` -> `ai_agent_trace.id` 列表，JSON 形式保存
 - `ai_data_table_column.table_name` -> `ai_data_table.table_name`，弱外键
 - `ai_data_table_relation` 的两端表名分别指向 `ai_data_table.table_name`，弱外键
 
 ## MVP 业务规则
 
-- 上传文档后先写入 `ai_document`，解析成功后写入 `ai_document_chunk`。
-- Embedding 结果写入 RedisStack，`ai_document_chunk.vector_key` 保存 Redis 向量 key。
-- RAG 回答必须返回引用来源，引用来源来自 `ai_document_chunk.id`。
 - AI Tool 调用先校验统一入口权限 `ai:assistant:use`；页面级权限不等于数据权限，Tool 仍需按所在业务模块校验。
 - AI Tool 不直接执行大模型生成 SQL，只能调用已有业务 Service。
-- AI Tool 返回大量数据时，日志只保存摘要和条数，不保存完整结果。
+- AI Tool 返回大量数据时，消息表只保存摘要，完整返回留在 `ai_agent_trace` 流水里。
 - 会话和消息接口必须从 Sa-Token 登录上下文取得 `user_id`，请求 DTO 不接收该字段。
 - AI 服务未启用时消息发送接口明确返回能力不可用，不得返回固定回复、固定商品或内存历史。
-- 涉及客户手机号、成本、信用额度等敏感字段时，返回前必须脱敏，并记录 `desensitized = 1`。
+- 涉及客户手机号、成本、信用额度等敏感字段时，返回前必须脱敏。
 
 ## 测试场景
 
-- 可以上传知识库文档并生成文档记录。
-- 文档解析后可以生成多个切片记录。
-- 切片向量写入 RedisStack 后，`vector_key` 可以反查。
-- RAG 问答可以记录 `RAG_CHAT` 交互日志和引用切片。
-- AI 查询库存时必须写入 `TOOL_CALL` 审计日志。
-- 权限校验失败时也必须写入审计日志，且 `permission_passed = 0`。
-- Tool 调用失败时记录 `success = 0` 和错误信息。
+- 一次主智能体运行后，`ai_agent_trace` 能按 `agent_type=MAIN` 查到输入、模型原话、工具调用、工具结果和最终答复。
+- 一次取数后，`ai_agent_trace` 能分别查到 `SQL_GENERATE` 与 `SQL_INSPECT` 两组输入与产出，生成节点的产出含真实 SQL。
+- 模型调用失败时流水记 `MODEL_FAILURE`，用户可见消息里不出现框架的错误原文。
 
 ## 定时任务数据契约补充
 

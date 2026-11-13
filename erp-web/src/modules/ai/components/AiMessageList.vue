@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { Bot, ChevronDown, Database, UserRound } from 'lucide-vue-next';
+import { Bot, ChevronDown, ChevronRight, Database, LoaderCircle, UserRound } from 'lucide-vue-next';
 import AiMarkdownContent from './AiMarkdownContent.vue';
 import AiClarificationHistory from '../clarification/AiClarificationHistory.vue';
+import { toolIcon } from './tool-icons';
 import type { AiConversationMessage } from '../types';
 import { clarificationAnswers } from '../contracts/message-contract';
 import type { LiveItem } from '../composables/use-conversation-runs';
@@ -19,6 +20,7 @@ const props = defineProps<{
   conversationId?: string;
   recentAnswers?: Record<string, { callId: string; questions: import('../clarification/clarification-types').ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
 }>();
+const emit = defineEmits<{ 'open-analysis': [] }>();
 const answers = computed(() => clarificationAnswers(props.messages));
 const answerDetails = computed(() => new Map(props.messages.flatMap(message => message.kind === 'TOOL_RESULT' && message.content.type === 'TEXT' && message.content.data.callId ? [[message.content.data.callId, message.content.data] as const] : [])));
 const questionIds = computed(() => new Set(props.messages.flatMap(message => message.content.type === 'CLARIFICATION' ? [message.content.data.callId] : [])));
@@ -27,7 +29,10 @@ const finalRuns = computed(() => new Set(props.messages.filter(message => messag
 const stepsByRun = computed(() => {
   const result = new Map<string, AiConversationMessage[]>();
   for (const message of props.messages) {
-    if (message.kind !== 'ASSISTANT_STEP' && message.kind !== 'TOOL_CALL') continue;
+    // 只收集能放进“工作过程”的行；分析过程行也在其中，由模板决定如何呈现。
+    if (message.kind !== 'ASSISTANT_STEP' && message.kind !== 'TOOL_CALL' && message.kind !== 'ANALYSIS_STEP') {
+      continue;
+    }
     const steps = result.get(message.requestId) || [];
     steps.push(message);
     result.set(message.requestId, steps);
@@ -35,18 +40,33 @@ const stepsByRun = computed(() => {
   return result;
 });
 const expandedRuns = ref(new Set<string>());
+/** 已有分析工具耗时摘要的轮次不再重复渲染分析过程行。 */
+const analysisToolRuns = computed(() => new Set(props.messages
+  .filter(message => message.kind === 'ASSISTANT_STEP' && message.content.type === 'TEXT'
+    && /^子智能体分析\s*·/.test(message.content.data.text))
+  .map(message => message.requestId)));
+
+/** 分析工具的耗时摘要直接作为打开面板的入口。 */
+function isAnalysisSummary(step: AiConversationMessage) {
+  return toolSummary(step)?.[1] === '子智能体分析';
+}
 
 /** 按运行记录控制折叠，保留每一轮独立的展开状态。 */
 function toggleSteps(id: string) {
   const next = new Set(expandedRuns.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
   expandedRuns.value = next;
 }
 
 /** 工具耗时摘要由服务端保存；普通规划文字仍按 Markdown 展示。 */
 function toolSummary(step: AiConversationMessage) {
-  if (step.content.type !== 'TEXT') return null;
+  if (step.content.type !== 'TEXT') {
+    return null;
+  }
   return /^(.+?)\s*·\s*(\d+(?:\.\d+)?\s*秒)$/.exec(step.content.data.text.trim());
 }
 </script>
@@ -55,7 +75,7 @@ function toolSummary(step: AiConversationMessage) {
   <div class="message-list" :aria-busy="loading">
     <p v-if="loading && !messages.length" class="list-note" role="status">正在读取会话记录…</p>
     <article
-      v-for="message in messages.filter(item => (item.content.type !== 'CLARIFICATION' || !liveQuestionIds.has(item.content.data.callId)) && (item.kind !== 'TOOL_RESULT' || (item.content.type === 'TEXT' && item.content.data.callId && !questionIds.has(item.content.data.callId) && !recentAnswers?.[item.content.data.callId])) && (!['ASSISTANT_STEP', 'TOOL_CALL'].includes(item.kind) || !finalRuns.has(item.requestId)))"
+      v-for="message in messages.filter(item => item.kind !== 'ANALYSIS_STEP' && (item.content.type !== 'CLARIFICATION' || !liveQuestionIds.has(item.content.data.callId)) && (item.kind !== 'TOOL_RESULT' || (item.content.type === 'TEXT' && item.content.data.callId && !questionIds.has(item.content.data.callId) && !recentAnswers?.[item.content.data.callId])) && (!['ASSISTANT_STEP', 'TOOL_CALL'].includes(item.kind) || !finalRuns.has(item.requestId)))"
       :key="message.messageId"
       class="message"
       :class="{ 'is-user': message.role === 'user', 'is-clarification': message.content.type === 'CLARIFICATION' }"
@@ -78,6 +98,19 @@ function toolSummary(step: AiConversationMessage) {
             <div class="work-reveal-inner">
               <template v-for="step in stepsByRun.get(message.requestId)" :key="step.messageId">
                 <AiClarificationHistory v-if="step.content.type === 'CLARIFICATION' && !liveQuestionIds.has(step.content.data.callId)" :questions="step.content.data.questions" :answer="answers.get(step.content.data.callId) || recentAnswers?.[step.content.data.callId]?.answer" :question-answers="answerDetails.get(step.content.data.callId)?.questionAnswers || recentAnswers?.[step.content.data.callId]?.questionAnswers" :note="answerDetails.get(step.content.data.callId)?.note || recentAnswers?.[step.content.data.callId]?.note" :tags="[]" />
+                <button v-else-if="step.content.type === 'TEXT' && isAnalysisSummary(step)" type="button" class="work-tool work-analysis" @click="emit('open-analysis')">
+                  <Bot class="work-tool-icon" aria-hidden="true" />
+                  <span>{{ toolSummary(step)?.[1] }}</span>
+                  <span class="work-duration">{{ toolSummary(step)?.[2] }}</span>
+                  <span class="work-analysis-hint">查看过程</span>
+                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                </button>
+                <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.content.type === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis')">
+                  <Bot class="work-tool-icon" aria-hidden="true" />
+                  <span>子智能体分析</span>
+                  <span class="work-analysis-hint">查看过程</span>
+                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                </button>
                 <p v-else-if="step.content.type === 'TEXT' && toolSummary(step)" class="work-tool"><Database class="work-tool-icon" aria-hidden="true" /><span>{{ toolSummary(step)?.[1] }}</span><span class="work-duration">{{ toolSummary(step)?.[2] }}</span></p>
                 <AiMarkdownContent v-else-if="step.content.type === 'TEXT'" :content="step.content.data.text" />
               </template>
@@ -87,12 +120,12 @@ function toolSummary(step: AiConversationMessage) {
         <details v-if="message.kind === 'TOOL_RESULT' && message.content.type === 'TEXT'" class="answer-receipt">
           <summary>补充回答</summary><p class="message-bubble">{{ message.content.data.text }}</p>
         </details>
-        <p v-else-if="message.role === 'user'" class="message-bubble">{{ message.content.data.text }}</p>
+        <p v-else-if="message.role === 'user'" class="message-bubble">{{ message.content.type === 'TEXT' ? message.content.data.text : '' }}</p>
         <template v-else-if="message.content.type === 'CLARIFICATION'">
           <slot v-if="message.messageId === activeQuestionId" name="clarification" />
           <AiClarificationHistory v-else :questions="message.content.data.questions" :answer="answers.get(message.content.data.callId) || recentAnswers?.[message.content.data.callId]?.answer" :question-answers="answerDetails.get(message.content.data.callId)?.questionAnswers || recentAnswers?.[message.content.data.callId]?.questionAnswers" :note="answerDetails.get(message.content.data.callId)?.note || recentAnswers?.[message.content.data.callId]?.note" :tags="[]" />
         </template>
-        <AiMarkdownContent v-else :content="message.content.data.text" />
+        <AiMarkdownContent v-else :content="message.content.type === 'TEXT' ? message.content.data.text : ''" />
       </div>
     </article>
     <article v-for="recentAnswer in Object.values(recentAnswers || {}).filter(answer => !liveQuestionIds.has(answer.callId) && !messages.some(message => message.content.type === 'CLARIFICATION' && message.content.data.callId === answer.callId))" :key="recentAnswer.callId" class="message is-clarification">
@@ -112,7 +145,19 @@ function toolSummary(step: AiConversationMessage) {
         <template v-for="item in liveItems" :key="item.type + item.id">
           <AiMarkdownContent v-if="item.type === 'text'" :content="item.text" />
           <AiClarificationHistory v-else-if="item.type === 'clarification'" :questions="item.questions" :answer="answers.get(item.id) || recentAnswers?.[item.id]?.answer" :question-answers="answerDetails.get(item.id)?.questionAnswers || recentAnswers?.[item.id]?.questionAnswers" :note="answerDetails.get(item.id)?.note || recentAnswers?.[item.id]?.note" :tags="[]" />
-          <p v-else class="tool-progress" :class="{ 'is-running': item.status === 'running' }"><Database class="work-tool-icon" aria-hidden="true" /><span class="flow-text">{{ item.status === 'running' ? item.label : item.label.replace(/^正在/, '') }}</span><span v-if="typeof item.durationMs === 'number' && Number.isFinite(item.durationMs)" class="work-duration">{{ (item.durationMs / 1000).toFixed(1) }} 秒</span></p>
+          <button
+            v-else-if="item.type === 'tool' && item.tool === 'analyzeData'"
+            type="button"
+            class="tool-progress analysis-entry"
+            :class="{ 'is-running': item.status === 'running' }"
+            @click="emit('open-analysis')"
+          >
+            <LoaderCircle v-if="item.status === 'running'" class="work-tool-icon animate-spin" aria-hidden="true" />
+            <Bot v-else class="work-tool-icon" aria-hidden="true" />
+            <span class="flow-text">{{ item.status === 'running' ? item.label : item.label.replace(/^正在/, '') }}</span>
+            <span class="analysis-entry-hint">查看过程<ChevronRight class="analysis-entry-arrow" aria-hidden="true" /></span>
+          </button>
+          <p v-else class="tool-progress" :class="{ 'is-running': item.status === 'running' }"><component :is="toolIcon(item.type === 'tool' ? item.tool : undefined)" class="work-tool-icon" aria-hidden="true" /><span class="flow-text">{{ item.status === 'running' ? item.label : item.label.replace(/^正在/, '') }}</span><span v-if="typeof item.durationMs === 'number' && Number.isFinite(item.durationMs)" class="work-duration">{{ (item.durationMs / 1000).toFixed(1) }} 秒</span></p>
         </template>
         <p v-if="thinking" class="tool-progress is-running" role="status"><span class="flow-text">正在思考</span></p>
       </div>
@@ -144,6 +189,26 @@ function toolSummary(step: AiConversationMessage) {
 .work-tool-icon { width: 14px; height: 14px; flex: none; }
 .work-duration { color: #64748b; font-variant-numeric: tabular-nums; }
 .tool-progress { display: flex; align-items: center; gap: 7px; margin: 10px 0; font-size: 14px; color: #526276; }
+.analysis-entry {
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px 0;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid color-mix(in srgb, #6b8ec9 34%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #6b8ec9 6%, transparent);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.analysis-entry:hover { border-color: color-mix(in srgb, #6b8ec9 60%, transparent); background: color-mix(in srgb, #6b8ec9 11%, transparent); }
+.analysis-entry:focus-visible { outline: 2px solid #6b8ec9; outline-offset: 2px; }
+.analysis-entry-hint { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; font-size: 12px; color: #6b8ec9; }
+.analysis-entry-arrow { width: 12px; height: 12px; }
+.work-analysis { display: flex; width: 100%; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; color: #4b5e73; text-align: left; }
+.work-analysis:hover { color: #1f2937; }
+.work-analysis:focus-visible { outline: 2px solid #6b8ec9; outline-offset: 3px; border-radius: 3px; }
+.work-analysis-arrow { width: 12px; height: 12px; flex: none; color: #6b8ec9; }
+.work-analysis-hint { margin-left: 2px; color: #6b8ec9; font-size: 12px; }
 @supports (background-clip: text) {
   .tool-progress.is-running .flow-text { color: transparent; background: linear-gradient(90deg, #526276 15%, #aab9cc 50%, #526276 85%) 100% 0 / 220% 100%; background-clip: text; animation: work-glow 1.6s linear infinite; }
 }

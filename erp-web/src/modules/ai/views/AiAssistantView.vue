@@ -16,16 +16,17 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { getApiErrorMessage } from '@/api/http';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import AiClarificationForm from '../clarification/AiClarificationForm.vue';
+import AiAnalysisPanel from '../components/AiAnalysisPanel.vue';
 import AiComposerDock from '../components/AiComposerDock.vue';
 import AiConversationSidebar from '../components/AiConversationSidebar.vue';
 import AiMessageList from '../components/AiMessageList.vue';
 import AiMessageNavigator from '../components/AiMessageNavigator.vue';
 import { usePanelResize } from '../composables/use-panel-resize';
-import { useConversationRuns, type ConversationRun, type LiveItem } from '../composables/use-conversation-runs';
+import { useConversationRuns, type ConversationRun, type LiveItem, type SnapshotItem } from '../composables/use-conversation-runs';
 import type { ClarificationDraft } from '../clarification/clarification-types';
 import { getMainAgentRuntime, startMainAgentStream, submitMainAgentAnswer, watchMainAgentStream, type MainAgentEvent } from '../stream/main-agent-stream';
 import { useAiConversationStore } from '../stores/aiConversationStore';
-import type { AiConversationMessage } from '../types';
+import type { AiAnalysisBlock, AiConversationMessage } from '../types';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -50,6 +51,7 @@ const pendingText = runtimeField('pendingText');
 const liveText = runtimeField('liveText');
 const liveItems = runtimeField('liveItems');
 const liveRunId = runtimeField('runId');
+const liveAnalyses = runtimeField('analyses');
 const clarificationDraft = ref<ClarificationDraft>({ answers: {}, note: '' });
 const clarificationForm = ref<InstanceType<typeof AiClarificationForm> | null>(null);
 const questionDock = ref<HTMLElement | null>(null);
@@ -71,6 +73,7 @@ const switchSnapshot = ref<{
   pendingText: string;
   liveText: string;
   liveItems: LiveItem[];
+  analyses: Record<string, AiAnalysisBlock>;
   recentAnswers: ConversationRun['recentAnswers'];
   thinking: boolean;
 } | null>(null);
@@ -81,8 +84,13 @@ const phone = useMediaQuery('(max-width: 640px)');
 const conversationResize = usePanelResize({
   storageKey: 'erp-ai-conversation-width', min: 200, max: 320, initial: 224,
 });
+/** 分析面板位于右侧，手柄在左边缘，向左拖动才是变宽。 */
+const analysisResize = usePanelResize({
+  storageKey: 'erp-ai-analysis-width', min: 280, max: 520, initial: 360, invert: true,
+});
 const workspaceStyle = computed(() => ({
   '--conversation-width': `${conversationResize.width.value}px`,
+  '--analysis-width': `${analysisResize.width.value}px`,
 }));
 let requestEpoch = 0;
 let disposed = false;
@@ -105,8 +113,12 @@ const waiting = computed(() => Boolean(currentQuestionData.value));
 const readingConversation = computed(() => switching.value || (store.historyLoading && !busy.value));
 const displayedMessages = computed(() => {
   const messages = switching.value && switchSnapshot.value ? switchSnapshot.value.messages : store.messages;
-  if (switching.value) return messages;
-  if (!liveRunId.value || currentRun.value.snapshotTruncated) return messages;
+  if (switching.value) {
+    return messages;
+  }
+  if (!liveRunId.value || currentRun.value.snapshotTruncated) {
+    return messages;
+  }
   // 当前轮的流式内容尚在展示时，不重复渲染已提前落库的过程文字。
   return messages.filter(message => message.requestId !== liveRunId.value ||
     !((liveItems.value.length > 0 && (message.kind === 'ASSISTANT_STEP' || message.kind === 'ASSISTANT_FINAL')) ||
@@ -115,10 +127,47 @@ const displayedMessages = computed(() => {
 const displayedPendingText = computed(() => liveRunId.value && displayedMessages.value.some(
   message => message.requestId === liveRunId.value && message.kind === 'USER_INPUT',
 ) ? '' : pendingText.value);
+/** 分析面板展示本次会话全部分析块；历史行与实时事件按父工具调用编号合并。 */
+const analysisBlocks = computed<AiAnalysisBlock[]>(() => {
+  const snapshot = switching.value ? switchSnapshot.value : null;
+  const source = snapshot ? snapshot.messages : store.messages;
+  const blocks = new Map<string, AiAnalysisBlock>();
+  for (const message of source) {
+    // 只有分析过程行参与合并，普通消息不进入分析面板。
+    if (message.kind !== 'ANALYSIS_STEP' || message.content.type !== 'ANALYSIS') {
+      continue;
+    }
+    const data = message.content.data;
+    blocks.set(data.callId, {
+      id: data.callId, goal: data.goal, steps: data.steps, completion: data.completion, summary: data.summary,
+      status: data.completion === 'FAILED' ? 'failed' : 'done',
+    });
+  }
+  const live = (snapshot ? snapshot.analyses : liveAnalyses.value) || {};
+  for (const block of Object.values(live)) {
+    const saved = blocks.get(block.id);
+    // 运行中的过程以实时数据为准；已结束的历史行内容完整，优先使用历史。
+    if (!saved || block.status === 'running' || saved.status === 'running') {
+      blocks.set(block.id, block);
+    }
+  }
+  return [...blocks.values()];
+});
+/** 本次会话是否存在分析过程；没有内容时不占用右侧面板位置。 */
+const showAnalysisPanel = computed(() => analysisBlocks.value.length > 0);
+/** 分析面板默认收起，用户点击“子智能体正在分析”才展开，可随时收回。 */
+const analysisOpen = ref(false);
+/** 切换会话时收起分析面板；新会话的分析过程需要重新打开。 */
+watch(() => store.activeId, () => {
+  analysisOpen.value = false;
+});
 const showWelcome = computed(() => switching.value && switchSnapshot.value
   ? switchSnapshot.value.welcome
   : !store.messages.length && !store.historyLoading && !pendingText.value && !busy.value && !error.value);
 const statusLabel = computed(() => {
+  if (switching.value) {
+    return '正在切换会话';
+  }
   if (busy.value) {
     return steps.value.find((step) => step.status === 'running')?.label || '正在思考';
   }
@@ -135,7 +184,9 @@ const statusLabel = computed(() => {
 });
 // 等待模型开始输出时，在当前工作过程内显示提示，不另设底部状态栏。
 const thinking = computed(() => {
-  if (!busy.value || steps.value.some(step => step.status === 'running')) return false;
+  if (!busy.value || steps.value.some(step => step.status === 'running')) {
+    return false;
+  }
   const last = liveItems.value[liveItems.value.length - 1];
   return !last || last.type === 'tool';
 });
@@ -187,20 +238,30 @@ function clearSubmittedDraft(userId: string | undefined, id: string, submission:
   } else {
     for (const key of [scopedDraftKey(userId, id, 'query'), ...(submission.fromNew ? [scopedDraftKey(userId, null, 'query')] : [])]) {
       const cached = storageRead(key);
-      if (typeof cached === 'string' && cached.trim() === submission.text) storageSet(key, '');
+      if (typeof cached === 'string' && cached.trim() === submission.text) {
+        storageSet(key, '');
+      }
     }
-    if (store.activeId === id && !switching.value && query.value.trim() === submission.text) query.value = '';
+    if (store.activeId === id && !switching.value && query.value.trim() === submission.text) {
+      query.value = '';
+    }
   }
   storageSet(scopedDraftKey(userId, id, 'inflight'), null);
 }
 /** 页面卸载只断开订阅。重进后用新增用户消息确认受理，再清草稿，不能凭终态猜测曾提交成功。 */
 function reconcileSubmittedDraft(id: string) {
-  if (!store.detail) return;
+  if (!store.detail) {
+    return false;
+  }
   const value = storageRead(draftKey('inflight'));
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
   const item = value as Partial<SubmittedDraft>;
   if (typeof item.text !== 'string' || typeof item.afterSeq !== 'string' || !/^\d+$/.test(item.afterSeq) ||
-    !(item.questionRequestId === null || typeof item.questionRequestId === 'string') || typeof item.fromNew !== 'boolean') return;
+    !(item.questionRequestId === null || typeof item.questionRequestId === 'string') || typeof item.fromNew !== 'boolean') {
+    return false;
+  }
   const accepted = [...store.messages].reverse().find(message => message.role === 'user' && message.content.type === 'TEXT');
   if (accepted?.content.type === 'TEXT' && accepted.content.data.text === item.text &&
     BigInt(accepted.seq) > BigInt(item.afterSeq)) {
@@ -297,48 +358,89 @@ function stopSteps(state: ConversationRun, status: 'done' | 'failed' | 'interrup
   });
 }
 function handleMainEvent(state: ConversationRun, valid: () => boolean, id: string, event: MainAgentEvent) {
-  if (!valid()) return;
+  if (!valid()) {
+    return;
+  }
   const data = event.data;
   const sequence = typeof data.eventSeq === 'number' ? data.eventSeq : null;
-  if (event.event !== 'run_snapshot' && sequence !== null && sequence <= state.eventSeq) return;
-  if (sequence !== null) state.eventSeq = sequence;
+  if (event.event !== 'run_snapshot' && sequence !== null && sequence <= state.eventSeq) {
+    return;
+  }
+  if (sequence !== null) {
+    state.eventSeq = sequence;
+  }
   switch (event.event) {
     case 'run_snapshot': {
-      if (typeof data.runId !== 'string' || !Array.isArray(data.items)) throw new Error('运行快照格式错误');
+      if (typeof data.runId !== 'string' || !Array.isArray(data.items)) {
+        throw new Error('运行快照格式错误');
+      }
       state.runId = data.runId;
       state.snapshotTruncated = data.snapshotTruncated === true;
       state.warning = state.snapshotTruncated ? '运行过程缓存不完整，已保留已保存的历史消息。' : '';
-      state.liveItems = data.items as LiveItem[];
+      const snapshotItems = data.items as SnapshotItem[];
+      state.liveItems = snapshotItems.filter((item): item is LiveItem => item.type !== 'analysis');
       state.completedTextIds = new Set(state.liveItems.filter(item => item.type === 'text' && item.completed).map(item => item.id));
       state.liveText = state.liveItems.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
       state.steps = state.liveItems.filter(item => item.type === 'tool').map(item => ({ node: item.id, label: item.label, status: item.status, durationMs: item.durationMs }));
-      if (data.status === 'RUNNING' || data.status === 'WAITING_USER' || data.status === 'COMPLETED' || data.status === 'FAILED') state.runStatus = data.status;
+      // 重连后按快照还原分析面板；已总结的块视为结束，其余仍在运行。
+      const analyses: Record<string, AiAnalysisBlock> = {};
+      for (const item of snapshotItems) {
+        if (item.type !== 'analysis') {
+          continue;
+        }
+        analyses[item.id] = {
+          id: item.id, goal: item.goal || '', steps: Array.isArray(item.steps) ? item.steps : [],
+          completion: item.completion || '', summary: item.summary || '',
+          status: item.summary ? 'done' : 'running',
+        };
+      }
+      state.analyses = analyses;
+      if (data.status === 'RUNNING' || data.status === 'WAITING_USER' || data.status === 'COMPLETED' || data.status === 'FAILED') {
+        state.runStatus = data.status;
+      }
       const question = data.question as ConversationRun['pendingClarification'];
       state.pendingClarification = data.status === 'WAITING_USER' && question?.questionRequestId && Array.isArray(question.questions) ? question : null;
       break;
     }
     case 'run_started':
-      state.runStatus = 'RUNNING'; state.runId = String(data.runId || '');
+      state.runStatus = 'RUNNING';
+      state.runId = String(data.runId || '');
       // 服务端在发出 run_started 前已保存输入；以历史记录替换临时提交气泡。
-      if (store.activeId === id && state.pendingText && !switching.value) void reload(id, requestEpoch, auth.user?.userId);
+      if (store.activeId === id && state.pendingText && !switching.value) {
+        void reload(id, requestEpoch, auth.user?.userId);
+      }
       break;
     case 'text_delta': {
-      if (typeof data.delta !== 'string' || typeof data.messageId !== 'string') throw new Error('文本事件格式错误');
-      if (state.completedTextIds.has(data.messageId)) break;
-      if (state.liveMessageId && state.liveMessageId !== data.messageId) state.liveText += '\n\n';
+      if (typeof data.delta !== 'string' || typeof data.messageId !== 'string') {
+        throw new Error('文本事件格式错误');
+      }
+      if (state.completedTextIds.has(data.messageId)) {
+        break;
+      }
+      if (state.liveMessageId && state.liveMessageId !== data.messageId) {
+        state.liveText += '\n\n';
+      }
       state.liveMessageId = data.messageId;
       state.liveText += data.delta;
       const last = state.liveItems[state.liveItems.length - 1];
-      if (last?.type === 'text' && last.id === data.messageId) last.text += data.delta;
-      else state.liveItems.push({ type: 'text', id: data.messageId, text: data.delta });
+      if (last?.type === 'text' && last.id === data.messageId) {
+        last.text += data.delta;
+      } else {
+        state.liveItems.push({ type: 'text', id: data.messageId, text: data.delta });
+      }
       break;
     }
     case 'text_completed': {
-      if (typeof data.text !== 'string' || typeof data.messageId !== 'string') throw new Error('完整文本事件格式错误');
+      if (typeof data.text !== 'string' || typeof data.messageId !== 'string') {
+        throw new Error('完整文本事件格式错误');
+      }
       // 完整消息校正同一段流式内容，避免尾部分片缺失或重复追加。
       const item = state.liveItems.find(entry => entry.type === 'text' && entry.id === data.messageId);
-      if (item?.type === 'text') item.text = data.text;
-      else state.liveItems.push({ type: 'text', id: data.messageId, text: data.text });
+      if (item?.type === 'text') {
+        item.text = data.text;
+      } else {
+        state.liveItems.push({ type: 'text', id: data.messageId, text: data.text });
+      }
       state.completedTextIds.add(data.messageId);
       state.liveMessageId = data.messageId;
       state.liveText = state.liveItems.filter(entry => entry.type === 'text').map(entry => entry.text).join('\n\n');
@@ -346,25 +448,76 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
     }
     case 'tool_started':
       state.steps.push({ node: String(data.toolCallId), label: String(data.label || '正在处理当前步骤'), status: 'running', durationMs: null });
-      state.liveItems.push({ type: 'tool', id: String(data.toolCallId), label: String(data.label || '正在处理当前步骤'), durationMs: null, status: 'running' });
+      state.liveItems.push({ type: 'tool', id: String(data.toolCallId), tool: typeof data.tool === 'string' ? data.tool : undefined, label: String(data.label || '正在处理当前步骤'), durationMs: null, status: 'running' });
       break;
     case 'tool_finished': {
       const step = state.steps.find(item => item.node === String(data.toolCallId));
       if (step) {
-        if (typeof data.label === 'string') step.label = data.label;
+        if (typeof data.label === 'string') {
+          step.label = data.label;
+        }
         step.status = data.status === 'failed' ? 'failed' : 'done';
         step.durationMs = typeof data.durationMs === 'number' ? data.durationMs : null;
       }
       const tool = state.liveItems.find(item => item.type === 'tool' && item.id === String(data.toolCallId));
       if (tool?.type === 'tool') {
-        if (typeof data.label === 'string') tool.label = data.label;
+        if (typeof data.label === 'string') {
+          tool.label = data.label;
+        }
         tool.status = data.status === 'failed' ? 'failed' : 'done';
         tool.durationMs = typeof data.durationMs === 'number' ? data.durationMs : null;
       }
+      // 分析工具本身失败时，过程块保留已出现的步骤并标记失败。
+      const failedAnalysis = state.analyses[String(data.toolCallId)];
+      if (failedAnalysis && data.status === 'failed' && failedAnalysis.status === 'running') {
+        failedAnalysis.status = 'failed';
+        failedAnalysis.completion = 'FAILED';
+      }
+      break;
+    }
+    case 'analysis_started': {
+      const id = String(data.toolCallId || '');
+      if (!id) {
+        throw new Error('分析事件格式错误');
+      }
+      state.analyses[id] = {
+        id, goal: typeof data.goal === 'string' ? data.goal : '', steps: [],
+        completion: '', summary: '', status: 'running',
+      };
+      break;
+    }
+    case 'analysis_step': {
+      const block = state.analyses[String(data.toolCallId || '')];
+      // 没有起始事件的步骤直接忽略，避免出现无法归属的孤立片段。
+      if (!block) {
+        break;
+      }
+      block.steps.push({
+        text: typeof data.text === 'string' ? data.text : '',
+        tools: Array.isArray(data.tools) ? data.tools as AiAnalysisBlock['steps'][number]['tools'] : [],
+      });
+      break;
+    }
+    case 'analysis_summary': {
+      const id = String(data.toolCallId || '');
+      if (!id) {
+        throw new Error('分析事件格式错误');
+      }
+      // 总结事件携带完整过程，直接覆盖，避免分片丢失导致面板缺步骤。
+      state.analyses[id] = {
+        id,
+        goal: typeof data.goal === 'string' ? data.goal : '',
+        steps: Array.isArray(data.steps) ? data.steps as AiAnalysisBlock['steps'] : [],
+        completion: typeof data.completion === 'string' ? data.completion : '',
+        summary: typeof data.summary === 'string' ? data.summary : '',
+        status: data.completion === 'FAILED' ? 'failed' : 'done',
+      };
       break;
     }
     case 'question': {
-      if (typeof data.questionRequestId !== 'string' || !Array.isArray(data.questions)) throw new Error('追问事件格式错误');
+      if (typeof data.questionRequestId !== 'string' || !Array.isArray(data.questions)) {
+        throw new Error('追问事件格式错误');
+      }
       state.pendingClarification = { questionRequestId: data.questionRequestId, toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined, questions: data.questions as import('../clarification/clarification-types').ClarificationQuestion[] };
       const callId = typeof data.toolCallId === 'string' ? data.toolCallId : data.questionRequestId;
       if (!state.liveItems.some(item => item.type === 'clarification' && item.id === callId)) {
@@ -372,8 +525,11 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.runStatus = 'WAITING_USER';
       state.steps = [];
-      state.settleSuccess?.(); state.settleSuccess = null;
-      if (store.activeId === id && state.pendingText && !switching.value) void reload(id, requestEpoch, auth.user?.userId);
+      state.settleSuccess?.();
+      state.settleSuccess = null;
+      if (store.activeId === id && state.pendingText && !switching.value) {
+        void reload(id, requestEpoch, auth.user?.userId);
+      }
       break;
     }
     case 'question_answered':
@@ -382,8 +538,16 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
         state.runStatus = 'RUNNING';
       }
       break;
-    case 'run_completed': state.runStatus = 'COMPLETED'; state.settleSuccess?.(); state.settleSuccess = null; break;
-    case 'run_failed': state.runStatus = 'FAILED'; state.error = String(data.message || '任务执行失败'); state.steps = []; break;
+    case 'run_completed':
+      state.runStatus = 'COMPLETED';
+      state.settleSuccess?.();
+      state.settleSuccess = null;
+      break;
+    case 'run_failed':
+      state.runStatus = 'FAILED';
+      state.error = String(data.message || '任务执行失败');
+      state.steps = [];
+      break;
   }
 }
 async function scrollToLatest() {
@@ -402,13 +566,17 @@ watch(error, value => {
 async function reload(id: string, epoch: number, userId: string | undefined) {
   const key = `${epoch}:${id}`;
   const pending = refreshes.get(key);
-  if (pending) return pending;
+  if (pending) {
+    return pending;
+  }
   const request = performReload(id, epoch, userId);
   refreshes.set(key, request);
   try {
     await request;
   } finally {
-    if (refreshes.get(key) === request) refreshes.delete(key);
+    if (refreshes.get(key) === request) {
+      refreshes.delete(key);
+    }
   }
 }
 async function performReload(id: string, epoch: number, userId: string | undefined) {
@@ -451,19 +619,27 @@ async function performReload(id: string, epoch: number, userId: string | undefin
 /** 接入后端仍在执行的本轮任务；不会再次发送用户消息。 */
 async function reconnectRun(id: string, epoch: number, userId: string | undefined) {
   const state = runs.get(id);
-  if (state.streaming) return;
+  if (state.streaming) {
+    return;
+  }
   const runtime = await getMainAgentRuntime(id);
-  if (!isCurrent(epoch, userId, id) || state.streaming || !runtime) return;
+  if (!isCurrent(epoch, userId, id) || state.streaming || !runtime) {
+    return;
+  }
   if (runtime.status === 'INTERRUPTED') {
     state.runStatus = 'INTERRUPTED';
     return;
   }
   if (runtime.status !== 'RUNNING' && runtime.status !== 'WAITING_USER') {
-    if (runtime.status === 'COMPLETED' || runtime.status === 'FAILED') await reload(id, epoch, userId);
+    if (runtime.status === 'COMPLETED' || runtime.status === 'FAILED') {
+      await reload(id, epoch, userId);
+    }
     return;
   }
   const connection = runs.connect(id, 'watching');
-  if (!connection) return;
+  if (!connection) {
+    return;
+  }
   const { controller, version } = connection;
   const token = auth.token;
   const valid = () => !disposed && auth.user?.userId === userId && auth.token === token
@@ -471,7 +647,9 @@ async function reconnectRun(id: string, epoch: number, userId: string | undefine
   state.error = '';
   state.runStatus = 'RUNNING';
   let snapshotReady = () => {};
-  const firstSnapshot = new Promise<void>(resolve => { snapshotReady = resolve; });
+  const firstSnapshot = new Promise<void>(resolve => {
+    snapshotReady = resolve;
+  });
   const snapshotTimer = window.setTimeout(() => {
     if (valid()) {
       state.warning = '运行快照读取超时，请重新进入会话重试。';
@@ -501,10 +679,14 @@ async function reconnectRun(id: string, epoch: number, userId: string | undefine
     } finally {
       window.clearTimeout(snapshotTimer);
       snapshotReady();
-      if (!valid()) return;
+      if (!valid()) {
+        return;
+      }
       state.streaming = false;
       state.refreshNeeded = true;
-      if (store.activeId === id && !switching.value) await reload(id, requestEpoch, userId);
+      if (store.activeId === id && !switching.value) {
+        await reload(id, requestEpoch, userId);
+      }
       if (valid()) {
         stopSteps(state, state.error ? 'failed' : 'interrupted');
         runs.disconnect(id, version);
@@ -518,7 +700,9 @@ async function reconnectRun(id: string, epoch: number, userId: string | undefine
 
 async function run(answer?: string) {
   if (answer && waiting.value && store.activeId && currentQuestionData.value) {
-    if (answering.value) return;
+    if (answering.value) {
+      return;
+    }
     answering.value = true;
     const question = currentQuestionData.value;
     const conversationId = store.activeId;
@@ -532,9 +716,13 @@ async function run(answer?: string) {
       });
       const note = clarificationDraft.value.note.trim();
       const answerText = answers.map(item => [...item.selectedOptions, item.customText].filter(Boolean).join('、')).filter(Boolean);
-      if (note) answerText.push(note);
+      if (note) {
+        answerText.push(note);
+      }
       await submitMainAgentAnswer(conversationId, question.questionRequestId, answers, note);
-      if (answerRun.error === previousError) answerRun.error = '';
+      if (answerRun.error === previousError) {
+        answerRun.error = '';
+      }
       const callId = question.toolCallId || question.questionRequestId;
       answerRun.recentAnswers[callId] = { callId, questions: question.questions, answer: answerText.join('；') || '已补充信息', questionAnswers: Object.fromEntries(answers.map(item => [item.questionId, [...item.selectedOptions, item.customText].filter(Boolean).join('、')])), note };
       // 运行流可能先于提交响应结束，不能覆盖新的终态或其他追问。
@@ -573,7 +761,9 @@ async function run(answer?: string) {
       try {
         id = (await store.createConversation()).conversationId;
       } finally {
-        if (auth.user?.userId === userId && auth.token === authToken) creating.value = false;
+        if (auth.user?.userId === userId && auth.token === authToken) {
+          creating.value = false;
+        }
       }
     }
     if (!isCurrent(epoch, userId, id)) {
@@ -581,7 +771,9 @@ async function run(answer?: string) {
     }
     storageSet(scopedDraftKey(userId, null, 'activeConversation'), id);
     const connection = runs.connect(id, 'querying');
-    if (!connection) return;
+    if (!connection) {
+      return;
+    }
     const { state, controller: currentController, version } = connection;
     const valid = () => !disposed && auth.user?.userId === userId && auth.token === authToken &&
       runs.states.get(id!) === state && state.version === version;
@@ -598,7 +790,9 @@ async function run(answer?: string) {
     storageSet(draftKey('inflight'), submission);
     store.touchActivity(id);
     await scrollToLatest();
-    if (!valid()) return;
+    if (!valid()) {
+      return;
+    }
     state.liveText = '';
     state.liveMessageId = '';
     state.liveItems = [];
@@ -617,7 +811,9 @@ async function run(answer?: string) {
         const reconnect = Boolean(state.error) && !currentController.signal.aborted;
         state.streaming = false;
         state.refreshNeeded = true;
-        if (store.activeId === id && !switching.value) await reload(id, requestEpoch, userId);
+        if (store.activeId === id && !switching.value) {
+        await reload(id, requestEpoch, userId);
+      }
         if (valid()) {
           stopSteps(state, state.error ? 'failed' : 'interrupted');
           runs.disconnect(id, version);
@@ -632,7 +828,9 @@ async function run(answer?: string) {
       }
     }
   } catch (cause) {
-    if (isCurrent(epoch, userId, id || undefined)) error.value = getApiErrorMessage(cause) || '会话创建失败';
+    if (isCurrent(epoch, userId, id || undefined)) {
+      error.value = getApiErrorMessage(cause) || '会话创建失败';
+    }
   }
 }
 /** 切换时保留旧会话的完整可见内容，直到新内容准备好。 */
@@ -643,6 +841,7 @@ function captureSwitchSnapshot() {
     pendingText: displayedPendingText.value,
     liveText: liveText.value,
     liveItems: liveItems.value.map(item => ({ ...item })),
+    analyses: { ...currentRun.value.analyses },
     recentAnswers: { ...currentRun.value.recentAnswers },
     thinking: thinking.value,
   };
@@ -678,15 +877,25 @@ async function openConversation(id: string, force = false) {
     storageSet(scopedDraftKey(userId, null, 'activeConversation'), id);
     const state = runs.get(id);
     // 切换读取期间后台可能刚好收尾；再取一次最新流水，避免用旧 RUNNING 快照覆盖终态。
-    if (state.refreshNeeded && !state.streaming) await reload(id, epoch, userId);
-    if (!isCurrent(epoch, userId, id)) return;
+    if (state.refreshNeeded && !state.streaming) {
+      await reload(id, epoch, userId);
+    }
+    if (!isCurrent(epoch, userId, id)) {
+      return;
+    }
     try {
       await reconnectRun(id, epoch, userId);
     } catch (cause) {
-      if (isCurrent(epoch, userId, id)) warning.value = getApiErrorMessage(cause) || '运行状态暂时无法读取';
+      if (isCurrent(epoch, userId, id)) {
+        warning.value = getApiErrorMessage(cause) || '运行状态暂时无法读取';
+      }
     }
-    if (!isCurrent(epoch, userId, id)) return;
-    if (reconcileSubmittedDraft(id)) state.error = '';
+    if (!isCurrent(epoch, userId, id)) {
+      return;
+    }
+    if (reconcileSubmittedDraft(id)) {
+      state.error = '';
+    }
     restoreQuery();
     restoreClarification();
     mobileSidebarOpen.value = false;
@@ -702,7 +911,9 @@ async function openConversation(id: string, force = false) {
       await scrollToLatest();
       // 终态也可能恰好落在上面的检查与切换遮罩退出之间，解除切换锁后补取一次。
       const state = runs.get(id);
-      if (store.activeId === id && state.refreshNeeded && !state.streaming) await reload(id, epoch, userId);
+      if (store.activeId === id && state.refreshNeeded && !state.streaming) {
+        await reload(id, epoch, userId);
+      }
     }
   }
 }
@@ -755,7 +966,9 @@ async function removeConversation(id: string) {
   const authToken = auth.token;
   try {
     await store.removeConversation(id);
-    if (!disposed && auth.user?.userId === userId && auth.token === authToken) runs.remove(id);
+    if (!disposed && auth.user?.userId === userId && auth.token === authToken) {
+      runs.remove(id);
+    }
     if (isCurrent(epoch, userId) && !store.activeId) {
       cancelTransient();
       restoreQuery();
@@ -830,7 +1043,9 @@ watch(
       if (typeof remembered === 'string' && remembered) {
         switching.value = false;
         await openConversation(remembered);
-        if (!isCurrent(epoch, userId) || (store.activeId === remembered && store.detail)) return;
+        if (!isCurrent(epoch, userId) || (store.activeId === remembered && store.detail)) {
+          return;
+        }
       }
       const first = store.conversations[0];
       if (first) {
@@ -856,7 +1071,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="workspaceElement" class="graph-workspace ai-pilot-workspace" :style="workspaceStyle" :class="{ 'is-resizing': conversationResize.dragging.value }" data-testid="ai-graph-workspace">
+  <section ref="workspaceElement" class="graph-workspace ai-pilot-workspace" :style="workspaceStyle" :class="{ 'is-resizing': conversationResize.dragging.value || analysisResize.dragging.value }" data-testid="ai-graph-workspace">
     <AiConversationSidebar
       v-if="!small"
       :conversations="store.conversations"
@@ -913,14 +1128,15 @@ onBeforeUnmount(() => {
           <h1>{{ store.activeSummary?.title || '智能经营助手' }}</h1>
         </div>
         <div class="workspace-actions">
-          <span class="task-status" :class="{ 'agent-running-status': busy }" role="status"
-            ><LoaderCircle v-if="busy" class="size-3.5 animate-spin" /><span
+          <span class="task-status" :class="{ 'agent-running-status': busy || switching }" role="status"
+            ><LoaderCircle v-if="busy || switching" class="size-3.5 animate-spin" /><span
               v-else
               class="status-dot"
             />{{ statusLabel }}</span>
         </div>
       </header>
       <div class="conversation-body" :aria-busy="readingConversation" data-ai-conversation-region>
+      <div v-if="switching" class="conversation-switch-progress" role="progressbar" aria-label="正在切换会话"><span /></div>
       <AiMessageNavigator :messages="displayedMessages" :scroll-container="scrollArea" :inert="readingConversation || undefined" />
       <div ref="scrollArea" class="conversation-scroll" :inert="readingConversation || undefined">
         <div class="conversation-stream" :class="{ 'conversation-enter': !switching, 'conversation-switching': switching }">
@@ -961,6 +1177,7 @@ onBeforeUnmount(() => {
             :active-question-id="undefined"
             :user-id="auth.user?.userId"
             :conversation-id="store.activeId || undefined"
+            @open-analysis="analysisOpen = !analysisOpen"
             >
             <template #clarification>
               <button type="button" class="question-status" data-testid="clarification-pending-status" aria-label="继续回答补充问题" :disabled="switching" @click="focusQuestion">
@@ -970,6 +1187,7 @@ onBeforeUnmount(() => {
               </button>
             </template>
           </AiMessageList>
+          <AiAnalysisPanel v-if="small && showAnalysisPanel" variant="inline" :blocks="analysisBlocks" />
           <p v-if="!switching && runStatus === 'INTERRUPTED' && !busy" class="state-note">
             上次执行已中断。可以重新描述需求后再试。
           </p>
@@ -1022,6 +1240,30 @@ onBeforeUnmount(() => {
         </template>
       </AiComposerDock>
     </main>
+    <template v-if="!small && showAnalysisPanel">
+      <div
+        v-if="analysisOpen"
+        class="panel-resizer analysis-resizer"
+        role="separator"
+        tabindex="0"
+        aria-label="调整分析面板宽度"
+        aria-orientation="vertical"
+        :aria-valuenow="analysisResize.width.value"
+        :aria-valuemin="280"
+        :aria-valuemax="520"
+        @pointerdown="analysisResize.startResize"
+        @keydown.left.prevent="analysisResize.nudge(16)"
+        @keydown.right.prevent="analysisResize.nudge(-16)"
+      />
+      <div
+        class="analysis-dock"
+        :class="{ 'is-open': analysisOpen }"
+        :inert="!analysisOpen"
+        data-testid="ai-analysis-dock"
+      >
+        <AiAnalysisPanel variant="panel" :blocks="analysisBlocks" @close="analysisOpen = false" />
+      </div>
+    </template>
     <Dialog :open="mobileSidebarOpen" @update:open="mobileSidebarOpen = $event"
       ><DialogContent
         data-ai-panel="conversations"
@@ -1053,10 +1295,39 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.conversation-enter { animation: conversation-enter 200ms ease-out; }
-.conversation-switching { opacity: .4; transition: opacity 160ms ease; }
-@keyframes conversation-enter { from { opacity: .4; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .conversation-enter, .conversation-switching { animation: none; transition: none; } }
+.conversation-enter { animation: conversation-enter 240ms cubic-bezier(0.4, 0, 0.2, 1); }
+/* 切换时旧内容轻微下沉失焦，配合顶部进度条和状态文字给出明确反馈。 */
+.conversation-switching {
+  opacity: .45;
+  filter: blur(1px);
+  transform: translateY(6px) scale(.995);
+  transition:
+    opacity 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    filter 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes conversation-enter { from { opacity: .4; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.conversation-switch-progress {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 3;
+  height: 3px;
+  overflow: hidden;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.conversation-switch-progress span {
+  display: block;
+  width: 36%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--primary) 30%, var(--primary) 70%, transparent);
+  animation: conversation-switch-progress 1.1s ease-in-out infinite;
+}
+@keyframes conversation-switch-progress { from { transform: translateX(-110%); } to { transform: translateX(330%); } }
+@media (prefers-reduced-motion: reduce) {
+  .conversation-enter, .conversation-switching { animation: none; transition: none; }
+  .conversation-switch-progress span { animation: none; width: 100%; opacity: .45; }
+}
 .graph-workspace {
   display: flex;
   height: 100%;
@@ -1245,6 +1516,34 @@ h1 {
 }
 .panel-resizer:focus-visible {
   outline: none;
+}
+/* 分析面板收放动效与会话侧栏一致：宽度与透明度同时过渡，内容固定宽度只做裁切。 */
+.analysis-dock {
+  flex: 0 0 auto;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(14px);
+  pointer-events: none;
+  transition:
+    width var(--motion-duration-slow) var(--motion-ease-standard),
+    opacity 180ms ease,
+    transform var(--motion-duration-slow) var(--motion-ease-standard);
+}
+.analysis-dock.is-open {
+  width: var(--analysis-width);
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.analysis-dock :deep(.analysis-panel) {
+  width: var(--analysis-width);
+  height: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .analysis-dock {
+    transition: none;
+  }
 }
 .graph-workspace.is-resizing,
 .graph-workspace.is-resizing * {

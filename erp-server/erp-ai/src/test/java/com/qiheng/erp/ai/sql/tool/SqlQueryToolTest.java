@@ -1,7 +1,7 @@
 package com.qiheng.erp.ai.sql.tool;
 
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 
 import com.qiheng.erp.ai.sql.graph.SqlGraphService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,7 +33,7 @@ class SqlQueryToolTest {
         assertThat(requirement.path("properties").path("goal").path("description").asText()).contains("查询目标");
         assertThat(requirement.path("properties").path("dataRequirement").path("description").asText()).contains("FULL", "LIMITED");
         assertThat(requirement.path("required").toString()).contains("goal", "dataRequirement").doesNotContain("grain", "purpose");
-        ToolContext context = new ToolContext(Map.of(SqlQueryTool.CONTEXT_KEY, new SqlToolContext(15, 1001)));
+        ToolContext context = new ToolContext(Map.of(AgentToolContext.CONTEXT_KEY, new AgentToolContext(15, 1001)));
         try (var executor = Executors.newSingleThreadExecutor()) {
             String result = executor.submit(() -> callback.call("{\"requirement\":{\"goal\":\"库存\",\"dataRequirement\":\"FULL\"}}", context)).get();
             assertThat(result).contains("NEED_INFO", "run1");
@@ -47,7 +47,7 @@ class SqlQueryToolTest {
         when(service.startForUser(eq(15L), eq(1001L), anyString(), anyMap()))
                 .thenReturn(Map.of("sqlRunId", "run1", "status", "PARTIAL", "truncated", true));
         var callback = MethodToolCallbackProvider.builder().toolObjects(new SqlQueryTool(service)).build().getToolCallbacks()[0];
-        ToolContext context = new ToolContext(Map.of(SqlQueryTool.CONTEXT_KEY, new SqlToolContext(15, 1001)));
+        ToolContext context = new ToolContext(Map.of(AgentToolContext.CONTEXT_KEY, new AgentToolContext(15, 1001)));
         String result = callback.call("{\"requirement\":{\"goal\":\"库存\",\"dataRequirement\":\"FULL\"}}", context);
         assertThat(result).contains("PARTIAL", "truncated");
         verify(service).acknowledgeForUser(15L, 1001L, "run1");
@@ -59,7 +59,7 @@ class SqlQueryToolTest {
         var callback = MethodToolCallbackProvider.builder().toolObjects(new SqlQueryTool(service)).build().getToolCallbacks()[0];
         assertThatThrownBy(() -> callback.call("{\"requirement\":{\"goal\":\"库存\",\"dataRequirement\":\"FULL\"},\"userId\":15}", new ToolContext(Map.of("userId", 15L))))
                 .hasRootCauseMessage("缺少可信 SQL 工具上下文");
-        ToolContext context = new ToolContext(Map.of(SqlQueryTool.CONTEXT_KEY, new SqlToolContext(15, 1001)));
+        ToolContext context = new ToolContext(Map.of(AgentToolContext.CONTEXT_KEY, new AgentToolContext(15, 1001)));
         assertThatThrownBy(() -> callback.call("{}", context)).hasRootCauseMessage("请提供取数需求");
         verifyNoInteractions(service);
     }

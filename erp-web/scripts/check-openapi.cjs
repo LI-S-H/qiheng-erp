@@ -1745,12 +1745,13 @@ if (
   !databaseOverview.includes("`supplier_score_change_log`") ||
   !databaseOverview.includes("`ai_node_memory`") ||
   !databaseOverview.includes("`ai_node_working_memory`") ||
-  !databaseOverview.includes("`ai_node_experience`") ||
+  !databaseOverview.includes("`ai_agent_experience`") ||
+  !databaseOverview.includes("`ai_agent_trace`") ||
   !returnSchema.includes("表：return_order（退货单主表）") ||
   !returnSchema.includes("表：return_order_item（退货单明细表）")
 ) {
   throw new Error(
-    "数据库总览必须同步 34 张已落 DDL 的表，并包含 sys_permission、评分变化日志、三张 AI 节点记忆表与两张退货表",
+    "数据库总览必须同步 34 张已落 DDL 的表，并包含 sys_permission、评分变化日志、AI 节点记忆与智能体流水表与两张退货表",
   );
 }
 for (const [name, apiSource, typeSource, viewSource] of [

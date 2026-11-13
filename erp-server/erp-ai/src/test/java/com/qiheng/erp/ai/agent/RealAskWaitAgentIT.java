@@ -44,6 +44,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
 
 /** 模拟首次格式错误，验证真实模型修正后等待用户回答并继续。 */
 @EnabledIfEnvironmentVariable(named = "ERP_REAL_QWEN_IT", matches = "true")
@@ -94,8 +96,8 @@ class RealAskWaitAgentIT {
             var graph = mock(BusinessGraphProvider.class);
             when(graph.render()).thenReturn("【ERP业务参考】需要用户提供仓库名称。");
             var agent = new MainAgentConfiguration().mainAgent(model, saver,
-                    new SqlQueryTool(mock(SqlGraphService.class)), new ReadDatasetTool(mock(DatasetManager.class)), graph, service);
-            var main = new MainAgentService(agent, saver, conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper());
+                    new SqlQueryTool(mock(SqlGraphService.class)), new ReadDatasetTool(mock(DatasetManager.class)), graph, service, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+            var main = new MainAgentService(agent, saver, conversations, users, new ConversationExecutionLock(redis), mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class), new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
             var eventCount = new AtomicInteger();
             var outputs = main.streamForUser(1L, conversation, "仓库名称尚未提供，请用追问工具询问；收到答案后只确认，不要查询。")
                     .doOnNext(event -> {

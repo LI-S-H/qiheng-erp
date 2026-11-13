@@ -13,13 +13,17 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
+import static org.mockito.Mockito.mock;
+import com.qiheng.erp.ai.sql.graph.SqlTraceSupport;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 class SqlRetryReporterTest {
     @Test
     void retryExhaustionReportsOncePerRunAndKeepsFeedbackPrivate() {
         var publisher = mock(SystemExceptionMqPublisher.class);
         var reporter = new SqlRetryReporter(publisher);
-        var support = new SqlNodeSupport(null, null, null, 2, reporter);
+        var support = new SqlNodeSupport(null, null, null, 2, reporter, traceSupport());
         var work = new HashMap<String, Object>(Map.of("sqlRunId", "run1", "attempt", 2));
 
         var result = support.retry(work, "包含业务数据的 SQL", "查询失败", "guard");
@@ -36,7 +40,7 @@ class SqlRetryReporterTest {
     void publishingFailureDoesNotChangeToolFailure() {
         var publisher = mock(SystemExceptionMqPublisher.class);
         doThrow(new IllegalStateException("unavailable")).when(publisher).publish(any());
-        var support = new SqlNodeSupport(null, null, null, 1, new SqlRetryReporter(publisher));
+        var support = new SqlNodeSupport(null, null, null, 1, new SqlRetryReporter(publisher), traceSupport());
         var work = new HashMap<String, Object>(Map.of("sqlRunId", "run2", "attempt", 1));
         assertThat(support.retry(work, "反馈", "查询失败", "execute"))
                 .containsEntry("code", "SQL_RETRY_EXHAUSTED").containsEntry("route", "end");
@@ -45,7 +49,7 @@ class SqlRetryReporterTest {
     @Test
     void inspectionExhaustionReportsFieldLevelReason() {
         var publisher = mock(SystemExceptionMqPublisher.class);
-        var support = new SqlNodeSupport(null, null, null, 1, new SqlRetryReporter(publisher));
+        var support = new SqlNodeSupport(null, null, null, 1, new SqlRetryReporter(publisher), traceSupport());
         var work = new HashMap<String, Object>(Map.of("sqlRunId", "run3", "attempt", 1,
                 "retryDiagnostic", "数据说明的字段序号或名称与查询结果不一致：第 1 列"));
         support.retry(work, "检查失败", "查询失败", "inspect");
@@ -62,5 +66,10 @@ class SqlRetryReporterTest {
         var reporter = new SqlRetryReporter(new SystemExceptionMqPublisher(provider));
         reporter.report("sqlrun_123", "guard", 5);
         verify(provider).getIfAvailable();
+    }
+
+    /** 建立只写不校验的取数流水支持；单元测试不连库。 */
+    private static SqlTraceSupport traceSupport() {
+        return new SqlTraceSupport(mock(AiAgentTraceMapper.class), new ObjectMapper());
     }
 }

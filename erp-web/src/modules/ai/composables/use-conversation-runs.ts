@@ -1,12 +1,19 @@
 import { reactive } from 'vue';
 import type { ClarificationQuestion } from '../clarification/clarification-types';
-import type { AiProgressStep, AiRunStatus } from '../types';
+import type { AiAnalysisBlock, AiAnalysisStep, AiProgressStep, AiRunStatus } from '../types';
 
+/** 运行中的实时条目：文本、追问与工具状态。 */
 export type LiveItem =
   | { type: 'text'; id: string; text: string; completed?: boolean }
   | { type: 'clarification'; id: string; questions: ClarificationQuestion[] }
-  | { type: 'tool'; id: string; label: string; durationMs: number | null; status: 'running' | 'done' | 'failed' };
+  | { type: 'tool'; id: string; label: string; tool?: string; durationMs: number | null; status: 'running' | 'done' | 'failed' };
 
+/** 运行快照中的条目：实时过程与分析过程共用同一次快照。 */
+export type SnapshotItem =
+  | LiveItem
+  | { type: 'analysis'; id: string; goal: string; steps: AiAnalysisStep[]; completion: string | null; summary: string | null };
+
+/** 单个会话的运行状态；会话之间彼此隔离。 */
 export interface ConversationRun {
   querying: boolean;
   watching: boolean;
@@ -24,6 +31,8 @@ export interface ConversationRun {
   error: string;
   warning: string;
   steps: AiProgressStep[];
+  /** 本次会话已出现的分析过程；按父工具调用编号区分，跨轮次保持。 */
+  analyses: Record<string, AiAnalysisBlock>;
   pendingClarification: { questionRequestId: string; toolCallId?: string; questions: ClarificationQuestion[] } | null;
   recentAnswers: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
   refreshNeeded: boolean;
@@ -35,19 +44,26 @@ export function useConversationRuns() {
   const states = reactive(new Map<string, ConversationRun>());
   const controllers = new Map<string, AbortController>();
 
+  /** 取得会话的运行状态；首次访问时建立初始状态。 */
   function get(id: string | null) {
     const key = id ?? 'new';
-    if (!states.has(key)) states.set(key, {
-      querying: false, watching: false, streaming: false, version: 0, runStatus: null,
-      pendingText: '', liveText: '', liveMessageId: '', liveItems: [], completedTextIds: new Set(), eventSeq: 0, snapshotTruncated: false, runId: '', error: '', warning: '', steps: [],
-      pendingClarification: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
-    });
+    if (!states.has(key)) {
+      states.set(key, {
+        querying: false, watching: false, streaming: false, version: 0, runStatus: null,
+        pendingText: '', liveText: '', liveMessageId: '', liveItems: [], completedTextIds: new Set(),
+        eventSeq: 0, snapshotTruncated: false, runId: '', error: '', warning: '', steps: [], analyses: {},
+        pendingClarification: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
+      });
+    }
     return states.get(key)!;
   }
 
+  /** 建立本会话的执行连接；同一会话已有连接时返回 null。 */
   function connect(id: string, mode: 'querying' | 'watching') {
     const state = get(id);
-    if (state.querying || state.watching) return null;
+    if (state.querying || state.watching) {
+      return null;
+    }
     const controller = new AbortController();
     controllers.set(id, controller);
     state.version += 1;
@@ -56,9 +72,12 @@ export function useConversationRuns() {
     return { state, controller, version: state.version };
   }
 
+  /** 断开本会话的执行连接；版本不一致说明已被新一轮接管，直接忽略。 */
   function disconnect(id: string, version: number) {
     const state = states.get(id);
-    if (!state || state.version !== version) return;
+    if (!state || state.version !== version) {
+      return;
+    }
     state.querying = false;
     state.watching = false;
     state.streaming = false;
@@ -73,16 +92,22 @@ export function useConversationRuns() {
     controllers.delete(id);
   }
 
+  /** 丢弃本会话的状态与连接。 */
   function remove(id: string) {
     const state = states.get(id);
-    if (state) state.version += 1;
+    if (state) {
+      state.version += 1;
+    }
     controllers.get(id)?.abort();
     controllers.delete(id);
     states.delete(id);
   }
 
+  /** 丢弃全部会话的状态与连接。 */
   function reset() {
-    for (const id of states.keys()) remove(id);
+    for (const id of states.keys()) {
+      remove(id);
+    }
   }
 
   return { states, get, connect, disconnect, remove, reset };

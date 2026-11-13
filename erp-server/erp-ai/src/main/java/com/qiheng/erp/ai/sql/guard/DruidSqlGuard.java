@@ -10,6 +10,7 @@ import com.alibaba.druid.sql.ast.SQLExpr;
 import com.alibaba.druid.sql.ast.SQLName;
 import com.alibaba.druid.sql.ast.SQLOrderBy;
 import com.alibaba.druid.sql.ast.SQLOrderingSpecification;
+import com.alibaba.druid.sql.ast.SQLOver;
 import com.alibaba.druid.sql.ast.SQLSetQuantifier;
 import com.alibaba.druid.sql.ast.SQLLimit;
 import com.alibaba.druid.sql.ast.SQLStatement;
@@ -773,7 +774,7 @@ public class DruidSqlGuard implements SqlGuard {
                 return false;
             }
             @Override
-            public boolean visit(com.alibaba.druid.sql.ast.SQLOver expression) {
+            public boolean visit(SQLOver expression) {
                 found[0] = true;
                 return false;
             }

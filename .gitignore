@@ -11,6 +11,12 @@ out/
 **/out/
 target/
 **/target/
+*.tsbuildinfo
+erp-web/vite.config.js
+erp-web/vite.config.d.ts
+
+# AI 运行期数据（数据集、Python 结果）
+erp-server/data/
 
 # Java 编译产物
 *.class

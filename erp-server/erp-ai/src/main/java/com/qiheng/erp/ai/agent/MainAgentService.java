@@ -3,35 +3,58 @@ package com.qiheng.erp.ai.agent;
 import com.qiheng.erp.ai.clarification.ClarificationService;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
+import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallRequest;
+import com.alibaba.cloud.ai.graph.checkpoint.Checkpoint;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
+import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.qiheng.erp.ai.sql.scope.PermissionCodes;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
+import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.redisson.api.RLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.scheduler.Schedulers;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
-/** 主智能体的内部流式入口；身份在调用线程确认后传入运行配置。 */
+/**
+ * 主智能体的内部流式入口；身份在调用线程确认后传入运行配置。
+ *
+ * @author Li
+ * @since 2026-10-27
+ */
 public final class MainAgentService {
     private static final Logger log = LoggerFactory.getLogger(MainAgentService.class);
     private final ReactAgent agent;
@@ -41,6 +64,7 @@ public final class MainAgentService {
     private final ConversationExecutionLock locks;
     private final ConversationMessageStore messageStore;
     private final ObjectMapper mapper;
+    private final AiAgentTraceMapper traceMapper;
     private final Map<String, RuntimeSnapshot> runs = new ConcurrentHashMap<>();
     private static final AtomicLong LOCK_OWNER = new AtomicLong(UUID.randomUUID().getMostSignificantBits());
 
@@ -62,6 +86,13 @@ public final class MainAgentService {
         return "RUNNING".equals(status) || "WAITING_USER".equals(status) ? "INTERRUPTED" : "IDLE";
     }
 
+    /**
+     * 查询指定用户在指定会话的运行状态。
+     *
+     * @param userId 会话所属用户
+     * @param conversationId 会话编号
+     * @return 运行快照；本进程没有运行时返回 null
+     */
     RuntimeSnapshot currentForUser(long userId, long conversationId) {
         if (conversations.selectOwned(conversationId, userId) == null) {
             throw new IllegalArgumentException("会话不存在或无权访问");
@@ -69,9 +100,21 @@ public final class MainAgentService {
         return runs.get(userId + ":" + conversationId);
     }
 
+    /**
+     * 注入主智能体图、检查点与会话存储。
+     *
+     * @param agent 主智能体图
+     * @param saver 检查点存储
+     * @param conversations 会话数据访问
+     * @param users 用户数据访问
+     * @param locks 会话执行锁
+     * @param messageStore 消息存储
+     * @param mapper JSON 序列化组件
+     * @param traceMapper 智能体流水写入通道
+     */
     public MainAgentService(ReactAgent agent, RedisSaver saver, AiConversationMapper conversations, LoginUserService users,
                             ConversationExecutionLock locks, ConversationMessageStore messageStore,
-                            ObjectMapper mapper) {
+                            ObjectMapper mapper, AiAgentTraceMapper traceMapper) {
         this.agent = agent;
         this.saver = saver;
         this.conversations = conversations;
@@ -79,14 +122,30 @@ public final class MainAgentService {
         this.locks = locks;
         this.messageStore = messageStore;
         this.mapper = mapper;
+        this.traceMapper = traceMapper;
     }
 
-    /** 从登录上下文捕获身份，避免流执行换线程后丢失用户。 */
+    /**
+     * 从登录上下文捕获身份，避免流执行换线程后丢失用户。
+     *
+     * @param conversationId 会话编号
+     * @param input 用户输入
+     * @return 内部图事件流
+     * @throws GraphRunnerException 图运行失败
+     */
     public Flux<NodeOutput> streamForCurrentUser(long conversationId, String input) throws GraphRunnerException {
         return streamForCurrentUser(conversationId, input, UUID.randomUUID().toString());
     }
 
-    /** 由运行通道预分配轮次标识，确保快照与数据库消息使用同一标识。 */
+    /**
+     * 由运行通道预分配轮次标识，确保快照与数据库消息使用同一标识。
+     *
+     * @param conversationId 会话编号
+     * @param input 用户输入
+     * @param runId 本轮运行标识
+     * @return 内部图事件流
+     * @throws GraphRunnerException 图运行失败
+     */
     public Flux<NodeOutput> streamForCurrentUser(long conversationId, String input, String runId) throws GraphRunnerException {
         long userId = UserContext.requireCurrentUser().getUserId();
         if (conversations.selectOwned(conversationId, userId) == null) {
@@ -111,19 +170,33 @@ public final class MainAgentService {
         return execute(userId, conversationId, input, UUID.randomUUID().toString());
     }
 
-    /** 在会话锁内验证身份，并启动新消息或恢复追问。 */
+    /**
+     * 在会话锁内验证身份，并启动新消息或恢复追问。
+     *
+     * @param userId 会话所属用户
+     * @param conversationId 会话编号
+     * @param input 用户输入
+     * @param requestedRunId 本轮运行标识
+     * @return 内部图事件流
+     */
     private Flux<NodeOutput> execute(long userId, long conversationId, String input, String requestedRunId) {
-        String businessDate = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString();
+        String businessDate = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
         var config = RunnableConfig.builder().threadId("main:" + userId + ":" + conversationId)
                 .addMetadata("businessDate", businessDate)
-                .addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT, new SqlToolContext(userId, conversationId, businessDate))
+                .addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT, new AgentToolContext(userId, conversationId, businessDate))
                 .build();
         return Flux.defer(() -> {
             RLock lock = locks.of(conversationId);
             long owner = LOCK_OWNER.incrementAndGet();
             return Flux.create(sink -> lock.tryLockAsync(owner).whenCompleteAsync((acquired, failure) -> {
-                if (failure != null) { sink.error(failure); return; }
-                if (!acquired) { sink.error(new IllegalStateException("会话正在执行其他任务")); return; }
+                if (failure != null) {
+                    sink.error(failure);
+                    return;
+                }
+                if (!acquired) {
+                    sink.error(new IllegalStateException("会话正在执行其他任务"));
+                    return;
+                }
                 if (sink.isCancelled()) {
                     lock.unlockAsync(owner).whenComplete((ignored, error) -> {
                         if (error != null) {
@@ -161,13 +234,15 @@ public final class MainAgentService {
                             throw new IllegalStateException("会话存在未完成的其他工具调用，请先确认执行状态");
                         }
                     }
-                    var recorder = new AgentRunRecorder(messageStore, mapper, userId, conversationId,
+                    var traces = new AiAgentTraceRecorder(traceMapper, mapper,
+                            new AiAgentTraceRecorder.Scope(userId, conversationId, requestedRunId, "MAIN"));
+                    var recorder = new AgentRunRecorder(messageStore, mapper, traces, userId, conversationId,
                             requestedRunId);
                     recorder.start(input);
                     String runKey = userId + ":" + conversationId;
                     String runId = recorder.runId();
                     runs.put(runKey, new RuntimeSnapshot(runId, "RUNNING", null));
-                    sink.next(NodeOutput.of("run_started", "main_agent", new com.alibaba.cloud.ai.graph.OverAllState(
+                    sink.next(NodeOutput.of("run_started", "main_agent", new OverAllState(
                             Map.of("runId", runId, "conversationId", String.valueOf(conversationId))), null));
                     subscribeRun(config, recorder, runKey, runId, input, lock, owner, sink);
                 } catch (Exception error) {
@@ -177,23 +252,38 @@ public final class MainAgentService {
         });
     }
 
-    /** 订阅内部运行流，持久化完整消息并维护本轮状态。 */
+    /**
+     * 订阅内部运行流，持久化完整消息并维护本轮状态。
+     *
+     * @param config 本轮运行配置
+     * @param recorder 本轮消息记录器
+     * @param runKey 运行状态键
+     * @param runId 本轮运行标识
+     * @param input 用户输入
+     * @param lock 会话执行锁
+     * @param owner 本次锁持有者标识
+     * @param sink 外部事件出口
+     * @throws Exception 订阅建立失败
+     */
     private void subscribeRun(RunnableConfig config, AgentRunRecorder recorder, String runKey, String runId,
                               String input, RLock lock, long owner, FluxSink<NodeOutput> sink) throws Exception {
         var events = new RuntimeEventForwarder(sink::next, runId);
         var runConfig = RunnableConfig.builder(config)
                 .addMetadata("runId", runId)
-                .addMetadata(com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor.ERROR_COUNT, new java.util.concurrent.atomic.AtomicInteger())
+                .addMetadata(ToolJsonInterceptor.ERROR_COUNT, new AtomicInteger())
                 .addMetadata("messageRecorder", recorder)
-                .addMetadata("toolEvents", (java.util.function.Consumer<NodeOutput>) event -> {
+                .addMetadata(AgentRunKeys.TOOL_EVENTS, (Consumer<NodeOutput>) event -> {
                     if ("tool_finished".equals(event.node())) {
                         var data = event.state().data();
                         recorder.toolFinished((String) data.get("toolCallId"), (String) data.get("label"),
                                 ((Number) data.get("durationMs")).longValue());
+                    } else if ("analysis_summary".equals(event.node())) {
+                        // 分析过程只在总结事件里携带完整步骤，一次写入即可保证回看内容完整。
+                        recorder.analysis(event.state().data());
                     }
                     events.toolEvent(event);
                 })
-                .addMetadata("recordToolCall", (java.util.function.Consumer<com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallRequest>) request -> {
+                .addMetadata(AgentRunKeys.RECORD_TOOL_CALL, (Consumer<ToolCallRequest>) request -> {
                     if ("ask_user".equals(request.getToolName())) {
                         events.questionCall(request.getToolCallId());
                     }
@@ -207,7 +297,7 @@ public final class MainAgentService {
                     }
                     recorder.toolCall(request.getToolCallId(), request.getToolName(), request.getArguments(), assistant);
                 })
-                .addMetadata(ClarificationService.EVENT_KEY, (java.util.function.Consumer<NodeOutput>) event -> {
+                .addMetadata(ClarificationService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
                     recorder.status("WAITING_USER", null);
                     var question = events.questionEvent(event);
                     runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(question.state().data())));
@@ -215,7 +305,7 @@ public final class MainAgentService {
                 })
                 .build();
         // 新消息交由模型结合已配对的工具历史处理。
-        reactor.core.publisher.Flux<NodeOutput> stream;
+        Flux<NodeOutput> stream;
         try {
             stream = agent.stream(input, runConfig);
         } catch (Exception error) {
@@ -223,7 +313,7 @@ public final class MainAgentService {
             runs.put(runKey, new RuntimeSnapshot(runId, "FAILED", null));
             throw error;
         }
-        var reachedEnd = new java.util.concurrent.atomic.AtomicBoolean();
+        var reachedEnd = new AtomicBoolean();
         stream.doOnNext(output -> {
                     // 节点完成后提取完整消息，流式片段只用于实时展示。
                     if (output.isEND() || output instanceof StreamingOutput<?> streaming
@@ -270,36 +360,57 @@ public final class MainAgentService {
 
     /** 在图的模型完成事件发出后，再交付对应的工具状态与追问。 */
     static final class RuntimeEventForwarder {
-        private final java.util.function.Consumer<NodeOutput> target;
-        private final java.util.Set<String> ready = new java.util.HashSet<>();
-        private final java.util.Set<String> degraded = new java.util.HashSet<>();
-        private final java.util.List<Map.Entry<String, NodeOutput>> pending = new java.util.ArrayList<>();
+        private final Consumer<NodeOutput> target;
+        private final Set<String> ready = new HashSet<>();
+        private final Set<String> degraded = new HashSet<>();
+        private final List<Map.Entry<String, NodeOutput>> pending = new ArrayList<>();
         private final String runId;
         private final long waitMillis;
-        private reactor.core.Disposable timer;
+        private Disposable timer;
         private long timerGeneration;
         private String questionCallId;
         private boolean closed;
         private boolean awaitingLateCompletion;
 
-        RuntimeEventForwarder(java.util.function.Consumer<NodeOutput> target) { this(target, "test", 1000); }
-        RuntimeEventForwarder(java.util.function.Consumer<NodeOutput> target, String runId) { this(target, runId, 1000); }
-        RuntimeEventForwarder(java.util.function.Consumer<NodeOutput> target, String runId, long waitMillis) {
-            this.target = target; this.runId = runId; this.waitMillis = waitMillis;
+        /** 使用默认等待时长建立转发器。 */
+        RuntimeEventForwarder(Consumer<NodeOutput> target) {
+            this(target, "test", 1000);
         }
 
-        synchronized void questionCall(String id) { questionCallId = id; }
+        /** 指定运行标识建立转发器，等待时长取默认值。 */
+        RuntimeEventForwarder(Consumer<NodeOutput> target, String runId) {
+            this(target, runId, 1000);
+        }
+
+        /**
+         * 建立转发器。
+         *
+         * @param target 事件交付目标
+         * @param runId 本轮运行标识
+         * @param waitMillis 排序等待时长
+         */
+        RuntimeEventForwarder(Consumer<NodeOutput> target, String runId, long waitMillis) {
+            this.target = target;
+            this.runId = runId;
+            this.waitMillis = waitMillis;
+        }
+
+        /** 记录本次追问对应的工具调用编号。 */
+        synchronized void questionCall(String id) {
+            questionCallId = id;
+        }
 
         /** 为追问事件补充真实工具调用标识，实时展示与重连快照使用相同标识。 */
         synchronized NodeOutput questionEvent(NodeOutput event) {
             if (questionCallId == null) {
                 return event;
             }
-            var data = new java.util.LinkedHashMap<String, Object>(event.state().data());
+            var data = new LinkedHashMap<String, Object>(event.state().data());
             data.put("toolCallId", questionCallId);
-            return NodeOutput.of(event.node(), "main_agent", new com.alibaba.cloud.ai.graph.OverAllState(data), null);
+            return NodeOutput.of(event.node(), "main_agent", new OverAllState(data), null);
         }
 
+        /** 交付工具事件；尚未排好序的事件先挂起，等待模型完成事件确认。 */
         synchronized void toolEvent(NodeOutput event) {
             if (closed) {
                 return;
@@ -313,10 +424,11 @@ public final class MainAgentService {
             pending.add(Map.entry(id, event));
             if (timer == null) {
                 long generation = ++timerGeneration;
-                timer = Schedulers.parallel().schedule(() -> releaseDelayed(generation), waitMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+                timer = Schedulers.parallel().schedule(() -> releaseDelayed(generation), waitMillis, TimeUnit.MILLISECONDS);
             }
         }
 
+        /** 处理图事件；模型完成事件负责确认工具事件的先后顺序。 */
         synchronized void graphEvent(NodeOutput event) {
             if (closed) {
                 return;
@@ -328,49 +440,72 @@ public final class MainAgentService {
                 return;
             }
             if (event instanceof StreamingOutput<?> streaming && streaming.message() instanceof ToolResponseMessage response) {
-                var finished = response.getResponses().stream().map(ToolResponseMessage.ToolResponse::id).collect(java.util.stream.Collectors.toSet());
-                // 工具已有响应时，尚未送达的追问已经无法再回答。
-                boolean expiredQuestion = pending.stream().anyMatch(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()));
-                if (expiredQuestion) {
-                    pending.stream().filter(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()))
-                            .forEach(item -> { ready.add(item.getKey()); degraded.add(item.getKey()); });
-                    target.accept(NodeOutput.of("model_tool_fallback", "main_agent", new com.alibaba.cloud.ai.graph.OverAllState(Map.of()), null));
-                }
-                pending.removeIf(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()));
-                if (!pending.isEmpty()) { cancelTimer(); releaseDelayed(expiredQuestion); } else {
-                    cancelTimer();
-                }
-                // 同一图流中，工具响应之后才会进入下一轮模型。
-                awaitingLateCompletion = false;
+                handleToolResponse(response);
             }
             String node = event.node();
-            if (node == null || !node.endsWith("message_recording.afterModel")) { target.accept(event); return; }
+            if (node == null || !node.endsWith("message_recording.afterModel")) {
+                target.accept(event);
+                return;
+            }
             Object value = event.state().data().get("messages");
             if (value instanceof List<?> list && !list.isEmpty()
                     && list.getLast() instanceof AssistantMessage assistant) {
-                // 超时后已经切段；迟到的完整消息不能覆盖新的文字段。
-                boolean late = !assistant.getToolCalls().isEmpty() && (awaitingLateCompletion
-                        || assistant.getToolCalls().stream().anyMatch(call -> degraded.contains(call.id())));
-                // 有待交付事件但没有一个调用 ID 能对应时，不能将该消息校正到当前文字段。
-                boolean mismatch = !pending.isEmpty() && !assistant.getToolCalls().isEmpty()
-                        && assistant.getToolCalls().stream().noneMatch(call -> pending.stream()
-                        .anyMatch(item -> call.id().equals(item.getKey())));
-                if (!assistant.getToolCalls().isEmpty()) {
-                    awaitingLateCompletion = false;
-                }
-                if (!late && !mismatch) {
-                    target.accept(event);
-                    assistant.getToolCalls().forEach(call -> ready.add(call.id()));
-                }
-                if (mismatch) {
-                    log.warn("模型完成事件与等待中的工具调用不匹配 runId={}", runId);
-                }
-                drain();
+                deliverAssistantMessage(event, assistant);
             } else {
                 target.accept(event);
             }
         }
 
+        /** 工具已有响应时，尚未送达的追问已经无法再回答。 */
+        private void handleToolResponse(ToolResponseMessage response) {
+            var finished = response.getResponses().stream()
+                    .map(ToolResponseMessage.ToolResponse::id)
+                    .collect(Collectors.toSet());
+            boolean expiredQuestion = pending.stream()
+                    .anyMatch(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()));
+            if (expiredQuestion) {
+                pending.stream()
+                        .filter(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()))
+                        .forEach(item -> {
+                            ready.add(item.getKey());
+                            degraded.add(item.getKey());
+                        });
+                target.accept(NodeOutput.of("model_tool_fallback", "main_agent", new OverAllState(Map.of()), null));
+            }
+            pending.removeIf(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()));
+            if (!pending.isEmpty()) {
+                cancelTimer();
+                releaseDelayed(expiredQuestion);
+            } else {
+                cancelTimer();
+            }
+            // 同一图流中，工具响应之后才会进入下一轮模型。
+            awaitingLateCompletion = false;
+        }
+
+        /** 把完整助手消息与等待中的工具调用对齐后交付。 */
+        private void deliverAssistantMessage(NodeOutput event, AssistantMessage assistant) {
+            // 超时后已经切段；迟到的完整消息不能覆盖新的文字段。
+            boolean late = !assistant.getToolCalls().isEmpty() && (awaitingLateCompletion
+                    || assistant.getToolCalls().stream().anyMatch(call -> degraded.contains(call.id())));
+            // 有待交付事件但没有一个调用 ID 能对应时，不能将该消息校正到当前文字段。
+            boolean mismatch = !pending.isEmpty() && !assistant.getToolCalls().isEmpty()
+                    && assistant.getToolCalls().stream().noneMatch(call -> pending.stream()
+                    .anyMatch(item -> call.id().equals(item.getKey())));
+            if (!assistant.getToolCalls().isEmpty()) {
+                awaitingLateCompletion = false;
+            }
+            if (!late && !mismatch) {
+                target.accept(event);
+                assistant.getToolCalls().forEach(call -> ready.add(call.id()));
+            }
+            if (mismatch) {
+                log.warn("模型完成事件与等待中的工具调用不匹配 runId={}", runId);
+            }
+            drain();
+        }
+
+        /** 交付已经排好序的挂起事件。 */
         private void drain() {
             while (!pending.isEmpty() && ready.contains(pending.getFirst().getKey())) {
                 target.accept(pending.removeFirst().getValue());
@@ -388,6 +523,7 @@ public final class MainAgentService {
             releaseDelayed(false);
         }
 
+        /** 放行全部挂起事件；首次放行时补发一次分段标记。 */
         private void releaseDelayed(boolean boundarySent) {
             timer = null;
             while (!pending.isEmpty()) {
@@ -396,7 +532,8 @@ public final class MainAgentService {
                     degraded.add(id);
                     log.warn("模型完成事件未及时匹配，已放行工具事件 runId={} toolCallId={}", runId, id);
                     if (!boundarySent) {
-                        target.accept(NodeOutput.of("model_tool_fallback", "main_agent", new com.alibaba.cloud.ai.graph.OverAllState(Map.of()), null));
+                        target.accept(NodeOutput.of("model_tool_fallback", "main_agent",
+                                new OverAllState(Map.of()), null));
                         boundarySent = true;
                         awaitingLateCompletion = true;
                     }
@@ -405,11 +542,16 @@ public final class MainAgentService {
             }
         }
 
+        /** 取消等待计时器并作废本次计时。 */
         private void cancelTimer() {
             timerGeneration++;
-            if (timer != null) { timer.dispose(); timer = null; }
+            if (timer != null) {
+                timer.dispose();
+                timer = null;
+            }
         }
 
+        /** 结束本轮转发；结束时追问已无法再接收回答。 */
         synchronized void flush() {
             if (closed) {
                 return;
@@ -424,14 +566,14 @@ public final class MainAgentService {
     }
 
     /** 只处理最后一条尚未获得结果的工具调用消息。 */
-    private boolean hasPendingToolCalls(com.alibaba.cloud.ai.graph.checkpoint.Checkpoint checkpoint) {
+    private boolean hasPendingToolCalls(Checkpoint checkpoint) {
         var messages = (List<?>) checkpoint.getState().get("messages");
         return "_AGENT_TOOL_".equals(checkpoint.getNextNodeId()) && messages != null && !messages.isEmpty()
                 && messages.getLast() instanceof AssistantMessage last && !last.getToolCalls().isEmpty();
     }
 
     /** 补写结果后若启动失败，下次继续不重复追加同一工具结果。 */
-    private boolean hasInterruptedToolResult(com.alibaba.cloud.ai.graph.checkpoint.Checkpoint checkpoint) {
+    private boolean hasInterruptedToolResult(Checkpoint checkpoint) {
         var messages = (List<?>) checkpoint.getState().get("messages");
         if (messages == null || messages.size() < 2
                 || !(messages.getLast() instanceof ToolResponseMessage response)
@@ -445,7 +587,14 @@ public final class MainAgentService {
                         && item.responseData().contains("\"status\":\"INTERRUPTED\"")));
     }
 
-    /** 在内部流真正结束后释放锁，再通知外部订阅者。 */
+    /**
+     * 在内部流真正结束后释放锁，再通知外部订阅者。
+     *
+     * @param lock 会话执行锁
+     * @param owner 本次锁持有者标识
+     * @param sink 外部事件出口
+     * @param error 失败原因；为空表示正常结束
+     */
     private void finish(RLock lock, long owner, FluxSink<NodeOutput> sink, Throwable error) {
         lock.unlockAsync(owner).whenComplete((ignored, unlockFailure) -> {
             if (unlockFailure != null) {

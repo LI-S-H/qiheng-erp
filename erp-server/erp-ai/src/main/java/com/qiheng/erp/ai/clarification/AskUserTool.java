@@ -9,14 +9,23 @@ import java.util.function.Consumer;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.agent.tools.ToolContextHelper;
 import com.qiheng.erp.ai.clarification.ClarificationService;
-import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
-import com.qiheng.erp.ai.sql.tool.SqlToolContext;
+import com.qiheng.erp.ai.context.AgentToolContext;
 import org.springframework.ai.chat.model.ToolContext;
 
-/** 用户追问工具：发出问题并等待服务端接收用户回答。 */
+/**
+ * 用户追问工具：发出问题并等待服务端接收用户回答。
+ *
+ * @author Li
+ * @since 2026-10-27
+ */
 public final class AskUserTool {
     private final ClarificationService service;
-    public AskUserTool(ClarificationService service) { this.service = service; }
+
+    /** 注入负责发布问题与接收回答的追问服务。 */
+    public AskUserTool(ClarificationService service) {
+        this.service = service;
+    }
+
     /** 决定用户对当前问题的回答方式。 */
     public enum QuestionType { SINGLE_CHOICE, MULTIPLE_CHOICE, TEXT }
 
@@ -28,7 +37,7 @@ public final class AskUserTool {
 
     @Tool(name = "ask_user", description = "当完成当前任务需要用户补充条件，或用户描述不够清楚、需要确认具体目标或范围时，向用户提出问题。工具会展示问题并等待回答，返回结构化答案，供你结合原任务继续规划。")
     public String ask(@ToolParam(description = "必填的非空问题数组。每题填写唯一 id、面向用户的完整 question、回答类型 type 和 options：SINGLE_CHOICE 供用户选一项，MULTIPLE_CHOICE 供用户选择多项，二者 options 为有依据且不重复的候选字符串数组；TEXT 为自由输入，options 填空数组。范围选项可使用全部或指定范围，不要编造具体业务对象；用户也可补充自定义内容。") List<Question> questions, ToolContext context) throws Exception {
-        var identity = ToolContextHelper.getMetadata(context, SqlQueryTool.CONTEXT_KEY, SqlToolContext.class).orElseThrow();
+        var identity = ToolContextHelper.getMetadata(context, AgentToolContext.CONTEXT_KEY, AgentToolContext.class).orElseThrow();
         var events = (Consumer<NodeOutput>) context.getContext().get(ClarificationService.EVENT_KEY);
         return service.ask(identity.userId(), identity.conversationId(), questions, events);
     }

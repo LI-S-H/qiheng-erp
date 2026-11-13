@@ -37,6 +37,42 @@ export interface ConversationRun {
   recentAnswers: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
   refreshNeeded: boolean;
   settleSuccess: (() => void) | null;
+  /** 本轮失败的错误码；用于区分瞬时故障与业务错误。 */
+  failureCode: string;
+  /** 连续瞬时故障次数，决定下一次退避时长。 */
+  failureCount: number;
+  /** 退避截止时间戳；0 表示可以立即再次发送。 */
+  retryAt: number;
+}
+
+/** 只有瞬时故障才退避；权限、参数这类业务错误改输入就能解决，锁住没有意义。 */
+const TRANSIENT_CODES = new Set(['MODEL_CALL_FAILED']);
+
+/** 退避时长（秒）：连续失败时逐步拉长，封顶 5 分钟。 */
+const RETRY_DELAYS = [30, 60, 120, 300];
+
+/**
+ * 按失败错误码决定是否进入退避。
+ *
+ * @param state 会话运行状态
+ * @returns 进入退避返回 true
+ */
+export function holdTransientFailure(state: ConversationRun): boolean {
+  if (!TRANSIENT_CODES.has(state.failureCode)) {
+    state.retryAt = 0;
+    return false;
+  }
+  const index = Math.min(state.failureCount, RETRY_DELAYS.length - 1);
+  state.failureCount += 1;
+  state.retryAt = Date.now() + RETRY_DELAYS[index] * 1000;
+  return true;
+}
+
+/** 本轮成功后清除退避，下一次故障从最短间隔重新计算。 */
+export function clearFailureHold(state: ConversationRun): void {
+  state.failureCode = '';
+  state.failureCount = 0;
+  state.retryAt = 0;
 }
 
 /** 执行连接属于会话；切换页面视图不能取消另一会话的执行或丢掉未落库暂停点。 */
@@ -53,6 +89,7 @@ export function useConversationRuns() {
         pendingText: '', liveText: '', liveMessageId: '', liveItems: [], completedTextIds: new Set(),
         eventSeq: 0, snapshotTruncated: false, runId: '', error: '', warning: '', steps: [], analyses: {},
         pendingClarification: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
+        failureCode: '', failureCount: 0, retryAt: 0,
       });
     }
     return states.get(key)!;

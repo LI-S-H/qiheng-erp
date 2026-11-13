@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onScopeDispose, ref, watch } from 'vue';
 import '@/styles/ai-pilot.css';
 import { useElementBounding, useMediaQuery } from '@vueuse/core';
 import { useRouter } from 'vue-router';
@@ -22,7 +22,7 @@ import AiConversationSidebar from '../components/AiConversationSidebar.vue';
 import AiMessageList from '../components/AiMessageList.vue';
 import AiMessageNavigator from '../components/AiMessageNavigator.vue';
 import { usePanelResize } from '../composables/use-panel-resize';
-import { useConversationRuns, type ConversationRun, type LiveItem, type SnapshotItem } from '../composables/use-conversation-runs';
+import { clearFailureHold, holdTransientFailure, useConversationRuns, type ConversationRun, type LiveItem, type SnapshotItem } from '../composables/use-conversation-runs';
 import type { ClarificationDraft } from '../clarification/clarification-types';
 import { getMainAgentRuntime, startMainAgentStream, submitMainAgentAnswer, watchMainAgentStream, type MainAgentEvent } from '../stream/main-agent-stream';
 import { useAiConversationStore } from '../stores/aiConversationStore';
@@ -52,6 +52,28 @@ const liveText = runtimeField('liveText');
 const liveItems = runtimeField('liveItems');
 const liveRunId = runtimeField('runId');
 const liveAnalyses = runtimeField('analyses');
+const retryAt = runtimeField('retryAt');
+const nowTick = ref(Date.now());
+let retryTimer: number | null = null;
+/** 剩余退避秒数；为 0 表示可以再次发送。 */
+const retryAfter = computed(() => Math.max(0, Math.ceil((retryAt.value - nowTick.value) / 1000)));
+const backingOff = computed(() => retryAfter.value > 0);
+// 退避期间每秒刷新倒计时，结束后自动停止计时，避免空转。
+watch(backingOff, active => {
+  if (active && retryTimer === null) {
+    retryTimer = window.setInterval(() => {
+      nowTick.value = Date.now();
+    }, 1000);
+  } else if (!active && retryTimer !== null) {
+    window.clearInterval(retryTimer);
+    retryTimer = null;
+  }
+}, { immediate: true });
+onScopeDispose(() => {
+  if (retryTimer !== null) {
+    window.clearInterval(retryTimer);
+  }
+});
 const clarificationDraft = ref<ClarificationDraft>({ answers: {}, note: '' });
 const clarificationForm = ref<InstanceType<typeof AiClarificationForm> | null>(null);
 const questionDock = ref<HTMLElement | null>(null);
@@ -540,13 +562,16 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       break;
     case 'run_completed':
       state.runStatus = 'COMPLETED';
+      clearFailureHold(state);
       state.settleSuccess?.();
       state.settleSuccess = null;
       break;
     case 'run_failed':
       state.runStatus = 'FAILED';
       state.error = String(data.message || '任务执行失败');
+      state.failureCode = String(data.code || '');
       state.steps = [];
+      holdTransientFailure(state);
       break;
   }
 }
@@ -1012,6 +1037,10 @@ async function toggleSidebar() {
   workspaceElement.value?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)?.focus({ preventScroll: true });
 }
 function submit() {
+  // 退避期间不接受新的发送请求，避免连续打向上游。
+  if (backingOff.value) {
+    return;
+  }
   if (waiting.value) {
     clarificationForm.value?.submit();
   } else {
@@ -1199,6 +1228,9 @@ onBeforeUnmount(() => {
             <div>
               <strong>暂时未能完成请求</strong>
               <p>{{ error }}</p>
+              <p v-if="backingOff" class="retry-countdown" data-testid="ai-retry-countdown" role="status">
+                请 {{ retryAfter }} 秒后再试
+              </p>
               <Button
                 v-if="store.activeId && !busy && !switching"
                 variant="ghost"
@@ -1218,6 +1250,7 @@ onBeforeUnmount(() => {
         :disabled="
           switching ||
           store.historyLoading ||
+          backingOff ||
           Boolean(store.activeId && !store.detail) ||
           (runStatus === 'RUNNING' && !watching)
         "
@@ -1596,6 +1629,11 @@ h1 {
 }
 .request-error p {
   overflow-wrap: anywhere;
+}
+.retry-countdown {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .request-warning {
   color: var(--muted-foreground);

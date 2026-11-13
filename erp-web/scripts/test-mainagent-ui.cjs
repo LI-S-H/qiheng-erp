@@ -37,7 +37,7 @@ async function main() {
         const stream = new ReadableStream({ start(controller) {
           window.__emitAi = (event, data) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
           window.__finishAi = () => { window.__emitAi('text_delta', { messageId: 'm2', delta: '已收到回答。' }); window.__emitAi('run_completed', { runId: 'r', status: 'COMPLETED' }); controller.close(); };
-          window.__failAi = () => { window.__emitAi('run_failed', { runId: 'r', status: 'FAILED', message: '测试运行失败' }); controller.close(); };
+          window.__failAi = (code) => { window.__emitAi('run_failed', { runId: 'r', status: 'FAILED', message: '测试运行失败', ...(code ? { code } : {}) }); controller.close(); };
           if (reconnect) {
             if (localStorage.getItem('qa_drop_snapshot') === 'yes') return;
             const waiting = localStorage.getItem('qa_waiting') === 'yes';
@@ -377,6 +377,24 @@ async function main() {
       await requestError.waitFor();
       await page.screenshot({ path: path.join(process.env.AI_QA_SCREENSHOT_DIR, 'error-at-bottom.png') });
     }
+    // 瞬时故障退避：模型调用失败时锁住发送并显示倒计时；业务错误不锁。
+    await page.evaluate(() => { window.__failAi = undefined; });
+    await page.getByLabel('经营问题').fill('检查退避倒计时');
+    await page.getByRole('button', { name: '发送需求' }).click();
+    await page.waitForFunction(() => typeof window.__failAi === 'function');
+    await page.evaluate(() => window.__failAi('MODEL_CALL_FAILED'));
+    const countdown = page.getByTestId('ai-retry-countdown');
+    await countdown.waitFor();
+    assert.match(await countdown.textContent(), /请 \d+ 秒后再试/, '瞬时故障应显示退避倒计时');
+    assert.equal(await page.getByRole('button', { name: '发送需求' }).isDisabled(), true, '退避期间不能发送');
+    await page.waitForFunction(() => !document.querySelector('[data-testid="ai-retry-countdown"]'), null, { timeout: 40000 });
+    await page.evaluate(() => { window.__failAi = undefined; });
+    await page.getByLabel('经营问题').fill('检查业务错误提示');
+    await page.getByRole('button', { name: '发送需求' }).click();
+    await page.waitForFunction(() => typeof window.__failAi === 'function');
+    await page.evaluate(() => window.__failAi('AI_PERMISSION_DENIED'));
+    await page.getByTestId('graph-request-error').waitFor();
+    assert.equal(await page.getByTestId('ai-retry-countdown').count(), 0, '业务错误不退避');
     paginationMode = true;
     listRequests = 0;
     // 分页数据集与前面的会话无关，避免恢复上一场景的活动会话。

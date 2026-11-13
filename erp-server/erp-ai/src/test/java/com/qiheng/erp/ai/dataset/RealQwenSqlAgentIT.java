@@ -86,6 +86,8 @@ class RealQwenSqlAgentIT {
         // 智能体流水表同样建在隔离库，验证真实模型链路上的流水真的落库。
         jdbc.execute(Files.readString(Path.of("..", "..", "docs", "database", "sql", "035_ai_agent_trace.sql")));
         // 正式建表脚本已包含数据集说明字段，隔离新库无需旧的本地补丁。
+        // 重复执行时先清掉上次留下的表与流水，保证实验可重复。
+        jdbc.execute("DROP TABLE IF EXISTS ai_stock_probe");
         jdbc.execute("CREATE TABLE ai_stock_probe (id BIGINT PRIMARY KEY, warehouse_id BIGINT NOT NULL, quantity DECIMAL(16,2) NOT NULL, unit_snapshot VARCHAR(32) NOT NULL)");
         jdbc.update("INSERT INTO ai_stock_probe VALUES (1,1,30.25,'千克'),(2,1,8.50,'件'),(3,2,9.75,'千克')");
         Config redisConfig = new Config();

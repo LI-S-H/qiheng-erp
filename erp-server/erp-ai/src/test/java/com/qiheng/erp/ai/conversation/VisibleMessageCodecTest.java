@@ -42,6 +42,21 @@ class VisibleMessageCodecTest {
         assertThat(content.data().get("steps").toString()).contains("查询业务数据");
     }
 
+    /** 普通工具的结构化展示行要原样交给前端，且不暴露参数与结果。 */
+    @Test void exposesStructuredToolRowWithoutInternalFields() {
+        var message = new AiMessage().setKind("TOOL_CALL").setContent(
+                "{\"callId\":\"c2\",\"name\":\"query_sql_data\",\"label\":\"查询业务数据\","
+                        + "\"status\":\"done\",\"durationMs\":\"15036\"}");
+        var view = codec.toView(message);
+        assertThat(view.content().type()).isEqualTo("TOOL_CALL");
+        assertThat(view.content().data())
+                .containsEntry("name", "query_sql_data")
+                .containsEntry("label", "查询业务数据")
+                .containsEntry("status", "done")
+                .containsEntry("durationMs", "15036")
+                .doesNotContainKeys("arguments", "result");
+    }
+
     @Test void legacyObjectsAndOtherToolsDoNotExposeInternalContent() {
         var message = new AiMessage().setKind("ASSISTANT_FINAL").setContent("{\"type\":\"PLAN\",\"data\":{\"plan\":{}}}");
         assertThat(codec.toView(message).content().data()).containsEntry("text", "该历史消息暂时无法展示。");

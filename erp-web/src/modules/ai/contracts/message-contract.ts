@@ -22,6 +22,17 @@ function requiredText(value: unknown, field: string): string {
   return result;
 }
 
+/** 时长字段可能是数字或数字字符串；无法解析时按 0 处理。 */
+function elapsedMillis(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return Number(value);
+  }
+  return 0;
+}
+
 export function normalizeMessage(value: unknown): AiConversationMessage {
   const item = object(value);
   if (item.role !== 'user' && item.role !== 'assistant' && item.role !== 'tool') {
@@ -46,7 +57,8 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
           name: typeof data.name === 'string' ? data.name : '',
           label: requiredText(data.label, 'label'),
           status: data.status === 'failed' ? 'failed' : 'done',
-          durationMs: typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) ? data.durationMs : 0,
+          // 后端把 long 统一序列化为字符串，避免前端精度丢失，这里两种形态都接受。
+          durationMs: elapsedMillis(data.durationMs),
         },
       };
     }

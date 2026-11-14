@@ -18,6 +18,8 @@ function compareTextEvents(stream) {
     lostTail: checks.filter(item => item.completed.startsWith(item.streamed) && item.streamed !== item.completed).length };
 }
 
+const BASE_URL = process.env.AI_LIVE_URL || 'http://127.0.0.1:15173';
+
 async function main() {
   const browser = await chromium.launch({ headless: true, executablePath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' });
   try {
@@ -35,13 +37,13 @@ async function main() {
     };
   });
   page.on('pageerror', error => failures.push(error.message));
-  await page.goto('http://127.0.0.1:15173/ai/assistant');
+  await page.goto(`${BASE_URL}/ai/assistant`);
   if (page.url().includes('/login')) {
     await page.locator('#username').fill(process.env.AI_QA_USERNAME || 'admin');
     await page.locator('#password').fill(process.env.AI_QA_PASSWORD || '123456');
     await page.getByRole('button', { name: '登录', exact: true }).click();
     await page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 20000 });
-    await page.goto('http://127.0.0.1:15173/ai/assistant');
+    await page.goto(`${BASE_URL}/ai/assistant`);
   }
   await page.getByRole('button', { name: '新建会话' }).click();
   const stream = page.waitForResponse(response => response.url().includes('/messages/stream') && response.request().method() === 'POST', { timeout: 30000 });

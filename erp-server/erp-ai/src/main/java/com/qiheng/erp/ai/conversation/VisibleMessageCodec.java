@@ -79,6 +79,16 @@ public class VisibleMessageCodec {
             }
             if (("TOOL_CALL".equals(kind) || "TOOL_RESULT".equals(kind)) && root.isObject()) {
                 if (!"ask_user".equals(root.path("name").asText())) {
+                    // 普通工具行是结构化展示：只给工具名、文案、状态与耗时，不含参数和结果。
+                    if ("TOOL_CALL".equals(kind) && root.has("label")) {
+                        Map<String, Object> data = new LinkedHashMap<>();
+                        for (String field : Set.of("callId", "name", "label", "status", "durationMs")) {
+                            if (root.has(field)) {
+                                data.put(field, mapper.convertValue(root.get(field), Object.class));
+                            }
+                        }
+                        return new VisibleMessageContent("TOOL_CALL", data);
+                    }
                     return text("");
                 }
                 Set<String> fields = "TOOL_CALL".equals(kind)

@@ -54,6 +54,8 @@ async function main() {
     await page.waitForFunction(() => !document.querySelector('.agent-running-status'), null, { timeout: 120000 });
     if (SHOT_DIR) await page.screenshot({ path: `${SHOT_DIR}/analysis-live-done.png` });
 
+    // SSE 文本要等响应关闭后才能通过 clone().text() 读到，先确认 run_completed 已入缓冲。
+    await page.waitForFunction(() => (window.__aiFrames || []).join('').includes('run_completed'), null, { timeout: 60000 });
     const frames = (await page.evaluate(() => window.__aiFrames)).join('\n');
     const events = [...frames.matchAll(/event:\s*([^\r\n]+)/g)].map(item => item[1].trim());
     for (const name of ['analysis_started', 'analysis_step', 'analysis_summary']) {

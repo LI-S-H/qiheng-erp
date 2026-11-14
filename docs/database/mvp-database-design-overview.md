@@ -844,7 +844,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     conversation["ai_conversation 会话表<br/>id 主键<br/>user_id 所属用户<br/>title / description<br/>last_message_at<br/>deleted / version"]
-    message["ai_message 消息表<br/>id 主键<br/>conversation_id / user_id<br/>role / kind / visible<br/>content 结构化 JSON<br/>create_time / update_time<br/>deleted"]
+    message["ai_message 消息表<br/>id 主键<br/>conversation_id / user_id<br/>role / kind<br/>content 结构化 JSON<br/>create_time / update_time<br/>deleted"]
     trace["ai_agent_trace 执行流水表<br/>id 主键<br/>user_id / conversation_id<br/>task_id 任务ID<br/>agent_type 智能体类型<br/>event_type 事件类型<br/>content 事件原文JSON"]
     experience["ai_agent_experience 经验表<br/>id 主键<br/>agent_type 智能体类型<br/>experience_text 经验正文<br/>evidence_refs 流水编号列表<br/>status 状态"]
     redis["RedisStack 检查点<br/>threadId 对话上下文<br/>图执行状态"]
@@ -859,7 +859,7 @@ flowchart LR
 
 AI 关系里有两个特殊点：
 
-- `ai_agent_trace` 只追加不软删，是排障与经验提取的事实来源；`ai_message` 里 `visible=0` 的行是内部工具调用与结果，页面不渲染。
+- `ai_agent_trace` 只追加不软删，是排障与后续经验提取的事实来源；`ai_message` 保存用户可见消息与结构化工具展示行，`visible` 字段已由 040 迁移删除，内部工具参数和返回原文保存在流水中。
 - `ai_agent_experience.evidence_refs` 用 JSON 保存流水编号列表，形成「流水 → 经验」的证据链，不单独拆引用关系表。
 
 </details>

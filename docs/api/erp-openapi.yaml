@@ -199,7 +199,7 @@ paths:
     delete:
       tags: [AIAssistant]
       summary: 删除会话
-      description: 运行中禁止删除；逻辑删除会话及其可见消息，在同一会话锁保护下完成短事务，不联动删除节点记忆或经验。
+      description: 运行中禁止删除；在同一会话锁保护下逻辑删除会话及其消息，并物理删除该会话的智能体流水。事务完成后清理主智能体和 SQL 图检查点；清理失败记录日志，不回滚数据库删除。经验数据不随会话删除。
       operationId: aiAssistantConversationDelete
       security: [{ SaTokenAuth: [] }]
       responses:
@@ -218,8 +218,8 @@ paths:
       tags: [AIAssistant]
       summary: 分页查询用户可见消息
       description: |
-        按会话内序号升序读取 MySQL 用户可见消息，包括用户输入、助手说明与最终回复，以及 ask_user 的工具调用和结果；其他内部工具消息不返回。
-        content 为展示层转换后的 type/data 对象，工具调用和结果通过 callId 关联。
+        按会话内序号升序读取 MySQL 用户可见消息，包括用户输入、助手说明与最终回复、工具展示行、追问问答及分析过程；内部工具参数和原始结果不返回。
+        content 为展示层转换后的 type/data 对象，追问的工具调用和回答通过 callId 关联；普通工具展示行包含状态和耗时。
       operationId: aiAssistantConversationMessages
       security: [{ SaTokenAuth: [] }]
       parameters:

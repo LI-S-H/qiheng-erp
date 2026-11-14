@@ -65,7 +65,7 @@ class PythonAnalysisMySqlDockerIT {
         when(datasets.get("ds_test", userId, 987652)).thenReturn(dataset);
         when(datasets.openReady("ds_test", userId, 987652)).thenAnswer(call -> new DatasetInput(dataset,
                 new ByteArrayInputStream("[\"商品甲\"]\n".getBytes(StandardCharsets.UTF_8))));
-        var store = new AnalysisResultStore(repository, datasets, mapper, directory.toString());
+        var store = new AnalysisResultStore(repository, datasets, mapper, directory.toString(), 0);
         var sdkLogger = (Logger) LoggerFactory.getLogger("io.agentscope.runtime.sandbox.manager.SandboxService");
         Level previousLevel = sdkLogger.getLevel();
         sdkLogger.setLevel(Level.WARN);

@@ -177,6 +177,10 @@ AI 模块先支撑经营助手的会话、分析与取数。当前不让 AI 直�
 
 流水写入失败只记录错误日志，不阻断任务本身，因此流水可能不完整。当前不从流水提取经验，也不使用流水恢复图执行。
 
+删除会话时该会话的流水一并物理删除，同时清理 Redis 中对应的两条检查点线程。流水没有软删除语义，也没有保留期；删除后不再参与后续的经验提炼，`ai_agent_experience.evidence_refs` 指向的流水可能已被删除。
+
+数据集与分析结果按天过期：`ai_dataset.expires_at` 与分析结果表的 `expires_at` 由 `erp.ai.dataset.ttl-days`（默认 15）与 `erp.ai.python.result-ttl-days`（默认 30）决定，凌晨任务先删文件再删元信息。
+
 ## 已退役：ai_node_memory、ai_node_working_memory
 
 旧节点记忆链路已退出：[028 迁移](sql/028_retire_ai_node_working_memory.sql) 删除工作窗口表，[038 迁移](sql/038_drop_ai_node_memory.sql) 删除原始记忆表。智能体执行的原文改由 `ai_agent_trace` 承载。

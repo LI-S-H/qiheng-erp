@@ -7,6 +7,8 @@ import com.qiheng.erp.ai.dataset.DatasetManager;
 import com.qiheng.erp.ai.domain.entity.AiAnalysisResult;
 import com.qiheng.erp.ai.mapper.AiAnalysisResultMapper;
 import com.qiheng.erp.ai.context.AgentToolContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -32,18 +35,22 @@ import java.util.UUID;
  */
 @Service
 public class AnalysisResultStore {
+    private static final Logger log = LoggerFactory.getLogger(AnalysisResultStore.class);
     private final AiAnalysisResultMapper repository;
     private final DatasetManager datasets;
     private final ObjectMapper mapper;
     private final Path directory;
+    private final long ttlDays;
 
-    /** 初始化结果目录及元信息和来源权限依赖。 */
+    /** 初始化结果目录、保留天数及元信息和来源权限依赖。 */
     public AnalysisResultStore(AiAnalysisResultMapper repository, DatasetManager datasets, ObjectMapper mapper,
-            @Value("${erp.ai.python.result-directory:./data/ai-python-results}") String directory) {
+            @Value("${erp.ai.python.result-directory:./data/ai-python-results}") String directory,
+            @Value("${erp.ai.python.result-ttl-days:0}") long ttlDays) {
         this.repository = repository;
         this.datasets = datasets;
         this.mapper = mapper;
         this.directory = Path.of(directory).toAbsolutePath().normalize();
+        this.ttlDays = ttlDays;
     }
 
     @FunctionalInterface
@@ -85,6 +92,7 @@ public class AnalysisResultStore {
             record.setStorageFile(relative.toString().replace('\\', '/'));
             record.setSourceDatasetIds(mapper.writeValueAsString(sourceDatasetIds));
             record.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+            record.setExpiresAt(expiresAtFromNow(ttlDays));
             repository.insert(record);
             return record;
         } catch (IOException | RuntimeException error) {
@@ -108,7 +116,9 @@ public class AnalysisResultStore {
                 List<String> sources = mapper.readValue(
                         record.getSourceDatasetIds(), new TypeReference<>() {});
                 verifySources(identity, sources);
-                accessible.add(record);
+                if (!expired(record)) {
+                    accessible.add(record);
+                }
             } catch (IllegalArgumentException | IllegalStateException ignored) {
                 // 来源权限或状态变化后不展示该结果。
             }
@@ -124,6 +134,9 @@ public class AnalysisResultStore {
                 .eq(AiAnalysisResult::getConversationId, identity.conversationId()));
         if (record == null) {
             throw new IllegalArgumentException("分析结果不存在");
+        }
+        if (expired(record)) {
+            throw new IllegalStateException("分析结果已过期");
         }
         List<String> sources = mapper.readValue(record.getSourceDatasetIds(), new TypeReference<>() {});
         verifySources(identity, sources);
@@ -172,6 +185,54 @@ public class AnalysisResultStore {
             throw new IllegalStateException("分析结果路径无效");
         }
         return Files.newInputStream(file);
+    }
+
+    /**
+     * 清理已过期的结果文件：先删文件再删元信息，单条失败跳过并留待下次重试。
+     *
+     * @param limit 本次最多清理条数
+     * @return 实际删除的元信息条数
+     */
+    public int purgeExpired(int limit) {
+        LocalDateTime cutoff = LocalDate.now(ZoneOffset.UTC).atStartOfDay();
+        var records = repository.selectList(new LambdaQueryWrapper<AiAnalysisResult>()
+                .isNotNull(AiAnalysisResult::getExpiresAt)
+                .lt(AiAnalysisResult::getExpiresAt, cutoff)
+                .orderByAsc(AiAnalysisResult::getExpiresAt)
+                .last("LIMIT " + limit));
+        int removed = 0;
+        for (AiAnalysisResult record : records) {
+            try {
+                Path file = directory.resolve(record.getStorageFile()).normalize();
+                if (file.startsWith(directory)) {
+                    Files.deleteIfExists(file);
+                }
+                if (repository.deleteById(record.getResultId()) > 0) {
+                    removed++;
+                }
+            } catch (IOException | RuntimeException error) {
+                log.warn("过期分析结果清理失败 resultId={}", record.getResultId(), error);
+            }
+        }
+        return removed;
+    }
+
+    /**
+     * 按天对齐的过期时刻：当天零点（UTC）加保留天数。
+     *
+     * @param days 保留天数，0 表示不自动过期
+     * @return 过期时刻；不启用时返回 null
+     */
+    private static LocalDateTime expiresAtFromNow(long days) {
+        if (days <= 0) {
+            return null;
+        }
+        return LocalDate.now(ZoneOffset.UTC).plusDays(days).atStartOfDay();
+    }
+
+    /** 已完成保留期判断；未设置过期时刻表示长期有效。 */
+    private static boolean expired(AiAnalysisResult record) {
+        return record.getExpiresAt() != null && !record.getExpiresAt().isAfter(LocalDateTime.now(ZoneOffset.UTC));
     }
 
     /** 同一会话中的来源数据集也必须仍然允许读取。 */

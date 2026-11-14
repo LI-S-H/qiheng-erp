@@ -1,7 +1,6 @@
 package com.qiheng.erp.ai.config;
 
 import com.qiheng.erp.ai.config.properties.AiChatProperties;
-import com.qiheng.erp.ai.config.properties.AiMemoryProperties;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.context.annotation.Bean;
@@ -19,8 +18,7 @@ import java.time.Duration;
  * 新增供应商（如通义/豆包）另建 Config 类，互不干扰。</p>
  *
  * <p>配置从 {@link AiChatProperties} 取，各模型共用同一份网关参数，
- * 改地址或密钥只改一处。摘要模型额外复用 {@link AiMemoryProperties} 的超时，
- * 与上下文压缩器保持同一个值。</p>
+ * 改地址或密钥只改一处。</p>
  *
  * @author Li
  * @since 2026-10-08
@@ -43,12 +41,6 @@ public class ChatModelConfiguration {
     @Bean("flashChatModel")
     public OpenAiChatModel flashChatModel(AiChatProperties chat) {
         return buildModel(chat, chat.model().flash(), chat.model().flashReadTimeoutSeconds());
-    }
-
-    /** 摘要通常输出较长内容，使用独立读取超时，不依赖旧运行时的首响应保护。 */
-    @Bean("contextSummaryChatModel")
-    public ChatModel contextSummaryChatModel(AiChatProperties chat, AiMemoryProperties memory) {
-        return buildModel(chat, chat.model().flash(), memory.summaryTimeoutSeconds());
     }
 
     /**

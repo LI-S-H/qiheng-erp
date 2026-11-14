@@ -24,4 +24,6 @@ public class AiAnalysisResult {
     private String storageFile;
     private String sourceDatasetIds;
     private LocalDateTime createdAt;
+    /** UTC 过期时刻；空表示不自动过期。 */
+    private LocalDateTime expiresAt;
 }

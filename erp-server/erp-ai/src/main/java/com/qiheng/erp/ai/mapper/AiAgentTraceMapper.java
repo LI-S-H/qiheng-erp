@@ -1,5 +1,6 @@
 package com.qiheng.erp.ai.mapper;
 
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 
@@ -14,4 +15,14 @@ public interface AiAgentTraceMapper {
     void insert(@Param("userId") long userId, @Param("conversationId") long conversationId,
                 @Param("taskId") String taskId, @Param("agentType") String agentType,
                 @Param("eventType") String eventType, @Param("content") String content);
+
+    /**
+     * 删除某个会话的全部流水；会话删除时级联清理，之后不再参与经验提炼。
+     *
+     * @param userId 会话所属用户
+     * @param conversationId 会话编号
+     * @return 删除行数
+     */
+    @Delete("DELETE FROM ai_agent_trace WHERE user_id = #{userId} AND conversation_id = #{conversationId}")
+    int deleteByConversation(@Param("userId") long userId, @Param("conversationId") long conversationId);
 }

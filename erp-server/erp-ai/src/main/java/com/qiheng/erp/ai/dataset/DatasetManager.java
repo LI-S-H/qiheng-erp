@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.qiheng.erp.ai.sql.execution.model.QueryResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -20,24 +22,28 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 /** 管理查询数据文件与元信息；暂存结果经检查发布后才对其他模块可见。 */
 @Service
 public class DatasetManager {
+    private static final Logger log = LoggerFactory.getLogger(DatasetManager.class);
     private static final int MAX_PAGE_CHARS = 8000;
     private final DatasetRepository repository;
     private final Path directory;
     private final ObjectMapper mapper;
-    private final long ttlSeconds;
+    private final long ttlDays;
     private final DatasetAccess access;
 
     DatasetManager(DatasetRepository repository, DatasetAccess access, ObjectMapper mapper,
                    @Value("${erp.ai.dataset.directory:./data/ai-datasets}") String directory,
-                   @Value("${erp.ai.dataset.ttl-seconds:0}") long ttlSeconds) {
+                   @Value("${erp.ai.dataset.ttl-days:0}") long ttlDays) {
         this.repository = repository;
         this.access = access;
         this.directory = Path.of(directory).toAbsolutePath().normalize();
-        this.ttlSeconds = ttlSeconds;
+        this.ttlDays = ttlDays;
         this.mapper = mapper.copy().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
                 .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
@@ -57,7 +63,7 @@ public class DatasetManager {
         DatasetRecord record = new DatasetRecord(id, request.sqlRunId(), request.userId(),
                 request.conversationId(), request.description(), result.columns(), result.rowCount(),
                 result.completed(), "STAGED",
-                ttlSeconds > 0 ? Instant.now().plusSeconds(ttlSeconds) : null, null, result.truncationReason());
+                expiresAtFromNow(ttlDays), null, result.truncationReason());
         Path file = directory.resolve(id + ".jsonl");
         try {
             Files.createDirectories(directory);
@@ -253,6 +259,28 @@ public class DatasetManager {
         }
     }
 
+    /**
+     * 清理已过期的数据集：先删文件再删元信息，单条失败跳过并留待下次重试。
+     *
+     * @param limit 本次最多清理条数
+     * @return 实际删除的元信息条数
+     */
+    public int purgeExpired(int limit) {
+        LocalDateTime cutoff = LocalDate.now(ZoneOffset.UTC).atStartOfDay();
+        int removed = 0;
+        for (DatasetRecord record : repository.findExpired(cutoff, limit)) {
+            try {
+                deleteFile(directory.resolve(record.datasetId() + ".jsonl"));
+                if (repository.delete(record.datasetId())) {
+                    removed++;
+                }
+            } catch (RuntimeException error) {
+                log.warn("过期数据集清理失败 datasetId={}", record.datasetId(), error);
+            }
+        }
+        return removed;
+    }
+
     private void deleteFile(Path file) {
         try {
             Files.deleteIfExists(file);
@@ -260,4 +288,17 @@ public class DatasetManager {
             throw new IllegalStateException("数据集文件无法清理", ex);
         }
     }
+    /**
+     * 按天对齐的过期时刻：当天零点（UTC）加保留天数。
+     *
+     * @param days 保留天数，0 表示不自动过期
+     * @return 过期时刻；不启用时返回 null
+     */
+    private static Instant expiresAtFromNow(long days) {
+        if (days <= 0) {
+            return null;
+        }
+        return LocalDate.now(ZoneOffset.UTC).plusDays(days).atStartOfDay(ZoneOffset.UTC).toInstant();
+    }
+
 }

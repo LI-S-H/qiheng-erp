@@ -69,7 +69,6 @@ function normalizeOverview(value: unknown): AiAssistantOverview {
   }
   return {
     refreshedAt: String(item.refreshedAt || ''),
-    quickPrompts: [],
     conversations: item.conversations.map(normalizeConversationSummary),
   };
 }

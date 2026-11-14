@@ -17,6 +17,7 @@ public final class AiToolLabels {
     public static final String DEFAULT_LABEL = "处理当前步骤";
 
     private static final Map<String, String> LABELS = Map.of(
+            "ask_user", "补充信息",
             "analyzeData", "子智能体分析",
             "query_sql_data", "查询业务数据",
             "readDataset", "读取数据",

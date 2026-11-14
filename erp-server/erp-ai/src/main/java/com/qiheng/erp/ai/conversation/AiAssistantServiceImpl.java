@@ -8,6 +8,7 @@ import com.qiheng.erp.ai.domain.vo.ChatMessageVO;
 import com.qiheng.erp.ai.domain.vo.ConversationDetailVO;
 import com.qiheng.erp.ai.domain.vo.ConversationMessagePageVO;
 import com.qiheng.erp.ai.domain.vo.ConversationSummaryVO;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.mapper.AiMessageMapper;
 import com.qiheng.erp.ai.conversation.AiAssistantService;
@@ -24,7 +25,6 @@ import org.redisson.api.RLock;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -45,6 +45,8 @@ public class AiAssistantServiceImpl implements AiAssistantService {
     private final VisibleMessageCodec messageCodec;
     private final ConversationExecutionLock executionLock;
     private final TransactionTemplate transactions;
+    private final AiAgentTraceMapper traceMapper;
+    private final ConversationCheckpointCleaner checkpointCleaner;
 
     /**
      *  会话列表，按最近一次活动倒序。
@@ -55,7 +57,7 @@ public class AiAssistantServiceImpl implements AiAssistantService {
         List<ConversationSummaryVO> summaries = rows.stream()
                 .map(this::toSummary)
                 .toList();
-        return new AssistantOverviewVO(currentTime(), Collections.emptyList(), summaries);
+        return new AssistantOverviewVO(currentTime(), summaries);
     }
 
     /** 读取最近活动的会话，额外取一条判断是否存在下一页。 */
@@ -132,8 +134,12 @@ public class AiAssistantServiceImpl implements AiAssistantService {
                     throw new BizException(ErrorCode.DATA_NOT_FOUND);
                 }
                 messageMapper.softDeleteByConversation(conversationId, userId);
+                // 流水是审计事实，没有软删语义，随会话一并物理删除。
+                traceMapper.deleteByConversation(userId, conversationId);
                 conversationMapper.softDelete(conversationId);
             });
+            // 事务提交后再清 Redis；失败只记日志，不回滚已完成的数据库删除。
+            checkpointCleaner.clearConversation(userId, conversationId);
         } finally {
             lock.unlock();
         }

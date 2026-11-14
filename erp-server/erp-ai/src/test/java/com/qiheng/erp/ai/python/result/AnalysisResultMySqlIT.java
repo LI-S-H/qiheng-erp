@@ -45,7 +45,7 @@ class AnalysisResultMySqlIT {
         var dataset = new DatasetRecord("ds_test", "run", 987651, 987652, "测试", List.of(), 1,
                 true, "READY", null, null);
         when(datasets.get("ds_test", 987651, 987652)).thenReturn(dataset);
-        var store = new AnalysisResultStore(repository, datasets, new ObjectMapper(), directory.toString());
+        var store = new AnalysisResultStore(repository, datasets, new ObjectMapper(), directory.toString(), 0);
         String task = "it_" + UUID.randomUUID();
         try {
             var saved = store.save(identity, task, "execution", "FILE", "低库存商品.csv", "结果", "csv",

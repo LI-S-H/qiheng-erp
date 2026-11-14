@@ -53,13 +53,13 @@ erp:
       max-pages: 10
       # 单条查询超时（秒）。
       query-timeout-seconds: 10
-    # 独立摘要能力保留；不再绑定旧 Planner 或节点工作记忆表。
-    # 新 Agent 的消息作用域与保存方式在后续接入时确定。
-    memory:
-      summary-trigger-tokens: ${ERP_AI_SUMMARY_TRIGGER_TOKENS:200000}
-      messages-to-keep: 20
-      # 摘要长度按待压缩历史的固定比例给，同时受下面两个硬上限约束。
-      summary-max-history-ratio: 0.10
-      summary-max-tokens: 50000
-      summary-provider-max-output-tokens: ${ERP_AI_SUMMARY_PROVIDER_MAX_OUTPUT_TOKENS:50000}
-      summary-timeout-seconds: 300
+
+    # 数据集是取数中间产物：按天过期，0 表示不自动过期。
+    dataset:
+      directory: ${ERP_AI_DATASET_DIRECTORY:./data/ai-datasets}
+      ttl-days: ${ERP_AI_DATASET_TTL_DAYS:15}
+
+    # Python 分析产物：交付给用户的结果文件保留更久。
+    python:
+      result-directory: ${ERP_AI_RESULT_DIRECTORY:./data/ai-python-results}
+      result-ttl-days: ${ERP_AI_RESULT_TTL_DAYS:30}

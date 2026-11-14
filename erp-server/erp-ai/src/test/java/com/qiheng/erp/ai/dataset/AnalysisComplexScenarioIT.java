@@ -142,7 +142,7 @@ class AnalysisComplexScenarioIT {
             bean.setDataSource(source);
             bean.setConfiguration(configuration);
             var resultMapper = new SqlSessionTemplate(bean.getObject()).getMapper(AiAnalysisResultMapper.class);
-            var results = new AnalysisResultStore(resultMapper, datasets, mapper, directory.resolve("results").toString());
+            var results = new AnalysisResultStore(resultMapper, datasets, mapper, directory.resolve("results").toString(), 0);
             var pythonTool = new PythonAnalysisTool(new PythonDatasetPreparer(datasets), results);
             var traces = mock(AiAgentTraceMapper.class);
             String prompt = new ClassPathResource("prompts/analysis-agent.md").getContentAsString(StandardCharsets.UTF_8);

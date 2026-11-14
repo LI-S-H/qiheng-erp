@@ -4,27 +4,6 @@ export type AiTone = 'neutral' | 'good' | 'watch' | 'risk';
 
 export type AiMessageRole = 'assistant' | 'user';
 
-export type AiPromptFieldType = 'PRODUCT_MULTI' | 'WAREHOUSE_MULTI' | 'DAYS' | 'TEXT';
-
-export interface AiPromptField {
-  fieldKey: string;
-  label: string;
-  fieldType: AiPromptFieldType;
-  required: boolean;
-  placeholder: string;
-  defaultValue: string | string[];
-}
-
-export interface AiQuickPrompt {
-  promptId: string;
-  title: string;
-  description: string;
-  intentCode: string;
-  promptTemplate: string;
-  fields: AiPromptField[];
-  actionPreview: AiActionPreview | null;
-}
-
 export interface AiContextSource {
   sourceId: string;
   sourceType: 'TOOL' | 'WORKFLOW' | 'KNOWLEDGE' | 'TASK';
@@ -53,7 +32,6 @@ export interface AiChartSpec {
 
 export interface AiAssistantOverview {
   refreshedAt: string;
-  quickPrompts: AiQuickPrompt[];
   conversations: AiConversationSummary[];
 }
 

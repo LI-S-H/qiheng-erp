@@ -4939,13 +4939,9 @@ components:
     # 会话与消息 Schema 对应当前 AI 助手页面；聊天卡片类 Schema 保留供后续功能设计引用。
     AiAssistantOverview:
       type: object
-      required: [refreshedAt, quickPrompts, conversations]
+      required: [refreshedAt, conversations]
       properties:
         refreshedAt: { type: string, description: 概览刷新时间，后端生成 }
-        quickPrompts:
-          type: array
-          description: 后续参数化快捷任务预留字段；当前固定返回空数组，前端也不补本地兜底数据。
-          items: { $ref: '#/components/schemas/AiQuickPrompt' }
         conversations:
           type: array
           description: 当前用户最近的会话摘要，按最近一次活动倒序，最多 50 条
@@ -5036,44 +5032,6 @@ components:
           description: 后续三智能体角色，分别对应主智能体、数据查询子智能体和数据分析子智能体
         description: { type: string, description: 智能体职责说明 }
         status: { type: string, enum: [ONLINE, BUSY, IDLE], description: 展示状态 }
-
-    AiQuickPrompt:
-      type: object
-      required: [promptId, title, description, intentCode, promptTemplate, fields]
-      description: |
-        快捷分析入口配置。每个入口应落到明确业务下一步，例如库存筛选、采购草稿、调拨草稿、锁定库存复核或预测报告。
-        `transfer`/调拨类入口的 `fields` 只采集调拨商品和参与仓库，不采集 `DAYS`；预测窗口由分析子智能体结果或后端任务上下文提供。基础阶段不返回快捷任务。
-      properties:
-        promptId: { type: string, description: 快捷提示稳定标识 }
-        title: { type: string, description: 快捷提示标题 }
-        description: { type: string, description: 快捷提示说明 }
-        intentCode: { type: string, description: 建议触发的多智能体任务编码，仅用于后端路由或观测，不允许前端绕过后端校验直接执行 }
-        promptTemplate: { type: string, description: "后端可识别的提示词模板，使用 `{{fieldKey}}` 占位" }
-        fields:
-          type: array
-          description: 前端需要用户填写的参数字段；调拨类快捷任务禁止返回预测天数字段
-          items: { $ref: '#/components/schemas/AiPromptField' }
-        actionPreview:
-          nullable: true
-          allOf:
-            - $ref: '#/components/schemas/AiActionPreview'
-          description: 可选的受控下一步预览；缺失或校验失败时前端不得自行按标题或提示词推断动作
-
-    AiPromptField:
-      type: object
-      required: [fieldKey, label, fieldType, required, placeholder, defaultValue]
-      properties:
-        fieldKey: { type: string, description: 字段键，对应 promptTemplate 占位符 }
-        label: { type: string, description: 表单标签 }
-        fieldType: { type: string, enum: [PRODUCT_MULTI, WAREHOUSE_MULTI, DAYS, TEXT], description: 字段控件类型 }
-        required: { type: boolean, description: 是否必填 }
-        placeholder: { type: string, description: 占位提示 }
-        defaultValue:
-          oneOf:
-            - type: string
-            - type: array
-              items: { type: string }
-          description: 默认值；多选字段使用字符串数组
 
     AiContextSource:
       type: object

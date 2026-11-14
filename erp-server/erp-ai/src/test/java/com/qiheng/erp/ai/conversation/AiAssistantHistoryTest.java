@@ -35,7 +35,7 @@ class AiAssistantHistoryTest {
     private final ConversationExecutionLock locks = mock(ConversationExecutionLock.class);
     private final PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
     private final AiAssistantServiceImpl service = new AiAssistantServiceImpl(conversations, messages,
-            new VisibleMessageCodec(new ObjectMapper()), locks, new TransactionTemplate(transactions));
+            new VisibleMessageCodec(new ObjectMapper()), locks, new TransactionTemplate(transactions), org.mockito.Mockito.mock(com.qiheng.erp.ai.mapper.AiAgentTraceMapper.class), org.mockito.Mockito.mock(ConversationCheckpointCleaner.class));
 
     @Test
     void invalidConversationCursorIsReportedAsParameterError() {

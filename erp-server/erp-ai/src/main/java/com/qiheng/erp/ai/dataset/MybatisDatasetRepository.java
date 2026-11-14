@@ -49,6 +49,21 @@ class MybatisDatasetRepository implements DatasetRepository {
                 .eq(AiDataset::getConversationId, conversationId)).stream().findFirst().map(this::record);
     }
 
+    /** 查询已过期的数据集，只取清理任务需要的字段。 */
+    @Override
+    public List<DatasetRecord> findExpired(java.time.LocalDateTime cutoff, int limit) {
+        return mapper.selectList(Wrappers.<AiDataset>lambdaQuery()
+                .isNotNull(AiDataset::getExpiresAt).lt(AiDataset::getExpiresAt, cutoff)
+                .orderByAsc(AiDataset::getExpiresAt).last("LIMIT " + limit))
+                .stream().map(this::record).toList();
+    }
+
+    /** 删除过期数据集的元信息；文件由管理器先删。 */
+    @Override
+    public boolean delete(String datasetId) {
+        return mapper.deleteById(datasetId) > 0;
+    }
+
     /** 查询会话中已发布的数据集，按创建时间倒序排列。 */
     @Override
     public List<DatasetRecord> findReadyByConversation(long userId, long conversationId) {

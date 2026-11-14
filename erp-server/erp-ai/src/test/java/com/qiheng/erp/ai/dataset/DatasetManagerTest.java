@@ -45,6 +45,27 @@ class DatasetManagerTest {
         verify(repository).findReadyByConversation(10, 20);
     }
 
+    /** 启用保留天数时，暂存数据集写入按天对齐的过期时刻。 */
+    @Test
+    void stagesDatasetWithDayAlignedExpiry() {
+        DatasetRepository repository = mock(DatasetRepository.class);
+        DatasetAccess access = mock(DatasetAccess.class);
+        DatasetManager manager = new DatasetManager(repository, access, new ObjectMapper(), directory.toString(), 15);
+        var captured = new java.util.concurrent.atomic.AtomicReference<DatasetRecord>();
+        doAnswer(invocation -> {
+            captured.set(invocation.getArgument(1));
+            return null;
+        }).when(repository).insert(any(DatasetRequest.class), any(DatasetRecord.class));
+
+        var request = new DatasetRequest("run-exp", 10, 20, "库存", "SELECT 1", 1);
+        manager.stage(request, new com.qiheng.erp.ai.sql.execution.model.QueryResult(
+                List.of(), List.of(), 0, true, 1, 1, "hash"));
+
+        var expected = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(15)
+                .atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+        assertEquals(expected, captured.get().expiresAt());
+    }
+
     @Test
     void opensOnlyAuthorizedPublishedDatasetWithoutChangingItsRows() throws Exception {
         DatasetRepository repository = mock(DatasetRepository.class);

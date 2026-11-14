@@ -36,7 +36,7 @@ class AnalysisResultStoreTest {
         });
         when(repository.selectOne(any())).thenAnswer(invocation -> stored.get());
         when(repository.selectList(any())).thenAnswer(invocation -> List.of(stored.get()));
-        var store = new AnalysisResultStore(repository, datasets, new ObjectMapper(), directory.toString());
+        var store = new AnalysisResultStore(repository, datasets, new ObjectMapper(), directory.toString(), 0);
         var identity = new AgentToolContext(10, 20);
         var result = store.save(identity, "task", "execution", "FILE", "库存.csv", null, "csv",
                 List.of("ds_test"), out -> out.write("内容".getBytes(StandardCharsets.UTF_8)));
@@ -56,11 +56,35 @@ class AnalysisResultStoreTest {
         assertTrue(store.list(identity, "task").isEmpty());
     }
 
+    /** 过期结果既不出现在列表里，也不能被直接读取。 */
+    @Test
+    void expiredResultIsHiddenAndRejected() throws Exception {
+        var repository = mock(AiAnalysisResultMapper.class);
+        var datasets = mock(DatasetManager.class);
+        var source = new DatasetRecord("ds_test", "run", 10, 20, "测试", List.of(), 1,
+                true, "READY", null, null);
+        when(datasets.get("ds_test", 10, 20)).thenReturn(source);
+        var record = new AiAnalysisResult();
+        record.setResultId("expired-1");
+        record.setUserId(10L);
+        record.setConversationId(20L);
+        record.setStorageFile("10/20/task/expired-1");
+        record.setSourceDatasetIds("[\"ds_test\"]");
+        record.setExpiresAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusDays(1));
+        when(repository.selectOne(any())).thenReturn(record);
+        when(repository.selectList(any())).thenReturn(List.of(record));
+        var store = new AnalysisResultStore(repository, datasets, new ObjectMapper(), directory.toString(), 30);
+        var identity = new AgentToolContext(10, 20);
+
+        assertTrue(store.list(identity, "task").isEmpty());
+        assertThrows(IllegalStateException.class, () -> store.find("expired-1", identity));
+    }
+
     @Test
     void deletesFileWhenDatabaseWriteFails() throws Exception {
         var repository = mock(AiAnalysisResultMapper.class);
         when(repository.insert(any(AiAnalysisResult.class))).thenThrow(new IllegalStateException("数据库失败"));
-        var store = new AnalysisResultStore(repository, mock(DatasetManager.class), new ObjectMapper(), directory.toString());
+        var store = new AnalysisResultStore(repository, mock(DatasetManager.class), new ObjectMapper(), directory.toString(), 0);
         assertThrows(IllegalStateException.class, () -> store.save(new AgentToolContext(10, 20), "task", "run", "TEXT",
                 "结果", null, "txt", List.of(), out -> out.write(1)));
         try (var files = Files.walk(directory)) {

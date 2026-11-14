@@ -63,3 +63,6 @@ erp:
     python:
       result-directory: ${ERP_AI_RESULT_DIRECTORY:./data/ai-python-results}
       result-ttl-days: ${ERP_AI_RESULT_TTL_DAYS:30}
+      # 单实例沙箱回收：一小时无活动后检查，每五分钟重试。
+      sandbox-idle-timeout: ${ERP_AI_SANDBOX_IDLE_TIMEOUT:PT1H}
+      sandbox-cleanup-interval-ms: ${ERP_AI_SANDBOX_CLEANUP_INTERVAL_MS:300000}

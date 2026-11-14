@@ -107,7 +107,7 @@ class AnalysisAgentServiceTest {
         assertThat(counter.get()).isEqualTo(4);
         verify(sqlService, never()).startForUser(anyLong(), anyLong(), anyString(), anyMap());
         verify(traces).insert(eq(10L), eq(20L), anyString(), eq("ANALYSIS"), eq("ERROR"), anyString());
-        verify(runtime, never()).openSession();
+        verify(runtime, never()).openSession(anyString());
     }
 
     /** 连续格式错误后若出现有效参数，应清空计数并允许后续错误重新计数。 */
@@ -309,7 +309,7 @@ class AnalysisAgentServiceTest {
                 .thenThrow(new IllegalStateException("模型不可用"));
         var runtime = mock(PythonSandboxRuntime.class);
         var sandbox = mock(com.qiheng.erp.ai.python.sandbox.PythonSandboxSession.class);
-        when(runtime.openSession()).thenReturn(sandbox);
+        when(runtime.openSession(anyString())).thenReturn(sandbox);
         when(sandbox.execute(anyString(), anyInt(), anyInt())).thenReturn(
                 new com.qiheng.erp.ai.python.sandbox.PythonExecutionResult(true, "1", "", 1, false, "output", null));
         var python = new PythonAnalysisTool(mock(com.qiheng.erp.ai.python.tool.PythonDatasetPreparer.class),
@@ -318,7 +318,7 @@ class AnalysisAgentServiceTest {
         var service = new AnalysisAgentService(model, python, runtime, "分析", mock(AiAgentTraceMapper.class), mapper,
                 null, null, new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null);
         assertThatThrownBy(() -> service.analyze("计算", new AgentToolContext(10, 20))).isNotNull();
-        verify(runtime).openSession();
+        verify(runtime).openSession(anyString());
         verify(sandbox).close();
     }
 

@@ -24,14 +24,14 @@ class PythonAnalysisToolTest {
         var runtime = mock(PythonSandboxRuntime.class);
         var firstSession = mock(PythonSandboxSession.class);
         var secondSession = mock(PythonSandboxSession.class);
-        when(runtime.openSession()).thenReturn(firstSession, secondSession);
+        when(runtime.openSession(anyString())).thenReturn(firstSession, secondSession);
         var first = new AnalysisTaskContext(new AgentToolContext(10, 20), "task-1", runtime);
         var second = new AnalysisTaskContext(new AgentToolContext(11, 21), "task-2", runtime);
         var tool = new PythonAnalysisTool(mock(PythonDatasetPreparer.class), mock(AnalysisResultStore.class));
         var firstContext = new ToolContext(Map.of(AnalysisTaskContext.CONTEXT_KEY, first));
         var secondContext = new ToolContext(Map.of(AnalysisTaskContext.CONTEXT_KEY, second));
         tool.prepareAnalysisData(List.of(), firstContext);
-        verify(runtime, never()).openSession();
+        verify(runtime, never()).openSession(anyString());
         when(firstSession.execute(anyString(), anyInt(), anyInt())).thenReturn(
                 new PythonExecutionResult(true, "first", "", 5, false, "output", null));
         when(secondSession.execute(anyString(), anyInt(), anyInt())).thenReturn(
@@ -39,7 +39,7 @@ class PythonAnalysisToolTest {
         tool.executePython("first", List.of(), false, null, firstContext);
         tool.executePython("first again", List.of(), false, null, firstContext);
         tool.executePython("second", List.of(), false, null, secondContext);
-        verify(runtime, times(2)).openSession();
+        verify(runtime, times(2)).openSession(anyString());
         verify(firstSession, times(2)).execute(anyString(), anyInt(), anyInt());
         verify(secondSession).execute(eq("second"), anyInt(), anyInt());
         first.close();
@@ -259,7 +259,7 @@ class PythonAnalysisToolTest {
 
     private ToolContext context(AgentToolContext identity, PythonSandboxSession session) {
         var runtime = mock(PythonSandboxRuntime.class);
-        when(runtime.openSession()).thenReturn(session);
+        when(runtime.openSession(anyString())).thenReturn(session);
         var task = new AnalysisTaskContext(identity, "task-1", runtime);
         return new ToolContext(Map.of(AnalysisTaskContext.CONTEXT_KEY, task));
     }

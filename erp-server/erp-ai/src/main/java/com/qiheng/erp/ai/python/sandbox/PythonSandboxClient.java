@@ -12,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * 调用任务沙箱内的 Python 工具，不记录代码或数据请求正文。
@@ -24,11 +25,17 @@ final class PythonSandboxClient {
     private final ObjectMapper mapper;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private ContainerModel connection;
+    private final Consumer<String> onCreated;
 
     /** 绑定单个任务沙箱，并准备 HTTP 请求所需的序列化器。 */
     PythonSandboxClient(BaseSandbox sandbox, ObjectMapper mapper) {
+        this(sandbox, mapper, id -> {});
+    }
+
+    PythonSandboxClient(BaseSandbox sandbox, ObjectMapper mapper, Consumer<String> onCreated) {
         this.sandbox = sandbox;
         this.mapper = mapper;
+        this.onCreated = onCreated;
     }
 
     /** 初始化容器后调用 Python 入口，错误信息不包含请求正文或认证信息。 */
@@ -37,6 +44,7 @@ final class PythonSandboxClient {
             if (connection == null) {
                 connection = sandbox.getInfo();
                 try {
+                    onCreated.accept(connection.getContainerId());
                     awaitHealthy();
                 } catch (RuntimeException | InterruptedException error) {
                     connection = null;

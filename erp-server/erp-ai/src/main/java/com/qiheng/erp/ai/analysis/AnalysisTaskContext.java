@@ -30,6 +30,7 @@ public final class AnalysisTaskContext implements AutoCloseable {
         this.identity = identity;
         this.taskId = taskId;
         this.runtime = runtime;
+        runtime.startTask(taskId);
     }
 
     /** 取得服务端提供的可信身份。 */
@@ -40,6 +41,11 @@ public final class AnalysisTaskContext implements AutoCloseable {
     /** 取得本次分析任务 ID。 */
     public String taskId() {
         return taskId;
+    }
+
+    /** 分析过程发生变化时刷新沙箱活动时间。 */
+    public void touch() {
+        runtime.touchTask(taskId);
     }
 
     /** 取得本任务已准备的数据集，调用方须持有任务锁。 */
@@ -68,7 +74,7 @@ public final class AnalysisTaskContext implements AutoCloseable {
             throw new IllegalStateException("分析任务已结束");
         }
         if (sandbox == null) {
-            sandbox = runtime.openSession();
+            sandbox = runtime.openSession(taskId);
         }
         return sandbox;
     }
@@ -80,8 +86,12 @@ public final class AnalysisTaskContext implements AutoCloseable {
             return;
         }
         closed = true;
-        if (sandbox != null) {
-            sandbox.close();
+        try {
+            if (sandbox != null) {
+                sandbox.close();
+            }
+        } finally {
+            runtime.finishTask(taskId);
         }
     }
 }

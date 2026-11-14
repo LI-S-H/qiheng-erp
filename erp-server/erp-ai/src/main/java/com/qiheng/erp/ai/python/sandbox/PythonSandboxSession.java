@@ -38,11 +38,16 @@ public final class PythonSandboxSession implements AutoCloseable {
     /** 绑定任务沙箱和管理器的会话释放回调。 */
     PythonSandboxSession(BaseSandbox sandbox, PythonExecutionProtocol protocol, ObjectMapper mapper,
                          Consumer<PythonSandboxSession> onClose) {
+        this(sandbox, protocol, mapper, onClose, id -> {});
+    }
+
+    PythonSandboxSession(BaseSandbox sandbox, PythonExecutionProtocol protocol, ObjectMapper mapper,
+                         Consumer<PythonSandboxSession> onClose, Consumer<String> onCreated) {
         this.sandbox = sandbox;
         this.protocol = protocol;
         this.mapper = mapper;
         this.onClose = onClose;
-        this.client = new PythonSandboxClient(sandbox, mapper);
+        this.client = new PythonSandboxClient(sandbox, mapper, onCreated);
     }
 
     /** 列出任务输出文件及内容摘要，供执行前后判断文件是否变化。 */

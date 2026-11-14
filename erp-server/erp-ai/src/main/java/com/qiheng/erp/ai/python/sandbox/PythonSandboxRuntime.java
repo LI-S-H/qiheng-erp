@@ -9,6 +9,7 @@ import io.agentscope.runtime.sandbox.manager.model.sandbox.SandboxConfig;
 import io.agentscope.runtime.sandbox.manager.registry.SandboxRegistryService;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
@@ -29,6 +30,41 @@ public final class PythonSandboxRuntime implements AutoCloseable {
     private final Set<PythonSandboxSession> sessions = new HashSet<>();
     private SandboxService service;
     private boolean closed;
+    private SandboxRetention retention;
+
+    /** 注入单实例沙箱登记；测试中可使用未启用登记的独立运行时。 */
+    @Autowired
+    public void setRetention(SandboxRetention retention) {
+        this.retention = retention;
+    }
+
+    public void startTask(String taskId) {
+        if (retention != null) {
+            retention.start(taskId);
+        }
+    }
+
+    public void touchTask(String taskId) {
+        if (retention != null) {
+            try {
+                retention.touch(taskId);
+            } catch (RuntimeException error) {
+                org.slf4j.LoggerFactory.getLogger(PythonSandboxRuntime.class)
+                        .warn("更新沙箱活动时间失败 taskId={}", taskId, error);
+            }
+        }
+    }
+
+    public void finishTask(String taskId) {
+        if (retention != null) {
+            try {
+                retention.finish(taskId);
+            } catch (RuntimeException error) {
+                org.slf4j.LoggerFactory.getLogger(PythonSandboxRuntime.class)
+                        .warn("沙箱登记清理失败 taskId={}", taskId, error);
+            }
+        }
+    }
 
     /** 配置任务沙箱使用的镜像及 JSON 序列化器。 */
     public PythonSandboxRuntime(ObjectMapper mapper,
@@ -39,6 +75,11 @@ public final class PythonSandboxRuntime implements AutoCloseable {
 
     /** 打开任务会话；容器由框架在首次执行时创建。 */
     public synchronized PythonSandboxSession openSession() {
+        return openSession(null);
+    }
+
+    /** 任务上下文传入任务 ID，以便登记实际创建的容器。 */
+    public synchronized PythonSandboxSession openSession(String taskId) {
         if (closed) {
             throw new IllegalStateException("Python 沙箱管理器已关闭");
         }
@@ -66,7 +107,8 @@ public final class PythonSandboxRuntime implements AutoCloseable {
             service = started;
         }
         var sandbox = new BaseSandbox(service, "erp-ai-python", UUID.randomUUID().toString());
-        var session = new PythonSandboxSession(sandbox, new PythonExecutionProtocol(mapper), mapper, this::forget);
+        var session = new PythonSandboxSession(sandbox, new PythonExecutionProtocol(mapper), mapper, this::forget,
+                id -> { if (retention != null && taskId != null) { retention.register(taskId, id); } });
         sessions.add(session);
         return session;
     }

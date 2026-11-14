@@ -78,6 +78,8 @@ final class AnalysisTraceHook extends MessagesModelHook {
             }
             // 文字与工具来自同一条助手消息，先于工具执行发布，顺序天然正确。
             if (progress != null) {
+                config.metadata(AnalysisTaskContext.CONTEXT_KEY)
+                        .ifPresent(value -> ((AnalysisTaskContext) value).touch());
                 progress.step(assistant.getText(), tools);
             }
         }

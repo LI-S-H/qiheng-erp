@@ -39,6 +39,12 @@ sudo bash /opt/qiheng-erp/bin/deploy.sh deploy
 
 MySQL、Redis、MQ 消息和日志使用固定 project 下的命名卷，不随应用发布删除。基础服务不映射主机端口。ERP 默认只在 Ubuntu 本机的 `http://127.0.0.1:8088` 提供访问，通过向日葵里的浏览器使用；更改网络访问范围需另行配置。
 
+实验室单机测试允许后端通过 `/var/run/docker.sock` 管理沙箱，Socket 不挂载到沙箱。后端由宿主 Docker Socket 的组号授权；服务器管理员先运行 `stat -c '%g' /var/run/docker.sock`，把输出填入服务器私有 `.env` 的 `DOCKER_SOCKET_GID`，每次部署前核对组号。切勿使用 `chmod 666`。访问宿主 Docker Socket 使后端具备很高的宿主管理权限，仅适用于经授权的测试环境，文件系统的只读挂载不会把 Docker API 限制为只读。
+
+后端同时连接 ERP 网络和 `qiheng-erp-sandbox` 内部网络；动态 Python 沙箱仅连接专用网络，不发布宿主机端口。分析结果数据卷为 `ai-results`，映射到后端 `/app/data/ai-python-results`；重建容器保留结果，但不能代替独立备份。具体网络、端口和资源隔离须在真实服务器上用 Docker inspect 与实际任务验证，不能仅依赖前后端健康检查。
+
+部署前须使用 `deploy/docker/Dockerfile.ai-sandbox` 准备 `erp-ai-sandbox:local` 镜像。镜像构建需要下载固定摘要的基础镜像以及 Python 依赖，具体可用性由服务器网络决定；失败时不得跳过验证并声称 Python 分析可用。
+
 当前代码无需 MinIO；普通 Redis 满足会话、锁、缓存和 AI 检查点，规划中的 RedisStack 向量检索不属于这次部署。AI 默认关闭，启用前须在服务器私有配置中设置模型密钥、`ERP_AI_SQL_USERNAME` 和独立的 `ERP_AI_SQL_PASSWORD`，并在数据库中建立仅有 SELECT 权限的对应账号。不要直接使用 `027_ai_readonly_user.sql` 中的示例密码。后端容器将 `ai-datasets` 命名卷挂载到 `/app/data/ai-datasets`，数据集文件随容器重建保留；数据库和此数据卷都需要备份。
 
 ## 1. 先确定镜像来源

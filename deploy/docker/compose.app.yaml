@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    group_add:
+      - "${DOCKER_SOCKET_GID:?请配置服务器 Docker Socket 的组号}"
     environment:
       SPRING_PROFILES_ACTIVE: container
       TZ: Asia/Shanghai
@@ -26,10 +28,14 @@ services:
       OPENAI_COMPAT_MODEL_PRO: ${OPENAI_COMPAT_MODEL_PRO:-deepseek-v4-pro}
       OPENAI_COMPAT_MODEL_FLASH: ${OPENAI_COMPAT_MODEL_FLASH:-deepseek-flash}
       OPENAI_COMPAT_ENABLE_THINKING: ${OPENAI_COMPAT_ENABLE_THINKING:-}
+      ERP_AI_SANDBOX_NETWORK: qiheng-erp-sandbox
     volumes:
       - ai-datasets:/app/data/ai-datasets
+      - ai-results:/app/data/ai-python-results
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - erp
+      - sandbox
     logging:
       driver: json-file
       options:
@@ -62,6 +68,10 @@ networks:
   erp:
     external: true
     name: qiheng-erp-net
+  sandbox:
+    name: qiheng-erp-sandbox
+    internal: true
 
 volumes:
   ai-datasets:
+  ai-results:

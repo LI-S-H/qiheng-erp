@@ -27,6 +27,7 @@ import java.util.UUID;
 public final class PythonSandboxRuntime implements AutoCloseable {
     private final ObjectMapper mapper;
     private final String image;
+    private final String sandboxNetwork;
     private final Set<PythonSandboxSession> sessions = new HashSet<>();
     private SandboxService service;
     private boolean closed;
@@ -67,10 +68,17 @@ public final class PythonSandboxRuntime implements AutoCloseable {
     }
 
     /** 配置任务沙箱使用的镜像及 JSON 序列化器。 */
+    public PythonSandboxRuntime(ObjectMapper mapper, String image) {
+        this(mapper, image, "");
+    }
+
+    @Autowired
     public PythonSandboxRuntime(ObjectMapper mapper,
-            @Value("${erp.ai.python.sandbox-image:erp-ai-sandbox:local}") String image) {
+            @Value("${erp.ai.python.sandbox-image:erp-ai-sandbox:local}") String image,
+            @Value("${ERP_AI_SANDBOX_NETWORK:}") String sandboxNetwork) {
         this.mapper = mapper;
         this.image = image;
+        this.sandboxNetwork = sandboxNetwork;
     }
 
     /** 打开任务会话；容器由框架在首次执行时创建。 */
@@ -100,7 +108,9 @@ public final class PythonSandboxRuntime implements AutoCloseable {
             SandboxRegistryService.register(BaseSandbox.class, config);
             var manager = ManagerConfig.builder()
                     .containerPrefixKey("erp-ai-python")
-                    .clientStarter(DockerClientStarter.builder().build())
+                    .clientStarter(sandboxNetwork.isBlank()
+                            ? DockerClientStarter.builder().build()
+                            : new IsolatedDockerClientStarter(sandboxNetwork))
                     .build();
             var started = new SandboxService(manager);
             started.start();

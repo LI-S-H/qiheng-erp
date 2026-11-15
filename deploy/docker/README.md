@@ -1,21 +1,21 @@
-# 实验室内网 Docker 自动部署
+# Docker 自动部署
 
-适用于 Ubuntu 22.04、Docker Compose、宝塔面板。只通过向日葵管理服务器；服务器主动读取 GitCode 私有仓库，无需公网 IP、WebHook 或 GitHub Runner。
+本指南介绍基于 Ubuntu 22.04、Docker Compose 和宝塔面板的部署方式。服务器主动读取配置的 GitCode 仓库，无需服务器具有公网 IP，也无需配置 WebHook 或 GitHub Runner。服务器需要能够访问仓库和所需的镜像及依赖源。
 
 本地测试通过后推送 GitCode `main`，宝塔每五分钟调用一次部署脚本。通过 HTTPS 和专用只读令牌获取分支完整提交 SHA，再归档该 SHA 的前后端源码，发现新提交才打包和更新。不再依赖 GitHub API 或 codeload，不使用代理或第三方源码镜像。服务器不执行单元测试、浏览器测试或交付测试。前端仍需要执行生产构建及其类型检查，后端通过 `-Dmaven.test.skip=true` 跳过测试编译和执行。
 
 ## 已部署服务器切换到 GitCode
 
-先暂停宝塔自动部署任务，保持现有容器运行。确认 GitCode 仓库设为私有，并已推送准备部署的 `main`。GitHub 可以作为另一个私有远程保留，但不再是服务器部署来源。两个仓库都不能提交实际密码、令牌和数据库导出。
+先暂停宝塔自动部署任务，保持现有容器运行。确认 GitCode 仓库已推送准备部署的 `main`。本部署脚本使用 GitCode 作为源码来源；仓库的公开或私有状态由维护者决定。任何仓库都不能提交实际密码、令牌和不应公开的数据库导出。
 
 为服务器创建专用只读 PAT，将令牌本身保存到 `/opt/qiheng-erp/config/gitcode.token`，root 所有，权限 `600`，不加引号、不放进 Git URL 或 `.env`。令牌到期后单独更换，不要复用开发电脑的写入令牌。若平台无法限定到单仓库，应由维护者确认授权范围，必要时使用仅有该仓库读取权限的专用账号。
 
 替换 `/opt/qiheng-erp/bin/deploy.sh` 后，仅修改服务器 `.env` 中以下字段，保留其他原有配置：
 
 ```dotenv
-DEPLOY_REPO=https://gitcode.com/LI_124301012/qiheng-erp.git
+DEPLOY_REPO=https://gitcode.com/你的用户名/你的仓库.git
 DEPLOY_BRANCH=main
-GITCODE_USERNAME=LI_124301012
+GITCODE_USERNAME=你的用户名
 ```
 
 然后执行：
@@ -37,9 +37,9 @@ sudo bash /opt/qiheng-erp/bin/deploy.sh deploy
 | `qiheng-erp-app` | Java 21 后端、Nginx 前端 | 随 `main` 提交构建并更新 |
 | `qiheng-erp-net` | 应用与基础服务共享的 Docker 网络 | 固定名称 |
 
-MySQL、Redis、MQ 消息和日志使用固定 project 下的命名卷，不随应用发布删除。基础服务不映射主机端口。ERP 默认只在 Ubuntu 本机的 `http://127.0.0.1:8088` 提供访问，通过向日葵里的浏览器使用；更改网络访问范围需另行配置。
+MySQL、Redis、MQ 消息和日志使用固定 project 下的命名卷，不随应用发布删除。基础服务不映射主机端口。ERP 默认只在服务器本机的 `http://127.0.0.1:8088` 提供访问；更改网络访问范围需另行配置。
 
-实验室单机测试允许后端通过 `/var/run/docker.sock` 管理沙箱，Socket 不挂载到沙箱。后端由宿主 Docker Socket 的组号授权；服务器管理员先运行 `stat -c '%g' /var/run/docker.sock`，把输出填入服务器私有 `.env` 的 `DOCKER_SOCKET_GID`，每次部署前核对组号。切勿使用 `chmod 666`。访问宿主 Docker Socket 使后端具备很高的宿主管理权限，仅适用于经授权的测试环境，文件系统的只读挂载不会把 Docker API 限制为只读。
+本部署方案允许后端通过 `/var/run/docker.sock` 管理沙箱，Socket 不挂载到沙箱。后端由宿主 Docker Socket 的组号授权；服务器管理员先运行 `stat -c '%g' /var/run/docker.sock`，把输出填入服务器私有 `.env` 的 `DOCKER_SOCKET_GID`，每次部署前核对组号。切勿使用 `chmod 666`。访问宿主 Docker Socket 使后端具备很高的宿主管理权限，仅适用于经授权的测试环境，文件系统的只读挂载不会把 Docker API 限制为只读。
 
 后端同时连接 ERP 网络和 `qiheng-erp-sandbox` 内部网络；动态 Python 沙箱仅连接专用网络，不发布宿主机端口。分析结果数据卷为 `ai-results`，映射到后端 `/app/data/ai-python-results`；重建容器保留结果，但不能代替独立备份。具体网络、端口和资源隔离须在真实服务器上用 Docker inspect 与实际任务验证，不能仅依赖前后端健康检查。
 
@@ -49,11 +49,11 @@ MySQL、Redis、MQ 消息和日志使用固定 project 下的命名卷，不随�
 
 ## 1. 先确定镜像来源
 
-Docker Hub 在该实验室的直连已超时，不能直接假定默认镜像能拉取。
+不同网络环境访问 Docker Hub 的情况可能不同，部署前应确认服务器可以拉取所需镜像。
 
-2026-10-21，Ubuntu 已成功拉取 `m.daocloud.io/docker.io/library/busybox:1.37`。模板现采用 [DaoCloud 官方项目说明](https://github.com/DaoCloud/public-image-mirror)中的增加前缀方式，为七个基础镜像填写完整来源地址；不依赖修改 Docker 全局加速设置或重启 Docker。
+模板采用 [DaoCloud 官方项目说明](https://github.com/DaoCloud/public-image-mirror)中的增加前缀方式，为七个基础镜像填写完整来源地址；不依赖修改 Docker 全局加速设置或重启 Docker。
 
-该结果仅确认小镜像下载成功，其他镜像的具体版本、白名单和下载速度仍需在 Ubuntu 逐个验证。若实验室有自己的仓库，在服务器 `.env` 中替换完整镜像地址即可。已初始化的 `.env` 不会随模板修改而覆盖，首次初始化请使用本次更新后的文件。
+镜像的具体版本、访问权限和下载速度需要在目标服务器逐个验证。如果使用其他镜像仓库，可在服务器 `.env` 中替换完整镜像地址。已初始化的 `.env` 不会随模板修改而覆盖。
 
 不要把随机教程里的旧加速地址当成保证可用的服务。Docker 镜像加速不等于 Maven/npm 依赖加速，也不等于 GitHub 下载加速。
 
@@ -61,9 +61,9 @@ Docker Hub 在该实验室的直连已超时，不能直接假定默认镜像能
 
 ## 2. 将部署文件推送到仓库
 
-这批文件最初只在开发电脑中，必须先由维护者提交并推送到 GitCode `main`，Ubuntu 才能获取。请单独检查部署文件，不要把本机密钥和其他未完成改动混入此次提交。本工具不会自动替你提交或推送工作区。通过向日葵传输部署准备包来初始化基础环境；正式应用发布前，GitCode `main` 仍必须包含部署文件和准备发布的完整业务版本。
+初始化前，GitCode 的部署分支必须包含部署文件和准备发布的完整业务版本。不要把本机密钥和其他未完成改动混入提交。将包含本仓库 `.dockerignore` 与 `deploy/docker/` 的部署准备包安全传输至服务器，用于初始化基础环境；准备包不应包含真实密钥。
 
-然后在 Ubuntu 通过向日葵终端操作。以下示例为首次安装目录；已有同名目录时应先确认内容，不覆盖已有业务目录。
+然后在 Ubuntu 终端操作。以下示例为首次安装目录；已有同名目录时应先确认内容，不覆盖已有业务目录。
 
 ```bash
 sudo apt install -y ca-certificates git python3
@@ -73,7 +73,7 @@ cd ~/qiheng-erp-setup
 sudo bash deploy/docker/deploy.sh init
 ```
 
-上述 `qiheng-erp-deploy.tar.gz` 是维护者从本仓库 `.dockerignore` 与 `deploy/docker/` 打包并通过向日葵传入的准备包，不含业务源码或真实密钥。`init` 只创建 `/opt/qiheng-erp` 下的配置与脚本，不启动容器。首次生成三个独立随机密码，已有配置不会被重置。已经完成基础服务启动和数据库导入时，只替换固定入口脚本，不重复初始化或导入。
+上述 `qiheng-erp-deploy.tar.gz` 是由 `.dockerignore` 与 `deploy/docker/` 打包的准备包，不含业务源码或真实密钥。`init` 只创建 `/opt/qiheng-erp` 下的配置与脚本，不启动容器。首次生成三个独立随机密码，已有配置不会被重置。已经完成基础服务启动和数据库导入时，只替换固定入口脚本，不重复初始化或导入。
 
 | 目录 | 用途 |
 |---|---|
@@ -126,10 +126,10 @@ MQ 卷由一次性初始化容器赋予镜像用户 UID/GID 3000 权限；MQ 服
 mysqldump -h 本地数据库地址 -u 用户名 -p --single-transaction --no-tablespaces --set-gtid-purged=OFF erp > erp.sql
 ```
 
-通过向日葵文件传输把 SQL 放到 Ubuntu，例如 `/home/cosinelab/erp.sql`。确认这是允许用于测试环境的数据后执行：
+通过合适的方式将 SQL 安全传输到服务器，例如当前用户的主目录。确认数据适合目标环境后执行：
 
 ```bash
-sudo bash /opt/qiheng-erp/bin/deploy.sh import-db /home/cosinelab/erp.sql
+sudo bash /opt/qiheng-erp/bin/deploy.sh import-db "$HOME/erp.sql"
 ```
 
 脚本只允许向空业务库导入，并使用仅有业务库权限的用户。导入后检查必要表并记录 SQL 校验值，不执行项目业务测试。若中途失败产生部分表，脚本拒绝再次覆盖，请人工审查错误后处理，不能删除数据卷来绕过问题。
@@ -169,7 +169,7 @@ Maven 默认使用阿里云公共仓库，npm 默认使用项目 lockfile 中已
 
 该固定入口需要具备 Docker 管理和 `/opt/qiheng-erp` 目录访问权限。按本指南以管理员初始化时，宝塔任务使用 root 执行，只读取受维护者控制的 `main` 分支；它不接收外部 WebHook，也不执行 PR 分支。不要把脚本、配置目录的写权限开放给无关用户。公开仓库的 `.env`、开发数据库配置和 AI 本地密钥文件均不进入 Docker 构建上下文。
 
-只将经过本地验证、确实准备发布的提交合并到 GitCode `main`，其他开发分支不会触发部署。没有新提交时不构建；上次尚未结束时跳过本次任务；失败的同一提交不反复构建。本项目开发电脑的 `origin` 仍指向 GitHub，`gitcode` 指向 GitCode，因此使用 `git push gitcode main` 发布；需要两边同步时另执行 `git push origin main`，两次推送分别检查结果。GitHub 也必须保持私有，避免另一边仍然公开代码。服务器须保持开机联网，不需要保持向日葵窗口打开。
+只将经过本地验证、确实准备发布的提交合并到配置的 GitCode 分支，其他开发分支不会触发部署。没有新提交时不构建；上次尚未结束时跳过本次任务；失败的同一提交不反复构建。如果同时维护多个远程仓库，需分别推送并检查结果。服务器须保持开机并能访问 GitCode 及所需依赖源。
 
 不再使用 GitHub API，也不依赖其公开接口限额。仍建议每五分钟检查一次，避免频繁 Git 请求；平台限流、令牌失效或网络错误时应人工处理，不持续高频重试。修改 README 不会自动修改宝塔设置。首次部署成功前不要启用计划任务。
 

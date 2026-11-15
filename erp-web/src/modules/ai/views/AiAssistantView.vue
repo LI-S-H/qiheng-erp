@@ -138,13 +138,15 @@ const displayedMessages = computed(() => {
   if (switching.value) {
     return messages;
   }
-  if (!liveRunId.value || currentRun.value.snapshotTruncated) {
+  if (!liveRunId.value) {
     return messages;
   }
-  // 当前轮的流式内容尚在展示时，不重复渲染已提前落库的过程文字。
+  // 实时快照已有的工具行不再重复显示历史行；追问仍由原有逻辑处理。
+  const liveToolIds = new Set(liveItems.value.filter(item => item.type === 'tool').map(item => item.id));
   return messages.filter(message => message.requestId !== liveRunId.value ||
-    !((liveItems.value.length > 0 && (message.kind === 'ASSISTANT_STEP' || message.kind === 'ASSISTANT_FINAL')) ||
-      (waiting.value && message.kind === 'TOOL_CALL')));
+    !((message.kind === 'TOOL_CALL' && message.content.type === 'TOOL_STEP' && liveToolIds.has(message.content.data.callId)) ||
+      (!currentRun.value.snapshotTruncated && ((liveItems.value.length > 0 && (message.kind === 'ASSISTANT_STEP' || message.kind === 'ASSISTANT_FINAL')) ||
+        (waiting.value && message.kind === 'TOOL_CALL')))));
 });
 const displayedPendingText = computed(() => liveRunId.value && displayedMessages.value.some(
   message => message.requestId === liveRunId.value && message.kind === 'USER_INPUT',

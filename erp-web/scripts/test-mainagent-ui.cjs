@@ -44,6 +44,7 @@ async function main() {
             const question = waiting ? { questionRequestId: 'q', toolCallId: 'c1', questions: [{ id: 'metrics', question: '分析哪些指标？', type: 'MULTIPLE_CHOICE', options: ['数量', '金额'] }] } : null;
             const sendSnapshot = () => window.__emitAi('run_snapshot', { runId: 'r', status: waiting ? 'WAITING_USER' : 'RUNNING', eventSeq: '3', question, items: [
               { type: 'text', id: 'm1', text: '先确认分析范围。', completed: true },
+              { type: 'tool', id: 'c2', label: '读取数据', status: 'done', durationMs: 3500 },
               { type: 'tool', id: 'c', label: '正在查询业务数据', status: 'running' },
               ...(waiting ? [{ type: 'clarification', id: 'c1', questionRequestId: 'q', questions: question.questions }] : []),
             ] });
@@ -115,7 +116,9 @@ async function main() {
           record('5', 'TOOL_CALL', 'assistant', { callId: 'c2', name: 'readDataset', label: '读取数据', status: 'done', durationMs: 3500 }),
           { ...record('6', 'ASSISTANT_STEP', 'assistant', {}), content: { type: 'TEXT', data: { text: '接下来分析查询结果。' } } },
           { ...record('7', 'ASSISTANT_FINAL', 'assistant', {}), content: { type: 'TEXT', data: { text: '| 商品 | 数量 |\n|---|---|\n| A | 10 |' } } },
-        ] : [{ ...record('1', 'USER_INPUT', 'user', {}), content: { type: 'TEXT', data: { text: '请分析数据' } } }];
+        ] : [{ ...record('1', 'USER_INPUT', 'user', {}), content: { type: 'TEXT', data: { text: '请分析数据' } } },
+          ...(reconnecting ? [record('2', 'TOOL_CALL', 'assistant', { callId: 'c', name: 'query_sql_data', label: '查询业务数据', status: 'done', durationMs: 1500 }),
+            record('3', 'TOOL_CALL', 'assistant', { callId: 'c2', name: 'readDataset', label: '读取数据', status: 'done', durationMs: 3500 })] : [])];
         data = { records, pageNum: 1, pageSize: 50, total: records.length };
       }
       else if (pathname === '/ai/assistant/conversations/123' && request.method() === 'PATCH') {
@@ -196,6 +199,11 @@ async function main() {
     assert.equal(await page.locator('.conversation-switching').count(), 1, '运行快照尚未到达时不能提前结束切换');
     await page.getByText('先确认分析范围。', { exact: true }).waitFor();
     await page.locator('.tool-progress.is-running').filter({ hasText: '正在查询业务数据' }).waitFor();
+    assert.equal(await page.locator('.message-list .message-avatar').count(), 2, '重连后的历史工具行与实时过程不能重复产生助手头像');
+    if (process.env.AI_QA_SCREENSHOT_DIR) {
+      await page.waitForFunction(() => !document.querySelector('.conversation-switching'));
+      await page.screenshot({ path: path.join(process.env.AI_QA_SCREENSHOT_DIR, 'running-reconnect.png') });
+    }
     await page.evaluate(() => localStorage.removeItem('qa_delay_snapshot'));
     assert.equal(await page.getByText('NaN 秒').count(), 0, '运行快照没有耗时时不能显示 NaN');
     assert.equal(await page.getByText('正在提交', { exact: false }).count(), 0, '消息保存后不能仍显示正在提交');

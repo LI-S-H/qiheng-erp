@@ -26,7 +26,9 @@ public final class SqlNodeSupport {
     /** 准备授权依赖与生成、纠错共用的次数上限。 */
     public SqlNodeSupport(SchemaProvider schemas, KnowledgeProvider knowledge, LoginUserService users, int maxAttempts,
             SqlRetryReporter retryReporter, SqlTraceSupport traceSupport) {
-        if (maxAttempts < 1) throw new IllegalArgumentException("SQL 最大尝试次数必须大于零");
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("SQL 最大尝试次数必须大于零");
+        }
         this.schemas = schemas;
         this.knowledge = knowledge;
         this.users = users;
@@ -107,7 +109,9 @@ public final class SqlNodeSupport {
     /** 撤销结果投影，不立即删除仍可能被检查点引用的暂存数据。 */
     public static void clearResult(Map<String, Object> work) {
         for (String key : List.of("datasetId", "columns", "rowCount", "truncated", "completed",
-                "limited", "limit", "limitations", "truncationReason", "businessFullResult", "summary", "dataDescription")) work.remove(key);
+                "limited", "limit", "limitations", "truncationReason", "businessFullResult", "summary", "dataDescription")) {
+            work.remove(key);
+        }
     }
 
     /** 标记本次取数结束及其原因。 */

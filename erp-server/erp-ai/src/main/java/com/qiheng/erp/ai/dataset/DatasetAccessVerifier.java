@@ -30,16 +30,18 @@ class DatasetAccessVerifier implements DatasetAccess {
     @Override
     public void verify(DatasetRecord record) {
         var user = users.findByUserId(record.userId());
-        if (user == null) throw new IllegalStateException("用户不存在，无法访问数据集");
+        if (user == null) {
+            throw new DatasetUnavailableException("用户不存在，无法访问数据集");
+        }
         var permissions = PermissionCodes.of(user);
         if (!permissions.contains("*") && !permissions.contains("ai:assistant:use")) {
-            throw new IllegalStateException("当前用户无 AI 使用权限");
+            throw new DatasetUnavailableException("当前用户无 AI 使用权限");
         }
         String sql = repository.findSourceSql(record.datasetId(), record.userId(), record.conversationId())
                 .orElseThrow(() -> new IllegalStateException("数据集查询来源不存在"));
         var snapshot = schemas.provideFreshSnapshot(permissions);
         if (!(guard.check(sql, snapshot, limits, false) instanceof GuardResult.Ok)) {
-            throw new IllegalStateException("当前用户无权访问此数据集");
+            throw new DatasetUnavailableException("当前用户无权访问此数据集");
         }
     }
 }

@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.qiheng.erp.ai.sql.execution.model.QueryResult;
+import com.qiheng.erp.ai.job.AiCleanupFailureReporter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,6 +38,13 @@ public class DatasetManager {
     private final ObjectMapper mapper;
     private final long ttlDays;
     private final DatasetAccess access;
+    private AiCleanupFailureReporter cleanupReporter;
+
+    /** 可选注入告警组件，保持独立测试和现有构造方式兼容。 */
+    @Autowired(required = false)
+    public void setCleanupReporter(AiCleanupFailureReporter cleanupReporter) {
+        this.cleanupReporter = cleanupReporter;
+    }
 
     DatasetManager(DatasetRepository repository, DatasetAccess access, ObjectMapper mapper,
                    @Value("${erp.ai.dataset.directory:./data/ai-datasets}") String directory,
@@ -231,16 +240,16 @@ public class DatasetManager {
 
     private DatasetRecord owned(String id, long userId, long conversationId) {
         return repository.find(id, userId, conversationId)
-                .orElseThrow(() -> new IllegalArgumentException("数据集不存在或无权访问"));
+                .orElseThrow(() -> new DatasetUnavailableException("数据集不存在或无权访问"));
     }
 
     /** 过期或文件缺失的引用不能当作可恢复的数据集。 */
     private DatasetRecord available(DatasetRecord record) {
         if (record.expiresAt() != null && !record.expiresAt().isAfter(Instant.now())) {
-            throw new IllegalStateException("数据集已过期");
+            throw new DatasetUnavailableException("数据集已过期");
         }
         if (!Files.isRegularFile(directory.resolve(record.datasetId() + ".jsonl"))) {
-            throw new IllegalStateException("数据集文件不存在");
+            throw new DatasetUnavailableException("数据集文件不存在");
         }
         access.verify(record);
         return record;
@@ -269,13 +278,18 @@ public class DatasetManager {
         LocalDateTime cutoff = LocalDate.now(ZoneOffset.UTC).atStartOfDay();
         int removed = 0;
         for (DatasetRecord record : repository.findExpired(cutoff, limit)) {
+            String stage = "删除文件";
             try {
                 deleteFile(directory.resolve(record.datasetId() + ".jsonl"));
+                stage = "删除元数据";
                 if (repository.delete(record.datasetId())) {
                     removed++;
                 }
             } catch (RuntimeException error) {
                 log.warn("过期数据集清理失败 datasetId={}", record.datasetId(), error);
+                if (cleanupReporter != null) {
+                    cleanupReporter.report("SQL 数据集", record.datasetId(), record.datasetId() + ".jsonl", stage, error);
+                }
             }
         }
         return removed;

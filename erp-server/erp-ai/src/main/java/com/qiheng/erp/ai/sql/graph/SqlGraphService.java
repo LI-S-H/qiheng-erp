@@ -1,46 +1,77 @@
 package com.qiheng.erp.ai.sql.graph;
 
-import com.alibaba.cloud.ai.graph.RunnableConfig;
 import cn.hutool.core.util.IdUtil;
-import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.dataset.DatasetManager;
 import com.qiheng.erp.ai.dataset.DatasetReadLimitException;
-import com.qiheng.erp.ai.sql.scope.PermissionCodes;
 import com.qiheng.erp.security.context.UserContext;
-import com.qiheng.erp.security.service.LoginUserService;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.annotation.PreDestroy;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 
-/** SQL 图内部入口：按用户和会话隔离，并由调用方确认结果交接。 */
+/** SQL 图内部入口：校验会话归属并执行独立取数。 */
 public final class SqlGraphService {
     private static final Logger log = LoggerFactory.getLogger(SqlGraphService.class);
     private final SqlGraph graph;
-    private final BaseCheckpointSaver saver;
     private final AiConversationMapper conversations;
-    private final RedissonClient redis;
-    private final LoginUserService users;
     private final DatasetManager datasets;
+    private final Consumer<String> cancelQuery;
+    private final Duration timeout;
+    private final ThreadPoolExecutor workers;
+    private final ThreadPoolExecutor cancellations;
 
-    public SqlGraphService(SqlGraph graph, BaseCheckpointSaver saver, AiConversationMapper conversations,
-                           RedissonClient redis, LoginUserService users, DatasetManager datasets) {
-        this.graph = graph;
-        this.saver = saver;
-        this.conversations = conversations;
-        this.redis = redis;
-        this.users = users;
-        this.datasets = datasets;
+    public SqlGraphService(SqlGraph graph, AiConversationMapper conversations, DatasetManager datasets) {
+        this(graph, conversations, datasets, runId -> {}, Duration.ofMinutes(10));
     }
 
-    /** 同一会话串行执行，每次新任务用完整输入替换上一轮工作状态。 */
+    public SqlGraphService(SqlGraph graph, AiConversationMapper conversations, DatasetManager datasets,
+                           Consumer<String> cancelQuery) {
+        this(graph, conversations, datasets, cancelQuery, Duration.ofMinutes(10));
+    }
+
+    /** 从配置创建有界 SQL 工作队列。 */
+    public SqlGraphService(SqlGraph graph, AiConversationMapper conversations, DatasetManager datasets,
+                           Consumer<String> cancelQuery, int workerThreads, int queueCapacity, Duration timeout) {
+        if (workerThreads < 1 || queueCapacity < 1 || timeout == null || timeout.isZero()
+                || timeout.isNegative() || timeout.toMillis() < 1) {
+            throw new IllegalArgumentException("SQL 工作线程数、等待队列容量和超时时间必须大于零");
+        }
+        this.graph = graph;
+        this.conversations = conversations;
+        this.datasets = datasets;
+        this.cancelQuery = cancelQuery;
+        this.timeout = timeout;
+        this.workers = new ThreadPoolExecutor(workerThreads, workerThreads, 0, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(queueCapacity),
+                Thread.ofPlatform().daemon().name("ai-sql-", 0).factory());
+        this.cancellations = new ThreadPoolExecutor(0, 8, 60, TimeUnit.SECONDS, new SynchronousQueue<>(),
+                Thread.ofPlatform().daemon().name("ai-sql-cancel-", 0).factory());
+    }
+
+    /** 每次查询独立运行；限制工作线程数，防止无法中断的调用无限累积。 */
+    SqlGraphService(SqlGraph graph, AiConversationMapper conversations, DatasetManager datasets,
+                    Consumer<String> cancelQuery, Duration timeout) {
+        this(graph, conversations, datasets, cancelQuery, 8, 8, timeout);
+    }
+
+    /** 使用当前用户身份执行独立取数。 */
     public Map<String, Object> startForCurrentUser(long conversationId, String sqlRunId,
                                      Map<String, Object> requirement) throws Exception {
         return startForUser(UserContext.requireCurrentUser().getUserId(), conversationId, sqlRunId, requirement);
@@ -56,105 +87,81 @@ public final class SqlGraphService {
     public Map<String, Object> startForUserAtDate(long userId, long conversationId, String sqlRunId,
                                      Map<String, Object> requirement, String businessDate) throws Exception {
         ownedUser(userId, conversationId);
-        RLock lock = lock(conversationId);
-        try {
-            String threadId = threadId(userId, conversationId);
-            Map<String, Object> previous = current(threadId);
-            if (!previous.isEmpty()) {
-                var permissions = PermissionCodes.of(users.findByUserId(userId));
-                if (!permissions.contains("*") && !permissions.contains("ai:assistant:use")) {
-                    var denied = permissionDenied((String) previous.get("sqlRunId"));
-                    denied.put("existing", true);
-                    return denied;
-                }
-                var checkpoint = saver.get(RunnableConfig.builder().threadId(threadId).build()).orElseThrow();
-                if ("__END__".equals(checkpoint.getNextNodeId())
-                        && ("SUCCESS".equals(previous.get("status")) || "PARTIAL".equals(previous.get("status")))) {
-                    datasets.get((String) previous.get("datasetId"), userId, conversationId);
-                }
-                Map<String, Object> pending = result(previous);
-                pending.put("existing", true);
-                pending.put("recoveryRequired", !"__END__".equals(checkpoint.getNextNodeId()));
-                return pending;
+        Map<String, Object> input = new HashMap<>();
+        input.put("userId", userId);
+        input.put("conversationId", conversationId);
+        input.put("sqlRunId", sqlRunId);
+        input.put("requirement", validatedRequirement(requirement));
+        if (businessDate != null) {
+            input.put("currentDate", businessDate);
+        }
+        input.put("attempt", 0);
+        input.put("supplements", List.of());
+        input.put("route", "next");
+        FutureTask<Map<String, Object>> task = new FutureTask<>(() -> {
+            Map<String, Object> finished = graph.start(input);
+            // 在执行线程真正结束后清理，不由超时的调用线程提前清理。
+            try {
+                datasets.cleanupStaged(sqlRunId, userId, conversationId);
+            } catch (RuntimeException error) {
+                log.warn("SQL 取数暂存数据清理失败 runId={}", sqlRunId, error);
             }
-            Map<String, Object> input = new HashMap<>();
-            input.put("userId", userId);
-            input.put("conversationId", conversationId);
-            input.put("sqlRunId", sqlRunId);
-            input.put("requirement", validatedRequirement(requirement));
-            if (businessDate != null) {
-                input.put("currentDate", businessDate);
-            }
-            input.put("attempt", 0);
-            input.put("supplements", List.of());
-            input.put("route", "next");
-            Map<String, Object> finished = graph.start(threadId, input);
-            cleanupIfComplete(threadId, sqlRunId, userId, conversationId);
             return result(finished);
-        } finally {
-            lock.unlock();
+        });
+        try {
+            workers.execute(task);
+        } catch (RejectedExecutionException error) {
+            return Map.of("status", "FAILED", "code", "SQL_BUSY", "message", "当前查询任务较多，请稍后重试。");
+        }
+        try {
+            return task.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException error) {
+            task.cancel(true);
+            workers.remove(task);
+            requestCancellation(sqlRunId);
+            return Map.of("status", "FAILED", "code", "SQL_TIMEOUT", "message", "本次查询超时，未取得结果。",
+                    "guidance", "可考虑缩小查询范围或稍后重试，不要将本次查询当作成功。");
+        } catch (InterruptedException error) {
+            task.cancel(true);
+            workers.remove(task);
+            requestCancellation(sqlRunId);
+            Thread.currentThread().interrupt();
+            throw error;
+        } catch (CancellationException error) {
+            return Map.of("status", "FAILED", "code", "SQL_CANCELLED", "message", "本次查询已取消。");
+        } catch (ExecutionException error) {
+            if (error.getCause() instanceof Exception cause) {
+                throw cause;
+            }
+            throw new IllegalStateException("SQL 子图执行失败", error.getCause());
         }
     }
 
-    /** 仅允许会话所有者恢复当前取数，执行节点会重新检查最新权限。 */
-    public Map<String, Object> recoverForCurrentUser(long conversationId, String sqlRunId) throws Exception {
-        return recoverForUser(UserContext.requireCurrentUser().getUserId(), conversationId, sqlRunId);
-    }
-
-    /** 使用可信用户身份恢复任务。 */
-    public Map<String, Object> recoverForUser(long userId, long conversationId, String sqlRunId) throws Exception {
-        ownedUser(userId, conversationId);
-        RLock lock = lock(conversationId);
+    /** JDBC 取消可能阻塞，因此不让它拖住已超时的调用方。 */
+    private void requestCancellation(String sqlRunId) {
         try {
-            String threadId = threadId(userId, conversationId);
-            var config = RunnableConfig.builder().threadId(threadId).build();
-            var checkpoint = saver.get(config).orElseThrow(() -> new IllegalStateException("SQL 取数检查点不存在"));
-            Map<String, Object> work = work(checkpoint.getState());
-            if (!sqlRunId.equals(work.get("sqlRunId"))) {
-                throw new IllegalStateException("SQL 取数标识与当前检查点不一致");
-            }
-            var permissions = PermissionCodes.of(users.findByUserId(userId));
-            if (!permissions.contains("*") && !permissions.contains("ai:assistant:use")) {
-                return permissionDenied(sqlRunId);
-            }
-            if ("__END__".equals(checkpoint.getNextNodeId())) {
-                if ("SUCCESS".equals(work.get("status")) || "PARTIAL".equals(work.get("status"))) {
-                    datasets.get((String) work.get("datasetId"), userId, conversationId);
+            cancellations.execute(() -> {
+                try {
+                    cancelQuery.accept(sqlRunId);
+                } catch (RuntimeException error) {
+                    log.warn("请求取消 SQL 查询失败 runId={}", sqlRunId, error);
                 }
-                cleanupIfComplete(threadId, sqlRunId, userId, conversationId);
-                return result(work);
-            }
-            Map<String, Object> finished = graph.resume(threadId, checkpoint.getId());
-            cleanupIfComplete(threadId, sqlRunId, userId, conversationId);
-            return result(finished);
-        } finally {
-            lock.unlock();
+            });
+        } catch (RejectedExecutionException error) {
+            log.warn("取消 SQL 查询的线程已满 runId={}", sqlRunId, error);
         }
     }
 
-    /** 上层已可靠保存结果后调用；清空当前状态但不删除框架历史检查点。 */
-    public void acknowledgeForCurrentUser(long conversationId, String sqlRunId) throws Exception {
-        acknowledgeForUser(UserContext.requireCurrentUser().getUserId(), conversationId, sqlRunId);
-    }
-
-    /** 上层可靠保存结果后，以可信用户身份确认交接。 */
-    public void acknowledgeForUser(long userId, long conversationId, String sqlRunId) throws Exception {
-        ownedUser(userId, conversationId);
-        RLock lock = lock(conversationId);
-        try {
-            String threadId = threadId(userId, conversationId);
-            var config = RunnableConfig.builder().threadId(threadId).build();
-            var checkpoint = saver.get(config).orElseThrow(() -> new IllegalStateException("SQL 取数检查点不存在"));
-            Map<String, Object> work = work(checkpoint.getState());
-            if (!sqlRunId.equals(work.get("sqlRunId")) || !"__END__".equals(checkpoint.getNextNodeId())) {
-                throw new IllegalStateException("只能确认当前已结束的 SQL 取数");
+    /** 应用停止时请求关闭执行线程，不等待无法中断的数据库调用。 */
+    @PreDestroy
+    public void shutdown() {
+        // shutdownNow 只移出排队任务；显式取消才能立即唤醒等待结果的调用方。
+        for (Runnable pending : workers.shutdownNow()) {
+            if (pending instanceof FutureTask<?> task) {
+                task.cancel(false);
             }
-            // 清理失败保留当前检查点，确保下一次确认仍有机会重试。
-            datasets.cleanupStaged(sqlRunId, userId, conversationId);
-            graph.clear(threadId);
-        } finally {
-            lock.unlock();
         }
+        cancellations.shutdownNow();
     }
 
     private void ownedUser(long userId, long conversationId) {
@@ -163,18 +170,7 @@ public final class SqlGraphService {
         }
     }
 
-    /** 返回权限拒绝而不改写检查点，权限恢复后仍可处理原任务。 */
-    private Map<String, Object> permissionDenied(String sqlRunId) {
-        Map<String, Object> denied = new LinkedHashMap<>();
-        denied.put("sqlRunId", sqlRunId);
-        denied.put("status", "FAILED");
-        denied.put("code", "AI_PERMISSION_DENIED");
-        denied.put("message", "当前用户没有 AI 使用权限，无法继续本次取数。");
-        denied.put("guidance", "请说明权限限制，不要重复调用 SQL 工具。");
-        return denied;
-    }
-
-    /** 上层先生成并记录执行 ID，以便调用中断后仍能恢复同一次取数。 */
+    /** 生成本次取数的独立标识，关联暂存和正式数据集。 */
     public static String newRunId() {
         return "sqlrun_" + IdUtil.simpleUUID();
     }
@@ -218,39 +214,4 @@ public final class SqlGraphService {
         return result;
     }
 
-    private RLock lock(long conversationId) {
-        // 子图锁独立于主智能体执行锁，避免工具运行在线程池时自锁。
-        RLock lock = redis.getLock("erp:ai:sql:execution:" + conversationId);
-        if (!lock.tryLock()) {
-            throw new IllegalStateException("会话正在执行其他任务");
-        }
-        return lock;
-    }
-
-    private Map<String, Object> current(String threadId) {
-        var config = RunnableConfig.builder().threadId(threadId).build();
-        return saver.get(config).map(checkpoint -> work(checkpoint.getState())).orElse(Map.of());
-    }
-
-    /** 只在最终检查点已保存后清理，失败不覆盖已完成的取数结果。 */
-    private void cleanupIfComplete(String threadId, String sqlRunId, long userId, long conversationId) {
-        try {
-            var config = RunnableConfig.builder().threadId(threadId).build();
-            var checkpoint = saver.get(config);
-            if (checkpoint.isEmpty() || !"__END__".equals(checkpoint.get().getNextNodeId())
-                    || !sqlRunId.equals(work(checkpoint.get().getState()).get("sqlRunId"))) return;
-            datasets.cleanupStaged(sqlRunId, userId, conversationId);
-        } catch (RuntimeException error) {
-            log.warn("SQL 取数暂存数据清理失败，可在结果交接时重试 runId={}", sqlRunId, error);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> work(Map<String, Object> state) {
-        return (Map<String, Object>) state.getOrDefault(SqlNodeSupport.WORK, Map.of());
-    }
-
-    private static String threadId(long userId, long conversationId) {
-        return "sql:" + userId + ":" + conversationId;
-    }
 }

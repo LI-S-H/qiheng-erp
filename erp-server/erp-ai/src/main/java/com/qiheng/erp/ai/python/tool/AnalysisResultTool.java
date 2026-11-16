@@ -3,6 +3,8 @@ package com.qiheng.erp.ai.python.tool;
 import com.alibaba.cloud.ai.graph.agent.tools.ToolContextHelper;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.python.result.AnalysisResultStore;
+import com.qiheng.erp.ai.python.result.AnalysisResultUnavailableException;
+import com.qiheng.erp.ai.dataset.DatasetUnavailableException;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -64,12 +66,17 @@ public final class AnalysisResultTool {
             ToolContext context) throws IOException {
         AgentToolContext identity = ToolContextHelper.getMetadata(context, AgentToolContext.CONTEXT_KEY, AgentToolContext.class)
                 .orElseThrow(() -> new IllegalStateException("缺少可信工具上下文"));
-        var text = results.readText(resultId, identity);
-        var response = new LinkedHashMap<String, Object>();
-        response.put("resultId", resultId);
-        response.put("name", text.name());
-        response.put("fileType", text.fileType());
-        response.put("content", text.content());
-        return response;
+        try {
+            var text = results.readText(resultId, identity);
+            var response = new LinkedHashMap<String, Object>();
+            response.put("resultId", resultId);
+            response.put("name", text.name());
+            response.put("fileType", text.fileType());
+            response.put("content", text.content());
+            return response;
+        } catch (AnalysisResultUnavailableException | DatasetUnavailableException error) {
+            return Map.of("status", "UNAVAILABLE", "message", "该分析结果或其来源数据不存在、已过期或当前无权访问。",
+                    "guidance", "不要重复读取同一结果；需要继续分析时根据已确认范围重新查询并分析，范围不明确时先询问用户。");
+        }
     }
 }

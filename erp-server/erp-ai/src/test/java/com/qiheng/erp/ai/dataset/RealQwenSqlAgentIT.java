@@ -133,11 +133,11 @@ class RealQwenSqlAgentIT {
             var repository = DatasetMapperTestFactory.create(jdbc.getDataSource(), mapper);
             var datasets = new DatasetManager(repository, new DatasetAccessVerifier(repository, users, schemas, guard, properties), mapper, directory.toString(), 0);
             executor = new ReadOnlySqlExecutor(properties, mock(SqlGuardGapReporter.class));
-            var graph = new SqlGraphConfiguration().sqlGraph(saver, schemas, knowledge, mainModel,
+            var graph = new SqlGraphConfiguration().sqlGraph(schemas, knowledge, mainModel,
                     mapper, guard, executor, properties, users, datasets,
                     mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class), traceMapper, 3);
             var conversations = mock(AiConversationMapper.class); when(conversations.selectOwned(2001L, 1001L)).thenReturn(new AiConversation());
-            var service = new SqlGraphService(graph, saver, conversations, redis, users, datasets);
+            var service = new SqlGraphService(graph, conversations, datasets);
             var businessGraph = mock(com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider.class);
             when(businessGraph.render()).thenReturn("【ERP 业务系统内实体、字段及关系参考】\n"
                     + "实体：测试库存（ai_stock_probe）\n"

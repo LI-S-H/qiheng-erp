@@ -1,6 +1,5 @@
 package com.qiheng.erp.ai.config;
 
-import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.config.properties.AiSqlProperties;
 import com.qiheng.erp.ai.sql.graph.SqlGraph;
@@ -24,7 +23,6 @@ import com.qiheng.erp.ai.sql.execution.ReadOnlySqlExecutor;
 import com.qiheng.erp.ai.sql.guard.SqlGuard;
 import com.qiheng.erp.ai.knowledge.KnowledgeProvider;
 import com.qiheng.erp.security.service.LoginUserService;
-import org.redisson.api.RedissonClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -34,13 +32,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
+import java.time.Duration;
 
 /** 只在模型和只读取数均启用时装配 SQL 子图，不改变旧入口的停用状态。 */
 @Configuration(proxyBeanMethods = false)
 @Conditional({AiModelEnabledCondition.class, AiSqlEnabledCondition.class})
 public class SqlGraphConfiguration {
     @Bean
-    public SqlGraph sqlGraph(RedisSaver saver, SchemaProvider schema,
+    public SqlGraph sqlGraph(SchemaProvider schema,
                              KnowledgeProvider knowledge,
                              @Qualifier("flashChatModel") OpenAiChatModel model,
                              ObjectMapper mapper,
@@ -55,7 +54,7 @@ public class SqlGraphConfiguration {
         var support = new SqlNodeSupport(schema, knowledge, users, maxAttempts, retryReporter,
                 new SqlTraceSupport(traces, mapper));
         var modelClient = new SqlModelClient(sqlModel(model), mapper);
-        return new SqlGraph(saver,
+        return new SqlGraph(
                 new SqlPrepareNode(support),
                 new SqlGenerateNode(support, modelClient, properties),
                 new SqlExecuteNode(support, guard, executor, properties, datasets, mapper),
@@ -88,8 +87,12 @@ public class SqlGraphConfiguration {
     }
 
     @Bean
-    public SqlGraphService sqlGraphService(SqlGraph graph, RedisSaver saver, AiConversationMapper conversations,
-                                           RedissonClient redis, LoginUserService users, DatasetManager datasets) {
-        return new SqlGraphService(graph, saver, conversations, redis, users, datasets);
+    public SqlGraphService sqlGraphService(SqlGraph graph, AiConversationMapper conversations, DatasetManager datasets,
+                                           ReadOnlySqlExecutor executor,
+                                           @Value("${erp.ai.sql.graph.worker-threads:8}") int workerThreads,
+                                           @Value("${erp.ai.sql.graph.queue-capacity:8}") int queueCapacity,
+                                           @Value("${erp.ai.sql.graph.timeout-seconds:600}") long timeoutSeconds) {
+        return new SqlGraphService(graph, conversations, datasets, executor::cancel,
+                workerThreads, queueCapacity, Duration.ofSeconds(timeoutSeconds));
     }
 }

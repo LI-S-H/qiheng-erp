@@ -82,7 +82,7 @@ class DatasetManagerTest {
             assertEquals(rows, new String(input.stream().readAllBytes(), StandardCharsets.UTF_8));
         }
         verify(access).verify(record);
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(DatasetUnavailableException.class,
                 () -> manager.openReady("ds_ready", 11, 20));
 
         var staged = new DatasetRecord("ds_ready", "run-1", 10, 20, "库存", List.of(), 1,
@@ -150,7 +150,7 @@ class DatasetManagerTest {
         assertEquals(new BigDecimal("1234567890.123456789"), sample.getFirst().getFirst());
         assertEquals("2026-10-27", sample.getFirst().get(1));
         assertNull(sample.getFirst().get(2));
-        assertThrows(IllegalArgumentException.class, () -> manager.readStaged(staged.datasetId(), 11, 20, 1));
+        assertThrows(DatasetUnavailableException.class, () -> manager.readStaged(staged.datasetId(), 11, 20, 1));
 
         DatasetRecord ready = new DatasetRecord(staged.datasetId(), staged.sqlRunId(), 10, 20,
                 staged.description(), staged.columns(), 1, true, "READY", null, DESCRIPTION);

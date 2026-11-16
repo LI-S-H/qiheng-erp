@@ -62,12 +62,11 @@ final class AnalysisDatasetInterceptor extends ToolInterceptor {
         }
     }
 
-    /** SQL 查询成功且启动了新查询时，登记本次产出的数据集。 */
+    /** SQL 查询成功时，登记本次产出的数据集。 */
     private void recordQueriedDataset(AnalysisTaskContext task, JsonNode result) {
-        boolean started = !result.has("newRequestStarted") || result.path("newRequestStarted").asBoolean();
         boolean succeeded = "SUCCESS".equals(result.path("status").asText())
                 || "PARTIAL".equals(result.path("status").asText());
-        if (started && succeeded) {
+        if (succeeded) {
             task.recordDataset(result.path("datasetId").asText(null));
         }
     }

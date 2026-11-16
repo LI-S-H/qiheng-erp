@@ -128,11 +128,11 @@ class SqlGraphMySqlRedisIT {
                     response(pass()));
             var support = new SqlNodeSupport(schemas, knowledge, users, 3, org.mockito.Mockito.mock(com.qiheng.erp.ai.sql.graph.SqlRetryReporter.class), traceSupport());
             var modelClient = new SqlModelClient(model, mapper);
-            SqlGraph graph = new SqlGraph(saver, new SqlPrepareNode(support),
+            SqlGraph graph = new SqlGraph(new SqlPrepareNode(support),
                     new SqlGenerateNode(support, modelClient, properties),
                     new SqlExecuteNode(support, guard, executor, properties, datasets, mapper),
                     new SqlInspectNode(support, modelClient, guard, properties, datasets, mapper));
-            var first = graph.start(thread, input(firstRun, "查询一号仓库库存"));
+            var first = graph.start(input(firstRun, "查询一号仓库库存"));
             assertThat(first.get("status")).isEqualTo("SUCCESS");
             String firstDataset = (String) first.get("datasetId");
             var expected = jdbc.query(sql1, (rs, row) -> List.of(rs.getLong("id"), rs.getBigDecimal("quantity")));
@@ -143,8 +143,7 @@ class SqlGraphMySqlRedisIT {
                 assertThat(new BigDecimal(actual.get(index).get(1).toString()))
                         .isEqualByComparingTo((BigDecimal) expected.get(index).get(1));
             }
-            graph.clear(thread);
-            var second = graph.start(thread, input(secondRun, "查询二号仓库库存"));
+            var second = graph.start(input(secondRun, "查询二号仓库库存"));
             assertThat(second.get("status")).isEqualTo("SUCCESS");
             assertThat(second.get("datasetId")).isNotEqualTo(firstDataset);
             var secondRows = datasets.read((String) second.get("datasetId"), 1001, 2001);
@@ -167,13 +166,13 @@ class SqlGraphMySqlRedisIT {
                 return response(mapper.writeValueAsString(Map.of("decision", "QUERY", "needFullData", false, "sql", sql1)));
             });
             var retryClient = new SqlModelClient(retryModel, mapper);
-            var retryGraph = new SqlGraph(saver, new SqlPrepareNode(support),
+            var retryGraph = new SqlGraph(new SqlPrepareNode(support),
                     new SqlGenerateNode(support, retryClient, properties),
                     new SqlExecuteNode(support, guard, executor, properties, datasets, mapper),
                     new SqlInspectNode(support, retryClient, guard, properties, datasets, mapper));
             var conversations = mock(AiConversationMapper.class);
             when(conversations.selectOwned(2001L, 1001L)).thenReturn(new AiConversation());
-            var service = new SqlGraphService(retryGraph, saver, conversations, redis, users, datasets);
+            var service = new SqlGraphService(retryGraph, conversations, datasets);
             try (var context = mockStatic(UserContext.class)) {
                 context.when(UserContext::requireCurrentUser).thenReturn(user);
                 var result = service.startForCurrentUser(2001, thirdRun,
@@ -186,8 +185,6 @@ class SqlGraphMySqlRedisIT {
                 assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_dataset WHERE sql_run_id=? AND status='READY' AND attempt=2",
                         Integer.class, thirdRun)).isEqualTo(1);
                 assertThat(datasets.read((String) result.get("datasetId"), 1001, 2001)).hasSize(2);
-                assertThat(service.recoverForCurrentUser(2001, thirdRun).get("datasetId")).isEqualTo(result.get("datasetId"));
-                service.acknowledgeForCurrentUser(2001, thirdRun);
 
                 // 一行上限使真实查询产生截断，验证发布、恢复、读取和确认后的下一次任务。
                 var partialDs = new AiSqlProperties.Datasource(readOnlyUrl, readOnlyUser, readOnlyPassword,
@@ -204,11 +201,11 @@ class SqlGraphMySqlRedisIT {
                 var partialDatasets = new DatasetManager(repository, partialAccess, mapper, directory.toString(), 0);
                 var partialExecutor = new ReadOnlySqlExecutor(smallLimits, mock(SqlGuardGapReporter.class));
                 try {
-                    var partialGraph = new SqlGraph(saver, new SqlPrepareNode(support),
+                    var partialGraph = new SqlGraph(new SqlPrepareNode(support),
                             new SqlGenerateNode(support, partialClient, smallLimits),
                             new SqlExecuteNode(support, guard, partialExecutor, smallLimits, partialDatasets, mapper),
                             new SqlInspectNode(support, partialClient, guard, smallLimits, partialDatasets, mapper));
-                    var partialService = new SqlGraphService(partialGraph, saver, conversations, redis, users, partialDatasets);
+                    var partialService = new SqlGraphService(partialGraph, conversations, partialDatasets);
                     var partial = partialService.startForCurrentUser(2001, partialRun,
                             Map.of("goal", "查询一号仓库库存", "dataRequirement", "FULL"));
                     assertThat(partial).containsEntry("status", "PARTIAL").containsEntry("truncated", true)
@@ -219,14 +216,10 @@ class SqlGraphMySqlRedisIT {
                     assertThat(page.rows()).hasSize(1);
                     assertThat(page.datasetTruncated()).isTrue();
                     assertThat(((Map<?, ?>) partial.get("preview")).get("containsAllRows")).isEqualTo(false);
-                    assertThat(partialService.recoverForCurrentUser(2001, partialRun))
-                            .containsEntry("datasetId", partialId).containsEntry("truncationReason", "ROW_LIMIT");
-                    partialService.acknowledgeForCurrentUser(2001, partialRun);
                     var after = partialService.startForCurrentUser(2001, afterRun,
                             Map.of("goal", "查询二号仓库库存", "dataRequirement", "FULL"));
                     assertThat(after).containsEntry("status", "SUCCESS");
                     assertThat(partialDatasets.readPage(partialId, 1001, 2001, 0, 5).datasetTruncated()).isTrue();
-                    partialService.acknowledgeForCurrentUser(2001, afterRun);
                 } finally {
                     partialExecutor.destroy();
                 }

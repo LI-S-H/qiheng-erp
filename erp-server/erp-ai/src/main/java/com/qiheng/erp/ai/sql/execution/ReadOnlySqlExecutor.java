@@ -54,6 +54,7 @@ public class ReadOnlySqlExecutor implements DisposableBean {
     private final CursorPager pager;
 
     private final SqlGuardGapReporter guardGapReporter;
+    private final SqlStatementCancellation cancellation = new SqlStatementCancellation();
 
     @Autowired
     public ReadOnlySqlExecutor(AiSqlProperties properties, SqlGuardGapReporter guardGapReporter) {
@@ -87,6 +88,7 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      * @return 成功、超过取数上限、分页未完成或执行失败
      */
     public ExecutionOutcome execute(SqlExecutionRequest request) {
+        var active = cancellation.begin(request.runId());
         GuardedSql guardedSql = request.guardedSql();
         long started = System.nanoTime();
         // 对 SQL 文本做 SHA-256 哈希，用于日志脱敏——日志里不打印完整 SQL（可能含业务数据），只打印哈希前 8 位
@@ -94,14 +96,14 @@ public class ReadOnlySqlExecutor implements DisposableBean {
         try (Connection connection = openConnection()) {
             if (guardedSql.limit() != null) {
                 // 路径 A：SQL 自带 LIMIT
-                return executeWithLimit(connection, guardedSql, started, sqlHash);
+                return executeWithLimit(connection, guardedSql, started, sqlHash, active);
             }
             if (guardedSql.executionStrategy() == GuardedSql.ExecutionStrategy.CURSOR) {
                 // 只对守卫确认可分页的单表明细改写 SQL。
-                return executePaged(connection, guardedSql, request, started, sqlHash);
+                return executePaged(connection, guardedSql, request, started, sqlHash, active);
             }
             // 聚合、子查询及非游标结果按原 SQL 有界读取，不能拼接明细游标。
-            return executeBounded(connection, guardedSql, started, sqlHash);
+            return executeBounded(connection, guardedSql, started, sqlHash, active);
         } catch (SQLException error) {
             // SQL 异常 → 分类处理
             return failure(error, guardedSql, request, sqlHash);
@@ -111,6 +113,17 @@ public class ReadOnlySqlExecutor implements DisposableBean {
             return new ExecutionOutcome.Failed(SqlErrorKind.UNKNOWN,
                     "查询执行失败：" + safeDetail(error.getMessage()),
                     SqlErrorKind.UNKNOWN.userMessage());
+        } finally {
+            cancellation.finish(request.runId(), active);
+        }
+    }
+
+    /** 尽力取消指定任务的当前数据库语句；不会关闭共享连接池。 */
+    public void cancel(String runId) {
+        try {
+            cancellation.cancel(runId);
+        } catch (SQLException error) {
+            log.warn("取消 SQL 语句失败 runId={}", runId, error);
         }
     }
 
@@ -154,23 +167,28 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      * 路径 A：模型自己写了 LIMIT。按它要的条数取，多取一行只为知道"还有没有"。
      */
     private ExecutionOutcome executeWithLimit(Connection connection, GuardedSql guardedSql,
-                                              long started, String sqlHash) throws SQLException {
+                                              long started, String sqlHash, SqlStatementCancellation.ActiveQuery active) throws SQLException {
         int limit = guardedSql.limit();
         // 预编译，多次执行更高效
         try (PreparedStatement statement = connection.prepareStatement(guardedSql.sql())) {
-            // 设置查询超时时间
-            statement.setQueryTimeout(limits.timeoutSeconds());
-            // 限制返回行数，数据库仍可能扫描更多源数据。
-            statement.setMaxRows(limit + 1);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                QueryResult result = readAll(resultSet, limit + 1, started, sqlHash);
-                if (result.rowCount() > limit) {
-                    result = new QueryResult(result.columns(), result.rows().subList(0, limit), limit,
-                            true, 1, result.elapsedMillis(), result.sqlHash());
+            active.register(statement);
+            try {
+                // 设置查询超时时间
+                statement.setQueryTimeout(limits.timeoutSeconds());
+                // 限制返回行数，数据库仍可能扫描更多源数据。
+                statement.setMaxRows(limit + 1);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    QueryResult result = readAll(resultSet, limit + 1, started, sqlHash);
+                    if (result.rowCount() > limit) {
+                        result = new QueryResult(result.columns(), result.rows().subList(0, limit), limit,
+                                true, 1, result.elapsedMillis(), result.sqlHash());
+                    }
+                    log.info("取数完成（LIMIT） hash={} rows={} elapsedMs={}",
+                            sqlHash.substring(0, 8), result.rowCount(), result.elapsedMillis());
+                    return new ExecutionOutcome.Success(result);
                 }
-                log.info("取数完成（LIMIT） hash={} rows={} elapsedMs={}",
-                        sqlHash.substring(0, 8), result.rowCount(), result.elapsedMillis());
-                return new ExecutionOutcome.Success(result);
+            } finally {
+                active.clear(statement);
             }
         }
     }
@@ -180,9 +198,9 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      */
     private ExecutionOutcome executePaged(Connection connection, GuardedSql guardedSql,
                                           SqlExecutionRequest request, long started,
-                                          String sqlHash) throws SQLException {
+                                          String sqlHash, SqlStatementCancellation.ActiveQuery active) throws SQLException {
         // 游标页：按游标翻页
-        CursorPager.PagingResult paging = pager.fetch(connection, guardedSql);
+        CursorPager.PagingResult paging = pager.fetch(connection, guardedSql, active);
         log.info("取数完成（全量） runId={} stepId={} pages={} rows={} completed={} elapsedMs={}",
                 request.runId(), request.stepId(), paging.pages(), paging.rows().size(),
                 paging.completed(), elapsed(started));
@@ -195,20 +213,25 @@ public class ReadOnlySqlExecutor implements DisposableBean {
      * 原样执行非游标 SQL；多取一行用于判断结果是否超过系统总上限。
      */
     private ExecutionOutcome executeBounded(Connection connection, GuardedSql guardedSql,
-                                          long started, String sqlHash) throws SQLException {
+                                          long started, String sqlHash, SqlStatementCancellation.ActiveQuery active) throws SQLException {
         int maxRows = limits.maxTotalRows();
         try (PreparedStatement statement = connection.prepareStatement(guardedSql.sql())) {
-            statement.setQueryTimeout(limits.timeoutSeconds());
-            statement.setMaxRows(maxRows + 1);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                QueryResult result = readAll(resultSet, maxRows + 1, started, sqlHash);
-                if (result.rowCount() > maxRows) {
-                    log.info("非游标取数超过总行数上限 hash={} maxRows={}", sqlHash.substring(0, 8), maxRows);
-                    return new ExecutionOutcome.Success(new QueryResult(result.columns(),
-                            result.rows().subList(0, maxRows), maxRows, false, 1,
-                            result.elapsedMillis(), result.sqlHash(), "ROW_LIMIT"));
+            active.register(statement);
+            try {
+                statement.setQueryTimeout(limits.timeoutSeconds());
+                statement.setMaxRows(maxRows + 1);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    QueryResult result = readAll(resultSet, maxRows + 1, started, sqlHash);
+                    if (result.rowCount() > maxRows) {
+                        log.info("非游标取数超过总行数上限 hash={} maxRows={}", sqlHash.substring(0, 8), maxRows);
+                        return new ExecutionOutcome.Success(new QueryResult(result.columns(),
+                                result.rows().subList(0, maxRows), maxRows, false, 1,
+                                result.elapsedMillis(), result.sqlHash(), "ROW_LIMIT"));
+                    }
+                    return new ExecutionOutcome.Success(result);
                 }
-                return new ExecutionOutcome.Success(result);
+            } finally {
+                active.clear(statement);
             }
         }
     }

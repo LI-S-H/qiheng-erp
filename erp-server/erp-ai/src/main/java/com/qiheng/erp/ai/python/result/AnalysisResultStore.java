@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.dataset.DatasetManager;
+import com.qiheng.erp.ai.job.AiCleanupFailureReporter;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.qiheng.erp.ai.domain.entity.AiAnalysisResult;
 import com.qiheng.erp.ai.mapper.AiAnalysisResultMapper;
 import com.qiheng.erp.ai.context.AgentToolContext;
@@ -18,6 +20,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,6 +44,13 @@ public class AnalysisResultStore {
     private final ObjectMapper mapper;
     private final Path directory;
     private final long ttlDays;
+    private AiCleanupFailureReporter cleanupReporter;
+
+    /** 可选注入告警组件，保持独立测试和现有构造方式兼容。 */
+    @Autowired(required = false)
+    public void setCleanupReporter(AiCleanupFailureReporter cleanupReporter) {
+        this.cleanupReporter = cleanupReporter;
+    }
 
     /** 初始化结果目录、保留天数及元信息和来源权限依赖。 */
     public AnalysisResultStore(AiAnalysisResultMapper repository, DatasetManager datasets, ObjectMapper mapper,
@@ -133,10 +143,10 @@ public class AnalysisResultStore {
                 .eq(AiAnalysisResult::getUserId, identity.userId())
                 .eq(AiAnalysisResult::getConversationId, identity.conversationId()));
         if (record == null) {
-            throw new IllegalArgumentException("分析结果不存在");
+            throw new AnalysisResultUnavailableException("分析结果不存在");
         }
         if (expired(record)) {
-            throw new IllegalStateException("分析结果已过期");
+            throw new AnalysisResultUnavailableException("分析结果已过期");
         }
         List<String> sources = mapper.readValue(record.getSourceDatasetIds(), new TypeReference<>() {});
         verifySources(identity, sources);
@@ -184,7 +194,11 @@ public class AnalysisResultStore {
         if (!file.startsWith(directory)) {
             throw new IllegalStateException("分析结果路径无效");
         }
-        return Files.newInputStream(file);
+        try {
+            return Files.newInputStream(file);
+        } catch (NoSuchFileException error) {
+            throw new AnalysisResultUnavailableException("分析结果文件不存在");
+        }
     }
 
     /**
@@ -202,16 +216,22 @@ public class AnalysisResultStore {
                 .last("LIMIT " + limit));
         int removed = 0;
         for (AiAnalysisResult record : records) {
+            String stage = "删除文件";
             try {
                 Path file = directory.resolve(record.getStorageFile()).normalize();
-                if (file.startsWith(directory)) {
-                    Files.deleteIfExists(file);
+                if (!file.startsWith(directory)) {
+                    throw new IOException("结果文件路径超出受管目录");
                 }
+                Files.deleteIfExists(file);
+                stage = "删除元数据";
                 if (repository.deleteById(record.getResultId()) > 0) {
                     removed++;
                 }
             } catch (IOException | RuntimeException error) {
                 log.warn("过期分析结果清理失败 resultId={}", record.getResultId(), error);
+                if (cleanupReporter != null) {
+                    cleanupReporter.report("Python 分析结果", record.getResultId(), record.getStorageFile(), stage, error);
+                }
             }
         }
         return removed;

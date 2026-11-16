@@ -38,7 +38,7 @@ class SqlQueryToolTest {
             String result = executor.submit(() -> callback.call("{\"requirement\":{\"goal\":\"库存\",\"dataRequirement\":\"FULL\"}}", context)).get();
             assertThat(result).contains("NEED_INFO", "run1");
         }
-        verify(service).acknowledgeForUser(15L, 1001L, "run1");
+        verify(service).startForUser(eq(15L), eq(1001L), anyString(), anyMap());
     }
 
     @Test
@@ -50,7 +50,7 @@ class SqlQueryToolTest {
         ToolContext context = new ToolContext(Map.of(AgentToolContext.CONTEXT_KEY, new AgentToolContext(15, 1001)));
         String result = callback.call("{\"requirement\":{\"goal\":\"库存\",\"dataRequirement\":\"FULL\"}}", context);
         assertThat(result).contains("PARTIAL", "truncated");
-        verify(service).acknowledgeForUser(15L, 1001L, "run1");
+        verify(service).startForUser(eq(15L), eq(1001L), anyString(), anyMap());
     }
 
     @Test

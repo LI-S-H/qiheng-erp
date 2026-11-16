@@ -131,11 +131,11 @@ class AnalysisComplexScenarioIT {
             var repository = DatasetMapperTestFactory.create(source, mapper);
             var datasets = new DatasetManager(repository, new DatasetAccessVerifier(repository, users, schemas, guard, properties), mapper, directory.resolve("datasets").toString(), 0);
             executor = new ReadOnlySqlExecutor(properties, mock(SqlGuardGapReporter.class));
-            var graph = new SqlGraphConfiguration().sqlGraph(saver, schemas, knowledge, flash, mapper, guard,
+            var graph = new SqlGraphConfiguration().sqlGraph(schemas, knowledge, flash, mapper, guard,
                     executor, properties, users, datasets, mock(SqlRetryReporter.class), mock(AiAgentTraceMapper.class), 3);
             var conversations = mock(AiConversationMapper.class);
             when(conversations.selectOwned(2001L, 1001L)).thenReturn(new AiConversation());
-            var sql = new SqlQueryTool(new SqlGraphService(graph, saver, conversations, redis, users, datasets));
+            var sql = new SqlQueryTool(new SqlGraphService(graph, conversations, datasets));
             var configuration = new MybatisConfiguration();
             configuration.addMapper(AiAnalysisResultMapper.class);
             var bean = new MybatisSqlSessionFactoryBean();

@@ -26,7 +26,9 @@ class SqlGraphTest {
             }
             public Map<String, Object> execute(Map<String, Object> state) {
                 var next = new HashMap<>(state);
-                if (attempts.getAndIncrement() == 0) next.put("route", "retry");
+                if (attempts.getAndIncrement() == 0) {
+                    next.put("route", "retry");
+                }
                 return next;
             }
             public Map<String, Object> inspect(Map<String, Object> state) {
@@ -36,21 +38,17 @@ class SqlGraphTest {
                 return next;
             }
         });
-        Map<String, Object> first = graph.start("session-1", Map.of("request", "first"));
-        Map<String, Object> second = graph.start("session-1", Map.of("request", "second"));
+        Map<String, Object> first = graph.start(Map.of("request", "first"));
+        Map<String, Object> second = graph.start(Map.of("request", "second"));
         assertThat(first.get("datasetId")).isEqualTo("dataset-first");
         assertThat(second.get("datasetId")).isEqualTo("dataset-second");
         assertThat(second.get("sql")).isEqualTo("SELECT second");
         assertThat(attempts).hasValue(3);
-        assertThat(saver.list(RunnableConfig.builder().threadId("session-1").build()).size()).isGreaterThan(1);
-        graph.clear("session-1");
-        var latest = saver.get(RunnableConfig.builder().threadId("session-1").build()).orElseThrow();
-        assertThat(latest.getState().get("sqlWork")).isEqualTo(Map.of());
-        assertThat(saver.list(RunnableConfig.builder().threadId("session-1").build()).size()).isGreaterThan(1);
+        assertThat(saver.list(RunnableConfig.builder().threadId("session-1").build())).isEmpty();
     }
 
     @Test
-    void restoresAtCheckpointAfterAnInterruptedNode() throws Exception {
+    void startsFromBeginningAfterAnInterruptedNode() throws Exception {
         MemorySaver saver = new MemorySaver();
         AtomicInteger generations = new AtomicInteger();
         AtomicInteger executions = new AtomicInteger();
@@ -63,7 +61,9 @@ class SqlGraphTest {
                 return next;
             }
             public Map<String, Object> execute(Map<String, Object> state) {
-                if (executions.getAndIncrement() == 0) throw new IllegalStateException("模拟中断");
+                if (executions.getAndIncrement() == 0) {
+                    throw new IllegalStateException("模拟中断");
+                }
                 return state;
             }
             public Map<String, Object> inspect(Map<String, Object> state) {
@@ -73,13 +73,11 @@ class SqlGraphTest {
                 return next;
             }
         };
-        assertThatThrownBy(() -> TestGraph.create(saver, operations).start("session-2", Map.of("request", "库存")))
+        assertThatThrownBy(() -> TestGraph.create(saver, operations).start(Map.of("request", "库存")))
                 .hasMessageContaining("模拟中断");
-        var checkpoint = saver.get(RunnableConfig.builder().threadId("session-2").build()).orElseThrow();
-        assertThat(checkpoint.getNextNodeId()).isEqualTo("execute");
-        var result = TestGraph.create(saver, operations).resume("session-2", checkpoint.getId());
+        var result = TestGraph.create(saver, operations).start(Map.of("request", "库存"));
         assertThat(result.get("datasetId")).isEqualTo("ds_1");
-        assertThat(generations).hasValue(1);
+        assertThat(generations).hasValue(2);
         assertThat(executions).hasValue(2);
     }
 }

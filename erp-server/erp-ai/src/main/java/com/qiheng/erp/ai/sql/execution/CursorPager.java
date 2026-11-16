@@ -91,6 +91,12 @@ final class CursorPager {
      * @throws SQLException 执行失败
      */
     PagingResult fetch(Connection connection, GuardedSql guardedSql) throws SQLException {
+        return fetch(connection, guardedSql, new SqlStatementCancellation.ActiveQuery());
+    }
+
+    /** 翻页过程中登记当前语句，使取消请求可作用于任一页。 */
+    PagingResult fetch(Connection connection, GuardedSql guardedSql,
+                       SqlStatementCancellation.ActiveQuery active) throws SQLException {
         // 1. 准备。调用 prepare() 把原始 SQL 改写成两段 SQL + 列信息
         PreparedPages pages = prepare(guardedSql);
         List<List<Object>> allRows = new ArrayList<>();
@@ -111,41 +117,46 @@ final class CursorPager {
             // 3. 第 1 页用 firstPageSql，后续页用 nextPageSql
             String sql = executedPages == 0 ? pages.firstPageSql() : pages.nextPageSql();
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setQueryTimeout(limits.timeoutSeconds());
-                statement.setMaxRows(requested + 1);
-                if (executedPages > 0) {
-                    // 4. 绑定游标
-                    bindCursor(statement, cursor, pages.sortKeys());
-                }
-                try (ResultSet resultSet = statement.executeQuery()) {
-                    if (layout == null) {
-                        // 5. 第 1 页，初始化布局
-                        layout = RowLayout.of(resultSet.getMetaData(), pages);
-                        columns = layout.columns();
+                active.register(statement);
+                try {
+                    statement.setQueryTimeout(limits.timeoutSeconds());
+                    statement.setMaxRows(requested + 1);
+                    if (executedPages > 0) {
+                        // 4. 绑定游标
+                        bindCursor(statement, cursor, pages.sortKeys());
                     }
-                    // 6. 读取一页数据
-                    PageBuffer buffer = layout.read(resultSet, requested);
-                    executedPages++;
-                    if (buffer.fetched() == 0) {
-                        completed = true;
-                        break;
+                    try (ResultSet resultSet = statement.executeQuery()) {
+                        if (layout == null) {
+                            // 5. 第 1 页，初始化布局
+                            layout = RowLayout.of(resultSet.getMetaData(), pages);
+                            columns = layout.columns();
+                        }
+                        // 6. 读取一页数据
+                        PageBuffer buffer = layout.read(resultSet, requested);
+                        executedPages++;
+                        if (buffer.fetched() == 0) {
+                            completed = true;
+                            break;
+                        }
+                        allRows.addAll(buffer.rows());
+                        if (!buffer.hasMore()) {
+                            completed = true;
+                            break;
+                        }
+                        // 7. 还有更多，记录最后一行的书签值 cursor
+                        cursor = buffer.lastCursor();
+                        // 8. 检查是否取完或撞上限
+                        if (allRows.size() >= limits.maxTotalRows()) {
+                            truncationReason = "ROW_LIMIT";
+                            break;
+                        }
+                        if (executedPages >= limits.maxPages()) {
+                            truncationReason = "PAGE_LIMIT";
+                            break;
+                        }
                     }
-                    allRows.addAll(buffer.rows());
-                    if (!buffer.hasMore()) {
-                        completed = true;
-                        break;
-                    }
-                    // 7. 还有更多，记录最后一行的书签值 cursor
-                    cursor = buffer.lastCursor();
-                    // 8. 检查是否取完或撞上限
-                    if (allRows.size() >= limits.maxTotalRows()) {
-                        truncationReason = "ROW_LIMIT";
-                        break;
-                    }
-                    if (executedPages >= limits.maxPages()) {
-                        truncationReason = "PAGE_LIMIT";
-                        break;
-                    }
+                } finally {
+                    active.clear(statement);
                 }
             }
         }

@@ -16,7 +16,7 @@ final class TestGraph {
     }
 
     static SqlGraph create(BaseCheckpointSaver saver, Operations operations) throws Exception {
-        return new SqlGraph(saver, node(operations::prepare), node(operations::generate),
+        return new SqlGraph(node(operations::prepare), node(operations::generate),
                 node(operations::execute), node(operations::inspect));
     }
 

@@ -53,6 +53,11 @@ erp:
       max-pages: 10
       # 单条查询超时（秒）。
       query-timeout-seconds: 10
+      graph:
+        # 工作线程执行 SQL 子图；队列中的任务也计入整体超时。
+        worker-threads: ${ERP_AI_SQL_GRAPH_WORKER_THREADS:8}
+        queue-capacity: ${ERP_AI_SQL_GRAPH_QUEUE_CAPACITY:8}
+        timeout-seconds: ${ERP_AI_SQL_GRAPH_TIMEOUT_SECONDS:600}
 
     # 数据集是取数中间产物：按天过期，0 表示不自动过期。
     dataset:

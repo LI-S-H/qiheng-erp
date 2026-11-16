@@ -3,6 +3,7 @@ package com.qiheng.erp.ai.python.tool;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.domain.entity.AiAnalysisResult;
 import com.qiheng.erp.ai.python.result.AnalysisResultStore;
+import com.qiheng.erp.ai.dataset.DatasetUnavailableException;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 
@@ -13,6 +14,17 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class AnalysisResultToolTest {
+    @Test
+    void explainsUnavailableSourceDataset() throws Exception {
+        var identity = new AgentToolContext(10, 20);
+        var context = new ToolContext(Map.of(AgentToolContext.CONTEXT_KEY, identity));
+        var store = mock(AnalysisResultStore.class);
+        when(store.readText("result-old", identity)).thenThrow(new DatasetUnavailableException("数据集已过期"));
+        var result = new AnalysisResultTool(store).readAnalysisResult("result-old", context);
+        assertEquals("UNAVAILABLE", result.get("status"));
+        assertTrue(result.get("guidance").toString().contains("重新查询"));
+    }
+
     /** 结果列表使用可信身份和当前分析任务，仅返回元信息。 */
     @Test
     void listsOnlyCurrentTask() throws Exception {

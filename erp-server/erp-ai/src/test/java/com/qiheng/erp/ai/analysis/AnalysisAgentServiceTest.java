@@ -202,7 +202,6 @@ class AnalysisAgentServiceTest {
 
         assertThat(service.analyze("分析", identity)).isEqualTo("完成");
         verify(sqlService).startForUserAtDate(eq(10L), eq(20L), anyString(), anyMap(), eq("2026-11-08"));
-        verify(sqlService).acknowledgeForUser(10L, 20L, "run-1");
         verify(manager).readPage("ds-1", 10, 20, 0, Integer.MAX_VALUE);
     }
 

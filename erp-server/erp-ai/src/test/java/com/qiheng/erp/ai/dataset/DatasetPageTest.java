@@ -36,7 +36,7 @@ class DatasetPageTest {
         assertThat(beyond.rows()).isEmpty();
         assertThat(beyond.hasMore()).isFalse();
         assertThat(beyond.nextOffset()).isNull();
-        assertThatThrownBy(() -> manager.readPage("ds_a", 99, 2, 0, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> manager.readPage("ds_a", 99, 2, 0, 1)).isInstanceOf(DatasetUnavailableException.class);
         verify(access, times(3)).verify(record);
     }
 

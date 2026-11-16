@@ -26,9 +26,9 @@ public final class SqlPrepareNode implements NodeAction {
         // 刷新权限，失败即 end
         if (!support.refreshAuthorization(work)) {
             return update(work);
-    }
+        }
         work.put("attempt", 0);
-        // 同一次取数的相对日期口径固定；重试和跨午夜恢复不能悄悄换成另一天。
+        // 同一次取数的相对日期口径固定，重试时不能悄悄换成另一天。
         work.putIfAbsent("currentDate", LocalDate.now(ZoneId.of("Asia/Shanghai")).toString());
         work.put("timeZone", "Asia/Shanghai");
         work.put("status", "RUNNING");

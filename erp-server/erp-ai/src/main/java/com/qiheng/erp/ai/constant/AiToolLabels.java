@@ -18,6 +18,7 @@ public final class AiToolLabels {
 
     private static final Map<String, String> LABELS = Map.of(
             "ask_user", "补充信息",
+            "createReport", "生成报告",
             "analyzeData", "子智能体分析",
             "query_sql_data", "查询业务数据",
             "readDataset", "读取数据",

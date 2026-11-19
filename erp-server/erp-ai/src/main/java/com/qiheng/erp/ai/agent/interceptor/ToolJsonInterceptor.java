@@ -41,7 +41,7 @@ public final class ToolJsonInterceptor extends ToolInterceptor {
 
     @Override
     public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
-        if (!Set.of("query_sql_data", "readDataset", "listDatasets", "listAnalysisResults", "readAnalysisResult", "analyzeData")
+        if (!Set.of("query_sql_data", "readDataset", "listDatasets", "listAnalysisResults", "readAnalysisResult", "analyzeData", "createReport")
                 .contains(request.getToolName())) {
             return handler.call(request);
         }

@@ -37,14 +37,15 @@ public final class AnalysisTool {
      * @param toolContext 运行上下文，提供可信身份与过程通道
      * @return 结构化分析结果
      */
-    @Tool(name = TOOL_NAME, description = "向数据分析智能体交付明确的业务分析任务。"
-            + "分析智能体会了解当前会话已有的数据，按需查询补充数据并使用 Python 计算，"
-            + "返回分析结论、使用的数据集和已保存的结果文件。调用时说明需要回答的业务问题及已知条件。")
+    @Tool(name = TOOL_NAME, description = "擅长数据核对、指标计算和业务分析的数据分析专家。"
+            + "只需交付要回答的业务问题，并附上已确认的范围、口径和相关数据集 ID（如有）。"
+            + "专家会自主复用数据、按需用 SQL 补数和用 Python 计算，"
+            + "返回分析结论、数据依据及影响结论的限制；生成结果文件时一并返回文件 ID。")
     public AnalysisResult analyzeData(
             @ToolParam(description = "必填：详细说明要回答的业务问题、需要分析的对象和期望得到的结论；"
                     + "应描述分析目标而不是只给出一个笼统主题") String goal,
             @ToolParam(required = false, description = "可选：提供用户或已有上下文明确确认的业务范围、"
-                    + "时间范围、指标口径、单位及其他约束；没有已知条件时省略，不要编造") String context,
+                    + "时间范围、指标口径、单位、相关数据集 ID 及用途；没有已知条件时省略，不要编造") String context,
             ToolContext toolContext) {
         var identity = ToolContextHelper.getMetadata(toolContext, AgentToolContext.CONTEXT_KEY, AgentToolContext.class)
                 .orElseThrow(() -> new IllegalStateException("缺少可信分析工具上下文"));

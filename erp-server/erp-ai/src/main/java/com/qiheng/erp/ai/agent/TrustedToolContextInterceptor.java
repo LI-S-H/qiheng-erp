@@ -20,6 +20,7 @@ import java.util.HashMap;
  */
 public final class TrustedToolContextInterceptor extends ToolInterceptor {
     public static final String TRUSTED_CONTEXT = "trustedSqlContext";
+    public static final String CURRENT_RUN_ID = "currentRunId";
 
     /**
      * 把服务端身份、任务对象与事件通道写入工具上下文。
@@ -34,6 +35,10 @@ public final class TrustedToolContextInterceptor extends ToolInterceptor {
                 .config().metadata(TRUSTED_CONTEXT).orElseThrow();
         var context = new HashMap<>(request.getContext());
         context.put(AgentToolContext.CONTEXT_KEY, trusted);
+        // 当前轮次只能从服务端运行配置中获取。
+        context.remove(CURRENT_RUN_ID);
+        request.getExecutionContext().orElseThrow().config().metadata("runId")
+                .ifPresent(value -> context.put(CURRENT_RUN_ID, value));
         // 任务对象只从服务端运行配置注入，不接受外部上下文冒充。
         context.remove(AnalysisTaskContext.CONTEXT_KEY);
         request.getExecutionContext().orElseThrow().config().metadata(AnalysisTaskContext.CONTEXT_KEY)

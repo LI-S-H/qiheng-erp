@@ -19,6 +19,17 @@ import java.util.List;
  */
 public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
 
+    /** 读取指定用户、会话和运行的消息，按会话顺序整理报告输入。 */
+    @Select("""
+        SELECT * FROM ai_message
+        WHERE user_id = #{userId} AND conversation_id = #{conversationId}
+          AND request_id = #{requestId} AND deleted = 0
+        ORDER BY seq ASC
+        """)
+    List<AiMessage> selectRunMessages(@Param("userId") long userId,
+                                      @Param("conversationId") long conversationId,
+                                      @Param("requestId") String requestId);
+
     /**
      * 用户可见消息分页：依据展示标记返回，包括追问工具调用和回答。
      *

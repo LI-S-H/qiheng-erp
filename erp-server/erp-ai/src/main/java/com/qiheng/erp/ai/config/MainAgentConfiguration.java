@@ -5,6 +5,7 @@ import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.MessageRecordingHook;
 import com.qiheng.erp.ai.agent.interceptor.AnalysisProgressContextInterceptor;
+import com.qiheng.erp.ai.agent.interceptor.ReportProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolRecordingInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
 import com.qiheng.erp.ai.clarification.ClarificationService;
@@ -23,6 +24,7 @@ import com.qiheng.erp.ai.dataset.tool.ListDatasetsTool;
 import com.qiheng.erp.ai.python.tool.AnalysisResultTool;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
 import com.qiheng.erp.ai.analysis.AnalysisTool;
+import com.qiheng.erp.ai.report.ReportTool;
 import com.qiheng.erp.ai.clarification.AskUserTool;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
@@ -49,6 +51,8 @@ import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 public class MainAgentConfiguration {
     @Autowired(required = false)
     private SystemExceptionMqPublisher publisher;
+    @Autowired(required = false)
+    private ReportTool reportTool;
 
     /**
      * 组装主智能体；工具、拦截器与检查点在这里一次性绑定。
@@ -71,11 +75,15 @@ public class MainAgentConfiguration {
                                 ClarificationService clarification, ListDatasetsTool datasetList,
                                 AnalysisResultTool results, AnalysisTool analysisTool) throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
+        var tools = new java.util.ArrayList<Object>(java.util.List.of(sql, dataset, datasetList, results, analysisTool, new AskUserTool(clarification)));
+        if (reportTool != null) {
+            tools.add(reportTool);
+        }
         return ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
-                .methodTools(sql, dataset, datasetList, results, analysisTool, new AskUserTool(clarification))
+                .methodTools(tools.toArray())
                 .hooks(new MessageRecordingHook())
                 .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
-                        new AnalysisProgressContextInterceptor(),
+                        new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
                         new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph))
                 .saver(saver).releaseThread(false).build();
     }

@@ -40,6 +40,7 @@ public final class RunEventChannel {
     private long closedAt;
     private int textChars;
     private boolean snapshotTruncated;
+    private String finalMessageId;
 
     /**
      * 建立本轮运行通道。
@@ -88,9 +89,15 @@ public final class RunEventChannel {
             case "analysis_started" -> applyAnalysisStarted(data);
             case "analysis_step" -> analysisStep(data);
             case "analysis_summary" -> analysisSummary(data);
+            case "report_progress", "report_ready" -> applyReport(name, data);
             case "question" -> applyQuestion(data);
             case "question_answered" -> applyTerminal("RUNNING");
-            case "run_completed" -> applyTerminal("COMPLETED");
+            case "run_completed" -> {
+                if (data.get("finalMessageId") instanceof String id) {
+                    finalMessageId = id;
+                }
+                applyTerminal("COMPLETED");
+            }
             case "run_failed" -> applyTerminal("FAILED");
             default -> {
                 // 未纳入快照的事件只做实时推送。
@@ -258,6 +265,9 @@ public final class RunEventChannel {
         snapshot.put("question", question);
         snapshot.put("eventSeq", eventSeq);
         snapshot.put("snapshotTruncated", snapshotTruncated);
+        if (finalMessageId != null) {
+            snapshot.put("finalMessageId", finalMessageId);
+        }
         return snapshot;
     }
 
@@ -271,8 +281,11 @@ public final class RunEventChannel {
             synchronized (this) {
                 sink.next(new Event("run_snapshot", snapshot()));
                 if (closed) {
-                    sink.next(new Event("COMPLETED".equals(status) ? "run_completed" : "run_failed",
-                            Map.of("runId", runId, "status", status)));
+                    var finished = new LinkedHashMap<String, Object>(Map.of("runId", runId, "status", status));
+                    if (finalMessageId != null) {
+                        finished.put("finalMessageId", finalMessageId);
+                    }
+                    sink.next(new Event("COMPLETED".equals(status) ? "run_completed" : "run_failed", Map.copyOf(finished)));
                     sink.complete();
                 } else {
                     subscribers.add(sink);
@@ -310,6 +323,29 @@ public final class RunEventChannel {
         item.put("steps", data.get("steps"));
         item.put("summary", data.get("summary"));
         item.put("completion", data.get("completion"));
+    }
+
+    /** 报告进度只保留展示数据，正文由独立详情接口提供。 */
+    @SuppressWarnings("unchecked")
+    private void applyReport(String name, Map<String, Object> data) {
+        String id = (String) data.get("toolCallId");
+        String key = "report:" + id;
+        if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
+            snapshotTruncated = true;
+            return;
+        }
+        var item = items.computeIfAbsent(key, ignored -> new LinkedHashMap<>(
+                Map.of("type", "report", "id", id, "steps", new ArrayList<Map<String, Object>>())));
+        if ("report_ready".equals(name)) {
+            item.put("report", Map.of("reportId", data.get("reportId"),
+                    "requestId", data.get("requestId"), "toolCallId", id,
+                    "title", data.get("title"), "placeholder", data.get("placeholder")));
+            return;
+        }
+        var steps = new ArrayList<>((List<Map<String, Object>>) item.get("steps"));
+        steps.add(Map.of("phase", data.get("phase"), "text", data.get("text"), "stepSeq", data.get("stepSeq")));
+        // 已发出的快照不能因后续步骤写入而发生变化。
+        item.put("steps", List.copyOf(steps));
     }
 
     /** 建立一段空文字条目。 */

@@ -259,6 +259,7 @@ ERP 全部 DDL 没有外键约束，关系无法从库结构推导，只能人�
 - `ai_conversation.user_id` -> `sys_user.id`，弱外键
 - `ai_message.conversation_id` -> `ai_conversation.id`，由 Service 事务维护级联逻辑删除
 - `ai_message.user_id` -> `sys_user.id`，冗余保存用于归属过滤
+- `ai_report.conversation_id` -> `ai_conversation.id`，读取时校验当前用户与会话归属
 - `ai_agent_trace.conversation_id` -> `ai_conversation.id`，弱外键
 - `ai_agent_experience.evidence_refs` -> `ai_agent_trace.id` 列表，JSON 形式保存
 - `ai_data_table_column.table_name` -> `ai_data_table.table_name`，弱外键
@@ -284,3 +285,16 @@ ERP 全部 DDL 没有外键约束，关系无法从库结构推导，只能人�
 MVP 暂不因此新增角色、商品或仓库快照表。任务配置持久化时应保存稳定 ID 数组：`product_ids`、`warehouse_ids`、`recipient_role_ids`；展示名称在读取时通过对应业务模块查询。`ALL` 表示执行时按当前用户权限展开全部可见资源。
 
 定时任务输出格式只允许 `REPORT`、`CHAT_CARD`。手动执行先创建执行记录并返回异步受理结果（`execution_id`、`task_id`、`RUNNING`、`accepted_at`），最终状态和结果通过执行记录查询。执行结果不再存储兼容字段 `sections`；对话模块的 SSE 流式事件保持不变。
+
+## 会话正式报告
+
+执行 [042 迁移](sql/042_ai_report.sql) 建立 `ai_report`。审核通过后的正文与引用一并保存，运行进度通过 SSE 推送和快照恢复。
+
+| 字段 | 用途 |
+|---|---|
+| `report_id` | 服务端生成的报告主键，用于打开详情 |
+| `user_id`、`conversation_id` | 报告归属 |
+| `request_id`、`tool_call_id` | 确定所属消息轮次和报告工具调用，用于幂等保存 |
+| `title` | 卡片和详情标题，同一轮同名时加序号 |
+| `content` | 审核通过的 Markdown 正文，可包含受控 HTML |
+| `created_at` | 报告保存时间 |

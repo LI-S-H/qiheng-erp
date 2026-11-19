@@ -85,4 +85,25 @@ class RunEventChannelTest {
         channel.publish("analysis_step", Map.of("toolCallId", "c", "text", "孤立步骤", "tools", List.of()));
         assertThat(channel.snapshot()).containsEntry("items", List.of());
     }
+
+    @Test
+    void reportSnapshotPreservesProgressAndFinalMessageWithoutLeakingContent() {
+        var channel = new RunEventChannel("r");
+        channel.publish("report_progress", Map.of("toolCallId", "c", "phase", "WRITING",
+                "text", "正在编写", "stepSeq", 1));
+        channel.publish("report_progress", Map.of("toolCallId", "c", "phase", "REVIEWING",
+                "text", "正在审阅", "stepSeq", 2));
+        channel.publish("report_ready", Map.of("toolCallId", "c", "requestId", "r",
+                "reportId", "rpt-1", "title", "库存简报", "placeholder", "[[REPORT:库存简报]]",
+                "content", "报告正文"));
+        channel.publish("run_completed", Map.of("runId", "r", "status", "COMPLETED", "finalMessageId", "final"));
+
+        var events = channel.subscribe().collectList().block();
+        assertThat(events).extracting(RunEventChannel.Event::event).containsExactly("run_snapshot", "run_completed");
+        assertThat(events.getFirst().data()).containsEntry("finalMessageId", "final");
+        assertThat(events.getFirst().data().get("items").toString())
+                .contains("type=report", "id=c", "正在编写", "正在审阅", "rpt-1")
+                .doesNotContain("报告正文");
+        assertThat(events.getLast().data()).containsEntry("finalMessageId", "final");
+    }
 }

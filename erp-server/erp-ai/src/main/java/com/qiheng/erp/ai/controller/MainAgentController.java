@@ -111,7 +111,7 @@ public class MainAgentController {
                 // 分析子过程与工具状态共用事件协议：事件名独立，过程数据在 data 内，并带父级工具调用编号。
                 } else if ("tool_started".equals(node) || "tool_finished".equals(node)
                         || "analysis_started".equals(node) || "analysis_step".equals(node)
-                        || "analysis_summary".equals(node)) {
+                        || "analysis_summary".equals(node) || "report_progress".equals(node) || "report_ready".equals(node)) {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());
                     sink.next(event(node, data));
@@ -142,7 +142,9 @@ public class MainAgentController {
                             "runId", runId.get() == null ? "" : runId.get(), "status", "FAILED",
                             "code", AgentModelFailure.ERROR_CODE, "message", AgentModelFailure.RESULT_MESSAGE)));
                 }
-                var end = event("run_completed", Map.of("runId", runId.get(), "status", "COMPLETED"));
+                var end = event("run_completed", finalText.get() == null
+                        ? Map.of("runId", runId.get(), "status", "COMPLETED")
+                        : Map.of("runId", runId.get(), "status", "COMPLETED", "finalMessageId", messageId.get()));
                 return finalText.get() == null ? Flux.just(end) : Flux.just(
                         event("text_completed", Map.of("messageId", messageId.get(), "text", finalText.get())), end);
             }))

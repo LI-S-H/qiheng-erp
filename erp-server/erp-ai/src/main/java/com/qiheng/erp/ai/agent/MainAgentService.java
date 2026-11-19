@@ -280,6 +280,8 @@ public final class MainAgentService {
                     } else if ("analysis_summary".equals(event.node())) {
                         // 分析过程只在总结事件里携带完整步骤，一次写入即可保证回看内容完整。
                         recorder.analysis(event.state().data());
+                    } else if ("report_progress".equals(event.node()) || "report_ready".equals(event.node())) {
+                        recorder.report(event.node(), event.state().data());
                     }
                     events.toolEvent(event);
                 })

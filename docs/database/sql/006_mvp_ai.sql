@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS ai_message (
     user_id BIGINT NOT NULL COMMENT '所属用户ID，用于所有权校验',
     request_id VARCHAR(64) NOT NULL COMMENT '服务端轮次标识；历史数据使用legacy前缀',
     seq BIGINT NOT NULL COMMENT '会话内全局递增消息序号',
-    message_key VARCHAR(192) NULL COMMENT '会话内消息幂等标识',
+    message_key VARCHAR(320) NULL COMMENT '会话内消息幂等标识',
     role VARCHAR(16) NOT NULL COMMENT '消息角色：user、assistant、tool',
     kind VARCHAR(32) NOT NULL COMMENT 'USER_INPUT、ASSISTANT_STEP、TOOL_CALL、TOOL_RESULT、ASSISTANT_FINAL、ERROR',
     visible TINYINT NOT NULL DEFAULT 1 COMMENT '是否在用户历史中展示',

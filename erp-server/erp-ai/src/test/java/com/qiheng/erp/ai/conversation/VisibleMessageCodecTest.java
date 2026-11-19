@@ -8,6 +8,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 class VisibleMessageCodecTest {
     private final VisibleMessageCodec codec = new VisibleMessageCodec(new ObjectMapper());
 
+    @Test void readsReportProcessWithoutExposingOtherFields() {
+        var message = new AiMessage().setKind("REPORT_STEP").setContent(
+                "{\"toolCallId\":\"call1\",\"taskId\":\"task-uuid\",\"status\":\"RUNNING\",\"steps\":[],\"secret\":\"hidden\"}");
+        var content = codec.toView(message).content();
+        assertThat(content.type()).isEqualTo("REPORT");
+        assertThat(content.data()).containsEntry("toolCallId", "call1").containsEntry("taskId", "task-uuid")
+                .containsEntry("status", "RUNNING")
+                .doesNotContainKey("secret");
+        message.setContent("{\"toolCallId\":\"old-call\",\"status\":\"RUNNING\",\"steps\":[]}");
+        assertThat(codec.toView(message).content().data()).containsEntry("toolCallId", "old-call")
+                .doesNotContainKey("taskId");
+    }
+
     @Test void readsTextAndUserQuestionTools() throws Exception {
         var message = new AiMessage().setKind("USER_INPUT")
                 .setContent(new ObjectMapper().writeValueAsString("{这是一段原文}"));

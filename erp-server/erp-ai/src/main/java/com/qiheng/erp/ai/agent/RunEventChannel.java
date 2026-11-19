@@ -336,6 +336,9 @@ public final class RunEventChannel {
         }
         var item = items.computeIfAbsent(key, ignored -> new LinkedHashMap<>(
                 Map.of("type", "report", "id", id, "steps", new ArrayList<Map<String, Object>>())));
+        if (data.get("taskId") instanceof String taskId && !taskId.isBlank()) {
+            item.put("taskId", taskId);
+        }
         if ("report_ready".equals(name)) {
             item.put("report", Map.of("reportId", data.get("reportId"),
                     "requestId", data.get("requestId"), "toolCallId", id,

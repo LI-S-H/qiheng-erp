@@ -56,7 +56,11 @@ async function mountFixture(page, includeMarker) {
       const row = (messageId, seq, kind, role, text) => ({ messageId, requestId: 'r', seq, role, kind,
         createdAt: conversation.updatedAt, content: { type: 'TEXT', data: { text } } });
       const records = finished ? [row('1', '1', 'USER_INPUT', 'user', '分析仓库库存'),
-        row('2', '2', 'ASSISTANT_FINAL', 'assistant',
+        { messageId: '3', requestId: 'r', seq: '2', role: 'assistant', kind: 'REPORT_STEP',
+          createdAt: conversation.updatedAt, content: { type: 'REPORT', data: { toolCallId: report.toolCallId,
+            ...(includeMarker ? { taskId: 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6' } : {}),
+            status: 'COMPLETED', steps: [{ phase: 'WRITING', text: '根据已整理的资料编写报告。', stepSeq: 1 }], report } } },
+        row('2', '3', 'ASSISTANT_FINAL', 'assistant',
           includeMarker ? `确认损失率 2%。\n\n${report.placeholder}\n\n以上为确认口径。` : '确认损失率 2%。')] : [];
       data = { records, pageNum: 1, pageSize: 50, total: records.length };
     } else if (pathname.endsWith('/reports')) {
@@ -156,6 +160,10 @@ async function controlled(browser, includeMarker) {
     await page.reload();
     await card.waitFor();
     assert.equal(await card.count(), 1);
+    await page.getByRole('button', { name: '查看工作过程' }).click();
+    await page.getByRole('button', { name: '查看报告编写与讨论过程' }).click();
+    await page.getByTestId('ai-report-process-panel').getByText('根据已整理的资料编写报告。').waitFor();
+    assert.equal(await page.getByTestId('ai-report-process-panel').locator('.animate-spin').count(), 0);
     assert.deepEqual(errors, []);
     console.log(includeMarker ? '通过：分片卡片、过程抽屉、详情和刷新' : '通过：未输出占位符时在末尾补充报告卡片');
   } catch (error) {

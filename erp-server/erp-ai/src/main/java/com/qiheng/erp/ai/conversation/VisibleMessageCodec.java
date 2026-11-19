@@ -111,6 +111,15 @@ public class VisibleMessageCodec {
                 }
                 return new VisibleMessageContent("ANALYSIS", data);
             }
+            if ("REPORT_STEP".equals(kind) && root.isObject()) {
+                Map<String, Object> data = new LinkedHashMap<>();
+                for (String field : Set.of("toolCallId", "taskId", "status", "steps", "report")) {
+                    if (root.has(field)) {
+                        data.put(field, mapper.convertValue(root.get(field), Object.class));
+                    }
+                }
+                return new VisibleMessageContent("REPORT", data);
+            }
             if (root.isObject() && !root.has("type") && root.path("text").isTextual()) {
                 return text(root.path("text").asText());
             }

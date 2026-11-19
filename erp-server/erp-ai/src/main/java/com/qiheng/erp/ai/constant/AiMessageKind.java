@@ -28,6 +28,9 @@ public final class AiMessageKind {
     /** 分析子过程；由分析面板读取，不进入聊天消息流。 */
     public static final String ANALYSIS_STEP = "ANALYSIS_STEP";
 
+    /** 报告生成与审阅的用户可见过程。 */
+    public static final String REPORT_STEP = "REPORT_STEP";
+
     private AiMessageKind() {
     }
 }

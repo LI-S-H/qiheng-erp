@@ -7,7 +7,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.AgentModelFailure;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.context.AgentToolContext;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.report.graph.ReportGraph;
+import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 import org.springframework.ai.chat.model.ChatModel;
 
 import java.util.Map;
@@ -23,21 +25,28 @@ public final class ReportAgents {
     private final ReportWriterOutputConverter writerConverter;
     private final ReportReviewValidationHook reviewHook;
     private final ObjectMapper mapper;
+    private final AiAgentTraceMapper traces;
 
     public ReportAgents(ChatModel model, ReportReadTools tools, ObjectMapper mapper,
                         String writerPrompt, String reviewerPrompt) {
+        this(model, tools, mapper, writerPrompt, reviewerPrompt, null);
+    }
+
+    public ReportAgents(ChatModel model, ReportReadTools tools, ObjectMapper mapper,
+                        String writerPrompt, String reviewerPrompt, AiAgentTraceMapper traces) {
         this.mapper = mapper;
+        this.traces = traces;
         this.writerConverter = new ReportWriterOutputConverter(mapper);
         this.reviewHook = new ReportReviewValidationHook(mapper);
         this.writer = ReactAgent.builder().name("report_writer").model(model)
                 .systemPrompt(writerPrompt + "\n\n" + writerConverter.outputFormat())
                 .methodTools(tools).interceptors(new TrustedToolContextInterceptor(), new ReportModelFailureInterceptor())
-                .hooks(new ReportWriterFormatHook(writerConverter))
+                .hooks(new ReportTraceHook(), new ReportWriterFormatHook(writerConverter))
                 .parallelToolExecution(false).saver(writerMemory).releaseThread(false).build();
         this.reviewer = ReactAgent.builder().name("report_reviewer").model(model)
                 .systemPrompt(reviewerPrompt).outputType(ReportReview.class)
                 .methodTools(tools).interceptors(new TrustedToolContextInterceptor(), new ReportModelFailureInterceptor())
-                .hooks(reviewHook).parallelToolExecution(false).saver(reviewerMemory).releaseThread(false).build();
+                .hooks(new ReportTraceHook(), reviewHook).parallelToolExecution(false).saver(reviewerMemory).releaseThread(false).build();
     }
 
     /** 创建一次报告任务；关闭时释放两位专家的内存上下文。 */
@@ -50,7 +59,8 @@ public final class ReportAgents {
         if (identity == null) {
             throw new IllegalArgumentException("缺少可信用户与会话身份");
         }
-        return new Task(identity, UUID.randomUUID().toString(), progress);
+        String taskId = progress == null ? UUID.randomUUID().toString() : progress.taskId();
+        return new Task(identity, taskId, progress);
     }
 
     public final class Task implements AutoCloseable {
@@ -58,21 +68,32 @@ public final class ReportAgents {
         private final String writerThread;
         private final String reviewerThread;
         private final ReportProgress progress;
+        private final AiAgentTraceRecorder writerTrace;
+        private final AiAgentTraceRecorder reviewerTrace;
         private boolean writerStarted;
         private boolean reviewerStarted;
 
         private Task(AgentToolContext identity, String taskId, ReportProgress progress) {
             this.identity = identity;
             this.progress = progress;
-            this.writerThread = "report:" + taskId + ":writer";
-            this.reviewerThread = "report:" + taskId + ":reviewer";
+            this.writerTrace = traces == null ? null : new AiAgentTraceRecorder(traces, mapper,
+                    new AiAgentTraceRecorder.Scope(identity.userId(), identity.conversationId(), taskId, "REPORT_WRITER"));
+            this.reviewerTrace = traces == null ? null : new AiAgentTraceRecorder(traces, mapper,
+                    new AiAgentTraceRecorder.Scope(identity.userId(), identity.conversationId(), taskId, "REPORT_REVIEWER"));
+            // 用任务 UUID 隔离本次专家上下文，并保留用户与会话作为额外边界。
+            String threadPrefix = "report:" + identity.userId() + ":" + identity.conversationId() + ":" + taskId;
+            this.writerThread = threadPrefix + ":writer";
+            this.reviewerThread = threadPrefix + ":reviewer";
         }
 
         /** 首次传入完整材料；返修时沿用上下文并传入本轮意见。 */
         public ReportWriterOutputConverter.Output write(String input, String feedback) throws Exception {
             String request = writerStarted ? feedback : input;
             writerStarted = true;
-            var config = config(writerThread, ReportWriterFormatHook.REPAIR_COUNT);
+            if (writerTrace != null) {
+                writerTrace.recordText("INPUT", request);
+            }
+            var config = config(writerThread, ReportWriterFormatHook.REPAIR_COUNT, writerTrace);
             String answer = writer.call(request, config).getText();
             if (answer == null || answer.isBlank() || AgentModelFailure.isFailure(answer)) {
                 throw new IllegalStateException("报告专家调用失败");
@@ -91,7 +112,10 @@ public final class ReportAgents {
                 request = input + "\n\n请审核以下报告：\n" + content;
             }
             reviewerStarted = true;
-            var config = config(reviewerThread, ReportReviewValidationHook.REPAIR_COUNT);
+            if (reviewerTrace != null) {
+                reviewerTrace.recordText("INPUT", request);
+            }
+            var config = config(reviewerThread, ReportReviewValidationHook.REPAIR_COUNT, reviewerTrace);
             String answer = reviewer.call(request, config).getText();
             if (answer == null || answer.isBlank() || AgentModelFailure.isFailure(answer)) {
                 throw new IllegalStateException("审核专家调用失败");
@@ -99,12 +123,15 @@ public final class ReportAgents {
             return reviewHook.parse(answer);
         }
 
-        private RunnableConfig config(String thread, String counter) {
+        private RunnableConfig config(String thread, String counter, AiAgentTraceRecorder recorder) {
             var builder = RunnableConfig.builder().threadId(thread)
                     .addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT, identity)
                     .addMetadata(counter, new AtomicInteger());
             if (progress != null) {
                 builder.addMetadata(ReportProgress.METADATA_KEY, progress);
+            }
+            if (recorder != null) {
+                builder.addMetadata(ReportTraceHook.RECORDER_KEY, recorder);
             }
             return builder.build();
         }
@@ -112,9 +139,9 @@ public final class ReportAgents {
         @Override
         public void close() throws Exception {
             try {
-                writerMemory.release(config(writerThread, ReportWriterFormatHook.REPAIR_COUNT));
+                writerMemory.release(config(writerThread, ReportWriterFormatHook.REPAIR_COUNT, writerTrace));
             } finally {
-                reviewerMemory.release(config(reviewerThread, ReportReviewValidationHook.REPAIR_COUNT));
+                reviewerMemory.release(config(reviewerThread, ReportReviewValidationHook.REPAIR_COUNT, reviewerTrace));
             }
         }
     }

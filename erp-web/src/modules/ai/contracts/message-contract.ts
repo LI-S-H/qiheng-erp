@@ -1,6 +1,7 @@
 import { normalizeStringId } from '@/shared/utils/api-normalizers';
 import type { AiConversationMessage, AiMessageContent } from '../types';
 import { normalizeQuestions } from '../clarification/clarification-contract';
+import { normalizeReportCard, normalizeReportStep } from './report-contract';
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -38,7 +39,7 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
   if (item.role !== 'user' && item.role !== 'assistant' && item.role !== 'tool') {
     throw new Error('消息角色不符合接口契约');
   }
-  if (!['USER_INPUT', 'ASSISTANT_FINAL', 'ASSISTANT_STEP', 'TOOL_CALL', 'TOOL_RESULT', 'ANALYSIS_STEP'].includes(String(item.kind))) {
+  if (!['USER_INPUT', 'ASSISTANT_FINAL', 'ASSISTANT_STEP', 'TOOL_CALL', 'TOOL_RESULT', 'ANALYSIS_STEP', 'REPORT_STEP'].includes(String(item.kind))) {
     throw new Error('消息种类不符合接口契约');
   }
   const source = object(item.content);
@@ -83,6 +84,17 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
     content = { type: 'TEXT', data: { text: [rendered, note].filter(Boolean).join('；') || '已补充信息', callId: requiredText(data.callId, 'callId'), questionAnswers, note } };
   } else if (source.type === 'ANALYSIS') {
     content = normalizeAnalysis(source);
+  } else if (source.type === 'REPORT') {
+    if (!['RUNNING', 'COMPLETED', 'FAILED'].includes(String(data.status)) || !Array.isArray(data.steps)) {
+      throw new Error('报告过程字段无效');
+    }
+    content = { type: 'REPORT', data: {
+      callId: requiredText(data.toolCallId, 'toolCallId'),
+      ...(data.taskId === undefined ? {} : { taskId: requiredText(data.taskId, 'taskId') }),
+      status: data.status as 'RUNNING' | 'COMPLETED' | 'FAILED',
+      steps: data.steps.map(normalizeReportStep),
+      ...(data.report ? { report: normalizeReportCard(data.report) } : {}),
+    } };
   } else {
     content = normalizeVisibleContent(item.content);
   }

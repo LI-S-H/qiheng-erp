@@ -18,7 +18,7 @@ const actionLabels: Record<string, string> = {
   SAVING: '保存报告',
   FAILED: '报告生成失败',
 };
-const running = computed(() => !props.process.report
+const running = computed(() => !props.process.historical && !props.process.report
   && props.process.steps[props.process.steps.length - 1]?.phase !== 'FAILED');
 watch(() => props.process.steps.length, async () => {
   const element = scrollArea.value;
@@ -56,6 +56,9 @@ watch(() => props.process.steps.length, async () => {
         <li v-if="process.report && !process.steps.some(step => step.text === '报告已保存')">
           <p>报告已保存，可以查看完整报告。</p>
           <span class="report-action"><Check :size="15" aria-hidden="true" />报告已保存</span>
+        </li>
+        <li v-else-if="process.historical && process.steps[process.steps.length - 1]?.phase !== 'FAILED'">
+          <p>以上是已保存的过程，当前运行状态暂无法从历史记录确认。</p>
         </li>
       </ol>
     </div>

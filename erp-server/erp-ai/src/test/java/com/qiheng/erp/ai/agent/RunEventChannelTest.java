@@ -89,7 +89,7 @@ class RunEventChannelTest {
     @Test
     void reportSnapshotPreservesProgressAndFinalMessageWithoutLeakingContent() {
         var channel = new RunEventChannel("r");
-        channel.publish("report_progress", Map.of("toolCallId", "c", "phase", "WRITING",
+        channel.publish("report_progress", Map.of("toolCallId", "c", "taskId", "task-uuid", "phase", "WRITING",
                 "text", "正在编写", "stepSeq", 1));
         channel.publish("report_progress", Map.of("toolCallId", "c", "phase", "REVIEWING",
                 "text", "正在审阅", "stepSeq", 2));
@@ -102,7 +102,7 @@ class RunEventChannelTest {
         assertThat(events).extracting(RunEventChannel.Event::event).containsExactly("run_snapshot", "run_completed");
         assertThat(events.getFirst().data()).containsEntry("finalMessageId", "final");
         assertThat(events.getFirst().data().get("items").toString())
-                .contains("type=report", "id=c", "正在编写", "正在审阅", "rpt-1")
+                .contains("type=report", "id=c", "taskId=task-uuid", "正在编写", "正在审阅", "rpt-1")
                 .doesNotContain("报告正文");
         assertThat(events.getLast().data()).containsEntry("finalMessageId", "final");
     }

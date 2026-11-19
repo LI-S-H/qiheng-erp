@@ -192,7 +192,21 @@ const showAnalysisPanel = computed(() => analysisBlocks.value.length > 0);
 /** 分析面板默认收起，用户点击“子智能体正在分析”才展开，可随时收回。 */
 const analysisOpen = ref(false);
 const selectedReportProcessId = ref('');
-const reportProcess = computed(() => currentRun.value.reportProcesses[selectedReportProcessId.value]);
+/** 以轮次和工具调用编号合并历史过程，防止不同轮次的调用编号重用时串线。 */
+const reportProcesses = computed<ConversationRun['reportProcesses']>(() => {
+  const result: ConversationRun['reportProcesses'] = {};
+  for (const message of store.messages) {
+    if (message.kind === 'REPORT_STEP' && message.content.type === 'REPORT') {
+      const data = message.content.data;
+      result[JSON.stringify([message.requestId, data.callId])] = { id: data.callId, steps: data.steps, report: data.report, historical: true };
+    }
+  }
+  for (const [callId, process] of Object.entries(currentRun.value.reportProcesses)) {
+    result[JSON.stringify([currentRun.value.runId, callId])] = process;
+  }
+  return result;
+});
+const reportProcess = computed(() => reportProcesses.value[selectedReportProcessId.value]);
 const cardsInConversation = computed(() => Object.values(currentRun.value.reportCards));
 /** 历史列表只批量读取已进入页面的轮次，实时生成的卡片继续由事件补齐。 */
 watch(
@@ -956,7 +970,7 @@ function captureSwitchSnapshot() {
     liveItems: liveItems.value.map(item => ({ ...item })),
     analyses: { ...currentRun.value.analyses },
     reportCards: [...cardsInConversation.value],
-    reportProcesses: { ...currentRun.value.reportProcesses },
+    reportProcesses: { ...reportProcesses.value },
     reportRunId: liveRunId.value,
     finalMessageId: currentRun.value.finalMessageId,
     runTerminal: runTerminal.value,
@@ -1308,7 +1322,7 @@ onBeforeUnmount(() => {
             :user-id="auth.user?.userId"
             :conversation-id="store.activeId || undefined"
             :report-cards="switching ? switchSnapshot?.reportCards : cardsInConversation"
-            :report-processes="switching ? switchSnapshot?.reportProcesses : currentRun.reportProcesses"
+            :report-processes="switching ? switchSnapshot?.reportProcesses : reportProcesses"
             :report-run-id="switching ? switchSnapshot?.reportRunId : liveRunId"
             :final-message-id="switching ? switchSnapshot?.finalMessageId : currentRun.finalMessageId"
             :run-terminal="switching ? switchSnapshot?.runTerminal : runTerminal"

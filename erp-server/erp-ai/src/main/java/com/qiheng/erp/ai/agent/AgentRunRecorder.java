@@ -14,6 +14,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -45,6 +46,10 @@ final class AgentRunRecorder {
 
     /** 本轮各工具调用的名称；结束时据此补全展示行。 */
     private final Map<String, String> toolNames = new LinkedHashMap<>();
+
+    /** 同一次工具调用的阶段累积在同一消息中。 */
+    private final Map<String, Map<String, Object>> reportProcesses = new LinkedHashMap<>();
+    private final Map<String, Long> reportSequences = new LinkedHashMap<>();
 
     AgentRunRecorder(ConversationMessageStore store, ObjectMapper mapper, AiAgentTraceRecorder traces,
                      long userId, long conversationId, String runId) {
@@ -154,6 +159,49 @@ final class AgentRunRecorder {
         } catch (RuntimeException error) {
             // 展示行写入失败不能吞掉已经算好的结论，与流水表保持同样的降级策略。
             log.error("分析过程写入失败 runId={} toolCallId={} errorType={}", runId, data.get("toolCallId"),
+                    error.getClass().getName());
+        }
+    }
+
+    /** 增量保存报告过程；消息写入失败不影响实时事件或报告生成。 */
+    @SuppressWarnings("unchecked")
+    synchronized void report(String event, Map<String, Object> data) {
+        try {
+            String toolCallId = (String) data.get("toolCallId");
+            long sequence = ((Number) data.get("stepSeq")).longValue();
+            if (toolCallId == null || toolCallId.isBlank()
+                    || sequence <= reportSequences.getOrDefault(toolCallId, 0L)) {
+                return;
+            }
+            var process = reportProcesses.computeIfAbsent(toolCallId, ignored -> {
+                var initial = new LinkedHashMap<String, Object>();
+                initial.put("toolCallId", toolCallId);
+                initial.put("status", "RUNNING");
+                initial.put("steps", new ArrayList<Map<String, Object>>());
+                return initial;
+            });
+            if (data.get("taskId") instanceof String taskId && !taskId.isBlank()) {
+                process.put("taskId", taskId);
+            }
+            if ("report_ready".equals(event)) {
+                process.put("status", "COMPLETED");
+                process.put("report", Map.of("reportId", data.get("reportId"),
+                        "requestId", data.get("requestId"), "toolCallId", toolCallId,
+                        "title", data.get("title"), "placeholder", data.get("placeholder")));
+            } else {
+                var steps = (List<Map<String, Object>>) process.get("steps");
+                steps.add(Map.of("phase", data.get("phase"), "text", data.get("text"), "stepSeq", sequence));
+                if ("FAILED".equals(data.get("phase"))) {
+                    process.put("status", "FAILED");
+                }
+            }
+            reportSequences.put(toolCallId, sequence);
+            var message = new AiMessage().setUserId(userId).setConversationId(conversationId).setRequestId(runId)
+                    .setMessageKey(runId + ":report:" + toolCallId).setRole("assistant").setKind("REPORT_STEP")
+                    .setContent(mapper.writeValueAsString(process));
+            store.saveReportProcess(message);
+        } catch (Exception error) {
+            log.error("报告过程写入失败 runId={} toolCallId={} errorType={}", runId, data.get("toolCallId"),
                     error.getClass().getName());
         }
     }

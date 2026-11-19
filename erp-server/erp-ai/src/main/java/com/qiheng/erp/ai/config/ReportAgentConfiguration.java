@@ -13,6 +13,7 @@ import com.qiheng.erp.ai.dataset.DatasetManager;
 import com.qiheng.erp.ai.python.result.AnalysisResultStore;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.mapper.AiMessageMapper;
+import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.report.graph.ReportConversationReader;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -36,10 +37,10 @@ public class ReportAgentConfiguration {
     /** 装配具备授权数据读取能力的独立报告及审核智能体。 */
     @Bean
     public ReportAgents reportAgents(@Qualifier("proChatModel") ChatModel model, ReadDatasetTool datasets,
-                                     AnalysisResultTool results, ObjectMapper mapper) throws IOException {
+                                     AnalysisResultTool results, ObjectMapper mapper, AiAgentTraceMapper traces) throws IOException {
         String writer = new ClassPathResource("prompts/report-writer.md").getContentAsString(StandardCharsets.UTF_8);
         String reviewer = new ClassPathResource("prompts/report-reviewer.md").getContentAsString(StandardCharsets.UTF_8);
-        return new ReportAgents(model, new ReportReadTools(datasets, results), mapper, writer, reviewer);
+        return new ReportAgents(model, new ReportReadTools(datasets, results), mapper, writer, reviewer, traces);
     }
 
     /** 创建仅供内部调用的报告图服务。 */

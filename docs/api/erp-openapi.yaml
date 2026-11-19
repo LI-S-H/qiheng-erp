@@ -256,7 +256,7 @@ paths:
         事件 data 是 JSON 对象。run_started 包含 runId、conversationId；text_delta 包含 messageId、delta；text_completed 包含 messageId、text，用完整文本校正对应片段，不应追加为新消息；
         tool_started 包含 runId、toolCallId、tool、label；tool_finished 包含 runId、toolCallId、status、label、durationMs；
         analysis_started 包含 runId、toolCallId、goal，toolCallId 为父级 analyzeData 调用；analysis_step 包含 runId、toolCallId、text、tools，tools 每项含 name 与 label，一段文字之后出现的步骤默认上一步工具已结束；analysis_summary 包含 runId、toolCallId、goal、steps、completion、summary，steps 为本次分析的完整过程，可直接覆盖已展示的步骤。分析事件只用于展示过程，结论仍以 tool_finished 后主智能体的答复为准。
-        report_progress 包含 runId、toolCallId、phase、text、stepSeq；report_ready 在报告保存成功后发送，包含 runId 与 AiReportCard 的字段。重连快照中的 report 项以 toolCallId 为 id，含步骤列表 steps，保存成功时另含 report。
+        report_progress 包含 runId、toolCallId、taskId、phase、text、stepSeq；taskId 是本次报告任务的服务端 UUID，toolCallId 用于关联模型工具调用。report_ready 在报告保存成功后发送，包含 taskId、runId 与 AiReportCard 的字段。重连快照中的 report 项以 toolCallId 为 id，包含 taskId 和步骤列表 steps，保存成功时另含 report；旧事件可能没有 taskId。
         question 包含 runId、questionRequestId、questions，并在可获取时包含用于关联历史工具调用的 toolCallId；run_completed 包含 runId、status，有最终答复时附带 finalMessageId；run_failed 包含 runId、status、message，瞬时故障时另含 code（如 MODEL_CALL_FAILED），前端据此退避重试，业务错误不带 code、不退避。
         工具状态 returned 仅表示调用已返回，不代表业务成功；invalid_arguments 表示参数格式错误、工具尚未执行；failed 表示调用异常终止。工具耗时摘要可用于运行过程展示。
         连接断开不会取消后端任务；可通过运行状态和事件订阅接口恢复当前进程内仍在执行的任务。事件包含递增的 eventSeq，run_snapshot 包含当前已累积的可见内容；items 按发生顺序包含文本、工具、追问和分析过程，追问项的 type 为 clarification，id 优先使用 toolCallId，附带 questionRequestId 和 questions；分析过程项的 type 为 analysis，id 为父级 toolCallId，附带 goal、steps、completion、summary（未结束时 summary 为空）。
@@ -5063,7 +5063,7 @@ components:
         requestId: { type: string, description: 服务端请求标识，用于关联一轮请求及其回复 }
         seq: { type: string, pattern: '^\d+$', description: 会话内消息顺序，BIGINT 按字符串传输 }
         role: { type: string, enum: [user, assistant, tool] }
-        kind: { type: string, enum: [USER_INPUT, ASSISTANT_STEP, TOOL_CALL, TOOL_RESULT, ASSISTANT_FINAL, ANALYSIS_STEP] }
+        kind: { type: string, enum: [USER_INPUT, ASSISTANT_STEP, TOOL_CALL, TOOL_RESULT, ASSISTANT_FINAL, ANALYSIS_STEP, REPORT_STEP] }
         content: { $ref: '#/components/schemas/AiVisibleMessageContent' }
         createdAt: { type: string, description: 创建时间 }
 
@@ -5071,16 +5071,21 @@ components:
       type: object
       required: [type, data]
       properties:
-        type: { type: string, enum: [TEXT, TOOL_CALL, TOOL_RESULT] }
+        type: { type: string, enum: [TEXT, TOOL_CALL, TOOL_RESULT, ANALYSIS, REPORT] }
         data:
           type: object
-          description: 按 type 解释；TEXT 使用 text，ask_user 工具消息使用 callId、name、arguments 或 result。
+          description: 按 type 解释；REPORT 包含 toolCallId、status、steps，新记录还包含报告任务 UUID taskId；报告保存后可包含 report 卡片。旧记录可能没有 taskId。
           properties:
             text: { type: string, description: 用户可见正文或摘要 }
             callId: { type: string, description: 工具调用标识 }
             name: { type: string, description: 工具名称 }
             arguments: { type: string, description: 工具调用的原始 JSON 参数字符串 }
             result: { type: string, description: 工具原始结果字符串 }
+            toolCallId: { type: string, description: 父级工具调用标识 }
+            taskId: { type: string, description: 报告任务 UUID；旧过程记录可能没有该字段 }
+            status: { type: string, description: 报告过程状态 }
+            steps: { type: array, items: { type: object, additionalProperties: true }, description: 分析或报告过程步骤 }
+            report: { $ref: '#/components/schemas/AiReportCard' }
 
     AiConversationMessagePage:
       type: object

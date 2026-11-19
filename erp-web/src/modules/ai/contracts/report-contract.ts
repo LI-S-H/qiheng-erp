@@ -20,6 +20,7 @@ export interface AiReportProcess {
   id: string;
   steps: AiReportStep[];
   report?: AiReportCard;
+  historical?: boolean;
 }
 
 const phases = new Set(['PREPARING', 'WRITING', 'REVIEWING', 'FORMAT_RETRY', 'WRITER_FORMAT_RETRY', 'REVIEW_FORMAT_RETRY', 'REVIEW_RETRY', 'REVISING', 'SAVING', 'FAILED']);

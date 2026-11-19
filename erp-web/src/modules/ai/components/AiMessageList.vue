@@ -28,6 +28,10 @@ const props = defineProps<{
   recentAnswers?: Record<string, { callId: string; questions: import('../clarification/clarification-types').ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
 }>();
 const emit = defineEmits<{ 'open-analysis': []; 'open-report-process': [id: string]; 'open-report': [report: AiReportCard] }>();
+/** 同一调用编号在不同轮次出现时，仍能打开对应的报告过程。 */
+function reportProcessKey(requestId: string, callId: string) {
+  return JSON.stringify([requestId, callId]);
+}
 const answers = computed(() => clarificationAnswers(props.messages));
 const answerDetails = computed(() => new Map(props.messages.flatMap(message => message.kind === 'TOOL_RESULT' && message.content.type === 'TEXT' && message.content.data.callId ? [[message.content.data.callId, message.content.data] as const] : [])));
 const questionIds = computed(() => new Set(props.messages.flatMap(message => message.content.type === 'CLARIFICATION' ? [message.content.data.callId] : [])));
@@ -42,7 +46,7 @@ const reportReply = computed(() => {
 });
 const liveReportCards = computed(() => finalRuns.value.has(props.reportRunId || '') ? []
   : (props.reportCards || []).filter(card => card.requestId === props.reportRunId
-    && Boolean(props.reportProcesses?.[card.toolCallId]?.report)));
+    && Boolean(props.reportProcesses?.[reportProcessKey(card.requestId, card.toolCallId)]?.report)));
 /** 主回复未保存时，仍可以打开已经通过审核并保存的报告。 */
 const unattachedReports = computed(() => (props.reportCards || []).filter(card => {
   if (finalRuns.value.has(card.requestId)) {
@@ -60,6 +64,17 @@ function cardsFor(requestId: string) {
 const stepsByRun = computed(() => {
   const result = new Map<string, AiConversationMessage[]>();
   for (const message of props.messages) {
+    if (message.kind === 'REPORT_STEP' && message.content.type === 'REPORT') {
+      const callId = message.content.data.callId;
+      const hasTool = props.messages.some(item => item.requestId === message.requestId
+        && item.kind === 'TOOL_CALL' && item.content.type === 'TOOL_STEP' && item.content.data.callId === callId);
+      if (!hasTool) {
+        const steps = result.get(message.requestId) || [];
+        steps.push(message);
+        result.set(message.requestId, steps);
+      }
+      continue;
+    }
     // 只收集能放进“工作过程”的行；分析过程行也在其中，由模板决定如何呈现。
     if (message.kind !== 'ASSISTANT_STEP' && message.kind !== 'TOOL_CALL' && message.kind !== 'ANALYSIS_STEP') {
       continue;
@@ -70,6 +85,16 @@ const stepsByRun = computed(() => {
   }
   return result;
 });
+/** 运行中断、没有最终答复或工具展示行时仍可查看已保存的过程。 */
+const orphanReportProcesses = computed(() => props.messages.filter(message => {
+  if (message.kind !== 'REPORT_STEP' || message.content.type !== 'REPORT' || finalRuns.value.has(message.requestId)) {
+    return false;
+  }
+  const callId = message.content.data.callId;
+  return !(props.liveItems || []).some(item => item.type === 'tool' && item.id === callId)
+    && !props.messages.some(item => item.requestId === message.requestId && item.kind === 'TOOL_CALL'
+      && item.content.type === 'TOOL_STEP' && item.content.data.callId === callId);
+}));
 const expandedRuns = ref(new Set<string>());
 /** 已有分析工具展示行的轮次不再重复渲染分析过程行。 */
 const analysisToolRuns = computed(() => new Set(props.messages
@@ -118,7 +143,7 @@ function toolSummary(step: AiConversationMessage) {
   <div class="message-list" :aria-busy="loading">
     <p v-if="loading && !messages.length" class="list-note" role="status">正在读取会话记录…</p>
     <article
-      v-for="message in messages.filter(item => item.kind !== 'ANALYSIS_STEP' && (item.content.type !== 'CLARIFICATION' || !liveQuestionIds.has(item.content.data.callId)) && (item.kind !== 'TOOL_RESULT' || (item.content.type === 'TEXT' && item.content.data.callId && !questionIds.has(item.content.data.callId) && !recentAnswers?.[item.content.data.callId])) && (!['ASSISTANT_STEP', 'TOOL_CALL'].includes(item.kind) || !finalRuns.has(item.requestId)))"
+      v-for="message in messages.filter(item => !['ANALYSIS_STEP', 'REPORT_STEP'].includes(item.kind) && (item.content.type !== 'CLARIFICATION' || !liveQuestionIds.has(item.content.data.callId)) && (item.kind !== 'TOOL_RESULT' || (item.content.type === 'TEXT' && item.content.data.callId && !questionIds.has(item.content.data.callId) && !recentAnswers?.[item.content.data.callId])) && (!['ASSISTANT_STEP', 'TOOL_CALL'].includes(item.kind) || !finalRuns.has(item.requestId)))"
       :key="message.messageId"
       class="message"
       :class="{ 'is-user': message.role === 'user', 'is-clarification': message.content.type === 'CLARIFICATION' }"
@@ -155,9 +180,12 @@ function toolSummary(step: AiConversationMessage) {
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
-                <button v-else-if="step.content.type === 'TOOL_STEP' && step.content.data.name === 'createReport' && reportProcesses?.[step.content.data.callId]"
-                  type="button" class="work-tool work-analysis" @click="emit('open-report-process', step.content.data.callId)">
+                <button v-else-if="step.content.type === 'TOOL_STEP' && step.content.data.name === 'createReport' && reportProcesses?.[reportProcessKey(step.requestId, step.content.data.callId)]"
+                  type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.content.data.callId))">
                   <span>报告专家完成报告编写与讨论</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                </button>
+                <button v-else-if="step.content.type === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.content.data.callId))">
+                  <span>查看报告编写与讨论过程</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
                 <p v-else-if="step.content.type === 'TOOL_STEP'" class="work-tool" :class="{ 'is-failed': step.content.data.status === 'failed' }">
                   <component :is="toolIcon(step.content.data.name)" class="work-tool-icon" aria-hidden="true" />
@@ -186,6 +214,10 @@ function toolSummary(step: AiConversationMessage) {
         </template>
         <AiReportMessage v-else-if="message.kind === 'ASSISTANT_FINAL' && message.content.type === 'TEXT'"
           :text="message.content.data.text" :reports="cardsFor(message.requestId)" active @open="emit('open-report', $event)" />
+        <button v-else-if="message.content.type === 'TOOL_STEP' && message.content.data.name === 'createReport' && reportProcesses?.[reportProcessKey(message.requestId, message.content.data.callId)]"
+          type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(message.requestId, message.content.data.callId))">
+          <span>查看报告编写与讨论过程</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+        </button>
         <AiMarkdownContent v-else :content="message.content.type === 'TEXT' ? message.content.data.text : ''" />
       </div>
     </article>
@@ -222,7 +254,7 @@ function toolSummary(step: AiConversationMessage) {
           </button>
           <button v-else-if="item.type === 'tool' && item.tool === 'createReport'" type="button"
             class="tool-progress analysis-entry" :class="{ 'is-running': item.status === 'running' }"
-            :disabled="!reportProcesses?.[item.id]" @click="emit('open-report-process', item.id)">
+            :disabled="!reportProcesses?.[reportProcessKey(reportRunId || '', item.id)]" @click="emit('open-report-process', reportProcessKey(reportRunId || '', item.id))">
             <LoaderCircle v-if="item.status === 'running'" class="work-tool-icon animate-spin" aria-hidden="true" />
             <component v-else :is="toolIcon(item.tool)" class="work-tool-icon" aria-hidden="true" />
             <span class="flow-text">{{ item.status === 'running' ? '报告专家正在完成报告编写与讨论' : '报告专家完成报告编写与讨论' }}</span>
@@ -233,6 +265,11 @@ function toolSummary(step: AiConversationMessage) {
         <p v-if="thinking" class="tool-progress is-running" role="status"><span class="flow-text">正在思考</span></p>
       </div>
     </article>
+    <template v-for="message in orphanReportProcesses" :key="message.messageId">
+      <button v-if="message.content.type === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(message.requestId, message.content.data.callId))">
+        <span>查看报告编写与讨论过程</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+      </button>
+    </template>
     <section v-if="unattachedReports.length" class="message-content" aria-label="已保存报告">
       <AiReportMessage text="" :reports="unattachedReports" active @open="emit('open-report', $event)" />
     </section>

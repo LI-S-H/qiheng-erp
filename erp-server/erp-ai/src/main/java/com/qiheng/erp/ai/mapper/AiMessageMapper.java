@@ -97,6 +97,15 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
     @Select("SELECT * FROM ai_message WHERE conversation_id = #{conversationId} AND message_key = #{messageKey} LIMIT 1")
     AiMessage selectByMessageKey(@Param("conversationId") long conversationId, @Param("messageKey") String messageKey);
 
+    /** 只更新所属会话的报告过程，不改变消息顺序。 */
+    @Update("""
+        UPDATE ai_message SET content = #{content}
+        WHERE id = #{id} AND conversation_id = #{conversationId} AND user_id = #{userId}
+          AND kind = 'REPORT_STEP' AND deleted = 0
+        """)
+    int updateReportProcess(@Param("id") long id, @Param("conversationId") long conversationId,
+                            @Param("userId") long userId, @Param("content") String content);
+
     /** 新消息和会话活动时间在同一个事务中更新。 */
     @Update("UPDATE ai_conversation SET last_message_at = NOW() WHERE id = #{conversationId} AND user_id = #{userId} AND deleted = 0")
     int touchActivity(@Param("conversationId") long conversationId, @Param("userId") long userId);

@@ -90,12 +90,12 @@ class ReportWorkflowGraphTest {
                 assertThat(feedback).isNull();
                 return new ReportWriterOutputConverter.Completed("REPORT", "第一版");
             }
-            assertThat(feedback).contains("引用错误", "编号不一致", "核对编号");
+            assertThat(feedback).contains("引用错误", "编号不一致", "核对编号", "结构清晰");
             return new ReportWriterOutputConverter.Completed("REPORT", "第二版");
         }, (input, content, feedback) -> {
             if (reviews.incrementAndGet() == 1) {
                 assertThat(content).contains("第一版");
-                return new ReportReview(6.0, List.of(), true, List.of(issue));
+                return new ReportReview(6.0, List.of("结构清晰"), true, List.of(issue));
             }
             assertThat(content).contains("第二版");
             assertThat(feedback).isNull();

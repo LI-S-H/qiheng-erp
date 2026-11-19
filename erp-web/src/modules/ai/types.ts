@@ -1,4 +1,5 @@
 import type { ClarificationQuestion } from './clarification/clarification-types';
+import type { AiReportCard, AiReportStep } from './contracts/report-contract';
 
 export type AiTone = 'neutral' | 'good' | 'watch' | 'risk';
 
@@ -78,6 +79,7 @@ export type AiMessageContent =
         summary: string;
       };
     }
+  | { type: 'REPORT'; data: { callId: string; taskId?: string; status: 'RUNNING' | 'COMPLETED' | 'FAILED'; steps: AiReportStep[]; report?: AiReportCard } }
   ;
 
 /** 分析子智能体一次工具调用；只保留基础文案，不展示参数与结果原文。 */
@@ -108,7 +110,7 @@ export interface AiConversationMessage {
   requestId: string;
   seq: string;
   role: AiMessageRole;
-  kind: 'USER_INPUT' | 'ASSISTANT_STEP' | 'TOOL_CALL' | 'TOOL_RESULT' | 'ASSISTANT_FINAL' | 'ANALYSIS_STEP';
+  kind: 'USER_INPUT' | 'ASSISTANT_STEP' | 'TOOL_CALL' | 'TOOL_RESULT' | 'ASSISTANT_FINAL' | 'ANALYSIS_STEP' | 'REPORT_STEP';
   content: AiMessageContent;
   createdAt: string;
 }

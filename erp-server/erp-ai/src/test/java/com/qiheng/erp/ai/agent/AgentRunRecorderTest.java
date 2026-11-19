@@ -23,6 +23,42 @@ import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 
 class AgentRunRecorderTest {
     @Test
+    void storesReportProgressAsOneUpdatedMessageAndKeepsReadyCard() throws Exception {
+        var store = mock(ConversationMessageStore.class);
+        var mapper = new ObjectMapper();
+        var recorder = new AgentRunRecorder(store, mapper, traceRecorder(), 1, 2, "run");
+        recorder.report("report_progress", Map.of("toolCallId", "call", "taskId", "task-uuid", "phase", "PREPARING",
+                "text", "正在整理资料", "stepSeq", 1));
+        recorder.report("report_progress", Map.of("toolCallId", "call", "phase", "WRITING",
+                "text", "正在编写", "stepSeq", 2));
+        recorder.report("report_progress", Map.of("toolCallId", "call", "phase", "WRITING",
+                "text", "重复事件", "stepSeq", 2));
+        recorder.report("report_ready", Map.of("toolCallId", "call", "requestId", "run",
+                "reportId", "rpt_1", "title", "库存报告", "placeholder", "[[REPORT:库存报告]]", "stepSeq", 3));
+        var saved = ArgumentCaptor.forClass(AiMessage.class);
+        verify(store, times(3)).saveReportProcess(saved.capture());
+        assertThat(saved.getValue().getMessageKey()).isEqualTo("run:report:call");
+        var body = mapper.readTree(saved.getValue().getContent());
+        assertThat(body.path("status").asText()).isEqualTo("COMPLETED");
+        assertThat(body.path("taskId").asText()).isEqualTo("task-uuid");
+        assertThat(body.path("steps").size()).isEqualTo(2);
+        assertThat(body.path("report").path("reportId").asText()).isEqualTo("rpt_1");
+    }
+
+    @Test
+    void reportPersistenceFailureDoesNotAbortAndNextEventRetainsSteps() {
+        var store = mock(ConversationMessageStore.class);
+        doThrow(new IllegalStateException("database")).doNothing().when(store).saveReportProcess(any());
+        var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
+        assertDoesNotThrow(() -> recorder.report("report_progress", Map.of("toolCallId", "call", "phase", "PREPARING",
+                "text", "准备", "stepSeq", 1)));
+        recorder.report("report_progress", Map.of("toolCallId", "call", "phase", "FAILED",
+                "text", "失败", "stepSeq", 2));
+        var saved = ArgumentCaptor.forClass(AiMessage.class);
+        verify(store, times(2)).saveReportProcess(saved.capture());
+        assertThat(saved.getValue().getContent()).contains("准备", "失败", "FAILED");
+    }
+    @Test
     void recordsCompleteMessagesOnceAndExposesOnlyQuestionTool() {
         var store = mock(ConversationMessageStore.class);
         var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");

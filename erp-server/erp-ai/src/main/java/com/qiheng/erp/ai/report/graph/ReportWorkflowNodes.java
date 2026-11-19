@@ -222,6 +222,12 @@ final class ReportWorkflowNodes {
                     fail(work, "REVIEW_FAILED", "报告经过多次返修仍未通过审核。");
                 } else {
                     StringBuilder feedback = new StringBuilder("请根据以下审阅意见修改上一版报告，并重新输出完整报告：\n");
+                    if (!review.strengths().isEmpty()) {
+                        feedback.append("报告已有的优点，请在修改时保留：\n");
+                        for (String strength : review.strengths()) {
+                            feedback.append("- ").append(strength).append("\n");
+                        }
+                    }
                     for (ReportReviewIssue issue : review.issues()) {
                         feedback.append("问题：").append(issue.problem()).append("\n原因：").append(issue.reason())
                                 .append("\n建议：").append(issue.suggest()).append("\n");

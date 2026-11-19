@@ -42,6 +42,10 @@ public final class ReportWriterFormatHook extends MessagesModelHook {
                 return new AgentCommand(JumpTo.end, null);
             }
             repairs.incrementAndGet();
+            var recorder = ReportTraceHook.recorder(config);
+            if (recorder != null) {
+                recorder.recordText("FORMAT_FEEDBACK", error.getMessage());
+            }
             config.metadata(ReportProgress.METADATA_KEY).ifPresent(value -> {
                 if (value instanceof ReportProgress progress) {
                     progress.stage("WRITER_FORMAT_RETRY", "报告输出存在格式问题，正在修复。");
@@ -55,6 +59,12 @@ public final class ReportWriterFormatHook extends MessagesModelHook {
     @Override
     public List<JumpTo> canJumpTo() {
         return List.of(JumpTo.model, JumpTo.end);
+    }
+
+    /** afterModel 逆序执行，先记录模型原文再决定是否跳转。 */
+    @Override
+    public int getOrder() {
+        return -1;
     }
 
     @Override

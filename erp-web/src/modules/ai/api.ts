@@ -1,4 +1,5 @@
 import { normalizeHistoryMessage, compareMessages } from './contracts/message-contract';
+import { normalizeReportCard, normalizeReportDetail } from './contracts/report-contract';
 import { http } from '@/api/http';
 import { normalizeStringId } from '@/shared/utils/api-normalizers';
 import type { Result } from '@/shared/types/api';
@@ -160,6 +161,36 @@ export async function getAiConversationHistory(conversationId: string, signal?: 
       ? first
       : await getAiConversationMessagePage(conversationId, lastPage, first.pageSize, signal);
   return { ...latest, records: latest.records.sort(compareMessages) };
+}
+
+/** 只读取可见历史轮次的卡片，正文由详情页单独请求。 */
+export async function getAiConversationReports(conversationId: string, requestIds: string[], signal?: AbortSignal) {
+  const chunks: string[][] = [];
+  for (let start = 0; start < requestIds.length; start += 100) {
+    chunks.push(requestIds.slice(start, start + 100));
+  }
+  const cards = await Promise.all(chunks.map(async (chunk) => {
+    const params = new URLSearchParams();
+    chunk.forEach(requestId => params.append('requestId', requestId));
+    const response = await http.get<Result<unknown>>(
+      `/ai/assistant/conversations/${encodeURIComponent(conversationId)}/reports`,
+      { params, signal, skipPageLoading: true, suppressErrorToast: true },
+    );
+    if (!Array.isArray(response.data.data)) {
+      throw new Error('会话报告列表结构无效');
+    }
+    return response.data.data.map(normalizeReportCard);
+  }));
+  return cards.flat();
+}
+
+/** 报告权限仍由服务端按会话和报告归属校验。 */
+export async function getAiReport(conversationId: string, reportId: string, signal?: AbortSignal) {
+  const response = await http.get<Result<unknown>>(
+    `/ai/assistant/conversations/${encodeURIComponent(conversationId)}/reports/${encodeURIComponent(reportId)}`,
+    { signal, skipPageLoading: true, suppressErrorToast: true },
+  );
+  return normalizeReportDetail(response.data.data);
 }
 
 // 页面组件暂存供以后接回；后端任务能力未实现前，不发送不存在的接口或生成假报告。

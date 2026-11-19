@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import MarkdownIt from 'markdown-it';
+import { sanitizeReportHtml } from '../contracts/report-html';
 
-const props = defineProps<{ content: string }>();
+const props = defineProps<{ content: string; reportHtml?: boolean }>();
 // 模型输出属于不可信文本；只允许解析器生成的标签，保留默认危险协议校验。
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
 markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
@@ -32,7 +33,11 @@ markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
 };
 markdown.renderer.rules.table_open = () => '<div class="ai-markdown-table" tabindex="0" role="region" aria-label="回复表格"><table>';
 markdown.renderer.rules.table_close = () => '</table></div>';
-const renderedContent = computed(() => markdown.render(props.content));
+const renderedContent = computed(() => {
+  markdown.set({ html: Boolean(props.reportHtml) });
+  const rendered = markdown.render(props.content);
+  return props.reportHtml ? sanitizeReportHtml(rendered) : rendered;
+});
 
 function handleImageError(event: Event) {
   const image = event.target;

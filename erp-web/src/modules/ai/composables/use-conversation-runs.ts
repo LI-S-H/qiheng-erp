@@ -1,6 +1,7 @@
 import { reactive } from 'vue';
 import type { ClarificationQuestion } from '../clarification/clarification-types';
 import type { AiAnalysisBlock, AiAnalysisStep, AiProgressStep, AiRunStatus } from '../types';
+import type { AiReportCard, AiReportProcess } from '../contracts/report-contract';
 
 /** 运行中的实时条目：文本、追问与工具状态。 */
 export type LiveItem =
@@ -11,7 +12,8 @@ export type LiveItem =
 /** 运行快照中的条目：实时过程与分析过程共用同一次快照。 */
 export type SnapshotItem =
   | LiveItem
-  | { type: 'analysis'; id: string; goal: string; steps: AiAnalysisStep[]; completion: string | null; summary: string | null };
+  | { type: 'analysis'; id: string; goal: string; steps: AiAnalysisStep[]; completion: string | null; summary: string | null }
+  | ({ type: 'report' } & AiReportProcess);
 
 /** 单个会话的运行状态；会话之间彼此隔离。 */
 export interface ConversationRun {
@@ -33,6 +35,9 @@ export interface ConversationRun {
   steps: AiProgressStep[];
   /** 本次会话已出现的分析过程；按父工具调用编号区分，跨轮次保持。 */
   analyses: Record<string, AiAnalysisBlock>;
+  reportProcesses: Record<string, AiReportProcess>;
+  reportCards: Record<string, AiReportCard>;
+  finalMessageId: string;
   pendingClarification: { questionRequestId: string; toolCallId?: string; questions: ClarificationQuestion[] } | null;
   recentAnswers: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
   refreshNeeded: boolean;
@@ -88,6 +93,7 @@ export function useConversationRuns() {
         querying: false, watching: false, streaming: false, version: 0, runStatus: null,
         pendingText: '', liveText: '', liveMessageId: '', liveItems: [], completedTextIds: new Set(),
         eventSeq: 0, snapshotTruncated: false, runId: '', error: '', warning: '', steps: [], analyses: {},
+        reportProcesses: {}, reportCards: {}, finalMessageId: '',
         pendingClarification: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
         failureCode: '', failureCount: 0, retryAt: 0,
       });
@@ -121,6 +127,7 @@ export function useConversationRuns() {
     state.pendingText = '';
     state.liveText = '';
     state.liveMessageId = '';
+    state.finalMessageId = '';
     state.liveItems = [];
     state.completedTextIds.clear();
     state.eventSeq = 0;

@@ -2,11 +2,13 @@
 import { computed, ref } from 'vue';
 import { Bot, ChevronDown, ChevronRight, Database, LoaderCircle, UserRound } from 'lucide-vue-next';
 import AiMarkdownContent from './AiMarkdownContent.vue';
+import AiReportMessage from './AiReportMessage.vue';
 import AiClarificationHistory from '../clarification/AiClarificationHistory.vue';
 import { toolIcon } from './tool-icons';
 import type { AiConversationMessage } from '../types';
 import { clarificationAnswers } from '../contracts/message-contract';
 import type { LiveItem } from '../composables/use-conversation-runs';
+import type { AiReportCard, AiReportProcess } from '../contracts/report-contract';
 
 const props = defineProps<{
   messages: AiConversationMessage[];
@@ -18,14 +20,43 @@ const props = defineProps<{
   activeQuestionId?: string;
   userId?: string;
   conversationId?: string;
+  reportCards?: AiReportCard[];
+  reportProcesses?: Record<string, AiReportProcess>;
+  reportRunId?: string;
+  finalMessageId?: string;
+  runTerminal?: boolean;
   recentAnswers?: Record<string, { callId: string; questions: import('../clarification/clarification-types').ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
 }>();
-const emit = defineEmits<{ 'open-analysis': [] }>();
+const emit = defineEmits<{ 'open-analysis': []; 'open-report-process': [id: string]; 'open-report': [report: AiReportCard] }>();
 const answers = computed(() => clarificationAnswers(props.messages));
 const answerDetails = computed(() => new Map(props.messages.flatMap(message => message.kind === 'TOOL_RESULT' && message.content.type === 'TEXT' && message.content.data.callId ? [[message.content.data.callId, message.content.data] as const] : [])));
 const questionIds = computed(() => new Set(props.messages.flatMap(message => message.content.type === 'CLARIFICATION' ? [message.content.data.callId] : [])));
 const liveQuestionIds = computed(() => new Set((props.liveItems || []).filter(item => item.type === 'clarification').map(item => item.id)));
 const finalRuns = computed(() => new Set(props.messages.filter(message => message.kind === 'ASSISTANT_FINAL' && message.requestId).map(message => message.requestId)));
+const reportReply = computed(() => {
+  const items = props.liveItems || [];
+  const last = props.finalMessageId
+    ? items.find(item => item.type === 'text' && item.id === props.finalMessageId)
+    : items[items.length - 1];
+  return last?.type === 'text' ? last : undefined;
+});
+const liveReportCards = computed(() => finalRuns.value.has(props.reportRunId || '') ? []
+  : (props.reportCards || []).filter(card => card.requestId === props.reportRunId
+    && Boolean(props.reportProcesses?.[card.toolCallId]?.report)));
+/** 主回复未保存时，仍可以打开已经通过审核并保存的报告。 */
+const unattachedReports = computed(() => (props.reportCards || []).filter(card => {
+  if (finalRuns.value.has(card.requestId)) {
+    return false;
+  }
+  if (card.requestId === props.reportRunId) {
+    return props.runTerminal && (!props.finalMessageId || !reportReply.value);
+  }
+  return props.messages.some(message => message.requestId === card.requestId);
+}));
+/** 仅把本轮报告渲染到自己的最终答复。 */
+function cardsFor(requestId: string) {
+  return (props.reportCards || []).filter(card => card.requestId === requestId);
+}
 const stepsByRun = computed(() => {
   const result = new Map<string, AiConversationMessage[]>();
   for (const message of props.messages) {
@@ -124,6 +155,10 @@ function toolSummary(step: AiConversationMessage) {
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
+                <button v-else-if="step.content.type === 'TOOL_STEP' && step.content.data.name === 'createReport' && reportProcesses?.[step.content.data.callId]"
+                  type="button" class="work-tool work-analysis" @click="emit('open-report-process', step.content.data.callId)">
+                  <span>报告专家完成报告编写与讨论</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                </button>
                 <p v-else-if="step.content.type === 'TOOL_STEP'" class="work-tool" :class="{ 'is-failed': step.content.data.status === 'failed' }">
                   <component :is="toolIcon(step.content.data.name)" class="work-tool-icon" aria-hidden="true" />
                   <span>{{ step.content.data.label }}</span>
@@ -149,6 +184,8 @@ function toolSummary(step: AiConversationMessage) {
           <slot v-if="message.messageId === activeQuestionId" name="clarification" />
           <AiClarificationHistory v-else :questions="message.content.data.questions" :answer="answers.get(message.content.data.callId) || recentAnswers?.[message.content.data.callId]?.answer" :question-answers="answerDetails.get(message.content.data.callId)?.questionAnswers || recentAnswers?.[message.content.data.callId]?.questionAnswers" :note="answerDetails.get(message.content.data.callId)?.note || recentAnswers?.[message.content.data.callId]?.note" :tags="[]" />
         </template>
+        <AiReportMessage v-else-if="message.kind === 'ASSISTANT_FINAL' && message.content.type === 'TEXT'"
+          :text="message.content.data.text" :reports="cardsFor(message.requestId)" active @open="emit('open-report', $event)" />
         <AiMarkdownContent v-else :content="message.content.type === 'TEXT' ? message.content.data.text : ''" />
       </div>
     </article>
@@ -167,7 +204,9 @@ function toolSummary(step: AiConversationMessage) {
       <div class="message-content">
         <div class="message-meta">经营助手</div>
         <template v-for="item in liveItems" :key="item.type + item.id">
-          <AiMarkdownContent v-if="item.type === 'text'" :content="item.text" />
+          <AiReportMessage v-if="item.type === 'text'" :text="item.text"
+            :reports="item.id === reportReply?.id && (finalMessageId === '' || item.id === finalMessageId) ? liveReportCards : []"
+            :active="item.id === finalMessageId" :streaming="!finalMessageId" @open="emit('open-report', $event)" />
           <AiClarificationHistory v-else-if="item.type === 'clarification'" :questions="item.questions" :answer="answers.get(item.id) || recentAnswers?.[item.id]?.answer" :question-answers="answerDetails.get(item.id)?.questionAnswers || recentAnswers?.[item.id]?.questionAnswers" :note="answerDetails.get(item.id)?.note || recentAnswers?.[item.id]?.note" :tags="[]" />
           <button
             v-else-if="item.type === 'tool' && item.tool === 'analyzeData'"
@@ -181,11 +220,22 @@ function toolSummary(step: AiConversationMessage) {
             <span class="flow-text">{{ item.status === 'running' ? item.label : item.label.replace(/^正在/, '') }}</span>
             <span class="analysis-entry-hint">查看过程<ChevronRight class="analysis-entry-arrow" aria-hidden="true" /></span>
           </button>
+          <button v-else-if="item.type === 'tool' && item.tool === 'createReport'" type="button"
+            class="tool-progress analysis-entry" :class="{ 'is-running': item.status === 'running' }"
+            :disabled="!reportProcesses?.[item.id]" @click="emit('open-report-process', item.id)">
+            <LoaderCircle v-if="item.status === 'running'" class="work-tool-icon animate-spin" aria-hidden="true" />
+            <component v-else :is="toolIcon(item.tool)" class="work-tool-icon" aria-hidden="true" />
+            <span class="flow-text">{{ item.status === 'running' ? '报告专家正在完成报告编写与讨论' : '报告专家完成报告编写与讨论' }}</span>
+            <span class="analysis-entry-hint">查看报告过程<ChevronRight class="analysis-entry-arrow" aria-hidden="true" /></span>
+          </button>
           <p v-else class="tool-progress" :class="{ 'is-running': item.status === 'running' }"><component :is="toolIcon(item.type === 'tool' ? item.tool : undefined)" class="work-tool-icon" aria-hidden="true" /><span class="flow-text">{{ item.status === 'running' ? item.label : item.label.replace(/^正在/, '') }}</span><span v-if="typeof item.durationMs === 'number' && Number.isFinite(item.durationMs)" class="work-duration">{{ (item.durationMs / 1000).toFixed(1) }} 秒</span></p>
         </template>
         <p v-if="thinking" class="tool-progress is-running" role="status"><span class="flow-text">正在思考</span></p>
       </div>
     </article>
+    <section v-if="unattachedReports.length" class="message-content" aria-label="已保存报告">
+      <AiReportMessage text="" :reports="unattachedReports" active @open="emit('open-report', $event)" />
+    </section>
   </div>
 </template>
 

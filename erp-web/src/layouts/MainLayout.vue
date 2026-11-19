@@ -50,7 +50,7 @@ const overviewStore = useDashboardOverviewStore();
 
 const BELL_MAX_ITEMS = 8;
 
-const activeMenu = computed(() => route.path);
+const activeMenu = computed(() => route.name === 'ai-report-detail' ? '/ai/assistant' : route.path);
 const openedMenus = reactive(new Set<string>());
 const logoutConfirmOpen = ref(false);
 const notificationOpen = ref(false);
@@ -164,7 +164,8 @@ const userLabel = computed(() => {
 });
 
 const currentSection = computed(() => {
-  return visibleMenus.value.find(item => item.index === route.path || item.children?.some(child => child.index === route.path));
+  return visibleMenus.value.find(item => item.index === activeMenu.value
+    || item.children?.some(child => child.index === activeMenu.value));
 });
 
 const currentPageTitle = computed(() => String(route.meta.title || currentSection.value?.title || '云仓ERP'));
@@ -257,7 +258,7 @@ watch(
 </script>
 
 <template>
-  <div class="app-shell flex h-screen bg-background text-foreground" :class="{ 'purchase-pilot-theme': ['/dashboard', '/purchase/orders', '/purchase/returns', '/purchase/suppliers', '/purchase/supplier-products', '/sales/customers', '/sales/orders', '/sales/returns', '/warehouse/warehouses', '/warehouse/stocks', '/warehouse/inbound-bills', '/warehouse/outbound-bills', '/warehouse/stock-bills', '/product/categories', '/product/products', '/system/users', '/system/roles', '/system/depts', '/system/permissions', '/ai/assistant'].includes(route.path), 'ai-pilot-theme': route.path === '/ai/assistant', 'dashboard-pilot-theme': route.path === '/dashboard' }">
+  <div class="app-shell flex h-screen bg-background text-foreground" :class="{ 'purchase-pilot-theme': ['/dashboard', '/purchase/orders', '/purchase/returns', '/purchase/suppliers', '/purchase/supplier-products', '/sales/customers', '/sales/orders', '/sales/returns', '/warehouse/warehouses', '/warehouse/stocks', '/warehouse/inbound-bills', '/warehouse/outbound-bills', '/warehouse/stock-bills', '/product/categories', '/product/products', '/system/users', '/system/roles', '/system/depts', '/system/permissions', '/ai/assistant'].includes(activeMenu), 'ai-pilot-theme': activeMenu === '/ai/assistant', 'dashboard-pilot-theme': route.path === '/dashboard' }">
     <!-- Sidebar -->
     <aside class="app-sidebar flex shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
       <!-- Brand -->

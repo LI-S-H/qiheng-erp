@@ -25,6 +25,7 @@ const CustomerManageView = () => import('@/modules/sales/customers/views/Custome
 const SalesOrderManageView = () => import('@/modules/sales/orders/views/SalesOrderManageView.vue');
 const SalesReturnManageView = () => import('@/modules/sales/returns/views/SalesReturnManageView.vue');
 const AiAssistantView = () => import('@/modules/ai/views/AiAssistantView.vue');
+const AiReportDetailView = () => import('@/modules/ai/views/AiReportDetailView.vue');
 
 const routes: RouteRecordRaw[] = [
   {
@@ -213,6 +214,12 @@ const routes: RouteRecordRaw[] = [
         path: 'ai/tasks',
         name: 'ai-tasks',
         redirect: '/ai/assistant',
+      },
+      {
+        path: 'ai/assistant/:conversationId/reports/:reportId',
+        name: 'ai-report-detail',
+        component: AiReportDetailView,
+        meta: { title: '报告详情' },
       },
     ],
   },

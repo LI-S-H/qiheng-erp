@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onScopeDispose, ref, watch } from 'vue';
 import '@/styles/ai-pilot.css';
 import { useElementBounding, useMediaQuery } from '@vueuse/core';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import {
   ArrowRight,
   MessageSquare,
@@ -17,6 +17,9 @@ import { getApiErrorMessage } from '@/api/http';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import AiClarificationForm from '../clarification/AiClarificationForm.vue';
 import AiAnalysisPanel from '../components/AiAnalysisPanel.vue';
+import AiReportProcessPanel from '../components/AiReportProcessPanel.vue';
+import { getAiConversationReports } from '../api';
+import { normalizeReportCard, normalizeReportStep, type AiReportCard } from '../contracts/report-contract';
 import AiComposerDock from '../components/AiComposerDock.vue';
 import AiConversationSidebar from '../components/AiConversationSidebar.vue';
 import AiMessageList from '../components/AiMessageList.vue';
@@ -29,6 +32,7 @@ import { useAiConversationStore } from '../stores/aiConversationStore';
 import type { AiAnalysisBlock, AiConversationMessage } from '../types';
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuthStore();
 const store = useAiConversationStore();
 const runs = useConversationRuns();
@@ -96,6 +100,11 @@ const switchSnapshot = ref<{
   liveText: string;
   liveItems: LiveItem[];
   analyses: Record<string, AiAnalysisBlock>;
+  reportCards: AiReportCard[];
+  reportProcesses: ConversationRun['reportProcesses'];
+  reportRunId: string;
+  finalMessageId: string;
+  runTerminal: boolean;
   recentAnswers: ConversationRun['recentAnswers'];
   thinking: boolean;
 } | null>(null);
@@ -130,6 +139,7 @@ const locked = computed(
     Boolean(store.activeId && !store.detail),
 );
 const runStatus = computed(() => currentRun.value.runStatus || 'IDLE');
+const runTerminal = computed(() => ['COMPLETED', 'FAILED', 'INTERRUPTED'].includes(runStatus.value));
 const currentQuestionData = computed(() => runStatus.value === 'WAITING_USER' ? pendingClarification.value : null);
 const waiting = computed(() => Boolean(currentQuestionData.value));
 const readingConversation = computed(() => switching.value || (store.historyLoading && !busy.value));
@@ -181,9 +191,53 @@ const analysisBlocks = computed<AiAnalysisBlock[]>(() => {
 const showAnalysisPanel = computed(() => analysisBlocks.value.length > 0);
 /** 分析面板默认收起，用户点击“子智能体正在分析”才展开，可随时收回。 */
 const analysisOpen = ref(false);
+const selectedReportProcessId = ref('');
+const reportProcess = computed(() => currentRun.value.reportProcesses[selectedReportProcessId.value]);
+const cardsInConversation = computed(() => Object.values(currentRun.value.reportCards));
+/** 历史列表只批量读取已进入页面的轮次，实时生成的卡片继续由事件补齐。 */
+watch(
+  () => [store.activeId, auth.token, [...new Set(store.messages.map(message => message.requestId))].filter(Boolean).join('\n')] as const,
+  async ([id, , requestKeys], _, onCleanup) => {
+    if (!id || !requestKeys) {
+      return;
+    }
+    const controller = new AbortController();
+    onCleanup(() => controller.abort());
+    try {
+      const cards = await getAiConversationReports(id, requestKeys.split('\n'), controller.signal);
+      if (!controller.signal.aborted && store.activeId === id) {
+        const state = runs.get(id);
+        for (const card of cards) {
+          state.reportCards[card.reportId] = card;
+        }
+      }
+    } catch {
+      if (!controller.signal.aborted && store.activeId === id) {
+        warning.value ||= '历史报告卡片暂时无法读取，可重新打开会话重试。';
+      }
+    }
+  },
+  { immediate: true },
+);
+
+function openReportProcess(id: string) {
+  analysisOpen.value = false;
+  selectedReportProcessId.value = selectedReportProcessId.value === id ? '' : id;
+}
+
+/** 独立报告页返回时恢复对应会话的滚动位置。 */
+async function openReport(card: AiReportCard) {
+  const id = store.activeId;
+  if (!id || switching.value) {
+    return;
+  }
+  storageSet(scopedDraftKey(auth.user?.userId, id, 'reportReturnScroll'), scrollArea.value?.scrollTop || 0);
+  await router.push({ name: 'ai-report-detail', params: { conversationId: id, reportId: card.reportId } });
+}
 /** 切换会话时收起分析面板；新会话的分析过程需要重新打开。 */
 watch(() => store.activeId, () => {
   analysisOpen.value = false;
+  selectedReportProcessId.value = '';
 });
 const showWelcome = computed(() => switching.value && switchSnapshot.value
   ? switchSnapshot.value.welcome
@@ -402,13 +456,21 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.snapshotTruncated = data.snapshotTruncated === true;
       state.warning = state.snapshotTruncated ? '运行过程缓存不完整，已保留已保存的历史消息。' : '';
       const snapshotItems = data.items as SnapshotItem[];
-      state.liveItems = snapshotItems.filter((item): item is LiveItem => item.type !== 'analysis');
+      state.liveItems = snapshotItems.filter((item): item is LiveItem => item.type !== 'analysis' && item.type !== 'report');
+      state.finalMessageId = typeof data.finalMessageId === 'string' ? data.finalMessageId : '';
       state.completedTextIds = new Set(state.liveItems.filter(item => item.type === 'text' && item.completed).map(item => item.id));
       state.liveText = state.liveItems.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
       state.steps = state.liveItems.filter(item => item.type === 'tool').map(item => ({ node: item.id, label: item.label, status: item.status, durationMs: item.durationMs }));
       // 重连后按快照还原分析面板；已总结的块视为结束，其余仍在运行。
       const analyses: Record<string, AiAnalysisBlock> = {};
       for (const item of snapshotItems) {
+        if (item.type === 'report') {
+          const report = item.report ? normalizeReportCard(item.report) : undefined;
+          state.reportProcesses[item.id] = { id: item.id, steps: item.steps.map(normalizeReportStep), report };
+          if (report) {
+            state.reportCards[report.reportId] = report;
+          }
+        }
         if (item.type !== 'analysis') {
           continue;
         }
@@ -428,6 +490,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
     }
     case 'run_started':
       state.runStatus = 'RUNNING';
+      state.finalMessageId = '';
       state.runId = String(data.runId || '');
       // 服务端在发出 run_started 前已保存输入；以历史记录替换临时提交气泡。
       if (store.activeId === id && state.pendingText && !switching.value) {
@@ -538,6 +601,28 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       };
       break;
     }
+    case 'report_progress': {
+      const id = String(data.toolCallId || '');
+      if (!id) {
+        throw new Error('报告事件缺少调用编号');
+      }
+      const step = normalizeReportStep(data);
+      const process = state.reportProcesses[id] ?? { id, steps: [] };
+      if (!process.steps.some(item => item.stepSeq === step.stepSeq)) {
+        state.reportProcesses[id] = { ...process, steps: [...process.steps, step] };
+      }
+      break;
+    }
+    case 'report_ready': {
+      const card = normalizeReportCard(data);
+      if (card.requestId !== state.runId) {
+        break;
+      }
+      const process = state.reportProcesses[card.toolCallId] ?? { id: card.toolCallId, steps: [] };
+      state.reportProcesses[card.toolCallId] = { ...process, report: card };
+      state.reportCards[card.reportId] = card;
+      break;
+    }
     case 'question': {
       if (typeof data.questionRequestId !== 'string' || !Array.isArray(data.questions)) {
         throw new Error('追问事件格式错误');
@@ -564,6 +649,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       break;
     case 'run_completed':
       state.runStatus = 'COMPLETED';
+      state.finalMessageId = typeof data.finalMessageId === 'string' ? data.finalMessageId : '';
       clearFailureHold(state);
       state.settleSuccess?.();
       state.settleSuccess = null;
@@ -869,6 +955,11 @@ function captureSwitchSnapshot() {
     liveText: liveText.value,
     liveItems: liveItems.value.map(item => ({ ...item })),
     analyses: { ...currentRun.value.analyses },
+    reportCards: [...cardsInConversation.value],
+    reportProcesses: { ...currentRun.value.reportProcesses },
+    reportRunId: liveRunId.value,
+    finalMessageId: currentRun.value.finalMessageId,
+    runTerminal: runTerminal.value,
     recentAnswers: { ...currentRun.value.recentAnswers },
     thinking: thinking.value,
   };
@@ -935,7 +1026,14 @@ async function openConversation(id: string, force = false) {
     if (isCurrent(epoch, userId)) {
       switching.value = false;
       switchSnapshot.value = null;
-      await scrollToLatest();
+      const restore = route.query.conversationId === id
+        ? storageRead(scopedDraftKey(userId, id, 'reportReturnScroll')) : null;
+      if (typeof restore === 'number' && scrollArea.value) {
+        await nextTick();
+        scrollArea.value.scrollTop = restore;
+      } else {
+        await scrollToLatest();
+      }
       // 终态也可能恰好落在上面的检查与切换遮罩退出之间，解除切换锁后补取一次。
       const state = runs.get(id);
       if (store.activeId === id && state.refreshNeeded && !state.streaming) {
@@ -1070,7 +1168,8 @@ watch(
       if (!isCurrent(epoch, userId)) {
         return;
       }
-      const remembered = storageRead(scopedDraftKey(userId, null, 'activeConversation'));
+      const remembered = typeof route.query.conversationId === 'string'
+        ? route.query.conversationId : storageRead(scopedDraftKey(userId, null, 'activeConversation'));
       if (typeof remembered === 'string' && remembered) {
         switching.value = false;
         await openConversation(remembered);
@@ -1208,7 +1307,14 @@ onBeforeUnmount(() => {
             :active-question-id="undefined"
             :user-id="auth.user?.userId"
             :conversation-id="store.activeId || undefined"
-            @open-analysis="analysisOpen = !analysisOpen"
+            :report-cards="switching ? switchSnapshot?.reportCards : cardsInConversation"
+            :report-processes="switching ? switchSnapshot?.reportProcesses : currentRun.reportProcesses"
+            :report-run-id="switching ? switchSnapshot?.reportRunId : liveRunId"
+            :final-message-id="switching ? switchSnapshot?.finalMessageId : currentRun.finalMessageId"
+            :run-terminal="switching ? switchSnapshot?.runTerminal : runTerminal"
+            @open-analysis="selectedReportProcessId = ''; analysisOpen = !analysisOpen"
+            @open-report-process="openReportProcess"
+            @open-report="openReport"
             >
             <template #clarification>
               <button type="button" class="question-status" data-testid="clarification-pending-status" aria-label="继续回答补充问题" :disabled="switching" @click="focusQuestion">
@@ -1219,6 +1325,7 @@ onBeforeUnmount(() => {
             </template>
           </AiMessageList>
           <AiAnalysisPanel v-if="small && showAnalysisPanel" variant="inline" :blocks="analysisBlocks" />
+          <AiReportProcessPanel v-if="small && reportProcess" :process="reportProcess" @close="selectedReportProcessId = ''" />
           <p v-if="!switching && runStatus === 'INTERRUPTED' && !busy" class="state-note">
             上次执行已中断。可以重新描述需求后再试。
           </p>
@@ -1275,9 +1382,9 @@ onBeforeUnmount(() => {
         </template>
       </AiComposerDock>
     </main>
-    <template v-if="!small && showAnalysisPanel">
+    <template v-if="!small && (showAnalysisPanel || reportProcess)">
       <div
-        v-if="analysisOpen"
+        v-if="analysisOpen || reportProcess"
         class="panel-resizer analysis-resizer"
         role="separator"
         tabindex="0"
@@ -1292,11 +1399,12 @@ onBeforeUnmount(() => {
       />
       <div
         class="analysis-dock"
-        :class="{ 'is-open': analysisOpen }"
-        :inert="!analysisOpen"
+        :class="{ 'is-open': analysisOpen || reportProcess }"
+        :inert="!analysisOpen && !reportProcess"
         data-testid="ai-analysis-dock"
       >
-        <AiAnalysisPanel variant="panel" :blocks="analysisBlocks" @close="analysisOpen = false" />
+        <AiReportProcessPanel v-if="reportProcess" :process="reportProcess" @close="selectedReportProcessId = ''" />
+        <AiAnalysisPanel v-else variant="panel" :blocks="analysisBlocks" @close="analysisOpen = false" />
       </div>
     </template>
     <Dialog :open="mobileSidebarOpen" @update:open="mobileSidebarOpen = $event"

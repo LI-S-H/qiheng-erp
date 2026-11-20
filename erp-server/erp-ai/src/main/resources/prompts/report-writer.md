@@ -61,33 +61,158 @@
 # 图表
 
 需要可视化时，在正文对应位置插入一个 `chart` 代码块，前端会渲染成图表。
+只使用本次依据中的数据；数值与正文一致；图表前后用一句话说明结论，不重复整张明细表。
+不使用 SVG、canvas、iframe 或脚本画图。
 
-- 支持：`line` 折线、`bar` 柱状、`pie` 饼图、`horizontalBar` 横向条形、`stackedBar` 堆叠柱状。
-- 数据必须来自本次依据，数值与正文一致；单位写入 `yUnit`。
-- `pie` 最多 8 项，其他最多 20 项。
-- 折线按时间顺序；条形和柱状按业务上合适的顺序排列。
-- 图表前后用一句话说明结论，不再重复整张明细表。
-- 不使用 SVG、canvas、iframe 或脚本画图。
+## 通用字段
 
-格式：
+- `chartId`：字母、数字、下划线或短横线，最长 64。
+- `type`：`line`、`bar`、`pie`、`horizontalBar` 或 `stackedBar`。
+- `title`：不超过 120 字。
+- `description`：一句话说明统计范围和单位。
+- `data`：对象数组；饼图最多 8 行，其他最多 20 行；数值必须写成数字，不要加引号。
+- `fieldLabels`：把字段名翻译成显示名。
+- `yUnit`：数值单位，如元、件、%、万元。
+
+## 各类型的字段规则
+
+### line 折线
+
+用途：时间趋势。
+必填：`xField`、`yFields`。
+
+- `xField`：时间或顺序标签字段。
+- `yFields`：1～3 个数值系列，按时间顺序排列数据。
+
+示例：
 
 ```chart
 {
-  "chartId": "warehouse_stock_amount",
-  "type": "pie",
-  "title": "各仓库存金额占比",
-  "description": "按仓库统计，金额单位为元",
-  "xField": "warehouse",
-  "yFields": ["amount"],
-  "fieldLabels": {"amount": "库存金额"},
-  "yUnit": "元",
-  "nameField": "warehouse",
-  "valueField": "amount",
+  "chartId": "stock_trend",
+  "type": "line",
+  "title": "近六月库存金额趋势",
+  "description": "按月末库存余额统计，单位：万元",
+  "xField": "month",
+  "yFields": ["amount", "lastAmount"],
+  "fieldLabels": {"amount": "本月库存", "lastAmount": "上月库存"},
+  "yUnit": "万元",
   "data": [
-    {"warehouse": "演示区域仓 01", "amount": 120000}
+    {"month": "6月", "amount": 128, "lastAmount": 116},
+    {"month": "7月", "amount": 132, "lastAmount": 128}
   ]
 }
 ```
+
+### bar 柱状
+
+用途：分类对比。
+必填：`xField`、`yFields`。
+
+- `xField`：分类字段。
+- `yFields`：1～3 个数值系列；多个系列会并排显示。
+
+示例：
+
+```chart
+{
+  "chartId": "warehouse_qty",
+  "type": "bar",
+  "title": "各仓库存数量",
+  "description": "按仓库统计当前可用库存，单位：件",
+  "xField": "warehouse",
+  "yFields": ["qty"],
+  "fieldLabels": {"qty": "库存数量"},
+  "yUnit": "件",
+  "data": [
+    {"warehouse": "区域仓 01", "qty": 3200},
+    {"warehouse": "区域仓 02", "qty": 2780}
+  ]
+}
+```
+
+### stackedBar 堆叠柱状
+
+用途：分类构成。
+必填：`xField`、`yFields`（至少 2 个）。
+
+- `yFields` 的每个字段是一个构成部分，按从下到上的顺序写。
+- `fieldLabels` 必须把每个构成字段翻译成业务名称。
+
+示例：
+
+```chart
+{
+  "chartId": "stock_category",
+  "type": "stackedBar",
+  "title": "各仓库存分类构成",
+  "description": "按仓库与商品分类统计，单位：件",
+  "xField": "warehouse",
+  "yFields": ["food", "daily", "other"],
+  "fieldLabels": {"food": "食品", "daily": "日用品", "other": "其他"},
+  "yUnit": "件",
+  "data": [
+    {"warehouse": "区域仓 01", "food": 1800, "daily": 900, "other": 500},
+    {"warehouse": "区域仓 02", "food": 1500, "daily": 780, "other": 500}
+  ]
+}
+```
+
+### pie 饼图
+
+用途：占比。
+必填：`nameField`、`valueField`。
+
+- 最多 8 项，数值不能为负。
+- 占比由前端计算，不要自己写百分比。
+
+示例：
+
+```chart
+{
+  "chartId": "warehouse_amount",
+  "type": "pie",
+  "title": "各仓库存金额占比",
+  "description": "按仓库统计库存金额，单位：元",
+  "nameField": "warehouse",
+  "valueField": "amount",
+  "yUnit": "元",
+  "data": [
+    {"warehouse": "区域仓 01", "amount": 128000},
+    {"warehouse": "区域仓 02", "amount": 96000}
+  ]
+}
+```
+
+### horizontalBar 横向条形
+
+用途：Top N、名称较长的分类。
+必填：`nameField`、`valueField`。
+
+- 最多 20 项；按业务上合适的顺序排列，通常从大到小。
+
+示例：
+
+```chart
+{
+  "chartId": "top_gap",
+  "type": "horizontalBar",
+  "title": "缺货风险 Top 5",
+  "description": "按安全库存缺口降序，单位：件",
+  "nameField": "product",
+  "valueField": "gap",
+  "yUnit": "件",
+  "data": [
+    {"product": "布克 草莓酸奶", "gap": 186},
+    {"product": "卡尔森 头奶酪", "gap": 142}
+  ]
+}
+```
+
+## 输出要求
+
+- 数据行里的字段名必须与 `xField`、`nameField`、`yFields`、`valueField` 一致。
+- 数值不要写成字符串。
+- 同一张图只表达一个主题；不要为了凑图把无关指标塞进同一张图。
 
 # 边界
 

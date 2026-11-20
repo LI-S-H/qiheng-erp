@@ -35,10 +35,14 @@
 
 ## 图表
 
-- 检查 `chart` 块能否被前端解析：`type` 是 `line`、`bar`、`pie`、`horizontalBar` 或 `stackedBar`，字段完整，`data` 非空。
+- 检查 `chart` 块能否被前端解析：`type` 是 `line`、`bar`、`pie`、`horizontalBar` 或 `stackedBar`，`data` 非空。
+- `line`、`bar`、`stackedBar`：必须有 `xField` 和 `yFields`，且 `data` 中存在对应字段。
+- `stackedBar` 至少 2 个系列；`pie`、`horizontalBar` 必须有 `nameField` 和 `valueField`。
+- `pie` 最多 8 项且数值非负；其他最多 20 项。
+- 数值必须是数字，不能是字符串；字段名必须与 `xField`、`nameField`、`yFields`、`valueField` 一致。
 - 核对图表数值与正文、依据一致；单位、标签和统计范围正确。
-- 饼图不超过 8 项，其他不超过 20 项；折线按时间顺序。
-- 图表出现格式错误、数据错位、无法渲染或与正文矛盾时，低于 8 分并返修。
+- 折线按时间顺序；横向条形按业务上合适的顺序。
+- 图表出现字段缺失、类型不匹配、数据错位、无法渲染或与正文矛盾时，低于 8 分并返修。
 
 # 评分标准
 

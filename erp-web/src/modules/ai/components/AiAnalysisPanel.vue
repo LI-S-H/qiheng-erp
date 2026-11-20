@@ -39,10 +39,10 @@ watch(
 </script>
 
 <template>
-  <aside v-if="variant === 'panel'" class="analysis-panel" aria-label="子智能体分析过程" data-testid="ai-analysis-panel">
+  <aside v-if="variant === 'panel'" class="analysis-panel" aria-label="分析专家分析过程" data-testid="ai-analysis-panel">
     <header class="analysis-panel-header">
       <span class="analysis-panel-icon" aria-hidden="true"><Bot class="size-4" /></span>
-      <h2>子智能体分析</h2>
+      <h2>分析专家</h2>
       <span v-if="running" class="analysis-running" role="status"><LoaderCircle class="size-3.5 animate-spin" aria-hidden="true" />运行中</span>
       <button type="button" class="analysis-close" aria-label="收起分析面板" title="收起" @click="emit('close')">
         <PanelRightClose class="size-4" aria-hidden="true" />
@@ -62,7 +62,7 @@ watch(
     >
       <ChevronDown class="analysis-card-chevron" aria-hidden="true" />
       <span class="analysis-panel-icon" aria-hidden="true"><Bot class="size-4" /></span>
-      <span class="analysis-card-title">子智能体分析过程</span>
+      <span class="analysis-card-title">分析专家分析过程</span>
       <span class="analysis-card-meta">{{ blocks.length }} 项 · {{ running ? '分析中' : '已完成' }}</span>
       <LoaderCircle v-if="running" class="size-3.5 animate-spin" aria-hidden="true" />
       <span v-else-if="!open" class="analysis-card-goal">{{ latestGoal }}</span>

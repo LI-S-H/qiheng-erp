@@ -187,21 +187,23 @@ function toolSummary(step: AiConversationMessage) {
                 <AiClarificationHistory v-if="step.content.type === 'CLARIFICATION' && !liveQuestionIds.has(step.content.data.callId)" :questions="step.content.data.questions" :answer="answers.get(step.content.data.callId) || recentAnswers?.[step.content.data.callId]?.answer" :question-answers="answerDetails.get(step.content.data.callId)?.questionAnswers || recentAnswers?.[step.content.data.callId]?.questionAnswers" :note="answerDetails.get(step.content.data.callId)?.note || recentAnswers?.[step.content.data.callId]?.note" :tags="[]" />
                 <button v-else-if="step.content.type === 'TEXT' && isAnalysisSummary(step)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
-                  <span>{{ toolSummary(step)?.[1] }}</span>
+                  <span>分析专家完成分析</span>
                   <span class="work-duration">{{ toolSummary(step)?.[2] }}</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
                 <button v-else-if="isAnalysisToolStep(step) && step.content.type === 'TOOL_STEP'" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
-                  <span>{{ step.content.data.label }}</span>
+                  <span>分析专家完成分析</span>
                   <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
                 <button v-else-if="step.content.type === 'TOOL_STEP' && step.content.data.name === 'createReport' && reportProcesses?.[reportProcessKey(step.requestId, step.content.data.callId)]"
                   type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.content.data.callId))">
-                  <span>报告专家完成报告编写与讨论</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                  <span>报告专家完成报告编写与讨论</span>
+                  <span class="work-analysis-hint">查看过程</span>
+                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
                 <button v-else-if="step.content.type === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.content.data.callId))">
                   <span>查看报告编写与讨论过程</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
@@ -213,7 +215,7 @@ function toolSummary(step: AiConversationMessage) {
                 </p>
                 <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.content.type === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
-                  <span>子智能体分析</span>
+                  <span>分析专家完成分析</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
@@ -268,7 +270,7 @@ function toolSummary(step: AiConversationMessage) {
           >
             <LoaderCircle v-if="item.status === 'running'" class="work-tool-icon animate-spin" aria-hidden="true" />
             <Bot v-else class="work-tool-icon" aria-hidden="true" />
-            <span class="flow-text">{{ item.status === 'running' ? item.label : item.label.replace(/^正在/, '') }}</span>
+            <span class="flow-text">{{ item.status === 'running' ? '分析专家正在分析' : '分析专家完成分析' }}</span>
             <span class="analysis-entry-hint">查看过程<ChevronRight class="analysis-entry-arrow" aria-hidden="true" /></span>
           </button>
           <button v-else-if="item.type === 'tool' && item.tool === 'createReport'" type="button"

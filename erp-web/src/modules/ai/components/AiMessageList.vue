@@ -27,7 +27,7 @@ const props = defineProps<{
   runTerminal?: boolean;
   recentAnswers?: Record<string, { callId: string; questions: import('../clarification/clarification-types').ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
 }>();
-const emit = defineEmits<{ 'open-analysis': []; 'open-report-process': [id: string]; 'open-report': [report: AiReportCard] }>();
+const emit = defineEmits<{ 'open-analysis': [id?: string]; 'open-report-process': [id: string]; 'open-report': [report: AiReportCard] }>();
 /** 同一调用编号在不同轮次出现时，仍能打开对应的报告过程。 */
 function reportProcessKey(requestId: string, callId: string) {
   return JSON.stringify([requestId, callId]);
@@ -119,6 +119,25 @@ function toolDuration(durationMs: number) {
   return `${(durationMs / 1000).toFixed(1)} 秒`;
 }
 
+/** 取这一行过程对应的分析调用编号；摘要行缺少编号时回退到同轮最近一次分析工具调用。 */
+function analysisBlockId(step: AiConversationMessage): string {
+  if (step.content.type === 'ANALYSIS' || step.content.type === 'TOOL_STEP') {
+    return step.content.data.callId;
+  }
+  if (step.content.type === 'TEXT' && step.content.data.callId) {
+    return step.content.data.callId;
+  }
+  const steps = stepsByRun.value.get(step.requestId) || [];
+  const index = steps.findIndex(item => item.messageId === step.messageId);
+  for (let cursor = index - 1; cursor >= 0; cursor--) {
+    const previous = steps[cursor];
+    if (previous.content.type === 'TOOL_STEP' && previous.content.data.name === 'analyzeData') {
+      return previous.content.data.callId;
+    }
+  }
+  return '';
+}
+
 /** 按运行记录控制折叠，保留每一轮独立的展开状态。 */
 function toggleSteps(id: string) {
   const next = new Set(expandedRuns.value);
@@ -166,14 +185,14 @@ function toolSummary(step: AiConversationMessage) {
             <div class="work-reveal-inner">
               <template v-for="step in stepsByRun.get(message.requestId)" :key="step.messageId">
                 <AiClarificationHistory v-if="step.content.type === 'CLARIFICATION' && !liveQuestionIds.has(step.content.data.callId)" :questions="step.content.data.questions" :answer="answers.get(step.content.data.callId) || recentAnswers?.[step.content.data.callId]?.answer" :question-answers="answerDetails.get(step.content.data.callId)?.questionAnswers || recentAnswers?.[step.content.data.callId]?.questionAnswers" :note="answerDetails.get(step.content.data.callId)?.note || recentAnswers?.[step.content.data.callId]?.note" :tags="[]" />
-                <button v-else-if="step.content.type === 'TEXT' && isAnalysisSummary(step)" type="button" class="work-tool work-analysis" @click="emit('open-analysis')">
+                <button v-else-if="step.content.type === 'TEXT' && isAnalysisSummary(step)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
                   <span>{{ toolSummary(step)?.[1] }}</span>
                   <span class="work-duration">{{ toolSummary(step)?.[2] }}</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
-                <button v-else-if="isAnalysisToolStep(step) && step.content.type === 'TOOL_STEP'" type="button" class="work-tool work-analysis" @click="emit('open-analysis')">
+                <button v-else-if="isAnalysisToolStep(step) && step.content.type === 'TOOL_STEP'" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
                   <span>{{ step.content.data.label }}</span>
                   <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
@@ -192,7 +211,7 @@ function toolSummary(step: AiConversationMessage) {
                   <span>{{ step.content.data.label }}</span>
                   <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
                 </p>
-                <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.content.type === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis')">
+                <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.content.type === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
                   <span>子智能体分析</span>
                   <span class="work-analysis-hint">查看过程</span>
@@ -245,7 +264,7 @@ function toolSummary(step: AiConversationMessage) {
             type="button"
             class="tool-progress analysis-entry"
             :class="{ 'is-running': item.status === 'running' }"
-            @click="emit('open-analysis')"
+            @click="emit('open-analysis', item.id)"
           >
             <LoaderCircle v-if="item.status === 'running'" class="work-tool-icon animate-spin" aria-hidden="true" />
             <Bot v-else class="work-tool-icon" aria-hidden="true" />

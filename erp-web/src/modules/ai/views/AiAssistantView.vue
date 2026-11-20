@@ -191,6 +191,17 @@ const analysisBlocks = computed<AiAnalysisBlock[]>(() => {
 const showAnalysisPanel = computed(() => analysisBlocks.value.length > 0);
 /** 分析面板默认收起，用户点击“子智能体正在分析”才展开，可随时收回。 */
 const analysisOpen = ref(false);
+/** 当前查看的分析调用编号；为空时展示全部过程。 */
+const selectedAnalysisId = ref('');
+/** 只展示用户点开的那次分析，避免多次调用混在同一面板。 */
+const visibleAnalysisBlocks = computed(() => {
+  const blocks = analysisBlocks.value;
+  if (!selectedAnalysisId.value) {
+    return blocks;
+  }
+  const matched = blocks.filter(block => block.id === selectedAnalysisId.value);
+  return matched.length > 0 ? matched : blocks;
+});
 const selectedReportProcessId = ref('');
 /** 以轮次和工具调用编号合并历史过程，防止不同轮次的调用编号重用时串线。 */
 const reportProcesses = computed<ConversationRun['reportProcesses']>(() => {
@@ -236,7 +247,26 @@ watch(
 
 function openReportProcess(id: string) {
   analysisOpen.value = false;
+  selectedAnalysisId.value = '';
   selectedReportProcessId.value = selectedReportProcessId.value === id ? '' : id;
+}
+
+/** 打开对应分析的过程；再次点击同一次分析时收起面板。 */
+function openAnalysis(id?: string) {
+  selectedReportProcessId.value = '';
+  const target = id || '';
+  if (analysisOpen.value && selectedAnalysisId.value === target) {
+    closeAnalysis();
+    return;
+  }
+  selectedAnalysisId.value = target;
+  analysisOpen.value = true;
+}
+
+/** 收起分析面板并清空选择，下次打开回到全部过程。 */
+function closeAnalysis() {
+  analysisOpen.value = false;
+  selectedAnalysisId.value = '';
 }
 
 /** 独立报告页返回时恢复对应会话的滚动位置。 */
@@ -251,6 +281,7 @@ async function openReport(card: AiReportCard) {
 /** 切换会话时收起分析面板；新会话的分析过程需要重新打开。 */
 watch(() => store.activeId, () => {
   analysisOpen.value = false;
+  selectedAnalysisId.value = '';
   selectedReportProcessId.value = '';
 });
 const showWelcome = computed(() => switching.value && switchSnapshot.value
@@ -1326,7 +1357,7 @@ onBeforeUnmount(() => {
             :report-run-id="switching ? switchSnapshot?.reportRunId : liveRunId"
             :final-message-id="switching ? switchSnapshot?.finalMessageId : currentRun.finalMessageId"
             :run-terminal="switching ? switchSnapshot?.runTerminal : runTerminal"
-            @open-analysis="selectedReportProcessId = ''; analysisOpen = !analysisOpen"
+            @open-analysis="openAnalysis"
             @open-report-process="openReportProcess"
             @open-report="openReport"
             >
@@ -1338,7 +1369,7 @@ onBeforeUnmount(() => {
               </button>
             </template>
           </AiMessageList>
-          <AiAnalysisPanel v-if="small && showAnalysisPanel" variant="inline" :blocks="analysisBlocks" />
+          <AiAnalysisPanel v-if="small && showAnalysisPanel" variant="inline" :blocks="visibleAnalysisBlocks" />
           <AiReportProcessPanel v-if="small && reportProcess" :process="reportProcess" @close="selectedReportProcessId = ''" />
           <p v-if="!switching && runStatus === 'INTERRUPTED' && !busy" class="state-note">
             上次执行已中断。可以重新描述需求后再试。
@@ -1418,7 +1449,7 @@ onBeforeUnmount(() => {
         data-testid="ai-analysis-dock"
       >
         <AiReportProcessPanel v-if="reportProcess" :process="reportProcess" @close="selectedReportProcessId = ''" />
-        <AiAnalysisPanel v-else variant="panel" :blocks="analysisBlocks" @close="analysisOpen = false" />
+        <AiAnalysisPanel v-else variant="panel" :blocks="visibleAnalysisBlocks" @close="closeAnalysis" />
       </div>
     </template>
     <Dialog :open="mobileSidebarOpen" @update:open="mobileSidebarOpen = $event"

@@ -18,8 +18,8 @@ import java.time.LocalDateTime;
  * AI 长期经验表
  * </p>
  *
- * <p>经验不绑定具体会话或任务，按智能体类型分类；证据引用指向 {@code ai_agent_trace} 的流水编号，
- * 形成"流水 → 经验"的证据链。经验提炼与发布流程暂未实现。</p>
+ * <p>经验不绑定具体会话或任务，按智能体类型分类；{@code source_task_id} 指向提取该经验的
+ * 任务，用于防止同一任务重复提取。</p>
  *
  * @author Li
  * @since 2026-10-15
@@ -45,9 +45,9 @@ public class AiExperience implements Serializable {
     @TableField("experience_text")
     private String experienceText;
 
-    @Schema(description = "经验依据的智能体流水编号列表")
-    @TableField("evidence_refs")
-    private String evidenceRefs;
+    @Schema(description = "来源任务 ID，用于防重复提取")
+    @TableField("source_task_id")
+    private String sourceTaskId;
 
     @Schema(description = "状态：CANDIDATE、PUBLISHED、REVOKED")
     @TableField("status")

@@ -8,6 +8,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -46,5 +47,16 @@ class SearchExperienceToolTest {
         var tool = new SearchExperienceTool(mapper, "ANALYSIS", 10);
 
         assertThat(tool.search("库存")).contains("没有匹配的经验");
+    }
+
+    @Test
+    void longKeywordIsSplitIntoTernaryTerms() {
+        var mapper = mock(AiExperienceMapper.class);
+        when(mapper.search(anyString(), anyString(), anyInt())).thenReturn(List.of());
+        when(mapper.search(eq("MAIN"), eq("库存"), anyInt())).thenReturn(List.of(
+                new AiExperience().setId(1L).setExperienceText("【口径】库存字段按100倍存储。")));
+        var tool = new SearchExperienceTool(mapper, "MAIN", 10);
+
+        assertThat(tool.search("库存分析")).contains("库存字段按100倍存储");
     }
 }

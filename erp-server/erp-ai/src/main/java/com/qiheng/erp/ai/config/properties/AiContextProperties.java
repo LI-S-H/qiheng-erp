@@ -31,7 +31,7 @@ public record AiContextProperties(
         @DefaultValue("8") int minKeepMessages,
         @DefaultValue("false") boolean keepFirstUserMessage,
         @DefaultValue("flash") String summaryModel,
-        @DefaultValue("180") long summaryTimeoutSeconds,
+        @DefaultValue("480") long summaryTimeoutSeconds,
         @DefaultValue("8000") int summaryMaxOutputTokens,
         @DefaultValue("800000") int summaryInputMaxTokens,
         @DefaultValue("1000") int sourceToolClipChars,

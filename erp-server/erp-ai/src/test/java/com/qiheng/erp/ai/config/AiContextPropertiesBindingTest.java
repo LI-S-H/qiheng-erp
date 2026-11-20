@@ -62,7 +62,7 @@ class AiContextPropertiesBindingTest {
             assertThat(properties.minKeepMessages()).isEqualTo(8);
             assertThat(properties.keepFirstUserMessage()).isFalse();
             assertThat(properties.summaryModel()).isEqualTo("flash");
-            assertThat(properties.summaryTimeoutSeconds()).isEqualTo(180L);
+            assertThat(properties.summaryTimeoutSeconds()).isEqualTo(480L);
             assertThat(properties.summaryMaxOutputTokens()).isEqualTo(8000);
             assertThat(properties.summaryInputMaxTokens()).isEqualTo(800_000);
             assertThat(properties.sourceToolClipChars()).isEqualTo(1000);

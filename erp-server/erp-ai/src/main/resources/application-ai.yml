@@ -31,7 +31,7 @@ erp:
       min-keep-messages: ${ERP_AI_CONTEXT_MIN_KEEP:8}
       keep-first-user-message: ${ERP_AI_CONTEXT_KEEP_FIRST_USER:false}
       summary-model: ${ERP_AI_CONTEXT_SUMMARY_MODEL:flash}
-      summary-timeout-seconds: ${ERP_AI_CONTEXT_SUMMARY_TIMEOUT:180}
+      summary-timeout-seconds: ${ERP_AI_CONTEXT_SUMMARY_TIMEOUT:480}
       summary-max-output-tokens: ${ERP_AI_CONTEXT_SUMMARY_MAX_OUTPUT:8000}
       summary-input-max-tokens: ${ERP_AI_CONTEXT_SUMMARY_INPUT_TOKENS:800000}
       source-tool-clip-chars: ${ERP_AI_CONTEXT_TOOL_CLIP:1000}

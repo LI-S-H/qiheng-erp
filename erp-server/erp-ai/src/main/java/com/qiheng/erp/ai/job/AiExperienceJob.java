@@ -41,6 +41,7 @@ public class AiExperienceJob {
         this.extraction = extraction;
         this.merge = merge;
         this.properties = properties;
+        log.info("经验定时任务已装配 cron={} enabled={}", properties.cron(), properties.enabled());
     }
 
     /** 每天 03:10 执行；cron 可通过配置覆盖。 */

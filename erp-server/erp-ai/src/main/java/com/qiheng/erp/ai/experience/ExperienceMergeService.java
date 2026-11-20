@@ -36,7 +36,7 @@ import java.util.Set;
  */
 @Component
 @Conditional(AiModelEnabledCondition.class)
-public final class ExperienceMergeService {
+public class ExperienceMergeService {
 
     private static final Logger log = LoggerFactory.getLogger(ExperienceMergeService.class);
 

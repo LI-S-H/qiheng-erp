@@ -93,7 +93,13 @@ const appliedQuery = reactive<ProductCategoryQuery>({ categoryName: '', status: 
 const form = reactive<ProductCategoryFormPayload>({ parentId: ROOT_PARENT_ID, categoryName: '', status: 1 });
 const formErrors = reactive<Record<string, string>>({});
 let fetchSequence = 0;
-const collapseTimers = new Map<string, number>();
+let hasFetchedCategories = false;
+let lastQueryWasFiltered = false;
+interface CollapseGroup {
+  timer: number;
+  ids: Set<string>;
+}
+const collapseTimers = new Map<string, CollapseGroup>();
 
 const confirmState = reactive({
   open: false,
@@ -158,7 +164,18 @@ async function fetchCategories(queryParams: ProductCategoryQuery = appliedQuery)
     if (sequence !== fetchSequence) return;
     clearCategoryCollapseState();
     filteredListResponse.value = result;
-    expandedCategoryIds.value = new Set(collectExpandableCategoryIds(buildCategoryTree(result)));
+    const expandableIds = collectExpandableCategoryIds(buildCategoryTree(result));
+    if (params) {
+      // 搜索结果可能位于多层分类中，展开路径以免隐藏匹配项。
+      expandedCategoryIds.value = new Set(expandableIds);
+    } else if (!hasFetchedCategories || lastQueryWasFiltered) {
+      expandedCategoryIds.value = new Set();
+    } else {
+      // 刷新或保存后保留用户手动展开的分类。
+      expandedCategoryIds.value = new Set(expandableIds.filter(id => expandedCategoryIds.value.has(id)));
+    }
+    hasFetchedCategories = true;
+    lastQueryWasFiltered = Boolean(params);
     selectedIds.value = new Set();
   } catch {
   } finally {
@@ -299,7 +316,7 @@ function isCategoryExpanded(row: ProductCategoryListItem) {
 }
 
 function clearCategoryCollapseState() {
-  collapseTimers.forEach(timer => window.clearTimeout(timer));
+  collapseTimers.forEach(group => window.clearTimeout(group.timer));
   collapseTimers.clear();
   collapsingCategoryIds.value = new Set();
 }
@@ -308,8 +325,11 @@ function cancelCollapsingCategoryIds(ids: string[]) {
   if (ids.length === 0) return;
   const nextCollapsing = new Set(collapsingCategoryIds.value);
   ids.forEach((id) => {
-    const timer = collapseTimers.get(id);
-    if (timer) window.clearTimeout(timer);
+    const group = collapseTimers.get(id);
+    if (group) {
+      group.ids.delete(id);
+      if (group.ids.size === 0) window.clearTimeout(group.timer);
+    }
     collapseTimers.delete(id);
     nextCollapsing.delete(id);
   });
@@ -317,17 +337,17 @@ function cancelCollapsingCategoryIds(ids: string[]) {
 }
 
 function scheduleCategoryCollapseRemoval(ids: string[]) {
-  ids.forEach((id) => {
-    const oldTimer = collapseTimers.get(id);
-    if (oldTimer) window.clearTimeout(oldTimer);
-    const timer = window.setTimeout(() => {
-      const nextCollapsing = new Set(collapsingCategoryIds.value);
+  if (!ids.length) return;
+  const group: CollapseGroup = { ids: new Set(ids), timer: 0 };
+  group.timer = window.setTimeout(() => {
+    const nextCollapsing = new Set(collapsingCategoryIds.value);
+    group.ids.forEach((id) => {
       nextCollapsing.delete(id);
-      collapsingCategoryIds.value = nextCollapsing;
       collapseTimers.delete(id);
-    }, TREE_COLLAPSE_DURATION);
-    collapseTimers.set(id, timer);
-  });
+    });
+    collapsingCategoryIds.value = nextCollapsing;
+  }, TREE_COLLAPSE_DURATION);
+  ids.forEach(id => collapseTimers.set(id, group));
 }
 
 function toggleCategory(row: ProductCategoryListItem) {
@@ -336,6 +356,8 @@ function toggleCategory(row: ProductCategoryListItem) {
   const next = new Set(expandedCategoryIds.value);
   if (next.has(row.categoryId)) {
     next.delete(row.categoryId);
+    // 同一次收起的子节点需要一起移除，否则多层分类会在定时器之间短暂恢复显示。
+    cancelCollapsingCategoryIds(descendantIds);
     const nextCollapsing = new Set(collapsingCategoryIds.value);
     descendantIds.forEach(id => nextCollapsing.add(id));
     collapsingCategoryIds.value = nextCollapsing;

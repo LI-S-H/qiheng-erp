@@ -10,6 +10,8 @@ runSmoke({
     await assertContentSizedFilter(page, [220, 168]);
     await assertFixedTableLayout(page, 7);
     await page.getByText('无上级分类').first().waitFor();
+    await tableRow(page, '饮料冲调').waitFor({ state: 'detached' });
+    await tableRow(page, '食品饮料').getByRole('button', { name: '展开当前分类' }).click();
     await page.getByText('饮料冲调', { exact: true }).waitFor();
     await page.getByText('食品饮料 / 饮料冲调', { exact: true }).waitFor();
     const categoryTypography = await page.evaluate(() => {
@@ -59,6 +61,8 @@ runSmoke({
     await tableRow(page, '食品饮料').waitFor({ state: 'detached' });
     await tableRow(page, '办公用品').waitFor();
     await clickResetAndAssertLoading(page, 'smoke-product-categories-reset-loading.png');
+    await tableRow(page, '书写文具').waitFor({ state: 'detached' });
+    await tableRow(page, '办公用品').getByRole('button', { name: '展开当前分类' }).click();
     await tableRow(page, '书写文具').waitFor();
 
     const statusTrigger = page.locator('.filter-panel').getByRole('combobox');
@@ -69,6 +73,8 @@ runSmoke({
     await tableRow(page, '电子配件').waitFor();
     await tableRow(page, '电脑周边').waitFor();
     await clickResetAndAssertLoading(page);
+    await tableRow(page, '食品饮料').getByRole('button', { name: '展开当前分类' }).click();
+    await tableRow(page, '办公用品').getByRole('button', { name: '展开当前分类' }).click();
 
     const buttonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)

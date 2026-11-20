@@ -13,7 +13,7 @@ export interface AiContextSource {
   freshness: string;
 }
 
-export type AiChartType = 'line' | 'bar' | 'pie';
+export type AiChartType = 'line' | 'bar' | 'pie' | 'horizontalBar' | 'stackedBar';
 
 export type AiChartRow = Record<string, string | number | null>;
 

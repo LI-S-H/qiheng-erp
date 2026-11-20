@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { ArrowLeft, FileText, LoaderCircle } from 'lucide-vue-next';
 import { getApiErrorMessage } from '@/api/http';
 import { getAiReport } from '../api';
 import AiMarkdownContent from '../components/AiMarkdownContent.vue';
-import type { AiReportDetail } from '../contracts/report-contract';
+import AiChartCard from '../components/AiChartCard.vue';
+import { splitReportMessage, type AiReportDetail } from '../contracts/report-contract';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 
 const route = useRoute();
@@ -13,6 +14,9 @@ const auth = useAuthStore();
 const report = ref<AiReportDetail | null>(null);
 const loading = ref(true);
 const error = ref('');
+const parts = computed(() => report.value
+  ? splitReportMessage(report.value.content, [], false, false)
+  : []);
 
 watch(() => [route.params.conversationId, route.params.reportId, auth.token] as const,
   async ([conversationId, reportId], _, onCleanup) => {
@@ -53,7 +57,10 @@ watch(() => [route.params.conversationId, route.params.reportId, auth.token] as 
       <p v-else-if="error" class="report-status" role="alert">{{ error }}</p>
       <template v-else-if="report">
         <header class="report-heading"><FileText :size="24" aria-hidden="true" /><h1>{{ report.title }}</h1></header>
-        <AiMarkdownContent :content="report.content" report-html />
+        <template v-for="part in parts" :key="part.key">
+          <AiChartCard v-if="'chart' in part" :chart="part.chart" />
+          <AiMarkdownContent v-else-if="'text' in part" :content="part.text" report-html />
+        </template>
       </template>
     </article>
   </section>

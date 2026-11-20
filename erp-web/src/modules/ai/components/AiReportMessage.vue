@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { ChevronRight, FileText } from 'lucide-vue-next';
 import AiMarkdownContent from './AiMarkdownContent.vue';
+import AiChartCard from './AiChartCard.vue';
 import { splitReportMessage, type AiReportCard } from '../contracts/report-contract';
 
 const props = withDefaults(defineProps<{
@@ -17,6 +18,7 @@ const parts = computed(() => splitReportMessage(props.text, props.reports, props
 <template>
   <template v-for="part in parts" :key="part.key">
     <AiMarkdownContent v-if="'text' in part" :content="part.text" />
+    <AiChartCard v-else-if="'chart' in part" :chart="part.chart" />
     <button
       v-else type="button" class="report-card" :class="{ 'is-pending': !active }"
       :disabled="!active" :aria-label="'查看报告：' + part.report.title"

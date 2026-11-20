@@ -75,6 +75,7 @@ type ReportPart =
 const chartTypes = new Set<AiChartSpec['type']>(['line', 'bar', 'pie', 'horizontalBar', 'stackedBar']);
 const chartIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
 const fieldPattern = /^[A-Za-z0-9_一-鿿-]{1,64}$/;
+const MAX_STACK_SERIES = 6;
 
 function optionalString(value: unknown, max: number): string | null {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
@@ -106,8 +107,14 @@ export function normalizeChartSpec(value: unknown): AiChartSpec | null {
     const valueField = optionalString(item.valueField, 64);
     const yUnit = optionalString(item.yUnit, 16);
     const yFields = Array.isArray(item.yFields)
-      ? item.yFields.filter((field): field is string => typeof field === 'string' && fieldPattern.test(field)).slice(0, 6)
+      ? item.yFields.filter((field): field is string => typeof field === 'string' && fieldPattern.test(field))
       : [];
+    // 堆叠图配色固定 6 种，系列超出时保留前 5 类、其余求和为「其他」，避免图与正文数据不一致。
+    const stackOverflow = type === 'stackedBar' && yFields.length > MAX_STACK_SERIES;
+    const overflowFields = stackOverflow ? yFields.slice(MAX_STACK_SERIES - 1) : [];
+    const resolvedYFields = stackOverflow
+      ? [...yFields.slice(0, MAX_STACK_SERIES - 1), 'other']
+      : yFields.slice(0, MAX_STACK_SERIES);
     const fieldLabels: Record<string, string> = {};
     if (item.fieldLabels && typeof item.fieldLabels === 'object' && !Array.isArray(item.fieldLabels)) {
       for (const [key, label] of Object.entries(item.fieldLabels)) {
@@ -131,11 +138,20 @@ export function normalizeChartSpec(value: unknown): AiChartSpec | null {
       if (Object.keys(clean).length > 0) data.push(clean);
     }
     if (data.length === 0) return null;
+    if (stackOverflow) {
+      for (const row of data) {
+        row.other = overflowFields.reduce((sum, field) => {
+          const value = row[field];
+          return sum + (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
+        }, 0);
+      }
+      fieldLabels.other = `其他（${overflowFields.length} 项）`;
+    }
 
     const resolvedName = nameField ?? xField ?? firstField(data, 'string');
     const resolvedValue = valueField ?? yFields[0] ?? firstField(data, 'number');
     if (!resolvedName || !resolvedValue) return null;
-    const resolvedFields = yFields.length > 0 ? yFields : [resolvedValue];
+    const resolvedFields = resolvedYFields.length > 0 ? resolvedYFields : [resolvedValue];
     if (type === 'pie' || type === 'horizontalBar') {
       return {
         chartId: item.chartId,

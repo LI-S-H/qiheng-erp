@@ -19,11 +19,13 @@ public final class ReadDatasetTool {
     }
 
     /** 根据可信会话读取授权数据集的一页。 */
-    @Tool(name = "readDataset", description = "读取已查询并发布的数据集，默认从头读取；hasMore 表示已保存数据中还有未读取的行，nextOffset 是继续读取的位置，truncated 表示本次读取因文本预算截断，datasetTruncated 表示原查询因上限未读完。数据集或本次读取不完整时不得称为完整数据。")
+    @Tool(name = "readDataset", description = "读取已查询并发布的数据集，默认从第 0 行开始。"
+            + "单次最多返回约 8000 字符；超出时 truncated=true，用 nextOffset 继续读取。"
+            + "hasMore 表示还有未读行，datasetTruncated 表示原查询本身不完整；不完整时不得当作完整数据。")
     public Object readDataset(
             @ToolParam(description = "已发布的数据集 ID") String datasetId,
-            @ToolParam(required = false, description = "从第几行开始，省略时从 0 开始") Integer offset,
-            @ToolParam(required = false, description = "本次最多读取行数，省略时在文本预算内尽可能读取") Integer limit,
+            @ToolParam(required = false, description = "从第几行开始，默认 0") Integer offset,
+            @ToolParam(required = false, description = "本次最多读取行数；省略时按 8000 字符预算尽量读取，可能少于全部") Integer limit,
             ToolContext toolContext) {
         AgentToolContext context = ToolContextHelper.getMetadata(toolContext, AgentToolContext.CONTEXT_KEY, AgentToolContext.class)
                 .orElseThrow(() -> new IllegalStateException("缺少可信 SQL 工具上下文"));

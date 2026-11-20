@@ -37,10 +37,9 @@ public final class AnalysisTool {
      * @param toolContext 运行上下文，提供可信身份与过程通道
      * @return 结构化分析结果
      */
-    @Tool(name = TOOL_NAME, description = "擅长数据核对、指标计算和业务分析的数据分析专家。"
-            + "只需交付要回答的业务问题，并附上已确认的范围、口径和相关数据集 ID（如有）。"
-            + "专家会自主复用数据、按需用 SQL 补数和用 Python 计算，"
-            + "返回分析结论、数据依据及影响结论的限制；生成结果文件时一并返回文件 ID。")
+    @Tool(name = TOOL_NAME, description = "把一项分析目标交给独立的数据分析专家执行。"
+            + "只需描述业务问题，并附已确认的范围、口径和相关数据集 ID；专家会自行补数、计算和核对，不需要你先查同样的数据。"
+            + "返回 completion、summary、数据集与分析结果 ID；同一目标不要重复交办。")
     public AnalysisResult analyzeData(
             @ToolParam(description = "必填：详细说明要回答的业务问题、需要分析的对象和期望得到的结论；"
                     + "应描述分析目标而不是只给出一个笼统主题") String goal,

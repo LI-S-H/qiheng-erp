@@ -402,7 +402,7 @@ class RealAnalysisAgentIT {
             interceptors.add(new com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor(graph));
             interceptors.addAll(List.of(extraInterceptors));
             service = new AnalysisAgentService(model, tool, runtime, prompt, traces, mapper, null, null,
-                    new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null, null,
+                    new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null, null, null, null,
                     interceptors.toArray(com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor[]::new));
         }
 

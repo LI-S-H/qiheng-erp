@@ -53,7 +53,7 @@ class AnalysisOutputPromptCaptureTest {
                 new com.qiheng.erp.ai.sql.tool.SqlQueryTool(mock(com.qiheng.erp.ai.sql.graph.SqlGraphService.class)),
                 new com.qiheng.erp.ai.dataset.tool.ReadDatasetTool(mock(com.qiheng.erp.ai.dataset.DatasetManager.class)),
                 new ToolJsonInterceptor(mapper), mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class),
-                mock(AnalysisResultTool.class), null, null, null, new BusinessGraphInterceptor(graph));
+                mock(AnalysisResultTool.class), null, null, null, null, null, new BusinessGraphInterceptor(graph));
         assertThat(service.analyze("查询库存", new AgentToolContext(1, 2, "2026-11-09"))).isEqualTo("完成");
         assertThat(calls).hasValue(2);
     }

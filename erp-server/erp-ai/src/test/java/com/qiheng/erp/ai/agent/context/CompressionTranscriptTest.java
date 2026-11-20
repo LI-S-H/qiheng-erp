@@ -95,6 +95,19 @@ class CompressionTranscriptTest {
         assertThat(CompressionTranscript.render(messages, 400, 1000, 2000)).isNull();
     }
 
+    @Test
+    void experienceCatalogIsNotSummarized() {
+        var messages = new ArrayList<Message>();
+        messages.add(new UserMessage("【经验目录】\nSQL 取数注意列名"));
+        messages.addAll(history());
+
+        var result = CompressionTranscript.render(messages, 10_000, 1000, 2000);
+
+        assertThat(result).isNotNull();
+        assertThat(result.text()).doesNotContain("【经验目录】")
+                .doesNotContain("SQL 取数注意列名");
+    }
+
     private static List<Message> history() {
         var call = new AssistantMessage.ToolCall("call-1", "function", "query_sql_data", "{\"goal\":\"库存\"}");
         return List.of(

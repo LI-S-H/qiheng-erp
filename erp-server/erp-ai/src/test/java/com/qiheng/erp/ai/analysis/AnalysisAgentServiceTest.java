@@ -41,7 +41,7 @@ class AnalysisAgentServiceTest {
         var mapper = new ObjectMapper();
         var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class),
                 mock(PythonSandboxRuntime.class), "分析", traces, mapper, null, null,
-                new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null, null);
+                new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null, null, null, null);
 
         String summary = service.analyze("分析库存", new AgentToolContext(10, 20));
 
@@ -75,7 +75,7 @@ class AnalysisAgentServiceTest {
         var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class), mock(PythonSandboxRuntime.class),
                 "分析", mock(AiAgentTraceMapper.class), mapper, new SqlQueryTool(mock(SqlGraphService.class)),
                 new ReadDatasetTool(mock(DatasetManager.class)), new ToolJsonInterceptor(mapper), mock(ListDatasetsTool.class),
-                mock(AnalysisResultTool.class), null, null, null,
+                mock(AnalysisResultTool.class), null, null, null, null, null,
                 new com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor(graph));
 
         assertThat(service.analyze("分析库存", new AgentToolContext(10, 20, "2026-11-05"))).isEqualTo("完成");
@@ -101,7 +101,7 @@ class AnalysisAgentServiceTest {
         var mapper = new ObjectMapper();
         var service = new AnalysisAgentService(model, python, runtime, "分析", traces, mapper,
                 new SqlQueryTool(sqlService), new ReadDatasetTool(mock(DatasetManager.class)), new ToolJsonInterceptor(mapper),
-                mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null);
+                mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null, null, null);
 
         assertThatThrownBy(() -> service.analyze("分析", identity)).isNotNull();
         assertThat(counter.get()).isEqualTo(4);
@@ -135,7 +135,7 @@ class AnalysisAgentServiceTest {
         var mapper = new ObjectMapper();
         var service = new AnalysisAgentService(model, python, runtime, "分析", mock(AiAgentTraceMapper.class), mapper,
                 new SqlQueryTool(sqlService), new ReadDatasetTool(mock(DatasetManager.class)), new ToolJsonInterceptor(mapper),
-                mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null);
+                mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null, null, null);
 
         assertThat(service.analyze("分析", identity)).isEqualTo("完成");
         verify(sqlService, times(1)).startForUser(eq(10L), eq(20L), anyString(), anyMap());
@@ -168,7 +168,7 @@ class AnalysisAgentServiceTest {
             var mapper = new ObjectMapper();
             var service = new AnalysisAgentService(model, python, runtime, "分析", mock(AiAgentTraceMapper.class), mapper,
                     new SqlQueryTool(sqlService), new ReadDatasetTool(mock(DatasetManager.class)), new ToolJsonInterceptor(mapper),
-                mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null);
+                mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null, null, null);
 
             assertThat(service.analyze("分析", identity)).isEqualTo("说明无法完成");
             assertThat(seen.get()).contains(outcome, "缺少条件或权限");
@@ -198,7 +198,7 @@ class AnalysisAgentServiceTest {
         var mapper = new ObjectMapper();
         var service = new AnalysisAgentService(model, python, runtime, "分析", mock(AiAgentTraceMapper.class), mapper,
                 new SqlQueryTool(sqlService), new ReadDatasetTool(manager), new ToolJsonInterceptor(mapper),
-                mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null);
+                mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null, null, null);
 
         assertThat(service.analyze("分析", identity)).isEqualTo("完成");
         verify(sqlService).startForUserAtDate(eq(10L), eq(20L), anyString(), anyMap(), eq("2026-11-08"));
@@ -218,7 +218,7 @@ class AnalysisAgentServiceTest {
         doThrow(new IllegalStateException("数据库不可用")).when(traces)
                 .insert(anyLong(), anyLong(), anyString(), anyString(), anyString(), anyString());
         var service = new AnalysisAgentService(model, tool, runtime, "分析", traces, new ObjectMapper(), null, null,
-                new ToolJsonInterceptor(new ObjectMapper()), null, mock(AnalysisResultTool.class), null, null, null);
+                new ToolJsonInterceptor(new ObjectMapper()), null, mock(AnalysisResultTool.class), null, null, null, null, null);
 
         assertThat(service.analyze("计算", identity)).isEqualTo("分析完成");
         
@@ -243,7 +243,7 @@ class AnalysisAgentServiceTest {
         var identity = new AgentToolContext(10, 20);
         var traces = mock(AiAgentTraceMapper.class);
         var service = new AnalysisAgentService(model, tool, runtime, "分析", traces, new ObjectMapper(), null, null,
-                new ToolJsonInterceptor(new ObjectMapper()), null, mock(AnalysisResultTool.class), null, null, null);
+                new ToolJsonInterceptor(new ObjectMapper()), null, mock(AnalysisResultTool.class), null, null, null, null, null);
 
         assertThat(service.analyze("计算", identity)).isEqualTo("完成");
         verify(traces).insert(eq(10L), eq(20L), anyString(), eq("ANALYSIS"), eq("TOOL_RESULT"), contains("FAILED"));
@@ -267,7 +267,7 @@ class AnalysisAgentServiceTest {
         var identity = new AgentToolContext(10, 20);
         var traces = mock(AiAgentTraceMapper.class);
         var service = new AnalysisAgentService(model, tool, runtime, "你是分析助手。", traces, new ObjectMapper(), null, null,
-                new ToolJsonInterceptor(new ObjectMapper()), null, mock(AnalysisResultTool.class), null, null, null);
+                new ToolJsonInterceptor(new ObjectMapper()), null, mock(AnalysisResultTool.class), null, null, null, null, null);
 
         assertThat(service.analyze("分析数据", identity)).isEqualTo("分析完成");
         var task = org.mockito.ArgumentCaptor.forClass(String.class);
@@ -288,7 +288,7 @@ class AnalysisAgentServiceTest {
         var identity = new AgentToolContext(10, 20);
         var traces = mock(AiAgentTraceMapper.class);
         var service = new AnalysisAgentService(model, tool, runtime, "你是分析助手。", traces, new ObjectMapper(), null, null,
-                new ToolJsonInterceptor(new ObjectMapper()), null, mock(AnalysisResultTool.class), null, null, null);
+                new ToolJsonInterceptor(new ObjectMapper()), null, mock(AnalysisResultTool.class), null, null, null, null, null);
 
         assertThatThrownBy(() -> service.analyze("分析数据", identity)).isNotNull();
         
@@ -315,7 +315,7 @@ class AnalysisAgentServiceTest {
                 mock(com.qiheng.erp.ai.python.result.AnalysisResultStore.class));
         var mapper = new ObjectMapper();
         var service = new AnalysisAgentService(model, python, runtime, "分析", mock(AiAgentTraceMapper.class), mapper,
-                null, null, new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null, null);
+                null, null, new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null, null, null, null);
         assertThatThrownBy(() -> service.analyze("计算", new AgentToolContext(10, 20))).isNotNull();
         verify(runtime).openSession(anyString());
         verify(sandbox).close();
@@ -351,7 +351,7 @@ class AnalysisAgentServiceTest {
         var runtime = mock(PythonSandboxRuntime.class);
         var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class), runtime, "分析", traces, mapper,
                 new SqlQueryTool(sqlService), new ReadDatasetTool(mock(DatasetManager.class)),
-                new ToolJsonInterceptor(mapper), mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null);
+                new ToolJsonInterceptor(mapper), mock(ListDatasetsTool.class), mock(AnalysisResultTool.class), null, null, null, null, null);
         var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
         try {
             var first = pool.submit(() -> service.analyze("任务 10", new AgentToolContext(10, 20)));

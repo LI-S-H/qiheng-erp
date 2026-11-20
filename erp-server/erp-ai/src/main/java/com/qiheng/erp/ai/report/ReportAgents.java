@@ -2,16 +2,20 @@ package com.qiheng.erp.ai.report;
 
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.Hook;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.AgentModelFailure;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
+import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.report.graph.ReportGraph;
 import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 import org.springframework.ai.chat.model.ChatModel;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,26 +31,40 @@ public final class ReportAgents {
     private final ObjectMapper mapper;
     private final AiAgentTraceMapper traces;
 
+    /**
+     * 装配报告撰写与审核专家；两个专家各自持有独立的上下文压缩实例。
+     *
+     * @param model 模型
+     * @param tools 报告可用的只读工具
+     * @param mapper JSON 序列化组件
+     * @param writerPrompt 撰写提示词
+     * @param reviewerPrompt 审核提示词
+     * @param traces 流水写入通道，可为空
+     * @param compression 上下文压缩工厂，可为空
+     */
     public ReportAgents(ChatModel model, ReportReadTools tools, ObjectMapper mapper,
-                        String writerPrompt, String reviewerPrompt) {
-        this(model, tools, mapper, writerPrompt, reviewerPrompt, null);
-    }
-
-    public ReportAgents(ChatModel model, ReportReadTools tools, ObjectMapper mapper,
-                        String writerPrompt, String reviewerPrompt, AiAgentTraceMapper traces) {
+                        String writerPrompt, String reviewerPrompt, AiAgentTraceMapper traces,
+                        ContextCompressionFactory compression) {
         this.mapper = mapper;
         this.traces = traces;
         this.writerConverter = new ReportWriterOutputConverter(mapper);
         this.reviewHook = new ReportReviewValidationHook(mapper);
+        var writerHooks = new ArrayList<Hook>(List.of(new ReportTraceHook(),
+                new ReportWriterFormatHook(writerConverter)));
+        var reviewerHooks = new ArrayList<Hook>(List.of(new ReportTraceHook(), reviewHook));
+        if (compression != null) {
+            writerHooks.add(compression.create());
+            reviewerHooks.add(compression.create());
+        }
         this.writer = ReactAgent.builder().name("report_writer").model(model)
                 .systemPrompt(writerPrompt + "\n\n" + writerConverter.outputFormat())
                 .methodTools(tools).interceptors(new TrustedToolContextInterceptor(), new ReportModelFailureInterceptor())
-                .hooks(new ReportTraceHook(), new ReportWriterFormatHook(writerConverter))
+                .hooks(writerHooks)
                 .parallelToolExecution(false).saver(writerMemory).releaseThread(false).build();
         this.reviewer = ReactAgent.builder().name("report_reviewer").model(model)
                 .systemPrompt(reviewerPrompt).outputType(ReportReview.class)
                 .methodTools(tools).interceptors(new TrustedToolContextInterceptor(), new ReportModelFailureInterceptor())
-                .hooks(new ReportTraceHook(), reviewHook).parallelToolExecution(false).saver(reviewerMemory).releaseThread(false).build();
+                .hooks(reviewerHooks).parallelToolExecution(false).saver(reviewerMemory).releaseThread(false).build();
     }
 
     /** 创建一次报告任务；关闭时释放两位专家的内存上下文。 */

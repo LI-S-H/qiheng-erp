@@ -137,7 +137,7 @@ class AnalysisSqlPythonIT {
             String prompt = new ClassPathResource("prompts/analysis-agent.md").getContentAsString(StandardCharsets.UTF_8);
             var agent = new AnalysisAgentService(pro, pythonTool, runtime, prompt, traces, mapper, sql,
                     new ReadDatasetTool(datasets), new ToolJsonInterceptor(mapper),
-                    new ListDatasetsTool(datasets), new AnalysisResultTool(results), datasets, results);
+                    new ListDatasetsTool(datasets), new AnalysisResultTool(results), datasets, results, null);
             String answer = agent.analyze("查询 1 号仓库各商品库存明细和单位，使用 Python 计算这些同单位库存的总和并报告数值。", new AgentToolContext(1001, 2001));
             System.out.println("ANALYSIS_SQL_PYTHON_RESULT=" + answer);
             assertThat(answer).contains("38.75");

@@ -22,6 +22,20 @@ erp:
       enable-thinking: ${OPENAI_COMPAT_ENABLE_THINKING:}
       read-timeout-seconds: 300
       flash-read-timeout-seconds: 60
+    # 会话上下文压缩：超过阈值时保留最近原文并生成交接摘要。
+    # 阈值按百万窗口的六成设置；摘要模型单独装配，读取超时不沿用对话模型。
+    context:
+      enabled: ${ERP_AI_CONTEXT_ENABLED:true}
+      max-tokens-before-summary: ${ERP_AI_CONTEXT_MAX_TOKENS:650000}
+      keep-tokens: ${ERP_AI_CONTEXT_KEEP_TOKENS:60000}
+      min-keep-messages: ${ERP_AI_CONTEXT_MIN_KEEP:8}
+      keep-first-user-message: ${ERP_AI_CONTEXT_KEEP_FIRST_USER:false}
+      summary-model: ${ERP_AI_CONTEXT_SUMMARY_MODEL:flash}
+      summary-timeout-seconds: ${ERP_AI_CONTEXT_SUMMARY_TIMEOUT:180}
+      summary-max-output-tokens: ${ERP_AI_CONTEXT_SUMMARY_MAX_OUTPUT:8000}
+      summary-input-max-tokens: ${ERP_AI_CONTEXT_SUMMARY_INPUT_TOKENS:800000}
+      source-tool-clip-chars: ${ERP_AI_CONTEXT_TOOL_CLIP:1000}
+      source-message-clip-chars: ${ERP_AI_CONTEXT_MESSAGE_CLIP:2000}
     # AI 取数底座：独立只读连接池 + SQL 守卫 + 执行器。
     # 与模型配置分开：取数底座不依赖模型密钥，模型没配也不影响底座开关。
     sql:

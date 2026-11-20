@@ -2,11 +2,13 @@ package com.qiheng.erp.ai.analysis;
 
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.Hook;
 import com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.AgentModelFailure;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
+import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.dataset.AnalysisDatasetSummaryService;
@@ -74,6 +76,7 @@ public final class AnalysisAgentService {
      * @param results 分析结果读写工具
      * @param datasetManager 数据集管理器，可为空
      * @param resultStore 分析结果存储，可为空
+     * @param compression 上下文压缩工厂，可为空
      * @param additionalInterceptors 追加的拦截器
      */
     public AnalysisAgentService(ChatModel model, PythonAnalysisTool pythonTool, PythonSandboxRuntime sandboxRuntime,
@@ -81,7 +84,7 @@ public final class AnalysisAgentService {
                                 ReadDatasetTool readDatasetTool, ToolJsonInterceptor jsonGuard,
                                 ListDatasetsTool listDatasetsTool, AnalysisResultTool results,
                                 DatasetManager datasetManager, AnalysisResultStore resultStore,
-                                Interceptor... additionalInterceptors) {
+                                ContextCompressionFactory compression, Interceptor... additionalInterceptors) {
         this.sandboxRuntime = sandboxRuntime;
         this.traces = traces;
         this.mapper = mapper;
@@ -92,12 +95,16 @@ public final class AnalysisAgentService {
         var interceptors = new ArrayList<Interceptor>(List.of(new TrustedToolContextInterceptor(), jsonGuard,
                 new AnalysisDatasetInterceptor(mapper), new AnalysisModelFailureInterceptor()));
         interceptors.addAll(List.of(additionalInterceptors));
+        var hooks = new ArrayList<Hook>(List.of(new AnalysisTraceHook(), handoffValidation));
+        if (compression != null) {
+            hooks.add(compression.create());
+        }
         var builder = ReactAgent.builder()
                 .name("analysis_agent")
                 .model(serialModel(model))
                 .systemPrompt(prompt)
                 .outputType(AnalysisHandoff.class)
-                .hooks(new AnalysisTraceHook(), handoffValidation)
+                .hooks(hooks)
                 .interceptors(interceptors.toArray(Interceptor[]::new))
                 .parallelToolExecution(false);
         if (sql != null && readDatasetTool != null && listDatasetsTool != null) {

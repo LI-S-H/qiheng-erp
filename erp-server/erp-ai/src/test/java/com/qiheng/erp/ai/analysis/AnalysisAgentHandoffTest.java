@@ -66,7 +66,7 @@ class AnalysisAgentHandoffTest {
         var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class),
                 mock(PythonSandboxRuntime.class), "分析", traces, mapper, new SqlQueryTool(sqlService),
                 new ReadDatasetTool(datasets), new ToolJsonInterceptor(mapper), new ListDatasetsTool(datasets),
-                new AnalysisResultTool(store), datasets, store);
+                new AnalysisResultTool(store), datasets, store, null);
 
         var result = service.analyzeForMainAgent(new AnalysisCommand("分析库存", null, identity, null));
         assertThat(result.completion()).isEqualTo("NEED_INFO");
@@ -97,7 +97,7 @@ class AnalysisAgentHandoffTest {
             var mapper = new ObjectMapper();
             var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class),
                     mock(PythonSandboxRuntime.class), "分析", mock(AiAgentTraceMapper.class), mapper,
-                    null, null, new ToolJsonInterceptor(mapper), null, new AnalysisResultTool(store), datasets, store);
+                    null, null, new ToolJsonInterceptor(mapper), null, new AnalysisResultTool(store), datasets, store, null);
 
             var result = service.analyzeForMainAgent(new AnalysisCommand("分析库存", null, identity, null));
             assertThat(result.completion()).isEqualTo("FAILED");
@@ -122,7 +122,7 @@ class AnalysisAgentHandoffTest {
             var mapper = new ObjectMapper();
             var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class),
                     mock(PythonSandboxRuntime.class), "分析", mock(AiAgentTraceMapper.class), mapper,
-                    null, null, new ToolJsonInterceptor(mapper), null, new AnalysisResultTool(store), datasets, store);
+                    null, null, new ToolJsonInterceptor(mapper), null, new AnalysisResultTool(store), datasets, store, null);
 
             var result = service.analyzeForMainAgent(new AnalysisCommand("分析库存", null, new AgentToolContext(10, 20), null));
             assertThat(result.completion()).isEqualTo(completion);
@@ -164,7 +164,7 @@ class AnalysisAgentHandoffTest {
         var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class), runtime, "分析",
                 mock(AiAgentTraceMapper.class), mapper, new SqlQueryTool(mock(SqlGraphService.class)),
                 new ReadDatasetTool(datasets), new ToolJsonInterceptor(mapper), new ListDatasetsTool(datasets),
-                new AnalysisResultTool(store), datasets, store);
+                new AnalysisResultTool(store), datasets, store, null);
         var result = service.analyzeForMainAgent(new AnalysisCommand("分析库存", "仓库一", identity, null));
         assertThat(result.completion()).isEqualTo("PARTIAL");
         assertThat(result.summary()).isEqualTo("已分析，范围有限");
@@ -189,7 +189,7 @@ class AnalysisAgentHandoffTest {
         var store = mock(AnalysisResultStore.class);
         var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class), mock(PythonSandboxRuntime.class),
                 "分析", mock(AiAgentTraceMapper.class), mapper, null, null, new ToolJsonInterceptor(mapper), null,
-                new AnalysisResultTool(store), datasets, store);
+                new AnalysisResultTool(store), datasets, store, null);
         var result = service.analyzeForMainAgent(new AnalysisCommand("分析库存", null, new AgentToolContext(10, 20), null));
         assertThat(result.completion()).isEqualTo("FAILED");
         assertThat(result.analysisTaskId()).isNotBlank();
@@ -212,7 +212,7 @@ class AnalysisAgentHandoffTest {
         var mapper = new ObjectMapper();
         var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class), mock(PythonSandboxRuntime.class),
                 "分析", mock(AiAgentTraceMapper.class), mapper, null, null, new ToolJsonInterceptor(mapper), null,
-                new AnalysisResultTool(store), datasets, store);
+                new AnalysisResultTool(store), datasets, store, null);
         var result = service.analyzeForMainAgent(new AnalysisCommand("分析库存", null, identity, null));
         assertThat(result.completion()).isEqualTo("FAILED");
         assertThat(result.analysisResults()).extracting(AnalysisResult.File::resultId).containsExactly("saved-before-error");
@@ -229,7 +229,7 @@ class AnalysisAgentHandoffTest {
         var store = mock(AnalysisResultStore.class);
         var service = new AnalysisAgentService(mock(ChatModel.class), mock(PythonAnalysisTool.class),
                 mock(PythonSandboxRuntime.class), "分析", traces, mapper, null, null,
-                new ToolJsonInterceptor(mapper), null, new AnalysisResultTool(store), datasets, store);
+                new ToolJsonInterceptor(mapper), null, new AnalysisResultTool(store), datasets, store, null);
         var result = service.analyzeForMainAgent(new AnalysisCommand("分析库存", null, identity, null));
         assertThat(result.completion()).isEqualTo("FAILED");
         assertThat(result.errorCode()).isEqualTo("ANALYSIS_INPUT_FAILED");

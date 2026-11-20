@@ -1,9 +1,11 @@
 package com.qiheng.erp.ai.config;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.Hook;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.MessageRecordingHook;
+import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.agent.interceptor.AnalysisProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ReportProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolRecordingInterceptor;
@@ -53,6 +55,8 @@ public class MainAgentConfiguration {
     private SystemExceptionMqPublisher publisher;
     @Autowired(required = false)
     private ReportTool reportTool;
+    @Autowired(required = false)
+    private ContextCompressionFactory compression;
 
     /**
      * 组装主智能体；工具、拦截器与检查点在这里一次性绑定。
@@ -79,9 +83,15 @@ public class MainAgentConfiguration {
         if (reportTool != null) {
             tools.add(reportTool);
         }
+        var hooks = new java.util.ArrayList<Hook>();
+        hooks.add(new MessageRecordingHook());
+        // 测试直接构造配置时不注入压缩工厂，保持原有行为。
+        if (compression != null) {
+            hooks.add(compression.create());
+        }
         return ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
                 .methodTools(tools.toArray())
-                .hooks(new MessageRecordingHook())
+                .hooks(hooks)
                 .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
                         new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
                         new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph))

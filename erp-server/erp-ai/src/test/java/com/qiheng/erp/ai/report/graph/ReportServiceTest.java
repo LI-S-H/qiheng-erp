@@ -34,7 +34,7 @@ class ReportServiceTest {
                 "{\"score\":8,\"strengths\":[\"清楚\"],\"hasReferenceIssue\":false,\"issues\":[]}"))));
         when(model.call(any(Prompt.class))).thenReturn(report, review);
         var tools = new ReportReadTools(mock(ReadDatasetTool.class), mock(AnalysisResultTool.class));
-        var agents = new ReportAgents(model, tools, new ObjectMapper(), "撰写报告", "审核报告");
+        var agents = new ReportAgents(model, tools, new ObjectMapper(), "撰写报告", "审核报告", null, null);
         var conversations = mock(AiConversationMapper.class);
         when(conversations.selectOwned(2L, 1L)).thenReturn(new AiConversation());
         var service = new ReportService(agents, conversations, mock(ReportMaterialPreparer.class));

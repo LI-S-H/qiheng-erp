@@ -62,6 +62,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -926,7 +927,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             validateQuantityPrecision(itemDto.getQuantity(), product.getQuantityPrecision(),
                     product.getProductCode());
             BigDecimal lineAmount = itemDto.getQuantity().multiply(itemDto.getUnitPrice())
-                    .setScale(2, java.math.RoundingMode.HALF_UP);
+                    .setScale(2, RoundingMode.HALF_UP);
             totalAmount = totalAmount.add(lineAmount);
         }
         return totalAmount;
@@ -938,7 +939,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private SalesOrderItem buildSalesOrderItem(SalesOrderDraftItemDto itemDto, Product product,
                                              Long salesOrderId, String salesNo, Long lockedQty) {
         BigDecimal lineAmount = itemDto.getQuantity().multiply(itemDto.getUnitPrice())
-                .setScale(2, java.math.RoundingMode.HALF_UP);
+                .setScale(2, RoundingMode.HALF_UP);
         return new SalesOrderItem()
                 .setSalesOrderId(salesOrderId)
                 .setSalesNo(salesNo)
@@ -1097,7 +1098,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (items == null || items.isEmpty()) {
             return List.of();
         }
-        List<RankItemInput> inputs = new java.util.ArrayList<>(items.size());
+        List<RankItemInput> inputs = new ArrayList<>(items.size());
         for (SalesOrderItem item : items) {
             inputs.add(new RankItemInput(item.getProductId(),
                     item.getTotalAmount() == null ? 0L : item.getTotalAmount(),

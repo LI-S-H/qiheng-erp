@@ -11,6 +11,7 @@ import com.qiheng.erp.dashboard.loader.DashboardInventoryStatusLoader;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import java.time.YearMonth;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -83,7 +84,7 @@ public class DashboardController {
         log.info("手动触发工作台快照任务");
         dailySnapshotJob.snapshot();
         // 手动触发时拍当月快照（本月尚未结束，拍的是截至此刻的累计；月末调度会覆盖为完整值）
-        monthlySnapshotJob.snapshotOfMonth(java.time.YearMonth.now());
+        monthlySnapshotJob.snapshotOfMonth(YearMonth.now());
         return Result.ok();
     }
 }

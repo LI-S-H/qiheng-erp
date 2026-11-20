@@ -135,7 +135,7 @@ public class DashboardMonthlySnapshotJob {
     }
 
     /** 月度销售快照金额（按统一状态、approved_at 和时间段在数据库中聚合）。 */
-    private BigDecimal sumSalesApprovedBetween(LocalDateTime start, java.time.LocalDateTime end) {
+    private BigDecimal sumSalesApprovedBetween(LocalDateTime start, LocalDateTime end) {
         List<Object> result = salesOrderMapper.selectObjs(new QueryWrapper<SalesOrder>()
                 .select("COALESCE(SUM(total_amount), 0)")
                 .in("status", OrderMetricScope.SALES.getStatuses())
@@ -155,7 +155,7 @@ public class DashboardMonthlySnapshotJob {
     }
 
     /** MyBatis 聚合结果会随驱动返回 Long、BigDecimal 或字符串，这里统一为金额原始分值。 */
-    private static BigDecimal extractAggregateAmount(java.util.List<Object> result) {
+    private static BigDecimal extractAggregateAmount(List<Object> result) {
         if (result == null || result.isEmpty() || result.getFirst() == null) {
             return BigDecimal.ZERO;
         }

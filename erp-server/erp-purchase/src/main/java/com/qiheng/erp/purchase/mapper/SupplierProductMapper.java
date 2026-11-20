@@ -5,6 +5,7 @@ import com.qiheng.erp.purchase.domain.supplierproduct.entity.SupplierProduct;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -30,7 +31,7 @@ public interface SupplierProductMapper extends MPJBaseMapper<SupplierProduct> {
             <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
             </script>
             """)
-    List<SupplierProduct> selectScoringOwners(@Param("ids") java.util.Collection<Long> ids);
+    List<SupplierProduct> selectScoringOwners(@Param("ids") Collection<Long> ids);
 
     /**
      * 逻辑删除供货产品（带乐观锁 version 校验）

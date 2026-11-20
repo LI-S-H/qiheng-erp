@@ -7,6 +7,8 @@ import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
+import com.qiheng.erp.ai.experience.ExperienceInjectionFactory;
+import com.qiheng.erp.ai.experience.tool.SearchExperienceToolFactory;
 import com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
 import com.qiheng.erp.ai.dataset.tool.ReadDatasetTool;
@@ -16,6 +18,7 @@ import com.qiheng.erp.ai.dataset.DatasetManager;
 import com.qiheng.erp.ai.python.result.AnalysisResultStore;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
 import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -31,6 +34,11 @@ import java.nio.charset.StandardCharsets;
 @Configuration(proxyBeanMethods = false)
 @Conditional(AiModelEnabledCondition.class)
 public class AnalysisAgentConfiguration {
+    @Autowired(required = false)
+    private ExperienceInjectionFactory experienceInjection;
+    @Autowired(required = false)
+    private SearchExperienceToolFactory experienceTools;
+
     /** 使用基础 Pro 模型和独立任务工具创建分析入口。 */
     @Bean
     public AnalysisAgentService analysisAgentService(
@@ -45,6 +53,7 @@ public class AnalysisAgentConfiguration {
         return new AnalysisAgentService(model, tools, sandboxRuntime, prompt, traces, mapper,
                 sql.getIfAvailable(), datasets.getIfAvailable(), new ToolJsonInterceptor(mapper, publisher.getIfAvailable()),
                 datasetList.getIfAvailable(), results, datasetManager, resultStore, compression,
+                experienceInjection, experienceTools,
                 new BusinessGraphInterceptor(businessGraph));
     }
 }

@@ -6,6 +6,8 @@ import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.MessageRecordingHook;
 import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
+import com.qiheng.erp.ai.experience.ExperienceInjectionFactory;
+import com.qiheng.erp.ai.experience.tool.SearchExperienceToolFactory;
 import com.qiheng.erp.ai.agent.interceptor.AnalysisProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ReportProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolRecordingInterceptor;
@@ -57,6 +59,10 @@ public class MainAgentConfiguration {
     private ReportTool reportTool;
     @Autowired(required = false)
     private ContextCompressionFactory compression;
+    @Autowired(required = false)
+    private ExperienceInjectionFactory experienceInjection;
+    @Autowired(required = false)
+    private SearchExperienceToolFactory experienceTools;
 
     /**
      * 组装主智能体；工具、拦截器与检查点在这里一次性绑定。
@@ -83,11 +89,17 @@ public class MainAgentConfiguration {
         if (reportTool != null) {
             tools.add(reportTool);
         }
+        if (experienceTools != null) {
+            tools.add(experienceTools.create("MAIN"));
+        }
         var hooks = new java.util.ArrayList<Hook>();
         hooks.add(new MessageRecordingHook());
         // 测试直接构造配置时不注入压缩工厂，保持原有行为。
         if (compression != null) {
             hooks.add(compression.create());
+        }
+        if (experienceInjection != null) {
+            hooks.add(experienceInjection.create("MAIN"));
         }
         return ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
                 .methodTools(tools.toArray())

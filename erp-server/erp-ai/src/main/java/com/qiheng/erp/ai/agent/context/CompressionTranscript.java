@@ -24,6 +24,9 @@ public final class CompressionTranscript {
     /** 摘要消息前缀，与 {@link ContextCompressionHook#SUMMARY_PREFIX} 保持一致。 */
     public static final String SUMMARY_PREFIX = "【前情摘要】";
 
+    /** 经验目录消息前缀，压缩时不进入摘要。 */
+    public static final String EXPERIENCE_PREFIX = "【经验目录】";
+
     /** 降级层级数：完整、截断工具结果、省略工具结果、只留用户文本、整轮省略。 */
     private static final int LEVELS = 5;
 
@@ -175,7 +178,8 @@ public final class CompressionTranscript {
         }
         if (message instanceof UserMessage user) {
             String text = user.getText();
-            if (text == null || text.isBlank()) {
+            if (text == null || text.isBlank() || text.startsWith(EXPERIENCE_PREFIX)) {
+                // 经验目录每轮重新注入，不进入摘要。
                 return "";
             }
             return "[用户]: " + (level >= USER_ONLY_LEVEL ? clip(text, messageClipChars) : text);

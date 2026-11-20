@@ -10,6 +10,8 @@ import com.qiheng.erp.ai.agent.AgentModelFailure;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
+import com.qiheng.erp.ai.experience.ExperienceInjectionFactory;
+import com.qiheng.erp.ai.experience.tool.SearchExperienceToolFactory;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.dataset.AnalysisDatasetSummaryService;
 import com.qiheng.erp.ai.dataset.DatasetManager;
@@ -77,6 +79,8 @@ public final class AnalysisAgentService {
      * @param datasetManager 数据集管理器，可为空
      * @param resultStore 分析结果存储，可为空
      * @param compression 上下文压缩工厂，可为空
+     * @param experienceInjection 经验注入工厂，可为空
+     * @param experienceTools 经验检索工具工厂，可为空
      * @param additionalInterceptors 追加的拦截器
      */
     public AnalysisAgentService(ChatModel model, PythonAnalysisTool pythonTool, PythonSandboxRuntime sandboxRuntime,
@@ -84,7 +88,10 @@ public final class AnalysisAgentService {
                                 ReadDatasetTool readDatasetTool, ToolJsonInterceptor jsonGuard,
                                 ListDatasetsTool listDatasetsTool, AnalysisResultTool results,
                                 DatasetManager datasetManager, AnalysisResultStore resultStore,
-                                ContextCompressionFactory compression, Interceptor... additionalInterceptors) {
+                                ContextCompressionFactory compression,
+                                ExperienceInjectionFactory experienceInjection,
+                                SearchExperienceToolFactory experienceTools,
+                                Interceptor... additionalInterceptors) {
         this.sandboxRuntime = sandboxRuntime;
         this.traces = traces;
         this.mapper = mapper;
@@ -99,6 +106,9 @@ public final class AnalysisAgentService {
         if (compression != null) {
             hooks.add(compression.create());
         }
+        if (experienceInjection != null) {
+            hooks.add(experienceInjection.create("ANALYSIS"));
+        }
         var builder = ReactAgent.builder()
                 .name("analysis_agent")
                 .model(serialModel(model))
@@ -108,7 +118,14 @@ public final class AnalysisAgentService {
                 .interceptors(interceptors.toArray(Interceptor[]::new))
                 .parallelToolExecution(false);
         if (sql != null && readDatasetTool != null && listDatasetsTool != null) {
-            builder.methodTools(pythonTool, results, sql, readDatasetTool, listDatasetsTool);
+            if (experienceTools != null) {
+                builder.methodTools(pythonTool, results, sql, readDatasetTool, listDatasetsTool,
+                        experienceTools.create("ANALYSIS"));
+            } else {
+                builder.methodTools(pythonTool, results, sql, readDatasetTool, listDatasetsTool);
+            }
+        } else if (experienceTools != null) {
+            builder.methodTools(pythonTool, results, experienceTools.create("ANALYSIS"));
         } else {
             builder.methodTools(pythonTool, results);
         }

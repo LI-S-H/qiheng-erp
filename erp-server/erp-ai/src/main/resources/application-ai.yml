@@ -36,6 +36,22 @@ erp:
       summary-input-max-tokens: ${ERP_AI_CONTEXT_SUMMARY_INPUT_TOKENS:800000}
       source-tool-clip-chars: ${ERP_AI_CONTEXT_TOOL_CLIP:1000}
       source-message-clip-chars: ${ERP_AI_CONTEXT_MESSAGE_CLIP:2000}
+    # 经验提取：每天从已完成任务提炼做法与避坑，合并后注入目录摘要。
+    experience:
+      enabled: ${ERP_AI_EXPERIENCE_ENABLED:true}
+      cron: "${ERP_AI_EXPERIENCE_CRON:0 10 3 * * ?}"
+      max-tasks-per-day: ${ERP_AI_EXPERIENCE_MAX_TASKS:100}
+      lookback-days: ${ERP_AI_EXPERIENCE_LOOKBACK_DAYS:7}
+      min-events: ${ERP_AI_EXPERIENCE_MIN_EVENTS:6}
+      extraction-input-max-tokens: ${ERP_AI_EXPERIENCE_INPUT_TOKENS:600000}
+      extraction-max-output-tokens: ${ERP_AI_EXPERIENCE_OUTPUT_TOKENS:4000}
+      max-experiences-per-task: ${ERP_AI_EXPERIENCE_MAX_PER_TASK:5}
+      max-text-chars: ${ERP_AI_EXPERIENCE_MAX_TEXT_CHARS:400}
+      merge-max-experiences: ${ERP_AI_EXPERIENCE_MERGE_LIMIT:100}
+      summary-max-chars: ${ERP_AI_EXPERIENCE_SUMMARY_CHARS:400}
+      search-limit: ${ERP_AI_EXPERIENCE_SEARCH_LIMIT:10}
+      cache-seconds: ${ERP_AI_EXPERIENCE_CACHE_SECONDS:60}
+      model: ${ERP_AI_EXPERIENCE_MODEL:flash}
     # AI 取数底座：独立只读连接池 + SQL 守卫 + 执行器。
     # 与模型配置分开：取数底座不依赖模型密钥，模型没配也不影响底座开关。
     sql:

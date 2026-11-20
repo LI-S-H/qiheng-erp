@@ -53,15 +53,18 @@ public final class SearchExperienceTool {
      * @param keyword 想查询的相关经验的关键词
      * @return 经验文本；没有匹配时返回提示
      */
-    @Tool(name = "searchExperience", description = "按关键词查询历史任务中沉淀的相关经验。")
+    @Tool(name = "searchExperience",
+          description = "按关键词查询历史任务中沉淀的相关经验；关键词用业务名词，不要用整句。")
     public String search(
-            @ToolParam(description = "想查询的相关经验的关键词，如列名、单位、库存缺口") String keyword) {
+            @ToolParam(description = "想查询的相关经验的关键词，用一到两个业务名词，"
+                    + "如库存、单位、列名、安全库存；不要用整句或长描述") String keyword) {
         if (keyword == null || keyword.isBlank()) {
             return "请提供要查询的关键词。";
         }
         List<AiExperience> found = lookup(terms(keyword));
         if (found.isEmpty()) {
-            return "没有匹配的经验。";
+            return "没有匹配的经验。可以换用更短、更具体的业务关键词再试，"
+                    + "例如“库存”“单位”“列名”“安全库存”。";
         }
         StringBuilder text = new StringBuilder(PREFIX);
         for (AiExperience item : found) {

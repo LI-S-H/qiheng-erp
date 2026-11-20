@@ -201,12 +201,17 @@ function toolSummary(step: AiConversationMessage) {
                 </button>
                 <button v-else-if="step.content.type === 'TOOL_STEP' && step.content.data.name === 'createReport' && reportProcesses?.[reportProcessKey(step.requestId, step.content.data.callId)]"
                   type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.content.data.callId))">
+                  <component :is="toolIcon('createReport')" class="work-tool-icon" aria-hidden="true" />
                   <span>报告专家完成报告编写与讨论</span>
+                  <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
                 <button v-else-if="step.content.type === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.content.data.callId))">
-                  <span>查看报告编写与讨论过程</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                  <component :is="toolIcon('createReport')" class="work-tool-icon" aria-hidden="true" />
+                  <span>查看报告编写与讨论过程</span>
+                  <span class="work-analysis-hint">查看过程</span>
+                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
                 <p v-else-if="step.content.type === 'TOOL_STEP'" class="work-tool" :class="{ 'is-failed': step.content.data.status === 'failed' }">
                   <component :is="toolIcon(step.content.data.name)" class="work-tool-icon" aria-hidden="true" />

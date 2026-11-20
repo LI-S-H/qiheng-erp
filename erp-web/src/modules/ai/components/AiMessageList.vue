@@ -5,7 +5,8 @@ import AiMarkdownContent from './AiMarkdownContent.vue';
 import AiReportMessage from './AiReportMessage.vue';
 import AiClarificationHistory from '../clarification/AiClarificationHistory.vue';
 import { toolIcon } from './tool-icons';
-import type { AiConversationMessage } from '../types';
+import type { AiConversationMessage, AiMessageContent } from '../types';
+import type { ClarificationQuestion } from '../clarification/clarification-types';
 import { clarificationAnswers } from '../contracts/message-contract';
 import type { LiveItem } from '../composables/use-conversation-runs';
 import type { AiReportCard, AiReportProcess } from '../contracts/report-contract';
@@ -25,9 +26,21 @@ const props = defineProps<{
   reportRunId?: string;
   finalMessageId?: string;
   runTerminal?: boolean;
-  recentAnswers?: Record<string, { callId: string; questions: import('../clarification/clarification-types').ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
+  recentAnswers?: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
 }>();
 const emit = defineEmits<{ 'open-analysis': [id?: string]; 'open-report-process': [id: string]; 'open-report': [report: AiReportCard] }>();
+/** 工作过程行：把内容类型与数据提到同一层，模板直接引用 step.data。 */
+type VisibleStep = Omit<AiConversationMessage, 'content'> & {
+  [K in AiMessageContent['type']]: {
+    contentType: K;
+    content: Extract<AiMessageContent, { type: K }>;
+    data: Extract<AiMessageContent, { type: K }>['data'];
+  };
+}[AiMessageContent['type']];
+/** 复制一份带数据引用的过程行，避免模板重复展开 content.data。 */
+function toVisibleStep(message: AiConversationMessage): VisibleStep {
+  return { ...message, contentType: message.content.type, data: message.content.data } as VisibleStep;
+}
 /** 同一调用编号在不同轮次出现时，仍能打开对应的报告过程。 */
 function reportProcessKey(requestId: string, callId: string) {
   return JSON.stringify([requestId, callId]);
@@ -62,7 +75,7 @@ function cardsFor(requestId: string) {
   return (props.reportCards || []).filter(card => card.requestId === requestId);
 }
 const stepsByRun = computed(() => {
-  const result = new Map<string, AiConversationMessage[]>();
+  const result = new Map<string, VisibleStep[]>();
   for (const message of props.messages) {
     if (message.kind === 'REPORT_STEP' && message.content.type === 'REPORT') {
       const callId = message.content.data.callId;
@@ -70,7 +83,7 @@ const stepsByRun = computed(() => {
         && item.kind === 'TOOL_CALL' && item.content.type === 'TOOL_STEP' && item.content.data.callId === callId);
       if (!hasTool) {
         const steps = result.get(message.requestId) || [];
-        steps.push(message);
+        steps.push(toVisibleStep(message));
         result.set(message.requestId, steps);
       }
       continue;
@@ -80,7 +93,7 @@ const stepsByRun = computed(() => {
       continue;
     }
     const steps = result.get(message.requestId) || [];
-    steps.push(message);
+    steps.push(toVisibleStep(message));
     result.set(message.requestId, steps);
   }
   return result;
@@ -184,48 +197,48 @@ function toolSummary(step: AiConversationMessage) {
           <div class="work-reveal" :class="{ 'is-open': expandedRuns.has(message.requestId) }" :inert="!expandedRuns.has(message.requestId)">
             <div class="work-reveal-inner">
               <template v-for="step in stepsByRun.get(message.requestId)" :key="step.messageId">
-                <AiClarificationHistory v-if="step.content.type === 'CLARIFICATION' && !liveQuestionIds.has(step.content.data.callId)" :questions="step.content.data.questions" :answer="answers.get(step.content.data.callId) || recentAnswers?.[step.content.data.callId]?.answer" :question-answers="answerDetails.get(step.content.data.callId)?.questionAnswers || recentAnswers?.[step.content.data.callId]?.questionAnswers" :note="answerDetails.get(step.content.data.callId)?.note || recentAnswers?.[step.content.data.callId]?.note" :tags="[]" />
-                <button v-else-if="step.content.type === 'TEXT' && isAnalysisSummary(step)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
+                <AiClarificationHistory v-if="step.contentType === 'CLARIFICATION' && !liveQuestionIds.has(step.data.callId)" :questions="step.data.questions" :answer="answers.get(step.data.callId) || recentAnswers?.[step.data.callId]?.answer" :question-answers="answerDetails.get(step.data.callId)?.questionAnswers || recentAnswers?.[step.data.callId]?.questionAnswers" :note="answerDetails.get(step.data.callId)?.note || recentAnswers?.[step.data.callId]?.note" :tags="[]" />
+                <button v-else-if="step.contentType === 'TEXT' && isAnalysisSummary(step)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
                   <span>分析专家完成分析</span>
                   <span class="work-duration">{{ toolSummary(step)?.[2] }}</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
-                <button v-else-if="isAnalysisToolStep(step) && step.content.type === 'TOOL_STEP'" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
+                <button v-else-if="isAnalysisToolStep(step) && step.contentType === 'TOOL_STEP'" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
                   <span>分析专家完成分析</span>
-                  <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
+                  <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
-                <button v-else-if="step.content.type === 'TOOL_STEP' && step.content.data.name === 'createReport' && reportProcesses?.[reportProcessKey(step.requestId, step.content.data.callId)]"
-                  type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.content.data.callId))">
+                <button v-else-if="step.contentType === 'TOOL_STEP' && step.data.name === 'createReport' && reportProcesses?.[reportProcessKey(step.requestId, step.data.callId)]"
+                  type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.data.callId))">
                   <component :is="toolIcon('createReport')" class="work-tool-icon" aria-hidden="true" />
                   <span>报告专家完成报告编写与讨论</span>
-                  <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
+                  <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
-                <button v-else-if="step.content.type === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.content.data.callId))">
+                <button v-else-if="step.contentType === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.data.callId))">
                   <component :is="toolIcon('createReport')" class="work-tool-icon" aria-hidden="true" />
                   <span>查看报告编写与讨论过程</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
-                <p v-else-if="step.content.type === 'TOOL_STEP'" class="work-tool" :class="{ 'is-failed': step.content.data.status === 'failed' }">
-                  <component :is="toolIcon(step.content.data.name)" class="work-tool-icon" aria-hidden="true" />
-                  <span>{{ step.content.data.label }}</span>
-                  <span class="work-duration">{{ toolDuration(step.content.data.durationMs) }}</span>
+                <p v-else-if="step.contentType === 'TOOL_STEP'" class="work-tool" :class="{ 'is-failed': step.data.status === 'failed' }">
+                  <component :is="toolIcon(step.data.name)" class="work-tool-icon" aria-hidden="true" />
+                  <span>{{ step.data.label }}</span>
+                  <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
                 </p>
-                <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.content.type === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
+                <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.contentType === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
                   <Bot class="work-tool-icon" aria-hidden="true" />
                   <span>分析专家完成分析</span>
                   <span class="work-analysis-hint">查看过程</span>
                   <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
                 </button>
-                <p v-else-if="step.content.type === 'TEXT' && toolSummary(step)" class="work-tool"><Database class="work-tool-icon" aria-hidden="true" /><span>{{ toolSummary(step)?.[1] }}</span><span class="work-duration">{{ toolSummary(step)?.[2] }}</span></p>
-                <AiMarkdownContent v-else-if="step.content.type === 'TEXT'" :content="step.content.data.text" />
+                <p v-else-if="step.contentType === 'TEXT' && toolSummary(step)" class="work-tool"><Database class="work-tool-icon" aria-hidden="true" /><span>{{ toolSummary(step)?.[1] }}</span><span class="work-duration">{{ toolSummary(step)?.[2] }}</span></p>
+                <AiMarkdownContent v-else-if="step.contentType === 'TEXT'" :content="step.data.text" />
               </template>
             </div>
           </div>

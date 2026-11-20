@@ -26,7 +26,7 @@ import AiMessageList from '../components/AiMessageList.vue';
 import AiMessageNavigator from '../components/AiMessageNavigator.vue';
 import { usePanelResize } from '../composables/use-panel-resize';
 import { clearFailureHold, holdTransientFailure, useConversationRuns, type ConversationRun, type LiveItem, type SnapshotItem } from '../composables/use-conversation-runs';
-import type { ClarificationDraft } from '../clarification/clarification-types';
+import type { ClarificationDraft, ClarificationQuestion } from '../clarification/clarification-types';
 import { getMainAgentRuntime, startMainAgentStream, submitMainAgentAnswer, watchMainAgentStream, type MainAgentEvent } from '../stream/main-agent-stream';
 import { useAiConversationStore } from '../stores/aiConversationStore';
 import type { AiAnalysisBlock, AiConversationMessage } from '../types';
@@ -672,7 +672,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       if (typeof data.questionRequestId !== 'string' || !Array.isArray(data.questions)) {
         throw new Error('追问事件格式错误');
       }
-      state.pendingClarification = { questionRequestId: data.questionRequestId, toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined, questions: data.questions as import('../clarification/clarification-types').ClarificationQuestion[] };
+      state.pendingClarification = { questionRequestId: data.questionRequestId, toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined, questions: data.questions as ClarificationQuestion[] };
       const callId = typeof data.toolCallId === 'string' ? data.toolCallId : data.questionRequestId;
       if (!state.liveItems.some(item => item.type === 'clarification' && item.id === callId)) {
         state.liveItems.push({ type: 'clarification', id: callId, questions: state.pendingClarification.questions });

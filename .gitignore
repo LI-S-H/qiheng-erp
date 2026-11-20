@@ -77,3 +77,11 @@ AGENT.md
 
 # 前端 QA 截图
 erp-web/docs/
+
+# 本地工具与过程产物
+.workbuddy/
+erp-web/work-process.png
+
+# 数据库导出快照（含业务数据，不入库）
+docs/database/sql/erp-schema-*.sql
+docs/database/sql/erp-system-data-*.sql

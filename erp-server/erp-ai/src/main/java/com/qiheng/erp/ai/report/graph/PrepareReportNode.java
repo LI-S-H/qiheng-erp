@@ -8,10 +8,12 @@ import com.qiheng.erp.ai.report.ReportProgress;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** 整理本轮需求、追问及分析步骤，生成报告智能体的完整输入。 */
 final class PrepareReportNode implements NodeAction {
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PrepareReportNode.class);
+    private static final Logger log = LoggerFactory.getLogger(PrepareReportNode.class);
     private final ReportConversationReader conversations;
     private final AgentToolContext identity;
     private final String runId;

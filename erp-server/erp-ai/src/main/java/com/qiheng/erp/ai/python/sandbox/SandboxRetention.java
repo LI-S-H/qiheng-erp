@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
@@ -118,7 +119,7 @@ public final class SandboxRetention {
             return true;
         } catch (NotFoundException error) {
             return true;
-        } catch (java.io.IOException error) {
+        } catch (IOException error) {
             throw new IllegalStateException("Docker 连接关闭失败", error);
         }
     }

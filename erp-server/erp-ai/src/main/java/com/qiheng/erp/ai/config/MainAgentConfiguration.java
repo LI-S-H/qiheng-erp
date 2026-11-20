@@ -13,6 +13,8 @@ import com.qiheng.erp.ai.agent.interceptor.ReportProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolRecordingInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
 import com.qiheng.erp.ai.clarification.ClarificationService;
+import java.util.ArrayList;
+import java.util.List;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor;
@@ -85,14 +87,14 @@ public class MainAgentConfiguration {
                                 ClarificationService clarification, ListDatasetsTool datasetList,
                                 AnalysisResultTool results, AnalysisTool analysisTool) throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
-        var tools = new java.util.ArrayList<Object>(java.util.List.of(sql, dataset, datasetList, results, analysisTool, new AskUserTool(clarification)));
+        var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool, new AskUserTool(clarification)));
         if (reportTool != null) {
             tools.add(reportTool);
         }
         if (experienceTools != null) {
             tools.add(experienceTools.create("MAIN"));
         }
-        var hooks = new java.util.ArrayList<Hook>();
+        var hooks = new ArrayList<Hook>();
         hooks.add(new MessageRecordingHook());
         // 测试直接构造配置时不注入压缩工厂，保持原有行为。
         if (compression != null) {

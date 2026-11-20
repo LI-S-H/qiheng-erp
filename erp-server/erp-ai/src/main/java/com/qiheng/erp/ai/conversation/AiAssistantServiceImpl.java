@@ -5,6 +5,7 @@ import com.qiheng.erp.ai.domain.entity.AiConversation;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.domain.vo.AssistantOverviewVO;
 import com.qiheng.erp.ai.domain.vo.ChatMessageVO;
+import com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO;
 import com.qiheng.erp.ai.domain.vo.ConversationDetailVO;
 import com.qiheng.erp.ai.domain.vo.ConversationMessagePageVO;
 import com.qiheng.erp.ai.domain.vo.ConversationSummaryVO;
@@ -62,21 +63,21 @@ public class AiAssistantServiceImpl implements AiAssistantService {
 
     /** 读取最近活动的会话，额外取一条判断是否存在下一页。 */
     @Override
-    public com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO pageConversations(Long userId, String beforeTime, Long beforeId) {
+    public ConversationCursorPageVO pageConversations(Long userId, String beforeTime, Long beforeId) {
         if ((beforeTime == null) != (beforeId == null)) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "会话分页游标不完整");
         }
         LocalDateTime time;
         try {
             time = beforeTime == null ? null : LocalDateTime.parse(beforeTime, TIME_FORMATTER);
-        } catch (java.time.format.DateTimeParseException error) {
+        } catch (DateTimeParseException error) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "会话分页时间格式错误");
         }
         var rows = conversationMapper.selectPage(userId, time, beforeId);
         boolean hasMore = rows.size() > 50;
         var page = hasMore ? rows.subList(0, 50) : rows;
         var last = hasMore ? page.getLast() : null;
-        return new com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO(page.stream().map(this::toSummary).toList(), hasMore,
+        return new ConversationCursorPageVO(page.stream().map(this::toSummary).toList(), hasMore,
                 last == null ? null : format(last.getLastMessageAt()), last == null ? null : String.valueOf(last.getId()));
     }
 

@@ -3,6 +3,7 @@ package com.qiheng.erp.ai.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.qiheng.erp.ai.domain.dto.ConversationUpdateRequest;
 import com.qiheng.erp.ai.domain.vo.AssistantOverviewVO;
+import com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO;
 import com.qiheng.erp.ai.domain.vo.ConversationDetailVO;
 import com.qiheng.erp.ai.domain.vo.ConversationMessagePageVO;
 import com.qiheng.erp.ai.conversation.AiAssistantService;
@@ -54,7 +55,7 @@ public class AiAssistantController {
     /** 按最近活动时间查询会话，每次最多返回 50 条。 */
     @GetMapping("/conversations")
     @Operation(summary = "会话游标分页")
-    public Result<com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO> pageConversations(
+    public Result<ConversationCursorPageVO> pageConversations(
             @RequestParam(value = "beforeTime", required = false) String beforeTime,
             @RequestParam(value = "beforeId", required = false) String beforeId) {
         Long userId = UserContext.requireCurrentUser().getUserId();

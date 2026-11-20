@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -216,7 +217,7 @@ public class DatasetManager {
     }
 
     /** 恢复时按业务执行 ID 查找已完成的数据集。 */
-    public java.util.Optional<DatasetRecord> findReady(String sqlRunId, long userId, long conversationId) {
+    public Optional<DatasetRecord> findReady(String sqlRunId, long userId, long conversationId) {
         return repository.findReady(sqlRunId, userId, conversationId).map(this::available);
     }
 

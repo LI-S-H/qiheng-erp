@@ -34,6 +34,8 @@ class AnalysisResultMySqlIT {
         var source = new DriverManagerDataSource(url, System.getenv("DATASET_IT_USER"), System.getenv("DATASET_IT_PASSWORD"));
         var jdbc = new JdbcTemplate(source);
         jdbc.execute(Files.readString(Path.of("..", "..", "docs", "database", "sql", "034_ai_analysis_result.sql")));
+        // 过期时间由后续迁移补列，建表后必须执行，否则实体查询缺 expires_at。
+        jdbc.execute(Files.readString(Path.of("..", "..", "docs", "database", "sql", "041_ai_data_retention.sql")));
         var configuration = new MybatisConfiguration();
         configuration.addMapper(AiAnalysisResultMapper.class);
         var bean = new MybatisSqlSessionFactoryBean();

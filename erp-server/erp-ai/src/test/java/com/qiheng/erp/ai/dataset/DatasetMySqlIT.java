@@ -88,8 +88,8 @@ class DatasetMySqlIT {
             assertEquals("STAGED", staged.status());
             assertEquals(staged.datasetId(), manager.stage(req, query).datasetId());
             assertThrows(IllegalStateException.class, () -> manager.read(staged.datasetId(), 1001, 2001));
-            assertThrows(IllegalArgumentException.class, () -> manager.get(staged.datasetId(), 1002, 2001));
-            assertThrows(IllegalArgumentException.class, () -> manager.get(staged.datasetId(), 1001, 2002));
+            assertThrows(DatasetUnavailableException.class, () -> manager.get(staged.datasetId(), 1002, 2001));
+            assertThrows(DatasetUnavailableException.class, () -> manager.get(staged.datasetId(), 1001, 2002));
             SqlDataDescription description = new SqlDataDescription("库存", "每个商品一行",
                     List.of(new SqlDataField(0, "amount", "库存数量")), "");
             DatasetRecord ready = manager.approve(staged.datasetId(), 1001, 2001, description);

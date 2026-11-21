@@ -45,7 +45,7 @@ MySQL、Redis、MQ 消息和日志使用固定 project 下的命名卷，不随�
 
 部署前须使用 `deploy/docker/Dockerfile.ai-sandbox` 准备 `erp-ai-sandbox:local` 镜像。镜像构建需要下载固定摘要的基础镜像以及 Python 依赖，具体可用性由服务器网络决定；失败时不得跳过验证并声称 Python 分析可用。
 
-当前代码无需 MinIO；普通 Redis 满足会话、锁、缓存和 AI 检查点，规划中的 RedisStack 向量检索不属于这次部署。AI 默认关闭，启用前须在服务器私有配置中设置模型密钥、`ERP_AI_SQL_USERNAME` 和独立的 `ERP_AI_SQL_PASSWORD`，并在数据库中建立仅有 SELECT 权限的对应账号。不要直接使用 `027_ai_readonly_user.sql` 中的示例密码。后端容器将 `ai-datasets` 命名卷挂载到 `/app/data/ai-datasets`，数据集文件随容器重建保留；数据库和此数据卷都需要备份。
+当前代码无需 MinIO；普通 Redis 满足会话、锁、缓存和 AI 检查点，规划中的 RedisStack 向量检索不属于这次部署。AI 默认关闭，启用前须在服务器私有配置中设置模型密钥、`ERP_AI_SQL_USERNAME` 和独立的 `ERP_AI_SQL_PASSWORD`，并在数据库中建立仅有 SELECT 权限的对应账号。只读账号凭据应由目标环境单独创建和管理。后端容器将 `ai-datasets` 命名卷挂载到 `/app/data/ai-datasets`，数据集文件随容器重建保留；数据库和此数据卷都需要备份。
 
 ## 1. 先确定镜像来源
 
@@ -116,20 +116,22 @@ MQ 卷由一次性初始化容器赋予镜像用户 UID/GID 3000 权限；MQ 服
 
 首次服务启动和 Topic 创建均可能失败，只有命令成功结束后才能进入下一步；不要为了让页面显示绿色而跳过错误。基础服务启动最多等待五分钟，超时可能已有部分服务启动，数据卷和容器会保留；排查后重试，不通过删卷重置环境。
 
-## 4. 一次性导入现有完整数据库
+## 4. 一次性初始化数据库
 
-项目目前没有一套可直接通配执行的自动迁移链。`docs/database/sql/` 混有初始化、回滚、开发修补及增量修改，**不要按文件名排序全部执行，也不要将整个目录挂到 MySQL 初始化目录**。
+项目目前没有一套自动升级既有数据库的迁移链。空库初始化和存量数据库升级是不同流程，不能使用空库脚本覆盖已有数据库。
 
-推荐从本地已通过验证的 MySQL 导出当前 `erp` 库的结构和所需数据，只导出这个业务数据库，不导出系统账号、其他数据库或本地 GTID 配置。通过数据库管理工具导出，或在本地有 `mysqldump` 时执行：
+空测试库可以使用 [数据库初始化说明](../../docs/database/init/README.md)中的结构 SQL 和系统测试数据。该套数据包含已知测试账号，不能直接用于生产；正式环境的初始账号与数据需另行制定。已有业务库不使用空库脚本覆盖，应另行设计迁移和备份方案。
+
+当前 `import-db` 一次接收一个文件；在可信私有目录按顺序合并建表和所需初始化数据后导入，例如：
 
 ```text
-mysqldump -h 本地数据库地址 -u 用户名 -p --single-transaction --no-tablespaces --set-gtid-purged=OFF erp > erp.sql
+cat docs/database/init/01-schema.sql docs/database/init/02-system-demo.sql > /安全目录/erp-init.sql
 ```
 
-通过合适的方式将 SQL 安全传输到服务器，例如当前用户的主目录。确认数据适合目标环境后执行：
+通过合适的方式将 SQL 安全传输到服务器，确认数据适合目标环境后执行：
 
 ```bash
-sudo bash /opt/qiheng-erp/bin/deploy.sh import-db "$HOME/erp.sql"
+sudo bash /opt/qiheng-erp/bin/deploy.sh import-db /安全目录/erp-init.sql
 ```
 
 脚本只允许向空业务库导入，并使用仅有业务库权限的用户。导入后检查必要表并记录 SQL 校验值，不执行项目业务测试。若中途失败产生部分表，脚本拒绝再次覆盖，请人工审查错误后处理，不能删除数据卷来绕过问题。

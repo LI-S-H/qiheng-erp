@@ -6,7 +6,7 @@ const { chromium, expect } = require('playwright/test');
 // 不拦截接口：浏览器 → Vite → 真实 Java、MySQL、Redis；模型使用本地受控场景。
 const base = process.env.AI_GRAPH_REAL_UI_URL || 'http://127.0.0.1:5174';
 const screenshots = process.env.AI_GRAPH_SCREENSHOT_DIR || path.resolve(__dirname,
-  '../../docs/qa-screenshots/2026-10-16-170012-ai-ledger-real-integration');
+  '../../docs/testing/evidence/2026-10-16-170012-ai-ledger-real-integration');
 
 async function main() {
   fs.mkdirSync(screenshots, { recursive: true });

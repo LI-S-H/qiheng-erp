@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { runSmoke, tableRow } = require('./smoke-helpers.cjs');
 
-const screenshotDirectory = path.resolve(process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/purchase-score-preview');
+const screenshotDirectory = path.resolve(process.env.QA_SCREENSHOT_DIR || 'docs/testing/evidence/purchase-score-preview');
 fs.mkdirSync(screenshotDirectory, { recursive: true });
 
 // 在 Vite 模块响应中注入测试故障，运行真实页面与真实 handler；不修改产品 Mock 行为。

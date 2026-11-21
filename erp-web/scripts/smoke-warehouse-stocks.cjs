@@ -6,7 +6,7 @@ const {
 } = require('./smoke-helpers.cjs');
 const path = require('path');
 const fs = require('fs');
-const screenshotDirectory = path.resolve(process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/warehouse-stocks');
+const screenshotDirectory = path.resolve(process.env.QA_SCREENSHOT_DIR || 'docs/testing/evidence/warehouse-stocks');
 fs.mkdirSync(screenshotDirectory, { recursive: true });
 const screenshotPath = filename => path.join(screenshotDirectory, filename);
 

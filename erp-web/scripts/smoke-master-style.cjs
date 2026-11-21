@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const base = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5192';
 const name = process.argv[2] || 'categories';
 const routes = { categories: '/product/categories', products: '/product/products', users: '/system/users', roles: '/system/roles', depts: '/system/depts', permissions: '/system/permissions' };
-const dir = path.resolve(`../docs/qa-screenshots/2026-10-19-master-style/${name}`);
+const dir = path.resolve(`../docs/testing/evidence/2026-10-19-master-style/${name}`);
 fs.mkdirSync(dir, { recursive: true });
 let page; const results = [];
 const tree = ['categories', 'depts'].includes(name);

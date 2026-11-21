@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const { chromium, expect } = require('playwright/test');
 const base = process.env.DASHBOARD_UI_URL || process.env.SMOKE_BASE_URL || 'http://127.0.0.1:9071';
-const out = path.resolve(__dirname, '../../docs/qa-screenshots/2026-10-19-dashboard-pilot');
+const out = path.resolve(__dirname, '../../docs/testing/evidence/2026-10-19-dashboard-pilot');
 fs.mkdirSync(out, { recursive: true });
 const source = fs.readFileSync(path.resolve(__dirname, '../src/modules/dashboard/api.ts'), 'utf8');
 const block = source.slice(source.indexOf('function formatMockDateTime'), source.indexOf('function normalizeMetric'));

@@ -3,7 +3,7 @@ const path = require('path');
 const { runSmoke, tableRow, assertFixedTableLayout, assertRequiredLabels, assertDialogScrollGutter, assertSharedListChrome, assertContentSizedFilter, clickQueryAndAssertLoading, clickPaginationAndAssertLoading, clickRefreshAndAssertLoading, clickResetAndAssertLoading } = require('./smoke-helpers.cjs');
 
 const screenshotDirectory = path.resolve(
-  process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/2026-07-14-140728-product-compact-table',
+  process.env.QA_SCREENSHOT_DIR || 'docs/testing/evidence/2026-07-14-140728-product-compact-table',
 );
 const screenshotPath = filename => path.join(screenshotDirectory, filename);
 const columnPreferenceStorageKey = 'erp.product.products.table-columns.v1';

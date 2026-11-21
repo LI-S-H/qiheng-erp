@@ -13,7 +13,7 @@ const {
 } = require('./smoke-helpers.cjs');
 
 const screenshotDirectory = path.resolve(
-  process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/2026-07-14-141759-sales-order-compact-table',
+  process.env.QA_SCREENSHOT_DIR || 'docs/testing/evidence/2026-07-14-141759-sales-order-compact-table',
 );
 const screenshotPath = filename => path.join(screenshotDirectory, filename);
 

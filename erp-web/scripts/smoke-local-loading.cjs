@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
 const {chromium}=require('playwright');
 const base=process.env.SMOKE_BASE_URL||'http://127.0.0.1:9071';
-const out=path.resolve(__dirname,'../../docs/qa-screenshots/2026-10-19-local-loading');fs.mkdirSync(out,{recursive:true});
+const out=path.resolve(__dirname,'../../docs/testing/evidence/2026-10-19-local-loading');fs.mkdirSync(out,{recursive:true});
 const cases=[
  ['/purchase/orders','/purchase/orders','purchaseOrderId'],['/purchase/returns','/returns','returnOrderId'],
  ['/purchase/suppliers','/purchase/suppliers','supplierId'],['/purchase/supplier-products','/purchase/supplier-products','supplierProductId'],

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 const baseUrl = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5192';
-const evidenceDir = path.resolve(process.env.QA_SCREENSHOT_DIR || '../docs/qa-screenshots/2026-10-18-pagination-scroll');
+const evidenceDir = path.resolve(process.env.QA_SCREENSHOT_DIR || '../docs/testing/evidence/2026-10-18-pagination-scroll');
 fs.mkdirSync(evidenceDir, { recursive: true });
 const results = [];
 let page;

@@ -3,7 +3,7 @@ const path = require('path');
 const { runSmoke } = require('./smoke-helpers.cjs');
 
 const screenshotDirectory = path.resolve(
-  process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/2026-07-14-135451-sticky-column-elevation',
+  process.env.QA_SCREENSHOT_DIR || 'docs/testing/evidence/2026-07-14-135451-sticky-column-elevation',
 );
 
 fs.mkdirSync(screenshotDirectory, { recursive: true });

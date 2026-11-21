@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 const { spawn } = require('node:child_process');
 
 const baseUrl = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5192';
-const evidenceDir = path.resolve(process.env.QA_SCREENSHOT_DIR || '../docs/qa-screenshots/purchase-style-pilot');
+const evidenceDir = path.resolve(process.env.QA_SCREENSHOT_DIR || '../docs/testing/evidence/purchase-style-pilot');
 fs.mkdirSync(evidenceDir, { recursive: true });
 const results = [];
 let page;

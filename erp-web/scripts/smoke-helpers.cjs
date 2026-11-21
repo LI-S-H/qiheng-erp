@@ -421,6 +421,7 @@ async function assertPolishedFilterPanel(page) {
     const labelStyle = label ? getComputedStyle(label) : null;
     const controlStyle = control ? getComputedStyle(control) : null;
     return {
+      pilotTheme: Boolean(element.closest('.app-shell.purchase-pilot-theme .purchase-pilot-page')),
       backgroundImage: style.backgroundImage,
       backgroundColor: style.backgroundColor,
       borderColor: style.borderColor,
@@ -438,9 +439,12 @@ async function assertPolishedFilterPanel(page) {
   });
   const hasPanelBackground = state.backgroundImage !== 'none' || state.backgroundColor !== 'rgba(0, 0, 0, 0)';
   const hasAccent = state.accentBackground !== 'none' || state.accentColor !== 'rgba(0, 0, 0, 0)';
-  if (!hasPanelBackground || state.boxShadow === 'none' || state.paddingTop !== 16
-    || state.borderTopWidth !== 1 || state.borderRadius !== 10 || hasAccent
-    || state.labelFontSize < 13 || state.labelWeight < 600 || state.controlHeight < 36) {
+  const invalidPanel = state.pilotTheme
+    ? hasPanelBackground || state.boxShadow !== 'none' || state.paddingTop !== 0
+      || state.borderTopWidth !== 0 || state.borderRadius !== 0 || state.labelWeight < 400
+    : !hasPanelBackground || state.boxShadow === 'none' || state.paddingTop !== 16
+      || state.borderTopWidth !== 1 || state.borderRadius !== 10 || state.labelWeight < 600;
+  if (invalidPanel || hasAccent || state.labelFontSize < 13 || state.controlHeight < 36) {
     throw new Error(`筛选区视觉层级或控件尺寸异常：${JSON.stringify(state)}`);
   }
 
@@ -481,6 +485,7 @@ async function assertSharedListChrome(page, { summaryLabel, filterLabel }) {
   const filter = page.getByRole('search', { name: filterLabel });
   await Promise.all([summary.waitFor(), filter.waitFor()]);
   const summaryState = await summary.evaluate(element => ({
+    pilotTheme: Boolean(element.closest('.app-shell.purchase-pilot-theme .purchase-pilot-page')),
     metricCount: element.querySelectorAll('.summary-item').length,
     definitionCount: element.querySelectorAll('dt').length,
     valueCount: element.querySelectorAll('dd').length,
@@ -491,14 +496,17 @@ async function assertSharedListChrome(page, { summaryLabel, filterLabel }) {
       shadow: getComputedStyle(item).boxShadow,
       border: getComputedStyle(item).borderTopWidth,
       radius: getComputedStyle(item).borderRadius,
+      accentDisplay: getComputedStyle(item, '::after').display,
       accent: getComputedStyle(item, '::after').backgroundColor,
     })),
   }));
+  const invalidLayout = summaryState.pilotTheme
+    ? summaryState.containerBorder !== '1px' || summaryState.cards.some(card => card.shadow !== 'none' || card.radius !== '0px' || card.accentDisplay !== 'none')
+    : summaryState.containerBorder !== '0px' || summaryState.cards.some(card => card.shadow === 'none' || card.border === '0px' || card.radius !== '10px')
+      || new Set(summaryState.cards.map(card => card.accent)).size < 3;
   if (summaryState.metricCount !== 4 || summaryState.definitionCount !== 4
     || summaryState.valueCount !== 4 || summaryState.containerShadow !== 'none'
-    || summaryState.containerBorder !== '0px' || summaryState.cards.length !== 4
-    || summaryState.cards.some(card => card.shadow === 'none' || card.border === '0px' || card.radius !== '10px')
-    || new Set(summaryState.cards.map(card => card.accent)).size < 3) {
+    || summaryState.cards.length !== 4 || invalidLayout) {
     throw new Error(`列表页汇总组件结构或层级异常：${JSON.stringify(summaryState)}`);
   }
   if (await filter.getAttribute('data-list-filter-panel') === null) {

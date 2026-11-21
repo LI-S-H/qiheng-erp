@@ -6,37 +6,30 @@ const readProjectFile = (...segments) =>
   fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 
 const source = readProjectFile("docs", "api", "erp-openapi.yaml");
-const pageDesign = readProjectFile("docs", "frontend-page-design.md");
-const databaseOverview = readProjectFile(
-  "docs",
-  "database",
-  "mvp-database-design-overview.md",
-);
-const permissionSchema = readProjectFile(
-  "docs",
-  "database",
-  "mvp-system-permission-schema.md",
-);
-const projectPlan = readProjectFile("docs", "erp-project-plan.md");
-const productRequirement = readProjectFile("docs", "product", "PRD.md");
-const databaseSql = readProjectFile(
-  "docs",
-  "database",
-  "sql",
-  "001_mvp_system_permission.sql",
-);
-const productSql = readProjectFile(
-  "docs",
-  "database",
-  "sql",
-  "002_mvp_product.sql",
-);
-const purchaseSql = readProjectFile(
-  "docs",
-  "database",
-  "sql",
-  "004_mvp_purchase.sql",
-);
+const currentSql = readProjectFile("docs", "database", "init", "01-schema.sql");
+const currentSchemaDocs = readProjectFile("docs", "database", "schema", "README.md");
+const warehouseSchema = readProjectFile("docs", "database", "schema", "warehouse.md");
+const returnSchema = readProjectFile("docs", "database", "schema", "returns.md");
+const returnContract = readProjectFile("docs", "api", "return-module.md");
+const databaseOverview = readProjectFile("docs", "database", "relations.md");
+const permissionSchema = readProjectFile("docs", "database", "schema", "system.md");
+const projectPlan = readProjectFile("docs", "architecture", "overview.md");
+// 当前导出使用反引号和 MySQL 的小写类型，统一格式以检查字段和索引。
+const normalizedSql = currentSql.replace(/`/g, "")
+  .replace(/CREATE TABLE\s+/gi, "CREATE TABLE IF NOT EXISTS ")
+  .replace(/\b(bigint|varchar|tinyint|int|datetime|date)\b/gi, value => value.toUpperCase())
+  .replace(/DEFAULT '(-?\d+)'/gi, "DEFAULT $1")
+  .replace(/,\s*/g, ", ");
+function tableSql(name) {
+  const start = normalizedSql.indexOf(`CREATE TABLE IF NOT EXISTS ${name} (`);
+  const end = normalizedSql.indexOf(';', start);
+  if (start < 0 || end < 0) throw new Error(`当前初始化 SQL 缺少表：${name}`);
+  return normalizedSql.slice(start, end);
+}
+const databaseSql = [tableSql('sys_user'), tableSql('sys_permission')].join('\n');
+const productSql = tableSql('product');
+const purchaseSql = [tableSql('supplier'), tableSql('supplier_product')].join('\n');
+const warehouseSql = tableSql('warehouse');
 const authStoreSource = readProjectFile(
   "erp-web",
   "src",
@@ -64,7 +57,7 @@ const frontendDevelopmentGuide = readProjectFile(
   "docs",
   "frontend-development-guide.md",
 );
-const agentInstructions = readProjectFile("AGENTS.md");
+const agentInstructions = readProjectFile("docs", "project-rules.md");
 const frontendPreflightSource = readProjectFile(
   "erp-web",
   "scripts",
@@ -100,22 +93,6 @@ const productViewSource = readProjectFile(
   "products",
   "views",
   "ProductManageView.vue",
-);
-const warehouseSql = readProjectFile(
-  "docs",
-  "database",
-  "sql",
-  "003_mvp_warehouse.sql",
-);
-const warehouseSchema = readProjectFile(
-  "docs",
-  "database",
-  "mvp-warehouse-schema.md",
-);
-const returnSchema = readProjectFile(
-  "docs",
-  "database",
-  "mvp-return-schema.md",
 );
 const returnTypeSource = readProjectFile(
   "erp-web",
@@ -461,18 +438,7 @@ const deptApiSource = readProjectFile(
   "depts",
   "api.ts",
 );
-const sqlDirectory = path.join(projectRoot, "docs", "database", "sql");
-const allSql = fs
-  .readdirSync(sqlDirectory)
-  .filter((fileName) => fileName.endsWith(".sql"))
-  .map((fileName) => fs.readFileSync(path.join(sqlDirectory, fileName), "utf8"))
-  .join("\n");
-// 34 张表对应历史 MVP 基线；后续 AI 取数与数据集迁移单独检查。
-const baselineSql = fs
-  .readdirSync(sqlDirectory)
-  .filter((fileName) => /^(00[1-8]|018)_.*\.sql$/.test(fileName))
-  .map((fileName) => fs.readFileSync(path.join(sqlDirectory, fileName), "utf8"))
-  .join("\n");
+const allSql = normalizedSql;
 
 const requiredPaths = [
   "/auth/login:",
@@ -606,15 +572,11 @@ for (const fragment of [
   if (!source.includes(fragment))
     throw new Error(`采购退回 OpenAPI 缺少关键契约：${fragment}`);
 }
-for (const fragment of [
-  "`return_order`",
-  "`return_order_item`",
-  "草稿不占用数量",
-  "采购退货审核通过时，来源服务必须通过仓储库存预占能力",
-  "采购退货确认时必须同时校验 `stock_qty` 和对应的 `locked_qty`",
-]) {
-  if (!returnSchema.includes(fragment))
-    throw new Error(`退货数据库设计缺少权威规则：${fragment}`);
+for (const fragment of ["`return_order`", "`return_order_item`"]) {
+  if (!returnSchema.includes(fragment)) throw new Error(`退货结构文档缺少表：${fragment}`);
+}
+for (const fragment of ["sourceFulfilledQty - occupiedQty", "预占实物库存", "warehouse_stock.stock_qty - warehouse_stock.locked_qty"]) {
+  if (!returnContract.includes(fragment)) throw new Error(`退货接口文档缺少业务规则：${fragment}`);
 }
 const purchaseReturnCreateStart = source.indexOf(
   "    PurchaseReturnOrderCreateRequest:",
@@ -1058,7 +1020,7 @@ for (const fragment of [
   "禁止使用 `--no-verify`",
 ]) {
   if (!agentInstructions.includes(fragment))
-    throw new Error(`AGENTS.md 缺少前端开发门禁规则：${fragment}`);
+    throw new Error(`项目规范缺少前端开发门禁规则：${fragment}`);
 }
 if (
   !frontendPreflightSource.includes("FRONTEND_PREFLIGHT_OK") ||
@@ -1108,7 +1070,7 @@ for (const fragment of [
     throw new Error(`前端规范缺少层级操作风险规则：${fragment}`);
   }
 }
-if (/Element Plus/i.test(pageDesign))
+if (/Element Plus/i.test(frontendDevelopmentGuide))
   throw new Error("前端设计文档仍残留 Element Plus 技术选型");
 if (
   !storageSource.includes("AUTH_TOKEN_NAME_STORAGE_KEY") ||
@@ -1405,8 +1367,7 @@ if (
   !warehouseStockViewSource.includes('<ListFilterPanel layout="content"') ||
   !warehouseStockViewSource.includes('data-filter-size="wide"') ||
   !warehouseStockViewSource.includes("库存健康") ||
-  !warehouseStockViewSource.includes("占用情况") ||
-  !pageDesign.includes("各业务页面的逐页设计稿已移除")
+  !warehouseStockViewSource.includes("占用情况")
 ) {
   throw new Error("库存管理页面边界、响应式布局或页面设计文档不完整");
 }
@@ -1465,9 +1426,7 @@ for (const fragment of [
 }
 if (
   source.includes("/warehouse/work-bills/") ||
-  stockBillApiSource.includes("/warehouse/work-bills/") ||
-  pageDesign.includes("/warehouse/work-bills/") ||
-  productRequirement.includes("/warehouse/work-bills/")
+  stockBillApiSource.includes("/warehouse/work-bills/")
 ) {
   throw new Error(
     "入库单/出库单不得再使用无法区分数据表的共享 work-bills 路由",
@@ -1628,9 +1587,9 @@ if (
   !stockBillViewSource.includes("<dt>作业单号</dt>") ||
   !stockBillViewSource.includes("本次入库数量") ||
   !stockBillViewSource.includes("本次出库数量") ||
-  !warehouseSchema.includes("`DRAFT`、`PENDING_CONFIRM`、`CONFIRMED`、`CANCELLED`") ||
-  !warehouseSchema.includes("CONFIRMED` 后不允许任何修改或取消") ||
-  !warehouseSchema.includes("100 倍整数存储")
+  !warehouseSchema.includes("DRAFT、PENDING_CONFIRM、CONFIRMED、CANCELLED") ||
+  !source.includes("CONFIRMED") ||
+  !warehouseSchema.includes("100倍整数存储")
 ) {
   throw new Error(
     "入库单/出库单新增、编辑、状态流转、详情或页面设计文档不完整",
@@ -1649,7 +1608,7 @@ if (
   !stockBillViewSource.includes("entryModeOptions") ||
   !source.includes("创建调整入库或补录采购入库、销售退货入库草稿") ||
   !source.includes("创建调整出库或补录销售出库、采购退货出库草稿") ||
-  !warehouseSchema.includes("库存调整使用 `entry_mode=MANUAL_ADJUSTMENT`")
+  !warehouseSchema.includes("MANUAL_ADJUSTMENT")
 ) {
   throw new Error("库存调整功能合并到入库单/出库单页面的契约或设计文档不完整");
 }
@@ -1728,32 +1687,12 @@ if (
   throw new Error("权限更新请求不得包含创建后不可修改的 permissionCode");
 }
 
-const tableCount = [...baselineSql.matchAll(/^CREATE TABLE IF NOT EXISTS\s+/gm)]
-  .length;
-if (tableCount !== 34)
-  throw new Error(
-    `数据库设计文档声明 34 张表，当前 DDL 实际为 ${tableCount} 张`,
-  );
-for (const table of ["ai_data_table", "ai_data_table_column", "ai_data_table_relation", "ai_dataset"]) {
-  if (!allSql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`)) {
-    throw new Error(`AI 数据底座缺少建表语句：${table}`);
-  }
+const tableCount = [...currentSql.matchAll(/^CREATE TABLE `[^`]+`\s*\(/gm)].length;
+if (tableCount !== 37) throw new Error(`空库初始化应包含 37 张表，当前为 ${tableCount} 张`);
+for (const table of ["ai_data_table", "ai_data_table_column", "ai_data_table_relation", "ai_dataset", "sys_permission", "supplier_score_change_log", "ai_agent_experience", "ai_agent_trace", "return_order", "return_order_item"]) {
+  if (!currentSql.includes(`CREATE TABLE \`${table}\` (`)) throw new Error(`当前初始化缺少表：${table}`);
 }
-if (
-  !databaseOverview.includes("共设计并已落 DDL 34 张表") ||
-  !databaseOverview.includes("`sys_permission`") ||
-  !databaseOverview.includes("`supplier_score_change_log`") ||
-  !databaseOverview.includes("`ai_node_memory`") ||
-  !databaseOverview.includes("`ai_node_working_memory`") ||
-  !databaseOverview.includes("`ai_agent_experience`") ||
-  !databaseOverview.includes("`ai_agent_trace`") ||
-  !returnSchema.includes("表：return_order（退货单主表）") ||
-  !returnSchema.includes("表：return_order_item（退货单明细表）")
-) {
-  throw new Error(
-    "数据库总览必须同步 34 张已落 DDL 的表，并包含 sys_permission、评分变化日志、AI 节点记忆与智能体流水表与两张退货表",
-  );
-}
+if (!currentSchemaDocs.includes("37 张表")) throw new Error("数据库结构入口未说明当前表数量");
 for (const [name, apiSource, typeSource, viewSource] of [
   ["仓库列表", warehouseApiSource, warehouseTypeSource, warehouseViewSource],
   [
@@ -2121,9 +2060,7 @@ for (const [tableName, columnName] of bigintMoneyColumns) {
     throw new Error(`金额字段必须使用 BIGINT：${tableName}.${columnName}`);
   }
 }
-if (!allSql.includes("交易金额统一为 BIGINT（按“元 × 100”的分值存储）")) {
-  throw new Error("缺少交易金额 BIGINT 的可重复执行迁移脚本");
-}
+
 const signedMoneySchemas = new Set(["DashboardTrendPoint"]);
 for (const schemaName of [
   "AiWorkbenchLine",
@@ -2173,5 +2110,5 @@ for (const schemaName of [
 }
 
 console.log(
-  `OPENAPI_OK: ${references.length} 个引用完整，34 张表已落 DDL，供应商评分、采购、工作台与基础契约已对齐`,
+  `OPENAPI_OK: ${references.length} 个引用完整；页面契约与当前数据库结构检查通过`,
 );

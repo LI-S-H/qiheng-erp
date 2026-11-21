@@ -5,7 +5,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const base = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5192';
 const pageName = process.argv[2] || 'warehouses';
-const dir = path.resolve(`../docs/qa-screenshots/2026-10-18-warehouse-style/${pageName}`);
+const dir = path.resolve(`../docs/testing/evidence/2026-10-18-warehouse-style/${pageName}`);
 fs.mkdirSync(dir, { recursive: true });
 let page;
 const results = [];

@@ -361,9 +361,9 @@ class SystemExceptionRecordClosedLoopIT {
         if (url == null || !url.matches("jdbc:mysql://(?:localhost|127\\.0\\.0\\.1):13307/erp(?:\\?.*)?")) {
             throw new IllegalStateException("拒绝重建非本机13307开发库的异常表");
         }
-        Path sqlFile = Path.of("../../docs/database/sql/007_mvp_system_exception.sql").toAbsolutePath().normalize();
+        Path sqlFile = Path.of("../../docs/database/init/01-schema.sql").toAbsolutePath().normalize();
         String sql = Files.readString(sqlFile, StandardCharsets.UTF_8);
-        int start = sql.indexOf("CREATE TABLE IF NOT EXISTS system_exception (");
+        int start = sql.indexOf("CREATE TABLE `system_exception` (");
         int end = sql.indexOf(";", start);
         if (start < 0 || end < 0 || !sql.substring(start, end).contains("uk_system_exception_event_id")) {
             throw new IllegalStateException("异常表建表SQL缺失或没有事件唯一索引");

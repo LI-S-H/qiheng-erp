@@ -8,31 +8,31 @@ const stampPath = path.join(projectRoot, '.codex', 'frontend-preflight.json');
 
 const scopeConfig = {
   system: {
-    database: ['docs/database/mvp-system-permission-schema.md'],
+    database: ['docs/database/schema/system.md'],
     openapiPrefixes: ['/auth/', '/system/'],
   },
   product: {
-    database: ['docs/database/mvp-product-schema.md'],
+    database: ['docs/database/schema/product.md'],
     openapiPrefixes: ['/product/', '/products'],
   },
   purchase: {
-    database: ['docs/database/mvp-purchase-schema.md'],
+    database: ['docs/database/schema/purchase.md', 'docs/database/schema/returns.md'],
     openapiPrefixes: ['/purchase/'],
   },
   sales: {
-    database: ['docs/database/mvp-sales-schema.md'],
+    database: ['docs/database/schema/sales.md', 'docs/database/schema/returns.md'],
     openapiPrefixes: ['/sales/'],
   },
   warehouse: {
-    database: ['docs/database/mvp-warehouse-schema.md'],
+    database: ['docs/database/schema/warehouse.md'],
     openapiPrefixes: ['/warehouse/'],
   },
   ai: {
-    database: ['docs/database/mvp-ai-schema.md'],
+    database: ['docs/database/schema/ai.md'],
     openapiPrefixes: ['/ai/'],
   },
   shared: {
-    database: ['docs/database/mvp-database-design-overview.md'],
+    database: ['docs/database/schema/README.md'],
     openapiPrefixes: [],
   },
 };

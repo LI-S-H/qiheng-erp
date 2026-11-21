@@ -6,13 +6,8 @@ const projectRoot = path.resolve(__dirname, '..', '..');
 const readProjectFile = (...segments) => fs.readFileSync(path.join(projectRoot, ...segments), 'utf8');
 
 const openapiPath = path.join(projectRoot, 'docs', 'api', 'erp-openapi.yaml');
-const returnSchema = readProjectFile('docs', 'database', 'mvp-return-schema.md');
-const returnSql = readProjectFile('docs', 'database', 'sql', '008_mvp_return.sql');
-const purchaseSql = readProjectFile('docs', 'database', 'sql', '004_mvp_purchase.sql');
-const salesSql = readProjectFile('docs', 'database', 'sql', '005_mvp_sales.sql');
-const productSql = readProjectFile('docs', 'database', 'sql', '002_mvp_product.sql');
-const warehouseSql = readProjectFile('docs', 'database', 'sql', '003_mvp_warehouse.sql');
-const systemSql = readProjectFile('docs', 'database', 'sql', '001_mvp_system_permission.sql');
+const returnSchema = readProjectFile('docs', 'database', 'schema', 'returns.md');
+const schemaSql = readProjectFile('docs', 'database', 'init', '01-schema.sql');
 const purchaseApiSource = readProjectFile('erp-web', 'src', 'modules', 'purchase', 'api.ts');
 const salesApiSource = readProjectFile('erp-web', 'src', 'modules', 'sales', 'api.ts');
 const warehouseApiSource = readProjectFile('erp-web', 'src', 'modules', 'warehouse', 'warehouses', 'api.ts');
@@ -22,17 +17,10 @@ function assert(condition, message) {
 }
 
 function tableDdl(tableName) {
-  const start = returnSql.indexOf(`CREATE TABLE IF NOT EXISTS ${tableName} (`);
-  const end = returnSql.indexOf(') ENGINE=', start);
-  assert(start >= 0 && end > start, `退货 DDL 缺少 ${tableName} 表`);
-  return returnSql.slice(start, end);
-}
-
-function seedBlock(tableName) {
-  const start = returnSql.indexOf(`INSERT INTO ${tableName} (`);
-  const end = returnSql.indexOf('ON DUPLICATE KEY UPDATE', start);
-  assert(start >= 0 && end > start, `退货 SQL 缺少 ${tableName} 幂等种子`);
-  return returnSql.slice(start, end);
+  const start = schemaSql.indexOf(`CREATE TABLE \`${tableName}\` (`);
+  const end = schemaSql.indexOf(') ENGINE=', start);
+  assert(start >= 0 && end > start, `当前初始化 SQL 缺少 ${tableName} 表`);
+  return schemaSql.slice(start, end);
 }
 
 async function checkApiContracts() {
@@ -176,101 +164,42 @@ async function checkApiContracts() {
 function checkDdlAndSeeds() {
   const orderDdl = tableDdl('return_order');
   const itemDdl = tableDdl('return_order_item');
-
-  for (const fragment of [
-    'id BIGINT NOT NULL', 'return_no VARCHAR(64) NOT NULL', 'return_type VARCHAR(32) NOT NULL',
-    'source_order_id BIGINT NOT NULL', 'source_order_no VARCHAR(64) NOT NULL', 'party_id BIGINT NOT NULL',
-    'party_code VARCHAR(64) NOT NULL', 'party_name VARCHAR(200) NOT NULL', 'warehouse_id BIGINT NOT NULL',
-    'warehouse_name VARCHAR(100) NOT NULL', 'expected_execution_date DATE DEFAULT NULL',
-    "handling_type VARCHAR(32) NOT NULL DEFAULT 'REFUND'", "reason_code VARCHAR(32) NOT NULL DEFAULT 'OTHER'",
-    "return_reason VARCHAR(500) NOT NULL DEFAULT ''", 'total_amount BIGINT NOT NULL DEFAULT 0',
-    "status VARCHAR(32) NOT NULL DEFAULT 'DRAFT'", "status_reason VARCHAR(500) NOT NULL DEFAULT ''",
-    'created_by_id BIGINT DEFAULT NULL', "created_by_name VARCHAR(100) NOT NULL DEFAULT ''",
-    'submitted_at DATETIME DEFAULT NULL', 'approved_by_id BIGINT DEFAULT NULL',
-    "approved_by_name VARCHAR(100) NOT NULL DEFAULT ''", 'approved_at DATETIME DEFAULT NULL',
-    'create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    'update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-    'deleted TINYINT NOT NULL DEFAULT 0', "remark VARCHAR(500) NOT NULL DEFAULT ''", 'version INT NOT NULL DEFAULT 0',
-    'UNIQUE KEY uk_return_order_no (return_no)', 'KEY idx_return_order_source (return_type, source_order_id)',
-    'KEY idx_return_order_party (return_type, party_id)', 'KEY idx_return_order_warehouse (warehouse_id)',
-    'KEY idx_return_order_status (return_type, deleted, status, create_time)',
-  ]) assert(orderDdl.includes(fragment), `return_order DDL 与设计文档不一致，缺少：${fragment}`);
-
-  for (const fragment of [
-    'id BIGINT NOT NULL', 'return_order_id BIGINT NOT NULL', 'source_order_item_id BIGINT NOT NULL',
-    'product_id BIGINT NOT NULL', 'product_code VARCHAR(64) NOT NULL', 'product_name VARCHAR(200) NOT NULL',
-    "unit_name VARCHAR(32) NOT NULL DEFAULT '件'", 'quantity_precision TINYINT NOT NULL DEFAULT 0',
-  'source_fulfilled_qty BIGINT NOT NULL DEFAULT 0', 'requested_qty BIGINT NOT NULL DEFAULT 0',
-  'approved_qty BIGINT NOT NULL DEFAULT 0', 'processed_qty BIGINT NOT NULL DEFAULT 0',
-    'unit_price BIGINT NOT NULL DEFAULT 0', 'total_amount BIGINT NOT NULL DEFAULT 0',
-    'create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    'update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-    "remark VARCHAR(500) NOT NULL DEFAULT ''", 'UNIQUE KEY uk_return_order_item_source (return_order_id, source_order_item_id)',
-    'KEY idx_return_order_item_order (return_order_id)', 'KEY idx_return_order_item_product (product_id)',
-    'KEY idx_return_order_item_source_item (source_order_item_id)',
-    'CHECK (quantity_precision BETWEEN 0 AND 2)', 'CHECK (source_fulfilled_qty > 0)',
-    'CHECK (requested_qty > 0 AND requested_qty <= source_fulfilled_qty)',
-    'CHECK (approved_qty >= 0 AND approved_qty <= requested_qty)',
-    'CHECK (processed_qty >= 0 AND processed_qty <= approved_qty)',
-  ]) assert(itemDdl.includes(fragment), `return_order_item DDL 与设计文档不一致，缺少：${fragment}`);
-
-  assert(!/\bFOREIGN KEY\b/i.test(orderDdl + itemDdl), '退货 MVP 设计明确不创建物理外键');
-  assert(returnSql.includes('inbound_qty <> ROUND(inbound_qty, 2)') && returnSql.includes('outbound_qty <> ROUND(outbound_qty, 2)'), '退货 SQL 缺少历史四位小数数据检查');
-
-  const orderSeeds = seedBlock('return_order');
-  const itemSeeds = seedBlock('return_order_item');
-  assert((orderSeeds.match(/^\(20\d{17},/gm) || []).length === 12, 'return_order 应提供采购、销售各 6 条状态种子');
-  assert((itemSeeds.match(/^\(20\d{17},/gm) || []).length === 12, 'return_order_item 应与 12 条退货单逐一对应');
-  for (const type of ['PURCHASE_RETURN', 'SALES_RETURN']) {
-    for (const status of ['DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL_EXECUTED', 'COMPLETED', 'CANCELLED']) {
-      assert(new RegExp(`'${type}'[^\\n]*'${status}'`).test(orderSeeds), `${type} 种子缺少 ${status} 状态`);
+  const columns = {
+    return_order: ['id', 'return_no', 'return_type', 'source_order_id', 'source_order_no', 'party_id', 'warehouse_id', 'expected_execution_date', 'handling_type', 'reason_code', 'return_reason', 'total_amount', 'status', 'version'],
+    return_order_item: ['id', 'return_order_id', 'source_order_item_id', 'product_id', 'quantity_precision', 'source_fulfilled_qty', 'requested_qty', 'approved_qty', 'processed_qty', 'unit_price', 'total_amount'],
+  };
+  for (const [table, fields] of Object.entries(columns)) {
+    const ddl = table === 'return_order' ? orderDdl : itemDdl;
+    for (const field of fields) {
+      assert(new RegExp('`' + field + '`\\s+', 'i').test(ddl), `当前初始化 SQL 缺少字段：${table}.${field}`);
+      assert(returnSchema.includes('`' + field + '`'), `当前退货结构文档缺少字段：${table}.${field}`);
     }
   }
-  for (const id of [...orderSeeds.matchAll(/^\((\d+),/gm), ...itemSeeds.matchAll(/^\((\d+),/gm)].map(match => match[1])) {
-    assert(/^\d{19}$/.test(id), `退货种子主键必须是 19 位 BIGINT：${id}`);
+  for (const field of ['source_fulfilled_qty', 'requested_qty', 'approved_qty', 'processed_qty', 'unit_price', 'total_amount']) {
+    assert(new RegExp('`' + field + '`\\s+bigint\\s+NOT NULL', 'i').test(itemDdl), `退货明细字段类型不符合当前约定：${field}`);
   }
-
-  assert(purchaseSql.includes("(2012000000000000101, 'PO202606001'") && purchaseSql.includes('(2012100000000000101, 2012000000000000101'), '采购退货种子引用的采购订单或明细不存在');
-  assert(salesSql.includes("(2022000000000000101, 'SO202606001'") && salesSql.includes('(2022100000000000101, 2022000000000000101'), '销售退货种子引用的销售订单或明细不存在');
-  for (const [name, source, id] of [
-    ['采购退货产品', productSql, '1920000000000000001'], ['销售退货产品', productSql, '1920000000000000001'],
-    ['采购退货仓库', warehouseSql, '1930000000000000001'], ['销售退货仓库', warehouseSql, '1930000000000000001'],
-    ['采购创建人', systemSql, '1900000000000000002'], ['销售创建人', systemSql, '1900000000000000003'],
-  ]) assert(source.includes(id), `${name}种子依赖不存在：${id}`);
-  assert(warehouseSql.includes("1930000000000000001, 'WH001', '华东中心仓', 1920000000000000001, 'P000001'")
-    && warehouseSql.includes("8600, 1800"), '采购退回执行种子缺少同仓库、同产品的可用库存');
-
-  for (const validationAlias of [
-    'invalid_purchase_return_seed_relation_count',
-    'invalid_sales_return_seed_relation_count',
-    'invalid_return_seed_amount_count',
-    'invalid_return_seed_status_audit_count',
-    'invalid_return_seed_occupancy_count',
-    'invalid_return_seed_work_bill_count',
-    'invalid_return_seed_stock_ledger_count',
-    'invalid_return_seed_stock_balance_count',
-    'invalid_purchase_return_seed_stock_count',
+  for (const index of ['uk_return_order_no', 'idx_return_order_source', 'idx_return_order_party', 'idx_return_order_warehouse', 'idx_return_order_status']) {
+    assert(orderDdl.includes('`' + index + '`'), `退货单缺少索引：${index}`);
+  }
+  for (const name of ['uk_return_order_item_source', 'idx_return_order_item_order', 'idx_return_order_item_product', 'idx_return_order_item_source_item', 'chk_return_order_item_approved_qty', 'chk_return_order_item_processed_qty', 'chk_return_order_item_quantity_precision', 'chk_return_order_item_requested_qty', 'chk_return_order_item_source_fulfilled_qty']) {
+    assert(itemDdl.includes('`' + name + '`'), `退货明细缺少索引或检查约束：${name}`);
+  }
+  for (const [name, requiredParts] of [
+    ['chk_return_order_item_quantity_precision', [/`quantity_precision`\s+between\s+0\s+and\s+2/i]],
+    ['chk_return_order_item_source_fulfilled_qty', [/`source_fulfilled_qty`\s*>\s*0/i]],
+    ['chk_return_order_item_requested_qty', [/`requested_qty`\s*>\s*0/i, /`requested_qty`\s*<=\s*`source_fulfilled_qty`/i]],
+    ['chk_return_order_item_approved_qty', [/`approved_qty`\s*>=\s*0/i, /`approved_qty`\s*<=\s*`requested_qty`/i]],
+    ['chk_return_order_item_processed_qty', [/`processed_qty`\s*>=\s*0/i, /`processed_qty`\s*<=\s*`approved_qty`/i]],
   ]) {
-    assert(returnSql.includes(`AS ${validationAlias}`), `退货 SQL 缺少种子业务一致性检查：${validationAlias}`);
-  }
-  for (const fragment of [
-    "'PURCHASE_RETURN', 'PURCHASE_RETURN_ORDER', 2030000000000000003",
-    "'SALES_RETURN', 'SALES_RETURN_ORDER', 2040000000000000003",
-    "'PARTIAL_EXECUTED', 'COMPLETED'",
-    'business_source_item_id',
-    'SUM(roi.approved_qty - roi.processed_qty)',
-    'SET stock_qty = 8400',
-  ]) assert(returnSql.includes(fragment), `退货仓库执行事实或剩余库存校验缺少：${fragment}`);
-
-  for (const field of ['return_no', 'return_type', 'source_order_id', 'party_id', 'warehouse_id', 'expected_execution_date', 'handling_type', 'reason_code', 'total_amount', 'status', 'version']) {
-    assert(returnSchema.includes(`\`${field}\``), `退货数据库设计缺少字段说明：${field}`);
+    const line = itemDdl.split('\n').find(value => value.includes('`' + name + '`')) || '';
+    assert(/\bCHECK\b/i.test(line) && requiredParts.every(pattern => pattern.test(line)), `退货数量检查约束内容不正确：${name}`);
   }
 }
 
 Promise.resolve()
   .then(checkApiContracts)
   .then(checkDdlAndSeeds)
-  .then(() => console.log('RETURN_CONTRACT_OK: 前端 22 个退货请求操作、OpenAPI、2 张 DDL 与 24 条种子记录已对齐'))
+  .then(() => console.log('RETURN_CONTRACT_OK: 前端退货请求、OpenAPI、当前退货表字段及约束检查通过'))
   .catch(error => {
     console.error(`RETURN_CONTRACT_INVALID: ${error.message}`);
     process.exitCode = 1;

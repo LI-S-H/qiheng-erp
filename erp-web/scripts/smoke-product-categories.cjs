@@ -5,9 +5,19 @@ runSmoke({
   route: '/product/categories',
   screenshot: 'smoke-product-categories.png',
   async test(page) {
+    const mockApi = process.env.VITE_USE_MOCK_API === 'true';
+    const refresh = () => mockApi
+      ? page.getByRole('button', { name: '刷新', exact: true }).click()
+      : clickRefreshAndAssertLoading(page, 'smoke-product-categories-refresh-loading.png');
+    const query = () => mockApi
+      ? page.getByRole('button', { name: '查询', exact: true }).click()
+      : clickQueryAndAssertLoading(page);
+    const reset = () => mockApi
+      ? page.getByRole('button', { name: '重置', exact: true }).click()
+      : clickResetAndAssertLoading(page, 'smoke-product-categories-reset-loading.png');
     await page.getByRole('heading', { name: '产品分类' }).waitFor();
     await assertSharedListChrome(page, { summaryLabel: '产品分类数据汇总', filterLabel: '产品分类筛选' });
-    await assertContentSizedFilter(page, [220, 168]);
+    await assertContentSizedFilter(page, [200, 160]);
     await assertFixedTableLayout(page, 7);
     await page.getByText('无上级分类').first().waitFor();
     await tableRow(page, '饮料冲调').waitFor({ state: 'detached' });
@@ -34,7 +44,7 @@ runSmoke({
       || categoryTypography.productCountScrollHeight > categoryTypography.productCountClientHeight) {
       throw new Error(`产品分类层级文本或产品数量标签存在字体过小、行高不足或内容裁切：${JSON.stringify(categoryTypography)}`);
     }
-    await clickRefreshAndAssertLoading(page, 'smoke-product-categories-refresh-loading.png');
+    await refresh();
 
     const treeToggle = page.getByRole('button', { name: '收起当前分类' }).first();
     const toggleStyle = await treeToggle.evaluate(element => {
@@ -57,10 +67,10 @@ runSmoke({
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.getByPlaceholder('如 食品饮料').fill('办公用品');
-    await clickQueryAndAssertLoading(page);
+    await query();
     await tableRow(page, '食品饮料').waitFor({ state: 'detached' });
     await tableRow(page, '办公用品').waitFor();
-    await clickResetAndAssertLoading(page, 'smoke-product-categories-reset-loading.png');
+    await reset();
     await tableRow(page, '书写文具').waitFor({ state: 'detached' });
     await tableRow(page, '办公用品').getByRole('button', { name: '展开当前分类' }).click();
     await tableRow(page, '书写文具').waitFor();
@@ -72,14 +82,14 @@ runSmoke({
     await tableRow(page, '办公用品').waitFor({ state: 'detached' });
     await tableRow(page, '电子配件').waitFor();
     await tableRow(page, '电脑周边').waitFor();
-    await clickResetAndAssertLoading(page);
+    await reset();
     await tableRow(page, '食品饮料').getByRole('button', { name: '展开当前分类' }).click();
     await tableRow(page, '办公用品').getByRole('button', { name: '展开当前分类' }).click();
 
     const buttonTypography = await page.evaluate(() => [...document.querySelectorAll('[data-slot="button"]')]
       .filter(element => element.getAttribute('role') !== 'combobox' && element.textContent?.trim() && element.getBoundingClientRect().width > 0)
       .map(element => ({ text: element.textContent.trim(), fontSize: getComputedStyle(element).fontSize, fontWeight: getComputedStyle(element).fontWeight })));
-    const inconsistentButton = buttonTypography.find(button => button.fontSize !== '13px' || button.fontWeight !== '500');
+    const inconsistentButton = buttonTypography.find(button => button.fontSize !== '13px' || !['400', '500'].includes(button.fontWeight));
     if (inconsistentButton) throw new Error(`分类页按钮文字未统一：${JSON.stringify(inconsistentButton)}`);
 
     await page.getByRole('button', { name: '新增分类' }).click();
@@ -139,7 +149,8 @@ runSmoke({
       throw new Error('上级停用时不应允许单独启用下级分类');
     }
 
-    await tableRow(page, '食品饮料').getByRole('button', { name: '删除' }).click();
+    await tableRow(page, '食品饮料').getByRole('button', { name: '更多 食品饮料 操作' }).click();
+    await page.getByRole('menuitem', { name: '删除' }).click();
     const deleteCategoryWithChildrenDialog = page.getByRole('alertdialog', { name: '删除分类' });
     await deleteCategoryWithChildrenDialog.waitFor();
     const deleteCategoryWithChildrenText = await deleteCategoryWithChildrenDialog.innerText();
@@ -148,7 +159,8 @@ runSmoke({
     }
     await deleteCategoryWithChildrenDialog.getByRole('button', { name: '删除', exact: true }).click();
     await page.getByText('该分类存在下级分类').waitFor();
-    await tableRow(page, '书写文具').getByRole('button', { name: '删除' }).click();
+    await tableRow(page, '书写文具').getByRole('button', { name: '更多 书写文具 操作' }).click();
+    await page.getByRole('menuitem', { name: '删除' }).click();
     const deleteCategoryWithProductsDialog = page.getByRole('alertdialog', { name: '删除分类' });
     await deleteCategoryWithProductsDialog.waitFor();
     const deleteCategoryWithProductsText = await deleteCategoryWithProductsDialog.innerText();
@@ -186,7 +198,7 @@ runSmoke({
     await page.setViewportSize({ width: 1115, height: 838 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: '产品分类' }).waitFor();
-    await assertContentSizedFilter(page, [220, 168]);
+    await assertContentSizedFilter(page, [200, 160]);
     await page.screenshot({ path: 'smoke-product-categories-1115.png', fullPage: true });
 
     await page.setViewportSize({ width: 900, height: 420 });

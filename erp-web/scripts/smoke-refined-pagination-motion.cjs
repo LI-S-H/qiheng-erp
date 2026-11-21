@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 const base = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5192';
-const dir = path.resolve('../docs/qa-screenshots/2026-10-18-sales-style/pagination');
+const dir = path.resolve('../docs/testing/evidence/2026-10-18-sales-style/pagination');
 fs.mkdirSync(dir, { recursive: true });
 const routes = ['/purchase/orders', '/purchase/returns', '/purchase/suppliers', '/purchase/supplier-products', '/sales/customers', '/sales/orders', '/sales/returns', '/warehouse/warehouses', '/warehouse/stocks', '/warehouse/inbound-bills', '/warehouse/outbound-bills', '/warehouse/stock-bills', '/product/products', '/system/users', '/system/roles', '/system/permissions'];
 (async () => {

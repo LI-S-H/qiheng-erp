@@ -34,12 +34,16 @@ for (const file of relevantFiles) {
   else if (file.startsWith('erp-web/src/modules/sales/')) requiredScopes.add('sales');
   else if (file.startsWith('erp-web/src/modules/warehouse/')) requiredScopes.add('warehouse');
   else if (file.startsWith('erp-web/src/modules/ai/')) requiredScopes.add('ai');
-  else if (file.includes('mvp-system-permission-schema')) requiredScopes.add('system');
-  else if (file.includes('mvp-product-schema')) requiredScopes.add('product');
-  else if (file.includes('mvp-purchase-schema')) requiredScopes.add('purchase');
-  else if (file.includes('mvp-sales-schema')) requiredScopes.add('sales');
-  else if (file.includes('mvp-warehouse-schema')) requiredScopes.add('warehouse');
-  else if (file.includes('mvp-ai-schema')) requiredScopes.add('ai');
+  else if (file === 'docs/database/schema/system.md') requiredScopes.add('system');
+  else if (file === 'docs/database/schema/product.md') requiredScopes.add('product');
+  else if (file === 'docs/database/schema/purchase.md') requiredScopes.add('purchase');
+  else if (file === 'docs/database/schema/sales.md') requiredScopes.add('sales');
+  else if (file === 'docs/database/schema/warehouse.md') requiredScopes.add('warehouse');
+  else if (file === 'docs/database/schema/ai.md') requiredScopes.add('ai');
+  else if (file === 'docs/database/schema/returns.md') {
+    requiredScopes.add('purchase');
+    requiredScopes.add('sales');
+  }
   else if (file.startsWith('erp-web/')) requiresSharedScope = true;
 }
 if (requiresSharedScope || requiredScopes.size === 0) requiredScopes.add('shared');

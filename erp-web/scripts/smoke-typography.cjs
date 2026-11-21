@@ -3,7 +3,7 @@ const path = require('path');
 const { runSmoke } = require('./smoke-helpers.cjs');
 
 const screenshotDirectory = path.resolve(
-  process.env.QA_SCREENSHOT_DIR || 'docs/qa-screenshots/2026-07-19-harmonyos-font',
+  process.env.QA_SCREENSHOT_DIR || 'docs/testing/evidence/2026-07-19-harmonyos-font',
 );
 
 fs.mkdirSync(screenshotDirectory, { recursive: true });

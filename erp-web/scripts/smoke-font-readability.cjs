@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
 const {chromium}=require('playwright');
 const base=process.env.SMOKE_BASE_URL||'http://127.0.0.1:9071';
-const out=path.resolve(__dirname,'../../docs/qa-screenshots/2026-10-19-noto-font');fs.mkdirSync(out,{recursive:true});
+const out=path.resolve(__dirname,'../../docs/testing/evidence/2026-10-19-noto-font');fs.mkdirSync(out,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
  const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage();

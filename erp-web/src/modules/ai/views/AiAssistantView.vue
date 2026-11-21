@@ -1483,18 +1483,13 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.conversation-enter { animation: conversation-enter 240ms cubic-bezier(0.4, 0, 0.2, 1); }
-/* 切换时旧内容轻微下沉失焦，配合顶部进度条和状态文字给出明确反馈。 */
+.conversation-enter { animation: conversation-enter 160ms ease-out; }
+/* 切换时只做透明度过渡：内容高度和滚动位置都会变化，再加位移与模糊会放大跳动感。 */
 .conversation-switching {
-  opacity: .45;
-  filter: blur(1px);
-  transform: translateY(6px) scale(.995);
-  transition:
-    opacity 220ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
-    filter 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: .55;
+  transition: opacity 160ms ease-out;
 }
-@keyframes conversation-enter { from { opacity: .4; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes conversation-enter { from { opacity: .55; } to { opacity: 1; } }
 .conversation-switch-progress {
   position: absolute;
   inset: 0 0 auto 0;

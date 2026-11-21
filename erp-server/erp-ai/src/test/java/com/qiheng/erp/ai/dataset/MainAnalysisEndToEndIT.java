@@ -155,7 +155,7 @@ class MainAnalysisEndToEndIT {
             String prompt = new ClassPathResource("prompts/analysis-agent.md").getContentAsString(StandardCharsets.UTF_8);
             var agent = new AnalysisAgentService(pro, pythonTool, runtime, prompt, traces, mapper, sql,
                     new ReadDatasetTool(datasets), new ToolJsonInterceptor(mapper),
-                    new ListDatasetsTool(datasets), new AnalysisResultTool(results), datasets, results);
+                    new ListDatasetsTool(datasets), new AnalysisResultTool(results), datasets, results, null, null, null);
             doAnswer(call -> {
                 System.out.println("TRACE " + call.getArgument(4) + " " + call.getArgument(5));
                 return null;

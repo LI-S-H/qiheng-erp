@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.slf4j.LoggerFactory;
 
 /**
  * 按需启动沙箱管理器，并为每个分析任务创建独立沙箱。
@@ -50,7 +51,7 @@ public final class PythonSandboxRuntime implements AutoCloseable {
             try {
                 retention.touch(taskId);
             } catch (RuntimeException error) {
-                org.slf4j.LoggerFactory.getLogger(PythonSandboxRuntime.class)
+                LoggerFactory.getLogger(PythonSandboxRuntime.class)
                         .warn("更新沙箱活动时间失败 taskId={}", taskId, error);
             }
         }
@@ -61,7 +62,7 @@ public final class PythonSandboxRuntime implements AutoCloseable {
             try {
                 retention.finish(taskId);
             } catch (RuntimeException error) {
-                org.slf4j.LoggerFactory.getLogger(PythonSandboxRuntime.class)
+                LoggerFactory.getLogger(PythonSandboxRuntime.class)
                         .warn("沙箱登记清理失败 taskId={}", taskId, error);
             }
         }

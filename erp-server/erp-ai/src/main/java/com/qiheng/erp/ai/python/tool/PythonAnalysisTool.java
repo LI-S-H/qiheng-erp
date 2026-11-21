@@ -101,15 +101,15 @@ public final class PythonAnalysisTool {
      * @throws IOException 结果保存失败
      */
     @Tool(name = "executePython",
-            description = "在当前分析任务的沙箱中执行 Python 代码，返回文本输出和生成的文件。"
-                    + "需要交付的文件请写入 /tmp/erp-analysis/output/。"
-                    + "每次执行为独立 Python 进程，变量不跨次保留。")
+            description = "在当前分析任务的沙箱中执行 Python 代码，返回文本输出和登记的文件。"
+                    + "datasetIds 只能填写已通过 prepareAnalysisData 准备过的数据集，否则调用失败。"
+                    + "交付文件写入 /tmp/erp-analysis/output/；每次执行是独立进程，变量不跨次保留。")
     public Map<String, Object> executePython(
             @ToolParam(description = "完整 Python 代码，用 print 输出文本；需交付的文件写入 /tmp/erp-analysis/output/")
             String code,
             @ToolParam(description = "本次代码使用的已准备数据集 ID 数组，无数据集时传空数组")
             List<String> datasetIds,
-            @ToolParam(description = "是否保存标准输出供后续读取；输出过长时会自动保存")
+            @ToolParam(description = "是否保存标准输出；省略时按默认值 false 处理")
             boolean saveResult,
             @ToolParam(required = false, description = "保存标准输出文本时的展示名称，不影响生成文件名；省略时使用默认名称")
             String outputTextName, ToolContext context) throws IOException {

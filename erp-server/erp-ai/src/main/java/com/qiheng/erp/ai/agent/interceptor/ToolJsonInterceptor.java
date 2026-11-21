@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.common.mq.SystemExceptionRecordMessage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -17,7 +19,7 @@ import com.qiheng.erp.ai.context.AgentToolContext;
 
 /** 在框架解析数据工具参数前，把 JSON 格式问题作为工具结果交给模型。 */
 public final class ToolJsonInterceptor extends ToolInterceptor {
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ToolJsonInterceptor.class);
+    private static final Logger log = LoggerFactory.getLogger(ToolJsonInterceptor.class);
     public static final String ERROR_COUNT = "toolJsonErrorCount";
     private final ObjectMapper mapper;
     private final SystemExceptionMqPublisher publisher;

@@ -55,7 +55,7 @@ class RealReportSyntheticIT {
         var writerPrompt = Files.readString(Path.of("src", "main", "resources", "prompts", "report-writer.md"));
         var reviewerPrompt = Files.readString(Path.of("src", "main", "resources", "prompts", "report-reviewer.md"));
         var agents = new ReportAgents(model, new ReportReadTools(datasets, results), new ObjectMapper(),
-                writerPrompt, reviewerPrompt);
+                writerPrompt, reviewerPrompt, null, null);
         var identity = new AgentToolContext(1001, 2001);
         var graph = new ReportGraph(state -> agents.write(state, identity), state -> agents.review(state, identity));
         var output = graph.run(Map.of("userRequest", "分析10月仓库甲商品A损失，并比较9月。",

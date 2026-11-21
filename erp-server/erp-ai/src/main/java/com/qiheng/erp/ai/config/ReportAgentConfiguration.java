@@ -1,6 +1,7 @@
 package com.qiheng.erp.ai.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.dataset.tool.ReadDatasetTool;
 import com.qiheng.erp.ai.python.tool.AnalysisResultTool;
 import com.qiheng.erp.ai.report.ReportAgents;
@@ -37,10 +38,12 @@ public class ReportAgentConfiguration {
     /** 装配具备授权数据读取能力的独立报告及审核智能体。 */
     @Bean
     public ReportAgents reportAgents(@Qualifier("proChatModel") ChatModel model, ReadDatasetTool datasets,
-                                     AnalysisResultTool results, ObjectMapper mapper, AiAgentTraceMapper traces) throws IOException {
+                                     AnalysisResultTool results, ObjectMapper mapper, AiAgentTraceMapper traces,
+                                     ContextCompressionFactory compression) throws IOException {
         String writer = new ClassPathResource("prompts/report-writer.md").getContentAsString(StandardCharsets.UTF_8);
         String reviewer = new ClassPathResource("prompts/report-reviewer.md").getContentAsString(StandardCharsets.UTF_8);
-        return new ReportAgents(model, new ReportReadTools(datasets, results), mapper, writer, reviewer, traces);
+        return new ReportAgents(model, new ReportReadTools(datasets, results), mapper, writer, reviewer, traces,
+                compression);
     }
 
     /** 创建仅供内部调用的报告图服务。 */

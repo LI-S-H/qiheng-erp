@@ -37,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
@@ -359,10 +360,10 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         }
         // 首次查询仅用于定位锁；等待期间供货关系可能变化，不能沿用锁前读取的记录。
         SupplierProduct current = supplierProductMapper.selectById(supplierProductId);
-        if (current == null || !java.util.Objects.equals(existing.getSupplierId(), current.getSupplierId())) {
+        if (current == null || !Objects.equals(existing.getSupplierId(), current.getSupplierId())) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供货关系已变化，请刷新后重试");
         }
-        if (!java.util.Objects.equals(dto.getVersion(), current.getVersion())) {
+        if (!Objects.equals(dto.getVersion(), current.getVersion())) {
             throw new BizException(ErrorCode.OPERATION_FAILED.getCode(), "供货关系数据已变化，请刷新后重试");
         }
         // 1. 验证报价参数

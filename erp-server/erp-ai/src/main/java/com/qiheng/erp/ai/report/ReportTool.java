@@ -19,7 +19,9 @@ public final class ReportTool {
     }
 
     /** 使用服务端上下文交接任务，不允许模型指定用户或轮次。 */
-    @Tool(name = "createReport", description = "当业务分析步骤较多、过程复杂或信息较多时，整理成专业、清晰、美观的报告。可使用 Markdown 或 HTML 组织内容；简单问题可直接回答，无须调用。")
+    @Tool(name = "createReport", description = "在取数、计算和核对全部完成后，把多步骤分析整理成正式报告。"
+            + "调用前必须已完成所有分析步骤；简单问题直接回答，无须调用。"
+            + "返回标题占位符，需原样输出到答复中，完整报告由该位置的卡片展示。")
     public Map<String, Object> createReport(
             @ToolParam(description = "按顺序交接各步骤的目的、操作、具体发现及对应数据集和分析结果 ID") List<ReportAnalysisStep> analysisSteps,
             @ToolParam(required = false, description = "影响整体分析结论的数据范围、缺口或其他局限；没有时省略") String limitations,

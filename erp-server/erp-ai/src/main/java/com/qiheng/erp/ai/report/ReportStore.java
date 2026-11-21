@@ -8,6 +8,8 @@ import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.common.exception.ErrorCode;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +17,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ReportStore {
     private static final int MAX_TITLE_LENGTH = 120;
+    /** 参考资料章节标题，兼容常见同义写法。 */
+    private static final Pattern REFERENCE_HEADING =
+            Pattern.compile("(?m)^#{1,3}[ \\t]*(参考资料|参考文献|参考来源)[ \\t]*$");
+    /** 正文中的引用编号，如 [1]、[12]。 */
+    private static final Pattern CITATION_MARK = Pattern.compile("\\[\\d{1,3}]");
+    /** 截断后残留的水平分隔线。 */
+    private static final Pattern TRAILING_RULE = Pattern.compile("(?m)^[ \\t]*(---|\\*\\*\\*)[ \\t]*$");
 
     private final AiConversationMapper conversations;
     private final AiMessageMapper messages;
@@ -58,7 +67,8 @@ public class ReportStore {
             storedTitle = truncate(cleanTitle, MAX_TITLE_LENGTH - label.length()) + label;
         }
         String reportId = "rpt_" + UUID.randomUUID();
-        if (reports.insert(reportId, userId, conversationId, runId, toolCallId, storedTitle, content) != 1) {
+        String storedContent = stripReferences(content);
+        if (reports.insert(reportId, userId, conversationId, runId, toolCallId, storedTitle, storedContent) != 1) {
             throw new IllegalStateException("报告保存失败");
         }
         return new Reference(reportId, runId, toolCallId, storedTitle, placeholder(storedTitle));
@@ -86,7 +96,23 @@ public class ReportStore {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "报告不存在");
         }
         return new Detail(row.reportId(), row.requestId(), row.toolCallId(), row.title(), placeholder(row.title()),
-                row.content());
+                stripReferences(row.content()));
+    }
+
+    /**
+     * 去掉参考列表与正文引用编号，只保留业务结论和依据说明。
+     * 历史报告未在保存时处理过，读取时再处理一次，保证前端口径一致。
+     *
+     * @param content 审核通过的报告正文
+     * @return 去掉参考资料后的正文；处理结果为空时保留原文
+     */
+    private static String stripReferences(String content) {
+        Matcher heading = REFERENCE_HEADING.matcher(content);
+        String body = heading.find() ? content.substring(0, heading.start()) : content;
+        body = CITATION_MARK.matcher(body).replaceAll("");
+        body = TRAILING_RULE.matcher(body).replaceAll("");
+        body = body.stripTrailing();
+        return body.isBlank() ? content : body;
     }
 
     private static Reference reference(AiReportMapper.CardRow row) {

@@ -1,14 +1,20 @@
 package com.qiheng.erp.ai.config;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.Hook;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.MessageRecordingHook;
+import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
+import com.qiheng.erp.ai.experience.ExperienceInjectionFactory;
+import com.qiheng.erp.ai.experience.tool.SearchExperienceToolFactory;
 import com.qiheng.erp.ai.agent.interceptor.AnalysisProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ReportProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolRecordingInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
 import com.qiheng.erp.ai.clarification.ClarificationService;
+import java.util.ArrayList;
+import java.util.List;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor;
@@ -53,6 +59,12 @@ public class MainAgentConfiguration {
     private SystemExceptionMqPublisher publisher;
     @Autowired(required = false)
     private ReportTool reportTool;
+    @Autowired(required = false)
+    private ContextCompressionFactory compression;
+    @Autowired(required = false)
+    private ExperienceInjectionFactory experienceInjection;
+    @Autowired(required = false)
+    private SearchExperienceToolFactory experienceTools;
 
     /**
      * 组装主智能体；工具、拦截器与检查点在这里一次性绑定。
@@ -75,13 +87,25 @@ public class MainAgentConfiguration {
                                 ClarificationService clarification, ListDatasetsTool datasetList,
                                 AnalysisResultTool results, AnalysisTool analysisTool) throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
-        var tools = new java.util.ArrayList<Object>(java.util.List.of(sql, dataset, datasetList, results, analysisTool, new AskUserTool(clarification)));
+        var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool, new AskUserTool(clarification)));
         if (reportTool != null) {
             tools.add(reportTool);
         }
+        if (experienceTools != null) {
+            tools.add(experienceTools.create("MAIN"));
+        }
+        var hooks = new ArrayList<Hook>();
+        hooks.add(new MessageRecordingHook());
+        // 测试直接构造配置时不注入压缩工厂，保持原有行为。
+        if (compression != null) {
+            hooks.add(compression.create());
+        }
+        if (experienceInjection != null) {
+            hooks.add(experienceInjection.create("MAIN"));
+        }
         return ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
                 .methodTools(tools.toArray())
-                .hooks(new MessageRecordingHook())
+                .hooks(hooks)
                 .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
                         new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
                         new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph))

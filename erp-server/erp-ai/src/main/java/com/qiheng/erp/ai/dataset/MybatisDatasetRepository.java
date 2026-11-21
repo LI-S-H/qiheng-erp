@@ -51,7 +51,7 @@ class MybatisDatasetRepository implements DatasetRepository {
 
     /** 查询已过期的数据集，只取清理任务需要的字段。 */
     @Override
-    public List<DatasetRecord> findExpired(java.time.LocalDateTime cutoff, int limit) {
+    public List<DatasetRecord> findExpired(LocalDateTime cutoff, int limit) {
         return mapper.selectList(Wrappers.<AiDataset>lambdaQuery()
                 .isNotNull(AiDataset::getExpiresAt).lt(AiDataset::getExpiresAt, cutoff)
                 .orderByAsc(AiDataset::getExpiresAt).last("LIMIT " + limit))

@@ -52,7 +52,7 @@ class ReportAgentsTest {
                     "{\"decision\":\"REPORT\",\"title\":\"报告\",\"content\":\"完成\"}"))));
         });
         var agents = new ReportAgents(model, new ReportReadTools(mock(ReadDatasetTool.class), mock(AnalysisResultTool.class)),
-                new ObjectMapper(), "撰写报告", "审核报告", traces);
+                new ObjectMapper(), "撰写报告", "审核报告", traces, null);
         var identity = new AgentToolContext(1, 2);
         try (var firstTask = agents.openTask(identity, first); var secondTask = agents.openTask(identity, second)) {
             first.stage("PREPARING", "准备第一轮");
@@ -83,7 +83,7 @@ class ReportAgentsTest {
             return new ChatResponse(List.of(new Generation(new AssistantMessage(answer))));
         });
         var agents = new ReportAgents(model, new ReportReadTools(mock(ReadDatasetTool.class), mock(AnalysisResultTool.class)),
-                new ObjectMapper(), "撰写报告", "审核报告", traces);
+                new ObjectMapper(), "撰写报告", "审核报告", traces, null);
         var progress = new ReportProgress("call-report-1", (event, data) -> {});
         try (var task = agents.openTask(new AgentToolContext(1, 2), progress)) {
             task.write("分析材料", null);
@@ -117,7 +117,7 @@ class ReportAgentsTest {
                     "{\"decision\":\"REPORT\",\"title\":\"库存报告\",\"content\":\"库存 12 件\"}"))));
         });
         var agents = new ReportAgents(model, new ReportReadTools(datasets, mock(AnalysisResultTool.class)),
-                new ObjectMapper(), "撰写报告", "审核报告", traces);
+                new ObjectMapper(), "撰写报告", "审核报告", traces, null);
         var progress = new ReportProgress("report-call", (event, data) -> {});
         try (var task = agents.openTask(new AgentToolContext(1, 2), progress)) {
             task.write("分析库存", null);
@@ -169,7 +169,7 @@ class ReportAgentsTest {
             return new ChatResponse(List.of(new Generation(new AssistantMessage("{\"score\":9,\"strengths\":[\"数据准确\"],\"hasReferenceIssue\":false,\"issues\":[]}"))));
         });
         var agents = new ReportAgents(model, new ReportReadTools(mock(ReadDatasetTool.class), results),
-                new ObjectMapper(), "撰写报告", "审核报告");
+                new ObjectMapper(), "撰写报告", "审核报告", null, null);
         var identity = new AgentToolContext(9, 10);
         assertThat(agents.review(Map.of("content", "库存 12 件"), identity).score()).isEqualTo(9);
         var captured = ArgumentCaptor.forClass(ToolContext.class);
@@ -192,7 +192,7 @@ class ReportAgentsTest {
             return new ChatResponse(List.of(new Generation(new AssistantMessage("{\"decision\":\"REPORT\",\"title\":\"库存报告\",\"content\":\"库存 12 件。[1]\"}"))));
         });
         var agents = new ReportAgents(model, new ReportReadTools(datasets, mock(AnalysisResultTool.class)),
-                new ObjectMapper(), "撰写报告", "审核报告");
+                new ObjectMapper(), "撰写报告", "审核报告", null, null);
         var identity = new AgentToolContext(1, 2);
         assertThat(agents.write(Map.of("datasetIds", List.of("ds_x")), identity)).contains("12");
         var captured = ArgumentCaptor.forClass(ToolContext.class);
@@ -233,7 +233,7 @@ class ReportAgentsTest {
 
     private static ReportAgents agents(ChatModel model) {
         return new ReportAgents(model, new ReportReadTools(mock(ReadDatasetTool.class), mock(AnalysisResultTool.class)),
-                new ObjectMapper(), "撰写报告", "审核报告");
+                new ObjectMapper(), "撰写报告", "审核报告", null, null);
     }
 
     private static ChatModel model(String text) {

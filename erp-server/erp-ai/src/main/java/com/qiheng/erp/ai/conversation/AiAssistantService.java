@@ -1,6 +1,7 @@
 package com.qiheng.erp.ai.conversation;
 
 import com.qiheng.erp.ai.domain.vo.AssistantOverviewVO;
+import com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO;
 import com.qiheng.erp.ai.domain.vo.ConversationDetailVO;
 import com.qiheng.erp.ai.domain.vo.ConversationMessagePageVO;
 
@@ -13,7 +14,7 @@ import com.qiheng.erp.ai.domain.vo.ConversationMessagePageVO;
 public interface AiAssistantService {
 
     /** 查询用户的会话游标页。 */
-    com.qiheng.erp.ai.domain.vo.ConversationCursorPageVO pageConversations(Long userId, String beforeTime, Long beforeId);
+    ConversationCursorPageVO pageConversations(Long userId, String beforeTime, Long beforeId);
 
     /**
      * 页面首屏数据：当前用户最近的会话列表。

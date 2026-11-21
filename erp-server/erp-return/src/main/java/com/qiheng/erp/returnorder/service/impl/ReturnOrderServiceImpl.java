@@ -894,8 +894,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
     }
 
     /** 校验预计执行日期不为空时不早于当天。 */
-    private void validateExpectedExecutionDate(java.time.LocalDate date) {
-        if (date != null && date.isBefore(java.time.LocalDate.now())) {
+    private void validateExpectedExecutionDate(LocalDate date) {
+        if (date != null && date.isBefore(LocalDate.now())) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计执行日期不得早于当天");
         }
     }
@@ -1464,7 +1464,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         if (items == null || items.isEmpty()) {
             return List.of();
         }
-        List<RankItemInput> inputs = new java.util.ArrayList<>(items.size());
+        List<RankItemInput> inputs = new ArrayList<>(items.size());
         for (ReturnOrderItem item : items) {
             long qty = approvedQtyMap == null
                     ? (item.getApprovedQty() == null ? 0L : item.getApprovedQty())

@@ -21,7 +21,9 @@ public final class SqlQueryTool {
     }
 
     /** 执行一次独立取数。 */
-    @Tool(name = "query_sql_data", description = "按明确的业务需求查询数据。提交时保留用户已明确的范围；仓库、商品或时间范围不明确且会实质影响查询目标时，不要自行写成全部，应先结合上下文确认，必要时询问用户；用户明确要求全部范围时如实提交。PARTIAL 表示已取得的数据因上限不完整，不能作为全量结果；结合限制说明调整计划。缺少必要信息时返回 NEED_INFO，可先获取信息或询问用户，再携带完整条件发起新查询。多个查询应依次执行。")
+    @Tool(name = "query_sql_data", description = "按明确的业务需求执行一次只读取数，返回数据集引用和完整性状态。"
+            + "对象、范围或时间不明确且会实质影响结论时先确认，不要自行扩大为全部；一次只提交一个查询需求。"
+            + "返回 PARTIAL 或 NEED_INFO 时，按结果中的限制或缺失说明处理，再决定是否重新查询。")
     public Map<String, Object> query(
             @ToolParam(description = "取数需求：必填非空 goal 和 dataRequirement，可选 grain、expectedFields、purpose；包含用户已提供的条件。") SqlDataRequirement requirement,
             ToolContext toolContext) throws Exception {

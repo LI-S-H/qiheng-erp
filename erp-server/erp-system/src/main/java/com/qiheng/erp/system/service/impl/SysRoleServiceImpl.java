@@ -20,6 +20,8 @@ import com.qiheng.erp.system.mapper.SysRoleMapper;
 import com.qiheng.erp.system.mapper.SysUserRoleMapper;
 import com.qiheng.erp.system.service.ISysRoleService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -203,8 +205,8 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
         Long bindingCount = sysUserRoleMapper.selectCount(
                 new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getRoleId, roleIds));
         if (bindingCount != null && bindingCount > 0) {
-            throw new com.qiheng.erp.common.exception.BizException(
-                    com.qiheng.erp.common.exception.ErrorCode.ROLE_IN_USE);
+            throw new BizException(
+                    ErrorCode.ROLE_IN_USE);
         }
     }
 

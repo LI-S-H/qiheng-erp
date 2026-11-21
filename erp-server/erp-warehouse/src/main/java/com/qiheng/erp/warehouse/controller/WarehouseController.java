@@ -103,7 +103,7 @@ public class WarehouseController {
      */
     @PatchMapping("/batch/status")
     @Operation(summary = "批量更新仓库状态")
-    public Result<java.util.Map<String, String>> updateBatchStatus(@Valid @RequestBody WarehouseBatchStatusDto dto) {
+    public Result<Map<String, String>> updateBatchStatus(@Valid @RequestBody WarehouseBatchStatusDto dto) {
         StpUtil.checkPermission("warehouse:manage");
         log.info("批量更新仓库状态，参数: {}", dto);
         Map<String, String> failures = warehouseService.updateBatchStatus(dto);
@@ -111,7 +111,7 @@ public class WarehouseController {
             return Result.ok();
         }
         log.warn("批量更新仓库状态部分失败: {}", failures);
-        return Result.fail(com.qiheng.erp.common.exception.ErrorCode.OPERATION_FAILED.getCode(),
+        return Result.fail(ErrorCode.OPERATION_FAILED.getCode(),
                 "部分仓库状态更新失败: " + failures);
     }
 

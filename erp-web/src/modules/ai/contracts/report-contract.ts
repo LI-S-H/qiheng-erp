@@ -1,3 +1,5 @@
+import type { AiChartRow, AiChartSpec } from '../types';
+
 export interface AiReportCard {
   reportId: string;
   requestId: string;
@@ -65,7 +67,123 @@ export function normalizeReportStep(value: unknown): AiReportStep {
   return { phase: item.phase as AiReportStep['phase'], text: item.text, stepSeq: seq };
 }
 
-type ReportPart = { key: string; text: string } | { key: string; report: AiReportCard };
+type ReportPart =
+  | { key: string; text: string }
+  | { key: string; report: AiReportCard }
+  | { key: string; chart: AiChartSpec };
+
+const chartTypes = new Set<AiChartSpec['type']>(['line', 'bar', 'pie', 'horizontalBar', 'stackedBar']);
+const chartIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
+const fieldPattern = /^[A-Za-z0-9_一-鿿-]{1,64}$/;
+const MAX_STACK_SERIES = 6;
+
+function optionalString(value: unknown, max: number): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
+}
+
+function firstField(rows: AiChartRow[], kind: 'string' | 'number'): string | null {
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row)) {
+      if (kind === 'number' ? typeof value === 'number' : typeof value === 'string' && value.trim()) {
+        return key;
+      }
+    }
+  }
+  return null;
+}
+
+/** 校验报告内嵌的图表规格；任何越界或非法字段都返回 null，降级为普通文本。 */
+export function normalizeChartSpec(value: unknown): AiChartSpec | null {
+  try {
+    const item = record(value);
+    if (typeof item.type !== 'string' || !chartTypes.has(item.type as AiChartSpec['type'])) return null;
+    if (typeof item.chartId !== 'string' || !chartIdPattern.test(item.chartId)) return null;
+    if (typeof item.title !== 'string' || !item.title.trim() || item.title.length > 120) return null;
+    const type = item.type as AiChartSpec['type'];
+    const title = item.title.trim();
+    const description = optionalString(item.description, 300) ?? '';
+    const xField = optionalString(item.xField, 64);
+    const nameField = optionalString(item.nameField, 64);
+    const valueField = optionalString(item.valueField, 64);
+    const yUnit = optionalString(item.yUnit, 16);
+    const yFields = Array.isArray(item.yFields)
+      ? item.yFields.filter((field): field is string => typeof field === 'string' && fieldPattern.test(field))
+      : [];
+    // 堆叠图配色固定 6 种，系列超出时保留前 5 类、其余求和为「其他」，避免图与正文数据不一致。
+    const stackOverflow = type === 'stackedBar' && yFields.length > MAX_STACK_SERIES;
+    const overflowFields = stackOverflow ? yFields.slice(MAX_STACK_SERIES - 1) : [];
+    const resolvedYFields = stackOverflow
+      ? [...yFields.slice(0, MAX_STACK_SERIES - 1), 'other']
+      : yFields.slice(0, MAX_STACK_SERIES);
+    const fieldLabels: Record<string, string> = {};
+    if (item.fieldLabels && typeof item.fieldLabels === 'object' && !Array.isArray(item.fieldLabels)) {
+      for (const [key, label] of Object.entries(item.fieldLabels)) {
+        if (fieldPattern.test(key) && typeof label === 'string' && label.trim()) {
+          fieldLabels[key] = label.trim().slice(0, 40);
+        }
+      }
+    }
+    const limit = type === 'pie' ? 8 : 20;
+    const rows = Array.isArray(item.data) ? item.data.slice(0, limit) : [];
+    const data: AiChartRow[] = [];
+    for (const row of rows) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+      const clean: AiChartRow = {};
+      for (const [key, raw] of Object.entries(row as Record<string, unknown>)) {
+        if (!fieldPattern.test(key)) continue;
+        if (typeof raw === 'number' && Number.isFinite(raw)) clean[key] = raw;
+        else if (typeof raw === 'string') clean[key] = raw.slice(0, 200);
+        else if (raw === null) clean[key] = null;
+      }
+      if (Object.keys(clean).length > 0) data.push(clean);
+    }
+    if (data.length === 0) return null;
+    if (stackOverflow) {
+      for (const row of data) {
+        row.other = overflowFields.reduce((sum, field) => {
+          const value = row[field];
+          return sum + (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
+        }, 0);
+      }
+      fieldLabels.other = `其他（${overflowFields.length} 项）`;
+    }
+
+    const resolvedName = nameField ?? xField ?? firstField(data, 'string');
+    const resolvedValue = valueField ?? yFields[0] ?? firstField(data, 'number');
+    if (!resolvedName || !resolvedValue) return null;
+    const resolvedFields = resolvedYFields.length > 0 ? resolvedYFields : [resolvedValue];
+    if (type === 'pie' || type === 'horizontalBar') {
+      return {
+        chartId: item.chartId,
+        type,
+        title,
+        description,
+        xField: resolvedName,
+        yFields: [resolvedValue],
+        fieldLabels,
+        yUnit,
+        nameField: resolvedName,
+        valueField: resolvedValue,
+        data,
+      };
+    }
+    return {
+      chartId: item.chartId,
+      type,
+      title,
+      description,
+      xField: resolvedName,
+      yFields: resolvedFields,
+      fieldLabels,
+      yUnit,
+      nameField: resolvedName,
+      valueField: resolvedValue,
+      data,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /** 截留半截标记，完整标记只识别独立行，代码块里的示例仍按正文展示。 */
 export function splitReportMessage(content: string, cards: AiReportCard[], streaming: boolean, appendMissing: boolean): ReportPart[] {
@@ -76,6 +194,10 @@ export function splitReportMessage(content: string, cards: AiReportCard[], strea
   let prose: string[] = [];
   let proseStart = 0;
   let fence: string | undefined;
+  let chartFence: string | undefined;
+  let chartOpening = '';
+  let chartStart = 0;
+  let chartLines: string[] = [];
   const flush = () => {
     if (prose.some(line => line.trim())) {
       parts.push({ key: `text-${proseStart}`, text: prose.join('\n') });
@@ -83,7 +205,39 @@ export function splitReportMessage(content: string, cards: AiReportCard[], strea
     prose = [];
   };
   lines.forEach((line, index) => {
-    const opening = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (chartFence) {
+      const closing = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line)?.[1];
+      if (closing && closing[0] === chartFence[0] && closing.length >= chartFence.length) {
+        let chart: AiChartSpec | null = null;
+        try {
+          chart = normalizeChartSpec(JSON.parse(chartLines.join('\n')));
+        } catch {
+          chart = null;
+        }
+        if (chart) {
+          flush();
+          parts.push({ key: `chart-${chartStart}`, chart });
+        } else {
+          if (prose.length === 0) proseStart = chartStart;
+          prose.push(chartOpening, ...chartLines, line);
+        }
+        chartFence = undefined;
+        chartOpening = '';
+        chartLines = [];
+        return;
+      }
+      chartLines.push(line);
+      return;
+    }
+    const openingMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!fence && openingMatch && openingMatch[2].trim().toLowerCase() === 'chart') {
+      chartFence = openingMatch[1];
+      chartOpening = line;
+      chartStart = index;
+      chartLines = [];
+      return;
+    }
+    const opening = openingMatch?.[1];
     if (opening) {
       if (!fence) {
         fence = opening;
@@ -110,6 +264,10 @@ export function splitReportMessage(content: string, cards: AiReportCard[], strea
     }
     prose.push(line);
   });
+  if (chartFence) {
+    if (prose.length === 0) proseStart = chartStart;
+    prose.push(chartOpening, ...chartLines);
+  }
   flush();
   if (appendMissing) {
     for (const card of cards) {

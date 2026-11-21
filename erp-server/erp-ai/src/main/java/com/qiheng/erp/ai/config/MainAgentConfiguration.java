@@ -2,7 +2,9 @@ package com.qiheng.erp.ai.config;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.hook.Hook;
+import com.alibaba.cloud.ai.graph.agent.hook.skills.ReadSkillTool;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
+import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.MessageRecordingHook;
 import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
@@ -32,6 +34,8 @@ import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
 import com.qiheng.erp.ai.analysis.AnalysisTool;
 import com.qiheng.erp.ai.report.ReportTool;
 import com.qiheng.erp.ai.clarification.AskUserTool;
+import com.qiheng.erp.ai.skill.SkillIndexInterceptor;
+import com.qiheng.erp.ai.skill.tool.ReadSkillFileTool;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -67,7 +71,7 @@ public class MainAgentConfiguration {
     private SearchExperienceToolFactory experienceTools;
 
     /**
-     * 组装主智能体；工具、拦截器与检查点在这里一次性绑定。
+     * 不挂载技能注册表的兼容入口，供测试和内部构造使用。
      *
      * @param model 主智能体模型
      * @param saver 检查点存储
@@ -81,13 +85,42 @@ public class MainAgentConfiguration {
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
+    public ReactAgent mainAgent(ChatModel model, RedisSaver saver, SqlQueryTool sql, ReadDatasetTool dataset,
+                                BusinessGraphProvider businessGraph, ClarificationService clarification,
+                                ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
+            throws IOException {
+        return mainAgent(model, saver, sql, dataset, businessGraph, clarification, datasetList, results,
+                analysisTool, null);
+    }
+
+    /**
+     * 组装主智能体；工具、拦截器与检查点在这里一次性绑定。
+     *
+     * @param model 主智能体模型
+     * @param saver 检查点存储
+     * @param sql SQL 查询工具
+     * @param dataset 数据集读取工具
+     * @param businessGraph 业务图谱
+     * @param clarification 追问服务
+     * @param datasetList 数据集列表工具
+     * @param results 分析结果工具
+     * @param analysisTool 分析任务工具
+     * @param skills 主智能体技能注册表
+     * @return 主智能体图
+     * @throws IOException 提示词读取失败
+     */
     @Bean
     public ReactAgent mainAgent(@Qualifier("proChatModel") ChatModel model, RedisSaver saver,
                                 SqlQueryTool sql, ReadDatasetTool dataset, BusinessGraphProvider businessGraph,
                                 ClarificationService clarification, ListDatasetsTool datasetList,
-                                AnalysisResultTool results, AnalysisTool analysisTool) throws IOException {
+                                AnalysisResultTool results, AnalysisTool analysisTool,
+                                @Qualifier("mainSkillRegistry") SkillRegistry skills) throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
-        var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool, new AskUserTool(clarification)));
+        var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool,
+                new AskUserTool(clarification)));
+        if (skills != null) {
+            tools.add(new ReadSkillFileTool(List.of("shared", "main")));
+        }
         if (reportTool != null) {
             tools.add(reportTool);
         }
@@ -103,13 +136,17 @@ public class MainAgentConfiguration {
         if (experienceInjection != null) {
             hooks.add(experienceInjection.create("MAIN"));
         }
-        return ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
+        var builder = ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
                 .methodTools(tools.toArray())
                 .hooks(hooks)
                 .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
                         new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
-                        new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph))
-                .saver(saver).releaseThread(false).build();
+                        new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph));
+        if (skills != null) {
+            builder.interceptors(new SkillIndexInterceptor(skills));
+            builder.tools(ReadSkillTool.createReadSkillToolCallback(skills, ""));
+        }
+        return builder.saver(saver).releaseThread(false).build();
     }
 
     /** 主智能体串行调用工具，避免同一轮出现多个独立追问。 */

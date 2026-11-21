@@ -1,5 +1,6 @@
 package com.qiheng.erp.ai.config;
 
+import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.qiheng.erp.ai.analysis.AnalysisAgentService;
 import com.qiheng.erp.ai.python.tool.PythonAnalysisTool;
 import com.qiheng.erp.ai.python.sandbox.PythonSandboxRuntime;
@@ -47,13 +48,14 @@ public class AnalysisAgentConfiguration {
             ObjectProvider<SqlQueryTool> sql, ObjectProvider<ReadDatasetTool> datasets,
             ObjectProvider<SystemExceptionMqPublisher> publisher, ObjectProvider<ListDatasetsTool> datasetList,
             AnalysisResultTool results, DatasetManager datasetManager, AnalysisResultStore resultStore,
-            BusinessGraphProvider businessGraph, ContextCompressionFactory compression) throws IOException {
+            BusinessGraphProvider businessGraph, ContextCompressionFactory compression,
+            @Qualifier("analysisSkillRegistry") SkillRegistry skills) throws IOException {
         String prompt = new ClassPathResource("prompts/analysis-agent.md")
                 .getContentAsString(StandardCharsets.UTF_8);
         return new AnalysisAgentService(model, tools, sandboxRuntime, prompt, traces, mapper,
                 sql.getIfAvailable(), datasets.getIfAvailable(), new ToolJsonInterceptor(mapper, publisher.getIfAvailable()),
                 datasetList.getIfAvailable(), results, datasetManager, resultStore, compression,
-                experienceInjection, experienceTools,
+                experienceInjection, experienceTools, skills,
                 new BusinessGraphInterceptor(businessGraph));
     }
 }

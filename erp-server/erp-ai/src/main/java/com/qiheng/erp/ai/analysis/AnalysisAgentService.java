@@ -3,8 +3,10 @@ package com.qiheng.erp.ai.analysis;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.hook.Hook;
+import com.alibaba.cloud.ai.graph.agent.hook.skills.ReadSkillTool;
 import com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
+import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.AgentModelFailure;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
@@ -22,6 +24,8 @@ import com.qiheng.erp.ai.python.result.AnalysisResultStore;
 import com.qiheng.erp.ai.python.sandbox.PythonSandboxRuntime;
 import com.qiheng.erp.ai.python.tool.AnalysisResultTool;
 import com.qiheng.erp.ai.python.tool.PythonAnalysisTool;
+import com.qiheng.erp.ai.skill.SkillIndexInterceptor;
+import com.qiheng.erp.ai.skill.tool.ReadSkillFileTool;
 import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
 import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 import org.slf4j.Logger;
@@ -63,7 +67,7 @@ public final class AnalysisAgentService {
     private final AnalysisHandoffValidationHook handoffValidation;
 
     /**
-     * 组装分析智能体；工具齐备时同时开放 SQL 查询与数据集读取能力。
+     * 不挂载技能注册表的兼容构造器，供不需要技能的场景和测试使用。
      *
      * @param model 分析使用的模型
      * @param pythonTool Python 执行工具
@@ -92,6 +96,43 @@ public final class AnalysisAgentService {
                                 ExperienceInjectionFactory experienceInjection,
                                 SearchExperienceToolFactory experienceTools,
                                 Interceptor... additionalInterceptors) {
+        this(model, pythonTool, sandboxRuntime, prompt, traces, mapper, sql, readDatasetTool, jsonGuard,
+                listDatasetsTool, results, datasetManager, resultStore, compression, experienceInjection,
+                experienceTools, null, additionalInterceptors);
+    }
+
+    /**
+     * 组装分析智能体；工具齐备时同时开放 SQL 查询与数据集读取能力。
+     *
+     * @param model 分析使用的模型
+     * @param pythonTool Python 执行工具
+     * @param sandboxRuntime 沙箱运行时
+     * @param prompt 分析智能体的角色提示
+     * @param traces 分析流水记录器
+     * @param mapper JSON 序列化组件
+     * @param sql SQL 查询工具，可为空
+     * @param readDatasetTool 数据集读取工具，可为空
+     * @param jsonGuard 工具参数校验拦截器
+     * @param listDatasetsTool 数据集列表工具，可为空
+     * @param results 分析结果读写工具
+     * @param datasetManager 数据集管理器，可为空
+     * @param resultStore 分析结果存储，可为空
+     * @param compression 上下文压缩工厂，可为空
+     * @param experienceInjection 经验注入工厂，可为空
+     * @param experienceTools 经验检索工具工厂，可为空
+     * @param skillRegistry 分析智能体技能注册表，可为空
+     * @param additionalInterceptors 追加的拦截器
+     */
+    public AnalysisAgentService(ChatModel model, PythonAnalysisTool pythonTool, PythonSandboxRuntime sandboxRuntime,
+                                String prompt, AiAgentTraceMapper traces, ObjectMapper mapper, SqlQueryTool sql,
+                                ReadDatasetTool readDatasetTool, ToolJsonInterceptor jsonGuard,
+                                ListDatasetsTool listDatasetsTool, AnalysisResultTool results,
+                                DatasetManager datasetManager, AnalysisResultStore resultStore,
+                                ContextCompressionFactory compression,
+                                ExperienceInjectionFactory experienceInjection,
+                                SearchExperienceToolFactory experienceTools,
+                                SkillRegistry skillRegistry,
+                                Interceptor... additionalInterceptors) {
         this.sandboxRuntime = sandboxRuntime;
         this.traces = traces;
         this.mapper = mapper;
@@ -102,6 +143,9 @@ public final class AnalysisAgentService {
         var interceptors = new ArrayList<Interceptor>(List.of(new TrustedToolContextInterceptor(), jsonGuard,
                 new AnalysisDatasetInterceptor(mapper), new AnalysisModelFailureInterceptor()));
         interceptors.addAll(List.of(additionalInterceptors));
+        if (skillRegistry != null) {
+            interceptors.add(new SkillIndexInterceptor(skillRegistry));
+        }
         var hooks = new ArrayList<Hook>(List.of(new AnalysisTraceHook(), handoffValidation));
         if (compression != null) {
             hooks.add(compression.create());
@@ -117,17 +161,19 @@ public final class AnalysisAgentService {
                 .hooks(hooks)
                 .interceptors(interceptors.toArray(Interceptor[]::new))
                 .parallelToolExecution(false);
+        var tools = new ArrayList<Object>(List.of(pythonTool, results));
         if (sql != null && readDatasetTool != null && listDatasetsTool != null) {
-            if (experienceTools != null) {
-                builder.methodTools(pythonTool, results, sql, readDatasetTool, listDatasetsTool,
-                        experienceTools.create("ANALYSIS"));
-            } else {
-                builder.methodTools(pythonTool, results, sql, readDatasetTool, listDatasetsTool);
-            }
-        } else if (experienceTools != null) {
-            builder.methodTools(pythonTool, results, experienceTools.create("ANALYSIS"));
-        } else {
-            builder.methodTools(pythonTool, results);
+            tools.addAll(List.of(sql, readDatasetTool, listDatasetsTool));
+        }
+        if (experienceTools != null) {
+            tools.add(experienceTools.create("ANALYSIS"));
+        }
+        if (skillRegistry != null) {
+            tools.add(new ReadSkillFileTool(List.of("shared", "analysis")));
+        }
+        builder.methodTools(tools.toArray());
+        if (skillRegistry != null) {
+            builder.tools(ReadSkillTool.createReadSkillToolCallback(skillRegistry, ""));
         }
         this.agent = builder.build();
     }

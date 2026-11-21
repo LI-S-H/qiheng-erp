@@ -90,7 +90,7 @@ public class MainAgentConfiguration {
                                 ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
             throws IOException {
         return mainAgent(model, saver, sql, dataset, businessGraph, clarification, datasetList, results,
-                analysisTool, null);
+                analysisTool, null, null);
     }
 
     /**
@@ -106,6 +106,7 @@ public class MainAgentConfiguration {
      * @param results 分析结果工具
      * @param analysisTool 分析任务工具
      * @param skills 主智能体技能注册表
+     * @param skillFileTool 主智能体读取技能支持文件的工具
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
@@ -114,12 +115,13 @@ public class MainAgentConfiguration {
                                 SqlQueryTool sql, ReadDatasetTool dataset, BusinessGraphProvider businessGraph,
                                 ClarificationService clarification, ListDatasetsTool datasetList,
                                 AnalysisResultTool results, AnalysisTool analysisTool,
-                                @Qualifier("mainSkillRegistry") SkillRegistry skills) throws IOException {
+                                @Qualifier("mainSkillRegistry") SkillRegistry skills,
+                                @Qualifier("mainReadSkillFileTool") ReadSkillFileTool skillFileTool) throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
         var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool,
                 new AskUserTool(clarification)));
-        if (skills != null) {
-            tools.add(new ReadSkillFileTool(List.of("shared", "main")));
+        if (skillFileTool != null) {
+            tools.add(skillFileTool);
         }
         if (reportTool != null) {
             tools.add(reportTool);

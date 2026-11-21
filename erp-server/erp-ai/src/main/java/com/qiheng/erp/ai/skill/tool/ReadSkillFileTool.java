@@ -1,27 +1,28 @@
 package com.qiheng.erp.ai.skill.tool;
 
+import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
+import com.qiheng.erp.ai.skill.GroupSkillRegistry;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
-import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
  * 读取技能目录下的支持文件。
  *
- * <p>资源直接从 classpath 读取：打包后技能以 jar 内条目形式存在，不能按普通文件打开。
- * 按智能体可见的分组顺序查找，路径必须落在技能自身目录内。</p>
+ * <p>从加载该技能的注册表定位目录，只允许访问该技能自身目录内的 Markdown 文件，
+ * 防止模型通过相对路径读取技能目录以外的文件。</p>
  *
  * @author Li
  * @since 2026-11-21
  */
 public final class ReadSkillFileTool {
-
-    /** 技能资源在 classpath 中的前缀。 */
-    private static final String CLASSPATH_PREFIX = "skills/";
 
     /** 技能名只允许小写字母、数字和单个连字符。 */
     private static final Pattern SKILL_NAME = Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*$");
@@ -32,16 +33,16 @@ public final class ReadSkillFileTool {
     /** 单次读取的文件大小上限。 */
     private static final long MAX_BYTES = 256L * 1024;
 
-    /** 当前智能体可见的技能分组，按优先级排列。 */
-    private final List<String> groups;
+    /** 当前智能体可见的技能注册表，按优先级排列。 */
+    private final List<GroupSkillRegistry> registries;
 
     /**
-     * 绑定技能分组。
+     * 绑定技能注册表。
      *
-     * @param groups 当前智能体可见的技能分组，如 shared、main
+     * @param registries 当前智能体可见的技能注册表
      */
-    public ReadSkillFileTool(List<String> groups) {
-        this.groups = List.copyOf(groups);
+    public ReadSkillFileTool(List<GroupSkillRegistry> registries) {
+        this.registries = List.copyOf(registries);
     }
 
     /**
@@ -62,22 +63,29 @@ public final class ReadSkillFileTool {
                 || !path.endsWith(".md") || hasParentSegment(path)) {
             return "路径不合法，只接受技能目录内的 Markdown 相对路径。";
         }
-        for (String group : groups) {
-            ClassPathResource resource = new ClassPathResource(
-                    CLASSPATH_PREFIX + group + "/" + skill + "/" + path);
-            if (!resource.exists()) {
+        for (GroupSkillRegistry registry : registries) {
+            Optional<SkillMetadata> metadata = registry.get(skill);
+            if (metadata.isEmpty()) {
                 continue;
             }
+            Path base = Path.of(metadata.get().getSkillPath()).toAbsolutePath().normalize();
+            Path target = base.resolve(path).normalize();
+            if (!target.startsWith(base)) {
+                return "路径不合法，只接受技能目录内的相对路径。";
+            }
+            if (!Files.isRegularFile(target)) {
+                return "文件不存在: " + path;
+            }
             try {
-                if (resource.contentLength() > MAX_BYTES) {
+                if (Files.size(target) > MAX_BYTES) {
                     return "文件超过读取上限，请缩小范围。";
                 }
-                return resource.getContentAsString(StandardCharsets.UTF_8);
+                return Files.readString(target, StandardCharsets.UTF_8);
             } catch (IOException error) {
                 return "读取失败: " + error.getMessage();
             }
         }
-        return "文件不存在: " + path;
+        return "技能不存在: " + skill;
     }
 
     /** 路径中不允许出现指向上级或当前目录的段。 */

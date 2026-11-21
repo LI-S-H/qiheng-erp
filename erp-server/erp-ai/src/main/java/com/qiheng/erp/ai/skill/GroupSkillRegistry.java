@@ -5,24 +5,26 @@ import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
- * 按目录分组扫描 classpath 下的技能。
+ * 从一个外部目录加载技能。
  *
- * <p>框架自带的 classpath 注册表对同一个 jar 只能创建一个实例——第二次创建 JAR FileSystem
- * 会失败并静默返回空列表，因此多个智能体分目录加载时必须使用本实现。
- * 正文在扫描时读入并缓存，读取时不再访问文件系统。</p>
+ * <p>目录结构为 {@code <技能根目录>/<分组>/<技能名>/SKILL.md}，正文在加载时读入内存。
+ * 技能只来自文件系统，不打包进 jar；{@link #refreshIfChanged()} 通过文件修改时间和大小
+ * 判断目录是否变化，变化时才重新加载。</p>
  *
  * @author Li
  * @since 2026-11-21
@@ -31,11 +33,16 @@ public final class GroupSkillRegistry implements SkillRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(GroupSkillRegistry.class);
 
+    private static final String SKILL_FILE = "SKILL.md";
+
     /** 技能名只允许小写字母、数字和单个连字符。 */
     private static final Pattern NAME_PATTERN = Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*$");
 
     /** 技能分组目录名，如 shared、main、analysis。 */
     private final String group;
+
+    /** 该分组对应的技能目录，绝对路径。 */
+    private final Path directory;
 
     /** 注入到系统提示词中的模板。 */
     private final String promptTemplate;
@@ -43,43 +50,56 @@ public final class GroupSkillRegistry implements SkillRegistry {
     /** 已加载技能：名称到元信息。 */
     private volatile Map<String, SkillMetadata> skills = Map.of();
 
+    /** 上次加载时的文件指纹，用于判断目录是否变化。 */
+    private volatile String fingerprint = "";
+
     /**
-     * 绑定分组并立即加载。
+     * 绑定分组和目录并立即加载。
      *
      * @param group 技能分组目录名
+     * @param directory 该分组对应的技能目录
      * @param promptTemplate 系统提示词模板
      */
-    public GroupSkillRegistry(String group, String promptTemplate) {
+    public GroupSkillRegistry(String group, Path directory, String promptTemplate) {
         this.group = group;
+        this.directory = directory.toAbsolutePath().normalize();
         this.promptTemplate = promptTemplate;
         reload();
     }
 
-    /** 重新扫描并替换当前技能集合。 */
+    /** 重新扫描目录并替换当前技能集合。 */
     @Override
     public synchronized void reload() {
         Map<String, SkillMetadata> loaded = new LinkedHashMap<>();
-        try {
-            Resource[] resources = new PathMatchingResourcePatternResolver()
-                    .getResources("classpath*:skills/**/SKILL.md");
-            for (Resource resource : resources) {
-                if (!matchesGroup(resource)) {
-                    continue;
-                }
-                try {
-                    SkillMetadata metadata = read(resource);
-                    if (metadata != null) {
-                        loaded.putIfAbsent(metadata.getName(), metadata);
-                    }
-                } catch (Exception error) {
-                    log.warn("技能读取失败 group={} resource={}", group, resource.getDescription(), error);
-                }
-            }
+        if (!Files.isDirectory(directory)) {
+            log.warn("技能目录不存在 group={} dir={}", group, directory);
+            this.skills = loaded;
+            this.fingerprint = "";
+            return;
+        }
+        try (Stream<Path> children = Files.list(directory)) {
+            children.filter(Files::isDirectory).sorted().forEach(skillDir -> loadInto(loaded, skillDir));
         } catch (IOException error) {
-            log.warn("技能目录扫描失败 group={}", group, error);
+            log.warn("技能目录读取失败 group={} dir={}", group, directory, error);
         }
         this.skills = loaded;
-        log.info("技能注册表已加载 group={} count={}", group, loaded.size());
+        this.fingerprint = computeFingerprint();
+        log.info("技能注册表已加载 group={} count={} dir={}", group, loaded.size(), directory);
+    }
+
+    /**
+     * 目录内容变化时重新加载。
+     *
+     * @return 是否发生了重新加载
+     */
+    public synchronized boolean refreshIfChanged() {
+        String current = computeFingerprint();
+        if (current.equals(fingerprint)) {
+            return false;
+        }
+        log.info("检测到技能变化 group={}，重新加载", group);
+        reload();
+        return true;
     }
 
     /**
@@ -157,7 +177,7 @@ public final class GroupSkillRegistry implements SkillRegistry {
      */
     @Override
     public String getRegistryType() {
-        return "classpath-group";
+        return "filesystem-group";
     }
 
     /**
@@ -170,28 +190,63 @@ public final class GroupSkillRegistry implements SkillRegistry {
         return new SystemPromptTemplate(promptTemplate);
     }
 
-    /** 判断资源是否属于当前分组目录。 */
-    private boolean matchesGroup(Resource resource) throws IOException {
-        return resource.getURL().toString().contains("/skills/" + group + "/");
+    /** 读取一个技能目录；格式不符合要求时跳过。 */
+    private void loadInto(Map<String, SkillMetadata> loaded, Path skillDir) {
+        Path file = skillDir.resolve(SKILL_FILE);
+        if (!Files.isRegularFile(file)) {
+            return;
+        }
+        try {
+            String content = Files.readString(file, StandardCharsets.UTF_8);
+            Map<String, Object> frontmatter = parseFrontmatter(content);
+            String name = text(frontmatter.get("name"));
+            String description = text(frontmatter.get("description"));
+            String directoryName = skillDir.getFileName().toString();
+            if (name.isEmpty() || description.isEmpty() || !NAME_PATTERN.matcher(name).matches()) {
+                log.warn("技能元信息不完整 group={} dir={}", group, skillDir);
+                return;
+            }
+            if (!name.equals(directoryName)) {
+                log.warn("技能名与目录名不一致 group={} name={} dir={}", group, name, directoryName);
+                return;
+            }
+            loaded.putIfAbsent(name, SkillMetadata.builder()
+                    .name(name)
+                    .description(description)
+                    .skillPath(skillDir.toString())
+                    .source("filesystem")
+                    .fullContent(stripFrontmatter(content))
+                    .build());
+        } catch (IOException error) {
+            log.warn("技能读取失败 group={} dir={}", group, skillDir, error);
+        }
     }
 
-    /** 读取一个技能文件；格式不符合要求时返回空。 */
-    private SkillMetadata read(Resource resource) throws IOException {
-        String content = resource.getContentAsString(StandardCharsets.UTF_8);
-        Map<String, Object> frontmatter = parseFrontmatter(content);
-        String name = text(frontmatter.get("name"));
-        String description = text(frontmatter.get("description"));
-        if (name.isEmpty() || description.isEmpty() || !NAME_PATTERN.matcher(name).matches()) {
-            log.warn("技能元信息不完整 group={} resource={}", group, resource.getDescription());
-            return null;
+    /** 计算目录指纹：每个 SKILL.md 的修改时间和大小。 */
+    private String computeFingerprint() {
+        if (!Files.isDirectory(directory)) {
+            return "";
         }
-        return SkillMetadata.builder()
-                .name(name)
-                .description(description)
-                .skillPath("skills/" + group + "/" + name)
-                .source("classpath")
-                .fullContent(stripFrontmatter(content))
-                .build();
+        try (Stream<Path> children = Files.list(directory)) {
+            return children.filter(Files::isDirectory)
+                    .map(child -> child.resolve(SKILL_FILE))
+                    .filter(Files::isRegularFile)
+                    .map(this::stamp)
+                    .sorted()
+                    .collect(Collectors.joining("|"));
+        } catch (IOException error) {
+            return "";
+        }
+    }
+
+    /** 单个技能文件的指纹片段。 */
+    private String stamp(Path file) {
+        try {
+            return file.getParent().getFileName() + ":" + Files.getLastModifiedTime(file).toMillis()
+                    + ":" + Files.size(file);
+        } catch (IOException error) {
+            return file.getParent().getFileName() + ":error";
+        }
     }
 
     /** 解析 YAML frontmatter；缺失或格式错误时返回空表。 */

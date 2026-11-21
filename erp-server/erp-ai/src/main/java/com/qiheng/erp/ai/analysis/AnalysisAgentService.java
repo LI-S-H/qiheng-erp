@@ -98,7 +98,7 @@ public final class AnalysisAgentService {
                                 Interceptor... additionalInterceptors) {
         this(model, pythonTool, sandboxRuntime, prompt, traces, mapper, sql, readDatasetTool, jsonGuard,
                 listDatasetsTool, results, datasetManager, resultStore, compression, experienceInjection,
-                experienceTools, null, additionalInterceptors);
+                experienceTools, null, null, additionalInterceptors);
     }
 
     /**
@@ -121,6 +121,7 @@ public final class AnalysisAgentService {
      * @param experienceInjection 经验注入工厂，可为空
      * @param experienceTools 经验检索工具工厂，可为空
      * @param skillRegistry 分析智能体技能注册表，可为空
+     * @param skillFileTool 读取技能支持文件的工具，可为空
      * @param additionalInterceptors 追加的拦截器
      */
     public AnalysisAgentService(ChatModel model, PythonAnalysisTool pythonTool, PythonSandboxRuntime sandboxRuntime,
@@ -132,6 +133,7 @@ public final class AnalysisAgentService {
                                 ExperienceInjectionFactory experienceInjection,
                                 SearchExperienceToolFactory experienceTools,
                                 SkillRegistry skillRegistry,
+                                ReadSkillFileTool skillFileTool,
                                 Interceptor... additionalInterceptors) {
         this.sandboxRuntime = sandboxRuntime;
         this.traces = traces;
@@ -168,8 +170,8 @@ public final class AnalysisAgentService {
         if (experienceTools != null) {
             tools.add(experienceTools.create("ANALYSIS"));
         }
-        if (skillRegistry != null) {
-            tools.add(new ReadSkillFileTool(List.of("shared", "analysis")));
+        if (skillFileTool != null) {
+            tools.add(skillFileTool);
         }
         builder.methodTools(tools.toArray());
         if (skillRegistry != null) {

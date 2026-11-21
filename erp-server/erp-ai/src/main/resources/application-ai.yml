@@ -14,6 +14,11 @@ erp:
     api-key: ${DEEPSEEK_API_KEY:${OPENAI_COMPAT_API_KEY:}}
     base-url: ${OPENAI_COMPAT_BASE_URL:https://api.deepseek.com}
     temperature: ${ERP_AI_TEMPERATURE:0.2}
+    # 技能目录：其下按 shared、main、analysis 分组，每个技能一个子目录和 SKILL.md。
+    # 只在外部目录读取，不打包进 jar；修改后按下述间隔检查并重新加载。
+    skills:
+      dir: ${ERP_AI_SKILLS_DIR:./skills}
+      refresh-ms: ${ERP_AI_SKILLS_REFRESH_MS:30000}
     model:
       # 模型名：换供应商时只改这里（或同名环境变量），不用改代码
       pro: ${OPENAI_COMPAT_MODEL_PRO:deepseek-v4-pro}

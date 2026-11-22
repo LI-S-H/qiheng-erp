@@ -77,7 +77,7 @@ class RealAnalysisAgentIT {
                     fixture.identity);
             assertThat(output).contains("202");
             verify(fixture.tool, atLeastOnce()).executePython(anyString(), anyList(), anyBoolean(),
-                    nullable(String.class), any(ToolContext.class));
+                    nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
             fixture.verifyTrace();
             System.out.println("ANALYSIS_RIGHT_ONLY=" + output);
         }
@@ -94,7 +94,7 @@ class RealAnalysisAgentIT {
             assertThat(output).contains("B", "5");
             verify(fixture.tool, atLeastOnce()).prepareAnalysisData(argThat(ids -> ids.contains("ds_test")), any(ToolContext.class));
             verify(fixture.tool, atLeastOnce()).executePython(anyString(), argThat(ids -> ids.contains("ds_test")),
-                    anyBoolean(), nullable(String.class), any(ToolContext.class));
+                    anyBoolean(), nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
             fixture.verifyTrace();
             System.out.println("ANALYSIS_TARGETED_EXCEPTION=" + output);
         }
@@ -112,7 +112,7 @@ class RealAnalysisAgentIT {
             assertThat(output).contains("A", "B", "8", "5", "3");
             verify(fixture.tool, atLeastOnce()).prepareAnalysisData(argThat(ids -> ids.contains("ds_test")), any(ToolContext.class));
             verify(fixture.tool, atLeastOnce()).executePython(anyString(), argThat(ids -> ids.contains("ds_test")),
-                    anyBoolean(), nullable(String.class), any(ToolContext.class));
+                    anyBoolean(), nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
             fixture.verifyTrace();
             System.out.println("ANALYSIS_PRODUCT_COMPARISON=" + output);
         }
@@ -135,7 +135,7 @@ class RealAnalysisAgentIT {
                 assertThat(firstAnswer).contains("221");
                 assertThat(secondAnswer).contains("437");
                 verify(fixture.tool, atLeast(2)).executePython(anyString(), anyList(), anyBoolean(),
-                        nullable(String.class), any(ToolContext.class));
+                        nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
                 var firstTask = org.mockito.ArgumentCaptor.forClass(String.class);
                 var secondTask = org.mockito.ArgumentCaptor.forClass(String.class);
                 verify(fixture.traces).insert(eq(91011L), eq(92011L), firstTask.capture(), eq("ANALYSIS"), eq("INPUT"), anyString());
@@ -159,7 +159,7 @@ class RealAnalysisAgentIT {
                     "请务必使用 executePython 计算 15、20、25 的平均值，并给出明确数值。",
                     fixture.identity);
             assertThat(output).contains("20");
-            verify(fixture.tool, atLeastOnce()).executePython(anyString(), anyList(), anyBoolean(), nullable(String.class), any(ToolContext.class));
+            verify(fixture.tool, atLeastOnce()).executePython(anyString(), anyList(), anyBoolean(), nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
             
             fixture.verifyTrace();
             System.out.println("ANALYSIS_WITHOUT_DATASET=" + output);
@@ -179,7 +179,7 @@ class RealAnalysisAgentIT {
             assertThat(output).contains("13");
             verify(fixture.tool, atLeastOnce()).prepareAnalysisData(argThat(ids -> ids.contains("ds_test")), any(ToolContext.class));
             verify(fixture.tool, atLeastOnce()).executePython(contains("ds_test"),
-                    argThat(ids -> ids.contains("ds_test")), anyBoolean(), nullable(String.class), any(ToolContext.class));
+                    argThat(ids -> ids.contains("ds_test")), anyBoolean(), nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
             
             fixture.verifyTrace();
             System.out.println("ANALYSIS_WITH_DATASET=" + output);
@@ -200,7 +200,7 @@ class RealAnalysisAgentIT {
             assertThat(output).contains("1653", "57");
             var code = org.mockito.ArgumentCaptor.forClass(String.class);
             verify(fixture.tool, atLeastOnce()).executePython(code.capture(),
-                    argThat(ids -> ids.contains("ds_test")), anyBoolean(), nullable(String.class), any(ToolContext.class));
+                    argThat(ids -> ids.contains("ds_test")), anyBoolean(), nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
             assertThat(code.getAllValues()).anyMatch(value -> value.contains("open(") || value.contains("read_json("));
             System.out.println("ANALYSIS_COMPLETE_DATASET=" + output);
         }
@@ -240,7 +240,7 @@ class RealAnalysisAgentIT {
             assertThat(replaced).isTrue();
             assertThat(feedbackSeen).isTrue();
             verify(fixture.tool, times(1)).executePython(anyString(), anyList(), anyBoolean(),
-                    nullable(String.class), any(ToolContext.class));
+                    nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
             fixture.verifyTrace();
             System.out.println("ACTUAL_AGENT_REPAIRED=" + output);
         }
@@ -385,7 +385,7 @@ class RealAnalysisAgentIT {
                         + " datasets=" + invocation.getArgument(1) + " save=" + invocation.getArgument(2)
                         + " result=" + result);
                 return result;
-            }).when(tool).executePython(anyString(), anyList(), anyBoolean(), nullable(String.class), any(ToolContext.class));
+            }).when(tool).executePython(anyString(), anyList(), anyBoolean(), nullable(String.class), nullable(Integer.class),  any(ToolContext.class));
             var yaml = new YamlPropertiesFactoryBean();
             yaml.setResources(new FileSystemResource(Path.of("..", ".env.ai.yaml")));
             var settings = Objects.requireNonNull(yaml.getObject());

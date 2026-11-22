@@ -53,19 +53,19 @@ class PythonAnalysisToolDockerIT {
         var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
         try {
             var a = pool.submit(() -> tool.executePython("open('/tmp/erp-marker','w').write('FIRST'); print('FIRST')",
-                    List.of(), false, null, firstContext));
+                    List.of(), false, null, null, firstContext));
             var b = pool.submit(() -> tool.executePython("open('/tmp/erp-marker','w').write('SECOND'); print('SECOND')",
-                    List.of(), false, null, secondContext));
+                    List.of(), false, null, null, secondContext));
             assertEquals("SUCCESS", a.get(120, java.util.concurrent.TimeUnit.SECONDS).get("status"));
             assertEquals("SUCCESS", b.get(120, java.util.concurrent.TimeUnit.SECONDS).get("status"));
-            var one = tool.executePython("print(open('/tmp/erp-marker').read())", List.of(), false, null, firstContext);
-            var two = tool.executePython("print(open('/tmp/erp-marker').read())", List.of(), false, null, secondContext);
+            var one = tool.executePython("print(open('/tmp/erp-marker').read())", List.of(), false, null, null, firstContext);
+            var two = tool.executePython("print(open('/tmp/erp-marker').read())", List.of(), false, null, null, secondContext);
             assertEquals("FIRST\n", ((java.util.Map<?, ?>) one.get("textOutput")).get("content"));
             assertEquals("SECOND\n", ((java.util.Map<?, ?>) two.get("textOutput")).get("content"));
-            var failed = tool.executePython("raise ValueError('expected')", List.of(), false, null, firstContext);
+            var failed = tool.executePython("raise ValueError('expected')", List.of(), false, null, null, firstContext);
             assertEquals("FAILED", failed.get("status"));
             first.close();
-            var stillRunning = tool.executePython("print(open('/tmp/erp-marker').read())", List.of(), false, null, secondContext);
+            var stillRunning = tool.executePython("print(open('/tmp/erp-marker').read())", List.of(), false, null, null, secondContext);
             assertEquals("SECOND\n", ((java.util.Map<?, ?>) stillRunning.get("textOutput")).get("content"));
         } finally {
             pool.shutdownNow();
@@ -119,16 +119,16 @@ class PythonAnalysisToolDockerIT {
         try (var task = new AnalysisTaskContext(new AgentToolContext(10, 20), "task-1", runtime)) {
             var tool = new PythonAnalysisTool(new PythonDatasetPreparer(datasets), store);
             var taskContext = new ToolContext(java.util.Map.of(AnalysisTaskContext.CONTEXT_KEY, task));
-            var noData = tool.executePython("print('第一行'); print('第二行')", List.of(), false, null, taskContext);
+            var noData = tool.executePython("print('第一行'); print('第二行')", List.of(), false, null, null, taskContext);
             assertEquals("SUCCESS", noData.get("status"));
             assertEquals("第一行\n第二行\n", ((java.util.Map<?, ?>) noData.get("textOutput")).get("content"));
             var invalid = tool.executePython(
-                    "import os; os.mkdir('/tmp/erp-analysis/output/invalid')", List.of(), false, null, taskContext);
+                    "import os; os.mkdir('/tmp/erp-analysis/output/invalid')", List.of(), false, null, null, taskContext);
             assertEquals("PARTIAL", invalid.get("status"));
             var repair = tool.executePython(
-                    "import os; os.rmdir('/tmp/erp-analysis/output/invalid')", List.of(), false, null, taskContext);
+                    "import os; os.rmdir('/tmp/erp-analysis/output/invalid')", List.of(), false, null, null, taskContext);
             assertEquals("PARTIAL", repair.get("status"));
-            assertEquals("SUCCESS", tool.executePython("print('已清理')", List.of(), false, null, taskContext).get("status"));
+            assertEquals("SUCCESS", tool.executePython("print('已清理')", List.of(), false, null, null, taskContext).get("status"));
             tool.prepareAnalysisData(List.of("ds_test"), taskContext);
             String code = """
                     import json, pandas as pd
@@ -139,7 +139,7 @@ class PythonAnalysisToolDockerIT {
                     frame = pd.DataFrame(rows, columns=['product', 'qty'])
                     print('TOTAL', frame['qty'].sum())
                     """;
-            var first = tool.executePython(code, List.of("ds_test"), false, null, taskContext);
+            var first = tool.executePython(code, List.of("ds_test"), false, null, null, taskContext);
             assertEquals("SUCCESS", first.get("status"));
             assertTrue(((String) ((java.util.Map<?, ?>) first.get("textOutput")).get("content")).contains("TOTAL 8"));
 
@@ -151,7 +151,7 @@ class PythonAnalysisToolDockerIT {
                         f.write('商品,数量\\nA,8\\n')
                     print('分析完成')
                     """.formatted(directory);
-            var artifact = tool.executePython(artifactCode, List.of("ds_test"), true, "库存分析", taskContext);
+            var artifact = tool.executePython(artifactCode, List.of("ds_test"), true, "库存分析", null, taskContext);
             assertEquals("SUCCESS", artifact.get("status"));
             assertEquals(true, ((java.util.Map<?, ?>) artifact.get("textOutput")).get("saved"));
             var files = (List<?>) artifact.get("files");
@@ -160,21 +160,21 @@ class PythonAnalysisToolDockerIT {
             assertEquals("库存结果.csv", file.get("fileName"));
             assertTrue(new String(savedBytes.get(file.get("resultId")), StandardCharsets.UTF_8).contains("A,8"));
 
-            var identical = tool.executePython(artifactCode, List.of("ds_test"), false, null, taskContext);
+            var identical = tool.executePython(artifactCode, List.of("ds_test"), false, null, null, taskContext);
             assertEquals("SUCCESS", identical.get("status"));
             assertEquals(List.of(), identical.get("files"));
-            var unchanged = tool.executePython("print('不修改文件')", List.of("ds_test"), false, null, taskContext);
+            var unchanged = tool.executePython("print('不修改文件')", List.of("ds_test"), false, null, null, taskContext);
             assertEquals("SUCCESS", unchanged.get("status"));
             assertEquals(List.of(), unchanged.get("files"));
             var overwritten = tool.executePython(artifactCode.replace("A,8", "A,9"),
-                    List.of("ds_test"), false, null, taskContext);
+                    List.of("ds_test"), false, null, null, taskContext);
             assertEquals("SUCCESS", overwritten.get("status"));
             var changedFile = (java.util.Map<?, ?>) ((List<?>) overwritten.get("files")).getFirst();
             assertNotEquals(file.get("resultId"), changedFile.get("resultId"));
             assertTrue(new String(savedBytes.get(changedFile.get("resultId")), StandardCharsets.UTF_8).contains("A,9"));
 
             tool.prepareAnalysisData(List.of(), taskContext);
-            var longOutput = tool.executePython("print('x' * 9000)", List.of(), false, null, taskContext);
+            var longOutput = tool.executePython("print('x' * 9000)", List.of(), false, null, null, taskContext);
             assertEquals("SUCCESS", longOutput.get("status"));
             assertEquals(true, ((java.util.Map<?, ?>) longOutput.get("textOutput")).get("truncated"));
             var resultTool = new AnalysisResultTool(store);
@@ -183,7 +183,7 @@ class PythonAnalysisToolDockerIT {
             assertEquals(9001, ((String) full.get("content")).length());
 
             tool.prepareAnalysisData(List.of(), taskContext);
-            var failure = tool.executePython("raise ValueError('expected failure')", List.of(), false, null, taskContext);
+            var failure = tool.executePython("raise ValueError('expected failure')", List.of(), false, null, null, taskContext);
             assertEquals("FAILED", failure.get("status"));
             assertTrue(((String) failure.get("stderr")).contains("expected failure"));
         } finally {
@@ -223,7 +223,7 @@ class PythonAnalysisToolDockerIT {
                     ((java.util.Map<?, ?>) ((List<?>) again.get("files")).getFirst()).get("reprepared"));
 
             // 执行失败时把沙箱现状一并交给模型。
-            var failure = tool.executePython("raise ValueError('expected')", List.of("ds_test"), false, null, taskContext);
+            var failure = tool.executePython("raise ValueError('expected')", List.of("ds_test"), false, null, null, taskContext);
             assertEquals("FAILED", failure.get("status"));
             var files = (java.util.Map<?, ?>) failure.get("sandboxFiles");
             var inputs = (List<?>) files.get("inputs");

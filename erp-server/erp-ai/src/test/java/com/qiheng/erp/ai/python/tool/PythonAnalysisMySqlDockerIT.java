@@ -88,7 +88,7 @@ class PythonAnalysisMySqlDockerIT {
                             result.write('商品\\n' + row[0] + '\\n')
                         print('分析完成')
                         """.formatted(inputPath, outputPath);
-                var response = tool.executePython(code, List.of("ds_test"), false, null, taskContext);
+                var response = tool.executePython(code, List.of("ds_test"), false, null, null, taskContext);
                 assertEquals("SUCCESS", response.get("status"), response.toString());
                 var artifacts = (List<?>) response.get("files");
                 assertEquals(1, artifacts.size());

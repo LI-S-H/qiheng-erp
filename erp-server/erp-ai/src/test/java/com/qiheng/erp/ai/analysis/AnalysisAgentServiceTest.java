@@ -238,7 +238,7 @@ class AnalysisAgentServiceTest {
                 new ChatResponse(List.of(new Generation(new AssistantMessage(handoff("完成"))))));
         var runtime = mock(PythonSandboxRuntime.class);
         var tool = mock(PythonAnalysisTool.class);
-        when(tool.executePython(anyString(), anyList(), anyBoolean(), nullable(String.class), any(ToolContext.class)))
+        when(tool.executePython(anyString(), anyList(), anyBoolean(), nullable(String.class), nullable(Integer.class),  any(ToolContext.class)))
                 .thenReturn(Map.of("status", "FAILED", "message", "代码错误"), Map.of("status", "SUCCESS"));
         var identity = new AgentToolContext(10, 20);
         var traces = mock(AiAgentTraceMapper.class);
@@ -263,7 +263,7 @@ class AnalysisAgentServiceTest {
         var runtime = mock(PythonSandboxRuntime.class);
         var tool = mock(PythonAnalysisTool.class);
         when(tool.prepareAnalysisData(anyList(), any(ToolContext.class))).thenReturn(Map.of("status", "SUCCESS"));
-        when(tool.executePython(anyString(), anyList(), anyBoolean(), nullable(String.class), any(ToolContext.class))).thenReturn(Map.of("status", "SUCCESS"));
+        when(tool.executePython(anyString(), anyList(), anyBoolean(), nullable(String.class), nullable(Integer.class),  any(ToolContext.class))).thenReturn(Map.of("status", "SUCCESS"));
         var identity = new AgentToolContext(10, 20);
         var traces = mock(AiAgentTraceMapper.class);
         var service = new AnalysisAgentService(model, tool, runtime, "你是分析助手。", traces, new ObjectMapper(), null, null,

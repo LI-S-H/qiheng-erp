@@ -36,9 +36,9 @@ class PythonAnalysisToolTest {
                 new PythonExecutionResult(true, "first", "", 5, false, "output", null));
         when(secondSession.execute(anyString(), anyInt(), anyInt())).thenReturn(
                 new PythonExecutionResult(true, "second", "", 6, false, "output", null));
-        tool.executePython("first", List.of(), false, null, firstContext);
-        tool.executePython("first again", List.of(), false, null, firstContext);
-        tool.executePython("second", List.of(), false, null, secondContext);
+        tool.executePython("first", List.of(), false, null, null, firstContext);
+        tool.executePython("first again", List.of(), false, null, null, firstContext);
+        tool.executePython("second", List.of(), false, null, null, secondContext);
         verify(runtime, times(2)).openSession(anyString());
         verify(firstSession, times(2)).execute(anyString(), anyInt(), anyInt());
         verify(secondSession).execute(eq("second"), anyInt(), anyInt());
@@ -66,7 +66,7 @@ class PythonAnalysisToolTest {
         when(results.save(eq(identity), anyString(), anyString(), eq("TEXT"), eq("摘要"), isNull(),
                 eq("txt"), eq(List.of()), any())).thenReturn(saved);
 
-        var response = tool.executePython("print('计算完成')", List.of(), true, "摘要", context);
+        var response = tool.executePython("print('计算完成')", List.of(), true, "摘要", null, context);
 
         assertEquals("PARTIAL", response.get("status"));
         var text = (Map<?, ?>) response.get("textOutput");
@@ -90,7 +90,7 @@ class PythonAnalysisToolTest {
         when(session.execute(anyString(), anyInt(), anyInt())).thenReturn(
                 new PythonExecutionResult(true, "已清理", "", 9, false, "output", null));
 
-        var response = tool.executePython("清理输出目录", List.of(), false, null, context);
+        var response = tool.executePython("清理输出目录", List.of(), false, null, null, context);
 
         assertEquals("PARTIAL", response.get("status"));
         assertTrue(((String) response.get("message")).contains("无法确认"));
@@ -134,7 +134,7 @@ class PythonAnalysisToolTest {
         var context = context(identity, session);
         tool.prepareAnalysisData(List.of("ds_1"), context);
         tool.prepareAnalysisData(List.of("ds_2", "ds_1"), context);
-        var response = tool.executePython("print('ok')", List.of("ds_2"), true, "测试", context);
+        var response = tool.executePython("print('ok')", List.of("ds_2"), true, "测试", null, context);
         assertEquals("PARTIAL", response.get("status"));
         assertEquals("result_1", ((Map<?, ?>) response.get("textOutput")).get("resultId"));
         assertEquals(List.of(), response.get("files"));
@@ -158,10 +158,10 @@ class PythonAnalysisToolTest {
         var context = context(identity, session);
 
         tool.prepareAnalysisData(List.of("ds_1"), context);
-        assertEquals("SUCCESS", tool.executePython("print('ok')", List.of("ds_1"), false, null, context).get("status"));
+        assertEquals("SUCCESS", tool.executePython("print('ok')", List.of("ds_1"), false, null, null, context).get("status"));
         tool.prepareAnalysisData(List.of(), context);
         doThrow(new IllegalArgumentException("权限已撤销")).when(preparer).verify("ds_1", identity);
-        assertThrows(IllegalArgumentException.class, () -> tool.executePython("print('again')", List.of(), false, null, context));
+        assertThrows(IllegalArgumentException.class, () -> tool.executePython("print('again')", List.of(), false, null, null, context));
         verify(session, times(1)).execute(anyString(), anyInt(), anyInt());
     }
     /** 沙箱容器被回收重建后，已准备的数据集要重新写入，不能返回失效路径。 */
@@ -226,7 +226,7 @@ class PythonAnalysisToolTest {
         var tool = new PythonAnalysisTool(mock(PythonDatasetPreparer.class), results);
         var context = context(identity, session);
 
-        var response = tool.executePython("print('ok')", List.of(), false, null, context);
+        var response = tool.executePython("print('ok')", List.of(), false, null, null, context);
 
         assertEquals("FAILED", response.get("status"));
         assertEquals("SANDBOX_UNAVAILABLE", response.get("errorType"));
@@ -247,7 +247,7 @@ class PythonAnalysisToolTest {
         var tool = new PythonAnalysisTool(mock(PythonDatasetPreparer.class), mock(AnalysisResultStore.class));
         var context = context(identity, session);
 
-        var response = tool.executePython("print('x')", List.of(), false, null, context);
+        var response = tool.executePython("print('x')", List.of(), false, null, null, context);
 
         assertEquals("FAILED", response.get("status"));
         assertEquals("PYTHON_ERROR", response.get("errorType"));

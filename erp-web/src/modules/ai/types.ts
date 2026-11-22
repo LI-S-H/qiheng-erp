@@ -80,6 +80,20 @@ export type AiMessageContent =
       };
     }
   | { type: 'REPORT'; data: { callId: string; taskId?: string; status: 'RUNNING' | 'COMPLETED' | 'FAILED'; steps: AiReportStep[]; report?: AiReportCard } }
+  | {
+      /** 已处置的采购草稿：只保留状态与单号，明细按单号查采购单详情。 */
+      type: 'PURCHASE_DRAFT';
+      data: {
+        status: 'created' | 'edited' | 'failed' | 'rejected';
+        purchaseOrderId?: string;
+        orderNo?: string;
+        changedFields?: string[];
+        userNote?: string;
+        reasons?: string[];
+        suggestion?: string;
+        error?: string;
+      };
+    }
   ;
 
 /** 分析子智能体一次工具调用；只保留基础文案，不展示参数与结果原文。 */

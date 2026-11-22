@@ -35,6 +35,7 @@ public final class RunEventChannel {
     private final Map<String, Map<String, Object>> items = new LinkedHashMap<>();
     private String status = "RUNNING";
     private Map<String, Object> question;
+    private Map<String, Object> draft;
     private long eventSeq;
     private boolean closed;
     private long closedAt;
@@ -92,6 +93,8 @@ public final class RunEventChannel {
             case "report_progress", "report_ready" -> applyReport(name, data);
             case "question" -> applyQuestion(data);
             case "question_answered" -> applyTerminal("RUNNING");
+            case "purchase_draft" -> applyDraft(data);
+            case "purchase_draft_resolved" -> applyTerminal("RUNNING");
             case "run_completed" -> {
                 if (data.get("finalMessageId") instanceof String id) {
                     finalMessageId = id;
@@ -216,10 +219,31 @@ public final class RunEventChannel {
         items.put(key, item);
     }
 
+    /** 登记一份待用户处置的采购草稿，并把本轮状态切换为等待用户。 */
+    private void applyDraft(Map<String, Object> data) {
+        status = "WAITING_USER";
+        draft = Map.copyOf(data);
+        Object callId = data.get("toolCallId");
+        String id = callId instanceof String value && !value.isBlank()
+                ? value : String.valueOf(data.get("draftRequestId"));
+        String key = "draft:" + id;
+        if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
+            snapshotTruncated = true;
+            return;
+        }
+        var item = new LinkedHashMap<String, Object>();
+        item.put("type", "purchase_draft");
+        item.put("id", id);
+        item.put("draftRequestId", data.get("draftRequestId"));
+        item.put("draft", data.get("draft"));
+        items.put(key, item);
+    }
+
     /** 结束本轮状态并清除待回答的追问。 */
     private void applyTerminal(String terminalStatus) {
         status = terminalStatus;
         question = null;
+        draft = null;
     }
 
     /**
@@ -231,6 +255,18 @@ public final class RunEventChannel {
         // 答案提交期间可能已出现新的追问，不能清除新问题。
         if (!closed && question != null && questionRequestId.equals(question.get("questionRequestId"))) {
             publish("question_answered", Map.of("questionRequestId", questionRequestId));
+        }
+    }
+
+    /**
+     * 用户处置草稿成功后撤销待确认状态；不改变已展示的历史。
+     *
+     * @param draftRequestId 本次处置对应的草稿编号
+     */
+    public synchronized void draftResolved(String draftRequestId) {
+        // 处置期间可能已出现新的草稿，不能清除新草稿。
+        if (!closed && draft != null && draftRequestId.equals(draft.get("draftRequestId"))) {
+            publish("purchase_draft_resolved", Map.of("draftRequestId", draftRequestId));
         }
     }
 
@@ -263,6 +299,7 @@ public final class RunEventChannel {
         snapshot.put("status", status);
         snapshot.put("items", items.values().stream().map(LinkedHashMap::new).toList());
         snapshot.put("question", question);
+        snapshot.put("draft", draft);
         snapshot.put("eventSeq", eventSeq);
         snapshot.put("snapshotTruncated", snapshotTruncated);
         if (finalMessageId != null) {

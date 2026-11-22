@@ -84,6 +84,8 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
     content = { type: 'TEXT', data: { text: [rendered, note].filter(Boolean).join('；') || '已补充信息', callId: requiredText(data.callId, 'callId'), questionAnswers, note } };
   } else if (source.type === 'ANALYSIS') {
     content = normalizeAnalysis(source);
+  } else if (source.type === 'PURCHASE_DRAFT') {
+    content = normalizeDraftRecord(data);
   } else if (source.type === 'REPORT') {
     if (!['RUNNING', 'COMPLETED', 'FAILED'].includes(String(data.status)) || !Array.isArray(data.steps)) {
       throw new Error('报告过程字段无效');
@@ -124,6 +126,30 @@ export function normalizeHistoryMessage(value: unknown): AiConversationMessage |
   } catch {
     return null;
   }
+}
+
+/** 已处置采购草稿的记录：只保留状态、单号和结果说明。 */
+function normalizeDraftRecord(data: Record<string, unknown>): AiMessageContent {
+  const status = String(data.status);
+  if (!['created', 'edited', 'failed', 'rejected'].includes(status)) {
+    throw new Error('采购草稿状态无效');
+  }
+  const optionalText = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  const textList = (value: unknown) => Array.isArray(value)
+    ? value.map(item => optionalText(item)).filter((item): item is string => Boolean(item)) : undefined;
+  return {
+    type: 'PURCHASE_DRAFT',
+    data: {
+      status: status as 'created' | 'edited' | 'failed' | 'rejected',
+      purchaseOrderId: optionalText(data.purchaseOrderId),
+      orderNo: optionalText(data.orderNo),
+      changedFields: textList(data.changedFields),
+      userNote: optionalText(data.userNote),
+      reasons: textList(data.reasons),
+      suggestion: optionalText(data.suggestion),
+      error: optionalText(data.error),
+    },
+  };
 }
 
 /** 校验并归一化分析过程消息；步骤只保留思路文字与工具文案。 */

@@ -133,7 +133,7 @@ watch(keyword, () => {
           invalid ? 'border-destructive focus-visible:ring-destructive' : '',
         ]"
       >
-        <OverflowTooltip :text="triggerLabel" class="truncate" />
+        <OverflowTooltip :text="triggerLabel" :disabled="open" class="truncate" />
         <ChevronsUpDown class="ml-2 shrink-0 opacity-50" :class="compact ? 'size-3.5' : 'size-4'" />
       </Button>
     </PopoverTrigger>

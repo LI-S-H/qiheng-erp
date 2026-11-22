@@ -78,6 +78,18 @@ public class VisibleMessageCodec {
                 }
             }
             if (("TOOL_CALL".equals(kind) || "TOOL_RESULT".equals(kind)) && root.isObject()) {
+                if ("TOOL_CALL".equals(kind) && "prepare_purchase_order_draft".equals(root.path("name").asText())
+                        && Set.of("created", "edited", "failed", "rejected").contains(root.path("status").asText())) {
+                    // 已处置的采购草稿：只保留状态与单号，明细由页面按单号查采购单详情。
+                    Map<String, Object> data = new LinkedHashMap<>();
+                    for (String field : Set.of("status", "purchaseOrderId", "orderNo", "changedFields",
+                            "userNote", "reasons", "suggestion", "error")) {
+                        if (root.has(field)) {
+                            data.put(field, mapper.convertValue(root.get(field), Object.class));
+                        }
+                    }
+                    return new VisibleMessageContent("PURCHASE_DRAFT", data);
+                }
                 if (!"ask_user".equals(root.path("name").asText())) {
                     // 普通工具行是结构化展示：只给工具名、文案、状态与耗时，不含参数和结果。
                     if ("TOOL_CALL".equals(kind) && root.has("label")) {

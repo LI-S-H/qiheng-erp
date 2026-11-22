@@ -16,17 +16,18 @@ public final class AiToolLabels {
     /** 未知工具的兜底文案。 */
     public static final String DEFAULT_LABEL = "处理当前步骤";
 
-    private static final Map<String, String> LABELS = Map.of(
-            "ask_user", "补充信息",
-            "createReport", "生成报告",
-            "analyzeData", "子智能体分析",
-            "query_sql_data", "查询业务数据",
-            "readDataset", "读取数据",
-            "listDatasets", "查看数据集",
-            "prepareAnalysisData", "准备分析数据",
-            "executePython", "执行 Python 分析",
-            "listAnalysisResults", "查看分析结果集",
-            "readAnalysisResult", "读取分析结果");
+    private static final Map<String, String> LABELS = Map.ofEntries(
+            Map.entry("ask_user", "补充信息"),
+            Map.entry("prepare_purchase_order_draft", "生成采购草稿"),
+            Map.entry("createReport", "生成报告"),
+            Map.entry("analyzeData", "子智能体分析"),
+            Map.entry("query_sql_data", "查询业务数据"),
+            Map.entry("readDataset", "读取数据"),
+            Map.entry("listDatasets", "查看数据集"),
+            Map.entry("prepareAnalysisData", "准备分析数据"),
+            Map.entry("executePython", "执行 Python 分析"),
+            Map.entry("listAnalysisResults", "查看分析结果集"),
+            Map.entry("readAnalysisResult", "读取分析结果"));
 
     /** 取工具的基础文案；未知工具使用通用文案。 */
     public static String label(String toolName) {

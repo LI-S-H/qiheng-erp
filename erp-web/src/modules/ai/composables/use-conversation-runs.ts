@@ -1,5 +1,6 @@
 import { reactive } from 'vue';
 import type { ClarificationQuestion } from '../clarification/clarification-types';
+import type { PurchaseDraftRequest } from '../drafts/purchase-draft-types';
 import type { AiAnalysisBlock, AiAnalysisStep, AiProgressStep, AiRunStatus } from '../types';
 import type { AiReportCard, AiReportProcess } from '../contracts/report-contract';
 
@@ -13,6 +14,7 @@ export type LiveItem =
 export type SnapshotItem =
   | LiveItem
   | { type: 'analysis'; id: string; goal: string; steps: AiAnalysisStep[]; completion: string | null; summary: string | null }
+  | { type: 'purchase_draft'; id: string; draftRequestId: string; draft: unknown }
   | ({ type: 'report' } & AiReportProcess);
 
 /** 单个会话的运行状态；会话之间彼此隔离。 */
@@ -39,6 +41,8 @@ export interface ConversationRun {
   reportCards: Record<string, AiReportCard>;
   finalMessageId: string;
   pendingClarification: { questionRequestId: string; toolCallId?: string; questions: ClarificationQuestion[] } | null;
+  /** 等待用户确认的采购草稿；同一时刻只会有一份。 */
+  pendingDraft: PurchaseDraftRequest | null;
   recentAnswers: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
   refreshNeeded: boolean;
   settleSuccess: (() => void) | null;
@@ -94,7 +98,7 @@ export function useConversationRuns() {
         pendingText: '', liveText: '', liveMessageId: '', liveItems: [], completedTextIds: new Set(),
         eventSeq: 0, snapshotTruncated: false, runId: '', error: '', warning: '', steps: [], analyses: {},
         reportProcesses: {}, reportCards: {}, finalMessageId: '',
-        pendingClarification: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
+        pendingClarification: null, pendingDraft: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
         failureCode: '', failureCount: 0, retryAt: 0,
       });
     }

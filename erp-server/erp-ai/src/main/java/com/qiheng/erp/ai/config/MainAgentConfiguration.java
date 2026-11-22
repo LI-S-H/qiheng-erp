@@ -21,6 +21,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor;
 import com.qiheng.erp.ai.clarification.AskUserArgumentsInterceptor;
+import com.qiheng.erp.ai.draft.PurchaseDraftArgumentsInterceptor;
+import com.qiheng.erp.ai.draft.PurchaseDraftService;
+import com.qiheng.erp.ai.draft.PurchaseOrderDraftTool;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
@@ -90,7 +93,7 @@ public class MainAgentConfiguration {
                                 ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
             throws IOException {
         return mainAgent(model, saver, sql, dataset, businessGraph, clarification, datasetList, results,
-                analysisTool, null, null);
+                analysisTool, null, null, null);
     }
 
     /**
@@ -107,6 +110,7 @@ public class MainAgentConfiguration {
      * @param analysisTool 分析任务工具
      * @param skills 主智能体技能注册表
      * @param skillFileTool 主智能体读取技能支持文件的工具
+     * @param drafts 采购草稿服务
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
@@ -116,10 +120,14 @@ public class MainAgentConfiguration {
                                 ClarificationService clarification, ListDatasetsTool datasetList,
                                 AnalysisResultTool results, AnalysisTool analysisTool,
                                 @Qualifier("mainSkillRegistry") SkillRegistry skills,
-                                @Qualifier("mainReadSkillFileTool") ReadSkillFileTool skillFileTool) throws IOException {
+                                @Qualifier("mainReadSkillFileTool") ReadSkillFileTool skillFileTool,
+                                PurchaseDraftService drafts) throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
         var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool,
                 new AskUserTool(clarification)));
+        if (drafts != null) {
+            tools.add(new PurchaseOrderDraftTool(drafts));
+        }
         if (skillFileTool != null) {
             tools.add(skillFileTool);
         }
@@ -143,7 +151,8 @@ public class MainAgentConfiguration {
                 .hooks(hooks)
                 .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
                         new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
-                        new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph));
+                        new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()),
+                        new PurchaseDraftArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph));
         if (skills != null) {
             builder.interceptors(new SkillIndexInterceptor(skills));
             builder.tools(ReadSkillTool.createReadSkillToolCallback(skills, ""));
@@ -194,5 +203,20 @@ public class MainAgentConfiguration {
     public ClarificationService clarificationService(AiConversationMapper conversations,
             LoginUserService users, ObjectMapper mapper) {
         return new ClarificationService(conversations, users, mapper);
+    }
+
+    /**
+     * 组装采购草稿服务。
+     *
+     * @param conversations 会话数据访问
+     * @param users 用户数据访问
+     * @param messages 会话消息存储
+     * @param mapper JSON 序列化组件
+     * @return 采购草稿服务
+     */
+    @Bean
+    public PurchaseDraftService purchaseDraftService(AiConversationMapper conversations,
+            LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
+        return new PurchaseDraftService(conversations, users, messages, mapper);
     }
 }

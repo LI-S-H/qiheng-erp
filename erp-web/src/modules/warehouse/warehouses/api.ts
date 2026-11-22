@@ -120,6 +120,23 @@ export function listWarehouses(params: WarehouseQuery, requestConfig?: AxiosRequ
   }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(normalizeWarehousePage);
 }
 
+/**
+ * 按主键读取仓库详情；确认页需要按编号回显名称，不能用列表首屏推断。
+ *
+ * @param warehouseId 仓库编号
+ * @param requestConfig 请求配置
+ * @returns 仓库详情
+ */
+export function getWarehouseDetail(warehouseId: string, requestConfig?: AxiosRequestConfig) {
+  if (useMockApi) {
+    const warehouse = mockWarehouses.find(item => item.warehouseId === warehouseId);
+    if (!warehouse) return Promise.reject(new Error('仓库不存在'));
+    return Promise.resolve(normalizeWarehouse(warehouse));
+  }
+  return getResult<WarehouseListItem>(`/warehouse/warehouses/${warehouseId}`, undefined, requestConfig)
+    .then(normalizeWarehouse);
+}
+
 export function createWarehouse(payload: WarehouseCreatePayload) {
   const { remark, ...requiredPayload } = payload;
   const normalizedRemark = remark?.trim();

@@ -1,6 +1,7 @@
 package com.qiheng.erp.ai.agent;
 
 import com.qiheng.erp.ai.clarification.ClarificationService;
+import com.qiheng.erp.ai.draft.PurchaseDraftService;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.OverAllState;
@@ -286,7 +287,8 @@ public final class MainAgentService {
                     events.toolEvent(event);
                 })
                 .addMetadata(AgentRunKeys.RECORD_TOOL_CALL, (Consumer<ToolCallRequest>) request -> {
-                    if ("ask_user".equals(request.getToolName())) {
+                    // 等待用户处理的工具需要把调用编号带到用户操作事件上。
+                    if (waitingUserTool(request.getToolName())) {
                         events.questionCall(request.getToolCallId());
                     }
                     var checkpoint = saver.get(config);
@@ -304,6 +306,12 @@ public final class MainAgentService {
                     var question = events.questionEvent(event);
                     runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(question.state().data())));
                     events.toolEvent(question);
+                })
+                .addMetadata(PurchaseDraftService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
+                    // 草稿确认与追问一样会阻塞本轮，线程一直等在同一次工具调用里。
+                    var draft = events.questionEvent(event);
+                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(draft.state().data())));
+                    events.toolEvent(draft);
                 })
                 .build();
         // 新消息交由模型结合已配对的工具历史处理。
@@ -326,7 +334,7 @@ public final class MainAgentService {
                         }
                         if (output instanceof StreamingOutput<?> streaming
                                 && streaming.message() instanceof ToolResponseMessage response
-                                && response.getResponses().stream().anyMatch(item -> "ask_user".equals(item.name()))) {
+                                && response.getResponses().stream().anyMatch(item -> waitingUserTool(item.name()))) {
                             runs.put(runKey, new RuntimeSnapshot(runId, "RUNNING", null));
                         }
                     }
@@ -471,17 +479,17 @@ public final class MainAgentService {
                     .map(ToolResponseMessage.ToolResponse::id)
                     .collect(Collectors.toSet());
             boolean expiredQuestion = pending.stream()
-                    .anyMatch(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()));
+                    .anyMatch(item -> waitingUserEvent(item.getValue().node()) && finished.contains(item.getKey()));
             if (expiredQuestion) {
                 pending.stream()
-                        .filter(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()))
+                        .filter(item -> waitingUserEvent(item.getValue().node()) && finished.contains(item.getKey()))
                         .forEach(item -> {
                             ready.add(item.getKey());
                             degraded.add(item.getKey());
                         });
                 target.accept(NodeOutput.of("model_tool_fallback", "main_agent", new OverAllState(Map.of()), null));
             }
-            pending.removeIf(item -> "ask_user".equals(item.getValue().node()) && finished.contains(item.getKey()));
+            pending.removeIf(item -> waitingUserEvent(item.getValue().node()) && finished.contains(item.getKey()));
             if (!pending.isEmpty()) {
                 cancelTimer();
                 releaseDelayed(expiredQuestion);
@@ -568,10 +576,20 @@ public final class MainAgentService {
             closed = true;
             cancelTimer();
             // 结束时追问已无法再接收回答，不向页面补发过期问题。
-            pending.removeIf(item -> "ask_user".equals(item.getValue().node()));
+            pending.removeIf(item -> waitingUserEvent(item.getValue().node()));
             // 普通工具可能已完成但未等到模型事件；结束前仍需先分段。
             releaseDelayed(false);
         }
+    }
+
+    /** 判断工具调用是否会阻塞等待用户处置。 */
+    private static boolean waitingUserTool(String toolName) {
+        return "ask_user".equals(toolName) || "prepare_purchase_order_draft".equals(toolName);
+    }
+
+    /** 判断事件是否属于等待用户处置的过程；这类事件不能当作过期过程丢弃。 */
+    private static boolean waitingUserEvent(String node) {
+        return "ask_user".equals(node) || "purchase_draft".equals(node);
     }
 
     /** 只处理最后一条尚未获得结果的工具调用消息。 */

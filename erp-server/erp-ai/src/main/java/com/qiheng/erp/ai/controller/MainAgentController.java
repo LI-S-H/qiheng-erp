@@ -10,6 +10,8 @@ import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.RunEventChannel;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.ai.clarification.ClarificationAnswer;
+import com.qiheng.erp.ai.draft.PurchaseDraftReceipt;
+import com.qiheng.erp.ai.draft.PurchaseDraftService;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.common.util.IdUtil;
 import jakarta.validation.Valid;
@@ -17,6 +19,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -44,6 +47,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MainAgentController {
     private final ObjectProvider<MainAgentService> agents;
     private final ObjectProvider<ClarificationService> clarifications;
+    private final ObjectProvider<PurchaseDraftService> drafts;
     private final ConcurrentHashMap<String, RunEventChannel> channels = new ConcurrentHashMap<>();
 
     /**
@@ -53,8 +57,22 @@ public class MainAgentController {
      * @param clarifications 追问服务
      */
     public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications) {
+        this(agents, clarifications, null);
+    }
+
+    /**
+     * 注入全部等待用户处置的服务。
+     *
+     * @param agents 主智能体服务
+     * @param clarifications 追问服务
+     * @param drafts 采购草稿服务
+     */
+    @Autowired
+    public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications,
+                               ObjectProvider<PurchaseDraftService> drafts) {
         this.agents = agents;
         this.clarifications = clarifications;
+        this.drafts = drafts;
     }
 
     /** 本轮用户输入。 */
@@ -108,6 +126,11 @@ public class MainAgentController {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());
                     sink.next(event("question", data));
+                } else if ("purchase_draft".equals(node)) {
+                    // 草稿确认与追问共用等待通道，事件名区分页面展示方式。
+                    var data = new LinkedHashMap<String, Object>(output.state().data());
+                    data.put("runId", runId.get());
+                    sink.next(event("purchase_draft", data));
                 // 分析子过程与工具状态共用事件协议：事件名独立，过程数据在 data 内，并带父级工具调用编号。
                 } else if ("tool_started".equals(node) || "tool_finished".equals(node)
                         || "analysis_started".equals(node) || "analysis_step".equals(node)
@@ -242,6 +265,35 @@ public class MainAgentController {
             synchronized (active) {
                 clarifications.getObject().answerForCurrentUser(id, questionRequestId, body.answers(), body.note());
                 active.answered(questionRequestId);
+            }
+        }
+        return Result.ok();
+    }
+
+    /**
+     * 提交用户对采购草稿的处置结果，结果随后交回等待中的模型。
+     *
+     * @param conversationId 会话编号
+     * @param draftRequestId 草稿请求编号
+     * @param body 处置结果
+     * @return 空结果
+     */
+    @PostMapping("/{conversationId}/drafts/{draftRequestId}/resolve")
+    public Result<Void> resolveDraft(@PathVariable String conversationId, @PathVariable String draftRequestId,
+                                     @RequestBody PurchaseDraftReceipt body) {
+        long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
+        if (drafts == null || drafts.getIfAvailable() == null) {
+            throw new IllegalStateException("采购草稿功能未启用");
+        }
+        var service = drafts.getObject();
+        var active = channel(id);
+        if (active == null) {
+            service.resolveForCurrentUser(id, draftRequestId, body);
+        } else {
+            // 处置生效与快照切换在同一把锁内，避免重连时取到已经处置的草稿。
+            synchronized (active) {
+                service.resolveForCurrentUser(id, draftRequestId, body);
+                active.draftResolved(draftRequestId);
             }
         }
         return Result.ok();

@@ -24,6 +24,9 @@ import AiComposerDock from '../components/AiComposerDock.vue';
 import AiConversationSidebar from '../components/AiConversationSidebar.vue';
 import AiMessageList from '../components/AiMessageList.vue';
 import AiMessageNavigator from '../components/AiMessageNavigator.vue';
+import AiPurchaseDraftDock from '../drafts/AiPurchaseDraftDock.vue';
+import PurchaseDraftDialog from '../drafts/PurchaseDraftDialog.vue';
+import { parsePurchaseDraftRequest, type PurchaseDraftRequest } from '../drafts/purchase-draft-types';
 import { usePanelResize } from '../composables/use-panel-resize';
 import { clearFailureHold, holdTransientFailure, useConversationRuns, type ConversationRun, type LiveItem, type SnapshotItem } from '../composables/use-conversation-runs';
 import type { ClarificationDraft, ClarificationQuestion } from '../clarification/clarification-types';
@@ -110,6 +113,33 @@ const switchSnapshot = ref<{
 } | null>(null);
 /** 未落库的暂停轮数据：澄清卡在库内出现前先行渲染表单，字段与落库卡 data 同构。 */
 const pendingClarification = runtimeField('pendingClarification');
+/** 等待用户处置的采购草稿；与追问互斥，同一时刻只会有一份。 */
+const pendingDraft = runtimeField('pendingDraft');
+const draftDialogOpen = ref(false);
+
+/** 把草稿事件收敛成可校验的结构；格式异常时按缺少草稿处理。 */
+function pendingDraftFrom(value: unknown): PurchaseDraftRequest | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  try {
+    return parsePurchaseDraftRequest(value as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
+/** 打开草稿确认页；必须点开详情后才能处置，避免不看内容直接确认。 */
+function openDraftDialog() {
+  if (!pendingDraft.value) return;
+  draftDialogOpen.value = true;
+}
+
+/** 处置完成后收起确认页并清除等待状态，结果由服务端事件或本地操作确认。 */
+function handleDraftSettled() {
+  draftDialogOpen.value = false;
+  pendingDraft.value = null;
+}
 const small = useMediaQuery('(max-width: 900px)');
 const phone = useMediaQuery('(max-width: 640px)');
 const conversationResize = usePanelResize({
@@ -283,6 +313,8 @@ watch(() => store.activeId, () => {
   analysisOpen.value = false;
   selectedAnalysisId.value = '';
   selectedReportProcessId.value = '';
+  // 草稿确认页属于原会话，切换后不能停留在新会话上方。
+  draftDialogOpen.value = false;
 });
 const showWelcome = computed(() => switching.value && switchSnapshot.value
   ? switchSnapshot.value.welcome
@@ -290,6 +322,9 @@ const showWelcome = computed(() => switching.value && switchSnapshot.value
 const statusLabel = computed(() => {
   if (switching.value) {
     return '正在切换会话';
+  }
+  if (pendingDraft.value) {
+    return '等待你确认采购草稿';
   }
   if (busy.value) {
     return steps.value.find((step) => step.status === 'running')?.label || '正在思考';
@@ -501,7 +536,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.snapshotTruncated = data.snapshotTruncated === true;
       state.warning = state.snapshotTruncated ? '运行过程缓存不完整，已保留已保存的历史消息。' : '';
       const snapshotItems = data.items as SnapshotItem[];
-      state.liveItems = snapshotItems.filter((item): item is LiveItem => item.type !== 'analysis' && item.type !== 'report');
+      state.liveItems = snapshotItems.filter((item): item is LiveItem => item.type !== 'analysis' && item.type !== 'report' && item.type !== 'purchase_draft');
       state.finalMessageId = typeof data.finalMessageId === 'string' ? data.finalMessageId : '';
       state.completedTextIds = new Set(state.liveItems.filter(item => item.type === 'text' && item.completed).map(item => item.id));
       state.liveText = state.liveItems.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
@@ -531,6 +566,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       const question = data.question as ConversationRun['pendingClarification'];
       state.pendingClarification = data.status === 'WAITING_USER' && question?.questionRequestId && Array.isArray(question.questions) ? question : null;
+      state.pendingDraft = data.status === 'WAITING_USER' ? pendingDraftFrom(data.draft) : null;
       break;
     }
     case 'run_started':
@@ -689,6 +725,24 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
     case 'question_answered':
       if (state.pendingClarification?.questionRequestId === data.questionRequestId) {
         state.pendingClarification = null;
+        state.runStatus = 'RUNNING';
+      }
+      break;
+    case 'purchase_draft': {
+      const draft = pendingDraftFrom(data);
+      if (!draft) {
+        throw new Error('采购草稿事件格式错误');
+      }
+      state.pendingDraft = draft;
+      state.runStatus = 'WAITING_USER';
+      state.steps = [];
+      state.settleSuccess?.();
+      state.settleSuccess = null;
+      break;
+    }
+    case 'purchase_draft_resolved':
+      if (state.pendingDraft?.draftRequestId === data.draftRequestId) {
+        state.pendingDraft = null;
         state.runStatus = 'RUNNING';
       }
       break;
@@ -1405,6 +1459,7 @@ onBeforeUnmount(() => {
           switching ||
           store.historyLoading ||
           backingOff ||
+          Boolean(pendingDraft) ||
           Boolean(store.activeId && !store.detail) ||
           (runStatus === 'RUNNING' && !watching)
         "
@@ -1421,6 +1476,15 @@ onBeforeUnmount(() => {
                 :questions="currentQuestionData.questions"
                 :busy="answering || (locked && !waiting)"
                 @submit="run"
+              />
+            </div>
+          </Transition>
+          <Transition name="question-dock" appear>
+            <div v-if="pendingDraft && !switching" class="agent-question-dock" data-ai-purchase-draft-dock>
+              <AiPurchaseDraftDock
+                :item-count="pendingDraft.draft.items.length"
+                :disabled="answering || switching"
+                @open="openDraftDialog"
               />
             </div>
           </Transition>
@@ -1479,6 +1543,13 @@ onBeforeUnmount(() => {
           @load-more="store.loadMoreConversations()"
           @toggle-collapse="mobileSidebarOpen = false" /></DialogContent
     ></Dialog>
+    <PurchaseDraftDialog
+      :open="draftDialogOpen"
+      :request="pendingDraft"
+      :conversation-id="store.activeId || ''"
+      @update:open="draftDialogOpen = $event"
+      @settled="handleDraftSettled"
+    />
   </section>
 </template>
 

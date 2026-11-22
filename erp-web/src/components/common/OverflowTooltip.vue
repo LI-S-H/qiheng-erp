@@ -12,12 +12,15 @@ const props = withDefaults(defineProps<{
   lines?: number;
   class?: HTMLAttributes['class'];
   contentClass?: HTMLAttributes['class'];
+  /** 触发控件展开浮层时暂停提示，避免提示压在选项列表上。 */
+  disabled?: boolean;
 }>(), {
   text: '',
   fallback: '-',
   lines: 1,
   class: undefined,
   contentClass: undefined,
+  disabled: false,
 });
 
 const triggerRef = ref<HTMLElement | null>(null);
@@ -29,7 +32,8 @@ const normalizedLines = computed(() => Math.max(1, Math.floor(props.lines)));
 const displayText = computed(() => props.text?.trim() || props.fallback);
 const hasTooltipContent = computed(() => Boolean(props.text?.trim()));
 const tooltipOpen = computed(() => (
-  isOverflowing.value
+  !props.disabled
+  && isOverflowing.value
   && !interactionDismissed.value
   && (isPointerInside.value || isFocused.value)
 ));

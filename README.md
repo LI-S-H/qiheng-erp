@@ -172,6 +172,8 @@ flowchart LR
     Main --> Analysis[分析智能体]
     Analysis --> Python[数据集 / Python 工具]
     Main --> Report[报告流程]
+    Main --> Draft[采购草稿确认]
+    Draft --> Purchase[采购单服务]
     Main --> Trace[会话 / 消息 / 执行轨迹]
     Trace --> Experience[经验提取与目录]
     Experience --> Main
@@ -189,6 +191,14 @@ flowchart LR
 
 主智能体可调用分析工具处理数据，分析模块提供数据集、SQL 和 Python 工具相关能力，分析文件和结果有独立记录。报告流程包含内容准备、生成、审核和存储；前端按照报告契约展示结果。模型可能产生不准确的解释，阅读结果时应结合数据来源、统计口径及限制判断。
 
+### 草稿确认与写操作
+
+主智能体可以用 `prepare_purchase_order_draft` 把一份采购草稿交给用户确认：调用后本轮暂停等待，前端在输入区上方显示待确认卡片，用户点开详情后才能确认创建、修改后创建或驳回。
+
+处置结果以结论文本加参数块的形式交回模型——确认时给出单号，修改时附最终参数、变化字段和用户说明，驳回时附原因和补充要求。模型据此说明这次改动的利弊，只改备注时只做一句确认。
+
+采购单仍由前端调用采购模块现有的创建接口完成，AI 模块不直接写业务表；会话消息里只保存处置状态、单号和采购单 ID，回看时按单号读取采购单详情，不重复保存参数。等待通道在进程内存中，服务重启会丢失未处置的草稿，断线重连可恢复卡片。
+
 ### 会话、上下文与经验
 
 会话、消息、数据集、分析结果、报告和执行轨迹由对应数据记录保存。上下文压缩在消息超过配置阈值时尝试摘要较早内容并保留最近消息；摘要失败或不符合要求时保留原消息。经验任务可从轨迹提取和合并经验，再通过目录与检索供后续任务使用；任务是否运行取决于配置开关与调度设置。
@@ -197,7 +207,7 @@ flowchart LR
 
 AI 技能以外部目录中的 `SKILL.md` 和参考资料描述判断方法及计算规则。主智能体使用 `shared + main` 技能，分析智能体使用 `shared + analysis` 技能：前者侧重明确问题和规划，后者侧重分析步骤与计算口径。技能清单在模型调用时注入，匹配后按需读取正文和参考文件；技能不直接访问数据，仍需通过查询和分析工具取得实际结果。
 
-当前仓库包含需求预测、库存健康、库存策略、补货、采购执行、供应商选择六类技能。未来可以按相同目录结构继续增加；具体清单以 [技能目录](erp-server/skills/) 为准。技能内容有规则并不等于每种分析已通过真实模型和业务数据验证，库存健康中的最近入库天数也不能等同于真实批次库龄。加载、刷新和部署条件见 [AI 架构](docs/architecture/ai.md#业务技能加载与扩展)。
+当前仓库包含需求预测、库存健康、库存策略、补货、采购执行、供应商选择、调拨、清仓、促销、退货、订单履约，以及负责把采购方案交给用户确认的 `purchase-draft`。未来可以按相同目录结构继续增加；具体清单以 [技能目录](erp-server/skills/) 为准。技能内容有规则并不等于每种分析已通过真实模型和业务数据验证，库存健康中的最近入库天数也不能等同于真实批次库龄。加载、刷新和部署条件见 [AI 架构](docs/architecture/ai.md#业务技能加载与扩展)。
 
 入口：[AI 架构](docs/architecture/ai.md) · [`MainAgentController`](erp-server/erp-ai/src/main/java/com/qiheng/erp/ai/controller/MainAgentController.java) · [`SqlGraphService`](erp-server/erp-ai/src/main/java/com/qiheng/erp/ai/sql/graph/SqlGraphService.java) · [`AnalysisTool`](erp-server/erp-ai/src/main/java/com/qiheng/erp/ai/analysis/AnalysisTool.java)。
 

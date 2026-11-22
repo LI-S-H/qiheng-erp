@@ -560,6 +560,7 @@ class Product:
     brand: str
     unit: str
     specification: str
+    barcode: str
     price_cents: int               # 参考采购价（分）
     sale_price_cents: int          # 参考销售价（分）
     safety_stock: int              # 件
@@ -666,6 +667,8 @@ class InboundBill:
     source_type: str = "PURCHASE_ORDER"
     stock_bill_id: int | None = None
     return_order: "ReturnOrder | None" = None
+    source_warehouse_index: int | None = None
+    manual_reason: str = ""
 
 
 @dataclass
@@ -682,6 +685,8 @@ class OutboundBill:
     source_type: str = "SALES_ORDER"
     stock_bill_id: int | None = None
     return_order: "ReturnOrder | None" = None
+    source_warehouse_index: int | None = None
+    manual_reason: str = ""
 
 
 @dataclass
@@ -919,6 +924,7 @@ def build_products(seeds: list[ProductSeed], categories: list[Category]) -> list
                 brand=brand,
                 unit=unit,
                 specification=spec,
+                barcode=f"69{seed.id % 100000000000:011d}",
                 price_cents=price_cents,
                 sale_price_cents=sale_cents,
                 safety_stock=safety_stock,
@@ -1049,7 +1055,7 @@ def dump_master_data(warehouses: list[Warehouse], suppliers: list[Supplier],
           "quantity_precision", "specification", "barcode", "reference_purchase_price",
           "reference_sale_price", "safety_stock_qty", "status", "create_time", "update_time",
           "remark", "version"],
-         [[p.id, p.code, p.name, p.category_id, p.brand, p.unit, 0, p.specification, None,
+         [[p.id, p.code, p.name, p.category_id, p.brand, p.unit, 0, p.specification, p.barcode,
            p.price_cents, p.sale_price_cents,
            p.safety_stock * SCALE, 1, "2025-10-15 09:00:00", "2025-10-15 09:00:00", "", 0]
           for p in products])
@@ -1214,6 +1220,8 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
             bill_type="ADJUST_IN",
             entry_mode="MANUAL_ADJUSTMENT",
             source_type="STOCK_ADJUST",
+            source_warehouse_index=wi,
+            manual_reason="期初库存建账",
         )
         for product in products:
             if wi not in product.warehouses:
@@ -1690,27 +1698,30 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
             customer = rng.choice(customers)
             factor = rng.uniform(0.88, 1.0)
             unit_price = max(1, round(product.sale_price_cents * factor))
-            status = weighted_pick(["DRAFT", "SUBMITTED", "APPROVED"], [0.45, 0.30, 0.25])
+            status = weighted_pick(["DRAFT", "SUBMITTED", "APPROVED", "CANCELLED"],
+                                   [0.34, 0.24, 0.20, 0.22])
             created = day - timedelta(days=rng.randint(0, 3))
             expected_delivery = max(TODAY + timedelta(days=1), day + timedelta(days=rng.randint(2, 15)))
+            created_ts = random_datetime(created, 9, 18)
+            submitted_at = None if status == "DRAFT" else created_ts + timedelta(minutes=30)
             order = SalesOrder(
                 id=so_id.next(),
                 no=so_no.next(created),
                 customer=customer,
                 warehouse_index=wi,
                 status=status,
-                created_at=random_datetime(created, 9, 18),
+                created_at=created_ts,
                 expected_delivery=expected_delivery,
-                submitted_at=random_datetime(created, 9, 18) if status != "DRAFT" else None,
-                approved_at=random_datetime(created, 9, 18) if status == "APPROVED" else None,
-                locked_at=random_datetime(created, 9, 18) if status != "DRAFT" else None,
+                submitted_at=submitted_at,
+                approved_at=created_ts + timedelta(hours=1) if status == "APPROVED" else None,
+                locked_at=submitted_at if status in ("SUBMITTED", "APPROVED") else None,
                 lines=[SalesLine(
                     item_id=soi_id.next(),
                     product=product,
                     quantity=qty,
                     unit_price=unit_price,
                     total_amount=qty * unit_price,
-                    locked_qty=qty if status != "DRAFT" else 0,
+                    locked_qty=qty if status in ("SUBMITTED", "APPROVED") else 0,
                 )],
                 outbound_bills=[],
             )
@@ -1738,7 +1749,7 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
                 )
                 order.outbound_bills.append(bill)
                 outbound_bills.append(bill)
-            if status != "DRAFT":
+            if status in ("SUBMITTED", "APPROVED"):
                 pending_locked[key] = pending_locked.get(key, 0) + qty
             sales_orders.append(order)
 
@@ -1756,20 +1767,33 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
             unit_price=relation.quote_cents,
             total_amount=qty * relation.quote_cents,
         )
+        status = weighted_pick(["DRAFT", "SUBMITTED", "CANCELLED"], [0.35, 0.35, 0.30])
+        created_ts = random_datetime(created, 9, 17)
+        submitted_at = None if status == "DRAFT" else created_ts + timedelta(minutes=30)
+        cancelled_at = None
+        cancel_reason = ""
+        if status == "CANCELLED":
+            cancelled_at = created_ts + timedelta(hours=rng.randint(1, 4))
+            cancel_reason = rng.choice([
+                "供应商无法按时供货",
+                "内部需求计划取消",
+                "价格谈判未达成一致",
+                "重复下单，原单作废",
+            ])
         order = PurchaseOrder(
             id=po_id.next(),
             no=po_no.next(created),
             supplier=relation.supplier,
             warehouse_index=wi,
-            status=rng.choice(["DRAFT", "SUBMITTED", "CANCELLED"]),
-            created_at=random_datetime(created, 9, 17),
+            status=status,
+            created_at=created_ts,
             expected_arrival=TODAY + timedelta(days=rng.randint(3, 20)),
-            submitted_at=random_datetime(created, 9, 17) if rng.random() < 0.6 else None,
+            submitted_at=submitted_at,
             approved_at=None,
             fully_received_at=None,
-            cancelled_at=random_datetime(created, 9, 17) if rng.random() < 0.3 else None,
-            cancel_reason="供应商无法按时供货" if rng.random() < 0.3 else "",
-            cancel_affects_score=1 if rng.random() < 0.5 else 0,
+            cancelled_at=cancelled_at,
+            cancel_reason=cancel_reason,
+            cancel_affects_score=1 if status == "CANCELLED" and rng.random() < 0.5 else 0,
             lines=[line],
         )
         purchase_orders.append(order)
@@ -1811,6 +1835,8 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
             bill_type="ADJUST_OUT",
             entry_mode="MANUAL_ADJUSTMENT",
             source_type="STOCK_ADJUST",
+            source_warehouse_index=source_wi,
+            manual_reason="跨仓库存调拨",
         )
         in_bill = InboundBill(
             id=tr_in_bill_id.next(),
@@ -1835,6 +1861,8 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
             bill_type="ADJUST_IN",
             entry_mode="MANUAL_ADJUSTMENT",
             source_type="STOCK_ADJUST",
+            source_warehouse_index=source_wi,
+            manual_reason="跨仓库存调拨",
         )
         add_stock(source_wi, product.id, -qty)
         add_stock(target_wi, product.id, qty)
@@ -2462,11 +2490,11 @@ def calc_scores(result: SimulationResult, relations: dict[int, list[SupplyRelati
         if line is None:
             continue
         relation = line.relation
-        amount = move.change * line.unit_price // SCALE
+        amount = move.change * line.unit_price
         relation.score_basis_amount += amount
         if move.ts.date() >= window_start:
-            good_amount = move.qualified_qty * line.unit_price // SCALE
-            bad_amount = move.defective_qty * line.unit_price // SCALE
+            good_amount = move.qualified_qty * line.unit_price
+            bad_amount = move.defective_qty * line.unit_price
             relation.quality_amount_good += good_amount
             relation.quality_amount_bad += bad_amount
             supplier_good[relation.supplier_id] = supplier_good.get(relation.supplier_id, 0) + good_amount
@@ -2500,12 +2528,19 @@ def calc_scores(result: SimulationResult, relations: dict[int, list[SupplyRelati
             continue
         supplier_due[order.supplier.id] = supplier_due.get(order.supplier.id, 0) + due
         supplier_penalty[order.supplier.id] = supplier_penalty.get(order.supplier.id, 0.0) + penalty
-        if order.status == "INBOUND_DONE" and order.fully_received_at and order.approved_at:
-            days = (order.fully_received_at - order.approved_at).days
-            if days >= 0:
-                amount = sum(line.total_amount for line in order.lines)
-                supplier_receive_amount[order.supplier.id] = supplier_receive_amount.get(order.supplier.id, 0) + amount
-                supplier_receive_days[order.supplier.id] = supplier_receive_days.get(order.supplier.id, 0) + amount * days
+
+    # 2.1 平均到货周期：最近 180 天完全入库订单的金额加权到货天数，按完全入库时间取窗口。
+    for order in result.purchase_orders:
+        if order.status != "INBOUND_DONE" or not order.fully_received_at or not order.approved_at:
+            continue
+        if order.fully_received_at.date() < window_start:
+            continue
+        days = (order.fully_received_at - order.approved_at).days
+        if days < 0:
+            continue
+        amount = sum(line.total_amount for line in order.lines)
+        supplier_receive_amount[order.supplier.id] = supplier_receive_amount.get(order.supplier.id, 0) + amount
+        supplier_receive_days[order.supplier.id] = supplier_receive_days.get(order.supplier.id, 0) + amount * days
 
     # 3. 供货关系价格分与质量分。
     for relation in relation_by_id.values():
@@ -2698,8 +2733,13 @@ def dump_transactions(result: SimulationResult, stock_bills: list[StockBill],
             source_type = "STOCK_ADJUST"
             source_id = None
             source_no = ""
-            party_id = None
-            party_name = ""
+            if bill.source_warehouse_index is not None:
+                source_warehouse = warehouses[bill.source_warehouse_index]
+                party_id = source_warehouse.id
+                party_name = source_warehouse.name
+            else:
+                party_id = None
+                party_name = ""
             expected = None
         warehouse = warehouses[resolve_warehouse_index(bill)]
         update_time = bill.confirmed_at or bill.created_at
@@ -2710,7 +2750,7 @@ def dump_transactions(result: SimulationResult, stock_bills: list[StockBill],
             actor if bill.confirmed_at else None, actor_name if bill.confirmed_at else "",
             bill.confirmed_at, actor, actor_name, actor if bill.confirmed_at else None,
             actor_name if bill.confirmed_at else None,
-            bill.created_at, update_time, "", "", 0,
+            bill.created_at, update_time, bill.manual_reason, "", 0,
         ])
         for item in bill.lines:
             product = item["product"]
@@ -2805,8 +2845,13 @@ def dump_transactions(result: SimulationResult, stock_bills: list[StockBill],
             source_type = "STOCK_ADJUST"
             source_id = None
             source_no = ""
-            party_id = None
-            party_name = ""
+            if bill.source_warehouse_index is not None:
+                source_warehouse = warehouses[bill.source_warehouse_index]
+                party_id = source_warehouse.id
+                party_name = source_warehouse.name
+            else:
+                party_id = None
+                party_name = ""
         warehouse = warehouses[resolve_warehouse_index(bill)]
         update_time = bill.confirmed_at or bill.created_at
         ob_rows.append([
@@ -2816,7 +2861,7 @@ def dump_transactions(result: SimulationResult, stock_bills: list[StockBill],
             actor if bill.confirmed_at else None, actor_name if bill.confirmed_at else "",
             bill.confirmed_at, actor, actor_name, actor if bill.confirmed_at else None,
             actor_name if bill.confirmed_at else None,
-            bill.created_at, update_time, "", "", 0,
+            bill.created_at, update_time, bill.manual_reason, "", 0,
         ])
         for item in bill.lines:
             product = item["product"]
@@ -2828,7 +2873,8 @@ def dump_transactions(result: SimulationResult, stock_bills: list[StockBill],
                 item["id"], bill.id, bill.no, item["source_item_id"],
                 product.id, product.code, product.name, product.unit, 0,
                 qty_to_stored(plan), qty_to_stored(processed), qty_to_stored(current),
-                qty_to_stored(pending), 0, 0,
+                qty_to_stored(pending),
+                qty_to_stored(current) if bill.bill_type == "PURCHASE_RETURN" else 0, 0,
                 item_stock_bill.get(item["id"]),
                 bill.created_at, update_time, "", 0,
             ])

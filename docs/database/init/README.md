@@ -6,6 +6,7 @@
 |---|---|
 | [01-schema.sql](01-schema.sql) | 37 张表的建表、主键、索引及检查约束，无业务数据。 |
 | [02-system-demo.sql](02-system-demo.sql) | 部门、权限、角色、测试用户及角色关联，保留提供的测试记录和密码哈希。 |
+| [03-ai-metadata.sql](03-ai-metadata.sql) | AI 取数元数据：登记允许 AI 查询的 20 张表和 389 个字段。**不导入时 AI 取数会返回 `DATA_ACCESS_DENIED`**；文件可重复执行，导入前会清空这两张元数据表。 |
 
 系统数据由提供者确认全部为虚构测试数据，初始密码统一为 `123456`；本次尚未通过登录接口逐个核对密码。**这些账号和密码只供隔离测试，不能用于生产；正式环境需要另行制定账号初始化及密码管理方案。**
 
@@ -14,14 +15,15 @@
 ## 导入顺序
 
 1. 创建并选择专用空数据库，设置与目标环境兼容的字符集；准备具有该库所需权限的导入账号。
-2. 按顺序执行 `01-schema.sql` 和 `02-system-demo.sql`。例如在 Linux shell 中，从本目录执行（变量由操作者在私有环境配置，密码由客户端交互输入）：
+2. 按顺序执行 `01-schema.sql`、`02-system-demo.sql` 和 `03-ai-metadata.sql`。例如在 Linux shell 中，从本目录执行（变量由操作者在私有环境配置，密码由客户端交互输入）：
 
    ```bash
    mysql --user "$DB_USER" --password "$DB_NAME" < 01-schema.sql
    mysql --user "$DB_USER" --password "$DB_NAME" < 02-system-demo.sql
+   mysql --user "$DB_USER" --password "$DB_NAME" < 03-ai-metadata.sql
    ```
 
-3. 如需演示业务，使用 [模拟数据包](../demo-data/README.md)进行导入、业务规则检查和 Redis 编号序列同步；不需要演示数据时跳过。
+3. 如需演示业务，使用 [模拟数据包](../demo-data/README.md)进行导入、业务规则检查和 Redis 编号序列同步；不需要演示数据时跳过。导入演示数据后仍保留元数据，不会被覆盖。
 4. 按目标环境校正供应商评分并完成登录、权限、业务接口和数据检查后，再开放业务写入。
 
 如使用当前 Docker 发布脚本的 `import-db`，它接收一个 SQL 文件。可在**可信私有目录**将这两个文件按上述顺序合并成一个临时 SQL 文件后导入，并遵循 [Docker 部署说明](../../deployment/docker.md)。失败时先审查数据库状态，不盲目重试或覆盖数据。

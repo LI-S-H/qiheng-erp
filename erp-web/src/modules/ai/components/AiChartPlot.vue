@@ -62,23 +62,37 @@ function inferUnit() {
   return '';
 }
 
-/** 坐标图最大值：堆叠图按每行合计，普通图按单系列最大值。 */
-const maxValue = computed(() => {
+/** 坐标图值域：堆叠图按每行合计取最大值；出现负值时向下扩展，避免折线画出绘图区。 */
+const valueRange = computed(() => {
   const values = data.value.flatMap(row => fields.value.map(field => chartNumber(row, field)));
-  const max = props.chart.type === 'stackedBar'
+  const rawMax = props.chart.type === 'stackedBar'
     ? Math.max(...data.value.map(row => fields.value.reduce((sum, field) => sum + Math.max(chartNumber(row, field), 0), 0)), 1)
     : Math.max(...values, 1);
-  return yUnit.value === '%' ? Math.max(max, 100) : max;
+  const max = yUnit.value === '%' ? Math.max(rawMax, 100) : rawMax;
+  const min = Math.min(0, ...values);
+  return { min, max: max <= min ? min + 1 : max };
 });
 
+const maxValue = computed(() => valueRange.value.max);
+
 const ticks = computed(() => {
-  const max = maxValue.value;
-  return [max, max * 0.75, max * 0.5, max * 0.25, 0];
+  const { min, max } = valueRange.value;
+  // 有负值时刻度必须保留 0，零线作为基准；正负各取两档。
+  if (min >= 0) return [max, max * 0.75, max * 0.5, max * 0.25, 0];
+  return [max, max * 0.5, 0, min * 0.5, min];
 });
 
 function yFor(value: number) {
-  return vertical.bottom - (value / maxValue.value) * (vertical.bottom - vertical.top);
+  const { min, max } = valueRange.value;
+  return vertical.bottom - ((value - min) / (max - min)) * (vertical.bottom - vertical.top);
 }
+
+/** 零基线：值域含负数时从零线起算柱高。 */
+const zeroY = computed(() => yFor(0));
+
+/** 裁剪绘图区内容，防止异常值画出坐标区。 */
+const clipId = `ai-chart-clip-${Math.random().toString(36).slice(2, 9)}`;
+const plotClip = `url(#${clipId})`;
 
 function xStep() {
   return (vertical.right - vertical.left) / Math.max(data.value.length, 1);
@@ -111,23 +125,25 @@ function barX(index: number, seriesIndex: number) {
 function barHeight(row: AiChartRow, field: string) {
   const value = Math.max(chartNumber(row, field), 0);
   if (value <= 0) return 0;
-  return Math.max(2, vertical.bottom - yFor(value));
+  return Math.max(2, zeroY.value - yFor(value));
 }
 
 /** 堆叠柱：同一行内按系列从底部累积。 */
 function stackedBarY(row: AiChartRow, field: string) {
+  const { min, max } = valueRange.value;
   const fieldIndex = fields.value.indexOf(field);
   let below = 0;
   for (let index = 0; index < fieldIndex; index++) {
     below += Math.max(chartNumber(row, fields.value[index]), 0);
   }
-  return vertical.bottom - (below + Math.max(chartNumber(row, field), 0)) / maxValue.value
+  return vertical.bottom - ((below + Math.max(chartNumber(row, field), 0) - min) / (max - min))
     * (vertical.bottom - vertical.top);
 }
 
 function stackedBarHeight(row: AiChartRow, field: string) {
+  const { min, max } = valueRange.value;
   const value = Math.max(chartNumber(row, field), 0);
-  return value <= 0 ? 0 : Math.max(2, value / maxValue.value * (vertical.bottom - vertical.top));
+  return value <= 0 ? 0 : Math.max(2, value / (max - min) * (vertical.bottom - vertical.top));
 }
 
 const horizontalMax = computed(() => Math.max(
@@ -203,16 +219,27 @@ function truncate(value: string, limit: number) {
       role="img"
       :aria-label="chart.title"
     >
+      <defs>
+        <clipPath :id="clipId">
+          <rect
+            :x="vertical.left"
+            :y="vertical.top"
+            :width="vertical.right - vertical.left"
+            :height="vertical.bottom - vertical.top"
+          />
+        </clipPath>
+      </defs>
+
       <g class="ai-chart-plot__grid">
-        <line v-for="tick in ticks" :key="`grid-${tick}`" :x1="vertical.left" :y1="yFor(tick)" :x2="vertical.right" :y2="yFor(tick)" />
-        <line :x1="vertical.left" :y1="vertical.bottom" :x2="vertical.right" :y2="vertical.bottom" class="ai-chart-plot__baseline" />
+        <line v-for="(tick, index) in ticks" :key="`grid-${index}`" :x1="vertical.left" :y1="yFor(tick)" :x2="vertical.right" :y2="yFor(tick)" />
+        <line :x1="vertical.left" :y1="zeroY" :x2="vertical.right" :y2="zeroY" class="ai-chart-plot__baseline" />
       </g>
       <g class="ai-chart-plot__y-axis">
         <text x="4" y="18" class="ai-chart-plot__unit">{{ yUnit ? `单位：${yUnit}` : '' }}</text>
-        <text v-for="tick in ticks" :key="`tick-${tick}`" x="4" :y="yFor(tick) + 4">{{ tickText(tick) }}</text>
+        <text v-for="(tick, index) in ticks" :key="`tick-${index}`" x="4" :y="yFor(tick) + 4">{{ tickText(tick) }}</text>
       </g>
 
-      <g v-if="chart.type === 'line'" class="ai-chart-plot__line-layer">
+      <g v-if="chart.type === 'line'" class="ai-chart-plot__line-layer" :clip-path="plotClip">
         <polyline
           v-for="(field, seriesIndex) in fields"
           :key="field"
@@ -234,7 +261,7 @@ function truncate(value: string, limit: number) {
         </g>
       </g>
 
-      <g v-else-if="chart.type === 'stackedBar'" class="ai-chart-plot__bar-layer">
+      <g v-else-if="chart.type === 'stackedBar'" class="ai-chart-plot__bar-layer" :clip-path="plotClip">
         <template v-for="(row, index) in data" :key="`stack-${chartLabel(row)}-${index}`">
           <rect
             v-for="(field, seriesIndex) in fields"
@@ -249,7 +276,7 @@ function truncate(value: string, limit: number) {
         </template>
       </g>
 
-      <g v-else class="ai-chart-plot__bar-layer">
+      <g v-else class="ai-chart-plot__bar-layer" :clip-path="plotClip">
         <template v-for="(row, index) in data" :key="`bar-${chartLabel(row)}-${index}`">
           <rect
             v-for="(field, seriesIndex) in fields"

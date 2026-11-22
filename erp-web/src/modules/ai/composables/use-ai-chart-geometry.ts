@@ -35,19 +35,33 @@ export function useAiChartGeometry(chartPalette: readonly string[], chartFrame: 
     return value == null ? '' : String(value);
   }
 
-  function chartMax(chart: AiChartSpec) {
+  function chartRange(chart: AiChartSpec) {
     const fields = chartFields(chart);
     const values = chart.data.flatMap(row => fields.map(field => chartNumber(row, field)));
-    return Math.max(...values, 1);
+    const max = Math.max(...values, 1);
+    const min = Math.min(0, ...values);
+    return { min, max: max <= min ? min + 1 : max };
+  }
+
+  function chartMax(chart: AiChartSpec) {
+    return chartRange(chart).max;
   }
 
   function chartY(chart: AiChartSpec, value: number) {
-    return chartFrame.plotHeight - (value / chartMax(chart)) * chartFrame.valueHeight - chartFrame.topPadding;
+    const { min, max } = chartRange(chart);
+    return chartFrame.plotHeight - chartFrame.topPadding
+      - ((value - min) / (max - min)) * chartFrame.valueHeight;
+  }
+
+  function chartZeroY(chart: AiChartSpec) {
+    return chartY(chart, 0);
   }
 
   function chartTicks(chart: AiChartSpec) {
-    const max = chartMax(chart);
-    return [max, max * 0.75, max * 0.5, max * 0.25, 0];
+    const { min, max } = chartRange(chart);
+    // 有负值时刻度必须保留 0，零线作为基准；正负各取两档。
+    if (min >= 0) return [max, max * 0.75, max * 0.5, max * 0.25, 0];
+    return [max, max * 0.5, 0, min * 0.5, min];
   }
 
   function chartGridLines(chart: AiChartSpec) {
@@ -102,11 +116,11 @@ export function useAiChartGeometry(chartPalette: readonly string[], chartFrame: 
   function chartBarHeight(chart: AiChartSpec, row: AiChartRow) {
     const value = chartNumber(row, chartBarField(chart));
     if (value <= 0) return 0;
-    return Math.max(4, chartFrame.plotHeight - chartY(chart, value));
+    return Math.max(4, chartZeroY(chart) - chartY(chart, value));
   }
 
   function chartBarY(chart: AiChartSpec, row: AiChartRow) {
-    return chartFrame.plotHeight - chartBarHeight(chart, row);
+    return chartY(chart, chartNumber(row, chartBarField(chart)));
   }
 
   return {

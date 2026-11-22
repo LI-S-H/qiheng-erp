@@ -19,7 +19,7 @@ python generate_demo_data.py
 |---|---|
 | `demo-data-v2.sql` | 完整演示数据，导入空库即可 |
 | `master-data-v2.sql` | 仅主数据，便于单独检查 |
-| `verify-data-v2.sql` | 86 项业务规则检查，第二列为 0 表示通过 |
+| `verify-data-v2.sql` | 99 项业务规则检查，第二列为 0 表示通过 |
 | `stats-v2.txt` | 数据规模与分布统计 |
 
 ## 输入
@@ -75,10 +75,10 @@ python generate_demo_data.py
 ## 验证方法
 
 1. 建隔离库，依次导入 `docs/database/init/01-schema.sql`、`02-system-demo.sql`、`out/demo-data-v2.sql`。
-2. 执行 `out/verify-data-v2.sql`，86 项检查应全部为 0。
+2. 执行 `out/verify-data-v2.sql`，99 项检查应全部为 0。
 3. 可选：将后端连接到隔离库，执行真实的提交、审核、入库确认、出库确认流程。
 
-2026-11-22 已在隔离库 `erp_demo_v2` 完成导入并通过 86 项检查；后端冒烟验证通过采购单提交/审核/入库确认、销售单提交/审核/出库确认、退货提交和库存余额复核。
+2026-11-22 已在隔离库 `erp_demo_v2` 完成导入并通过 99 项检查；后端冒烟验证通过采购单提交/审核/入库确认、销售单提交/审核/出库确认、退货提交和库存余额复核。
 
 ## 注意
 

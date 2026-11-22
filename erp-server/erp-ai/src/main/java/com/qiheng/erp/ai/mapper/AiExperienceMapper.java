@@ -67,6 +67,8 @@ public interface AiExperienceMapper extends MPJBaseMapper<AiExperience> {
     /**
      * 查询某个任务是否已经提取过经验。
      *
+     * <p>不过滤 deleted：合并软删除的经验仍算已提取，避免同一任务被反复提取。</p>
+     *
      * @param agentType    智能体类型
      * @param sourceTaskId 来源任务 ID
      * @return 已存在的条数
@@ -76,7 +78,6 @@ public interface AiExperienceMapper extends MPJBaseMapper<AiExperience> {
         FROM ai_agent_experience
         WHERE agent_type = #{agentType}
           AND source_task_id = #{sourceTaskId}
-          AND deleted = 0
         """)
     int countBySource(@Param("agentType") String agentType,
                       @Param("sourceTaskId") String sourceTaskId);

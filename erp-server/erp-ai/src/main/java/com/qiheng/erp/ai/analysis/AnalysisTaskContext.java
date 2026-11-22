@@ -68,12 +68,13 @@ public final class AnalysisTaskContext implements AutoCloseable {
         return List.copyOf(usedDatasetIds);
     }
 
-    /** 本任务首次使用 Python 时创建，后续复用同一会话。 */
+    /** 本任务首次使用 Python 时创建，后续复用同一会话；超时销毁后自动重建。 */
     public synchronized PythonSandboxSession sandbox() {
         if (closed) {
             throw new IllegalStateException("分析任务已结束");
         }
-        if (sandbox == null) {
+        // 执行超时会关闭会话并销毁容器，下一次调用必须换新容器。
+        if (sandbox == null || sandbox.isClosed()) {
             sandbox = runtime.openSession(taskId);
         }
         return sandbox;

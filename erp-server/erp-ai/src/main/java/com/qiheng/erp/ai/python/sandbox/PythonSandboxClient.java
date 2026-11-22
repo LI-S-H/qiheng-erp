@@ -12,6 +12,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 /**
@@ -21,6 +24,12 @@ import java.util.function.Consumer;
  * @since 2026-11-10
  */
 final class PythonSandboxClient {
+    /** 默认执行超时，准备数据等内部调用使用。 */
+    static final int DEFAULT_TIMEOUT_SECONDS = 60;
+
+    /** 执行结束后等待结果回传的余量，超过即判定传输已失效。 */
+    private static final long TRANSFER_GRACE_SECONDS = 30;
+
     private final BaseSandbox sandbox;
     private final ObjectMapper mapper;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
@@ -40,6 +49,20 @@ final class PythonSandboxClient {
 
     /** 初始化容器后调用 Python 入口，错误信息不包含请求正文或认证信息。 */
     String run(String code) {
+        return run(code, DEFAULT_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * 执行包装后的代码；传输层按执行超时加余量设置硬 deadline。
+     *
+     * <p>HttpClient 的请求超时只覆盖到响应开始，响应体流式不结束时不会触发，
+     * 因此用 Future 超时兜底。超时后销毁容器，避免后续调用复用挂死的会话。</p>
+     *
+     * @param code 包装后的完整代码
+     * @param timeoutSeconds Python 子进程执行超时
+     * @return 沙箱原始响应
+     */
+    String run(String code, int timeoutSeconds) {
         try {
             if (connection == null) {
                 connection = sandbox.getInfo();
@@ -54,7 +77,22 @@ final class PythonSandboxClient {
             String body = mapper.writeValueAsString(Map.of("code", code));
             var request = request("/tools/run_ipython_cell")
                     .POST(HttpRequest.BodyPublishers.ofString(body)).build();
-            var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response;
+            try {
+                response = http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                        .orTimeout(Math.max(timeoutSeconds, 1) + TRANSFER_GRACE_SECONDS, TimeUnit.SECONDS)
+                        .get();
+            } catch (ExecutionException error) {
+                if (error.getCause() instanceof TimeoutException) {
+                    destroySandbox();
+                    throw new IllegalStateException("沙箱执行超时");
+                }
+                Throwable cause = error.getCause();
+                if (cause instanceof IOException io) {
+                    throw io;
+                }
+                throw new IllegalStateException("沙箱调用失败", cause);
+            }
             if (response.statusCode() != 200) {
                 throw new IllegalStateException("沙箱工具调用失败，HTTP 状态：" + response.statusCode());
             }
@@ -71,6 +109,16 @@ final class PythonSandboxClient {
             throw new IllegalStateException("沙箱响应格式错误");
         } catch (IOException error) {
             throw new IllegalStateException("沙箱连接失败", error);
+        }
+    }
+
+    /** 超时或通信失败后销毁容器，下一次调用重新创建。 */
+    private void destroySandbox() {
+        connection = null;
+        try {
+            sandbox.close();
+        } catch (RuntimeException ignored) {
+            // 容器可能已不存在，忽略即可。
         }
     }
 

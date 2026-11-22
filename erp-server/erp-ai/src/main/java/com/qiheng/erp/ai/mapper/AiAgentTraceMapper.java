@@ -42,7 +42,10 @@ public interface AiAgentTraceMapper {
     int deleteByConversation(@Param("userId") long userId, @Param("conversationId") long conversationId);
 
     /**
-     * 查询可以提取经验的任务：有 FINAL、达到最小流水条数、且没有被提取过。
+     * 查询可以提取经验的任务：有 FINAL、达到最小流水条数、且没有提取记录。
+     *
+     * <p>提取判断不过滤 deleted：合并阶段会软删除被合并的经验，
+     * 若按 deleted = 0 判断，对应任务会被反复重新提取。</p>
      *
      * @param since     只取该时间之后创建的任务
      * @param minEvents 最小流水条数
@@ -60,8 +63,7 @@ public interface AiAgentTraceMapper {
                         AND f.event_type = 'FINAL')
           AND NOT EXISTS (SELECT 1 FROM ai_agent_experience e
                           WHERE e.agent_type = t.agent_type
-                            AND e.source_task_id = t.task_id
-                            AND e.deleted = 0)
+                            AND e.source_task_id = t.task_id)
         GROUP BY t.agent_type, t.task_id, t.user_id, t.conversation_id
         HAVING COUNT(*) >= #{minEvents}
         ORDER BY MAX(t.create_time) DESC

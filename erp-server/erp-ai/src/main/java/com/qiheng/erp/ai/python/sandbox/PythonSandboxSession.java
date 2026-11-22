@@ -180,7 +180,15 @@ public final class PythonSandboxSession implements AutoCloseable {
     /** 在独立 Python 子进程中执行，并解析明确的成功、错误和超时状态。 */
     public synchronized PythonExecutionResult execute(String code, int timeoutSeconds, int previewBytes) {
         String wrapped = protocol.wrap(code, UUID.randomUUID().toString(), timeoutSeconds, previewBytes);
-        return protocol.parse(runBootstrap(wrapped));
+        try {
+            return protocol.parse(runBootstrap(wrapped, timeoutSeconds));
+        } catch (RuntimeException error) {
+            // 传输已失效，不能复用同一个容器；关闭后由任务上下文重建会话。
+            if (error.getMessage() != null && error.getMessage().contains("沙箱执行超时")) {
+                close();
+            }
+            throw error;
+        }
     }
 
     /** 将本次授权数据按块写入任务目录，避免一次请求携带完整大文件。 */
@@ -249,10 +257,26 @@ public final class PythonSandboxSession implements AutoCloseable {
 
     /** 执行服务端生成的固定脚本，用于准备和读取任务文件。 */
     synchronized String runBootstrap(String code) {
+        return runBootstrap(code, PythonSandboxClient.DEFAULT_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * 执行服务端生成的固定脚本，并指定子进程执行超时。
+     *
+     * @param code 固定脚本
+     * @param timeoutSeconds 子进程执行超时
+     * @return 沙箱原始响应
+     */
+    synchronized String runBootstrap(String code, int timeoutSeconds) {
         if (closed) {
             throw new IllegalStateException("Python 沙箱会话已关闭");
         }
-        return client.run(code);
+        return client.run(code, timeoutSeconds);
+    }
+
+    /** 会话是否已关闭；任务上下文据此重建沙箱。 */
+    public synchronized boolean isClosed() {
+        return closed;
     }
 
     /** 释放本任务容器及其临时文件。 */

@@ -112,8 +112,11 @@ public final class PythonAnalysisTool {
             @ToolParam(description = "是否保存标准输出；省略时按默认值 false 处理")
             boolean saveResult,
             @ToolParam(required = false, description = "保存标准输出文本时的展示名称，不影响生成文件名；省略时使用默认名称")
-            String outputTextName, ToolContext context) throws IOException {
+            String outputTextName,
+            @ToolParam(required = false, description = "执行超时秒数，默认 60，上限 300；数据量大或计算复杂时调大")
+            Integer timeoutSeconds, ToolContext context) throws IOException {
         var task = task(context);
+        int timeout = timeoutSeconds == null ? 60 : Math.min(Math.max(timeoutSeconds, 10), 300);
         synchronized (task) {
             var prepared = task.preparedDatasets();
             var identity = task.identity();
@@ -131,7 +134,7 @@ public final class PythonAnalysisTool {
             var before = readArtifactsBefore(scope);
             PythonExecutionResult execution;
             try {
-                execution = sandbox.execute(code, 60, 8000);
+                execution = sandbox.execute(code, timeout, 8000);
             } catch (RuntimeException error) {
                 // 沙箱不可用：容器丢失或通信失败，本次没有任何文件产出。
                 log.warn("Python 沙箱不可用 taskId={} errorType={}", taskId, error.getClass().getName());

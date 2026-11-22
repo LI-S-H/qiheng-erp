@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.retry.NonTransientAiException;
+import org.springframework.ai.retry.TransientAiException;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.client.reactive.JdkClientHttpConnector;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -76,7 +78,15 @@ public final class OpenAiCompatibleChatModel {
                         .restClientBuilder(rest)
                         .webClientBuilder(WebClient.builder().clientConnector(streamingHttp))
                         .build())
-                .retryTemplate(RetryTemplate.builder().maxAttempts(1).build())
+                // 429 限流和网络瞬态错误重试；参数类 4xx 不重试，避免无谓等待。
+                .retryTemplate(RetryTemplate.builder()
+                        .maxAttempts(3)
+                        .exponentialBackoff(2000, 2, 8000)
+                        .retryOn(error -> error instanceof TransientAiException
+                                || (error instanceof NonTransientAiException
+                                && error.getMessage() != null
+                                && error.getMessage().contains("429")))
+                        .build())
                 .defaultOptions(options.build())
                 .build();
     }

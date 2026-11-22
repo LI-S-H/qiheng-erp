@@ -38,6 +38,8 @@ description: 接到库存策略计算任务，需要确定安全库存、再订�
 
 公式、Z 值表和适用条件见 `references/inventory-policy.md`。
 
+- 调用方式：`readSkillFile(skill="inventory-policy", path="references/inventory-policy.md")`，开始计算前先读取，不要按自己的口径心算
+
 ## 计算步骤
 
 ### 第一步：统计需求

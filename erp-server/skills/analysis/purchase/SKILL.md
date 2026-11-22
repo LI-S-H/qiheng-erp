@@ -27,6 +27,7 @@ description: 接到采购计算任务，需要确定下单数量、比较报价�
 - 报价必须先确认有效期、币种和是否含税；过期报价只能作参考，不能直接用于下单决策
 - 候选和报价从供应商产品档案取，供应商评分直接引用系统结果，不在采购侧重算
 - 公式细则见 `references/purchasing.md`
+- 调用方式：`readSkillFile(skill="purchase", path="references/purchasing.md")`，开始计算前先读取，不要按自己的口径心算
 
 ## 计算步骤
 

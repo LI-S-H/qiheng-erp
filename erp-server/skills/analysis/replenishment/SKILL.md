@@ -31,13 +31,16 @@ description: 接到补货分析任务，需要计算当前低于安全库存的�
 
 预测方法的公式、参数和历史长度要求见 `references/forecasting.md`。
 滚动余额、单批补救、取整和安全库存公式见 `references/inventory-calc.md`。
-需要具体计算时先读取对应文件。
+
+- 调用方式：`readSkillFile(skill="replenishment", path="references/forecasting.md")`
+- 调用方式：`readSkillFile(skill="replenishment", path="references/inventory-calc.md")`
+- 需要具体计算时先读取对应文件，不要按自己的口径心算
 
 ## 计算步骤
 
 ### 当前缺口
 
-1. 数量按库内值还原：库存、锁定、订单都除以 100；产品参考价是元，不再除
+1. 数量按库内值还原：库存、锁定、订单都除以 100；产品参考价按分除以 100
 2. 可用量 A = H − R
    - H 或 R 缺失：该行标记未确认，不按零处理
    - A 小于 0，或 R 大于 H：停止对该行承诺可用量，其他正常行继续

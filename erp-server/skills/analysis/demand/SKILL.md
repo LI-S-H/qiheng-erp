@@ -33,6 +33,10 @@ description: 接到需求预测任务，需要给出未来各期需求量、判�
 方法公式、参数和历史长度要求见 `references/forecasting.md`。
 异常检测、回测指标、基准定义和区间计算见 `references/validation.md`。
 
+- 调用方式：`readSkillFile(skill="demand", path="references/forecasting.md")`
+- 调用方式：`readSkillFile(skill="demand", path="references/validation.md")`
+- 开始计算前先读取对应文件，不要按自己的口径心算
+
 ## 计算步骤
 
 ### 1. 数据准备

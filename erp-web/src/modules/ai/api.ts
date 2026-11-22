@@ -152,9 +152,9 @@ export async function getAiConversationMessagePage(
   return normalizeMessagePage(response.data.data);
 }
 
-/** 只定位最近一页，旧消息由用户向上加载，避免每次执行后重读全量历史。 */
+/** 只定位最近一页，旧消息由用户向上加载，避免每次执行后重读全量历史；一页按轮次计。 */
 export async function getAiConversationHistory(conversationId: string, signal?: AbortSignal) {
-  const first = await getAiConversationMessagePage(conversationId, 1, 50, signal);
+  const first = await getAiConversationMessagePage(conversationId, 1, 20, signal);
   const lastPage = Math.max(1, Math.ceil(first.total / first.pageSize));
   const latest =
     lastPage === 1

@@ -156,8 +156,15 @@ public class AiAssistantServiceImpl implements AiAssistantService {
         int safePageNum = Math.max(pageNum, 1);
         int safePageSize = Math.min(Math.max(pageSize, 1), 100);
         int offset = (safePageNum - 1) * safePageSize;
-        long total = messageMapper.countVisibleMessages(conversationId, userId);
-        List<AiMessage> rows = total == 0 ? List.of() : messageMapper.selectVisibleMessages(conversationId, userId, offset, safePageSize);
+        // 按轮次分页：先取本页涉及的轮次，再取这些轮次的全部消息，避免把一轮切在两页。
+        long total = messageMapper.countVisibleTurns(conversationId, userId);
+        List<AiMessage> rows = List.of();
+        if (total > 0) {
+            List<String> turnKeys = messageMapper.selectVisibleTurnKeys(conversationId, userId, offset, safePageSize);
+            if (!turnKeys.isEmpty()) {
+                rows = messageMapper.selectMessagesByTurnKeys(conversationId, userId, turnKeys);
+            }
+        }
         List<ChatMessageVO> records = rows.stream().map(messageCodec::toView).toList();
         return new ConversationMessagePageVO(records, total, safePageNum, safePageSize);
     }

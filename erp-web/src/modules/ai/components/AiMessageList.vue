@@ -4,6 +4,7 @@ import { Bot, ChevronDown, ChevronRight, Database, LoaderCircle, UserRound } fro
 import AiMarkdownContent from './AiMarkdownContent.vue';
 import AiReportMessage from './AiReportMessage.vue';
 import AiClarificationHistory from '../clarification/AiClarificationHistory.vue';
+import AiPurchaseDraftHistory from '../drafts/AiPurchaseDraftHistory.vue';
 import { toolIcon } from './tool-icons';
 import type { AiConversationMessage, AiMessageContent } from '../types';
 import type { ClarificationQuestion } from '../clarification/clarification-types';
@@ -37,6 +38,21 @@ type VisibleStep = Omit<AiConversationMessage, 'content'> & {
     data: Extract<AiMessageContent, { type: K }>['data'];
   };
 }[AiMessageContent['type']];
+/** 已处置的采购草稿记录。 */
+type DraftMessage = AiConversationMessage & {
+  content: Extract<AiMessageContent, { type: 'PURCHASE_DRAFT' }>;
+};
+/** 一次用户提问对应的一轮：用户消息、工作步骤、最终回复与产物都挂在同一轮下。 */
+interface ConversationTurn {
+  requestId: string;
+  sortKey: bigint;
+  user: AiConversationMessage | null;
+  steps: VisibleStep[];
+  final: AiConversationMessage | null;
+  drafts: DraftMessage[];
+  /** 追问回答的补充说明，仍以折叠块展示。 */
+  receipts: AiConversationMessage[];
+}
 /** 复制一份带数据引用的过程行，避免模板重复展开 content.data。 */
 function toVisibleStep(message: AiConversationMessage): VisibleStep {
   return { ...message, contentType: message.content.type, data: message.content.data } as VisibleStep;
@@ -98,7 +114,101 @@ const stepsByRun = computed(() => {
   }
   return result;
 });
-/** 运行中断、没有最终答复或工具展示行时仍可查看已保存的过程。 */
+
+/**
+ * 按 requestId 把消息聚合成轮次：用户消息、工作步骤、最终回复、草稿记录各归其位。
+ *
+ * <p>同一轮的实时条目和历史消息合并后只渲染一个机器人，只有用户发起新消息才另起一轮。</p>
+ */
+const turns = computed<ConversationTurn[]>(() => {
+  const map = new Map<string, ConversationTurn>();
+  const ensure = (message: AiConversationMessage) => {
+    let turn = map.get(message.requestId);
+    if (!turn) {
+      turn = {
+        requestId: message.requestId,
+        // 消息按 seq 升序；首次出现即该轮最小序号，用于稳定排序。
+        sortKey: BigInt(message.seq),
+        user: null,
+        steps: [],
+        final: null,
+        drafts: [],
+        receipts: [],
+      };
+      map.set(message.requestId, turn);
+    }
+    return turn;
+  };
+  for (const message of props.messages) {
+    if (message.content.type === 'PURCHASE_DRAFT') {
+      ensure(message).drafts.push(message as DraftMessage);
+      continue;
+    }
+    if (message.kind === 'USER_INPUT') {
+      ensure(message).user = message;
+      continue;
+    }
+    if (message.kind === 'ASSISTANT_FINAL' && message.content.type === 'TEXT') {
+      ensure(message).final = message;
+      continue;
+    }
+    if (message.kind === 'TOOL_RESULT') {
+      // 追问回答只作为折叠的补充说明，和问题卡片关联展示。
+      if (message.content.type === 'TEXT' && message.content.data.callId
+        && !questionIds.value.has(message.content.data.callId)
+        && !props.recentAnswers?.[message.content.data.callId]) {
+        ensure(message).receipts.push(message);
+      }
+      continue;
+    }
+    // 其余步骤只登记轮次，具体内容由 stepsByRun 统一提供。
+    if (message.kind === 'ASSISTANT_STEP' || message.kind === 'TOOL_CALL'
+      || message.kind === 'ANALYSIS_STEP' || message.kind === 'REPORT_STEP') {
+      ensure(message);
+    }
+  }
+  for (const [requestId, steps] of stepsByRun.value) {
+    const turn = map.get(requestId);
+    if (turn) {
+      turn.steps = steps;
+    }
+  }
+  return [...map.values()]
+    .filter(turn => turn.user || turn.final || turn.steps.length || turn.drafts.length)
+    .sort((left, right) => (left.sortKey < right.sortKey ? -1 : left.sortKey > right.sortKey ? 1 : 0));
+});
+
+/** 当前运行轮次的标识；重连后与已落库的轮次对齐，避免多出一个机器人。 */
+const liveTurnId = computed(() => props.reportRunId || '');
+const liveTurnExists = computed(() => Boolean(liveTurnId.value)
+  && turns.value.some(turn => turn.requestId === liveTurnId.value));
+const liveTextItems = computed(() => (props.liveItems || []).filter(item => item.type === 'text'));
+const liveClarificationItems = computed(() => (props.liveItems || [])
+  .filter((item): item is Extract<LiveItem, { type: 'clarification' }> => item.type === 'clarification'));
+const liveRunningTools = computed(() => (props.liveItems || [])
+  .filter((item): item is Extract<LiveItem, { type: 'tool' }> => item.type === 'tool' && item.status === 'running'));
+
+/** 该轮是否为正在运行的那一轮。 */
+function isLiveTurn(turn: ConversationTurn) {
+  return Boolean(liveTurnId.value) && turn.requestId === liveTurnId.value
+    && (Boolean(props.liveItems?.length) || Boolean(props.thinking));
+}
+
+/** 这一轮是否有机器人侧内容；只有用户消息时不再补一个空机器人。 */
+function hasAssistant(turn: ConversationTurn) {
+  return Boolean(turn.final) || turn.steps.length > 0 || turn.drafts.length > 0 || isLiveTurn(turn);
+}
+
+/** 该轮最终回复的正文。 */
+function finalText(turn: ConversationTurn) {
+  return turn.final && turn.final.content.type === 'TEXT' ? turn.final.content.data.text : '';
+}
+
+/** 机器人条目的时间：优先用最终回复，其次用用户提问。 */
+function turnTime(turn: ConversationTurn) {
+  return turn.final?.createdAt || turn.user?.createdAt || '';
+}
+/** 没有落到最终答复的报告过程：仍允许从历史消息打开。 */
 const orphanReportProcesses = computed(() => props.messages.filter(message => {
   if (message.kind !== 'REPORT_STEP' || message.content.type !== 'REPORT' || finalRuns.value.has(message.requestId)) {
     return false;
@@ -174,103 +284,111 @@ function toolSummary(step: AiConversationMessage) {
 <template>
   <div class="message-list" :aria-busy="loading">
     <p v-if="loading && !messages.length" class="list-note" role="status">正在读取会话记录…</p>
-    <article
-      v-for="message in messages.filter(item => !['ANALYSIS_STEP', 'REPORT_STEP'].includes(item.kind) && (item.content.type !== 'CLARIFICATION' || !liveQuestionIds.has(item.content.data.callId)) && (item.kind !== 'TOOL_RESULT' || (item.content.type === 'TEXT' && item.content.data.callId && !questionIds.has(item.content.data.callId) && !recentAnswers?.[item.content.data.callId])) && (!['ASSISTANT_STEP', 'TOOL_CALL'].includes(item.kind) || !finalRuns.has(item.requestId)))"
-      :key="message.messageId"
-      class="message"
-      :class="{ 'is-user': message.role === 'user', 'is-clarification': message.content.type === 'CLARIFICATION' }"
-      :data-message-id="message.messageId"
-    >
-      <span v-if="message.content.type !== 'CLARIFICATION'" class="message-avatar" aria-hidden="true"
-        ><UserRound v-if="message.role === 'user'" class="size-4" /><Bot v-else class="size-4"
-      /></span>
-      <div class="message-content">
-        <div v-if="message.content.type !== 'CLARIFICATION'" class="message-meta">
-          <span>{{ message.role === 'user' ? '你' : '经营助手' }}</span
-          ><time>{{ message.createdAt }}</time>
+
+    <!-- 一轮对话一个区块：用户气泡 + 一个机器人图标 -->
+    <template v-for="turn in turns" :key="turn.requestId">
+      <article v-if="turn.user" :key="`${turn.requestId}-user`" class="message is-user" :data-message-id="turn.user.messageId">
+        <span class="message-avatar" aria-hidden="true"><UserRound class="size-4" /></span>
+        <div class="message-content">
+          <div class="message-meta"><span>你</span><time>{{ turn.user.createdAt }}</time></div>
+          <p class="message-bubble">{{ turn.user.content.type === 'TEXT' ? turn.user.content.data.text : '' }}</p>
         </div>
-        <section v-if="message.kind === 'ASSISTANT_FINAL' && stepsByRun.get(message.requestId)?.length" class="work-steps">
-          <button type="button" class="work-toggle" :aria-expanded="expandedRuns.has(message.requestId)" @click="toggleSteps(message.requestId)">
-            <ChevronDown class="work-chevron" :class="{ 'is-open': expandedRuns.has(message.requestId) }" aria-hidden="true" />
-            {{ expandedRuns.has(message.requestId) ? '收起工作过程' : '查看工作过程' }}
-          </button>
-          <div class="work-reveal" :class="{ 'is-open': expandedRuns.has(message.requestId) }" :inert="!expandedRuns.has(message.requestId)">
-            <div class="work-reveal-inner">
-              <template v-for="step in stepsByRun.get(message.requestId)" :key="step.messageId">
-                <AiClarificationHistory v-if="step.contentType === 'CLARIFICATION' && !liveQuestionIds.has(step.data.callId)" :questions="step.data.questions" :answer="answers.get(step.data.callId) || recentAnswers?.[step.data.callId]?.answer" :question-answers="answerDetails.get(step.data.callId)?.questionAnswers || recentAnswers?.[step.data.callId]?.questionAnswers" :note="answerDetails.get(step.data.callId)?.note || recentAnswers?.[step.data.callId]?.note" :tags="[]" />
-                <button v-else-if="step.contentType === 'TEXT' && isAnalysisSummary(step)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
-                  <Bot class="work-tool-icon" aria-hidden="true" />
-                  <span>分析专家完成分析</span>
-                  <span class="work-duration">{{ toolSummary(step)?.[2] }}</span>
-                  <span class="work-analysis-hint">查看过程</span>
-                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
-                </button>
-                <button v-else-if="isAnalysisToolStep(step) && step.contentType === 'TOOL_STEP'" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
-                  <Bot class="work-tool-icon" aria-hidden="true" />
-                  <span>分析专家完成分析</span>
-                  <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
-                  <span class="work-analysis-hint">查看过程</span>
-                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
-                </button>
-                <button v-else-if="step.contentType === 'TOOL_STEP' && step.data.name === 'createReport' && reportProcesses?.[reportProcessKey(step.requestId, step.data.callId)]"
-                  type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.data.callId))">
-                  <component :is="toolIcon('createReport')" class="work-tool-icon" aria-hidden="true" />
-                  <span>报告专家完成报告编写与讨论</span>
-                  <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
-                  <span class="work-analysis-hint">查看过程</span>
-                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
-                </button>
-                <button v-else-if="step.contentType === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.data.callId))">
-                  <component :is="toolIcon('createReport')" class="work-tool-icon" aria-hidden="true" />
-                  <span>查看报告编写与讨论过程</span>
-                  <span class="work-analysis-hint">查看过程</span>
-                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
-                </button>
-                <p v-else-if="step.contentType === 'TOOL_STEP'" class="work-tool" :class="{ 'is-failed': step.data.status === 'failed' }">
-                  <component :is="toolIcon(step.data.name)" class="work-tool-icon" aria-hidden="true" />
-                  <span>{{ step.data.label }}</span>
-                  <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
-                </p>
-                <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.contentType === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
-                  <Bot class="work-tool-icon" aria-hidden="true" />
-                  <span>分析专家完成分析</span>
-                  <span class="work-analysis-hint">查看过程</span>
-                  <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
-                </button>
-                <p v-else-if="step.contentType === 'TEXT' && toolSummary(step)" class="work-tool"><Database class="work-tool-icon" aria-hidden="true" /><span>{{ toolSummary(step)?.[1] }}</span><span class="work-duration">{{ toolSummary(step)?.[2] }}</span></p>
-                <AiMarkdownContent v-else-if="step.contentType === 'TEXT'" :content="step.data.text" />
-              </template>
+      </article>
+
+      <article v-if="hasAssistant(turn)" :key="`${turn.requestId}-assistant`" class="message" :data-run-id="turn.requestId">
+        <span class="message-avatar" aria-hidden="true"><Bot class="size-4" /></span>
+        <div class="message-content">
+          <div class="message-meta"><span>经营助手</span><time>{{ turnTime(turn) }}</time></div>
+
+          <section v-if="turn.steps.length" class="work-steps">
+            <button type="button" class="work-toggle" :aria-expanded="expandedRuns.has(turn.requestId)" @click="toggleSteps(turn.requestId)">
+              <ChevronDown class="work-chevron" :class="{ 'is-open': expandedRuns.has(turn.requestId) }" aria-hidden="true" />
+              {{ expandedRuns.has(turn.requestId) ? '收起工作过程' : '查看工作过程' }}
+            </button>
+            <div class="work-reveal" :class="{ 'is-open': expandedRuns.has(turn.requestId) }" :inert="!expandedRuns.has(turn.requestId)">
+              <div class="work-reveal-inner">
+                <template v-for="step in turn.steps" :key="step.messageId">
+                  <AiClarificationHistory v-if="step.contentType === 'CLARIFICATION' && !liveQuestionIds.has(step.data.callId)" :questions="step.data.questions" :answer="answers.get(step.data.callId) || recentAnswers?.[step.data.callId]?.answer" :question-answers="answerDetails.get(step.data.callId)?.questionAnswers || recentAnswers?.[step.data.callId]?.questionAnswers" :note="answerDetails.get(step.data.callId)?.note || recentAnswers?.[step.data.callId]?.note" :tags="[]" />
+                  <button v-else-if="step.contentType === 'TEXT' && isAnalysisSummary(step)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
+                    <Bot class="work-tool-icon" aria-hidden="true" />
+                    <span>分析专家完成分析</span>
+                    <span class="work-duration">{{ toolSummary(step)?.[2] }}</span>
+                    <span class="work-analysis-hint">查看过程</span>
+                    <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                  </button>
+                  <button v-else-if="isAnalysisToolStep(step) && step.contentType === 'TOOL_STEP'" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
+                    <Bot class="work-tool-icon" aria-hidden="true" />
+                    <span>分析专家完成分析</span>
+                    <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
+                    <span class="work-analysis-hint">查看过程</span>
+                    <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                  </button>
+                  <button v-else-if="step.contentType === 'TOOL_STEP' && step.data.name === 'createReport' && reportProcesses?.[reportProcessKey(step.requestId, step.data.callId)]"
+                    type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.data.callId))">
+                    <component :is="toolIcon('createReport')" class="work-tool-icon" aria-hidden="true" />
+                    <span>报告专家完成报告编写与讨论</span>
+                    <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
+                    <span class="work-analysis-hint">查看过程</span>
+                    <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                  </button>
+                  <button v-else-if="step.contentType === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(step.requestId, step.data.callId))">
+                    <component :is="toolIcon('createReport')" class="work-tool-icon" aria-hidden="true" />
+                    <span>查看报告编写与讨论过程</span>
+                    <span class="work-analysis-hint">查看过程</span>
+                    <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                  </button>
+                  <p v-else-if="step.contentType === 'TOOL_STEP'" class="work-tool" :class="{ 'is-failed': step.data.status === 'failed' }">
+                    <component :is="toolIcon(step.data.name)" class="work-tool-icon" aria-hidden="true" />
+                    <span>{{ step.data.label }}</span>
+                    <span class="work-duration">{{ toolDuration(step.data.durationMs) }}</span>
+                  </p>
+                  <button v-else-if="step.kind === 'ANALYSIS_STEP' && step.contentType === 'ANALYSIS' && !analysisToolRuns.has(step.requestId)" type="button" class="work-tool work-analysis" @click="emit('open-analysis', analysisBlockId(step))">
+                    <Bot class="work-tool-icon" aria-hidden="true" />
+                    <span>分析专家完成分析</span>
+                    <span class="work-analysis-hint">查看过程</span>
+                    <ChevronRight class="work-analysis-arrow" aria-hidden="true" />
+                  </button>
+                  <p v-else-if="step.contentType === 'TEXT' && toolSummary(step)" class="work-tool"><Database class="work-tool-icon" aria-hidden="true" /><span>{{ toolSummary(step)?.[1] }}</span><span class="work-duration">{{ toolSummary(step)?.[2] }}</span></p>
+                  <AiMarkdownContent v-else-if="step.contentType === 'TEXT'" :content="step.data.text" />
+                </template>
+              </div>
             </div>
-          </div>
-        </section>
-        <details v-if="message.kind === 'TOOL_RESULT' && message.content.type === 'TEXT'" class="answer-receipt">
-          <summary>补充回答</summary><p class="message-bubble">{{ message.content.data.text }}</p>
-        </details>
-        <p v-else-if="message.role === 'user'" class="message-bubble">{{ message.content.type === 'TEXT' ? message.content.data.text : '' }}</p>
-        <template v-else-if="message.content.type === 'CLARIFICATION'">
-          <slot v-if="message.messageId === activeQuestionId" name="clarification" />
-          <AiClarificationHistory v-else :questions="message.content.data.questions" :answer="answers.get(message.content.data.callId) || recentAnswers?.[message.content.data.callId]?.answer" :question-answers="answerDetails.get(message.content.data.callId)?.questionAnswers || recentAnswers?.[message.content.data.callId]?.questionAnswers" :note="answerDetails.get(message.content.data.callId)?.note || recentAnswers?.[message.content.data.callId]?.note" :tags="[]" />
-        </template>
-        <AiReportMessage v-else-if="message.kind === 'ASSISTANT_FINAL' && message.content.type === 'TEXT'"
-          :text="message.content.data.text" :reports="cardsFor(message.requestId)" active @open="emit('open-report', $event)" />
-        <button v-else-if="message.content.type === 'TOOL_STEP' && message.content.data.name === 'createReport' && reportProcesses?.[reportProcessKey(message.requestId, message.content.data.callId)]"
-          type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(message.requestId, message.content.data.callId))">
-          <span>查看报告编写与讨论过程</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
-        </button>
-        <AiMarkdownContent v-else :content="message.content.type === 'TEXT' ? message.content.data.text : ''" />
-      </div>
-    </article>
-    <article v-for="recentAnswer in Object.values(recentAnswers || {}).filter(answer => !liveQuestionIds.has(answer.callId) && !messages.some(message => message.content.type === 'CLARIFICATION' && message.content.data.callId === answer.callId))" :key="recentAnswer.callId" class="message is-clarification">
-      <div class="message-content"><AiClarificationHistory :questions="recentAnswer.questions" :answer="recentAnswer.answer" :question-answers="recentAnswer.questionAnswers" :note="recentAnswer.note" :tags="[]" /></div>
-    </article>
-    <article v-if="pendingText" class="message is-user">
-      <span class="message-avatar"><UserRound class="size-4" /></span>
-      <div class="message-content">
-        <div class="message-meta">你 · 正在提交</div>
-        <p class="message-bubble">{{ pendingText }}</p>
-      </div>
-    </article>
-    <article v-if="liveItems?.length || thinking" class="message">
+          </section>
+
+          <!-- 正在进行的这一轮：流式文字和运行中的工具合并进同一个机器人 -->
+          <template v-if="isLiveTurn(turn)">
+            <template v-if="!turn.final">
+              <AiReportMessage v-for="item in liveTextItems" :key="item.id" :text="item.text"
+                :reports="item.id === reportReply?.id && (finalMessageId === '' || item.id === finalMessageId) ? liveReportCards : []"
+                :active="item.id === finalMessageId" :streaming="!finalMessageId" @open="emit('open-report', $event)" />
+              <AiClarificationHistory v-for="item in liveClarificationItems" :key="item.id"
+                :questions="item.questions"
+                :answer="answers.get(item.id) || recentAnswers?.[item.id]?.answer"
+                :question-answers="answerDetails.get(item.id)?.questionAnswers || recentAnswers?.[item.id]?.questionAnswers"
+                :note="answerDetails.get(item.id)?.note || recentAnswers?.[item.id]?.note"
+                :tags="[]" />
+            </template>
+            <p v-for="item in liveRunningTools" :key="item.id" class="tool-progress is-running">
+              <LoaderCircle class="work-tool-icon animate-spin" aria-hidden="true" />
+              <span class="flow-text">{{ item.label }}</span>
+            </p>
+            <p v-if="thinking" class="tool-progress is-running" role="status"><span class="flow-text">正在思考</span></p>
+          </template>
+
+          <AiReportMessage v-if="turn.final" :text="finalText(turn)" :reports="cardsFor(turn.requestId)" active @open="emit('open-report', $event)" />
+
+          <details v-for="receipt in turn.receipts" :key="receipt.messageId" class="answer-receipt">
+            <summary>补充回答</summary>
+            <p class="message-bubble">{{ receipt.content.type === 'TEXT' ? receipt.content.data.text : '' }}</p>
+          </details>
+
+          <AiPurchaseDraftHistory v-for="draft in turn.drafts" :key="draft.messageId" :data="draft.content.data" />
+        </div>
+      </article>
+    </template>
+
+    <!-- 还没落库的实时轮次：单独一个机器人，落库后自然并入上面的轮次 -->
+    <article v-if="!liveTurnExists && (liveItems?.length || thinking)" class="message">
       <span class="message-avatar" aria-hidden="true"><Bot class="size-4" /></span>
       <div class="message-content">
         <div class="message-meta">经营助手</div>
@@ -304,6 +422,19 @@ function toolSummary(step: AiConversationMessage) {
         <p v-if="thinking" class="tool-progress is-running" role="status"><span class="flow-text">正在思考</span></p>
       </div>
     </article>
+
+    <article v-if="pendingText" class="message is-user">
+      <span class="message-avatar"><UserRound class="size-4" /></span>
+      <div class="message-content">
+        <div class="message-meta">你 · 正在提交</div>
+        <p class="message-bubble">{{ pendingText }}</p>
+      </div>
+    </article>
+
+    <article v-for="recentAnswer in Object.values(recentAnswers || {}).filter(answer => !liveQuestionIds.has(answer.callId) && !messages.some(message => message.content.type === 'CLARIFICATION' && message.content.data.callId === answer.callId))" :key="recentAnswer.callId" class="message is-clarification">
+      <div class="message-content"><AiClarificationHistory :questions="recentAnswer.questions" :answer="recentAnswer.answer" :question-answers="recentAnswer.questionAnswers" :note="recentAnswer.note" :tags="[]" /></div>
+    </article>
+
     <template v-for="message in orphanReportProcesses" :key="message.messageId">
       <button v-if="message.content.type === 'REPORT'" type="button" class="work-tool work-analysis" @click="emit('open-report-process', reportProcessKey(message.requestId, message.content.data.callId))">
         <span>查看报告编写与讨论过程</span><ChevronRight class="work-analysis-arrow" aria-hidden="true" />
@@ -314,7 +445,6 @@ function toolSummary(step: AiConversationMessage) {
     </section>
   </div>
 </template>
-
 <style scoped>
 .message-list {
   display: grid;

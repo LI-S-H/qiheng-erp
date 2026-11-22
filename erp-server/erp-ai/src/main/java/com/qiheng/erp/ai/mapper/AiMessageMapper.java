@@ -31,42 +31,72 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
                                       @Param("requestId") String requestId);
 
     /**
-     * 用户可见消息分页：依据展示标记返回，包括追问工具调用和回答。
+     * 用户可见轮次分页：按轮次正序返回一批轮次标识，一轮不会被切开。
      *
      * @param conversationId 会话 ID
      * @param userId         用户 ID
-     * @param offset         分页偏移
-     * @param limit          分页大小
+     * @param offset         跳过的轮次数
+     * @param limit          每页轮次数
+     * @return 轮次标识，按该轮最早消息升序
+     */
+    @Select("""
+        SELECT COALESCE(NULLIF(request_id, ''), CONCAT('legacy-', id)) AS turn_key
+        FROM ai_message
+        WHERE conversation_id = #{conversationId}
+          AND user_id = #{userId}
+          AND deleted = 0
+        GROUP BY turn_key
+        ORDER BY MIN(seq) ASC
+        LIMIT #{offset}, #{limit}
+        """)
+    @Options(timeout = 30)
+    List<String> selectVisibleTurnKeys(@Param("conversationId") Long conversationId,
+                                       @Param("userId") Long userId,
+                                       @Param("offset") int offset,
+                                       @Param("limit") int limit);
+
+    /**
+     * 按轮次标识取整轮消息，保证同一轮的提问、过程和产物不跨页。
+     *
+     * @param conversationId 会话 ID
+     * @param userId         用户 ID
+     * @param turnKeys       轮次标识
      * @return 消息列表，按 seq 升序
      */
     @Select("""
+        <script>
         SELECT *
         FROM ai_message
         WHERE conversation_id = #{conversationId}
           AND user_id = #{userId}
           AND deleted = 0
+          AND COALESCE(NULLIF(request_id, ''), CONCAT('legacy-', id)) IN
+          <foreach collection="turnKeys" item="key" open="(" separator="," close=")">#{key}</foreach>
         ORDER BY seq ASC
-        LIMIT #{offset}, #{limit}
+        </script>
         """)
     @Options(timeout = 30)
-    List<AiMessage> selectVisibleMessages(@Param("conversationId") Long conversationId,
-                                        @Param("userId") Long userId,
-                                        @Param("offset") int offset,
-                                        @Param("limit") int limit);
+    List<AiMessage> selectMessagesByTurnKeys(@Param("conversationId") Long conversationId,
+                                             @Param("userId") Long userId,
+                                             @Param("turnKeys") List<String> turnKeys);
 
     /**
-     * 用户可见消息总数，用于分页。
+     * 用户可见轮次总数，用于分页。
+     *
+     * @param conversationId 会话 ID
+     * @param userId         用户 ID
+     * @return 轮次数量
      */
     @Select("""
-        SELECT COUNT(*)
+        SELECT COUNT(DISTINCT COALESCE(NULLIF(request_id, ''), CONCAT('legacy-', id)))
         FROM ai_message
         WHERE conversation_id = #{conversationId}
           AND user_id = #{userId}
           AND deleted = 0
         """)
     @Options(timeout = 30)
-    long countVisibleMessages(@Param("conversationId") Long conversationId,
-                              @Param("userId") Long userId);
+    long countVisibleTurns(@Param("conversationId") Long conversationId,
+                           @Param("userId") Long userId);
 
     /** 最近一轮的持久状态；与进程内运行对象分别判断。 */
     @Select("SELECT run_status FROM ai_message WHERE conversation_id=#{conversationId} AND user_id=#{userId} AND kind='USER_INPUT' AND deleted=0 ORDER BY seq DESC LIMIT 1")

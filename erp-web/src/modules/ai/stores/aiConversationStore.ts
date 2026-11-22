@@ -178,7 +178,7 @@ export const useAiConversationStore = defineStore('aiConversation', {
         const page = await getAiConversationMessagePage(
           id,
           this.oldestPage - 1,
-          50,
+          20,
           controller.signal,
         );
         if (

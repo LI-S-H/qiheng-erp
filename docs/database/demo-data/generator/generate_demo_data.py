@@ -2748,8 +2748,8 @@ def dump_transactions(result: SimulationResult, stock_bills: list[StockBill],
             party_id, party_name, bill.entry_mode,
             warehouse.id, warehouse.name, bill.status, expected,
             actor if bill.confirmed_at else None, actor_name if bill.confirmed_at else "",
-            bill.confirmed_at, actor, actor_name, actor if bill.confirmed_at else None,
-            actor_name if bill.confirmed_at else None,
+            bill.confirmed_at, actor, actor_name, actor,
+            actor_name,
             bill.created_at, update_time, bill.manual_reason, "", 0,
         ])
         for item in bill.lines:
@@ -2859,8 +2859,8 @@ def dump_transactions(result: SimulationResult, stock_bills: list[StockBill],
             party_id, party_name, bill.entry_mode,
             warehouse.id, warehouse.name, bill.status,
             actor if bill.confirmed_at else None, actor_name if bill.confirmed_at else "",
-            bill.confirmed_at, actor, actor_name, actor if bill.confirmed_at else None,
-            actor_name if bill.confirmed_at else None,
+            bill.confirmed_at, actor, actor_name, actor,
+            actor_name,
             bill.created_at, update_time, bill.manual_reason, "", 0,
         ])
         for item in bill.lines:

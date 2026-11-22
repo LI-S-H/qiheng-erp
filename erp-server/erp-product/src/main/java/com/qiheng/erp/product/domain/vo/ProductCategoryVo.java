@@ -25,6 +25,9 @@ public class ProductCategoryVo {
     @Schema(description = "该分类下产品数量")
     private Integer productCount;
 
+    @Schema(description = "该分类及其所有下级分类下的产品总数")
+    private Integer totalProductCount;
+
     @Schema(description = "创建时间")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;

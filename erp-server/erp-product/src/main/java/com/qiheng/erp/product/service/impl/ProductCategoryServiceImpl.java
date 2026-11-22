@@ -52,7 +52,28 @@ public class ProductCategoryServiceImpl extends ServiceImpl<ProductCategoryMappe
      */
     @Override
     public List<ProductCategoryVo> listWithProductCount(String categoryName, Integer status) {
-        MPJLambdaWrapper<ProductCategory> wrapper = new MPJLambdaWrapper<ProductCategory>()
+        List<ProductCategoryVo> rows = productCategoryMapper.selectJoinList(
+                ProductCategoryVo.class, buildCategoryCountWrapper(categoryName, status));
+        // 无筛选时列表已覆盖全部分类，直接复用；有筛选时补查一次全量分类用于聚合。
+        boolean filtered = StrUtil.isNotBlank(categoryName) || status != null;
+        List<ProductCategoryVo> allRows = filtered
+                ? productCategoryMapper.selectJoinList(ProductCategoryVo.class, buildCategoryCountWrapper(null, null))
+                : rows;
+        Map<Long, Integer> totalCounts = calculateTotalProductCounts(allRows);
+        for (ProductCategoryVo row : rows) {
+            row.setTotalProductCount(totalCounts.getOrDefault(Long.valueOf(row.getCategoryId()), 0));
+        }
+        return rows;
+    }
+
+    /**
+     * 构建分类及其直接产品数量查询。
+     * @param categoryName 分类名称
+     * @param status 状态：1启用，0禁用
+     * @return 查询条件
+     */
+    private MPJLambdaWrapper<ProductCategory> buildCategoryCountWrapper(String categoryName, Integer status) {
+        return new MPJLambdaWrapper<ProductCategory>()
                 .selectAs(ProductCategory::getId, ProductCategoryVo::getCategoryId)
                 .selectAs(ProductCategory::getParentId, ProductCategoryVo::getParentId)
                 .select(ProductCategory::getCategoryName)
@@ -65,7 +86,36 @@ public class ProductCategoryServiceImpl extends ServiceImpl<ProductCategoryMappe
                 .eq(status != null, ProductCategory::getStatus, status)
                 .groupBy(ProductCategory::getId)
                 .orderByDesc(ProductCategory::getCreateTime);
-        return productCategoryMapper.selectJoinList(ProductCategoryVo.class, wrapper);
+    }
+
+    /**
+     * 计算每个分类及其所有下级分类的产品总数。
+     * 只遍历一次分类，沿父级链向上累加，避免递归查询和重复扫描。
+     * @param allRows 全部分类及其直接产品数量
+     * @return 分类ID到产品总数的映射
+     */
+    private Map<Long, Integer> calculateTotalProductCounts(List<ProductCategoryVo> allRows) {
+        Map<Long, Long> parentById = new HashMap<>(allRows.size());
+        Map<Long, Integer> totalById = new HashMap<>(allRows.size());
+        for (ProductCategoryVo row : allRows) {
+            Long id = Long.valueOf(row.getCategoryId());
+            parentById.put(id, Long.valueOf(row.getParentId()));
+            totalById.put(id, row.getProductCount() == null ? 0 : row.getProductCount());
+        }
+        for (ProductCategoryVo row : allRows) {
+            int directCount = row.getProductCount() == null ? 0 : row.getProductCount();
+            if (directCount == 0) {
+                continue;
+            }
+            Long parentId = parentById.get(Long.valueOf(row.getCategoryId()));
+            // 深度上限仅用于防御异常脏数据形成环。
+            int depth = 0;
+            while (parentId != null && parentId != 0L && depth++ < 64) {
+                totalById.merge(parentId, directCount, Integer::sum);
+                parentId = parentById.get(parentId);
+            }
+        }
+        return totalById;
     }
 
     /**
@@ -75,18 +125,17 @@ public class ProductCategoryServiceImpl extends ServiceImpl<ProductCategoryMappe
      */
     @Override
     public ProductCategoryVo getDetailById(Long categoryId) {
-        MPJLambdaWrapper<ProductCategory> wrapper = new MPJLambdaWrapper<ProductCategory>()
-                .selectAs(ProductCategory::getId, ProductCategoryVo::getCategoryId)
-                .selectAs(ProductCategory::getParentId, ProductCategoryVo::getParentId)
-                .select(ProductCategory::getCategoryName)
-                .select(ProductCategory::getStatus)
-                .selectCount(Product::getId, ProductCategoryVo::getProductCount)
-                .select(ProductCategory::getCreateTime)
-                .select(ProductCategory::getUpdateTime)
-                .leftJoin(Product.class, Product::getCategoryId, ProductCategory::getId)
-                .eq(ProductCategory::getId, categoryId)
-                .groupBy(ProductCategory::getId);
-        return productCategoryMapper.selectJoinOne(ProductCategoryVo.class, wrapper);
+        // 详情与列表共用一次全量分类查询，既避免额外单条查询，也保证聚合口径一致。
+        List<ProductCategoryVo> allRows = productCategoryMapper.selectJoinList(
+                ProductCategoryVo.class, buildCategoryCountWrapper(null, null));
+        ProductCategoryVo target = allRows.stream()
+                .filter(row -> categoryId.equals(Long.valueOf(row.getCategoryId())))
+                .findFirst()
+                .orElse(null);
+        if (target != null) {
+            target.setTotalProductCount(calculateTotalProductCounts(allRows).getOrDefault(categoryId, 0));
+        }
+        return target;
     }
 
     /**

@@ -4584,7 +4584,7 @@ paths:
       tags: [ProductCategory]
       summary: 查询产品分类列表
       description: |
-        返回 `product_category` 未删除数据的扁平数组，并通过一次可执行的聚合查询返回每个分类直接关联的 `productCount`。
+        返回 `product_category` 未删除数据的扁平数组，并通过一次可执行的聚合查询返回每个分类直接关联的 `productCount`，同时返回含全部下级分类的 `totalProductCount`。
         后端不组装 `children`、上级分类名称或层级路径；前端根据 `parentId` 构建分类树、计算路径。
         支持 `categoryName`、`status` 两个独立查询参数：分类名称使用包含匹配，状态使用精确匹配；多个有效条件按 AND 组合。
         前端必须把有效筛选条件作为查询参数传给后端，不能拉取全量分类后再按名称或状态二次筛选；空字符串、`all` 和未选择状态不得发送。
@@ -8276,7 +8276,7 @@ components:
 
     ProductCategory:
       type: object
-      required: [categoryId, parentId, categoryName, status, productCount, createTime, updateTime]
+      required: [categoryId, parentId, categoryName, status, productCount, totalProductCount, createTime, updateTime]
       properties:
         categoryId:
           type: string
@@ -8297,6 +8297,10 @@ components:
           type: integer
           minimum: 0
           description: 当前分类直接关联的未删除产品数量，通过 `product.category_id` 聚合，不包含下级分类产品
+        totalProductCount:
+          type: integer
+          minimum: 0
+          description: 当前分类及其所有下级分类关联的未删除产品总数；叶子分类与 productCount 相同
         createTime:
           type: string
           description: 创建时间，对应 `product_category.create_time`

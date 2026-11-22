@@ -6,6 +6,7 @@ export interface ProductCategoryListItem {
   categoryName: string;
   status: ProductCategoryStatus;
   productCount: number;
+  totalProductCount: number;
   children?: ProductCategoryListItem[];
   createTime: string;
   updateTime: string;

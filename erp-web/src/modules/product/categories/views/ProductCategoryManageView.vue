@@ -747,7 +747,7 @@ function confirmBatchDelete() {
               </TableCell>
               <TableCell class="text-center">
                 <div class="tree-table-cell-reveal">
-                  <Badge data-product-count variant="outline" class="h-6 min-w-[38px] justify-center leading-none font-semibold" :class="row.productCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'">{{ row.productCount }}</Badge>
+                  <Badge data-product-count variant="outline" class="h-6 min-w-[38px] justify-center leading-none font-semibold" :class="row.totalProductCount === 0 ? 'text-muted-foreground' : 'border-blue-200 bg-blue-50 text-blue-700'">{{ row.totalProductCount }}</Badge>
                 </div>
               </TableCell>
               <TableCell class="text-center">

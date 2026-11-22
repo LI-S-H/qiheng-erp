@@ -8186,9 +8186,11 @@ components:
           maxLength: 64
         referencePurchasePrice:
           type: string
+          description: 参考采购价，单位元，最多两位小数；库内按分存储
           pattern: '^\d+(\.\d{1,2})?$'
         referenceSalePrice:
           type: string
+          description: 参考销售价，单位元，最多两位小数；库内按分存储
           pattern: '^\d+(\.\d{1,2})?$'
         safetyStockQty:
           type: number

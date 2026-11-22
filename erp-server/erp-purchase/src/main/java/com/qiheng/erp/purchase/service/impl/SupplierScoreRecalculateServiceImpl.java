@@ -42,7 +42,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
-import java.math.RoundingMode;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -348,16 +347,14 @@ public class SupplierScoreRecalculateServiceImpl implements SupplierScoreRecalcu
         appendChanges(result, ctx);
     }
 
-    /** 无效、停用或到期报价没有价格分；参考价以元存储，换算为分后计算。 */
+    /** 无效、停用或到期报价没有价格分；参考价与报价均按分存储，直接比较。 */
     private Integer calculateProductPrice(SupplierProduct relation, Product product, LocalDate date) {
         if (!Integer.valueOf(1).equals(relation.getStatus()) || relation.getQuoteValidUntil() == null
                 || relation.getQuoteValidUntil().isBefore(date) || product == null
                 || product.getReferencePurchasePrice() == null){
             return null;
         }
-        long referenceCents = product.getReferencePurchasePrice().movePointRight(2)
-                .setScale(0, RoundingMode.HALF_UP).longValueExact();
-        return priceCalculator.calculate(referenceCents, relation.getQuotedPurchasePrice());
+        return priceCalculator.calculate(product.getReferencePurchasePrice(), relation.getQuotedPurchasePrice());
     }
 
     // ============================================
@@ -550,9 +547,7 @@ public class SupplierScoreRecalculateServiceImpl implements SupplierScoreRecalcu
             // 4.1 若是影响的产品,则计算对应的价格分
             if (facts.isFullQualityRebuild() || facts.getAffectedSupplierProductIds().contains(p.getId())) {
                 Product product = referenceProducts.get(p.getProductId());
-                Long referenceCents = product == null || product.getReferencePurchasePrice() == null ? null
-                        : product.getReferencePurchasePrice().movePointRight(2)
-                                .setScale(0, RoundingMode.HALF_UP).longValueExact();
+                Long referenceCents = product == null ? null : product.getReferencePurchasePrice();
                 boolean validQuote = Integer.valueOf(1).equals(p.getStatus())
                         && p.getQuoteValidUntil() != null && !p.getQuoteValidUntil().isBefore(date);
                 price = validQuote ? priceCalculator.calculate(referenceCents, p.getQuotedPurchasePrice()) : null;

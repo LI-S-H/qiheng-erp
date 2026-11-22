@@ -25,7 +25,7 @@ import java.math.BigDecimal;
 @Schema(description = "产品参考采购价调整请求")
 public class ProductReferencePriceDto {
 
-    @Schema(description = "新参考采购价，最多两位小数")
+    @Schema(description = "新参考采购价，单位元，最多两位小数，落库按分存储")
     @NotNull(message = "参考采购价不能为空")
     @DecimalMin(value = "0", message = "参考采购价不能为负数")
     @Digits(integer = 16, fraction = 2, message = "参考采购价最多保留两位小数")

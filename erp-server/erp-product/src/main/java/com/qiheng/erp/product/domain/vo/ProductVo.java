@@ -43,11 +43,11 @@ public class ProductVo {
     @Schema(description = "条码")
     private String barcode;
 
-    @Schema(description = "参考采购价")
+    @Schema(description = "参考采购价，单位元")
     @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal referencePurchasePrice;
 
-    @Schema(description = "参考销售价")
+    @Schema(description = "参考销售价，单位元")
     @JsonSerialize(using = MoneyStringSerializer.class)
     private BigDecimal referenceSalePrice;
 

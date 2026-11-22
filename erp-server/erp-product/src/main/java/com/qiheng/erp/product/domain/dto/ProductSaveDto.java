@@ -16,7 +16,7 @@ import java.math.BigDecimal;
  * 产品新增与更新请求。
  * <p>
  * 对应接口文档的 {@code ProductFormRequest}。数量与金额均以业务真实值传入，
- * 由服务层按存储规则转换：{@code safetyStockQty} 转 100 倍整数，参考价直接落 DECIMAL 列。
+ * 由服务层按存储规则转换：{@code safetyStockQty} 转 100 倍整数，参考价转分落 BIGINT 列。
  *
  * @author Li
  * @since 2026-09-06
@@ -58,7 +58,7 @@ public class ProductSaveDto {
     @Size(max = 64, message = "条码长度不能超过 64")
     private String barcode;
 
-    @Schema(description = "参考采购价，最多两位小数；编辑接口不接收本字段(必须用单独接口 PUT /products/{id}/reference-price),创建时必填")
+    @Schema(description = "参考采购价，单位元，最多两位小数，落库按分存储；编辑接口不接收本字段(必须用单独接口 PUT /products/{id}/reference-price),创建时必填")
     @DecimalMin(value = "0", message = "参考采购价不能为负数")
     @Digits(integer = 16, fraction = 2, message = "参考采购价最多保留两位小数")
     private BigDecimal referencePurchasePrice;

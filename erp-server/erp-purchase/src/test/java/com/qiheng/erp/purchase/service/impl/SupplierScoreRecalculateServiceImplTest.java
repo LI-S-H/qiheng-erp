@@ -80,7 +80,7 @@ class SupplierScoreRecalculateServiceImplTest {
         SupplierProduct unrelated = new SupplierProduct().setId(11L).setSupplierId(1L).setProductId(21L)
                 .setStatus(1).setPriceScore(8000).setQualityScore(9000)
                 .setRecommendScore(8700).setScoreStatus("READY");
-        Product product = new Product().setId(20L).setReferencePurchasePrice(new BigDecimal("20.00"));
+        Product product = new Product().setId(20L).setReferencePurchasePrice(2000L);
         when(supplierProductMapper.selectById(10L)).thenReturn(sp);
         when(supplierMapper.selectById(1L)).thenReturn(supplier);
         when(supplierProductMapper.selectList(any())).thenReturn(List.of(sp, unrelated));
@@ -154,7 +154,7 @@ class SupplierScoreRecalculateServiceImplTest {
         when(supplierMapper.selectById(1L)).thenReturn(supplier);
         when(supplierProductMapper.selectList(any())).thenReturn(List.of(sp));
         when(productMapper.selectByIds(any())).thenReturn(List.of(
-                new Product().setId(20L).setReferencePurchasePrice(new BigDecimal("20.00"))));
+                new Product().setId(20L).setReferencePurchasePrice(2000L)));
         when(supplierMapper.update(eq(null), any(Wrapper.class))).thenReturn(1);
         when(supplierProductMapper.update(eq(null), any(Wrapper.class))).thenReturn(1);
         when(billNoGenerator.nextNo(eq("SC"), any(ToLongFunction.class))).thenReturn("SC2026093000003");
@@ -199,7 +199,7 @@ class SupplierScoreRecalculateServiceImplTest {
         when(supplierMapper.selectById(1L)).thenReturn(firstSupplier);
         when(supplierMapper.selectById(2L)).thenReturn(secondSupplier);
         when(productMapper.selectByIds(any())).thenReturn(List.of(
-                new Product().setId(20L).setReferencePurchasePrice(new BigDecimal("20.00"))));
+                new Product().setId(20L).setReferencePurchasePrice(2000L)));
         when(supplierMapper.update(eq(null), any(Wrapper.class))).thenReturn(1);
         when(supplierProductMapper.update(eq(null), any(Wrapper.class))).thenReturn(1);
         when(billNoGenerator.nextNo(eq("SC"), any(ToLongFunction.class)))
@@ -243,8 +243,8 @@ class SupplierScoreRecalculateServiceImplTest {
         when(supplierMapper.selectById(1L)).thenReturn(supplier);
         when(supplierProductMapper.selectList(any())).thenReturn(List.of(expired, valid));
         when(productMapper.selectByIds(any())).thenReturn(List.of(
-                new Product().setId(20L).setReferencePurchasePrice(new BigDecimal("90.00")),
-                new Product().setId(21L).setReferencePurchasePrice(new BigDecimal("60.00"))));
+                new Product().setId(20L).setReferencePurchasePrice(9000L),
+                new Product().setId(21L).setReferencePurchasePrice(6000L)));
         when(supplierMapper.update(eq(null), any(Wrapper.class))).thenReturn(1);
         when(supplierProductMapper.update(eq(null), any(Wrapper.class))).thenReturn(1);
         when(billNoGenerator.nextNo(eq("SC"), any(ToLongFunction.class))).thenReturn("SC2026093000006");
@@ -282,7 +282,7 @@ class SupplierScoreRecalculateServiceImplTest {
         when(supplierMapper.selectById(1L)).thenReturn(supplier);
         when(supplierProductMapper.selectList(any())).thenReturn(List.of(sp));
         when(productMapper.selectByIds(any())).thenReturn(List.of(new Product().setId(20L)
-                .setReferencePurchasePrice(new BigDecimal("20.00"))));
+                .setReferencePurchasePrice(2000L)));
         when(supplierMapper.update(eq(null), any(Wrapper.class))).thenReturn(1);
         when(supplierProductMapper.update(eq(null), any(Wrapper.class))).thenReturn(1);
         when(billNoGenerator.nextNo(eq("SC"), any(ToLongFunction.class))).thenReturn("SC2026093000007");

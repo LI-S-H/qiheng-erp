@@ -171,7 +171,7 @@ class SupplierScoreConcurrencyIT {
         });
         quote.get(20, TimeUnit.SECONDS);
         reference.get(20, TimeUnit.SECONDS);
-        assertEquals(new BigDecimal("120.00"), jdbc.queryForObject(
+        assertEquals(new BigDecimal("12000"), jdbc.queryForObject(
                 "SELECT reference_purchase_price FROM product WHERE id=?", BigDecimal.class, sample.productIds().getFirst()));
         assertEquals(15000L, jdbc.queryForObject("SELECT quoted_purchase_price FROM supplier_product WHERE id=?",
                 Long.class, sample.supplierProductIds().getFirst()));

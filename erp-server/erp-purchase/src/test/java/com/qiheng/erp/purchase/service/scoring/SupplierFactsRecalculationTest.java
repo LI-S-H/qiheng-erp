@@ -62,7 +62,7 @@ class SupplierFactsRecalculationTest {
         product.setQuoteValidUntil(date.plusDays(1)); product.setPriceScore(8000);
         product.setQualityScore(9000); product.setRecommendScore(8800);
         when(referenceProducts.selectByIds(any())).thenReturn(List.of(
-                new Product().setId(3L).setReferencePurchasePrice(new BigDecimal("8.00"))));
+                new Product().setId(3L).setReferencePurchasePrice(800L)));
         when(suppliers.selectById(1L)).thenReturn(supplier); when(products.selectList(any())).thenReturn(List.of(product));
         when(suppliers.lockByIdForUpdate(1L)).thenReturn(1L);
         when(suppliers.update(isNull(), any(Wrapper.class))).thenReturn(1);

@@ -27,7 +27,7 @@ update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMEST
 - 单价
 - 总金额
 
-产品参考采购价、参考销售价继续使用 `decimal(18,2)`，因为它们属于主数据参考值而不是已发生交易金额。
+产品参考采购价、参考销售价同样使用 `bigint` 保存金额分。它们曾以 `decimal(18,2)` 存元，2026-11-22 起统一为分，读写统一经 `QtyUtil` 转换，接口层仍按元传输。
 
 采购、销售、退货、库存余额、入库、出库、库存流水、合格/不合格数量和最小起订量，统一使用 `bigint` 保存真实业务值放大 100 倍后的整数：
 

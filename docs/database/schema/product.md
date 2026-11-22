@@ -17,8 +17,8 @@
 | `quantity_precision` | `tinyint` | 否 | '0' | 数量小数位：0-2，离散单位通常为0 |
 | `specification` | `varchar(255)` | 否 | '' | 规格型号 |
 | `barcode` | `varchar(64)` | 是 | NULL | 条码 |
-| `reference_purchase_price` | `decimal(18,2)` | 否 | '0.00' | 参考采购价 |
-| `reference_sale_price` | `decimal(18,2)` | 否 | '0.00' | 参考销售价 |
+| `reference_purchase_price` | `bigint` | 否 | `0` | 参考采购价，按分存储 |
+| `reference_sale_price` | `bigint` | 否 | `0` | 参考销售价，按分存储 |
 | `safety_stock_qty` | `bigint` | 否 | '0' | 安全库存数量，按100倍整数存储，例如12.50存1250 |
 | `status` | `tinyint` | 否 | '1' | 状态：1启用，0禁用 |
 | `create_time` | `datetime` | 否 | CURRENT_TIMESTAMP | 创建时间 |

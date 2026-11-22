@@ -111,6 +111,12 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
             if (vo.getSafetyStockQty() != null) {
                 vo.setSafetyStockQty(QtyUtil.toDecimal(vo.getSafetyStockQty()));
             }
+            if (vo.getReferencePurchasePrice() != null) {
+                vo.setReferencePurchasePrice(QtyUtil.toDecimal(vo.getReferencePurchasePrice()));
+            }
+            if (vo.getReferenceSalePrice() != null) {
+                vo.setReferenceSalePrice(QtyUtil.toDecimal(vo.getReferenceSalePrice()));
+            }
         });
         return PageResult.of(result.getRecords(), (int) result.getTotal(), (int) result.getCurrent(), (int) result.getSize());
     }
@@ -176,8 +182,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         product.setQuantityPrecision(dto.getQuantityPrecision());
         product.setSpecification(dto.getSpecification());
         product.setBarcode(dto.getBarcode());
-        product.setReferencePurchasePrice(dto.getReferencePurchasePrice());
-        product.setReferenceSalePrice(dto.getReferenceSalePrice());
+        product.setReferencePurchasePrice(QtyUtil.toStored(dto.getReferencePurchasePrice()));
+        product.setReferenceSalePrice(QtyUtil.toStored(dto.getReferenceSalePrice()));
         product.setSafetyStockQty(QtyUtil.toStored(dto.getSafetyStockQty()));
         product.setStatus(dto.getStatus());
         product.setRemark(dto.getRemark());
@@ -228,6 +234,12 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         ProductVo vo = productMapper.selectJoinOne(ProductVo.class, wrapper);
         if (vo != null && vo.getSafetyStockQty() != null) {
             vo.setSafetyStockQty(QtyUtil.toDecimal(vo.getSafetyStockQty()));
+        }
+        if (vo != null && vo.getReferencePurchasePrice() != null) {
+            vo.setReferencePurchasePrice(QtyUtil.toDecimal(vo.getReferencePurchasePrice()));
+        }
+        if (vo != null && vo.getReferenceSalePrice() != null) {
+            vo.setReferenceSalePrice(QtyUtil.toDecimal(vo.getReferenceSalePrice()));
         }
         return vo;
     }
@@ -351,8 +363,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         if (existing == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "产品不存在");
         }
-        BigDecimal oldPrice = existing.getReferencePurchasePrice();
-        BigDecimal newPrice = dto.getReferencePurchasePrice();
+        Long oldPrice = existing.getReferencePurchasePrice();
+        Long newPrice = QtyUtil.toStored(dto.getReferencePurchasePrice());
 
         // 产品表没有 version；更新由外层产品锁串行保护，不接收无效版本参数。
         Product update = new Product();
@@ -365,7 +377,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         }
 
         // 仅当价格实际变化时触发评分重算
-        if (oldPrice == null || oldPrice.compareTo(newPrice) != 0) {
+        if (oldPrice == null || !oldPrice.equals(newPrice)) {
             log.info("产品参考采购价变化 productId={} oldPrice={} newPrice={}",
                     productId, oldPrice, newPrice);
             for (ProductReferencePriceChangeHandler handler : referencePriceHandlers) {

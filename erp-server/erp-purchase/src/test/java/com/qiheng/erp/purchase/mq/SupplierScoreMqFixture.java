@@ -4,7 +4,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -153,7 +152,7 @@ public final class SupplierScoreMqFixture {
             item.put("product_code", code("P", productId));
             item.put("product_name", "评分测试产品-" + product + "-" + runId);
             item.put("barcode", code("B", productId));
-            item.put("reference_purchase_price", new BigDecimal("100.00"));
+            item.put("reference_purchase_price", 10000L);
             item.put("quantity_precision", 0);
             insert("product", item);
             Map<String, Object> relation = row("supplier_product", sample.supplierProductIds().get(product));

@@ -1,7 +1,6 @@
 package com.qiheng.erp.product.domain.entity;
 
 import java.io.Serial;
-import java.math.BigDecimal;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -74,15 +73,15 @@ public class Product implements Serializable {
     @NotNull(message = "条码不能为空")
     private String barcode;
 
-    @Schema(description = "参考采购价")
+    @Schema(description = "参考采购价，按分存储，例如 9.90 元存 990")
     @TableField("reference_purchase_price")
     @NotNull(message = "参考采购价不能为空")
-    private BigDecimal referencePurchasePrice;
+    private Long referencePurchasePrice;
 
-    @Schema(description = "参考销售价")
+    @Schema(description = "参考销售价，按分存储，例如 13.86 元存 1386")
     @TableField("reference_sale_price")
     @NotNull(message = "参考销售价不能为空")
-    private BigDecimal referenceSalePrice;
+    private Long referenceSalePrice;
 
     @Schema(description = "安全库存数量，按100倍整数存储，例如12.50存1250")
     @TableField("safety_stock_qty")

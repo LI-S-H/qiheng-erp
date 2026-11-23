@@ -99,6 +99,7 @@ description: 用户询问这批订单能不能按期发、哪些订单有交付�
 
 ## 相关技能
 
+- 需要创建、修改、提交或取消销售单：`sales-order`
 - 需要跨仓支援：`transfer`
 - 需要对外采购：`purchase`
 - 补货缺口怎么算：`replenishment`

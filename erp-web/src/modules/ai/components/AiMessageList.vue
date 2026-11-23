@@ -5,6 +5,7 @@ import AiMarkdownContent from './AiMarkdownContent.vue';
 import AiReportMessage from './AiReportMessage.vue';
 import AiClarificationHistory from '../clarification/AiClarificationHistory.vue';
 import AiPurchaseDraftHistory from '../drafts/AiPurchaseDraftHistory.vue';
+import AiSalesDraftHistory from '../drafts/AiSalesDraftHistory.vue';
 import { toolIcon } from './tool-icons';
 import type { AiConversationMessage, AiMessageContent } from '../types';
 import type { ClarificationQuestion } from '../clarification/clarification-types';
@@ -42,6 +43,10 @@ type VisibleStep = Omit<AiConversationMessage, 'content'> & {
 type DraftMessage = AiConversationMessage & {
   content: Extract<AiMessageContent, { type: 'PURCHASE_ORDER' }>;
 };
+/** 已处置的销售草稿记录。 */
+type SalesDraftMessage = AiConversationMessage & {
+  content: Extract<AiMessageContent, { type: 'SALES_ORDER' }>;
+};
 /** 一次用户提问对应的一轮：用户消息、工作步骤、最终回复与产物都挂在同一轮下。 */
 interface ConversationTurn {
   requestId: string;
@@ -50,6 +55,7 @@ interface ConversationTurn {
   steps: VisibleStep[];
   final: AiConversationMessage | null;
   drafts: DraftMessage[];
+  salesDrafts: SalesDraftMessage[];
   /** 追问回答的补充说明，仍以折叠块展示。 */
   receipts: AiConversationMessage[];
 }
@@ -133,6 +139,7 @@ const turns = computed<ConversationTurn[]>(() => {
         steps: [],
         final: null,
         drafts: [],
+        salesDrafts: [],
         receipts: [],
       };
       map.set(message.requestId, turn);
@@ -142,6 +149,10 @@ const turns = computed<ConversationTurn[]>(() => {
   for (const message of props.messages) {
     if (message.content.type === 'PURCHASE_ORDER') {
       ensure(message).drafts.push(message as DraftMessage);
+      continue;
+    }
+    if (message.content.type === 'SALES_ORDER') {
+      ensure(message).salesDrafts.push(message as SalesDraftMessage);
       continue;
     }
     if (message.kind === 'USER_INPUT') {
@@ -383,6 +394,7 @@ function toolSummary(step: AiConversationMessage) {
           </details>
 
           <AiPurchaseDraftHistory v-for="draft in turn.drafts" :key="draft.messageId" :data="draft.content.data" />
+          <AiSalesDraftHistory v-for="draft in turn.salesDrafts" :key="draft.messageId" :data="draft.content.data" />
         </div>
       </article>
     </template>

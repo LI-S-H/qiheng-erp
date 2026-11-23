@@ -28,6 +28,13 @@ import com.qiheng.erp.ai.draft.PurchaseDraftArgumentsInterceptor;
 import com.qiheng.erp.ai.draft.PurchaseDraftService;
 import com.qiheng.erp.ai.draft.PurchaseOrderDraftTool;
 import com.qiheng.erp.ai.draft.UpdatePurchaseOrderDraftTool;
+import com.qiheng.erp.ai.sales.CancelSalesOrderTool;
+import com.qiheng.erp.ai.sales.SalesOrderActionService;
+import com.qiheng.erp.ai.sales.SalesOrderDraftArgumentsInterceptor;
+import com.qiheng.erp.ai.sales.SalesOrderDraftService;
+import com.qiheng.erp.ai.sales.SalesOrderDraftTool;
+import com.qiheng.erp.ai.sales.SubmitSalesOrderTool;
+import com.qiheng.erp.ai.sales.UpdateSalesOrderDraftTool;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
@@ -97,7 +104,7 @@ public class MainAgentConfiguration {
                                 ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
             throws IOException {
         return mainAgent(model, saver, sql, dataset, businessGraph, clarification, datasetList, results,
-                analysisTool, null, null, null, null);
+                analysisTool, null, null, null, null, null, null);
     }
 
     /**
@@ -116,6 +123,8 @@ public class MainAgentConfiguration {
      * @param skillFileTool 主智能体读取技能支持文件的工具
      * @param drafts 采购草稿服务
      * @param actions 采购单提交与取消服务
+     * @param salesDrafts 销售草稿服务
+     * @param salesActions 销售单提交与取消服务
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
@@ -126,7 +135,9 @@ public class MainAgentConfiguration {
                                 AnalysisResultTool results, AnalysisTool analysisTool,
                                 @Qualifier("mainSkillRegistry") SkillRegistry skills,
                                 @Qualifier("mainReadSkillFileTool") ReadSkillFileTool skillFileTool,
-                                PurchaseDraftService drafts, PurchaseOrderActionService actions) throws IOException {
+                                PurchaseDraftService drafts, PurchaseOrderActionService actions,
+                                SalesOrderDraftService salesDrafts, SalesOrderActionService salesActions)
+            throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
         var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool,
                 new AskUserTool(clarification)));
@@ -137,6 +148,14 @@ public class MainAgentConfiguration {
         if (actions != null) {
             tools.add(new SubmitPurchaseOrderTool(actions));
             tools.add(new CancelPurchaseOrderTool(actions));
+        }
+        if (salesDrafts != null) {
+            tools.add(new SalesOrderDraftTool(salesDrafts));
+            tools.add(new UpdateSalesOrderDraftTool(salesDrafts));
+        }
+        if (salesActions != null) {
+            tools.add(new SubmitSalesOrderTool(salesActions));
+            tools.add(new CancelSalesOrderTool(salesActions));
         }
         if (skillFileTool != null) {
             tools.add(skillFileTool);
@@ -162,7 +181,8 @@ public class MainAgentConfiguration {
                 .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
                         new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
                         new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()),
-                        new PurchaseDraftArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph));
+                        new PurchaseDraftArgumentsInterceptor(new ObjectMapper()),
+                        new SalesOrderDraftArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph));
         if (skills != null) {
             builder.interceptors(new SkillIndexInterceptor(skills));
             builder.tools(ReadSkillTool.createReadSkillToolCallback(skills, ""));
@@ -243,5 +263,35 @@ public class MainAgentConfiguration {
     public PurchaseOrderActionService purchaseOrderActionService(AiConversationMapper conversations,
             LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
         return new PurchaseOrderActionService(conversations, users, messages, mapper);
+    }
+
+    /**
+     * 组装销售草稿服务。
+     *
+     * @param conversations 会话数据访问
+     * @param users 用户数据访问
+     * @param messages 会话消息存储
+     * @param mapper JSON 序列化组件
+     * @return 销售草稿服务
+     */
+    @Bean
+    public SalesOrderDraftService salesOrderDraftService(AiConversationMapper conversations,
+            LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
+        return new SalesOrderDraftService(conversations, users, messages, mapper);
+    }
+
+    /**
+     * 组装销售单提交与取消服务。
+     *
+     * @param conversations 会话数据访问
+     * @param users 用户数据访问
+     * @param messages 会话消息存储
+     * @param mapper JSON 序列化组件
+     * @return 销售单动作服务
+     */
+    @Bean
+    public SalesOrderActionService salesOrderActionService(AiConversationMapper conversations,
+            LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
+        return new SalesOrderActionService(conversations, users, messages, mapper);
     }
 }

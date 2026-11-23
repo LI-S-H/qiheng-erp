@@ -2,6 +2,8 @@ import { reactive } from 'vue';
 import type { ClarificationQuestion } from '../clarification/clarification-types';
 import type { PurchaseDraftRequest } from '../drafts/purchase-draft-types';
 import type { PurchaseActionRequest } from '../drafts/purchase-action';
+import type { SalesDraftRequest } from '../drafts/sales-draft-types';
+import type { SalesActionRequest } from '../drafts/sales-action';
 import type { AiAnalysisBlock, AiAnalysisStep, AiProgressStep, AiRunStatus } from '../types';
 import type { AiReportCard, AiReportProcess } from '../contracts/report-contract';
 
@@ -17,6 +19,8 @@ export type SnapshotItem =
   | { type: 'analysis'; id: string; goal: string; steps: AiAnalysisStep[]; completion: string | null; summary: string | null }
   | { type: 'purchase_draft'; id: string; draftRequestId: string; draft: unknown }
   | { type: 'purchase_action'; id: string; actionRequestId: string; action: unknown }
+  | { type: 'sales_draft'; id: string; draftRequestId: string; draft: unknown }
+  | { type: 'sales_action'; id: string; actionRequestId: string; action: unknown }
   | ({ type: 'report' } & AiReportProcess);
 
 /** 单个会话的运行状态；会话之间彼此隔离。 */
@@ -47,6 +51,10 @@ export interface ConversationRun {
   pendingDraft: PurchaseDraftRequest | null;
   /** 等待用户确认的提交或取消动作。 */
   pendingAction: PurchaseActionRequest | null;
+  /** 等待用户确认的销售草稿；与采购草稿互斥。 */
+  pendingSalesDraft: SalesDraftRequest | null;
+  /** 等待用户确认的销售单提交或取消动作。 */
+  pendingSalesAction: SalesActionRequest | null;
   recentAnswers: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
   refreshNeeded: boolean;
   settleSuccess: (() => void) | null;
@@ -102,7 +110,7 @@ export function useConversationRuns() {
         pendingText: '', liveText: '', liveMessageId: '', liveItems: [], completedTextIds: new Set(),
         eventSeq: 0, snapshotTruncated: false, runId: '', error: '', warning: '', steps: [], analyses: {},
         reportProcesses: {}, reportCards: {}, finalMessageId: '',
-        pendingClarification: null, pendingDraft: null, pendingAction: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
+        pendingClarification: null, pendingDraft: null, pendingAction: null, pendingSalesDraft: null, pendingSalesAction: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
         failureCode: '', failureCount: 0, retryAt: 0,
       });
     }

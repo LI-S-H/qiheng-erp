@@ -2,6 +2,8 @@ package com.qiheng.erp.ai.agent;
 
 import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.action.PurchaseOrderActionService;
+import com.qiheng.erp.ai.sales.SalesOrderActionService;
+import com.qiheng.erp.ai.sales.SalesOrderDraftService;
 import com.qiheng.erp.ai.draft.PurchaseDraftService;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
@@ -320,6 +322,16 @@ public final class MainAgentService {
                     runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(action.state().data())));
                     events.toolEvent(action);
                 })
+                .addMetadata(SalesOrderDraftService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
+                    var draft = events.questionEvent(event);
+                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(draft.state().data())));
+                    events.toolEvent(draft);
+                })
+                .addMetadata(SalesOrderActionService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
+                    var action = events.questionEvent(event);
+                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(action.state().data())));
+                    events.toolEvent(action);
+                })
                 .build();
         // 新消息交由模型结合已配对的工具历史处理。
         Flux<NodeOutput> stream;
@@ -592,11 +604,13 @@ public final class MainAgentService {
     /** 会阻塞等待用户处置的工具。 */
     private static final Set<String> WAITING_USER_TOOLS = Set.of(
             "ask_user", "prepare_purchase_order_draft", "update_purchase_order_draft",
-            "submit_purchase_order", "cancel_purchase_order");
+            "submit_purchase_order", "cancel_purchase_order",
+            "prepare_sales_order_draft", "update_sales_order_draft",
+            "submit_sales_order", "cancel_sales_order");
 
     /** 等待用户处置时发出的事件节点。 */
     private static final Set<String> WAITING_USER_EVENTS = Set.of(
-            "ask_user", "purchase_draft", "purchase_action");
+            "ask_user", "purchase_draft", "purchase_action", "sales_order_draft", "sales_order_action");
 
     /** 判断工具调用是否会阻塞等待用户处置。 */
     private static boolean waitingUserTool(String toolName) {

@@ -97,6 +97,23 @@ export type AiMessageContent =
         reason?: string;
       };
     }
+  | {
+      /** 销售单动作记录：创建、修改、提交、取消的结果。 */
+      type: 'SALES_ORDER';
+      data: {
+        action?: 'CREATE' | 'UPDATE' | 'SUBMIT' | 'CANCEL';
+        status: 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled';
+        salesOrderId?: string;
+        orderNo?: string;
+        orderStatus?: string;
+        changedFields?: string[];
+        userNote?: string;
+        reasons?: string[];
+        suggestion?: string;
+        error?: string;
+        reason?: string;
+      };
+    }
   ;
 
 /** 分析子智能体一次工具调用；只保留基础文案，不展示参数与结果原文。 */

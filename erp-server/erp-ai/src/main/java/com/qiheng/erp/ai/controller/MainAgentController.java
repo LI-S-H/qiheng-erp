@@ -14,6 +14,10 @@ import com.qiheng.erp.ai.action.PurchaseOrderActionReceipt;
 import com.qiheng.erp.ai.action.PurchaseOrderActionService;
 import com.qiheng.erp.ai.draft.PurchaseDraftReceipt;
 import com.qiheng.erp.ai.draft.PurchaseDraftService;
+import com.qiheng.erp.ai.sales.SalesOrderActionReceipt;
+import com.qiheng.erp.ai.sales.SalesOrderActionService;
+import com.qiheng.erp.ai.sales.SalesOrderDraftReceipt;
+import com.qiheng.erp.ai.sales.SalesOrderDraftService;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.common.util.IdUtil;
 import jakarta.validation.Valid;
@@ -51,6 +55,8 @@ public class MainAgentController {
     private final ObjectProvider<ClarificationService> clarifications;
     private final ObjectProvider<PurchaseDraftService> drafts;
     private final ObjectProvider<PurchaseOrderActionService> actions;
+    private final ObjectProvider<SalesOrderDraftService> salesDrafts;
+    private final ObjectProvider<SalesOrderActionService> salesActions;
     private final ConcurrentHashMap<String, RunEventChannel> channels = new ConcurrentHashMap<>();
 
     /**
@@ -60,11 +66,11 @@ public class MainAgentController {
      * @param clarifications 追问服务
      */
     public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications) {
-        this(agents, clarifications, null, null);
+        this(agents, clarifications, null, null, null, null);
     }
 
     /**
-     * 兼容只注入草稿服务的调用方。
+     * 兼容只注入采购草稿服务的调用方。
      *
      * @param agents 主智能体服务
      * @param clarifications 追问服务
@@ -72,7 +78,7 @@ public class MainAgentController {
      */
     public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications,
                                ObjectProvider<PurchaseDraftService> drafts) {
-        this(agents, clarifications, drafts, null);
+        this(agents, clarifications, drafts, null, null, null);
     }
 
     /**
@@ -82,15 +88,21 @@ public class MainAgentController {
      * @param clarifications 追问服务
      * @param drafts 采购草稿服务
      * @param actions 采购单提交与取消服务
+     * @param salesDrafts 销售草稿服务
+     * @param salesActions 销售单提交与取消服务
      */
     @Autowired
     public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications,
                                ObjectProvider<PurchaseDraftService> drafts,
-                               ObjectProvider<PurchaseOrderActionService> actions) {
+                               ObjectProvider<PurchaseOrderActionService> actions,
+                               ObjectProvider<SalesOrderDraftService> salesDrafts,
+                               ObjectProvider<SalesOrderActionService> salesActions) {
         this.agents = agents;
         this.clarifications = clarifications;
         this.drafts = drafts;
         this.actions = actions;
+        this.salesDrafts = salesDrafts;
+        this.salesActions = salesActions;
     }
 
     /** 本轮用户输入。 */
@@ -153,6 +165,14 @@ public class MainAgentController {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());
                     sink.next(event("purchase_action", data));
+                } else if ("sales_order_draft".equals(node)) {
+                    var data = new LinkedHashMap<String, Object>(output.state().data());
+                    data.put("runId", runId.get());
+                    sink.next(event("sales_order_draft", data));
+                } else if ("sales_order_action".equals(node)) {
+                    var data = new LinkedHashMap<String, Object>(output.state().data());
+                    data.put("runId", runId.get());
+                    sink.next(event("sales_order_action", data));
                 // 分析子过程与工具状态共用事件协议：事件名独立，过程数据在 data 内，并带父级工具调用编号。
                 } else if ("tool_started".equals(node) || "tool_finished".equals(node)
                         || "analysis_started".equals(node) || "analysis_step".equals(node)
@@ -344,6 +364,62 @@ public class MainAgentController {
             synchronized (active) {
                 service.resolveForCurrentUser(id, actionRequestId, body);
                 active.actionResolved(actionRequestId);
+            }
+        }
+        return Result.ok();
+    }
+
+    /**
+     * 提交用户对销售草稿的处置结果。
+     *
+     * @param conversationId 会话编号
+     * @param draftRequestId 草稿请求编号
+     * @param body 处置结果
+     * @return 空结果
+     */
+    @PostMapping("/{conversationId}/sales-drafts/{draftRequestId}/resolve")
+    public Result<Void> resolveSalesDraft(@PathVariable String conversationId, @PathVariable String draftRequestId,
+                                          @RequestBody SalesOrderDraftReceipt body) {
+        long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
+        if (salesDrafts == null || salesDrafts.getIfAvailable() == null) {
+            throw new IllegalStateException("销售草稿功能未启用");
+        }
+        var service = salesDrafts.getObject();
+        var active = channel(id);
+        if (active == null) {
+            service.resolveForCurrentUser(id, draftRequestId, body);
+        } else {
+            synchronized (active) {
+                service.resolveForCurrentUser(id, draftRequestId, body);
+                active.salesDraftResolved(draftRequestId);
+            }
+        }
+        return Result.ok();
+    }
+
+    /**
+     * 提交用户对销售单动作（提交审核、取消）的处置结果。
+     *
+     * @param conversationId 会话编号
+     * @param actionRequestId 动作请求编号
+     * @param body 处置结果
+     * @return 空结果
+     */
+    @PostMapping("/{conversationId}/sales-actions/{actionRequestId}/resolve")
+    public Result<Void> resolveSalesAction(@PathVariable String conversationId, @PathVariable String actionRequestId,
+                                           @RequestBody SalesOrderActionReceipt body) {
+        long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
+        if (salesActions == null || salesActions.getIfAvailable() == null) {
+            throw new IllegalStateException("销售单操作功能未启用");
+        }
+        var service = salesActions.getObject();
+        var active = channel(id);
+        if (active == null) {
+            service.resolveForCurrentUser(id, actionRequestId, body);
+        } else {
+            synchronized (active) {
+                service.resolveForCurrentUser(id, actionRequestId, body);
+                active.salesActionResolved(actionRequestId);
             }
         }
         return Result.ok();

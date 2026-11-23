@@ -37,6 +37,8 @@ public final class RunEventChannel {
     private Map<String, Object> question;
     private Map<String, Object> draft;
     private Map<String, Object> action;
+    private Map<String, Object> salesDraft;
+    private Map<String, Object> salesAction;
     private long eventSeq;
     private boolean closed;
     private long closedAt;
@@ -98,6 +100,10 @@ public final class RunEventChannel {
             case "purchase_draft_resolved" -> applyTerminal("RUNNING");
             case "purchase_action" -> applyAction(data);
             case "purchase_action_resolved" -> applyTerminal("RUNNING");
+            case "sales_order_draft" -> applySalesDraft(data);
+            case "sales_order_draft_resolved" -> applyTerminal("RUNNING");
+            case "sales_order_action" -> applySalesAction(data);
+            case "sales_order_action_resolved" -> applyTerminal("RUNNING");
             case "run_completed" -> {
                 if (data.get("finalMessageId") instanceof String id) {
                     finalMessageId = id;
@@ -262,12 +268,53 @@ public final class RunEventChannel {
         items.put(key, item);
     }
 
+    /** 登记一份待确认的销售草稿。 */
+    private void applySalesDraft(Map<String, Object> data) {
+        status = "WAITING_USER";
+        salesDraft = Map.copyOf(data);
+        String id = String.valueOf(data.get("draftRequestId"));
+        String key = "salesDraft:" + id;
+        if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
+            snapshotTruncated = true;
+            return;
+        }
+        var item = new LinkedHashMap<String, Object>();
+        item.put("type", "sales_order_draft");
+        item.put("id", id);
+        item.put("draftRequestId", data.get("draftRequestId"));
+        item.put("action", data.get("action"));
+        item.put("draft", data.get("draft"));
+        items.put(key, item);
+    }
+
+    /** 登记一次等待用户确认的销售单动作。 */
+    private void applySalesAction(Map<String, Object> data) {
+        status = "WAITING_USER";
+        salesAction = Map.copyOf(data);
+        String id = String.valueOf(data.get("actionRequestId"));
+        String key = "salesAction:" + id;
+        if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
+            snapshotTruncated = true;
+            return;
+        }
+        var item = new LinkedHashMap<String, Object>();
+        item.put("type", "sales_order_action");
+        item.put("id", id);
+        item.put("actionRequestId", data.get("actionRequestId"));
+        item.put("action", data.get("action"));
+        item.put("salesOrderId", data.get("salesOrderId"));
+        item.put("orderNo", data.get("orderNo"));
+        items.put(key, item);
+    }
+
     /** 结束本轮状态并清除待回答的追问。 */
     private void applyTerminal(String terminalStatus) {
         status = terminalStatus;
         question = null;
         draft = null;
         action = null;
+        salesDraft = null;
+        salesAction = null;
     }
 
     /**
@@ -306,6 +353,28 @@ public final class RunEventChannel {
     }
 
     /**
+     * 用户处置销售草稿成功后撤销待确认状态。
+     *
+     * @param draftRequestId 本次处置对应的草稿编号
+     */
+    public synchronized void salesDraftResolved(String draftRequestId) {
+        if (!closed && salesDraft != null && draftRequestId.equals(salesDraft.get("draftRequestId"))) {
+            publish("sales_order_draft_resolved", Map.of("draftRequestId", draftRequestId));
+        }
+    }
+
+    /**
+     * 用户处置销售单动作成功后撤销待确认状态。
+     *
+     * @param actionRequestId 本次处置对应的动作编号
+     */
+    public synchronized void salesActionResolved(String actionRequestId) {
+        if (!closed && salesAction != null && actionRequestId.equals(salesAction.get("actionRequestId"))) {
+            publish("sales_order_action_resolved", Map.of("actionRequestId", actionRequestId));
+        }
+    }
+
+    /**
      * 判断已结束任务是否超过保留时间。
      *
      * @return 超过保留时间返回 true
@@ -336,6 +405,8 @@ public final class RunEventChannel {
         snapshot.put("question", question);
         snapshot.put("draft", draft);
         snapshot.put("action", action);
+        snapshot.put("salesDraft", salesDraft);
+        snapshot.put("salesAction", salesAction);
         snapshot.put("eventSeq", eventSeq);
         snapshot.put("snapshotTruncated", snapshotTruncated);
         if (finalMessageId != null) {

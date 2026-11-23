@@ -28,8 +28,14 @@ import AiPurchaseDraftDock from '../drafts/AiPurchaseDraftDock.vue';
 import PurchaseDraftDialog from '../drafts/PurchaseDraftDialog.vue';
 import AiPurchaseActionDock from '../drafts/AiPurchaseActionDock.vue';
 import PurchaseActionDialog from '../drafts/PurchaseActionDialog.vue';
+import AiSalesDraftDock from '../drafts/AiSalesDraftDock.vue';
+import SalesDraftDialog from '../drafts/SalesDraftDialog.vue';
+import AiSalesActionDock from '../drafts/AiSalesActionDock.vue';
+import SalesActionDialog from '../drafts/SalesActionDialog.vue';
 import { parsePurchaseDraftRequest, type PurchaseDraftRequest } from '../drafts/purchase-draft-types';
 import { parsePurchaseActionRequest, type PurchaseActionRequest } from '../drafts/purchase-action';
+import { parseSalesDraftRequest, type SalesDraftRequest } from '../drafts/sales-draft-types';
+import { parseSalesActionRequest, type SalesActionRequest } from '../drafts/sales-action';
 import { usePanelResize } from '../composables/use-panel-resize';
 import { clearFailureHold, holdTransientFailure, useConversationRuns, type ConversationRun, type LiveItem, type SnapshotItem } from '../composables/use-conversation-runs';
 import type { ClarificationDraft, ClarificationQuestion } from '../clarification/clarification-types';
@@ -170,6 +176,61 @@ function openActionDialog() {
 function handleActionSettled() {
   actionDialogOpen.value = false;
   pendingAction.value = null;
+}
+/** 等待用户处置的销售草稿；与采购草稿互斥，同一时刻只会有一份。 */
+const pendingSalesDraft = runtimeField('pendingSalesDraft');
+const salesDraftDialogOpen = ref(false);
+
+/** 把销售草稿事件收敛成可校验的结构；格式异常时按缺少草稿处理。 */
+function pendingSalesDraftFrom(value: unknown): SalesDraftRequest | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  try {
+    return parseSalesDraftRequest(value as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
+/** 打开销售草稿确认页；必须点开详情后才能处置。 */
+function openSalesDraftDialog() {
+  if (!pendingSalesDraft.value) return;
+  salesDraftDialogOpen.value = true;
+}
+
+/** 销售草稿处置完成后收起确认页并清除等待状态。 */
+function handleSalesDraftSettled() {
+  salesDraftDialogOpen.value = false;
+  pendingSalesDraft.value = null;
+}
+
+/** 等待用户确认的销售单提交或取消动作。 */
+const pendingSalesAction = runtimeField('pendingSalesAction');
+const salesActionDialogOpen = ref(false);
+
+/** 把销售动作事件收敛成可校验的结构；格式异常时按缺少动作处理。 */
+function pendingSalesActionFrom(value: unknown): SalesActionRequest | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  try {
+    return parseSalesActionRequest(value as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
+/** 打开销售动作确认页；必须点开详情后才能提交或取消。 */
+function openSalesActionDialog() {
+  if (!pendingSalesAction.value) return;
+  salesActionDialogOpen.value = true;
+}
+
+/** 销售动作处置完成后收起确认页并清除等待状态。 */
+function handleSalesActionSettled() {
+  salesActionDialogOpen.value = false;
+  pendingSalesAction.value = null;
 }
 const small = useMediaQuery('(max-width: 900px)');
 const phone = useMediaQuery('(max-width: 640px)');
@@ -571,7 +632,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.snapshotTruncated = data.snapshotTruncated === true;
       state.warning = state.snapshotTruncated ? '运行过程缓存不完整，已保留已保存的历史消息。' : '';
       const snapshotItems = data.items as SnapshotItem[];
-      state.liveItems = snapshotItems.filter((item): item is LiveItem => item.type !== 'analysis' && item.type !== 'report' && item.type !== 'purchase_draft' && item.type !== 'purchase_action');
+      state.liveItems = snapshotItems.filter((item): item is LiveItem => item.type !== 'analysis' && item.type !== 'report' && item.type !== 'purchase_draft' && item.type !== 'purchase_action' && item.type !== 'sales_draft' && item.type !== 'sales_action');
       state.finalMessageId = typeof data.finalMessageId === 'string' ? data.finalMessageId : '';
       state.completedTextIds = new Set(state.liveItems.filter(item => item.type === 'text' && item.completed).map(item => item.id));
       state.liveText = state.liveItems.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
@@ -603,6 +664,8 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.pendingClarification = data.status === 'WAITING_USER' && question?.questionRequestId && Array.isArray(question.questions) ? question : null;
       state.pendingDraft = data.status === 'WAITING_USER' ? pendingDraftFrom(data.draft) : null;
       state.pendingAction = data.status === 'WAITING_USER' ? pendingActionFrom(data.action) : null;
+      state.pendingSalesDraft = data.status === 'WAITING_USER' ? pendingSalesDraftFrom(data.salesDraft) : null;
+      state.pendingSalesAction = data.status === 'WAITING_USER' ? pendingSalesActionFrom(data.salesAction) : null;
       break;
     }
     case 'run_started':
@@ -797,6 +860,42 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
     case 'purchase_action_resolved':
       if (state.pendingAction?.actionRequestId === data.actionRequestId) {
         state.pendingAction = null;
+        state.runStatus = 'RUNNING';
+      }
+      break;
+    case 'sales_order_draft': {
+      const draft = pendingSalesDraftFrom(data);
+      if (!draft) {
+        throw new Error('销售草稿事件格式错误');
+      }
+      state.pendingSalesDraft = draft;
+      state.runStatus = 'WAITING_USER';
+      state.steps = [];
+      state.settleSuccess?.();
+      state.settleSuccess = null;
+      break;
+    }
+    case 'sales_order_draft_resolved':
+      if (state.pendingSalesDraft?.draftRequestId === data.draftRequestId) {
+        state.pendingSalesDraft = null;
+        state.runStatus = 'RUNNING';
+      }
+      break;
+    case 'sales_order_action': {
+      const action = pendingSalesActionFrom(data);
+      if (!action) {
+        throw new Error('销售单动作格式错误');
+      }
+      state.pendingSalesAction = action;
+      state.runStatus = 'WAITING_USER';
+      state.steps = [];
+      state.settleSuccess?.();
+      state.settleSuccess = null;
+      break;
+    }
+    case 'sales_order_action_resolved':
+      if (state.pendingSalesAction?.actionRequestId === data.actionRequestId) {
+        state.pendingSalesAction = null;
         state.runStatus = 'RUNNING';
       }
       break;
@@ -1538,6 +1637,7 @@ onBeforeUnmount(() => {
             <div v-if="pendingDraft && !switching" class="agent-question-dock" data-ai-purchase-draft-dock>
               <AiPurchaseDraftDock
                 :item-count="pendingDraft.draft.items.length"
+                :action="pendingDraft.action"
                 :disabled="answering || switching"
                 @open="openDraftDialog"
               />
@@ -1550,6 +1650,26 @@ onBeforeUnmount(() => {
                 :order-no="pendingAction.orderNo"
                 :disabled="answering || switching"
                 @open="openActionDialog"
+              />
+            </div>
+          </Transition>
+          <Transition name="question-dock" appear>
+            <div v-if="pendingSalesDraft && !switching" class="agent-question-dock" data-ai-sales-draft-dock>
+              <AiSalesDraftDock
+                :item-count="pendingSalesDraft.draft.items.length"
+                :action="pendingSalesDraft.action"
+                :disabled="answering || switching"
+                @open="openSalesDraftDialog"
+              />
+            </div>
+          </Transition>
+          <Transition name="question-dock" appear>
+            <div v-if="pendingSalesAction && !switching" class="agent-question-dock" data-ai-sales-action-dock>
+              <AiSalesActionDock
+                :action="pendingSalesAction.action"
+                :order-no="pendingSalesAction.orderNo"
+                :disabled="answering || switching"
+                @open="openSalesActionDialog"
               />
             </div>
           </Transition>
@@ -1622,6 +1742,21 @@ onBeforeUnmount(() => {
       :conversation-id="store.activeId || ''"
       @update:open="actionDialogOpen = $event"
       @settled="handleActionSettled"
+    />
+    <SalesDraftDialog
+      :open="salesDraftDialogOpen"
+      :request="pendingSalesDraft"
+      :conversation-id="store.activeId || ''"
+      :action="pendingSalesDraft?.action"
+      @update:open="salesDraftDialogOpen = $event"
+      @settled="handleSalesDraftSettled"
+    />
+    <SalesActionDialog
+      :open="salesActionDialogOpen"
+      :request="pendingSalesAction"
+      :conversation-id="store.activeId || ''"
+      @update:open="salesActionDialogOpen = $event"
+      @settled="handleSalesActionSettled"
     />
   </section>
 </template>

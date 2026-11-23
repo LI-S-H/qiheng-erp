@@ -3,6 +3,8 @@ package com.qiheng.erp.ai.agent;
 import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.action.PurchaseOrderActionService;
 import com.qiheng.erp.ai.draft.PurchaseDraftService;
+import com.qiheng.erp.ai.sales.SalesOrderActionService;
+import com.qiheng.erp.ai.sales.SalesOrderDraftService;
 
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallHandler;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallRequest;
@@ -57,6 +59,11 @@ public final class TrustedToolContextInterceptor extends ToolInterceptor {
         // 提交和取消的确认同样需要事件通道。
         request.getExecutionContext().orElseThrow().config().metadata(PurchaseOrderActionService.EVENT_KEY)
                 .ifPresent(value -> context.put(PurchaseOrderActionService.EVENT_KEY, value));
+        // 销售草稿与提交、取消同样需要事件通道。
+        request.getExecutionContext().orElseThrow().config().metadata(SalesOrderDraftService.EVENT_KEY)
+                .ifPresent(value -> context.put(SalesOrderDraftService.EVENT_KEY, value));
+        request.getExecutionContext().orElseThrow().config().metadata(SalesOrderActionService.EVENT_KEY)
+                .ifPresent(value -> context.put(SalesOrderActionService.EVENT_KEY, value));
         // 框架复制构建器不会保留执行上下文，后续拦截器仍需读取恢复配置。
         return handler.call(ToolCallRequest.builder(request)
                 .context(context).executionContext(request.getExecutionContext().orElseThrow()).build());

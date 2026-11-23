@@ -2,11 +2,11 @@ import { http } from '@/api/http';
 import { AUTH_TOKEN_NAME_STORAGE_KEY, AUTH_TOKEN_STORAGE_KEY } from '@/shared/constants/storage';
 import { readSseStream } from './sse';
 
-export type MainAgentEventName = 'run_snapshot' | 'run_started' | 'text_delta' | 'text_completed' | 'tool_started' | 'tool_finished' | 'analysis_started' | 'analysis_step' | 'analysis_summary' | 'report_progress' | 'report_ready' | 'question' | 'question_answered' | 'purchase_draft' | 'purchase_draft_resolved' | 'purchase_action' | 'purchase_action_resolved' | 'run_completed' | 'run_failed';
+export type MainAgentEventName = 'run_snapshot' | 'run_started' | 'text_delta' | 'text_completed' | 'tool_started' | 'tool_finished' | 'analysis_started' | 'analysis_step' | 'analysis_summary' | 'report_progress' | 'report_ready' | 'question' | 'question_answered' | 'purchase_draft' | 'purchase_draft_resolved' | 'purchase_action' | 'purchase_action_resolved' | 'sales_order_draft' | 'sales_order_draft_resolved' | 'sales_order_action' | 'sales_order_action_resolved' | 'run_completed' | 'run_failed';
 export interface MainAgentEvent { event: MainAgentEventName; data: Record<string, unknown> }
 export interface QuestionAnswer { questionId: string; selectedOptions: string[]; customText: string }
 
-const events = new Set<MainAgentEventName>(['run_snapshot', 'run_started', 'text_delta', 'text_completed', 'tool_started', 'tool_finished', 'analysis_started', 'analysis_step', 'analysis_summary', 'report_progress', 'report_ready', 'question', 'question_answered', 'purchase_draft', 'purchase_draft_resolved', 'purchase_action', 'purchase_action_resolved', 'run_completed', 'run_failed']);
+const events = new Set<MainAgentEventName>(['run_snapshot', 'run_started', 'text_delta', 'text_completed', 'tool_started', 'tool_finished', 'analysis_started', 'analysis_step', 'analysis_summary', 'report_progress', 'report_ready', 'question', 'question_answered', 'purchase_draft', 'purchase_draft_resolved', 'purchase_action', 'purchase_action_resolved', 'sales_order_draft', 'sales_order_draft_resolved', 'sales_order_action', 'sales_order_action_resolved', 'run_completed', 'run_failed']);
 
 /** 事件序号与耗时可能由后端作为数字字符串传输，统一转换后再进入页面状态。 */
 function eventNumber(value: unknown): number | null {

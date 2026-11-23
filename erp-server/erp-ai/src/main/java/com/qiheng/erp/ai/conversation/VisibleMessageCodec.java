@@ -67,6 +67,22 @@ public class VisibleMessageCodec {
         };
     }
 
+    /** 判断是否销售单动作记录，并按动作校验状态取值。 */
+    private static boolean isSalesOrderRecord(String name, String status) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        return switch (name) {
+            case "prepare_sales_order_draft", "update_sales_order_draft" ->
+                    Set.of("created", "updated", "edited", "failed", "rejected").contains(status);
+            case "submit_sales_order" ->
+                    Set.of("submitted", "rejected", "failed").contains(status);
+            case "cancel_sales_order" ->
+                    Set.of("cancelled", "rejected", "failed").contains(status);
+            default -> false;
+        };
+    }
+
     /**
      * 读取当前消息及已保存的普通文本、追问工具消息。
      *
@@ -105,6 +121,18 @@ public class VisibleMessageCodec {
                         }
                     }
                     return new VisibleMessageContent("PURCHASE_ORDER", data);
+                }
+                if ("TOOL_CALL".equals(kind) && isSalesOrderRecord(root.path("name").asText(),
+                        root.path("status").asText())) {
+                    // 销售单动作记录：与采购单一样只保存动作、状态和单号。
+                    Map<String, Object> data = new LinkedHashMap<>();
+                    for (String field : Set.of("action", "status", "salesOrderId", "orderNo", "orderStatus",
+                            "changedFields", "userNote", "reasons", "suggestion", "error", "reason")) {
+                        if (root.has(field)) {
+                            data.put(field, mapper.convertValue(root.get(field), Object.class));
+                        }
+                    }
+                    return new VisibleMessageContent("SALES_ORDER", data);
                 }
                 if (!"ask_user".equals(root.path("name").asText())) {
                     // 普通工具行是结构化展示：只给工具名、文案、状态与耗时，不含参数和结果。

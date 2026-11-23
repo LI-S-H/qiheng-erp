@@ -30,12 +30,12 @@ GROUP BY r.return_type;
 
 ## 2. 原因分布
 
-按原因编码分组，并保留原始编码便于识别历史值。
+按原因编码分组，直接使用规范化后的枚举值。
 
 ```sql
 SELECT
     r.return_type,
-    CASE WHEN r.reason_code = 'QUALITY' THEN 'QUALITY_ISSUE' ELSE r.reason_code END AS reason_code,
+    r.reason_code,
     COUNT(DISTINCT r.id) AS order_count,
     SUM(ri.requested_qty) AS requested_qty,
     SUM(ri.total_amount) AS return_amount
@@ -48,8 +48,8 @@ GROUP BY r.return_type, reason_code
 ORDER BY return_amount DESC;
 ```
 
-- `QUALITY` 归一为 `QUALITY_ISSUE`
-- 历史数据里销售退货常用 `CUSTOMER_RETURN`，不在当前枚举内，保留原值并标注是历史编码
+- 原因编码统一为 7 个枚举：`QUALITY_ISSUE`、`DAMAGED`、`WRONG_ITEM`、`QUANTITY_ERROR`、`SPEC_MISMATCH`、`NO_LONGER_NEEDED`、`OTHER`
+- 历史旧码已迁移，直接按枚举分组
 - 原因由人工填写，分组结论只作方向参考
 
 ## 3. 供应商集中度

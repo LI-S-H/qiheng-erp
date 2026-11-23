@@ -18,7 +18,7 @@ description: 用户询问退货多不多、为什么退货、哪家供应商退�
 ## 系统边界
 
 - 系统只有退货单据，没有退货申请以外的处理流程；`handling_type` 目前只有退款
-- 历史数据里存在旧原因编码：`QUALITY` 归一为 `QUALITY_ISSUE`，`CUSTOMER_RETURN` 保留原值并标注为历史编码，其余枚举外的值归入 `OTHER`
+- 原因编码统一为 7 个枚举：`QUALITY_ISSUE`、`DAMAGED`、`WRONG_ITEM`、`QUANTITY_ERROR`、`SPEC_MISMATCH`、`NO_LONGER_NEEDED`、`OTHER`；历史旧码已迁移，不再存在 `QUALITY`、`CUSTOMER_RETURN`
 - 退货单通过来源订单关联采购单或销售单，没有独立的产品成本信息
 - 退货原因由人工填写，存在填写不一致的情况，按原因分组时要把样本量一起给出
 

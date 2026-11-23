@@ -55,7 +55,7 @@ description: 接到退货分析任务时使用。负责查退货单据、来源�
 某原因占比 = 该原因退货量 ÷ 退货总量
 ```
 
-- 原因编码先归一：`QUALITY` 归一为 `QUALITY_ISSUE`；`CUSTOMER_RETURN` 保留原值并标注为历史编码；其余未知值归入 `OTHER`
+- 原因编码统一为 7 个枚举：`QUALITY_ISSUE`、`DAMAGED`、`WRONG_ITEM`、`QUANTITY_ERROR`、`SPEC_MISMATCH`、`NO_LONGER_NEEDED`、`OTHER`；历史旧码已迁移，按这 7 类分组即可
 - 原因由人工填写，占比只能作为方向参考，不能当作精确分类
 - 大额单笔退货会显著改变占比，要同时给笔数和单均
 

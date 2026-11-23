@@ -30,7 +30,6 @@ import com.qiheng.erp.returnorder.domain.dto.ReturnOrderPageDto;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
 import com.qiheng.erp.returnorder.domain.entity.ReturnOrderItem;
 import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
-import com.qiheng.erp.returnorder.domain.enums.ReturnReasonCode;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderItemVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderVo;
@@ -260,7 +259,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
                 .setWarehouseName(ctx.sourceOrder.warehouseName())
                 .setExpectedExecutionDate(dto.getExpectedExecutionDate())
                 .setHandlingType(dto.getHandlingType())
-                .setReasonCode(ReturnReasonCode.normalizeStoredCode(dto.getReasonCode()))
+                .setReasonCode(dto.getReasonCode())
                 .setReturnReason(dto.getReturnReason())
                 .setTotalAmount(QtyUtil.toStored(built.totalAmount))
                 .setStatus(ReturnStatus.DRAFT.name())
@@ -316,7 +315,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         update.setWarehouseName(ctx.sourceOrder.warehouseName());
         update.setExpectedExecutionDate(dto.getExpectedExecutionDate());
         update.setHandlingType(dto.getHandlingType());
-        update.setReasonCode(ReturnReasonCode.normalizeStoredCode(dto.getReasonCode()));
+        update.setReasonCode(dto.getReasonCode());
         update.setReturnReason(dto.getReturnReason());
         update.setTotalAmount(QtyUtil.toStored(built.totalAmount));
         update.setRemark(dto.getRemark());
@@ -1212,7 +1211,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         BeanUtil.copyProperties(entity, vo, "id");
         vo.setReturnOrderId(entity.getId());
         vo.setTotalAmount(QtyUtil.toDecimal(entity.getTotalAmount()));
-        vo.setReasonCode(ReturnReasonCode.normalizeStoredCode(entity.getReasonCode()));
+        vo.setReasonCode(entity.getReasonCode());
         return vo;
     }
 

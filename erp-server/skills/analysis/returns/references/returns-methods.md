@@ -15,9 +15,8 @@
 
 ## 原因编码
 
-- `QUALITY` 是历史编码，读取时归一为 `QUALITY_ISSUE`
-- `CUSTOMER_RETURN` 是历史销售退货编码，不在当前枚举内，保留原值并标注为历史编码
-- 其他不在枚举内的值归入 `OTHER`
+- 原因编码统一为 7 个枚举：`QUALITY_ISSUE`、`DAMAGED`、`WRONG_ITEM`、`QUANTITY_ERROR`、`SPEC_MISMATCH`、`NO_LONGER_NEEDED`、`OTHER`
+- 历史旧码已迁移，不再需要归一或标注历史编码
 - 原因是人工填写，同一问题可能被填成不同编码，分组结论只作方向参考
 
 ## 集中度

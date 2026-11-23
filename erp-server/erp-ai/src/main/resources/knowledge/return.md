@@ -156,7 +156,7 @@ return_order.total_amount = Σ( requested_qty × unit_price )
 
 ### 4.5 退货原因
 
-`reason_code`（提交前必填）：`QUALITY_ISSUE`（质量问题）、`DAMAGED`（破损）、`WRONG_ITEM`（错货）、`QUANTITY_ERROR`（数量错误）、`SPEC_MISMATCH`（规格不符）、`NO_LONGER_NEEDED`（不再需要）、`OTHER`（其它）。历史数据中可能残留旧编码，统计时按规范口径合并。
+`reason_code`（提交前必填）：`QUALITY_ISSUE`（质量问题）、`DAMAGED`（破损）、`WRONG_ITEM`（错货）、`QUANTITY_ERROR`（数量错误）、`SPEC_MISMATCH`（规格不符）、`NO_LONGER_NEEDED`（不再需要）、`OTHER`（其它）。历史旧码已迁移，这 7 个枚举即为完整口径。
 
 ## 五、业务定义
 

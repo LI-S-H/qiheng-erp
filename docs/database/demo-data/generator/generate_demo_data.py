@@ -159,6 +159,36 @@ def weighted_pick(items: Iterable, weights: Iterable[float]):
     return pool[-1]
 
 
+
+
+# 退货原因按业务方向配置权重与说明模板：原因码与说明一一对应，避免同一原因文本挂在多个码上。
+PURCHASE_RETURN_REASONS = [
+    ("QUALITY_ISSUE", 45, ["到货抽检发现批次质量问题", "批次色差，抽检不合格", "供应商批次稳定性不达标"]),
+    ("DAMAGED", 15, ["到货发现外箱破损", "运输途中压坏", "包装受潮变形"]),
+    ("WRONG_ITEM", 10, ["供应商发错型号", "规格与订单不符", "错发同系列其他产品"]),
+    ("QUANTITY_ERROR", 10, ["实收数量少于送货单", "重复发货多出一箱", "装箱数量与标签不一致"]),
+    ("SPEC_MISMATCH", 10, ["规格与合同不一致", "包装规格变更未提前通知", "标签标注与实物不符"]),
+    ("OTHER", 10, ["供应商协商退回", "质量问题待复检", "批次追溯信息缺失"]),
+]
+
+SALES_RETURN_REASONS = [
+    ("DAMAGED", 25, ["运输途中包装破损", "客户反馈到手有磕碰", "外箱受潮，商品受影响"]),
+    ("NO_LONGER_NEEDED", 25, ["客户临时取消采购计划", "门店关闭不再需要", "客户调整品类，取消订货"]),
+    ("QUALITY_ISSUE", 15, ["客户反馈口感异常", "批次临期，客户拒收", "抽检发现品质波动"]),
+    ("WRONG_ITEM", 10, ["发错型号客户要求退回", "仓库错发规格", "客户收到的商品与订单不符"]),
+    ("QUANTITY_ERROR", 10, ["实收数量少于订单", "重复发货多出一箱", "赠品数量登记错误"]),
+    ("SPEC_MISMATCH", 8, ["客户要求换规格", "与促销物料不符", "包装改版后客户不认可"]),
+    ("OTHER", 7, ["客户协商退货", "售后待复检", "客户临时调整陈列"]),
+]
+
+
+def choose_return_reason(return_type: str) -> tuple[str, str]:
+    """按退货方向抽取原因码，并从该原因的说明模板中选一条，保证码与文本一致。"""
+    table = PURCHASE_RETURN_REASONS if return_type == "PURCHASE_RETURN" else SALES_RETURN_REASONS
+    code = weighted_pick([row[0] for row in table], [row[1] for row in table])
+    reasons = next(row[2] for row in table if row[0] == code)
+    return code, rng.choice(reasons)
+
 def random_datetime(day: date, start_hour: int = 8, end_hour: int = 20) -> datetime:
     """生成当天的工作时间。"""
     return datetime(day.year, day.month, day.day, rng.randint(start_hour, end_hour - 1),
@@ -1903,6 +1933,7 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
         created_day = order.fully_received_at.date() + timedelta(days=rng.randint(5, 45)) if order.fully_received_at else WINDOW_END
         created_day = max(WINDOW_START, min(created_day, WINDOW_END - timedelta(days=2)))
         expected = max(TODAY + timedelta(days=rng.randint(2, 20)), created_day + timedelta(days=5))
+        pr_reason_code, pr_reason_text = choose_return_reason("PURCHASE_RETURN")
         ret = ReturnOrder(
             id=return_id.next(),
             no=pr_no.next(created_day),
@@ -1930,8 +1961,8 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
                 "total_amount": line_total,
             }],
             total_amount=line_total,
-            reason_code="QUALITY",
-            return_reason="到货抽检发现批次质量问题",
+            reason_code=pr_reason_code,
+            return_reason=pr_reason_text,
             handling_type="REFUND",
         )
         return_orders.append(ret)
@@ -1953,6 +1984,7 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
         created_day = order.approved_at.date() + timedelta(days=rng.randint(5, 60)) if order.approved_at else WINDOW_END
         created_day = max(WINDOW_START, min(created_day, WINDOW_END - timedelta(days=2)))
         expected = max(TODAY + timedelta(days=rng.randint(2, 20)), created_day + timedelta(days=5))
+        sr_reason_code, sr_reason_text = choose_return_reason("SALES_RETURN")
         ret = ReturnOrder(
             id=return_id.next(),
             no=sr_no.next(created_day),
@@ -1980,8 +2012,8 @@ def simulate(products: list[Product], relations: dict[int, list[SupplyRelation]]
                 "total_amount": line_total,
             }],
             total_amount=line_total,
-            reason_code="CUSTOMER_RETURN",
-            return_reason="客户反馈包装破损，协商退货",
+            reason_code=sr_reason_code,
+            return_reason=sr_reason_text,
             handling_type="REFUND",
         )
         return_orders.append(ret)

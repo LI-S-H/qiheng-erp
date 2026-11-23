@@ -1,0 +1,14 @@
+products 1560
+class Counter({'正常': 1560})
+total onhand 124417.0 total period demand 0.0
+total gap 0 total net 0
+wh_count dist Counter({1: 1560})
+min ending 30.0 min gap-to-safety margin 20.0
+open SO rows (filtered) 0 open PO rows(filtered) 0
+ending_main == ending_alt? True
+onhand check by warehouse Counter({'8400000000004000001': 312, '8400000000004000002': 312, '8400000000004000003': 312, '8400000000004000004': 312, '8400000000004000005': 312})
+DEMOW01 products 312 stock 24862.0 locked 0.0
+DEMOW02 products 312 stock 24885.0 locked 0.0
+DEMOW03 products 312 stock 24908.0 locked 0.0
+DEMOW04 products 312 stock 24890.0 locked 0.0
+DEMOW05 products 312 stock 24872.0 locked 0.0

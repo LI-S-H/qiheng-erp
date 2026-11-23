@@ -89,11 +89,11 @@ function fieldLabel(path: string) {
   return path;
 }
 
-/** 展开时按单号读取采购单详情，复用采购模块的只读数据。 */
+/** 每次展开都按单号重查，卡片状态始终和采购单当前状态一致。 */
 async function toggle() {
   if (!hasOrder.value) return;
   expanded.value = !expanded.value;
-  if (!expanded.value || order.value || loading.value) return;
+  if (!expanded.value || loading.value) return;
   loading.value = true;
   loadError.value = '';
   try {

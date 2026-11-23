@@ -41,7 +41,7 @@ public final class CancelPurchaseOrderTool {
             + "用户明确要求取消、作废、不再采购，或你建议取消且用户已经同意时才调用；建议取消必须先征求用户同意，不要直接调用。"
             + "已入库或已取消的单据不要调用。"
             + "从用户的话里提取取消原因作为 reason，没有就留空。"
-            + "返回的结论文字以「用户同意取消 / 用户暂不取消 / 取消失败」开头，按 purchase-order 技能处理。")
+            + "返回的结论文字会说明是已取消、暂不取消还是取消失败，按 purchase-order 技能处理。")
     public String cancel(
             @ToolParam(description = "采购单标识：purchaseOrderId 必填，orderNo 和 reason 可选")
             PurchaseOrderActionRequest request,

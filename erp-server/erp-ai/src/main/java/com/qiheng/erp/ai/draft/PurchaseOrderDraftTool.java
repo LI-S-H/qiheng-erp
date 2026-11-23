@@ -40,8 +40,7 @@ public final class PurchaseOrderDraftTool {
     @Tool(name = "prepare_purchase_order_draft", description = "把采购单草稿交给用户确认，并在用户处置后返回结果。"
             + "只在需要生成采购草稿请用户确认时调用；供应商、仓库和产品必须使用系统中真实存在的编号，先查询确认，不要编造。"
             + "返回的是结论文字：第一句说明用户做了什么，后面按需附带参数 JSON，先读结论、需要精确数值时再读参数块。"
-            + "调用后按 purchase-order 技能处理：created 报告单号与下一步；edited 说明用户改动带来的好处和代价，只改备注时一句话确认即可；"
-            + "failed 判断是参数问题还是业务规则问题再调整；rejected 按驳回原因和补充要求重新规划。")
+            + "处置结果按 purchase-order 技能处理。")
     public String prepare(
             @ToolParam(description = "采购草稿参数")
             PurchaseOrderDraftRequest request,

@@ -40,7 +40,7 @@ public final class SubmitPurchaseOrderTool {
     @Tool(name = "submit_purchase_order", description = "把草稿状态的采购单提交审核。"
             + "只在用户同意提交时调用；单据不是草稿时不要调用，先把当前状态告诉用户。"
             + "提交不产生新参数，预计到货为空时由用户在确认卡片上补，不要编造日期。"
-            + "返回的结论文字以「用户同意提交 / 用户暂不提交 / 提交未通过」开头，按 purchase-order 技能处理。")
+            + "返回的结论文字会说明是已提交、暂不提交还是提交未通过，按 purchase-order 技能处理。")
     public String submit(
             @ToolParam(description = "采购单标识：purchaseOrderId 必填，orderNo 可选")
             PurchaseOrderActionRequest request,

@@ -40,7 +40,7 @@ public final class UpdatePurchaseOrderDraftTool {
     @Tool(name = "update_purchase_order_draft", description = "修改已经存在的采购单参数，交用户确认后保存。"
             + "只在采购单已创建、用户明确要求修改数量、单价、仓库、到货日期或明细时调用；单据还不存在时不要调用，先走创建流程。"
             + "必须传 purchaseOrderId；明细要传完整的 items，没提到的字段可以省略，确认卡片会以单据现值为底。"
-            + "返回的结论文字以「用户确认修改 / 用户修改参数后保存 / 用户驳回 / 修改未保存」开头，按 purchase-order 技能处理。")
+            + "返回的结论文字会说明是已保存、修改后保存、被驳回还是修改未保存，按 purchase-order 技能处理。")
     public String update(
             @ToolParam(description = "采购单修改参数，必须包含 purchaseOrderId")
             PurchaseOrderDraftRequest request,

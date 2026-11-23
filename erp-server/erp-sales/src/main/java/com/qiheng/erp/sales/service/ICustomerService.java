@@ -30,6 +30,13 @@ public interface ICustomerService extends IService<Customer> {
     PageResult<CustomerVo> page(CustomerPageDto dto);
 
     /**
+     * 按客户 ID 查询详情
+     * @param customerId 客户 ID
+     * @return 客户详情；不存在时抛出业务异常
+     */
+    CustomerVo getDetailById(Long customerId);
+
+    /**
      * 新增客户（后端生成客户编码，信用额度按 100 倍入库）
      * @param dto 新增客户请求 DTO
      * @return 新增后的客户 VO

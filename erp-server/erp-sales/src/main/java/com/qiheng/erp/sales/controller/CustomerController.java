@@ -62,6 +62,19 @@ public class CustomerController {
     }
 
     /**
+     * 按客户 ID 查询详情
+     * @param customerId 客户 ID
+     * @return 客户详情
+     */
+    @GetMapping("/{customerId}")
+    @Operation(summary = "按ID查询客户详情")
+    public Result<CustomerVo> getDetailById(@PathVariable Long customerId) {
+        StpUtil.checkPermission("customer:query");
+        log.info("按ID查询客户详情，参数: {}", customerId);
+        return Result.ok(customerService.getDetailById(customerId));
+    }
+
+    /**
      * 新增客户（后端生成客户编码）
      * @param dto 新增客户请求 DTO
      * @return 新增后的客户 VO

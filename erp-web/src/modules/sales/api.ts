@@ -360,6 +360,16 @@ export async function searchCustomerOptions(keyword = '', pageSize = 10): Promis
   }));
 }
 
+/** 按客户 ID 读取详情，销售单确认页按编号回显客户名称。 */
+export function getCustomerDetail(customerId: string) {
+  if (useMockApi) {
+    const customer = mockCustomers.find(item => item.customerId === customerId);
+    return customer ? Promise.resolve(normalizeCustomer(customer)) : Promise.reject(new Error('客户不存在'));
+  }
+  return getResult<CustomerListItem>(`/sales/customers/${customerId}`, undefined, { skipPageLoading: true })
+    .then(normalizeCustomer);
+}
+
 export function createCustomer(payload: CustomerFormPayload) {
   if (useMockApi) {
     const timestamp = nowText();

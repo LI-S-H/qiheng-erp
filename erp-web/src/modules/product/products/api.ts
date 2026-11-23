@@ -158,6 +158,13 @@ export function listProducts(params: ProductQuery, requestConfig?: AxiosRequestC
   }, { skipPageLoading: true, timeout: requestConfig?.skipPageLoading ? http.defaults.timeout : 5_000, ...requestConfig }).then(normalizeProductPage);
 }
 
+/** 按产品 ID 读取详情；产品不存在时返回 null，由调用方决定兜底展示。 */
+export async function getProductDetail(productId: string): Promise<ProductListItem | null> {
+  if (useMockApi) return getMockProductSnapshot(productId) ?? null;
+  const product = await getResult<ProductListItem | null>(`/products/${productId}`, undefined, { skipPageLoading: true });
+  return product ? normalizeProduct(product) : null;
+}
+
 export function createProduct(payload: ProductFormPayload) {
   if (useMockApi) {
     ensureEnabledCategory(payload);

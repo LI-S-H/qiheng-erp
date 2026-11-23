@@ -83,6 +83,20 @@ public class CustomerServiceImpl extends ServiceImpl<CustomerMapper, Customer> i
     }
 
     /**
+     * 按客户 ID 查询详情
+     * @param customerId 客户 ID
+     * @return 客户详情；不存在时抛出业务异常
+     */
+    @Override
+    public CustomerVo getDetailById(Long customerId) {
+        Customer entity = customerMapper.selectById(customerId);
+        if (entity == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND);
+        }
+        return toVo(entity);
+    }
+
+    /**
      * 新增客户（后端生成客户编码，信用额度按 100 倍入库）
      * @param dto 新增客户请求 DTO
      * @return 新增后的客户 VO

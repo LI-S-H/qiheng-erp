@@ -91,9 +91,12 @@ function fieldLabel(path: string) {
 
 /** 每次展开都按单号重查，卡片状态始终和采购单当前状态一致。 */
 async function toggle() {
-  if (!hasOrder.value) return;
-  expanded.value = !expanded.value;
-  if (!expanded.value || loading.value) return;
+  if (!hasOrder.value || loading.value) return;
+  if (expanded.value) {
+    expanded.value = false;
+    return;
+  }
+  // 先取明细再展开：展开动画直接过渡到完整内容高度，不会先撑开再跳高。
   loading.value = true;
   loadError.value = '';
   try {
@@ -103,7 +106,9 @@ async function toggle() {
   } finally {
     loading.value = false;
   }
+  expanded.value = true;
 }
+
 
 /** 金额展示保留两位小数。 */
 function formatMoney(value: number) {
@@ -121,7 +126,7 @@ function formatMoney(value: number) {
         <span v-if="data.orderNo" class="draft-history-no">{{ data.orderNo }}</span>
       </div>
       <button v-if="hasOrder" type="button" class="draft-history-toggle" :aria-expanded="expanded" @click="toggle">
-        {{ expanded ? '收起明细' : '查看明细' }}
+        {{ loading ? '读取中…' : expanded ? '收起明细' : '查看明细' }}
         <ChevronDown class="size-4 transition-transform" :class="{ 'rotate-180': expanded }" aria-hidden="true" />
       </button>
     </div>
@@ -133,7 +138,9 @@ function formatMoney(value: number) {
     <p v-if="changedLabels.length" class="draft-history-note">修改内容：{{ changedLabels.join('、') }}</p>
     <p v-if="data.userNote" class="draft-history-note">用户说明：{{ data.userNote }}</p>
 
-    <div v-if="expanded" class="draft-history-body">
+    <div class="draft-history-collapse" :class="{ 'is-open': expanded }">
+      <div class="draft-history-collapse-inner">
+        <div class="draft-history-body">
       <p v-if="loading" class="draft-history-placeholder">正在读取明细…</p>
       <p v-else-if="loadError" class="draft-history-placeholder is-error">{{ loadError }}</p>
       <template v-else-if="order">
@@ -160,6 +167,8 @@ function formatMoney(value: number) {
         </table>
         <p class="draft-history-total">合计 <strong>{{ formatMoney(order.totalAmount) }}</strong></p>
       </template>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -233,10 +242,28 @@ function formatMoney(value: number) {
 .draft-history-note.is-error {
   color: var(--destructive);
 }
+.draft-history-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.draft-history-collapse.is-open {
+  grid-template-rows: 1fr;
+}
+.draft-history-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
 .draft-history-body {
   margin-top: 8px;
   border-top: 1px solid var(--border);
   padding-top: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draft-history-collapse {
+    transition: none;
+  }
 }
 .draft-history-placeholder {
   margin: 0;

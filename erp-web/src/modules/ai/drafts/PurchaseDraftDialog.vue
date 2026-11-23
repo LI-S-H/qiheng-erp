@@ -48,6 +48,8 @@ type ConfirmAction = 'create' | 'update' | 'discard' | 'close';
 
 const isUpdate = computed(() => props.action === 'UPDATE');
 const orderVersion = ref<number | null>(null);
+const existingOrderNo = ref('');
+const existingOrderStatus = ref('');
 
 const loading = ref(false);
 const loadError = ref('');
@@ -132,6 +134,8 @@ async function loadExistingOrder(draft: PurchaseDraftHeader) {
   if (!orderId) throw new Error('缺少要修改的采购单');
   const detail = await getPurchaseOrderDetail(orderId);
   orderVersion.value = detail.version;
+  existingOrderNo.value = detail.purchaseNo;
+  existingOrderStatus.value = detail.status;
   supplierId.value = detail.supplierId;
   supplierLabel.value = `${detail.supplierCode} ${detail.supplierName}`;
   warehouseLabel.value = detail.warehouseName;
@@ -193,6 +197,8 @@ function resetState() {
   mode.value = 'readonly';
   loadError.value = '';
   supplierLabel.value = '';
+  existingOrderNo.value = '';
+  existingOrderStatus.value = '';
   warehouseLabel.value = '';
   originalWarehouseLabel.value = '';
   lines.value = [];
@@ -534,6 +540,19 @@ function lineAmount(line: PurchaseDraftLine) {
   return Number(line.quantity || 0) * Number(line.unitPrice || 0);
 }
 
+/** 单据状态编码转中文，仅修改态需要展示。 */
+function statusLabel(status: string) {
+  switch (status) {
+    case 'DRAFT': return '草稿';
+    case 'SUBMITTED': return '待审核';
+    case 'APPROVED': return '待入库';
+    case 'PARTIAL_INBOUND': return '部分入库';
+    case 'INBOUND_DONE': return '已入库';
+    case 'CANCELLED': return '已取消';
+    default: return status;
+  }
+}
+
 /** 金额展示保留两位小数。 */
 function formatMoney(value: number) {
   return `￥${value.toFixed(2)}`;
@@ -550,7 +569,7 @@ function formatMoney(value: number) {
     >
       <DialogHeader>
         <DialogTitle>{{ isUpdate ? 'AI 采购单修改' : 'AI 采购草稿' }}</DialogTitle>
-        <DialogDescription>确认采购单内容后创建草稿；可编辑后补充说明，或驳回告知调整方向。</DialogDescription>
+        <DialogDescription>{{ isUpdate ? '确认采购单修改内容后保存；可编辑后补充说明，或驳回告知调整方向。' : '确认采购单内容后创建草稿；可编辑后补充说明，或驳回告知调整方向。' }}</DialogDescription>
       </DialogHeader>
 
       <DialogScrollArea>
@@ -558,8 +577,8 @@ function formatMoney(value: number) {
         <div v-else-if="loadError" class="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{{ loadError }}</div>
         <div v-else class="space-y-4 p-1">
           <div class="grid grid-cols-3 gap-3 rounded-md border border-border bg-muted/30 p-3 text-sm max-md:grid-cols-1">
-            <div><span class="text-muted-foreground">采购单号</span><div class="mt-1 font-medium">创建后自动生成</div></div>
-            <div><span class="text-muted-foreground">订单状态</span><div class="mt-1 font-medium">保存后为草稿</div></div>
+            <div><span class="text-muted-foreground">采购单号</span><div class="mt-1 font-medium">{{ isUpdate ? (existingOrderNo || '读取中…') : '创建后自动生成' }}</div></div>
+            <div><span class="text-muted-foreground">订单状态</span><div class="mt-1 font-medium">{{ isUpdate ? (existingOrderStatus ? statusLabel(existingOrderStatus) : '读取中…') : '保存后为草稿' }}</div></div>
             <div><span class="text-muted-foreground">创建来源</span><div class="mt-1 font-medium">{{ isUpdate ? 'AI 修改建议，尚未保存' : 'AI 生成，尚未写入系统' }}</div></div>
           </div>
 

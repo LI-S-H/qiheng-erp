@@ -36,6 +36,7 @@ public final class RunEventChannel {
     private String status = "RUNNING";
     private Map<String, Object> question;
     private Map<String, Object> draft;
+    private Map<String, Object> action;
     private long eventSeq;
     private boolean closed;
     private long closedAt;
@@ -95,6 +96,8 @@ public final class RunEventChannel {
             case "question_answered" -> applyTerminal("RUNNING");
             case "purchase_draft" -> applyDraft(data);
             case "purchase_draft_resolved" -> applyTerminal("RUNNING");
+            case "purchase_action" -> applyAction(data);
+            case "purchase_action_resolved" -> applyTerminal("RUNNING");
             case "run_completed" -> {
                 if (data.get("finalMessageId") instanceof String id) {
                     finalMessageId = id;
@@ -239,11 +242,32 @@ public final class RunEventChannel {
         items.put(key, item);
     }
 
+    /** 登记一次等待用户确认的采购单动作。 */
+    private void applyAction(Map<String, Object> data) {
+        status = "WAITING_USER";
+        action = Map.copyOf(data);
+        String id = String.valueOf(data.get("actionRequestId"));
+        String key = "action:" + id;
+        if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
+            snapshotTruncated = true;
+            return;
+        }
+        var item = new LinkedHashMap<String, Object>();
+        item.put("type", "purchase_action");
+        item.put("id", id);
+        item.put("actionRequestId", data.get("actionRequestId"));
+        item.put("action", data.get("action"));
+        item.put("purchaseOrderId", data.get("purchaseOrderId"));
+        item.put("orderNo", data.get("orderNo"));
+        items.put(key, item);
+    }
+
     /** 结束本轮状态并清除待回答的追问。 */
     private void applyTerminal(String terminalStatus) {
         status = terminalStatus;
         question = null;
         draft = null;
+        action = null;
     }
 
     /**
@@ -267,6 +291,17 @@ public final class RunEventChannel {
         // 处置期间可能已出现新的草稿，不能清除新草稿。
         if (!closed && draft != null && draftRequestId.equals(draft.get("draftRequestId"))) {
             publish("purchase_draft_resolved", Map.of("draftRequestId", draftRequestId));
+        }
+    }
+
+    /**
+     * 用户处置采购单动作成功后撤销待确认状态。
+     *
+     * @param actionRequestId 本次处置对应的动作编号
+     */
+    public synchronized void actionResolved(String actionRequestId) {
+        if (!closed && action != null && actionRequestId.equals(action.get("actionRequestId"))) {
+            publish("purchase_action_resolved", Map.of("actionRequestId", actionRequestId));
         }
     }
 
@@ -300,6 +335,7 @@ public final class RunEventChannel {
         snapshot.put("items", items.values().stream().map(LinkedHashMap::new).toList());
         snapshot.put("question", question);
         snapshot.put("draft", draft);
+        snapshot.put("action", action);
         snapshot.put("eventSeq", eventSeq);
         snapshot.put("snapshotTruncated", snapshotTruncated);
         if (finalMessageId != null) {

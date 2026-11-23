@@ -1,6 +1,7 @@
 package com.qiheng.erp.ai.agent;
 
 import com.qiheng.erp.ai.clarification.ClarificationService;
+import com.qiheng.erp.ai.action.PurchaseOrderActionService;
 import com.qiheng.erp.ai.draft.PurchaseDraftService;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
@@ -313,6 +314,12 @@ public final class MainAgentService {
                     runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(draft.state().data())));
                     events.toolEvent(draft);
                 })
+                .addMetadata(PurchaseOrderActionService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
+                    // 提交和取消同样是一次等待用户确认的动作。
+                    var action = events.questionEvent(event);
+                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(action.state().data())));
+                    events.toolEvent(action);
+                })
                 .build();
         // 新消息交由模型结合已配对的工具历史处理。
         Flux<NodeOutput> stream;
@@ -582,14 +589,23 @@ public final class MainAgentService {
         }
     }
 
+    /** 会阻塞等待用户处置的工具。 */
+    private static final Set<String> WAITING_USER_TOOLS = Set.of(
+            "ask_user", "prepare_purchase_order_draft", "update_purchase_order_draft",
+            "submit_purchase_order", "cancel_purchase_order");
+
+    /** 等待用户处置时发出的事件节点。 */
+    private static final Set<String> WAITING_USER_EVENTS = Set.of(
+            "ask_user", "purchase_draft", "purchase_action");
+
     /** 判断工具调用是否会阻塞等待用户处置。 */
     private static boolean waitingUserTool(String toolName) {
-        return "ask_user".equals(toolName) || "prepare_purchase_order_draft".equals(toolName);
+        return WAITING_USER_TOOLS.contains(toolName);
     }
 
     /** 判断事件是否属于等待用户处置的过程；这类事件不能当作过期过程丢弃。 */
     private static boolean waitingUserEvent(String node) {
-        return "ask_user".equals(node) || "purchase_draft".equals(node);
+        return WAITING_USER_EVENTS.contains(node);
     }
 
     /** 只处理最后一条尚未获得结果的工具调用消息。 */

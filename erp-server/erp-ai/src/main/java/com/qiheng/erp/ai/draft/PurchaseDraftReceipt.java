@@ -16,6 +16,7 @@ public record PurchaseDraftReceipt(
         String status,
         String orderNo,
         String purchaseOrderId,
+        String orderStatus,
         String error,
         Map<String, Object> finalParams,
         String userNote,
@@ -24,10 +25,12 @@ public record PurchaseDraftReceipt(
 
     /** 直接确认创建。 */
     public static final String STATUS_CREATED = "created";
-    /** 用户修改后创建。 */
+    /** 直接确认修改。 */
+    public static final String STATUS_UPDATED = "updated";
+    /** 用户修改参数后创建或保存。 */
     public static final String STATUS_EDITED = "edited";
-    /** 系统接口拒绝了创建。 */
+    /** 系统接口拒绝了操作。 */
     public static final String STATUS_FAILED = "failed";
-    /** 用户驳回草稿。 */
+    /** 用户驳回草稿或修改。 */
     public static final String STATUS_REJECTED = "rejected";
 }

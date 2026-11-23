@@ -81,17 +81,20 @@ export type AiMessageContent =
     }
   | { type: 'REPORT'; data: { callId: string; taskId?: string; status: 'RUNNING' | 'COMPLETED' | 'FAILED'; steps: AiReportStep[]; report?: AiReportCard } }
   | {
-      /** 已处置的采购草稿：只保留状态与单号，明细按单号查采购单详情。 */
-      type: 'PURCHASE_DRAFT';
+      /** 采购单动作记录：创建、修改、提交、取消的结果。 */
+      type: 'PURCHASE_ORDER';
       data: {
-        status: 'created' | 'edited' | 'failed' | 'rejected';
+        action?: 'CREATE' | 'UPDATE' | 'SUBMIT' | 'CANCEL';
+        status: 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled';
         purchaseOrderId?: string;
         orderNo?: string;
+        orderStatus?: string;
         changedFields?: string[];
         userNote?: string;
         reasons?: string[];
         suggestion?: string;
         error?: string;
+        reason?: string;
       };
     }
   ;

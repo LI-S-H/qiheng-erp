@@ -29,9 +29,12 @@ public final class PurchaseDraftArgumentsInterceptor extends ToolInterceptor {
         this.mapper = mapper;
     }
 
+    private static final java.util.Set<String> TOOL_NAMES =
+            java.util.Set.of("prepare_purchase_order_draft", "update_purchase_order_draft");
+
     @Override
     public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
-        if (!"prepare_purchase_order_draft".equals(request.getToolName())) {
+        if (!TOOL_NAMES.contains(request.getToolName())) {
             return handler.call(request);
         }
         try {
@@ -39,13 +42,29 @@ public final class PurchaseDraftArgumentsInterceptor extends ToolInterceptor {
             // 框架把单个对象参数包在参数名下，模型也可能直接提交扁平结构，两种都要接受。
             var json = root != null && root.isObject() && root.path("request").isObject()
                     ? root.path("request") : root;
-            if (json == null || !json.isObject() || !json.path("items").isArray() || json.path("items").isEmpty()) {
+            if (json == null || !json.isObject()) {
                 return ToolCallResponse.of(request.getToolCallId(), request.getToolName(),
-                        "采购草稿格式错误：items 必须是非空数组，请修正后重试。");
+                        "采购草稿格式错误：参数必须是 JSON 对象，请修正后重试。");
             }
-            if (json.path("supplierId").asText("").isBlank() || json.path("warehouseId").asText("").isBlank()) {
-                return ToolCallResponse.of(request.getToolCallId(), request.getToolName(),
-                        "采购草稿格式错误：supplierId 和 warehouseId 不能为空，请先确认供应商与入库仓库。");
+            if ("update_purchase_order_draft".equals(request.getToolName())) {
+                // 修改允许只传变化字段；传了 items 就不能是空数组。
+                if (json.path("purchaseOrderId").asText("").isBlank()) {
+                    return ToolCallResponse.of(request.getToolCallId(), request.getToolName(),
+                            "采购单修改格式错误：purchaseOrderId 不能为空，请先确认要修改的单据。");
+                }
+                if (json.has("items") && (!json.path("items").isArray() || json.path("items").isEmpty())) {
+                    return ToolCallResponse.of(request.getToolCallId(), request.getToolName(),
+                            "采购单修改格式错误：items 传了就不能为空，不需要改明细时省略该字段。");
+                }
+            } else {
+                if (!json.path("items").isArray() || json.path("items").isEmpty()) {
+                    return ToolCallResponse.of(request.getToolCallId(), request.getToolName(),
+                            "采购草稿格式错误：items 必须是非空数组，请修正后重试。");
+                }
+                if (json.path("supplierId").asText("").isBlank() || json.path("warehouseId").asText("").isBlank()) {
+                    return ToolCallResponse.of(request.getToolCallId(), request.getToolName(),
+                            "采购草稿格式错误：supplierId 和 warehouseId 不能为空，请先确认供应商与入库仓库。");
+                }
             }
             mapper.treeToValue(json, PurchaseOrderDraftRequest.class);
         } catch (JsonProcessingException | IllegalArgumentException error) {

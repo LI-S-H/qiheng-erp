@@ -68,7 +68,7 @@ description: 用户询问采购数量、不同报价怎么比、什么时候到�
 
 ### 第八步：需要草稿时交给用户确认
 
-规划完成后，如果用户需要生成采购草稿，调用 `prepare_purchase_order_draft` 把方案交给用户确认，并按 `purchase-draft` 技能完成后续的确认、修改和驳回处理。
+规划完成后，如果用户需要生成采购草稿，调用 `prepare_purchase_order_draft` 把方案交给用户确认，并按 `purchase-order` 技能完成后续的创建、编辑、提交和取消处理。
 
 草稿工具只负责把方案交给用户，创建动作由用户在确认页完成，不在本技能里直接写入。
 
@@ -92,4 +92,4 @@ description: 用户询问采购数量、不同报价怎么比、什么时候到�
 
 - 缺口来源：`replenishment`
 - 候选供应商和评分：`supplier-selection`
-- 生成草稿并处理用户确认：`purchase-draft`
+- 采购单创建、编辑、提交和取消：`purchase-order`

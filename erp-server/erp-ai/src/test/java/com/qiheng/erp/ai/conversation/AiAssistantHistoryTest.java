@@ -91,8 +91,9 @@ class AiAssistantHistoryTest {
                     """;
         };
         when(conversations.selectOwned(10L, 1L)).thenReturn(new AiConversation().setId(10L).setUserId(1L));
-        when(messages.countVisibleMessages(10L, 1L)).thenReturn(1L);
-        when(messages.selectVisibleMessages(10L, 1L, 0, 20)).thenReturn(List.of(new AiMessage()
+        when(messages.countVisibleTurns(10L, 1L)).thenReturn(1L);
+        when(messages.selectVisibleTurnKeys(10L, 1L, 0, 20)).thenReturn(List.of("old-request"));
+        when(messages.selectMessagesByTurnKeys(10L, 1L, List.of("old-request"))).thenReturn(List.of(new AiMessage()
                 .setId(100L).setConversationId(10L).setUserId(1L).setRequestId("old-request")
                 .setSeq(2L).setRole("assistant").setKind("ASSISTANT_FINAL")
                 .setContent(content).setCreateTime(LocalDateTime.of(2026, 10, 26, 12, 0))));

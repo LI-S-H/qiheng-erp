@@ -21,9 +21,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor;
 import com.qiheng.erp.ai.clarification.AskUserArgumentsInterceptor;
+import com.qiheng.erp.ai.action.CancelPurchaseOrderTool;
+import com.qiheng.erp.ai.action.PurchaseOrderActionService;
+import com.qiheng.erp.ai.action.SubmitPurchaseOrderTool;
 import com.qiheng.erp.ai.draft.PurchaseDraftArgumentsInterceptor;
 import com.qiheng.erp.ai.draft.PurchaseDraftService;
 import com.qiheng.erp.ai.draft.PurchaseOrderDraftTool;
+import com.qiheng.erp.ai.draft.UpdatePurchaseOrderDraftTool;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
@@ -93,7 +97,7 @@ public class MainAgentConfiguration {
                                 ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
             throws IOException {
         return mainAgent(model, saver, sql, dataset, businessGraph, clarification, datasetList, results,
-                analysisTool, null, null, null);
+                analysisTool, null, null, null, null);
     }
 
     /**
@@ -111,6 +115,7 @@ public class MainAgentConfiguration {
      * @param skills 主智能体技能注册表
      * @param skillFileTool 主智能体读取技能支持文件的工具
      * @param drafts 采购草稿服务
+     * @param actions 采购单提交与取消服务
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
@@ -121,12 +126,17 @@ public class MainAgentConfiguration {
                                 AnalysisResultTool results, AnalysisTool analysisTool,
                                 @Qualifier("mainSkillRegistry") SkillRegistry skills,
                                 @Qualifier("mainReadSkillFileTool") ReadSkillFileTool skillFileTool,
-                                PurchaseDraftService drafts) throws IOException {
+                                PurchaseDraftService drafts, PurchaseOrderActionService actions) throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
         var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool,
                 new AskUserTool(clarification)));
         if (drafts != null) {
             tools.add(new PurchaseOrderDraftTool(drafts));
+            tools.add(new UpdatePurchaseOrderDraftTool(drafts));
+        }
+        if (actions != null) {
+            tools.add(new SubmitPurchaseOrderTool(actions));
+            tools.add(new CancelPurchaseOrderTool(actions));
         }
         if (skillFileTool != null) {
             tools.add(skillFileTool);
@@ -218,5 +228,20 @@ public class MainAgentConfiguration {
     public PurchaseDraftService purchaseDraftService(AiConversationMapper conversations,
             LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
         return new PurchaseDraftService(conversations, users, messages, mapper);
+    }
+
+    /**
+     * 组装采购单提交与取消服务。
+     *
+     * @param conversations 会话数据访问
+     * @param users 用户数据访问
+     * @param messages 会话消息存储
+     * @param mapper JSON 序列化组件
+     * @return 采购单动作服务
+     */
+    @Bean
+    public PurchaseOrderActionService purchaseOrderActionService(AiConversationMapper conversations,
+            LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
+        return new PurchaseOrderActionService(conversations, users, messages, mapper);
     }
 }

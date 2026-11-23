@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
-import { listEnabledWarehouseOptions } from '@/modules/purchase/api';
+import { getPurchaseOrderDetail, listEnabledWarehouseOptions } from '@/modules/purchase/api';
 import { getWarehouseDetail } from '@/modules/warehouse/warehouses/api';
 import {
   createPurchaseOrderFromDraft,
@@ -21,6 +21,7 @@ import {
   loadPurchaseDraftContext,
   resolvePurchaseDraft,
   searchDraftSupplierProducts,
+  updatePurchaseOrderFromDraft,
 } from './purchase-draft-api';
 import {
   PURCHASE_DRAFT_REJECT_REASONS,
@@ -33,6 +34,8 @@ const props = defineProps<{
   open: boolean;
   request: PurchaseDraftRequest | null;
   conversationId: string;
+  /** 创建新草稿或修改已有采购单。 */
+  action?: 'CREATE' | 'UPDATE';
 }>();
 
 const emit = defineEmits<{
@@ -42,6 +45,9 @@ const emit = defineEmits<{
 
 /** 确认动作：创建、保存编辑、放弃编辑。 */
 type ConfirmAction = 'create' | 'update' | 'discard' | 'close';
+
+const isUpdate = computed(() => props.action === 'UPDATE');
+const orderVersion = ref<number | null>(null);
 
 const loading = ref(false);
 const loadError = ref('');
@@ -64,7 +70,7 @@ const confirmState = reactive({ open: false, action: 'create' as ConfirmAction, 
 const readonly = computed(() => mode.value === 'readonly');
 const totalAmount = computed(() => lines.value.reduce((sum, line) => sum + lineAmount(line), 0));
 const busy = computed(() => submitting.value || loading.value || Boolean(loadError.value));
-const supplierId = computed(() => props.request?.draft.supplierId || '');
+const supplierId = ref('');
 const rejectOptions = PURCHASE_DRAFT_REJECT_REASONS;
 /** 选择「其他」时必须写清楚具体要求，否则模型无法据此调整。 */
 const rejectOtherSelected = computed(() => rejectReasons.value.includes('其他'));
@@ -86,28 +92,100 @@ async function load() {
   loadError.value = '';
   mode.value = 'readonly';
   try {
-    const context = await loadPurchaseDraftContext(request.draft);
-    supplierLabel.value = context.supplierLabel;
-    warehouseLabel.value = context.warehouseLabel;
-    originalWarehouseLabel.value = context.warehouseLabel;
-    lines.value = context.lines.map(line => ({ ...line }));
-    originalLines.value = context.lines.map(line => ({ ...line }));
-    Object.assign(form, {
-      warehouseId: request.draft.warehouseId,
-      expectedArrivalDate: request.draft.expectedArrivalDate || '',
-      remark: request.draft.remark || '',
-      userNote: '',
-    });
-    Object.assign(originalForm, {
-      warehouseId: request.draft.warehouseId,
-      expectedArrivalDate: request.draft.expectedArrivalDate || '',
-      remark: request.draft.remark || '',
-    });
+    if (isUpdate.value) {
+      await loadExistingOrder(request.draft);
+    } else {
+      await loadNewDraft(request.draft);
+    }
   } catch (error) {
     loadError.value = getApiErrorMessage(error) || '采购草稿加载失败，请重新发起采购需求';
   } finally {
     loading.value = false;
   }
+}
+
+/** 创建：按工具参数补齐名称和供货关系。 */
+async function loadNewDraft(draft: PurchaseDraftHeader) {
+  supplierId.value = draft.supplierId;
+  const context = await loadPurchaseDraftContext(draft);
+  supplierLabel.value = context.supplierLabel;
+  warehouseLabel.value = context.warehouseLabel;
+  originalWarehouseLabel.value = context.warehouseLabel;
+  lines.value = context.lines.map(line => ({ ...line }));
+  originalLines.value = context.lines.map(line => ({ ...line }));
+  Object.assign(form, {
+    warehouseId: draft.warehouseId,
+    expectedArrivalDate: draft.expectedArrivalDate || '',
+    remark: draft.remark || '',
+    userNote: '',
+  });
+  Object.assign(originalForm, {
+    warehouseId: draft.warehouseId,
+    expectedArrivalDate: draft.expectedArrivalDate || '',
+    remark: draft.remark || '',
+  });
+}
+
+/** 修改：以单据详情为底，再用模型给的新值覆盖。 */
+async function loadExistingOrder(draft: PurchaseDraftHeader) {
+  const orderId = draft.purchaseOrderId;
+  if (!orderId) throw new Error('缺少要修改的采购单');
+  const detail = await getPurchaseOrderDetail(orderId);
+  orderVersion.value = detail.version;
+  supplierId.value = detail.supplierId;
+  supplierLabel.value = `${detail.supplierCode} ${detail.supplierName}`;
+  warehouseLabel.value = detail.warehouseName;
+  originalWarehouseLabel.value = detail.warehouseName;
+  const baseLines: PurchaseDraftLine[] = detail.items.map(item => ({
+    productId: item.productId,
+    productCode: item.productCode,
+    productName: item.productName,
+    unitName: item.unitName,
+    quantityPrecision: item.quantityPrecision,
+    supplierProductId: item.supplierProductId,
+    latestPurchasePrice: null,
+    minOrderQty: 0,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    remark: item.remark || '',
+  }));
+  lines.value = await applyModelItems(detail.supplierId, baseLines, draft.items);
+  originalLines.value = lines.value.map(line => ({ ...line }));
+  Object.assign(form, {
+    warehouseId: draft.warehouseId || detail.warehouseId,
+    expectedArrivalDate: draft.expectedArrivalDate || detail.expectedArrivalDate || '',
+    remark: draft.remark ?? detail.remark ?? '',
+    userNote: '',
+  });
+  Object.assign(originalForm, {
+    warehouseId: form.warehouseId,
+    expectedArrivalDate: form.expectedArrivalDate,
+    remark: form.remark,
+  });
+  // 修改场景直接进入编辑态。
+  mode.value = 'edit';
+}
+
+/** 模型给的明细覆盖单据明细：保留供货关系和精度，按产品匹配。 */
+async function applyModelItems(supplierId: string, baseLines: PurchaseDraftLine[], items: PurchaseDraftHeader['items']) {
+  if (!items.length) {
+    return baseLines;
+  }
+  return Promise.all(items.map(async item => {
+    const existing = baseLines.find(line => line.productId === item.productId);
+    if (existing) {
+      return { ...existing, quantity: item.quantity, unitPrice: item.unitPrice ?? existing.unitPrice, remark: item.remark || '' };
+    }
+    const found = await findDraftLine(supplierId, item.productId).catch(() => null);
+    if (found) {
+      return { ...found, quantity: item.quantity, unitPrice: item.unitPrice ?? found.unitPrice, remark: item.remark || '' };
+    }
+    return {
+      productId: item.productId, productCode: '', productName: item.productId, unitName: '',
+      quantityPrecision: 0, supplierProductId: null, latestPurchasePrice: null, minOrderQty: 0,
+      quantity: item.quantity, unitPrice: item.unitPrice, remark: item.remark || '',
+    } satisfies PurchaseDraftLine;
+  }));
 }
 
 /** 清空全部临时状态，不保留上一次的编辑内容。 */
@@ -148,20 +226,32 @@ function askConfirm(action: ConfirmAction) {
   if (busy.value) return;
   if (action === 'create') {
     if (!validate()) return;
-    Object.assign(confirmState, {
-      open: true, action, title: '确认创建采购单？',
-      description: `将按当前内容创建采购单草稿，供应商为${supplierLabel.value}，共 ${lines.value.length} 行明细，合计 ${formatMoney(totalAmount.value)}。`,
-      confirmText: '确认创建', variant: 'default',
-    });
+    Object.assign(confirmState, isUpdate.value
+      ? {
+          open: true, action, title: '确认保存修改？',
+          description: `将保存对采购单的修改，供应商为${supplierLabel.value}，共 ${lines.value.length} 行明细，合计 ${formatMoney(totalAmount.value)}。`,
+          confirmText: '确认保存', variant: 'default',
+        }
+      : {
+          open: true, action, title: '确认创建采购单？',
+          description: `将按当前内容创建采购单草稿，供应商为${supplierLabel.value}，共 ${lines.value.length} 行明细，合计 ${formatMoney(totalAmount.value)}。`,
+          confirmText: '确认创建', variant: 'default',
+        });
     return;
   }
   if (action === 'update') {
     if (!validate()) return;
-    Object.assign(confirmState, {
-      open: true, action, title: '保存修改并创建？',
-      description: `修改内容将随采购单一起提交，并把变化和修改说明交回 AI 继续分析。合计 ${formatMoney(totalAmount.value)}。`,
-      confirmText: '保存并创建', variant: 'default',
-    });
+    Object.assign(confirmState, isUpdate.value
+      ? {
+          open: true, action, title: '保存修改？',
+          description: `修改内容将保存到采购单，并把变化和修改说明交回 AI 继续分析。合计 ${formatMoney(totalAmount.value)}。`,
+          confirmText: '保存修改', variant: 'default',
+        }
+      : {
+          open: true, action, title: '保存修改并创建？',
+          description: `修改内容将随采购单一起提交，并把变化和修改说明交回 AI 继续分析。合计 ${formatMoney(totalAmount.value)}。`,
+          confirmText: '保存并创建', variant: 'default',
+        });
     return;
   }
   if (action === 'discard') {
@@ -188,9 +278,9 @@ function runConfirm() {
   } else if (action === 'close') {
     emit('update:open', false);
   } else if (action === 'create') {
-    void submitCreate('created');
+    void submitSave('confirmed');
   } else if (action === 'update') {
-    void submitCreate('edited');
+    void submitSave('edited');
   }
 }
 
@@ -207,24 +297,41 @@ function handleOpenChange(value: boolean) {
   emit('update:open', false);
 }
 
-/** 创建采购单并把结果交回 AI；系统拒绝时同样交回原因。 */
-async function submitCreate(status: 'created' | 'edited') {
+/** 保存采购单并把结果交回 AI；系统拒绝时同样交回原因。 */
+async function submitSave(kind: 'confirmed' | 'edited') {
   const request = props.request;
   if (!request) return;
   submitting.value = true;
   try {
-    const created = await createPurchaseOrderFromDraft(currentHeader(), lines.value);
-    await resolvePurchaseDraft(props.conversationId, request, status === 'created'
-      ? { status: 'created', orderNo: created.purchaseNo, purchaseOrderId: created.purchaseOrderId }
-      : {
-          status: 'edited', orderNo: created.purchaseNo, purchaseOrderId: created.purchaseOrderId,
-          finalParams: currentHeader(), userNote: form.userNote.trim(),
-        });
-    toast.success(`采购单 ${created.purchaseNo} 已创建`);
+    const note = form.userNote.trim();
+    if (isUpdate.value) {
+      const orderId = request.draft.purchaseOrderId;
+      if (!orderId || orderVersion.value === null) {
+        throw new Error('采购单信息不完整，请关闭后重新发起');
+      }
+      const updated = await updatePurchaseOrderFromDraft(orderId, orderVersion.value, currentHeader(), lines.value);
+      await resolvePurchaseDraft(props.conversationId, request, kind === 'confirmed'
+        ? { status: 'updated', orderNo: updated.purchaseNo, purchaseOrderId: orderId, orderStatus: updated.status }
+        : {
+            status: 'edited', orderNo: updated.purchaseNo, purchaseOrderId: orderId, orderStatus: updated.status,
+            finalParams: currentHeader(), userNote: note,
+          });
+      toast.success(`采购单 ${updated.purchaseNo} 已保存`);
+    } else {
+      const created = await createPurchaseOrderFromDraft(currentHeader(), lines.value);
+      await resolvePurchaseDraft(props.conversationId, request, kind === 'confirmed'
+        ? { status: 'created', orderNo: created.purchaseNo, purchaseOrderId: created.purchaseOrderId }
+        : {
+            status: 'edited', orderNo: created.purchaseNo, purchaseOrderId: created.purchaseOrderId,
+            finalParams: currentHeader(), userNote: note,
+          });
+      toast.success(`采购单 ${created.purchaseNo} 已创建`);
+    }
     emit('settled');
     emit('update:open', false);
   } catch (error) {
-    await reportFailure(getApiErrorMessage(error) || '采购单创建失败，请调整后重试');
+    await reportFailure(getApiErrorMessage(error)
+      || (isUpdate.value ? '采购单保存失败，请调整后重试' : '采购单创建失败，请调整后重试'));
   } finally {
     submitting.value = false;
   }
@@ -236,10 +343,12 @@ async function reportFailure(message: string) {
   if (!request) return;
   toast.error(message);
   try {
+    const orderId = request.draft.purchaseOrderId || undefined;
     await resolvePurchaseDraft(props.conversationId, request, {
       status: 'failed',
       error: message,
       finalParams: currentHeader(),
+      ...(orderId ? { purchaseOrderId: orderId } : {}),
     });
     emit('settled');
     emit('update:open', false);
@@ -440,7 +549,7 @@ function formatMoney(value: number) {
       data-purchase-draft-dialog
     >
       <DialogHeader>
-        <DialogTitle>AI 采购草稿</DialogTitle>
+        <DialogTitle>{{ isUpdate ? 'AI 采购单修改' : 'AI 采购草稿' }}</DialogTitle>
         <DialogDescription>确认采购单内容后创建草稿；可编辑后补充说明，或驳回告知调整方向。</DialogDescription>
       </DialogHeader>
 
@@ -451,7 +560,7 @@ function formatMoney(value: number) {
           <div class="grid grid-cols-3 gap-3 rounded-md border border-border bg-muted/30 p-3 text-sm max-md:grid-cols-1">
             <div><span class="text-muted-foreground">采购单号</span><div class="mt-1 font-medium">创建后自动生成</div></div>
             <div><span class="text-muted-foreground">订单状态</span><div class="mt-1 font-medium">保存后为草稿</div></div>
-            <div><span class="text-muted-foreground">创建来源</span><div class="mt-1 font-medium">AI 生成，尚未写入系统</div></div>
+            <div><span class="text-muted-foreground">创建来源</span><div class="mt-1 font-medium">{{ isUpdate ? 'AI 修改建议，尚未保存' : 'AI 生成，尚未写入系统' }}</div></div>
           </div>
 
           <div class="grid grid-cols-3 gap-4 max-md:grid-cols-1">
@@ -579,11 +688,11 @@ function formatMoney(value: number) {
         <template v-if="readonly">
           <Button variant="outline" :disabled="busy" @click="openReject">驳回并说明</Button>
           <Button variant="outline" :disabled="busy" @click="startEdit">编辑并补充说明</Button>
-          <Button :disabled="busy" @click="askConfirm('create')">确认创建</Button>
+          <Button :disabled="busy" @click="askConfirm('create')">{{ isUpdate ? '确认保存' : '确认创建' }}</Button>
         </template>
         <template v-else>
           <Button variant="outline" :disabled="busy" @click="askConfirm('discard')">取消编辑</Button>
-          <Button :disabled="busy" @click="askConfirm('update')">{{ submitting ? '创建中…' : '保存并创建' }}</Button>
+          <Button :disabled="busy" @click="askConfirm('update')">{{ submitting ? '保存中…' : (isUpdate ? '保存修改' : '保存并创建') }}</Button>
         </template>
       </DialogFooter>
     </DialogContent>

@@ -6,14 +6,17 @@ import type { PurchaseOrderDetail } from '@/modules/purchase/types';
 
 const props = defineProps<{
   data: {
-    status: 'created' | 'edited' | 'failed' | 'rejected';
+    action?: 'CREATE' | 'UPDATE' | 'SUBMIT' | 'CANCEL';
+    status: 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled';
     purchaseOrderId?: string;
     orderNo?: string;
+    orderStatus?: string;
     changedFields?: string[];
     userNote?: string;
     reasons?: string[];
     suggestion?: string;
     error?: string;
+    reason?: string;
   };
 }>();
 
@@ -22,13 +25,37 @@ const loading = ref(false);
 const loadError = ref('');
 const order = ref<PurchaseOrderDetail | null>(null);
 
-/** 状态标签：创建成功、修改后创建、创建被拒、用户驳回。 */
-const statusMeta = computed(() => ({
-  created: { label: '已确认创建', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  edited: { label: '修改后创建', className: 'border-sky-200 bg-sky-50 text-sky-700' },
-  failed: { label: '创建被拒', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  rejected: { label: '已驳回', className: 'border-muted bg-muted text-muted-foreground' },
-}[props.data.status]));
+/** 卡片标题按动作区分。 */
+const title = computed(() => {
+  switch (props.data.action) {
+    case 'UPDATE': return '采购单修改';
+    case 'SUBMIT': return '采购单提交';
+    case 'CANCEL': return '采购单取消';
+    default: return '采购单草稿';
+  }
+});
+
+/** 状态标签：动作与结果一起决定文案。 */
+const statusMeta = computed(() => {
+  const key = `${props.data.action || 'CREATE'}:${props.data.status}`;
+  const map: Record<string, { label: string; className: string }> = {
+    'CREATE:created': { label: '已确认创建', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    'UPDATE:updated': { label: '已保存', className: 'border-sky-200 bg-sky-50 text-sky-700' },
+    'CREATE:edited': { label: '修改后创建', className: 'border-sky-200 bg-sky-50 text-sky-700' },
+    'UPDATE:edited': { label: '修改后保存', className: 'border-sky-200 bg-sky-50 text-sky-700' },
+    'SUBMIT:submitted': { label: '已提交审核', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+    'CANCEL:cancelled': { label: '已取消', className: 'border-muted bg-muted text-muted-foreground' },
+    'CREATE:rejected': { label: '已驳回', className: 'border-muted bg-muted text-muted-foreground' },
+    'UPDATE:rejected': { label: '修改已驳回', className: 'border-muted bg-muted text-muted-foreground' },
+    'SUBMIT:rejected': { label: '暂不提交', className: 'border-muted bg-muted text-muted-foreground' },
+    'CANCEL:rejected': { label: '暂不取消', className: 'border-muted bg-muted text-muted-foreground' },
+    'CREATE:failed': { label: '创建被拒', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+    'UPDATE:failed': { label: '修改被拒', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+    'SUBMIT:failed': { label: '提交被拒', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+    'CANCEL:failed': { label: '取消被拒', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+  };
+  return map[key] || { label: '已处理', className: 'border-muted bg-muted text-muted-foreground' };
+});
 
 /** 只有真正生成了采购单才有明细可看。 */
 const hasOrder = computed(() => Boolean(props.data.purchaseOrderId));
@@ -89,7 +116,7 @@ function formatMoney(value: number) {
     <div class="draft-history-head">
       <span class="draft-history-icon" aria-hidden="true"><ClipboardCheck class="size-4" /></span>
       <div class="draft-history-title">
-        <span class="draft-history-label">采购草稿</span>
+        <span class="draft-history-label">{{ title }}</span>
         <span class="draft-history-badge" :class="statusMeta.className">{{ statusMeta.label }}</span>
         <span v-if="data.orderNo" class="draft-history-no">{{ data.orderNo }}</span>
       </div>
@@ -100,6 +127,7 @@ function formatMoney(value: number) {
     </div>
 
     <p v-if="data.error" class="draft-history-note is-error">{{ data.error }}</p>
+    <p v-if="data.reason" class="draft-history-note">原因：{{ data.reason }}</p>
     <p v-if="data.reasons?.length" class="draft-history-note">驳回原因：{{ data.reasons.join('、') }}</p>
     <p v-if="data.suggestion" class="draft-history-note">补充要求：{{ data.suggestion }}</p>
     <p v-if="changedLabels.length" class="draft-history-note">修改内容：{{ changedLabels.join('、') }}</p>

@@ -66,8 +66,8 @@ public final class PurchaseDraftService {
 
     private final Duration timeout;
 
-    private record Pending(long userId, long conversationId, String runId, Map<String, Object> draft,
-                           CompletableFuture<String> receipt) {}
+    private record Pending(PurchaseOrderDraftAction action, long userId, long conversationId, String runId,
+                           Map<String, Object> draft, CompletableFuture<String> receipt) {}
 
     /**
      * 使用默认等待时长构造服务。
@@ -103,6 +103,7 @@ public final class PurchaseDraftService {
     /**
      * 校验草稿参数，发出确认事件并等待用户处置。
      *
+     * @param action 创建新草稿或修改已有单据
      * @param userId 发起任务的用户
      * @param conversationId 当前会话
      * @param runId 本轮运行标识，用于把草稿记录归到同一轮对话
@@ -111,18 +112,18 @@ public final class PurchaseDraftService {
      * @return 交回模型的结论文本，包含结构化参数
      * @throws Exception 等待被中断或超时
      */
-    public String request(long userId, long conversationId, String runId, PurchaseOrderDraftRequest request,
-                          Consumer<NodeOutput> events) throws Exception {
-        String invalid = validate(request);
+    public String request(PurchaseOrderDraftAction action, long userId, long conversationId, String runId,
+                          PurchaseOrderDraftRequest request, Consumer<NodeOutput> events) throws Exception {
+        String invalid = validate(action, request);
         if (invalid != null) {
             return invalid;
         }
         var draft = normalize(request);
         String id = UUID.randomUUID().toString();
-        var waiting = new Pending(userId, conversationId, runId, draft, new CompletableFuture<>());
+        var waiting = new Pending(action, userId, conversationId, runId, draft, new CompletableFuture<>());
         pending.put(id, waiting);
         try {
-            var state = new OverAllState(Map.of("draftRequestId", id, "draft", draft));
+            var state = new OverAllState(Map.of("draftRequestId", id, "action", action.name(), "draft", draft));
             events.accept(NodeOutput.of("purchase_draft", "main_agent", state, null));
             return waiting.receipt().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException error) {
@@ -172,10 +173,21 @@ public final class PurchaseDraftService {
             throw new IllegalArgumentException("请提供处置结果");
         }
         var result = switch (receipt.status()) {
-            case PurchaseDraftReceipt.STATUS_CREATED -> created(receipt);
-            case PurchaseDraftReceipt.STATUS_EDITED -> edited(request.draft(), receipt);
-            case PurchaseDraftReceipt.STATUS_FAILED -> failed(receipt);
-            case PurchaseDraftReceipt.STATUS_REJECTED -> rejected(receipt);
+            case PurchaseDraftReceipt.STATUS_CREATED -> {
+                if (request.action() != PurchaseOrderDraftAction.CREATE) {
+                    throw new IllegalArgumentException("修改采购单不能使用 created 状态");
+                }
+                yield confirmed(request.action(), receipt);
+            }
+            case PurchaseDraftReceipt.STATUS_UPDATED -> {
+                if (request.action() != PurchaseOrderDraftAction.UPDATE) {
+                    throw new IllegalArgumentException("创建采购单不能使用 updated 状态");
+                }
+                yield confirmed(request.action(), receipt);
+            }
+            case PurchaseDraftReceipt.STATUS_EDITED -> edited(request.action(), request.draft(), receipt);
+            case PurchaseDraftReceipt.STATUS_FAILED -> failed(request.action(), receipt);
+            case PurchaseDraftReceipt.STATUS_REJECTED -> rejected(request.action(), receipt);
             default -> throw new IllegalArgumentException("不支持的处置状态：" + receipt.status());
         };
         record(request, draftRequestId, receipt);
@@ -195,10 +207,13 @@ public final class PurchaseDraftService {
         }
         try {
             var content = new LinkedHashMap<String, Object>();
-            content.put("name", "prepare_purchase_order_draft");
+            content.put("name", pending.action() == PurchaseOrderDraftAction.CREATE
+                    ? "prepare_purchase_order_draft" : "update_purchase_order_draft");
+            content.put("action", pending.action().name());
             content.put("status", receipt.status());
             putIfPresent(content, "purchaseOrderId", trimToNull(receipt.purchaseOrderId()));
             putIfPresent(content, "orderNo", trimToNull(receipt.orderNo()));
+            putIfPresent(content, "orderStatus", trimToNull(receipt.orderStatus()));
             putIfPresent(content, "error", trimToNull(receipt.error()));
             putIfPresent(content, "userNote", trimToNull(receipt.userNote()));
             putIfPresent(content, "suggestion", trimToNull(receipt.suggestion()));
@@ -228,18 +243,32 @@ public final class PurchaseDraftService {
     }
 
     /** 校验草稿参数；合法时返回 null。 */
-    private String validate(PurchaseOrderDraftRequest request) {
+    private String validate(PurchaseOrderDraftAction action, PurchaseOrderDraftRequest request) {
         if (request == null) {
             return "采购草稿格式错误：缺少草稿参数，请补充后重试。";
         }
-        if (isBlank(request.supplierId())) {
-            return "采购草稿格式错误：supplierId 不能为空，请先确认供应商。";
-        }
-        if (isBlank(request.warehouseId())) {
-            return "采购草稿格式错误：warehouseId 不能为空，请先确认入库仓库。";
-        }
-        if (request.items() == null || request.items().isEmpty()) {
-            return "采购草稿格式错误：items 至少需要一行采购明细。";
+        boolean update = action == PurchaseOrderDraftAction.UPDATE;
+        if (update) {
+            if (isBlank(request.purchaseOrderId())) {
+                return "采购单修改缺少 purchaseOrderId，请先确认要修改的单据。";
+            }
+            // 修改允许只传变化字段；不需要改明细时省略 items。
+            if (request.items() == null) {
+                return null;
+            }
+            if (request.items().isEmpty()) {
+                return "采购单修改格式错误：items 传了就不能为空，不需要改明细时省略该字段。";
+            }
+        } else {
+            if (isBlank(request.supplierId())) {
+                return "采购草稿格式错误：supplierId 不能为空，请先确认供应商。";
+            }
+            if (isBlank(request.warehouseId())) {
+                return "采购草稿格式错误：warehouseId 不能为空，请先确认入库仓库。";
+            }
+            if (request.items() == null || request.items().isEmpty()) {
+                return "采购草稿格式错误：items 至少需要一行采购明细。";
+            }
         }
         if (request.items().size() > MAX_ITEMS) {
             return "采购草稿格式错误：单次草稿最多 " + MAX_ITEMS + " 行明细，请拆分后重试。";
@@ -265,40 +294,75 @@ public final class PurchaseDraftService {
     /** 把工具参数规范化成可序列化的展示结构。 */
     private Map<String, Object> normalize(PurchaseOrderDraftRequest request) {
         var draft = new LinkedHashMap<String, Object>();
+        draft.put("purchaseOrderId", trimToNull(request.purchaseOrderId()));
         draft.put("supplierId", request.supplierId());
         draft.put("warehouseId", request.warehouseId());
         draft.put("expectedArrivalDate", trimToNull(request.expectedArrivalDate()));
         draft.put("remark", trimToNull(request.remark()));
         var items = new ArrayList<Map<String, Object>>();
-        for (var item : request.items()) {
-            var line = new LinkedHashMap<String, Object>();
-            line.put("productId", item.productId());
-            line.put("quantity", item.quantity());
-            line.put("unitPrice", item.unitPrice());
-            line.put("remark", trimToNull(item.remark()));
-            items.add(line);
+        // 修改允许不传明细：空数组表示沿用单据原明细。
+        if (request.items() != null) {
+            for (var item : request.items()) {
+                var line = new LinkedHashMap<String, Object>();
+                line.put("productId", item.productId());
+                line.put("quantity", item.quantity());
+                line.put("unitPrice", item.unitPrice());
+                line.put("remark", trimToNull(item.remark()));
+                items.add(line);
+            }
         }
         draft.put("items", items);
         return draft;
     }
 
-    /** 用户直接确认：说明结果和单号，参数就是模型提交的原稿，不再重复。 */
-    private String created(PurchaseDraftReceipt receipt) {
+    /** 用户直接确认：创建给出单号和草稿单信息，修改给出单号和最终参数。 */
+    private String confirmed(PurchaseOrderDraftAction action, PurchaseDraftReceipt receipt) {
         String orderNo = trimToNull(receipt.orderNo());
-        return orderNo == null
-                ? "用户接受了你的采购草稿参数，草稿单已创建。"
-                : "用户接受了你的采购草稿参数，已生成单号为 " + orderNo + " 的草稿单。";
+        String orderId = trimToNull(receipt.purchaseOrderId());
+        var text = new StringBuilder();
+        if (action == PurchaseOrderDraftAction.CREATE) {
+            text.append("用户确认创建，采购单 ");
+            text.append(orderNo == null ? "已生成草稿。" : orderNo + " 已生成草稿。");
+            var block = new LinkedHashMap<String, Object>();
+            putIfPresent(block, "purchaseOrderId", orderId);
+            putIfPresent(block, "orderNo", orderNo);
+            if (!block.isEmpty()) {
+                text.append("\n草稿单：").append(toJson(block));
+            }
+            return text.toString();
+        }
+        text.append("用户确认修改，采购单 ");
+        text.append(orderNo == null ? "已保存。" : orderNo + " 已保存。");
+        String status = statusText(receipt.orderStatus());
+        if (status != null) {
+            text.append("当前状态为").append(status).append("。");
+        }
+        var finalParams = sanitize(receipt.finalParams());
+        if (finalParams != null) {
+            text.append("\n最终参数：").append(toJson(finalParams));
+        }
+        return text.toString();
     }
 
-    /** 用户修改后创建：说明结果、最终参数、变化字段和用户的修改说明。 */
-    private String edited(Map<String, Object> draft, PurchaseDraftReceipt receipt) {
+    /** 用户修改后创建或保存：说明结果、最终参数、变化字段和用户的修改说明。 */
+    private String edited(PurchaseOrderDraftAction action, Map<String, Object> draft, PurchaseDraftReceipt receipt) {
         var finalParams = sanitize(receipt.finalParams());
         if (finalParams == null) {
             throw new IllegalArgumentException("请提供用户确认后的最终参数");
         }
         String orderNo = trimToNull(receipt.orderNo());
-        var text = new StringBuilder("用户修改了你的采购草稿提案");
-        text.append(orderNo == null ? "并创建了草稿单。" : "，已创建单号为 " + orderNo + " 的草稿单。");
+        var text = new StringBuilder();
+        if (action == PurchaseOrderDraftAction.CREATE) {
+            text.append("用户修改参数后确认创建，采购单 ");
+            text.append(orderNo == null ? "已生成草稿。" : orderNo + " 已生成草稿。");
+        } else {
+            text.append("用户修改参数后保存，采购单 ");
+            text.append(orderNo == null ? "已更新。" : orderNo + " 已更新。");
+            String status = statusText(receipt.orderStatus());
+            if (status != null) {
+                text.append("当前状态为").append(status).append("。");
+            }
+        }
         text.append("\n最终参数：").append(toJson(finalParams));
         var changes = diff(draft, finalParams);
         text.append("\n修改的字段：").append(changes.isEmpty() ? "无（用户未改变内容）" : String.join("、", changes));
@@ -310,12 +374,19 @@ public final class PurchaseDraftService {
     }
 
     /** 系统拒绝：只说明规则原因和被拒参数，不评价用户改了什么。 */
-    private String failed(PurchaseDraftReceipt receipt) {
+    private String failed(PurchaseOrderDraftAction action, PurchaseDraftReceipt receipt) {
         String error = trimToNull(receipt.error());
         if (error == null) {
             throw new IllegalArgumentException("请提供系统拒绝的原因");
         }
-        var text = new StringBuilder("用户提交的采购草稿不符合系统生成规则：").append(error).append("。");
+        String orderNo = trimToNull(receipt.orderNo());
+        var text = new StringBuilder();
+        if (action == PurchaseOrderDraftAction.CREATE) {
+            text.append("创建未通过，未生成采购单：").append(error).append("。");
+        } else {
+            text.append("采购单 ").append(orderNo == null ? "" : orderNo + " ")
+                    .append("修改未保存：").append(error).append("。");
+        }
         var finalParams = sanitize(receipt.finalParams());
         if (finalParams != null) {
             text.append("\n被拒参数：").append(toJson(finalParams));
@@ -324,20 +395,45 @@ public final class PurchaseDraftService {
     }
 
     /** 用户驳回：说明驳回原因和补充要求。 */
-    private String rejected(PurchaseDraftReceipt receipt) {
+    private String rejected(PurchaseOrderDraftAction action, PurchaseDraftReceipt receipt) {
         var reasons = reasonsOf(receipt);
         String suggestion = trimToNull(receipt.suggestion());
         if (reasons.isEmpty() && suggestion == null) {
             throw new IllegalArgumentException("请说明驳回原因或补充要求");
         }
-        var text = new StringBuilder("用户驳回了你的采购草稿。");
+        String orderNo = trimToNull(receipt.orderNo());
+        var text = new StringBuilder();
+        if (action == PurchaseOrderDraftAction.CREATE) {
+            text.append("用户驳回了采购草稿，未生成采购单。");
+        } else {
+            text.append("用户驳回了这次修改，采购单 ").append(orderNo == null ? "" : orderNo + " ")
+                    .append("保持原样。");
+        }
         if (!reasons.isEmpty()) {
-            text.append("\n驳回原因：").append(String.join("、", reasons));
+            text.append("\n").append(action == PurchaseOrderDraftAction.CREATE ? "驳回原因：" : "原因：")
+                    .append(String.join("、", reasons));
         }
         if (suggestion != null) {
             text.append("\n补充要求：").append(suggestion);
         }
         return text.toString();
+    }
+
+    /** 把单据状态编码转成用户可读文字。 */
+    private String statusText(String status) {
+        String value = trimToNull(status);
+        if (value == null) {
+            return null;
+        }
+        return switch (value) {
+            case "DRAFT" -> "草稿";
+            case "SUBMITTED" -> "待审核";
+            case "APPROVED" -> "待入库";
+            case "PARTIAL_INBOUND" -> "部分入库";
+            case "INBOUND_DONE" -> "已入库";
+            case "CANCELLED" -> "已取消";
+            default -> value;
+        };
     }
 
     /** 提取并清洗驳回原因。 */
@@ -417,6 +513,10 @@ public final class PurchaseDraftService {
         }
         List<?> before = draft.get("items") instanceof List<?> lines ? lines : List.of();
         List<?> after = finalParams.get("items") instanceof List<?> lines ? lines : List.of();
+        // 修改时没有传明细：沿用单据原明细，不参与变化比较。
+        if (before.isEmpty()) {
+            return changes;
+        }
         if (before.size() != after.size()) {
             changes.add("items");
             return changes;

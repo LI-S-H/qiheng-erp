@@ -14,6 +14,10 @@ import java.util.List;
  * @since 2026-11-22
  */
 public record PurchaseOrderDraftRequest(
+        @Nullable
+        @JsonPropertyDescription("采购单 ID。修改已有采购单时必填，创建时不需要。")
+        String purchaseOrderId,
+
         @JsonProperty(required = true)
         @JsonPropertyDescription("必填，供应商 ID。必须是系统内真实存在的供应商编号，不要编造。")
         String supplierId,

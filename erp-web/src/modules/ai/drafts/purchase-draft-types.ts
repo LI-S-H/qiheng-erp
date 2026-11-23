@@ -7,6 +7,8 @@ export interface PurchaseDraftItem {
 }
 
 export interface PurchaseDraftHeader {
+  /** 修改已有采购单时必填。 */
+  purchaseOrderId?: string | null;
   supplierId: string;
   warehouseId: string;
   expectedArrivalDate: string | null;
@@ -18,6 +20,8 @@ export interface PurchaseDraftHeader {
 export interface PurchaseDraftRequest {
   draftRequestId: string;
   toolCallId?: string;
+  /** 创建新草稿或修改已有采购单。 */
+  action?: 'CREATE' | 'UPDATE';
   draft: PurchaseDraftHeader;
 }
 
@@ -38,10 +42,11 @@ export interface PurchaseDraftLine {
 
 /** 用户处置结果；提交后由工具交回模型。 */
 export type PurchaseDraftReceipt =
-  | { status: 'created'; orderNo: string; purchaseOrderId: string }
-  | { status: 'edited'; orderNo: string; purchaseOrderId: string; finalParams: PurchaseDraftHeader; userNote: string }
-  | { status: 'failed'; error: string; finalParams: PurchaseDraftHeader }
-  | { status: 'rejected'; reasons: string[]; suggestion: string };
+  | { status: 'created'; orderNo: string; purchaseOrderId: string; orderStatus?: string }
+  | { status: 'updated'; orderNo: string; purchaseOrderId: string; orderStatus?: string }
+  | { status: 'edited'; orderNo: string; purchaseOrderId: string; orderStatus?: string; finalParams: PurchaseDraftHeader; userNote: string }
+  | { status: 'failed'; orderNo?: string; purchaseOrderId?: string; error: string; finalParams?: PurchaseDraftHeader }
+  | { status: 'rejected'; orderNo?: string; purchaseOrderId?: string; reasons: string[]; suggestion: string };
 
 /** 草稿行可按产品编码或名称查询启用供货关系。 */
 export const PURCHASE_DRAFT_REJECT_REASONS = [
@@ -76,21 +81,29 @@ export function parsePurchaseDraftRequest(data: Record<string, unknown>): Purcha
       remark: typeof line.remark === 'string' && line.remark.trim() ? line.remark.trim() : null,
     };
   });
-  if (typeof value.supplierId !== 'string' || !value.supplierId) {
-    throw new Error('采购草稿缺少供应商');
-  }
-  if (typeof value.warehouseId !== 'string' || !value.warehouseId) {
-    throw new Error('采购草稿缺少入库仓库');
-  }
-  if (normalizedItems.length === 0) {
-    throw new Error('采购草稿没有明细');
+  const action = data.action === 'UPDATE' ? 'UPDATE' : 'CREATE';
+  const supplierId = typeof value.supplierId === 'string' ? value.supplierId : '';
+  const warehouseId = typeof value.warehouseId === 'string' ? value.warehouseId : '';
+  // 创建必须有完整参数；修改允许只带变化字段，其余以单据详情为底。
+  if (action === 'CREATE') {
+    if (!supplierId) {
+      throw new Error('采购草稿缺少供应商');
+    }
+    if (!warehouseId) {
+      throw new Error('采购草稿缺少入库仓库');
+    }
+    if (normalizedItems.length === 0) {
+      throw new Error('采购草稿没有明细');
+    }
   }
   return {
     draftRequestId: String(data.draftRequestId ?? ''),
     toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined,
+    action,
     draft: {
-      supplierId: value.supplierId,
-      warehouseId: value.warehouseId,
+      purchaseOrderId: typeof value.purchaseOrderId === 'string' ? value.purchaseOrderId : null,
+      supplierId,
+      warehouseId,
       expectedArrivalDate: typeof value.expectedArrivalDate === 'string' && value.expectedArrivalDate ? value.expectedArrivalDate : null,
       remark: typeof value.remark === 'string' && value.remark.trim() ? value.remark.trim() : null,
       items: normalizedItems,

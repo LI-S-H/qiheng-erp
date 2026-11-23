@@ -1,5 +1,5 @@
 import { http } from '@/api/http';
-import { createPurchaseOrder, getSupplierDetail, listSupplierProducts } from '@/modules/purchase/api';
+import { createPurchaseOrder, getSupplierDetail, listSupplierProducts, updatePurchaseOrder } from '@/modules/purchase/api';
 import { getWarehouseDetail } from '@/modules/warehouse/warehouses/api';
 import type { PurchaseDraftHeader, PurchaseDraftLine, PurchaseDraftRequest, PurchaseDraftReceipt } from './purchase-draft-types';
 
@@ -123,6 +123,32 @@ export async function createPurchaseOrderFromDraft(draft: PurchaseDraftHeader, l
     })),
   });
   return { purchaseNo: order.purchaseNo, purchaseOrderId: order.purchaseOrderId };
+}
+
+/** 用户确认后更新已有采购单，复用业务模块的完整校验。 */
+export async function updatePurchaseOrderFromDraft(
+  orderId: string,
+  version: number,
+  draft: PurchaseDraftHeader,
+  lines: PurchaseDraftLine[],
+) {
+  if (!draft.warehouseId) throw new Error('请选择入库仓库');
+  const order = await updatePurchaseOrder(orderId, {
+    version,
+    supplierId: draft.supplierId,
+    warehouseId: draft.warehouseId,
+    expectedArrivalDate: draft.expectedArrivalDate || null,
+    remark: draft.remark || '',
+    items: lines.map(line => ({
+      supplierProductId: line.supplierProductId!,
+      productId: line.productId,
+      quantityPrecision: line.quantityPrecision,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice!,
+      remark: line.remark,
+    })),
+  });
+  return { purchaseNo: order.purchaseNo, purchaseOrderId: order.purchaseOrderId, status: order.status };
 }
 
 /** 把用户处置结果交回等待中的模型。 */

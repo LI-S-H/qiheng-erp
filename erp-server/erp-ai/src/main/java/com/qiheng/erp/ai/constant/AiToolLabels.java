@@ -19,6 +19,9 @@ public final class AiToolLabels {
     private static final Map<String, String> LABELS = Map.ofEntries(
             Map.entry("ask_user", "补充信息"),
             Map.entry("prepare_purchase_order_draft", "生成采购草稿"),
+            Map.entry("update_purchase_order_draft", "修改采购单"),
+            Map.entry("submit_purchase_order", "提交采购审核"),
+            Map.entry("cancel_purchase_order", "取消采购单"),
             Map.entry("createReport", "生成报告"),
             Map.entry("analyzeData", "子智能体分析"),
             Map.entry("query_sql_data", "查询业务数据"),

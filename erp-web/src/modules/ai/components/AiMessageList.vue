@@ -40,7 +40,7 @@ type VisibleStep = Omit<AiConversationMessage, 'content'> & {
 }[AiMessageContent['type']];
 /** 已处置的采购草稿记录。 */
 type DraftMessage = AiConversationMessage & {
-  content: Extract<AiMessageContent, { type: 'PURCHASE_DRAFT' }>;
+  content: Extract<AiMessageContent, { type: 'PURCHASE_ORDER' }>;
 };
 /** 一次用户提问对应的一轮：用户消息、工作步骤、最终回复与产物都挂在同一轮下。 */
 interface ConversationTurn {
@@ -140,7 +140,7 @@ const turns = computed<ConversationTurn[]>(() => {
     return turn;
   };
   for (const message of props.messages) {
-    if (message.content.type === 'PURCHASE_DRAFT') {
+    if (message.content.type === 'PURCHASE_ORDER') {
       ensure(message).drafts.push(message as DraftMessage);
       continue;
     }

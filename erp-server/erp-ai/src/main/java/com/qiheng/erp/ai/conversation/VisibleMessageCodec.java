@@ -51,6 +51,22 @@ public class VisibleMessageCodec {
         return decode(raw, null);
     }
 
+    /** 判断是否采购单动作记录，并按动作校验状态取值。 */
+    private static boolean isPurchaseOrderRecord(String name, String status) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        return switch (name) {
+            case "prepare_purchase_order_draft", "update_purchase_order_draft" ->
+                    Set.of("created", "updated", "edited", "failed", "rejected").contains(status);
+            case "submit_purchase_order" ->
+                    Set.of("submitted", "rejected", "failed").contains(status);
+            case "cancel_purchase_order" ->
+                    Set.of("cancelled", "rejected", "failed").contains(status);
+            default -> false;
+        };
+    }
+
     /**
      * 读取当前消息及已保存的普通文本、追问工具消息。
      *
@@ -78,17 +94,17 @@ public class VisibleMessageCodec {
                 }
             }
             if (("TOOL_CALL".equals(kind) || "TOOL_RESULT".equals(kind)) && root.isObject()) {
-                if ("TOOL_CALL".equals(kind) && "prepare_purchase_order_draft".equals(root.path("name").asText())
-                        && Set.of("created", "edited", "failed", "rejected").contains(root.path("status").asText())) {
-                    // 已处置的采购草稿：只保留状态与单号，明细由页面按单号查采购单详情。
+                if ("TOOL_CALL".equals(kind) && isPurchaseOrderRecord(root.path("name").asText(),
+                        root.path("status").asText())) {
+                    // 采购单动作记录：只保留状态、单号与结果，明细由页面按单号查采购单。
                     Map<String, Object> data = new LinkedHashMap<>();
-                    for (String field : Set.of("status", "purchaseOrderId", "orderNo", "changedFields",
-                            "userNote", "reasons", "suggestion", "error")) {
+                    for (String field : Set.of("action", "status", "purchaseOrderId", "orderNo", "orderStatus",
+                            "changedFields", "userNote", "reasons", "suggestion", "error", "reason")) {
                         if (root.has(field)) {
                             data.put(field, mapper.convertValue(root.get(field), Object.class));
                         }
                     }
-                    return new VisibleMessageContent("PURCHASE_DRAFT", data);
+                    return new VisibleMessageContent("PURCHASE_ORDER", data);
                 }
                 if (!"ask_user".equals(root.path("name").asText())) {
                     // 普通工具行是结构化展示：只给工具名、文案、状态与耗时，不含参数和结果。

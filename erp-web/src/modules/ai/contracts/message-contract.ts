@@ -84,8 +84,8 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
     content = { type: 'TEXT', data: { text: [rendered, note].filter(Boolean).join('；') || '已补充信息', callId: requiredText(data.callId, 'callId'), questionAnswers, note } };
   } else if (source.type === 'ANALYSIS') {
     content = normalizeAnalysis(source);
-  } else if (source.type === 'PURCHASE_DRAFT') {
-    content = normalizeDraftRecord(data);
+  } else if (source.type === 'PURCHASE_ORDER') {
+    content = normalizeOrderRecord(data);
   } else if (source.type === 'REPORT') {
     if (!['RUNNING', 'COMPLETED', 'FAILED'].includes(String(data.status)) || !Array.isArray(data.steps)) {
       throw new Error('报告过程字段无效');
@@ -128,26 +128,30 @@ export function normalizeHistoryMessage(value: unknown): AiConversationMessage |
   }
 }
 
-/** 已处置采购草稿的记录：只保留状态、单号和结果说明。 */
-function normalizeDraftRecord(data: Record<string, unknown>): AiMessageContent {
+/** 采购单动作记录：只保留动作、状态、单号和结果说明。 */
+function normalizeOrderRecord(data: Record<string, unknown>): AiMessageContent {
   const status = String(data.status);
-  if (!['created', 'edited', 'failed', 'rejected'].includes(status)) {
-    throw new Error('采购草稿状态无效');
+  if (!['created', 'updated', 'edited', 'rejected', 'failed', 'submitted', 'cancelled'].includes(status)) {
+    throw new Error('采购单动作状态无效');
   }
   const optionalText = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
   const textList = (value: unknown) => Array.isArray(value)
     ? value.map(item => optionalText(item)).filter((item): item is string => Boolean(item)) : undefined;
+  const action = optionalText(data.action);
   return {
-    type: 'PURCHASE_DRAFT',
+    type: 'PURCHASE_ORDER',
     data: {
-      status: status as 'created' | 'edited' | 'failed' | 'rejected',
+      action: action === 'CREATE' || action === 'UPDATE' || action === 'SUBMIT' || action === 'CANCEL' ? action : undefined,
+      status: status as 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled',
       purchaseOrderId: optionalText(data.purchaseOrderId),
       orderNo: optionalText(data.orderNo),
+      orderStatus: optionalText(data.orderStatus),
       changedFields: textList(data.changedFields),
       userNote: optionalText(data.userNote),
       reasons: textList(data.reasons),
       suggestion: optionalText(data.suggestion),
       error: optionalText(data.error),
+      reason: optionalText(data.reason),
     },
   };
 }

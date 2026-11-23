@@ -1,0 +1,10 @@
+非CANCELLED 退货总额(元): 287433.87
+主表金额合计(去重单): 287433.87
+CUR合计: 160943.56 PRE合计: 126490.31
+CANCELLED金额: 14947.83 CANCELLED单数 19
+采购退货申请量占库存 0.245%
+销售退货申请量占库存 0.298%
+files: ['sales_return_by_customer_cur.csv', 'sales_return_by_product_cur.csv', 'returns_detail_half_year.csv', 'purchase_return_by_supplier.csv']
+
+销售退货客户Top5 占比: 23.11
+销售退货产品Top5 占比: 18.82

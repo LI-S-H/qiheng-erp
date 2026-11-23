@@ -1,0 +1,55 @@
+=== 1. 分仓库存（业务数量，罐） ===
+warehouse_name  stock_qty  locked_qty  available_qty  safety_stock_qty
+       广州白云分拨仓      352.0         0.0          352.0              65.0
+        成都双流西仓       61.0         0.0           61.0              65.0
+        武汉江夏南仓      352.0         0.0          352.0              65.0
+
+=== 2. 库存自洽核对：流水净变动 vs 账面库存 ===
+                flow_net  stock_qty  diff
+warehouse_name                           
+广州白云分拨仓            352.0      352.0   0.0
+成都双流西仓              61.0       61.0   0.0
+武汉江夏南仓             352.0      352.0   0.0
+
+流水构成：
+warehouse_name   bill_type        entry_mode bill_count  sum_change_qty  first_confirmed_at   last_confirmed_at
+       广州白云分拨仓   ADJUST_IN MANUAL_ADJUSTMENT          1           352.0 2025-11-01T08:16:56 2025-11-01T08:16:56
+        成都双流西仓   ADJUST_IN MANUAL_ADJUSTMENT          1           352.0 2025-11-01T08:07:36 2025-11-01T08:07:36
+        成都双流西仓 PURCHASE_IN  SOURCE_GENERATED          9          2900.0 2025-11-22T08:14:22 2026-11-10T08:02:34
+        成都双流西仓   SALES_OUT  SOURCE_GENERATED         14         -3191.0 2026-01-19T10:22:16 2026-11-21T19:51:18
+        武汉江夏南仓   ADJUST_IN MANUAL_ADJUSTMENT          1           352.0 2025-11-01T09:18:32 2025-11-01T09:18:32
+
+=== 3. 近6个月销售出库事实（2026-05-22~2026-11-22，184天） ===
+       warehouse_id warehouse_name  outbound_qty  bill_count   first_outbound_at last_outbound_at_window last_outbound_at_all
+8400000000004000004         成都双流西仓        2291.0          10 2026-05-27T11:55:14     2026-11-21T19:51:18  2026-11-21T19:51:18
+
+成都日均出库 = 12.4511 罐/天
+成都覆盖天数 = 4.9 天 (61 / 日均)
+广州白云/武汉江夏窗内出库=0，全历史亦无销售出库记录（库存仅来自2025-11-01 ADJUST_IN）
+自2025-11-01手工调整入库至今 = 386 天无销售出库
+
+=== 4. 采购来源（全产品） ===
+                              count     sum
+supplier_name warehouse_name               
+青岛润丰日用品商贸有限公司 成都双流西仓              9  2900.0
+已入库合计=2900 罐, 单价=5.35, 最近入库=2026-11-10T14:06:01
+未完成采购（非取消且未完全入库）行数 = 0
+审核→完全入库天数: [16, 8, 10, 10, 8, 13, 13, 14, 9]
+平均到货周期=11.2 天, 最短8/最长16
+
+供应商供货主档：
+supplier_name  latest_purchase_price  quoted_purchase_price  min_order_qty    last_purchase_at avg_delivery_days score_status quote_valid_until
+青岛润丰日用品商贸有限公司                   5.35                   5.35          100.0 2026-11-10T08:02:34              None        READY        2027-03-01
+
+=== 5. 销售订单（未完成核对） ===
+未完成销售明细行数 = 0
+各状态分布：
+status
+OUTBOUND_DONE    14
+窗口内订单已出库合计=2291，与出库单2291核对差=0
+最近成交价(元)：         approved_at  unit_price
+2026-11-21T07:13:37        7.09
+2026-11-21T07:28:16        6.77
+2026-11-21T07:45:43        7.37
+
+仓库主档： ['上海浦东中心仓', '广州白云分拨仓', '北京顺义北仓', '成都双流西仓', '武汉江夏南仓'] | 有该产品库存的仓= ['广州白云分拨仓', '成都双流西仓', '武汉江夏南仓']

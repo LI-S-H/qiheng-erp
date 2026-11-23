@@ -1,6 +1,6 @@
 # 模拟数据
 
-[demo-data-bundle.zip](demo-data-bundle.zip) 包含模拟数据 SQL、99 项规则检查、Redis 编号序列同步脚本和使用说明。数据仅供测试和演示，联系人、电话、地址和交易均为虚构数据。2026-11-22 已按新的参考价分口径重新打包，旧包保留为 [demo-data-bundle-2026-11-20.zip](demo-data-bundle-2026-11-20.zip)。
+[demo-data-bundle.zip](demo-data-bundle.zip) 包含模拟数据 SQL、99 项规则检查、Redis 编号序列同步脚本和使用说明。数据仅供测试和演示，联系人、电话、地址和交易均为虚构数据。2026-11-22 已按新的参考价分口径重新打包，旧包保留为 [demo-data-bundle-2026-11-20.zip](demo-data-bundle-2026-11-20.zip)。包内 `ai-demo/` 目录是 AI 会话演示数据，说明见 [ai-demo/README.md](ai-demo/README.md)。
 
 ## 2026-11-22 生成器 v2
 
@@ -28,3 +28,11 @@
 ## 2026-11-22 金额口径变更
 
 `product.reference_purchase_price` 和 `reference_sale_price` 已由 `decimal(18,2)` 元改为 `bigint` 分，与交易金额统一。**包内 `demo_data.sql` 是 2026-11-20 生成的旧版，参考价为元，不能导入新结构**，否则价格会小 100 倍。请使用 [generator](generator/README.md) 重新生成，输出中的参考价已按分写入。
+
+## AI 演示数据（2026-11-23）
+
+`ai-demo/` 目录提供 12 个精选 AI 会话，覆盖库存健康、补货、供应商选择、履约、退货、报告和采购草稿全流程；同时包含 46 条已发布经验、29 条业务图谱关系和会话引用的 177 个数据集与分析结果文件。
+
+导入顺序：init 的 01/02/03 → 本包 `demo_data.sql` → `ai-demo/ai-demo-data.sql` → 复制 `ai-demo/files/` 到后端数据目录。详细说明见 [ai-demo/README.md](ai-demo/README.md)。
+
+同一批数据已打进 [demo-data-bundle.zip](demo-data-bundle.zip) 的 `ai-demo/` 下，解压目录保留用于后续维护。

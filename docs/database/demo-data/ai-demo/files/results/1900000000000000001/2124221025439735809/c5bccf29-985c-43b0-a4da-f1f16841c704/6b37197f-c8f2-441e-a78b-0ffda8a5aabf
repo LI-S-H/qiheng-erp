@@ -1,0 +1,54 @@
+warehouse_id      object
+warehouse_code    object
+warehouse_name    object
+product_id        object
+product_code      object
+product_name      object
+unit_name         object
+stock_qty          int64
+locked_qty         int64
+rows 1560 1560 406 1560
+stock nulls
+ warehouse_id      0
+warehouse_code    0
+warehouse_name    0
+product_id        0
+product_code      0
+product_name      0
+unit_name         0
+stock_qty         0
+locked_qty        0
+prod nulls
+ product_id                  0
+product_code                0
+product_name                0
+category_id                 0
+unit_name                   0
+quantity_precision          0
+safety_stock_qty            0
+reference_purchase_price    0
+reference_sale_price        0
+status                      0
+out nulls
+ warehouse_id                   0
+warehouse_code                 0
+product_id                     0
+product_code                   0
+product_name                   0
+sales_out_qty                  0
+last_sales_out_confirmed_at    0
+sales_out_bill_count           0
+pin last in null count 0
+重复仓+SKU: 0 负库存: 0 锁定>账面: 0
+仓库数 5 SKU行数 1560 产品数 1560
+单位 ['件']
+merge后行数 1560 缺价格 0 缺safety 0
+warehouse_code  SKU    stock  locked    avail        amt
+       DEMOW01  312  24862.0     0.0  24862.0  268928.60
+       DEMOW02  312  24885.0     0.0  24885.0  262899.00
+       DEMOW03  312  24908.0     0.0  24908.0  263503.30
+       DEMOW04  312  24890.0     0.0  24890.0  259097.00
+       DEMOW05  312  24872.0     0.0  24872.0  260770.95
+        合计/全公司 1560 124417.0     0.0 124417.0 1315198.85
+锁定总量 0.0 库存总量 124417.0
+总额校验 avail=stock-locked: 124417.0 124417.0

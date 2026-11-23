@@ -1,0 +1,31 @@
+=== 库存余额 ===
+       warehouse_id warehouse_name product_code  stock_qty  locked_qty
+8400000000004000002        广州白云分拨仓      P000173   140500.0         0.0
+库存=1405袋 锁定=0袋 未预占(可用)=1405袋
+
+=== 产品主档 ===
+P000173 绿田 新鲜蔬菜量贩装 1kg/袋 单位=袋 精度=0 参考采购价=3.3500元 参考售价=4.0400元 安全库存=29袋 status=1
+
+=== 库存流水全部记录 ===
+            bill_id         bill_no   bill_type warehouse_name        confirmed_at        entry_mode   work_bill_item_id  qualified_qty  defective_qty  before_qty  change_qty  after_qty
+8400000000033000002 SL2025110100002   ADJUST_IN        广州白云分拨仓 2025-11-01T08:16:56 MANUAL_ADJUSTMENT 8400000000032000873            0.0            0.0         0.0       696.0      696.0
+8400000000011000354 SL2025120100004 PURCHASE_IN        广州白云分拨仓 2025-12-01T08:07:23  SOURCE_GENERATED 8400000000010001005          702.0            7.0       696.0       709.0     1405.0
+
+流水校验:
+入库合计=1405袋 出库合计=0袋 净变动=1405袋 期末after_qty=1405袋
+与库存余额一致: True
+
+=== 入库单构成 ===
+     inbound_no inbound_type    source_type       source_no source_party_name    status        entry_mode        confirmed_at manual_reason  current_qty
+IB2025113000013  PURCHASE_IN PURCHASE_ORDER PO2025112100006        杭州合顺商贸有限公司 CONFIRMED  SOURCE_GENERATED 2025-12-01T08:07:23                      709.0
+IB2025103100002    ADJUST_IN   STOCK_ADJUST                           广州白云分拨仓 CONFIRMED MANUAL_ADJUSTMENT 2025-11-01T08:16:56        期初库存建账        696.0
+入库单合计=1405袋
+
+=== 采购订单明细（全部状态） ===
+    purchase_no supplier_name warehouse_name       status  quantity  inbound_qty  unit_price_yuan   fully_received_at cancelled_at
+PO2025112100006    杭州合顺商贸有限公司        广州白云分拨仓 INBOUND_DONE     709.0        709.0             3.51 2025-12-01T14:49:46         None
+
+=== 供应商供货产品 ===
+supplier_name  latest_purchase_price  quoted_purchase_price quoted_price_reason quote_valid_until  min_order_qty    last_purchase_at score_status  status
+   杭州合顺商贸有限公司                  351.0                    349            年度框架协议报价        2026-12-17           3000 2025-12-01T08:07:23    NOT_READY       1
+   昆明正丰商贸有限公司                    NaN                    314            年度框架协议报价        2027-01-13           5000                None    NOT_READY       1

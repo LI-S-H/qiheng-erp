@@ -373,6 +373,66 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
 
+  /ai/assistant/conversations/{conversationId}/drafts/{draftRequestId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/AiConversationId'
+      - name: draftRequestId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+        description: purchase_draft 事件中服务端生成的草稿请求标识
+    post:
+      tags: [AIAssistant]
+      summary: 提交采购草稿的处置结果
+      description: 用户在前端确认卡片上完成创建、修改或驳回后提交。服务端校验会话归属与草稿归属，把结果交回等待中的工具，主智能体继续运行。创建和修改由前端调用采购模块接口完成，本接口只回传处置结果。
+      operationId: aiAssistantResolvePurchaseDraft
+      security: [{ SaTokenAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiPurchaseDraftReceipt' }
+      responses:
+        "200":
+          description: 已提交处置结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /ai/assistant/conversations/{conversationId}/actions/{actionRequestId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/AiConversationId'
+      - name: actionRequestId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+        description: purchase_action 事件中服务端生成的动作请求标识
+    post:
+      tags: [AIAssistant]
+      summary: 提交采购单提交或取消的处置结果
+      description: 用户在前端确认卡片上同意、暂不执行或被系统拒绝后提交。服务端校验会话归属与动作归属，把结果交回等待中的工具，主智能体继续运行。提交和取消由前端调用采购模块接口完成。
+      operationId: aiAssistantResolvePurchaseAction
+      security: [{ SaTokenAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiPurchaseActionReceipt' }
+      responses:
+        "200":
+          description: 已提交处置结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResult' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
   /ai/assistant/conversations/{conversationId}/reports:
     parameters:
       - $ref: '#/components/parameters/AiConversationId'
@@ -5071,10 +5131,10 @@ components:
       type: object
       required: [type, data]
       properties:
-        type: { type: string, enum: [TEXT, TOOL_CALL, TOOL_RESULT, ANALYSIS, REPORT] }
+        type: { type: string, enum: [TEXT, TOOL_CALL, TOOL_RESULT, ANALYSIS, REPORT, PURCHASE_ORDER] }
         data:
           type: object
-          description: 按 type 解释；REPORT 包含 toolCallId、status、steps，新记录还包含报告任务 UUID taskId；报告保存后可包含 report 卡片。旧记录可能没有 taskId。
+          description: 按 type 解释；REPORT 包含 toolCallId、status、steps，新记录还包含报告任务 UUID taskId；报告保存后可包含 report 卡片。旧记录可能没有 taskId。PURCHASE_ORDER 是采购单动作记录，只保存动作、状态和单号，明细由前端按 purchaseOrderId 查询采购单详情。
           properties:
             text: { type: string, description: 用户可见正文或摘要 }
             callId: { type: string, description: 工具调用标识 }
@@ -5083,9 +5143,19 @@ components:
             result: { type: string, description: 工具原始结果字符串 }
             toolCallId: { type: string, description: 父级工具调用标识 }
             taskId: { type: string, description: 报告任务 UUID；旧过程记录可能没有该字段 }
-            status: { type: string, description: 报告过程状态 }
+            status: { type: string, description: 报告过程状态，或采购单动作结果 }
             steps: { type: array, items: { type: object, additionalProperties: true }, description: 分析或报告过程步骤 }
             report: { $ref: '#/components/schemas/AiReportCard' }
+            action: { type: string, enum: [CREATE, UPDATE, SUBMIT, CANCEL], description: 采购单动作 }
+            purchaseOrderId: { type: string, description: 采购单 ID }
+            orderNo: { type: string, description: 采购单号 }
+            orderStatus: { type: string, description: 动作发生后的单据状态编码 }
+            changedFields: { type: array, items: { type: string }, description: 修改动作发生变化的字段路径 }
+            userNote: { type: string, description: 用户在编辑态填写的修改说明 }
+            reasons: { type: array, items: { type: string }, description: 用户驳回原因 }
+            suggestion: { type: string, description: 用户补充要求 }
+            error: { type: string, description: 系统拒绝的错误原文 }
+            reason: { type: string, description: 取消原因 }
 
     AiConversationMessagePage:
       type: object
@@ -5094,9 +5164,56 @@ components:
         records:
           type: array
           items: { $ref: '#/components/schemas/AiConversationMessage' }
-        total: { type: integer, minimum: 0, description: 当前用户该会话的未删除可见消息总数 }
+        total: { type: integer, minimum: 0, description: 当前用户该会话的未删除消息按 requestId 分组后的轮次总数；分页按轮次切分，一轮不会被拆到两页 }
         pageNum: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1, maximum: 100 }
+
+    AiPurchaseDraftReceipt:
+      type: object
+      required: [status]
+      description: 采购草稿的用户处置结果；创建和修改使用
+      properties:
+        status:
+          type: string
+          enum: [created, updated, edited, failed, rejected]
+          description: created 确认创建；updated 确认修改；edited 修改后创建或保存；failed 系统拒绝；rejected 用户驳回
+        orderNo: { type: string, nullable: true, description: 采购单号 }
+        purchaseOrderId: { type: string, nullable: true, description: 采购单 ID }
+        orderStatus: { type: string, nullable: true, description: 动作发生后的单据状态编码 }
+        error: { type: string, nullable: true, description: failed 时的错误原文 }
+        finalParams:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: 用户确认后的最终参数，结构与工具参数一致
+        userNote: { type: string, nullable: true, description: 用户在编辑态填写的修改说明 }
+        reasons:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: 用户驳回原因
+        suggestion: { type: string, nullable: true, description: 用户补充要求 }
+
+    AiPurchaseActionReceipt:
+      type: object
+      required: [status]
+      description: 采购单提交或取消的用户处置结果
+      properties:
+        status:
+          type: string
+          enum: [submitted, cancelled, rejected, failed]
+          description: submitted 同意提交；cancelled 同意取消；rejected 用户暂不执行；failed 系统拒绝
+        purchaseOrderId: { type: string, nullable: true, description: 采购单 ID }
+        orderNo: { type: string, nullable: true, description: 采购单号 }
+        orderStatus: { type: string, nullable: true, description: 动作发生后的单据状态编码 }
+        error: { type: string, nullable: true, description: failed 时的错误原文 }
+        reason: { type: string, nullable: true, description: 取消原因或用户暂不执行的原因 }
+        arrivalDate: { type: string, nullable: true, description: 提交时补填的预计到货日期 }
+        orderParams:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: failed 时回传的当前单据参数，供模型判断
 
     AiAgentProfile:
       type: object

@@ -232,8 +232,8 @@
 | `seq` | `bigint` | 否 | — | 会话内全局递增消息序号 |
 | `message_key` | `varchar(320)` | 是 | NULL | 会话内消息幂等标识 |
 | `role` | `varchar(16)` | 否 | — | 消息角色：user、assistant、tool |
-| `kind` | `varchar(32)` | 否 | — | 消息种类：USER_INPUT / ASSISTANT_STEP / TOOL_CALL / TOOL_RESULT / ASSISTANT_FINAL / ANALYSIS_STEP |
-| `content` | `longtext` | 否 | — | 消息内容 JSON；文本类为 JSON 字符串，工具类为 JSON 对象，按 kind 解释 |
+| `kind` | `varchar(32)` | 否 | — | 消息种类：USER_INPUT / ASSISTANT_STEP / TOOL_CALL / TOOL_RESULT / ASSISTANT_FINAL / ANALYSIS_STEP / REPORT_STEP |
+| `content` | `longtext` | 否 | — | 消息内容 JSON；文本类为 JSON 字符串，工具类为 JSON 对象，按 kind 解释；采购单动作记录保存为 type=PURCHASE_ORDER 的结构化内容，只含动作、状态和单号 |
 | `run_status` | `varchar(32)` | 是 | NULL | 轮次状态，仅USER_INPUT使用，不改写消息原文 |
 | `error_code` | `varchar(80)` | 是 | NULL | 轮次失败原因编码，仅USER_INPUT使用 |
 | `history_summary` | `text` | 是 | — | 最终回复历史导航摘要，未生成或失败为NULL，不替代原文 |

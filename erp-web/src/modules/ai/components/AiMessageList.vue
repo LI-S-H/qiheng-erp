@@ -31,6 +31,8 @@ const props = defineProps<{
   runTerminal?: boolean;
   paused?: boolean;
   recentAnswers?: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
+  /** 本次页面内已经提交成功的审批调用；用于立即结束等待提示，历史结果到达后由历史接管。 */
+  settledOrderCalls?: Set<string>;
 }>();
 const emit = defineEmits<{ 'open-analysis': [id?: string]; 'open-report-process': [id: string]; 'open-report': [report: AiReportCard]; 'open-order-tool': [data: Extract<AiMessageContent, { type: 'ORDER_TOOL' }>['data']] }>();
 /** 工作过程行：把内容类型与数据提到同一层，模板直接引用 step.data。 */
@@ -84,7 +86,17 @@ function reportProcessKey(requestId: string, callId: string) {
 /** 已完成的草稿工具行放入工作过程，动作和结果都留在折叠区。 */
 function orderStep(order: OrderToolMessage): VisibleStep {
   const data = order.content.data;
-  const stepData = { callId: data.callId, name: data.name, label: data.label || '销售草稿单', status: 'done' };
+  const parsed = parseOrderResult(order);
+  // 没有单号的结果不会生成历史卡片，工作过程行必须把结果说清楚。
+  const outcome = parsed.status === 'cancelled' ? ' · 已放弃'
+    : parsed.status === 'rejected' ? ' · 已驳回'
+      : parsed.status === 'failed' ? ' · 失败' : '';
+  const stepData = {
+    callId: data.callId,
+    name: data.name,
+    label: `${data.label || '销售草稿单'}${outcome}`,
+    status: parsed.status === 'failed' ? 'failed' : 'done',
+  };
   return {
     ...order,
     kind: 'TOOL_CALL',
@@ -269,8 +281,10 @@ const turns = computed<ConversationTurn[]>(() => {
     // 只有明确标记 waiting 或完全没有状态的记录才算等待确认，旧记录 status=created/done 视为已完成。
     const completed = turn.orders.filter(order => order.content.data.result
       || (order.content.data.status && order.content.data.status !== 'waiting'));
+    // 审批接口成功后立即结束当前 callId 的等待提示；历史里补到 TOOL_RESULT 后仍由历史接管。
     const pending = turn.orders.filter(order => !order.content.data.result
-      && (order.content.data.status === 'waiting' || !order.content.data.status));
+      && (order.content.data.status === 'waiting' || !order.content.data.status)
+      && !props.settledOrderCalls?.has(order.content.data.callId));
     turn.pendingOrder = pending.length ? pending[pending.length - 1] : null;
     // 同一单据在一轮里只渲染一张结果卡片，取最后一次状态。
     const byOrderId = new Map<string, OrderToolMessage>();

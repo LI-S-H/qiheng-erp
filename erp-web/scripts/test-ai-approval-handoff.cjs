@@ -72,6 +72,9 @@ async function check(browser, action) {
     await dialog.getByRole('button', { name: button, exact: true }).click();
     await page.waitForTimeout(50); await page.screenshot({ path: path.join(screenshotDir, `${action}-closing.png`) });
     await page.waitForTimeout(1350);
+    // 审批成功返回后，当前 callId 的等待提示必须立即结束；历史还没补到 TOOL_RESULT 也不能残留。
+    assert.equal(await page.getByText('等待用户确认', { exact: false }).count(), 0, `${action} 确认后仍显示等待用户确认`);
+    assert.equal(await page.locator('[data-ai-sales-draft-dock],[data-ai-sales-action-dock]').count(), 0, `${action} 确认后仍显示待确认卡片`);
     const trace = await page.evaluate(() => window.__closeTrace); const exiting = trace.filter(x=>x.dialog==='closed');
     assert.ok(resolved, `${action} 未提交审批回执`); assert.ok(!trace.some(x => x.mask), `${action} 业务请求期间出现全局白色加载遮罩`); assert.ok(trace.some(x => x.dialog === 'gone' && !x.overlay), `${action} 弹窗或遮罩未关闭`);
     assert.ok(trace.every(x => !x.confirm), `${action} 意外出现二次确认`);

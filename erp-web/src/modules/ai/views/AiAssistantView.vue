@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onScopeDispose, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onScopeDispose, reactive, ref, watch } from 'vue';
 import '@/styles/ai-pilot.css';
 import { useElementBounding, useMediaQuery } from '@vueuse/core';
 import { useRoute, useRouter } from 'vue-router';
@@ -250,8 +250,8 @@ function openOrderTool(data: { callId: string; action?: string; arguments?: stri
 }
 
 /** 销售草稿处置完成后收起确认页，并接上后端已经启动的恢复运行。 */
-// 按会话和调用编号保留已提交状态，旧历史不能重新恢复同一张卡片。
-const settledSalesCalls = new Map<string, Set<string>>();
+// 按会话和调用编号保留已提交状态，旧历史不能重新恢复同一张卡片；需要响应式，确认后立即结束等待提示。
+const settledSalesCalls = reactive(new Map<string, Set<string>>());
 
 function settleSalesCall(id: string, callId: string) {
   if (!callId) return;
@@ -1830,6 +1830,7 @@ onBeforeUnmount(() => {
             :final-message-id="switching ? switchSnapshot?.finalMessageId : currentRun.finalMessageId"
             :run-terminal="switching ? switchSnapshot?.runTerminal : runTerminal"
             :paused="switching ? false : (runStatus === 'WAITING_USER' && Boolean(pendingSalesDraft || pendingSalesAction))"
+            :settled-order-calls="switching ? undefined : settledSalesCalls.get(store.activeId || '')"
             @open-analysis="openAnalysis"
             @open-report-process="openReportProcess"
             @open-report="openReport"
@@ -1882,6 +1883,8 @@ onBeforeUnmount(() => {
           backingOff ||
           Boolean(pendingDraft) ||
           Boolean(pendingAction) ||
+          Boolean(pendingSalesDraft) ||
+          Boolean(pendingSalesAction) ||
           Boolean(store.activeId && !store.detail) ||
           (runStatus === 'RUNNING' && !watching)
         "

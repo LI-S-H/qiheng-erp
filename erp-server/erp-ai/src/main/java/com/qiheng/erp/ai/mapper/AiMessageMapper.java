@@ -102,6 +102,10 @@ public interface AiMessageMapper extends MPJBaseMapper<AiMessage> {
     @Select("SELECT run_status FROM ai_message WHERE conversation_id=#{conversationId} AND user_id=#{userId} AND kind='USER_INPUT' AND deleted=0 ORDER BY seq DESC LIMIT 1")
     String latestRunStatus(@Param("conversationId") long conversationId, @Param("userId") long userId);
 
+    /** 最近一轮的运行标识；进程重启后用它沿用原轮次恢复。 */
+    @Select("SELECT request_id FROM ai_message WHERE conversation_id=#{conversationId} AND user_id=#{userId} AND kind='USER_INPUT' AND deleted=0 ORDER BY seq DESC LIMIT 1")
+    String latestRunId(@Param("conversationId") long conversationId, @Param("userId") long userId);
+
     /**
      * 只软删除用户可见消息，不联动内部工具记录。
      */

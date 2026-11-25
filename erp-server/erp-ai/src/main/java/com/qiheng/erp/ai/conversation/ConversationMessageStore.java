@@ -77,4 +77,9 @@ public class ConversationMessageStore {
     public String latestRunStatus(long userId, long conversationId) {
         return messages.latestRunStatus(conversationId, userId);
     }
+
+    /** 查询最后一次用户输入对应的运行标识。 */
+    public String latestRunId(long userId, long conversationId) {
+        return messages.latestRunId(conversationId, userId);
+    }
 }

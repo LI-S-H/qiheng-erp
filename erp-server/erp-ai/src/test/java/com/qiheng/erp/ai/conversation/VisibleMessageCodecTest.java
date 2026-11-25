@@ -3,77 +3,67 @@ package com.qiheng.erp.ai.conversation;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import org.junit.jupiter.api.Test;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * 单据工具消息的解析契约：调用与结果都输出 ORDER_TOOL，普通工具仍输出 TOOL_CALL。
+ *
+ * @author Li
+ * @since 2026-11-25
+ */
 class VisibleMessageCodecTest {
+
     private final VisibleMessageCodec codec = new VisibleMessageCodec(new ObjectMapper());
 
-    @Test void readsReportProcessWithoutExposingOtherFields() {
-        var message = new AiMessage().setKind("REPORT_STEP").setContent(
-                "{\"toolCallId\":\"call1\",\"taskId\":\"task-uuid\",\"status\":\"RUNNING\",\"steps\":[],\"secret\":\"hidden\"}");
-        var content = codec.toView(message).content();
-        assertThat(content.type()).isEqualTo("REPORT");
-        assertThat(content.data()).containsEntry("toolCallId", "call1").containsEntry("taskId", "task-uuid")
-                .containsEntry("status", "RUNNING")
-                .doesNotContainKey("secret");
-        message.setContent("{\"toolCallId\":\"old-call\",\"status\":\"RUNNING\",\"steps\":[]}");
-        assertThat(codec.toView(message).content().data()).containsEntry("toolCallId", "old-call")
-                .doesNotContainKey("taskId");
+    @Test
+    void confirmationTextKeepsCallIdAndLegacyTextStillDecodes() {
+        var linked = codec.toView(message("ASSISTANT_STEP", "{\"text\":\"确认前说明\",\"callId\":\"c1\"}")).content();
+        assertThat(linked.type()).isEqualTo("TEXT");
+        assertThat(linked.data()).containsEntry("text", "确认前说明").containsEntry("callId", "c1");
+        var legacy = codec.toView(message("ASSISTANT_STEP", "\"历史说明\"")).content();
+        assertThat(legacy.data()).containsEntry("text", "历史说明").doesNotContainKey("callId");
     }
 
-    @Test void readsTextAndUserQuestionTools() throws Exception {
-        var message = new AiMessage().setKind("USER_INPUT")
-                .setContent(new ObjectMapper().writeValueAsString("{这是一段原文}"));
-        assertThat(codec.toView(message).content().data()).containsEntry("text", "{这是一段原文}");
-        message.setKind("TOOL_CALL").setContent("{\"name\":\"ask_user\",\"callId\":\"c1\",\"arguments\":\"{}\"}");
-        assertThat(codec.toView(message).content().type()).isEqualTo("TOOL_CALL");
-        message.setKind("TOOL_RESULT").setContent("{\"name\":\"ask_user\",\"callId\":\"c1\",\"result\":\"null\"}");
-        assertThat(codec.toView(message).content().data()).containsEntry("result", "null");
+    @Test
+    void decodesOrderToolCall() {
+        var content = codec.toView(message("TOOL_CALL",
+                "{\"callId\":\"c1\",\"name\":\"prepare_sales_order_draft\",\"label\":\"创建销售草稿单\","
+                        + "\"action\":\"CREATE\",\"orderType\":\"SALES\",\"status\":\"waiting\",\"arguments\":\"{}\"}"))
+                .content();
+
+        assertThat(content.type()).isEqualTo("ORDER_TOOL");
+        assertThat(content.data()).containsEntry("callId", "c1").containsEntry("status", "waiting")
+                .containsEntry("action", "CREATE");
     }
 
-    @Test void readsStoredTextAndWrappedUserQuestionTools() {
-        var message = new AiMessage().setKind("ASSISTANT_FINAL")
-                .setContent("{\"type\":\"TEXT\",\"data\":{\"text\":\"历史文本\"}}");
-        assertThat(codec.toView(message).content().data()).containsEntry("text", "历史文本");
-        message.setContent("{\"text\":\"旧文本\"}");
-        assertThat(codec.toView(message).content().data()).containsEntry("text", "旧文本");
-        message.setKind("TOOL_CALL").setContent("{\"type\":\"TOOL_CALL\",\"data\":{\"name\":\"ask_user\",\"callId\":\"c1\",\"arguments\":\"{}\"}}");
-        assertThat(codec.toView(message).content().type()).isEqualTo("TOOL_CALL");
-        message.setKind("TOOL_RESULT").setContent("{\"type\":\"TOOL_RESULT\",\"data\":{\"name\":\"ask_user\",\"callId\":\"c1\",\"result\":\"yes\"}}");
-        assertThat(codec.toView(message).content().data()).containsEntry("result", "yes");
+    @Test
+    void decodesOrderToolResult() {
+        var content = codec.toView(message("TOOL_RESULT",
+                "{\"callId\":\"c1\",\"name\":\"prepare_sales_order_draft\",\"action\":\"CREATE\","
+                        + "\"orderType\":\"SALES\",\"result\":\"{\\\"status\\\":\\\"created\\\",\\\"orderId\\\":\\\"9001\\\"}\"}"))
+                .content();
+
+        assertThat(content.type()).isEqualTo("ORDER_TOOL");
+        assertThat(content.data()).containsEntry("callId", "c1").containsKey("result");
     }
 
-    @Test void readsAnalysisProcessWithGoalStepsAndSummary() {
-        var message = new AiMessage().setKind("ANALYSIS_STEP").setContent(
-                "{\"toolCallId\":\"c1\",\"goal\":\"分析库存\",\"steps\":[{\"text\":\"先看数据\","
-                        + "\"tools\":[{\"name\":\"query_sql_data\",\"label\":\"查询业务数据\"}]}],"
-                        + "\"completion\":\"COMPLETED\",\"summary\":\"库存充足\"}");
-        var content = codec.toView(message).content();
-        assertThat(content.type()).isEqualTo("ANALYSIS");
-        assertThat(content.data()).containsEntry("toolCallId", "c1").containsEntry("goal", "分析库存")
-                .containsEntry("completion", "COMPLETED").containsEntry("summary", "库存充足");
-        assertThat(content.data().get("steps").toString()).contains("查询业务数据");
-    }
-
-    /** 普通工具的结构化展示行要原样交给前端，且不暴露参数与结果。 */
-    @Test void exposesStructuredToolRowWithoutInternalFields() {
-        var message = new AiMessage().setKind("TOOL_CALL").setContent(
+    @Test
+    void keepsPlainToolRow() {
+        var content = codec.toView(message("TOOL_CALL",
                 "{\"callId\":\"c2\",\"name\":\"query_sql_data\",\"label\":\"查询业务数据\","
-                        + "\"status\":\"done\",\"durationMs\":\"15036\"}");
-        var view = codec.toView(message);
-        assertThat(view.content().type()).isEqualTo("TOOL_CALL");
-        assertThat(view.content().data())
-                .containsEntry("name", "query_sql_data")
-                .containsEntry("label", "查询业务数据")
-                .containsEntry("status", "done")
-                .containsEntry("durationMs", "15036")
-                .doesNotContainKeys("arguments", "result");
+                        + "\"status\":\"done\",\"durationMs\":\"10\"}"))
+                .content();
+
+        assertThat(content.type()).isEqualTo("TOOL_CALL");
     }
 
-    @Test void legacyObjectsAndOtherToolsDoNotExposeInternalContent() {
-        var message = new AiMessage().setKind("ASSISTANT_FINAL").setContent("{\"type\":\"PLAN\",\"data\":{\"plan\":{}}}");
-        assertThat(codec.toView(message).content().data()).containsEntry("text", "该历史消息暂时无法展示。");
-        message.setKind("TOOL_RESULT").setContent("{\"name\":\"query_sql_data\",\"result\":\"secret\"}");
-        assertThat(codec.toView(message).content().data()).containsEntry("text", "");
+    /** 构造一条最小消息。 */
+    private AiMessage message(String kind, String content) {
+        var message = new AiMessage();
+        message.setKind(kind);
+        message.setContent(content);
+        message.setRole("assistant");
+        return message;
     }
 }

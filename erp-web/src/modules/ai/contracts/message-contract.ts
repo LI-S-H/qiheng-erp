@@ -86,8 +86,8 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
     content = normalizeAnalysis(source);
   } else if (source.type === 'PURCHASE_ORDER') {
     content = normalizeOrderRecord(data);
-  } else if (source.type === 'SALES_ORDER') {
-    content = normalizeSalesOrderRecord(data);
+  } else if (source.type === 'ORDER_TOOL') {
+    content = normalizeOrderTool(data);
   } else if (source.type === 'REPORT') {
     if (!['RUNNING', 'COMPLETED', 'FAILED'].includes(String(data.status)) || !Array.isArray(data.steps)) {
       throw new Error('报告过程字段无效');
@@ -158,30 +158,26 @@ function normalizeOrderRecord(data: Record<string, unknown>): AiMessageContent {
   };
 }
 
-/** 销售单动作记录：与采购单同构，只保留动作、状态、单号和结果说明。 */
-function normalizeSalesOrderRecord(data: Record<string, unknown>): AiMessageContent {
-  const status = String(data.status);
-  if (!['created', 'updated', 'edited', 'rejected', 'failed', 'submitted', 'cancelled'].includes(status)) {
-    throw new Error('销售单动作状态无效');
-  }
+/** 草稿工具调用与结果：调用带参数，结果带业务回执。 */
+function normalizeOrderTool(data: Record<string, unknown>): AiMessageContent {
   const optionalText = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
-  const textList = (value: unknown) => Array.isArray(value)
-    ? value.map(item => optionalText(item)).filter((item): item is string => Boolean(item)) : undefined;
   const action = optionalText(data.action);
+  const status = optionalText(data.status);
+  const orderType = optionalText(data.orderType);
   return {
-    type: 'SALES_ORDER',
+    type: 'ORDER_TOOL',
     data: {
-      action: action === 'CREATE' || action === 'UPDATE' || action === 'SUBMIT' || action === 'CANCEL' ? action : undefined,
-      status: status as 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled',
-      salesOrderId: optionalText(data.salesOrderId),
-      orderNo: optionalText(data.orderNo),
-      orderStatus: optionalText(data.orderStatus),
-      changedFields: textList(data.changedFields),
-      userNote: optionalText(data.userNote),
-      reasons: textList(data.reasons),
-      suggestion: optionalText(data.suggestion),
-      error: optionalText(data.error),
-      reason: optionalText(data.reason),
+      callId: requiredText(data.callId, 'callId'),
+      name: requiredText(data.name, 'name'),
+      ...(optionalText(data.label) ? { label: optionalText(data.label) } : {}),
+      ...(action === 'CREATE' || action === 'UPDATE' || action === 'SUBMIT' || action === 'CANCEL' ? { action } : {}),
+      ...(orderType === 'SALES' ? { orderType } : {}),
+      ...(status === 'waiting' ? { status } : {}),
+      ...(optionalText(data.arguments) ? { arguments: optionalText(data.arguments) } : {}),
+      ...(optionalText(data.result) ? { result: optionalText(data.result) } : {}),
+      ...(optionalText(data.salesOrderId) ? { salesOrderId: optionalText(data.salesOrderId) } : {}),
+      ...(optionalText(data.orderNo) ? { orderNo: optionalText(data.orderNo) } : {}),
+      ...(optionalText(data.reason) ? { reason: optionalText(data.reason) } : {}),
     },
   };
 }
@@ -216,7 +212,7 @@ export function normalizeVisibleContent(value: unknown): AiMessageContent {
   const data = object(body.data);
   let content: AiMessageContent;
   if (body.type === 'TEXT') {
-    content = { type: 'TEXT', data: { text: text(data.text, 'text') } };
+    content = { type: 'TEXT', data: { text: text(data.text, 'text'), ...(typeof data.callId === 'string' && data.callId ? { callId: data.callId } : {}) } };
   } else {
     throw new Error('未知的用户可见消息类型');
   }

@@ -41,6 +41,7 @@ public final class RunEventChannel {
     private Map<String, Object> salesAction;
     private long eventSeq;
     private boolean closed;
+    private Event terminalEvent;
     private long closedAt;
     private int textChars;
     private boolean snapshotTruncated;
@@ -73,6 +74,7 @@ public final class RunEventChannel {
             subscriber.next(event);
         }
         if (name.equals("run_completed") || name.equals("run_failed")) {
+            terminalEvent = event;
             closed = true;
             closedAt = System.currentTimeMillis();
             for (var subscriber : List.copyOf(subscribers)) {
@@ -105,10 +107,15 @@ public final class RunEventChannel {
             case "sales_order_action" -> applySalesAction(data);
             case "sales_order_action_resolved" -> applyTerminal("RUNNING");
             case "run_completed" -> {
-                if (data.get("finalMessageId") instanceof String id) {
-                    finalMessageId = id;
+                // 人工确认暂停不是最终完成，待确认内容必须留在快照里供刷新恢复。
+                if ("WAITING_USER".equals(data.get("status"))) {
+                    status = "WAITING_USER";
+                } else {
+                    if (data.get("finalMessageId") instanceof String id) {
+                        finalMessageId = id;
+                    }
+                    applyTerminal("COMPLETED");
                 }
-                applyTerminal("COMPLETED");
             }
             case "run_failed" -> applyTerminal("FAILED");
             default -> {
@@ -425,11 +432,15 @@ public final class RunEventChannel {
             synchronized (this) {
                 sink.next(new Event("run_snapshot", snapshot()));
                 if (closed) {
-                    var finished = new LinkedHashMap<String, Object>(Map.of("runId", runId, "status", status));
+                    var finished = new LinkedHashMap<String, Object>(terminalEvent.data());
+                    // 快照已携带终态序号；重复发送相同序号会被客户端判为旧事件。
+                    finished.remove("eventSeq");
+                    finished.put("runId", runId);
+                    finished.put("status", status);
                     if (finalMessageId != null) {
                         finished.put("finalMessageId", finalMessageId);
                     }
-                    sink.next(new Event("COMPLETED".equals(status) ? "run_completed" : "run_failed", Map.copyOf(finished)));
+                    sink.next(new Event(terminalEvent.event(), Map.copyOf(finished)));
                     sink.complete();
                 } else {
                     subscribers.add(sink);

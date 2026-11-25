@@ -99,7 +99,7 @@ export async function createSalesOrderFromDraft(draft: SalesDraftHeader, lines: 
       unitPrice: line.unitPrice ?? 0,
       remark: line.remark,
     })),
-  });
+  }, { skipPageLoading: true });
   return { salesNo: order.salesNo, salesOrderId: order.salesOrderId };
 }
 
@@ -124,7 +124,7 @@ export async function updateSalesOrderFromDraft(
       unitPrice: line.unitPrice ?? 0,
       remark: line.remark,
     })),
-  });
+  }, { skipPageLoading: true });
   return { salesNo: order.salesNo, salesOrderId: order.salesOrderId, status: order.status };
 }
 

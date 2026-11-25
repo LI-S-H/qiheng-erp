@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { ChevronDown, ClipboardCheck } from 'lucide-vue-next';
 import { getSalesOrderDetail } from '@/modules/sales/api';
 import type { SalesOrderDetail } from '@/modules/sales/types';
@@ -25,18 +25,33 @@ const loading = ref(false);
 const loadError = ref('');
 const order = ref<SalesOrderDetail | null>(null);
 
-/** 卡片标题按动作区分。 */
-const title = computed(() => {
-  switch (props.data.action) {
-    case 'UPDATE': return '销售单修改';
-    case 'SUBMIT': return '销售单提交';
-    case 'CANCEL': return '销售单取消';
-    default: return '销售单草稿';
+/** 挂载时读一次详情，卡片徽标显示当前真实状态。 */
+onMounted(async () => {
+  if (!props.data.salesOrderId) return;
+  try {
+    order.value = await getSalesOrderDetail(props.data.salesOrderId);
+  } catch {
+    // 读取失败时保留记录状态。
   }
 });
 
-/** 状态标签：动作与结果一起决定文案。 */
+/** 卡片标题固定为单据类型，动作只在工作过程里体现。 */
+const title = computed(() => '销售单');
+
+/** 状态标签优先显示单据真实状态，旧记录回退到动作状态。 */
 const statusMeta = computed(() => {
+  const real = order.value?.status || props.data.orderStatus;
+  const realMap: Record<string, { label: string; className: string }> = {
+    DRAFT: { label: '草稿', className: 'border-muted bg-muted text-muted-foreground' },
+    SUBMITTED: { label: '待审核', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+    APPROVED: { label: '已审核', className: 'border-sky-200 bg-sky-50 text-sky-700' },
+    PARTIAL_EXECUTED: { label: '部分执行', className: 'border-sky-200 bg-sky-50 text-sky-700' },
+    COMPLETED: { label: '已完成', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    CANCELLED: { label: '已取消', className: 'border-muted bg-muted text-muted-foreground' },
+  };
+  if (real && realMap[real]) {
+    return realMap[real];
+  }
   const key = `${props.data.action || 'CREATE'}:${props.data.status}`;
   const map: Record<string, { label: string; className: string }> = {
     'CREATE:created': { label: '已确认创建', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
@@ -102,7 +117,7 @@ async function toggle() {
   try {
     order.value = await getSalesOrderDetail(props.data.salesOrderId!);
   } catch {
-    loadError.value = '销售单明细读取失败';
+    loadError.value = '单据已删除或无法读取';
   } finally {
     loading.value = false;
   }

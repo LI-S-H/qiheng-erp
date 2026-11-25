@@ -98,19 +98,19 @@ export type AiMessageContent =
       };
     }
   | {
-      /** 销售单动作记录：创建、修改、提交、取消的结果。 */
-      type: 'SALES_ORDER';
+      /** 草稿工具的一次调用或结果：调用带参数，结果带业务回执。 */
+      type: 'ORDER_TOOL';
       data: {
+        callId: string;
+        name: string;
+        label?: string;
         action?: 'CREATE' | 'UPDATE' | 'SUBMIT' | 'CANCEL';
-        status: 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled';
+        orderType?: 'SALES';
+        status?: string;
+        arguments?: string;
+        result?: string;
         salesOrderId?: string;
         orderNo?: string;
-        orderStatus?: string;
-        changedFields?: string[];
-        userNote?: string;
-        reasons?: string[];
-        suggestion?: string;
-        error?: string;
         reason?: string;
       };
     }

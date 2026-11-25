@@ -26,6 +26,7 @@ import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
+import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
@@ -72,8 +73,27 @@ public final class MainAgentService {
     private final Map<String, RuntimeSnapshot> runs = new ConcurrentHashMap<>();
     private static final AtomicLong LOCK_OWNER = new AtomicLong(UUID.randomUUID().getMostSignificantBits());
 
-    /** 当前进程中的运行信息；进程重启后不作为历史记录使用。 */
+    /** 人工确认节点前缀；命中表示图停在工具执行前。 */
+    private static final String HITL_NODE_PREFIX = "_AGENT_HOOK_HITL";
+
+    /** 查询当前进程中的运行信息；进程重启后不作为历史记录使用。 */
     public record RuntimeSnapshot(String runId, String status, Map<String, Object> question) {}
+
+    /**
+     * 读取当前会话最近的运行标识；恢复运行时沿用它，避免历史被拆成两轮。
+     *
+     * @param userId 会话所属用户
+     * @param conversationId 会话编号
+     * @return 最近的运行标识；没有运行记录时返回 null
+     */
+    public String currentRunIdForUser(long userId, long conversationId) {
+        var snapshot = runs.get(userId + ":" + conversationId);
+        if (snapshot != null) {
+            return snapshot.runId();
+        }
+        // 进程重启后内存快照为空，回退到最近一轮的持久标识，避免历史被拆成两轮。
+        return messageStore.latestRunId(userId, conversationId);
+    }
 
     /** 查询当前进程的运行状态及有效追问，先校验会话归属。 */
     public RuntimeSnapshot currentForCurrentUser(long conversationId) {
@@ -87,7 +107,11 @@ public final class MainAgentService {
             throw new IllegalArgumentException("会话不存在或无权访问");
         }
         String status = messageStore.latestRunStatus(userId, conversationId);
-        return "RUNNING".equals(status) || "WAITING_USER".equals(status) ? "INTERRUPTED" : "IDLE";
+        if ("RUNNING".equals(status)) {
+            return "RUNNING";
+        }
+        // 等待用户确认不是中断，页面按待确认消息继续渲染。
+        return "WAITING_USER".equals(status) ? "WAITING_USER" : "IDLE";
     }
 
     /**
@@ -185,10 +209,7 @@ public final class MainAgentService {
      */
     private Flux<NodeOutput> execute(long userId, long conversationId, String input, String requestedRunId) {
         String businessDate = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
-        var config = RunnableConfig.builder().threadId("main:" + userId + ":" + conversationId)
-                .addMetadata("businessDate", businessDate)
-                .addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT, new AgentToolContext(userId, conversationId, businessDate))
-                .build();
+        var config = baseConfig(userId, conversationId, businessDate);
         return Flux.defer(() -> {
             RLock lock = locks.of(conversationId);
             long owner = LOCK_OWNER.incrementAndGet();
@@ -211,15 +232,13 @@ public final class MainAgentService {
                 }
                 try {
                     // 锁内检查，避免会话删除或权限撤销与启动并发。
-                    if (conversations.selectOwned(conversationId, userId) == null) {
-                        throw new IllegalArgumentException("会话不存在或无权访问");
-                    }
-                    var user = users.findByUserId(userId);
-                    var permissions = PermissionCodes.of(user);
-                    if (user == null || (!permissions.contains("*") && !permissions.contains("ai:assistant:use"))) {
-                        throw new IllegalStateException("当前用户无 AI 使用权限");
-                    }
+                    checkAccess(userId, conversationId);
                     var checkpoint = saver.get(config);
+                    // 用户没确认就发了新消息：作废待确认草稿，避免两个状态并存。
+                    if (checkpoint.isPresent() && checkpoint.get().getNextNodeId() != null
+                            && checkpoint.get().getNextNodeId().startsWith(HITL_NODE_PREFIX)) {
+                        cancelPendingConfirmation(checkpoint.get(), config);
+                    }
                     if (checkpoint.isPresent() && "_AGENT_TOOL_".equals(checkpoint.get().getNextNodeId())) {
                         var current = checkpoint.get();
                         if (hasPendingToolCalls(current)) {
@@ -250,10 +269,74 @@ public final class MainAgentService {
                             Map.of("runId", runId, "conversationId", String.valueOf(conversationId))), null));
                     subscribeRun(config, recorder, runKey, runId, input, lock, owner, sink);
                 } catch (Exception error) {
+                    log.error("主智能体启动失败 conversationId={}", conversationId, error);
                     finish(lock, owner, sink, error);
                 }
             }));
         });
+    }
+
+    /**
+     * 恢复一次停在人工确认节点的运行；工具结果由调用方先写入检查点。
+     *
+     * @param userId 会话所属用户
+     * @param conversationId 会话编号
+     * @param runId 恢复运行标识，沿用原轮次
+     * @return 内部图事件流
+     */
+    public Flux<NodeOutput> resumeForUser(long userId, long conversationId, String runId) {
+        String businessDate = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
+        var config = baseConfig(userId, conversationId, businessDate);
+        return Flux.defer(() -> {
+            RLock lock = locks.of(conversationId);
+            long owner = LOCK_OWNER.incrementAndGet();
+            return Flux.create(sink -> lock.tryLockAsync(owner).whenCompleteAsync((acquired, failure) -> {
+                if (failure != null) {
+                    sink.error(failure);
+                    return;
+                }
+                if (!acquired) {
+                    sink.error(new IllegalStateException("会话正在执行其他任务"));
+                    return;
+                }
+                try {
+                    checkAccess(userId, conversationId);
+                    var traces = new AiAgentTraceRecorder(traceMapper, mapper,
+                            new AiAgentTraceRecorder.Scope(userId, conversationId, runId, "MAIN"));
+                    var recorder = new AgentRunRecorder(messageStore, mapper, traces, userId, conversationId, runId);
+                    String runKey = userId + ":" + conversationId;
+                    runs.put(runKey, new RuntimeSnapshot(runId, "RUNNING", null));
+                    sink.next(NodeOutput.of("run_started", "main_agent", new OverAllState(
+                            Map.of("runId", runId, "conversationId", String.valueOf(conversationId))), null));
+                    // 工具结果已经写入检查点，直接沿用原配置恢复，避免 withResume 注入的占位反馈被人工钩子拒绝。
+                    subscribeRun(config, recorder, runKey, runId, Map.of(), lock, owner, sink);
+                } catch (Exception error) {
+                    log.error("主智能体启动失败 conversationId={}", conversationId, error);
+                    finish(lock, owner, sink, error);
+                }
+            }));
+        });
+    }
+
+    /** 组装本轮运行配置，补上可信身份与业务日期。 */
+    private RunnableConfig baseConfig(long userId, long conversationId, String businessDate) {
+        return RunnableConfig.builder().threadId("main:" + userId + ":" + conversationId)
+                .addMetadata("businessDate", businessDate)
+                .addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT,
+                        new AgentToolContext(userId, conversationId, businessDate))
+                .build();
+    }
+
+    /** 校验会话归属与 AI 使用权限，启动和恢复共用。 */
+    private void checkAccess(long userId, long conversationId) {
+        if (conversations.selectOwned(conversationId, userId) == null) {
+            throw new IllegalArgumentException("会话不存在或无权访问");
+        }
+        var user = users.findByUserId(userId);
+        var permissions = PermissionCodes.of(user);
+        if (user == null || (!permissions.contains("*") && !permissions.contains("ai:assistant:use"))) {
+            throw new IllegalStateException("当前用户无 AI 使用权限");
+        }
     }
 
     /**
@@ -270,7 +353,7 @@ public final class MainAgentService {
      * @throws Exception 订阅建立失败
      */
     private void subscribeRun(RunnableConfig config, AgentRunRecorder recorder, String runKey, String runId,
-                              String input, RLock lock, long owner, FluxSink<NodeOutput> sink) throws Exception {
+                              Object input, RLock lock, long owner, FluxSink<NodeOutput> sink) throws Exception {
         var events = new RuntimeEventForwarder(sink::next, runId);
         var runConfig = RunnableConfig.builder(config)
                 .addMetadata("runId", runId)
@@ -336,7 +419,9 @@ public final class MainAgentService {
         // 新消息交由模型结合已配对的工具历史处理。
         Flux<NodeOutput> stream;
         try {
-            stream = agent.stream(input, runConfig);
+            stream = input instanceof Map<?, ?> map
+                    ? agent.stream((Map<String, Object>) map, runConfig)
+                    : agent.stream(String.valueOf(input), runConfig);
         } catch (Exception error) {
             recorder.status("FAILED", "AGENT_EXECUTION_FAILED");
             runs.put(runKey, new RuntimeSnapshot(runId, "FAILED", null));
@@ -359,6 +444,7 @@ public final class MainAgentService {
                     }
                 }).subscribeOn(Schedulers.boundedElastic())
                 .subscribe(events::graphEvent, error -> {
+                    log.error("主智能体运行失败 runId={}", runId, error);
                     try {
                         events.flush();
                         recorder.status("FAILED", "AGENT_EXECUTION_FAILED");
@@ -371,6 +457,17 @@ public final class MainAgentService {
                 }, () -> {
                     try {
                         events.flush();
+                        // 图停在人工确认节点时不会发出结束节点，先判断再校验是否完整。
+                        var pendingConfirmation = saver.get(runConfig)
+                                .filter(checkpoint -> checkpoint.getNextNodeId() != null
+                                        && checkpoint.getNextNodeId().startsWith(HITL_NODE_PREFIX));
+                        if (pendingConfirmation.isPresent()) {
+                            publishPendingConfirmation(pendingConfirmation.get(), runId, runKey, recorder, sink);
+                            recorder.status("WAITING_USER", null);
+                            runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", null));
+                            finish(lock, owner, sink, null);
+                            return;
+                        }
                         if (!reachedEnd.get()) {
                             recorder.status("FAILED", "AGENT_STREAM_INCOMPLETE");
                             runs.put(runKey, new RuntimeSnapshot(runId, "FAILED", null));
@@ -569,7 +666,7 @@ public final class MainAgentService {
                     log.warn("模型完成事件未及时匹配，已放行工具事件 runId={} toolCallId={}", runId, id);
                     if (!boundarySent) {
                         target.accept(NodeOutput.of("model_tool_fallback", "main_agent",
-                                new OverAllState(Map.of()), null));
+                                new OverAllState(Map.of("callId", id)), null));
                         boundarySent = true;
                         awaitingLateCompletion = true;
                     }
@@ -620,6 +717,125 @@ public final class MainAgentService {
     /** 判断事件是否属于等待用户处置的过程；这类事件不能当作过期过程丢弃。 */
     private static boolean waitingUserEvent(String node) {
         return WAITING_USER_EVENTS.contains(node);
+    }
+
+    /** 新消息到来时作废尚未确认的草稿或动作，避免旧确认和新消息并存。 */
+    private void cancelPendingConfirmation(Checkpoint checkpoint, RunnableConfig config) throws Exception {
+        var messages = (List<?>) checkpoint.getState().get("messages");
+        if (messages == null || messages.isEmpty()
+                || !(messages.getLast() instanceof AssistantMessage assistant)
+                || assistant.getToolCalls().isEmpty()) {
+            return;
+        }
+        var responses = assistant.getToolCalls().stream()
+                .map(call -> new ToolResponseMessage.ToolResponse(call.id(), call.name(),
+                        "{\"status\":\"CANCELLED\",\"message\":\"用户未确认，已放弃本次操作。\"}"))
+                .toList();
+        agent.getAndCompileGraph().updateState(
+                RunnableConfig.builder(config).checkPointId(checkpoint.getId()).build(),
+                Map.of("messages", List.of(ToolResponseMessage.builder().responses(responses).build())));
+    }
+
+    /** 把停在人工确认节点的工具调用写成一条待确认记录，并推送同一份内容。 */
+    private void publishPendingConfirmation(Checkpoint checkpoint, String runId, String runKey,
+                                            AgentRunRecorder recorder, FluxSink<NodeOutput> sink) {
+        var messages = (List<?>) checkpoint.getState().get("messages");
+        if (messages == null || messages.isEmpty()
+                || !(messages.getLast() instanceof AssistantMessage assistant)
+                || assistant.getToolCalls().isEmpty()) {
+            return;
+        }
+        var call = assistant.getToolCalls().getFirst();
+        var content = new LinkedHashMap<String, Object>();
+        content.put("callId", call.id());
+        content.put("name", call.name());
+        content.put("label", labelOf(call.name()));
+        content.put("status", "waiting");
+        content.put("arguments", call.arguments());
+        String event;
+        switch (call.name()) {
+            case "prepare_sales_order_draft", "update_sales_order_draft" -> {
+                event = "sales_order_draft";
+                content.put("action", "prepare_sales_order_draft".equals(call.name()) ? "CREATE" : "UPDATE");
+                content.put("orderType", "SALES");
+            }
+            case "submit_sales_order", "cancel_sales_order" -> {
+                event = "sales_order_action";
+                content.put("action", "submit_sales_order".equals(call.name()) ? "SUBMIT" : "CANCEL");
+                content.put("orderType", "SALES");
+                var arguments = parseArguments(call.arguments());
+                content.put("salesOrderId", text(arguments, "salesOrderId"));
+                content.put("orderNo", text(arguments, "orderNo"));
+                content.put("reason", text(arguments, "reason"));
+            }
+            default -> {
+                return;
+            }
+        }
+        try {
+            // 人工确认发生在工具节点之前，必须先保存同一条模型消息的正文。
+            recorder.assistantBeforeConfirmation(assistant);
+        } catch (Exception error) {
+            // 正文保存失败不能阻止待确认工具本身保存和展示。
+            log.warn("待确认正文写入失败 runId={} callId={}", runId, call.id(), error);
+        }
+        // 模型完成钩子可能缺席或被降级丢弃；确认前补发完整正文，由事件转换层按调用编号去重。
+        if (assistant.getText() != null && !assistant.getText().isBlank()) {
+            sink.next(NodeOutput.of("confirmation_text", "main_agent", new OverAllState(
+                    Map.of("callId", call.id(), "text", assistant.getText())), null));
+        }
+        try {
+            String[] parts = runKey.split(":");
+            messageStore.append(new AiMessage()
+                    .setUserId(Long.parseLong(parts[0]))
+                    .setConversationId(Long.parseLong(parts[1]))
+                    .setRequestId(runId)
+                    .setMessageKey(runId + ":tool:" + call.id())
+                    .setRole("assistant")
+                    .setKind("TOOL_CALL")
+                    .setContent(mapper.writeValueAsString(content)));
+        } catch (Exception error) {
+            log.warn("待确认工具调用写入失败 runId={} callId={}", runId, call.id(), error);
+        }
+        recorder.traceToolCall(call.id(), call.name(), call.arguments());
+        sink.next(NodeOutput.of(event, "main_agent", new OverAllState(content), null));
+    }
+
+    /** 待确认工具的中文动作名。 */
+    private String labelOf(String name) {
+        return switch (name) {
+            case "prepare_sales_order_draft" -> "创建销售草稿单";
+            case "update_sales_order_draft" -> "修改销售草稿单";
+            case "submit_sales_order" -> "提交销售草稿单";
+            case "cancel_sales_order" -> "取消销售草稿单";
+            default -> name;
+        };
+    }
+
+    /** 解析模型生成的工具参数；兼容框架包一层 request 的结构。 */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseArguments(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Map.of();
+        }
+        try {
+            var root = mapper.readTree(raw);
+            var node = root != null && root.isObject() && root.path("request").isObject()
+                    ? root.path("request") : root;
+            if (node == null || !node.isObject()) {
+                return Map.of();
+            }
+            return mapper.convertValue(node, Map.class);
+        } catch (Exception error) {
+            log.warn("待确认工具参数解析失败 raw={}", raw, error);
+            return Map.of();
+        }
+    }
+
+    /** 读取参数中的文本字段，缺失时返回空串。 */
+    private String text(Map<String, Object> values, String key) {
+        Object value = values.get(key);
+        return value == null ? "" : String.valueOf(value);
     }
 
     /** 只处理最后一条尚未获得结果的工具调用消息。 */

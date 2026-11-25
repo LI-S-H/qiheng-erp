@@ -23,6 +23,41 @@ import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
 
 class AgentRunRecorderTest {
     @Test
+    void pendingConfirmationAndToolCallbackUseSameMessageKey() throws Exception {
+        var store = mock(ConversationMessageStore.class);
+        var traces = mock(AiAgentTraceMapper.class);
+        var mapper = new ObjectMapper();
+        var recorder = new AgentRunRecorder(store, mapper, traceRecorder(traces), 1, 2, "run");
+        var call = new AssistantMessage.ToolCall("sales-1", "function", "update_sales_order_draft", "{}");
+        var assistant = AssistantMessage.builder().content("先确认预计发货日期").toolCalls(List.of(call)).build();
+
+        recorder.assistantBeforeConfirmation(assistant);
+        recorder.toolCall(call.id(), call.name(), call.arguments(), assistant);
+
+        var saved = ArgumentCaptor.forClass(AiMessage.class);
+        verify(store, times(2)).append(saved.capture());
+        assertThat(saved.getAllValues()).extracting(AiMessage::getMessageKey)
+                .containsExactly("run:step:sales-1", "run:step:sales-1");
+        assertThat(saved.getAllValues()).extracting(AiMessage::getKind)
+                .containsOnly("ASSISTANT_STEP");
+        assertThat(mapper.readTree(saved.getAllValues().getFirst().getContent()).path("text").asText())
+                .isEqualTo("先确认预计发货日期");
+        assertThat(mapper.readTree(saved.getAllValues().getFirst().getContent()).path("callId").asText())
+                .isEqualTo("sales-1");
+        assertThat(mapper.readValue(saved.getValue().getContent(), String.class)).isEqualTo("先确认预计发货日期");
+        verify(traces, times(1)).insert(eq(1L), eq(2L), eq("run"), eq("MAIN"), eq("MODEL_OUTPUT"), anyString());
+    }
+
+    @Test
+    void pendingConfirmationWithoutTextDoesNotCreateBlankMessage() {
+        var store = mock(ConversationMessageStore.class);
+        var recorder = new AgentRunRecorder(store, new ObjectMapper(), traceRecorder(), 1, 2, "run");
+        var call = new AssistantMessage.ToolCall("sales-1", "function", "cancel_sales_order", "{}");
+        recorder.assistantBeforeConfirmation(AssistantMessage.builder().content(" ").toolCalls(List.of(call)).build());
+        verifyNoInteractions(store);
+    }
+
+    @Test
     void storesReportProgressAsOneUpdatedMessageAndKeepsReadyCard() throws Exception {
         var store = mock(ConversationMessageStore.class);
         var mapper = new ObjectMapper();

@@ -2,7 +2,6 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import RemoteSearchSelect from '@/components/common/RemoteSearchSelect.vue';
 import { Button } from '@/components/ui/button';
@@ -41,7 +40,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:open': [value: boolean];
-  settled: [];
+  settled: [context: { conversationId: string; callId: string }];
 }>();
 
 /** 确认动作：创建、保存编辑、放弃编辑。 */
@@ -68,7 +67,6 @@ const rejectError = ref('');
 const form = reactive({ warehouseId: '', expectedDeliveryDate: '', remark: '', userNote: '' });
 const originalForm = reactive({ warehouseId: '', expectedDeliveryDate: '', remark: '' });
 const errors = reactive<Record<string, string>>({});
-const confirmState = reactive({ open: false, action: 'create' as ConfirmAction, title: '', description: '', confirmText: '', variant: 'default' as 'default' | 'warning' | 'destructive' });
 
 const readonly = computed(() => mode.value === 'readonly');
 const totalAmount = computed(() => lines.value.reduce((sum, line) => sum + lineAmount(line), 0));
@@ -81,9 +79,8 @@ const rejectOtherSelected = computed(() => rejectReasons.value.includes('其他'
 /** 每次打开都按最新草稿重新加载，避免沿用上一次确认页的状态。 */
 watch(() => [props.open, props.request?.draftRequestId], ([open]) => {
   if (open) {
-    void load();
-  } else {
     resetState();
+    void load();
   }
 }, { immediate: true });
 
@@ -207,7 +204,6 @@ function resetState() {
   rejectReasons.value = [];
   rejectNote.value = '';
   rejectError.value = '';
-  confirmState.open = false;
   Object.keys(errors).forEach(key => delete errors[key]);
 }
 
@@ -227,67 +223,18 @@ function cancelEdit() {
   Object.keys(errors).forEach(key => delete errors[key]);
 }
 
-/** 底部按钮与关闭按钮统一走二次确认，避免误操作。 */
+/** 直接执行用户在详情页选择的操作。 */
 function askConfirm(action: ConfirmAction) {
   if (busy.value) return;
-  if (action === 'create') {
-    if (!validate()) return;
-    Object.assign(confirmState, isUpdate.value
-      ? {
-          open: true, action, title: '确认保存修改？',
-          description: `将保存对销售单的修改，客户为${customerLabel.value}，共 ${lines.value.length} 行明细，合计 ${formatMoney(totalAmount.value)}。`,
-          confirmText: '确认保存', variant: 'default',
-        }
-      : {
-          open: true, action, title: '确认创建销售单？',
-          description: `将按当前内容创建销售单草稿，客户为${customerLabel.value}，共 ${lines.value.length} 行明细，合计 ${formatMoney(totalAmount.value)}。`,
-          confirmText: '确认创建', variant: 'default',
-        });
-    return;
-  }
-  if (action === 'update') {
-    if (!validate()) return;
-    Object.assign(confirmState, isUpdate.value
-      ? {
-          open: true, action, title: '保存修改？',
-          description: `修改内容将保存到销售单，并把变化和修改说明交回 AI 继续分析。合计 ${formatMoney(totalAmount.value)}。`,
-          confirmText: '保存修改', variant: 'default',
-        }
-      : {
-          open: true, action, title: '保存修改并创建？',
-          description: `修改内容将随销售单一起提交，并把变化和修改说明交回 AI 继续分析。合计 ${formatMoney(totalAmount.value)}。`,
-          confirmText: '保存并创建', variant: 'default',
-        });
-    return;
-  }
-  if (action === 'discard') {
-    Object.assign(confirmState, {
-      open: true, action, title: '取消本次编辑？',
-      description: '本次编辑全部取消，恢复为 AI 生成的内容，不会记录。',
-      confirmText: '取消编辑', variant: 'warning',
-    });
-    return;
-  }
-  Object.assign(confirmState, {
-    open: true, action, title: '放弃编辑并关闭？',
-    description: '本次编辑全部取消，不会记录；草稿仍保留，可重新打开查看。',
-    confirmText: '放弃并关闭', variant: 'warning',
-  });
+  if (action === 'discard') { cancelEdit(); return; }
+  if (action === 'close') { emit('update:open', false); return; }
+  if (!validate()) return;
+  void submitSave(action === 'create' ? 'confirmed' : 'edited');
 }
 
-/** 执行二次确认选定的动作。 */
-function runConfirm() {
-  const action = confirmState.action;
-  confirmState.open = false;
-  if (action === 'discard') {
-    cancelEdit();
-  } else if (action === 'close') {
-    emit('update:open', false);
-  } else if (action === 'create') {
-    void submitSave('confirmed');
-  } else if (action === 'update') {
-    void submitSave('edited');
-  }
+/** 成功后同时关闭两层弹窗，让遮罩和预览同步退出。 */
+function finishConfirmation(conversationId: string, request: SalesDraftRequest) {
+  emit('settled', { conversationId, callId: request.draftRequestId });
 }
 
 /** 弹窗关闭前拦截编辑态，避免误丢失修改。 */
@@ -307,57 +254,56 @@ function handleOpenChange(value: boolean) {
 async function submitSave(kind: 'confirmed' | 'edited') {
   const request = props.request;
   if (!request) return;
+  const conversationId = props.conversationId;
+  const header = currentHeader();
+  const orderLines = lines.value.map(line => ({ ...line }));
+  const update = isUpdate.value;
+  const version = orderVersion.value;
   submitting.value = true;
   try {
     const note = form.userNote.trim();
-    if (isUpdate.value) {
+    if (update) {
       const orderId = request.draft.salesOrderId;
-      if (!orderId || orderVersion.value === null) {
+      if (!orderId || version === null) {
         throw new Error('销售单信息不完整，请关闭后重新发起');
       }
-      const updated = await updateSalesOrderFromDraft(orderId, orderVersion.value, currentHeader(), lines.value);
-      await resolveSalesDraft(props.conversationId, request, kind === 'confirmed'
+      const updated = await updateSalesOrderFromDraft(orderId, version, header, orderLines);
+      await resolveSalesDraft(conversationId, request, kind === 'confirmed'
         ? { status: 'updated', orderNo: updated.salesNo, salesOrderId: orderId, orderStatus: updated.status }
         : {
             status: 'edited', orderNo: updated.salesNo, salesOrderId: orderId, orderStatus: updated.status,
-            finalParams: currentHeader(), userNote: note,
+            finalParams: header, userNote: note,
           });
       toast.success(`销售单 ${updated.salesNo} 已保存`);
     } else {
-      const created = await createSalesOrderFromDraft(currentHeader(), lines.value);
-      await resolveSalesDraft(props.conversationId, request, kind === 'confirmed'
+      const created = await createSalesOrderFromDraft(header, orderLines);
+      await resolveSalesDraft(conversationId, request, kind === 'confirmed'
         ? { status: 'created', orderNo: created.salesNo, salesOrderId: created.salesOrderId }
         : {
             status: 'edited', orderNo: created.salesNo, salesOrderId: created.salesOrderId,
-            finalParams: currentHeader(), userNote: note,
+            finalParams: header, userNote: note,
           });
       toast.success(`销售单 ${created.salesNo} 已创建`);
     }
-    emit('settled');
-    emit('update:open', false);
+    finishConfirmation(conversationId, request);
   } catch (error) {
     await reportFailure(getApiErrorMessage(error)
-      || (isUpdate.value ? '销售单保存失败，请调整后重试' : '销售单创建失败，请调整后重试'));
+      || (update ? '销售单保存失败，请调整后重试' : '销售单创建失败，请调整后重试'), conversationId, request, header);
   } finally {
     submitting.value = false;
   }
 }
 
 /** 把创建失败的原因交回模型，让 AI 依据真实约束调整。 */
-async function reportFailure(message: string) {
-  const request = props.request;
-  if (!request) return;
+async function reportFailure(message: string, conversationId: string, request: SalesDraftRequest, header: SalesDraftHeader) {
   toast.error(message);
   try {
     const orderId = request.draft.salesOrderId || undefined;
-    await resolveSalesDraft(props.conversationId, request, {
-      status: 'failed',
-      error: message,
-      finalParams: currentHeader(),
+    await resolveSalesDraft(conversationId, request, {
+      status: 'failed', error: message, finalParams: header,
       ...(orderId ? { salesOrderId: orderId } : {}),
     });
-    emit('settled');
-    emit('update:open', false);
+    finishConfirmation(conversationId, request);
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '未能把创建结果交回 AI，请重新发起销售需求');
   }
@@ -403,17 +349,17 @@ function validateReject() {
 async function submitReject() {
   const request = props.request;
   if (!request) return;
+  const conversationId = props.conversationId;
   submitting.value = true;
   try {
-    await resolveSalesDraft(props.conversationId, request, {
+    await resolveSalesDraft(conversationId, request, {
       status: 'rejected',
       reasons: rejectReasons.value,
       suggestion: rejectNote.value.trim(),
     });
-    rejectOpen.value = false;
+    if (props.conversationId === conversationId && props.request?.draftRequestId === request.draftRequestId) rejectOpen.value = false;
     toast.success('已驳回销售草稿，AI 将按你的意见调整');
-    emit('settled');
-    emit('update:open', false);
+    emit('settled', { conversationId, callId: request.draftRequestId });
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '驳回失败，请稍后重试');
   } finally {
@@ -558,13 +504,17 @@ function formatMoney(value: number) {
   <Dialog :open="props.open" @update:open="handleOpenChange">
     <DialogContent
       placement="app-content"
-      :inert="confirmState.open || rejectOpen ? '' : undefined"
+      overlay-class="sales-approval-overlay"
+      :inert="rejectOpen ? '' : undefined"
       class="order-form-dialog flex h-[min(780px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-6xl"
       data-sales-draft-dialog
     >
       <DialogHeader>
         <DialogTitle>{{ isUpdate ? 'AI 销售单修改' : 'AI 销售草稿' }}</DialogTitle>
-        <DialogDescription>{{ isUpdate ? '确认销售单修改内容后保存；可编辑后补充说明，或驳回告知调整方向。' : '确认销售单内容后创建草稿；可编辑后补充说明，或驳回告知调整方向。' }}</DialogDescription>
+        <DialogDescription>
+          {{ isUpdate ? '确认销售单修改内容后保存；可编辑后补充说明，或驳回告知调整方向。' : '确认销售单内容后创建草稿；可编辑后补充说明，或驳回告知调整方向。' }}
+          当前为只读预览，点击「编辑并补充说明」后才能修改客户、仓库、日期和明细。
+        </DialogDescription>
       </DialogHeader>
 
       <DialogScrollArea>
@@ -745,16 +695,9 @@ function formatMoney(value: number) {
     </DialogContent>
   </Dialog>
 
-  <ConfirmDialog
-    placement="app-content"
-    :open="confirmState.open"
-    :title="confirmState.title"
-    :description="confirmState.description"
-    :confirm-text="confirmState.confirmText"
-    cancel-text="取消"
-    :variant="confirmState.variant"
-    :loading="submitting"
-    @update:open="confirmState.open = $event"
-    @confirm="runConfirm"
-  />
 </template>
+
+<style>
+[data-sales-draft-dialog][data-state='closed'],
+.sales-approval-overlay[data-state='closed'] { animation: none !important; }
+</style>

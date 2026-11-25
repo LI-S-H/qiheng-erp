@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Bot, ChevronDown, ChevronRight, Database, LoaderCircle, UserRound } from 'lucide-vue-next';
 import AiMarkdownContent from './AiMarkdownContent.vue';
 import AiReportMessage from './AiReportMessage.vue';
 import AiClarificationHistory from '../clarification/AiClarificationHistory.vue';
 import AiPurchaseDraftHistory from '../drafts/AiPurchaseDraftHistory.vue';
 import AiSalesDraftHistory from '../drafts/AiSalesDraftHistory.vue';
+import AiOrderToolCard from './AiOrderToolCard.vue';
 import { toolIcon } from './tool-icons';
 import type { AiConversationMessage, AiMessageContent } from '../types';
 import type { ClarificationQuestion } from '../clarification/clarification-types';
@@ -28,9 +29,10 @@ const props = defineProps<{
   reportRunId?: string;
   finalMessageId?: string;
   runTerminal?: boolean;
+  paused?: boolean;
   recentAnswers?: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
 }>();
-const emit = defineEmits<{ 'open-analysis': [id?: string]; 'open-report-process': [id: string]; 'open-report': [report: AiReportCard] }>();
+const emit = defineEmits<{ 'open-analysis': [id?: string]; 'open-report-process': [id: string]; 'open-report': [report: AiReportCard]; 'open-order-tool': [data: Extract<AiMessageContent, { type: 'ORDER_TOOL' }>['data']] }>();
 /** 工作过程行：把内容类型与数据提到同一层，模板直接引用 step.data。 */
 type VisibleStep = Omit<AiConversationMessage, 'content'> & {
   [K in AiMessageContent['type']]: {
@@ -43,9 +45,9 @@ type VisibleStep = Omit<AiConversationMessage, 'content'> & {
 type DraftMessage = AiConversationMessage & {
   content: Extract<AiMessageContent, { type: 'PURCHASE_ORDER' }>;
 };
-/** 已处置的销售草稿记录。 */
-type SalesDraftMessage = AiConversationMessage & {
-  content: Extract<AiMessageContent, { type: 'SALES_ORDER' }>;
+/** 草稿工具的一次调用或结果。 */
+type OrderToolMessage = AiConversationMessage & {
+  content: Extract<AiMessageContent, { type: 'ORDER_TOOL' }>;
 };
 /** 一次用户提问对应的一轮：用户消息、工作步骤、最终回复与产物都挂在同一轮下。 */
 interface ConversationTurn {
@@ -55,17 +57,74 @@ interface ConversationTurn {
   steps: VisibleStep[];
   final: AiConversationMessage | null;
   drafts: DraftMessage[];
-  salesDrafts: SalesDraftMessage[];
+  orders: OrderToolMessage[];
+  pendingOrder: OrderToolMessage | null;
+  resultOrders: OrderToolMessage[];
   /** 追问回答的补充说明，仍以折叠块展示。 */
   receipts: AiConversationMessage[];
+  confirmationTexts: AiConversationMessage[];
 }
 /** 复制一份带数据引用的过程行，避免模板重复展开 content.data。 */
 function toVisibleStep(message: AiConversationMessage): VisibleStep {
   return { ...message, contentType: message.content.type, data: message.content.data } as VisibleStep;
 }
+/** 同一次草稿调用的调用行和结果行合并成一条。 */
+function mergeOrderTool(call: OrderToolMessage, result: OrderToolMessage): OrderToolMessage {
+  return {
+    ...call,
+    content: { type: 'ORDER_TOOL', data: { ...call.content.data, ...result.content.data } },
+  } as OrderToolMessage;
+}
+
 /** 同一调用编号在不同轮次出现时，仍能打开对应的报告过程。 */
 function reportProcessKey(requestId: string, callId: string) {
   return JSON.stringify([requestId, callId]);
+}
+
+/** 已完成的草稿工具行放入工作过程，动作和结果都留在折叠区。 */
+function orderStep(order: OrderToolMessage): VisibleStep {
+  const data = order.content.data;
+  const stepData = { callId: data.callId, name: data.name, label: data.label || '销售草稿单', status: 'done' };
+  return {
+    ...order,
+    kind: 'TOOL_CALL',
+    contentType: 'TOOL_STEP',
+    content: { type: 'TOOL_STEP', data: stepData },
+    data: stepData,
+  } as VisibleStep;
+}
+
+/** 解析单据工具结果；结果缺失或格式错误时返回空对象。 */
+function parseOrderResult(order: OrderToolMessage): Record<string, unknown> {
+  if (!order.content.data.result) return {};
+  try {
+    const parsed = JSON.parse(order.content.data.result);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 把单据工具结果转成结果卡片需要的数据。 */
+function historyDataOf(order: OrderToolMessage) {
+  const parsed = parseOrderResult(order);
+  const data = order.content.data;
+  const orderId = String(parsed.orderId || parsed.salesOrderId || data.salesOrderId || '');
+  // 旧记录没有 result，用顶层 status 映射成业务状态。
+  const legacyStatus = data.status === 'submitted' ? 'SUBMITTED'
+    : data.status === 'cancelled' ? 'CANCELLED'
+      : data.status === 'created' || data.status === 'edited' ? 'DRAFT'
+        : undefined;
+  return {
+    action: data.action,
+    status: ((parsed.status as string) || data.status || 'created') as 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled',
+    salesOrderId: orderId,
+    orderNo: (typeof parsed.orderNo === 'string' ? parsed.orderNo : data.orderNo) || undefined,
+    orderStatus: (typeof parsed.orderStatus === 'string' ? parsed.orderStatus : legacyStatus),
+    error: typeof parsed.error === 'string' ? parsed.error : undefined,
+    reasons: Array.isArray(parsed.reasons) ? parsed.reasons as string[] : undefined,
+    suggestion: typeof parsed.suggestion === 'string' ? parsed.suggestion : undefined,
+  };
 }
 const answers = computed(() => clarificationAnswers(props.messages));
 const answerDetails = computed(() => new Map(props.messages.flatMap(message => message.kind === 'TOOL_RESULT' && message.content.type === 'TEXT' && message.content.data.callId ? [[message.content.data.callId, message.content.data] as const] : [])));
@@ -139,8 +198,11 @@ const turns = computed<ConversationTurn[]>(() => {
         steps: [],
         final: null,
         drafts: [],
-        salesDrafts: [],
+        orders: [],
+        pendingOrder: null,
+        resultOrders: [],
         receipts: [],
+        confirmationTexts: [],
       };
       map.set(message.requestId, turn);
     }
@@ -151,8 +213,16 @@ const turns = computed<ConversationTurn[]>(() => {
       ensure(message).drafts.push(message as DraftMessage);
       continue;
     }
-    if (message.content.type === 'SALES_ORDER') {
-      ensure(message).salesDrafts.push(message as SalesDraftMessage);
+    if (message.content.type === 'ORDER_TOOL') {
+      // 同一次草稿调用的调用行和结果行合并成一条，页面只渲染一个工具行和一张卡片。
+      const turn = ensure(message);
+      const callId = message.content.data.callId;
+      const index = turn.orders.findIndex(item => item.content.data.callId === callId);
+      if (index >= 0) {
+        turn.orders[index] = mergeOrderTool(turn.orders[index], message as OrderToolMessage);
+      } else {
+        turn.orders.push(message as OrderToolMessage);
+      }
       continue;
     }
     if (message.kind === 'USER_INPUT') {
@@ -181,11 +251,48 @@ const turns = computed<ConversationTurn[]>(() => {
   for (const [requestId, steps] of stepsByRun.value) {
     const turn = map.get(requestId);
     if (turn) {
-      turn.steps = steps;
+      // 草稿工具行由 turn.orders 统一处理，避免折叠区重复。
+      turn.steps = steps.filter(step => step.contentType !== 'ORDER_TOOL');
     }
   }
+  for (const turn of map.values()) {
+    // 按调用编号关联人工确认正文，不能仅凭消息相邻推断。
+    const rows = props.messages.filter(message => message.requestId === turn.requestId);
+    const orderIds = new Set(rows.filter(message => message.content.type === 'ORDER_TOOL')
+      .map(message => message.content.type === 'ORDER_TOOL' ? message.content.data.callId : ''));
+    const confirmationTexts = rows.filter(message => message.kind === 'ASSISTANT_STEP'
+      && message.content.type === 'TEXT' && Boolean(message.content.data.callId)
+      && orderIds.has(message.content.data.callId!));
+    turn.confirmationTexts = turn.final ? [] : confirmationTexts;
+    const confirmationIds = new Set(turn.confirmationTexts.map(message => message.messageId));
+    turn.steps = turn.steps.filter(step => !confirmationIds.has(step.messageId));
+    // 只有明确标记 waiting 或完全没有状态的记录才算等待确认，旧记录 status=created/done 视为已完成。
+    const completed = turn.orders.filter(order => order.content.data.result
+      || (order.content.data.status && order.content.data.status !== 'waiting'));
+    const pending = turn.orders.filter(order => !order.content.data.result
+      && (order.content.data.status === 'waiting' || !order.content.data.status));
+    turn.pendingOrder = pending.length ? pending[pending.length - 1] : null;
+    // 同一单据在一轮里只渲染一张结果卡片，取最后一次状态。
+    const byOrderId = new Map<string, OrderToolMessage>();
+    for (const order of completed) {
+      const parsed = parseOrderResult(order);
+      const data = order.content.data;
+      const orderId = String(parsed.orderId || parsed.salesOrderId || data.salesOrderId || '');
+      if (!orderId) continue;
+      const existing = byOrderId.get(orderId);
+      if (!existing || Number(order.seq) > Number(existing.seq)) {
+        byOrderId.set(orderId, order);
+      }
+    }
+    turn.resultOrders = [...byOrderId.values()];
+    for (const order of completed) {
+      turn.steps.push(orderStep(order));
+    }
+    turn.steps.sort((left, right) => Number(left.seq) - Number(right.seq));
+  }
   return [...map.values()]
-    .filter(turn => turn.user || turn.final || turn.steps.length || turn.drafts.length)
+    .filter(turn => turn.user || turn.final || turn.steps.length || turn.drafts.length
+      || turn.confirmationTexts.length || turn.pendingOrder || turn.resultOrders.length)
     .sort((left, right) => (left.sortKey < right.sortKey ? -1 : left.sortKey > right.sortKey ? 1 : 0));
 });
 
@@ -193,11 +300,15 @@ const turns = computed<ConversationTurn[]>(() => {
 const liveTurnId = computed(() => props.reportRunId || '');
 const liveTurnExists = computed(() => Boolean(liveTurnId.value)
   && turns.value.some(turn => turn.requestId === liveTurnId.value));
-const liveTextItems = computed(() => (props.liveItems || []).filter(item => item.type === 'text'));
-const liveClarificationItems = computed(() => (props.liveItems || [])
-  .filter((item): item is Extract<LiveItem, { type: 'clarification' }> => item.type === 'clarification'));
-const liveRunningTools = computed(() => (props.liveItems || [])
-  .filter((item): item is Extract<LiveItem, { type: 'tool' }> => item.type === 'tool' && item.status === 'running'));
+const liveDisplayItems = computed(() => {
+  const turn = turns.value.find(item => item.requestId === liveTurnId.value);
+  const saved = props.messages.filter(message => message.requestId === liveTurnId.value
+    && message.kind === 'ASSISTANT_STEP' && message.content.type === 'TEXT');
+  return (props.liveItems || []).filter(item => item.type !== 'text' || (
+    !(turn?.final && item.text === finalText(turn)) &&
+    (item.id === props.finalMessageId || !saved.some(message => message.content.type === 'TEXT' && message.content.data.text === item.text))
+  ));
+});
 
 /** 该轮是否为正在运行的那一轮。 */
 function isLiveTurn(turn: ConversationTurn) {
@@ -207,7 +318,8 @@ function isLiveTurn(turn: ConversationTurn) {
 
 /** 这一轮是否有机器人侧内容；只有用户消息时不再补一个空机器人。 */
 function hasAssistant(turn: ConversationTurn) {
-  return Boolean(turn.final) || turn.steps.length > 0 || turn.drafts.length > 0 || isLiveTurn(turn);
+  return Boolean(turn.final) || turn.steps.length > 0 || turn.drafts.length > 0
+    || turn.confirmationTexts.length > 0 || Boolean(turn.pendingOrder) || isLiveTurn(turn);
 }
 
 /** 该轮最终回复的正文。 */
@@ -215,6 +327,7 @@ function finalText(turn: ConversationTurn) {
   return turn.final && turn.final.content.type === 'TEXT' ? turn.final.content.data.text : '';
 }
 
+/** 等待确认时仍把模型刚说的话直接展示，不折叠进工作过程。 */
 /** 机器人条目的时间：优先用最终回复，其次用用户提问。 */
 function turnTime(turn: ConversationTurn) {
   return turn.final?.createdAt || turn.user?.createdAt || '';
@@ -230,6 +343,7 @@ const orphanReportProcesses = computed(() => props.messages.filter(message => {
       && item.content.type === 'TOOL_STEP' && item.content.data.callId === callId);
 }));
 const expandedRuns = ref(new Set<string>());
+watch(() => props.conversationId, () => { expandedRuns.value = new Set(); });
 /** 已有分析工具展示行的轮次不再重复渲染分析过程行。 */
 const analysisToolRuns = computed(() => new Set(props.messages
   .filter(message => (message.kind === 'ASSISTANT_STEP' && message.content.type === 'TEXT'
@@ -249,8 +363,10 @@ function isAnalysisToolStep(step: AiConversationMessage) {
 }
 
 /** 工具展示行右侧的耗时文案。 */
-function toolDuration(durationMs: number) {
-  return `${(durationMs / 1000).toFixed(1)} 秒`;
+function toolDuration(durationMs: number | undefined) {
+  return typeof durationMs === 'number' && Number.isFinite(durationMs)
+    ? `${(durationMs / 1000).toFixed(1)} 秒`
+    : '';
 }
 
 /** 取这一行过程对应的分析调用编号；摘要行缺少编号时回退到同轮最近一次分析工具调用。 */
@@ -311,12 +427,12 @@ function toolSummary(step: AiConversationMessage) {
         <div class="message-content">
           <div class="message-meta"><span>经营助手</span><time>{{ turnTime(turn) }}</time></div>
 
-          <section v-if="turn.steps.length" class="work-steps">
-            <button type="button" class="work-toggle" :aria-expanded="expandedRuns.has(turn.requestId)" @click="toggleSteps(turn.requestId)">
+          <section v-if="turn.steps.length" class="work-steps" :class="{ 'is-paused': !turn.final }">
+            <button v-if="turn.final" type="button" class="work-toggle" :aria-expanded="expandedRuns.has(turn.requestId)" @click="toggleSteps(turn.requestId)">
               <ChevronDown class="work-chevron" :class="{ 'is-open': expandedRuns.has(turn.requestId) }" aria-hidden="true" />
               {{ expandedRuns.has(turn.requestId) ? '收起工作过程' : '查看工作过程' }}
             </button>
-            <div class="work-reveal" :class="{ 'is-open': expandedRuns.has(turn.requestId) }" :inert="!expandedRuns.has(turn.requestId)">
+            <div class="work-reveal" :class="{ 'is-open': !turn.final || expandedRuns.has(turn.requestId) }" :inert="Boolean(turn.final) && !expandedRuns.has(turn.requestId)">
               <div class="work-reveal-inner">
                 <template v-for="step in turn.steps" :key="step.messageId">
                   <AiClarificationHistory v-if="step.contentType === 'CLARIFICATION' && !liveQuestionIds.has(step.data.callId)" :questions="step.data.questions" :answer="answers.get(step.data.callId) || recentAnswers?.[step.data.callId]?.answer" :question-answers="answerDetails.get(step.data.callId)?.questionAnswers || recentAnswers?.[step.data.callId]?.questionAnswers" :note="answerDetails.get(step.data.callId)?.note || recentAnswers?.[step.data.callId]?.note" :tags="[]" />
@@ -366,26 +482,48 @@ function toolSummary(step: AiConversationMessage) {
             </div>
           </section>
 
-          <!-- 正在进行的这一轮：流式文字和运行中的工具合并进同一个机器人 -->
+          <AiMarkdownContent v-for="message in turn.confirmationTexts" :key="message.messageId" :content="message.content.type === 'TEXT' ? message.content.data.text : ''" />
+          <!-- 实时文本、工具和追问按事件顺序展示，完成的工具在历史接管前仍可见。 -->
           <template v-if="isLiveTurn(turn)">
-            <template v-if="!turn.final">
-              <AiReportMessage v-for="item in liveTextItems" :key="item.id" :text="item.text"
+            <template v-for="item in liveDisplayItems" :key="item.type + item.id">
+              <AiReportMessage v-if="item.type === 'text'" :text="item.text"
                 :reports="item.id === reportReply?.id && (finalMessageId === '' || item.id === finalMessageId) ? liveReportCards : []"
                 :active="item.id === finalMessageId" :streaming="!finalMessageId" @open="emit('open-report', $event)" />
-              <AiClarificationHistory v-for="item in liveClarificationItems" :key="item.id"
+              <AiClarificationHistory v-else-if="item.type === 'clarification'"
                 :questions="item.questions"
                 :answer="answers.get(item.id) || recentAnswers?.[item.id]?.answer"
                 :question-answers="answerDetails.get(item.id)?.questionAnswers || recentAnswers?.[item.id]?.questionAnswers"
                 :note="answerDetails.get(item.id)?.note || recentAnswers?.[item.id]?.note"
                 :tags="[]" />
+              <button v-else-if="item.tool === 'analyzeData'" type="button" class="tool-progress analysis-entry"
+                :class="{ 'is-running': item.status === 'running' }" @click="emit('open-analysis', item.id)">
+                <LoaderCircle v-if="item.status === 'running'" class="work-tool-icon animate-spin" aria-hidden="true" />
+                <Bot v-else class="work-tool-icon" aria-hidden="true" />
+                <span class="flow-text">{{ item.status === 'running' ? '分析专家正在分析' : '分析专家完成分析' }}</span>
+                <span class="analysis-entry-hint">查看过程<ChevronRight class="analysis-entry-arrow" aria-hidden="true" /></span>
+              </button>
+              <button v-else-if="item.tool === 'createReport'" type="button" class="tool-progress analysis-entry"
+                :class="{ 'is-running': item.status === 'running' }"
+                :disabled="!reportProcesses?.[reportProcessKey(reportRunId || '', item.id)]" @click="emit('open-report-process', reportProcessKey(reportRunId || '', item.id))">
+                <LoaderCircle v-if="item.status === 'running'" class="work-tool-icon animate-spin" aria-hidden="true" />
+                <component v-else :is="toolIcon(item.tool)" class="work-tool-icon" aria-hidden="true" />
+                <span class="flow-text">{{ item.status === 'running' ? '报告专家正在完成报告编写与讨论' : '报告专家完成报告编写与讨论' }}</span>
+                <span class="analysis-entry-hint">查看报告过程<ChevronRight class="analysis-entry-arrow" aria-hidden="true" /></span>
+              </button>
+              <p v-else class="tool-progress" :class="{ 'is-running': item.status === 'running' }">
+                <LoaderCircle v-if="item.status === 'running'" class="work-tool-icon animate-spin" aria-hidden="true" />
+                <component v-else :is="toolIcon(item.tool)" class="work-tool-icon" aria-hidden="true" />
+                <span class="flow-text">{{ item.status === 'running' ? item.label : item.label.replace(/^正在/, '') }}</span>
+                <span v-if="typeof item.durationMs === 'number' && Number.isFinite(item.durationMs)" class="work-duration">{{ (item.durationMs / 1000).toFixed(1) }} 秒</span>
+              </p>
             </template>
-            <p v-for="item in liveRunningTools" :key="item.id" class="tool-progress is-running">
-              <LoaderCircle class="work-tool-icon animate-spin" aria-hidden="true" />
-              <span class="flow-text">{{ item.label }}</span>
-            </p>
             <p v-if="thinking" class="tool-progress is-running" role="status"><span class="flow-text">正在思考</span></p>
           </template>
 
+          <p v-if="turn.pendingOrder" class="tool-progress is-running">
+            <LoaderCircle class="work-tool-icon animate-spin" aria-hidden="true" />
+            <span class="flow-text">{{ turn.pendingOrder.content.data.label || '单据操作' }} · 等待用户确认</span>
+          </p>
           <AiReportMessage v-if="turn.final" :text="finalText(turn)" :reports="cardsFor(turn.requestId)" active @open="emit('open-report', $event)" />
 
           <details v-for="receipt in turn.receipts" :key="receipt.messageId" class="answer-receipt">
@@ -393,11 +531,20 @@ function toolSummary(step: AiConversationMessage) {
             <p class="message-bubble">{{ receipt.content.type === 'TEXT' ? receipt.content.data.text : '' }}</p>
           </details>
 
+          <AiSalesDraftHistory v-for="order in turn.resultOrders" :key="order.messageId" :data="historyDataOf(order)" />
           <AiPurchaseDraftHistory v-for="draft in turn.drafts" :key="draft.messageId" :data="draft.content.data" />
-          <AiSalesDraftHistory v-for="draft in turn.salesDrafts" :key="draft.messageId" :data="draft.content.data" />
         </div>
       </article>
     </template>
+
+    <!-- 临时用户消息先显示，确保实时回复始终位于本次提问之后。 -->
+    <article v-if="pendingText" class="message is-user">
+      <span class="message-avatar"><UserRound class="size-4" /></span>
+      <div class="message-content">
+        <div class="message-meta">你 · 正在提交</div>
+        <p class="message-bubble">{{ pendingText }}</p>
+      </div>
+    </article>
 
     <!-- 还没落库的实时轮次：单独一个机器人，落库后自然并入上面的轮次 -->
     <article v-if="!liveTurnExists && (liveItems?.length || thinking)" class="message">
@@ -435,14 +582,6 @@ function toolSummary(step: AiConversationMessage) {
       </div>
     </article>
 
-    <article v-if="pendingText" class="message is-user">
-      <span class="message-avatar"><UserRound class="size-4" /></span>
-      <div class="message-content">
-        <div class="message-meta">你 · 正在提交</div>
-        <p class="message-bubble">{{ pendingText }}</p>
-      </div>
-    </article>
-
     <article v-for="recentAnswer in Object.values(recentAnswers || {}).filter(answer => !liveQuestionIds.has(answer.callId) && !messages.some(message => message.content.type === 'CLARIFICATION' && message.content.data.callId === answer.callId))" :key="recentAnswer.callId" class="message is-clarification">
       <div class="message-content"><AiClarificationHistory :questions="recentAnswer.questions" :answer="recentAnswer.answer" :question-answers="recentAnswer.questionAnswers" :note="recentAnswer.note" :tags="[]" /></div>
     </article>
@@ -469,6 +608,7 @@ function toolSummary(step: AiConversationMessage) {
 }
 .answer-receipt summary { color: var(--muted-foreground); font-size: 12px; cursor: pointer; }
 .work-steps { margin: 0 0 14px; padding: 8px 12px; border-left: 2px solid #cbd5e1; color: #536276; }
+.work-steps.is-paused { margin: 0 0 12px; padding: 0; border-left: 0; }
 .work-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: #536276; }
 .work-toggle:hover { color: #1f2937; }
 .work-toggle:focus-visible { outline: 2px solid #6b8ec9; outline-offset: 3px; border-radius: 3px; }

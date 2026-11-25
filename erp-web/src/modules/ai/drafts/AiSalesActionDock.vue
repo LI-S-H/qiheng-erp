@@ -15,7 +15,7 @@ const emit = defineEmits<{ open: [] }>();
   <div class="draft-card" data-ai-sales-action>
     <span class="draft-card-icon" aria-hidden="true"><ClipboardCheck class="size-4" /></span>
     <div class="draft-card-body">
-      <p class="draft-card-title">{{ action === 'SUBMIT' ? '销售单待提交审核' : '销售单待取消' }}</p>
+      <p class="draft-card-title">{{ action === 'SUBMIT' ? '提交销售单' : '取消销售单' }}</p>
       <p class="draft-card-hint">
         {{ orderNo || '销售单' }} 尚未处理，点开确认后才能{{ action === 'SUBMIT' ? '提交审核（提交会锁定可用库存）' : '取消（已锁定库存会释放）' }}。
       </p>

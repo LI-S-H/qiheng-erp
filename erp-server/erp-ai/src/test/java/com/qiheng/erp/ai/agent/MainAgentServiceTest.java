@@ -29,6 +29,38 @@ import static org.mockito.Mockito.mock;
 /** 验证会话归属和可信身份在流启动前被固定。 */
 class MainAgentServiceTest {
     @Test
+    void savesPendingToolEvenWhenConfirmationTextWriteFails() throws Exception {
+        var store = mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class);
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var service = new MainAgentService(mock(ReactAgent.class), mock(RedisSaver.class),
+                mock(AiConversationMapper.class), mock(LoginUserService.class), mock(ConversationExecutionLock.class),
+                store, mapper, mock(AiAgentTraceMapper.class));
+        var checkpoint = mock(Checkpoint.class);
+        var call = new AssistantMessage.ToolCall("c1", "function", "update_sales_order_draft", "{}");
+        when(checkpoint.getState()).thenReturn(Map.of("messages", List.of(
+                AssistantMessage.builder().content("请确认修改").toolCalls(List.of(call)).build())));
+        var recorder = mock(AgentRunRecorder.class);
+        doThrow(new IllegalStateException("正文写入失败")).when(recorder).assistantBeforeConfirmation(any());
+        @SuppressWarnings("unchecked") var sink = (reactor.core.publisher.FluxSink<com.alibaba.cloud.ai.graph.NodeOutput>) mock(reactor.core.publisher.FluxSink.class);
+        var method = MainAgentService.class.getDeclaredMethod("publishPendingConfirmation", Checkpoint.class,
+                String.class, String.class, AgentRunRecorder.class, reactor.core.publisher.FluxSink.class);
+        method.setAccessible(true);
+
+        method.invoke(service, checkpoint, "run", "1:101", recorder, sink);
+
+        var saved = ArgumentCaptor.forClass(com.qiheng.erp.ai.domain.entity.AiMessage.class);
+        verify(store).append(saved.capture());
+        assertThat(saved.getValue().getKind()).isEqualTo("TOOL_CALL");
+        assertThat(saved.getValue().getMessageKey()).isEqualTo("run:tool:c1");
+        var output = ArgumentCaptor.forClass(com.alibaba.cloud.ai.graph.NodeOutput.class);
+        verify(sink, times(2)).next(output.capture());
+        assertThat(output.getAllValues()).extracting(com.alibaba.cloud.ai.graph.NodeOutput::node)
+                .containsExactly("confirmation_text", "sales_order_draft");
+        assertThat(output.getAllValues().getFirst().state().data())
+                .containsEntry("callId", "c1").containsEntry("text", "请确认修改");
+    }
+
+    @Test
     void pairsInterruptedToolBeforeContinuingAndChecksOwnership() throws Exception {
         var agent = mock(ReactAgent.class);
         var saver = mock(RedisSaver.class);

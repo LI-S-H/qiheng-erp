@@ -30,6 +30,97 @@ class MainAgentControllerTest {
     @org.junit.jupiter.api.AfterEach
     void clearUser() { currentUser.close(); }
 
+    @Test
+    void confirmationTextIsSentBeforeApprovalWhenModelHookIsMissing() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var text = NodeOutput.of("confirmation_text", "main_agent", new OverAllState(Map.of("callId", "sales-1", "text", "请确认草稿")), null);
+        var pending = NodeOutput.of("sales_order_draft", "main_agent", new OverAllState(Map.of("callId", "sales-1")), null);
+        when(agent.streamForCurrentUser(eq(1L), eq("创建"), anyString())).thenReturn(Flux.just(text, pending));
+        var events = new MainAgentController(agents, null).stream("1", new MainAgentController.MessageRequest("创建"))
+                .filter(e -> !"run_snapshot".equals(e.event())).collectList().block();
+        assertThat(events).extracting(e -> e.event()).containsExactly("text_completed", "sales_order_draft", "run_completed");
+        assertThat(((Map<?, ?>) events.getFirst().data()).get("text")).isEqualTo("请确认草稿");
+    }
+
+    @Test
+    void confirmationTextAlreadySentByHookIsNotRepeated() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var call = new org.springframework.ai.chat.messages.AssistantMessage.ToolCall("sales-1", "function", "prepare_sales_order_draft", "{}");
+        var assistant = org.springframework.ai.chat.messages.AssistantMessage.builder().content("请确认草稿").toolCalls(List.of(call)).build();
+        var hook = NodeOutput.of("_AGENT_HOOK_message_recording.afterModel", "main_agent", new OverAllState(Map.of("messages", List.of(assistant))), null);
+        var text = NodeOutput.of("confirmation_text", "main_agent", new OverAllState(Map.of("callId", "sales-1", "text", "请确认草稿")), null);
+        var pending = NodeOutput.of("sales_order_draft", "main_agent", new OverAllState(Map.of("callId", "sales-1")), null);
+        when(agent.streamForCurrentUser(eq(1L), eq("创建"), anyString())).thenReturn(Flux.just(hook, text, pending));
+        var events = new MainAgentController(agents, null).stream("1", new MainAgentController.MessageRequest("创建"))
+                .filter(e -> !"run_snapshot".equals(e.event())).collectList().block();
+        assertThat(events).extracting(e -> e.event()).containsExactly("text_completed", "sales_order_draft", "run_completed");
+    }
+
+    @Test
+    void confirmationFallbackCorrectsOriginalStreamSegment() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var fragment = mock(StreamingOutput.class);
+        when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
+        when(fragment.chunk()).thenReturn("请确认");
+        var boundary = NodeOutput.of("model_tool_fallback", "main_agent", new OverAllState(Map.of("callId", "sales-1")), null);
+        var text = NodeOutput.of("confirmation_text", "main_agent", new OverAllState(Map.of("callId", "sales-1", "text", "请确认草稿")), null);
+        var pending = NodeOutput.of("sales_order_draft", "main_agent", new OverAllState(Map.of("callId", "sales-1")), null);
+        when(agent.streamForCurrentUser(eq(1L), eq("创建"), anyString())).thenReturn(Flux.just(fragment, boundary, text, pending));
+        var events = new MainAgentController(agents, null).stream("1", new MainAgentController.MessageRequest("创建"))
+                .filter(e -> !"run_snapshot".equals(e.event())).collectList().block();
+        assertThat(events).extracting(e -> e.event()).containsExactly("text_delta", "text_completed", "sales_order_draft", "run_completed");
+        assertThat(((Map<?, ?>) events.get(0).data()).get("messageId"))
+                .isEqualTo(((Map<?, ?>) events.get(1).data()).get("messageId"));
+    }
+
+    @Test
+    void resumedRunSnapshotRetainsConfirmationTextWhenHookIsMissing() throws Exception {
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        ObjectProvider<com.qiheng.erp.ai.sales.SalesOrderConfirmationService> sales = mock(ObjectProvider.class);
+        var service = mock(com.qiheng.erp.ai.sales.SalesOrderConfirmationService.class);
+        when(agents.getObject()).thenReturn(mock(MainAgentService.class));
+        when(sales.getIfAvailable()).thenReturn(service);
+        when(sales.getObject()).thenReturn(service);
+        var text = NodeOutput.of("confirmation_text", "main_agent", new OverAllState(Map.of("callId", "sales-2", "text", "请确认新修改")), null);
+        var pending = NodeOutput.of("sales_order_draft", "main_agent", new OverAllState(Map.of("callId", "sales-2")), null);
+        when(service.resolveForUser(eq(1L), eq(1L), eq("draft"), any()))
+                .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("original", Flux.just(text, pending)));
+        var controller = new MainAgentController(agents, null, null, null, null, null, sales);
+        var draft = new com.qiheng.erp.ai.sales.SalesOrderDraftReceipt("created", null, null, null, null, null, null, null, null);
+        controller.resolveSalesDraft("1", "draft", draft);
+        var snapshot = controller.runtime("1").getData();
+        assertThat(snapshot.get("items").toString()).contains("请确认新修改");
+        assertThat(snapshot.get("status")).isEqualTo("WAITING_USER");
+    }
+
+    @Test
+    void resumedSalesSnapshotUsesOriginalRunIdBeforeAnyGraphEvent() throws Exception {
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        ObjectProvider<com.qiheng.erp.ai.sales.SalesOrderConfirmationService> sales = mock(ObjectProvider.class);
+        var service = mock(com.qiheng.erp.ai.sales.SalesOrderConfirmationService.class);
+        when(agents.getObject()).thenReturn(mock(MainAgentService.class));
+        when(sales.getIfAvailable()).thenReturn(service);
+        when(sales.getObject()).thenReturn(service);
+        when(service.resolveForUser(eq(1L), eq(1L), eq("draft"), any()))
+                .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("original", Flux.never()));
+        when(service.resolveActionForUser(eq(1L), eq(1L), eq("action"), any()))
+                .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("fallback", Flux.never()));
+        var controller = new MainAgentController(agents, null, null, null, null, null, sales);
+        var draft = new com.qiheng.erp.ai.sales.SalesOrderDraftReceipt("created", null, null, null, null, null, null, null, null);
+        var action = mock(com.qiheng.erp.ai.sales.SalesOrderActionReceipt.class);
+
+        controller.resolveSalesDraft("1", "draft", draft);
+        assertThat(controller.runtime("1").getData()).containsEntry("runId", "original");
+        controller.resolveSalesAction("1", "action", action);
+        assertThat(controller.runtime("1").getData()).containsEntry("runId", "fallback");
+    }
+
     /** 框架异常结束时主动终止订阅，不能让页面一直等待。 */
     @Test
     void producerWithoutTerminalEventReportsFailure() throws Exception {

@@ -30,6 +30,11 @@ export function toolIcon(name?: string): Component {
       return FolderOpen;
     case 'readAnalysisResult':
       return FileText;
+    case 'prepare_sales_order_draft':
+    case 'update_sales_order_draft':
+    case 'submit_sales_order':
+    case 'cancel_sales_order':
+      return FileText;
     default:
       return Wrench;
   }

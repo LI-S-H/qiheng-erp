@@ -5214,13 +5214,13 @@ components:
       type: object
       required: [type, data]
       properties:
-        type: { type: string, enum: [TEXT, TOOL_CALL, TOOL_RESULT, ANALYSIS, REPORT, PURCHASE_ORDER, SALES_ORDER] }
+        type: { type: string, enum: [TEXT, TOOL_CALL, TOOL_RESULT, ANALYSIS, REPORT, PURCHASE_ORDER, SALES_ORDER, ORDER_TOOL] }
         data:
           type: object
-          description: 按 type 解释；REPORT 包含 toolCallId、status、steps，新记录还包含报告任务 UUID taskId；报告保存后可包含 report 卡片。旧记录可能没有 taskId。PURCHASE_ORDER 是采购单动作记录、SALES_ORDER 是销售单动作记录，两者都只保存动作、状态和单号，明细由前端按 purchaseOrderId 或 salesOrderId 查询单据详情。
+          description: 按 type 解释；REPORT 包含 toolCallId、status、steps，新记录还包含报告任务 UUID taskId；报告保存后可包含 report 卡片。旧记录可能没有 taskId。PURCHASE_ORDER 是采购单动作记录、SALES_ORDER 是销售单动作记录。ORDER_TOOL 是销售单待确认调用或处置结果，通过 callId 配对，调用包含 arguments，结果包含 result。
           properties:
             text: { type: string, description: 用户可见正文或摘要 }
-            callId: { type: string, description: 工具调用标识 }
+            callId: { type: string, description: 工具调用标识；销售单人工确认前的 TEXT 正文可携带该字段，用于关联对应确认调用 }
             name: { type: string, description: 工具名称 }
             arguments: { type: string, description: 工具调用的原始 JSON 参数字符串 }
             result: { type: string, description: 工具原始结果字符串 }

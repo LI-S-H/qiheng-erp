@@ -96,17 +96,36 @@ final class AgentRunRecorder {
         }
     }
 
-    /** 工具执行前保存调用，并以调用 ID 作为稳定标识。 */
-    synchronized void toolCall(String id, String name, String arguments, AssistantMessage assistant) {
-        toolNames.put(id, name);
-        // 模型这一轮的思考文字必须先于工具展示行写入，顺序由 seq 保证。
+    /** 只写工具调用流水，供未进入工具节点的待确认调用使用，避免重复写展示消息。 */
+    synchronized void traceToolCall(String id, String name, String arguments) {
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("callId", id);
+        content.put("name", name);
+        content.put("text", arguments);
+        traces.record("TOOL_CALL", content);
+    }
+
+    /** 人工确认前保存正文及其调用标识，方便历史消息与确认卡片准确配对。 */
+    synchronized void assistantBeforeConfirmation(AssistantMessage assistant) {
+        saveAssistantBeforeTool(assistant, true);
+    }
+
+    /** 普通工具和人工确认共用稳定键，恢复执行时由存储层去重。 */
+    private void saveAssistantBeforeTool(AssistantMessage assistant, boolean confirmation) {
         if (assistant != null && assistant.getText() != null && !assistant.getText().isBlank()
                 && !assistant.getToolCalls().isEmpty()) {
             String firstId = assistant.getToolCalls().getFirst().id();
-            save("step:" + firstId, "assistant", "ASSISTANT_STEP",
-                    assistant.getText(), null);
+            Object content = confirmation ? Map.of("text", assistant.getText(), "callId", firstId) : assistant.getText();
+            save("step:" + firstId, "assistant", "ASSISTANT_STEP", content, null);
             recordModelOutput(firstId, assistant.getText());
         }
+    }
+
+    /** 工具执行前保存调用，并以调用 ID 作为稳定标识。 */
+    synchronized void toolCall(String id, String name, String arguments, AssistantMessage assistant) {
+        toolNames.put(id, name);
+        // 模型正文必须先于工具展示行写入，顺序由 seq 保证。
+        saveAssistantBeforeTool(assistant, false);
         // 追问要在开始时写，前端才能立刻显示问题；其他工具等结束时补耗时。
         if ("ask_user".equals(name)) {
             save("call:" + id, "assistant", "TOOL_CALL", askUserContent(id, name, arguments), null);

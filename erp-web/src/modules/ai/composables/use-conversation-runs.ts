@@ -132,7 +132,7 @@ export function useConversationRuns() {
   }
 
   /** 断开本会话的执行连接；版本不一致说明已被新一轮接管，直接忽略。 */
-  function disconnect(id: string, version: number) {
+  function disconnect(id: string, version: number, preserveLive = false) {
     const state = states.get(id);
     if (!state || state.version !== version) {
       return;
@@ -140,6 +140,8 @@ export function useConversationRuns() {
     state.querying = false;
     state.watching = false;
     state.streaming = false;
+    controllers.delete(id);
+    if (preserveLive) return;
     state.pendingText = '';
     state.liveText = '';
     state.liveMessageId = '';
@@ -149,7 +151,6 @@ export function useConversationRuns() {
     state.eventSeq = 0;
     state.snapshotTruncated = false;
     state.runId = '';
-    controllers.delete(id);
   }
 
   /** 丢弃本会话的状态与连接。 */

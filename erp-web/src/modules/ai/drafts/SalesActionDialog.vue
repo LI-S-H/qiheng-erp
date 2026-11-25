@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import { getApiErrorMessage } from '@/api/http';
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import OrderDatePicker from '@/components/common/OrderDatePicker.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
@@ -20,7 +19,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:open': [value: boolean];
-  settled: [];
+  settled: [context: { conversationId: string; callId: string }];
 }>();
 
 const loading = ref(false);
@@ -29,13 +28,6 @@ const submitting = ref(false);
 const order = ref<SalesOrderDetail | null>(null);
 const deliveryDate = ref('');
 const reason = ref('');
-const confirmState = reactive({
-  open: false,
-  title: '',
-  description: '',
-  confirmText: '',
-  variant: 'default' as 'default' | 'warning' | 'destructive',
-});
 
 const isSubmit = computed(() => props.request?.action === 'SUBMIT');
 const orderNo = computed(() => order.value?.salesNo || props.request?.orderNo || '');
@@ -45,9 +37,8 @@ const busy = computed(() => loading.value || submitting.value || Boolean(loadErr
 /** 每次打开都按当前动作重新读取单据。 */
 watch(() => [props.open, props.request?.actionRequestId], ([open]) => {
   if (open) {
-    void load();
-  } else {
     reset();
+    void load();
   }
 }, { immediate: true });
 
@@ -69,57 +60,39 @@ async function load() {
   }
 }
 
-/** 关闭后清空状态，避免沿用上一张单据。 */
+/** 打开前清空状态；关闭动画期间保留原单据内容。 */
 function reset() {
   order.value = null;
   deliveryDate.value = '';
   reason.value = '';
   loadError.value = '';
-  confirmState.open = false;
 }
 
-/** 提交前的二次确认。 */
-function askSubmit() {
+/** 提交前保留发货日期校验，点击后直接执行。 */
+function runConfirm() {
   if (busy.value) return;
-  if (!deliveryDate.value) {
-    toast.error('提交审核前需要填写预计发货日期');
-    return;
+  if (isSubmit.value) {
+    if (!deliveryDate.value) { toast.error('提交审核前需要填写预计发货日期'); return; }
+    void submitOrder();
+  } else {
+    void cancelOrder();
   }
-  Object.assign(confirmState, {
-    open: true,
-    title: '确认提交审核？',
-    description: `销售单 ${orderNo.value} 将提交审核，后端会校验并锁定可用库存；提交后草稿不能再编辑。`,
-    confirmText: '提交审核',
-    variant: 'default',
-  });
-}
-
-/** 取消前的二次确认，取消是终态。 */
-function askCancel() {
-  if (busy.value) return;
-  Object.assign(confirmState, {
-    open: true,
-    title: '确认取消销售单？',
-    description: `销售单 ${orderNo.value} 取消后不可恢复；已锁定的库存会一并释放。`,
-    confirmText: '确认取消',
-    variant: 'destructive',
-  });
 }
 
 /** 用户选择暂不执行，把原因交回模型。 */
 async function reject() {
   const request = props.request;
   if (!request || busy.value) return;
+  const conversationId = props.conversationId;
   submitting.value = true;
   try {
-    await resolveSalesAction(props.conversationId, request, {
+    await resolveSalesAction(conversationId, request, {
       status: 'rejected',
       salesOrderId: request.salesOrderId,
       orderNo: orderNo.value,
       reason: reason.value.trim() || undefined,
     });
-    emit('settled');
-    emit('update:open', false);
+    emit('settled', { conversationId, callId: request.actionRequestId });
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '未能把结果交回 AI，请重新发起');
   } finally {
@@ -127,14 +100,9 @@ async function reject() {
   }
 }
 
-/** 执行二次确认选定的动作。 */
-function runConfirm() {
-  confirmState.open = false;
-  if (isSubmit.value) {
-    void submitOrder();
-  } else {
-    void cancelOrder();
-  }
+/** 成功后同时关闭两层弹窗，让遮罩和预览同步退出。 */
+function finishConfirmation(conversationId: string, request: SalesActionRequest) {
+  emit('settled', { conversationId, callId: request.actionRequestId });
 }
 
 /** 提交审核：先补发货日期（有变化时），再提交。 */
@@ -142,27 +110,27 @@ async function submitOrder() {
   const request = props.request;
   const detail = order.value;
   if (!request || !detail) return;
+  const conversationId = props.conversationId;
+  const delivery = deliveryDate.value;
+  const fallbackOrderNo = orderNo.value;
   submitting.value = true;
   try {
     let current = detail;
-    if (deliveryDate.value !== (detail.expectedDeliveryDate || '')) {
-      await updateSalesOrder(detail.salesOrderId, buildPayload(current, deliveryDate.value));
+    if (delivery !== (detail.expectedDeliveryDate || '')) {
+      await updateSalesOrder(detail.salesOrderId, buildPayload(current, delivery), { skipPageLoading: true });
       current = await getSalesOrderDetail(detail.salesOrderId);
-      order.value = current;
+      if (props.conversationId === conversationId && props.request?.actionRequestId === request.actionRequestId) order.value = current;
     }
-    await updateSalesOrderStatus(current.salesOrderId, 'submit', current.version);
-    await resolveSalesAction(props.conversationId, request, {
-      status: 'submitted',
-      salesOrderId: request.salesOrderId,
-      orderNo: current.salesNo || orderNo.value,
-      orderStatus: 'SUBMITTED',
-      deliveryDate: deliveryDate.value || undefined,
+    await updateSalesOrderStatus(current.salesOrderId, 'submit', current.version, { skipPageLoading: true });
+    await resolveSalesAction(conversationId, request, {
+      status: 'submitted', salesOrderId: request.salesOrderId,
+      orderNo: current.salesNo || fallbackOrderNo, orderStatus: 'SUBMITTED',
+      deliveryDate: delivery || undefined,
     });
     toast.success(`销售单 ${current.salesNo} 已提交审核`);
-    emit('settled');
-    emit('update:open', false);
+    finishConfirmation(conversationId, request);
   } catch (error) {
-    await reportFailure(getApiErrorMessage(error) || '提交审核失败，请稍后重试');
+    await reportFailure(getApiErrorMessage(error) || '提交审核失败，请稍后重试', conversationId, request, detail, fallbackOrderNo);
   } finally {
     submitting.value = false;
   }
@@ -173,44 +141,48 @@ async function cancelOrder() {
   const request = props.request;
   const detail = order.value;
   if (!request || !detail) return;
+  const conversationId = props.conversationId;
+  const fallbackOrderNo = orderNo.value;
+  const cancelReason = reason.value.trim();
   submitting.value = true;
   try {
-    await updateSalesOrderStatus(detail.salesOrderId, 'cancel', detail.version);
-    await resolveSalesAction(props.conversationId, request, {
-      status: 'cancelled',
-      salesOrderId: request.salesOrderId,
-      orderNo: detail.salesNo || orderNo.value,
-      orderStatus: 'CANCELLED',
-      reason: reason.value.trim() || undefined,
+    await updateSalesOrderStatus(detail.salesOrderId, 'cancel', detail.version, { skipPageLoading: true });
+    await resolveSalesAction(conversationId, request, {
+      status: 'cancelled', salesOrderId: request.salesOrderId,
+      orderNo: detail.salesNo || fallbackOrderNo, orderStatus: 'CANCELLED',
+      reason: cancelReason || undefined,
     });
     toast.success(`销售单 ${detail.salesNo} 已取消`);
-    emit('settled');
-    emit('update:open', false);
+    finishConfirmation(conversationId, request);
   } catch (error) {
-    await reportFailure(getApiErrorMessage(error) || '取消失败，请稍后重试');
+    await reportFailure(getApiErrorMessage(error) || '取消失败，请稍后重试', conversationId, request, detail, fallbackOrderNo);
   } finally {
     submitting.value = false;
   }
 }
 
 /** 接口拒绝时把原因和当前单据参数交回模型。 */
-async function reportFailure(message: string) {
-  const request = props.request;
-  if (!request) return;
+async function reportFailure(message: string, conversationId: string, request: SalesActionRequest, detail: SalesOrderDetail, fallbackOrderNo: string) {
   toast.error(message);
   try {
-    await resolveSalesAction(props.conversationId, request, {
-      status: 'failed',
-      salesOrderId: request.salesOrderId,
-      orderNo: orderNo.value,
-      error: message,
-      orderParams: order.value ? currentParams(order.value) : undefined,
+    await resolveSalesAction(conversationId, request, {
+      status: 'failed', salesOrderId: request.salesOrderId, orderNo: fallbackOrderNo,
+      error: message, orderParams: currentParams(detail),
     });
-    emit('settled');
-    emit('update:open', false);
+    finishConfirmation(conversationId, request);
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '未能把结果交回 AI，请重新发起');
   }
+}
+
+/** 当前单据参数：接口拒绝时供模型判断。 */
+function currentParams(detail: SalesOrderDetail) {
+  return {
+    customerId: detail.customerId, warehouseId: detail.warehouseId,
+    expectedDeliveryDate: detail.expectedDeliveryDate || null, remark: detail.remark || null,
+    items: detail.items.map(item => ({ productId: item.productId, quantity: item.quantity,
+      unitPrice: item.unitPrice, remark: item.remark || null })),
+  };
 }
 
 /** 组装更新请求：补日期时带完整单据参数。 */
@@ -227,22 +199,6 @@ function buildPayload(detail: SalesOrderDetail, delivery: string): SalesOrderFor
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       remark: item.remark || '',
-    })),
-  };
-}
-
-/** 当前单据参数：接口拒绝时供模型判断。 */
-function currentParams(detail: SalesOrderDetail) {
-  return {
-    customerId: detail.customerId,
-    warehouseId: detail.warehouseId,
-    expectedDeliveryDate: detail.expectedDeliveryDate || null,
-    remark: detail.remark || null,
-    items: detail.items.map(item => ({
-      productId: item.productId,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      remark: item.remark || null,
     })),
   };
 }
@@ -270,7 +226,7 @@ function formatMoney(value: number) {
   <Dialog :open="props.open" @update:open="emit('update:open', $event)">
     <DialogContent
       placement="app-content"
-      :inert="confirmState.open ? '' : undefined"
+      overlay-class="sales-approval-overlay"
       class="flex h-[min(620px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-2xl"
       data-sales-action-dialog
     >
@@ -311,7 +267,7 @@ function formatMoney(value: number) {
         <Button
           :variant="isSubmit ? 'default' : 'destructive'"
           :disabled="busy || !order"
-          @click="isSubmit ? askSubmit() : askCancel()"
+          @click="runConfirm"
         >
           {{ submitting ? '处理中…' : (isSubmit ? '提交审核' : '确认取消') }}
         </Button>
@@ -319,16 +275,9 @@ function formatMoney(value: number) {
     </DialogContent>
   </Dialog>
 
-  <ConfirmDialog
-    placement="app-content"
-    :open="confirmState.open"
-    :title="confirmState.title"
-    :description="confirmState.description"
-    :confirm-text="confirmState.confirmText"
-    cancel-text="取消"
-    :variant="confirmState.variant"
-    :loading="submitting"
-    @update:open="confirmState.open = $event"
-    @confirm="runConfirm"
-  />
 </template>
+
+<style>
+[data-sales-action-dialog][data-state='closed'],
+.sales-approval-overlay[data-state='closed'] { animation: none !important; }
+</style>

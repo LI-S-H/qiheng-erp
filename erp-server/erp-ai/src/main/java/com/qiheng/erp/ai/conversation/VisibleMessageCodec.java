@@ -51,6 +51,23 @@ public class VisibleMessageCodec {
         return decode(raw, null);
     }
 
+    /** 判断是否为等待用户处置的销售单工具。 */
+    private static boolean isOrderTool(String name) {
+        return "prepare_sales_order_draft".equals(name) || "update_sales_order_draft".equals(name)
+                || "submit_sales_order".equals(name) || "cancel_sales_order".equals(name);
+    }
+
+    /** 按白名单复制字段，避免把内部结构暴露给页面。 */
+    private Map<String, Object> copyFields(JsonNode root, String... names) {
+        var data = new LinkedHashMap<String, Object>();
+        for (String name : names) {
+            if (root.has(name)) {
+                data.put(name, mapper.convertValue(root.get(name), Object.class));
+            }
+        }
+        return data;
+    }
+
     /** 判断是否采购单动作记录，并按动作校验状态取值。 */
     private static boolean isPurchaseOrderRecord(String name, String status) {
         if (name == null || name.isBlank()) {
@@ -62,22 +79,6 @@ public class VisibleMessageCodec {
             case "submit_purchase_order" ->
                     Set.of("submitted", "rejected", "failed").contains(status);
             case "cancel_purchase_order" ->
-                    Set.of("cancelled", "rejected", "failed").contains(status);
-            default -> false;
-        };
-    }
-
-    /** 判断是否销售单动作记录，并按动作校验状态取值。 */
-    private static boolean isSalesOrderRecord(String name, String status) {
-        if (name == null || name.isBlank()) {
-            return false;
-        }
-        return switch (name) {
-            case "prepare_sales_order_draft", "update_sales_order_draft" ->
-                    Set.of("created", "updated", "edited", "failed", "rejected").contains(status);
-            case "submit_sales_order" ->
-                    Set.of("submitted", "rejected", "failed").contains(status);
-            case "cancel_sales_order" ->
                     Set.of("cancelled", "rejected", "failed").contains(status);
             default -> false;
         };
@@ -110,6 +111,16 @@ public class VisibleMessageCodec {
                 }
             }
             if (("TOOL_CALL".equals(kind) || "TOOL_RESULT".equals(kind)) && root.isObject()) {
+                // 草稿工具：调用记录带原始参数，结果记录带业务回执，前端按 callId 配对渲染。
+                if ("TOOL_CALL".equals(kind) && isOrderTool(root.path("name").asText())) {
+                    return new VisibleMessageContent("ORDER_TOOL", copyFields(root,
+                            "callId", "name", "label", "action", "orderType", "status", "arguments",
+                            "salesOrderId", "orderNo", "reason"));
+                }
+                if ("TOOL_RESULT".equals(kind) && isOrderTool(root.path("name").asText())) {
+                    return new VisibleMessageContent("ORDER_TOOL", copyFields(root,
+                            "callId", "name", "action", "orderType", "result"));
+                }
                 if ("TOOL_CALL".equals(kind) && isPurchaseOrderRecord(root.path("name").asText(),
                         root.path("status").asText())) {
                     // 采购单动作记录：只保留状态、单号与结果，明细由页面按单号查采购单。
@@ -121,18 +132,6 @@ public class VisibleMessageCodec {
                         }
                     }
                     return new VisibleMessageContent("PURCHASE_ORDER", data);
-                }
-                if ("TOOL_CALL".equals(kind) && isSalesOrderRecord(root.path("name").asText(),
-                        root.path("status").asText())) {
-                    // 销售单动作记录：与采购单一样只保存动作、状态和单号。
-                    Map<String, Object> data = new LinkedHashMap<>();
-                    for (String field : Set.of("action", "status", "salesOrderId", "orderNo", "orderStatus",
-                            "changedFields", "userNote", "reasons", "suggestion", "error", "reason")) {
-                        if (root.has(field)) {
-                            data.put(field, mapper.convertValue(root.get(field), Object.class));
-                        }
-                    }
-                    return new VisibleMessageContent("SALES_ORDER", data);
                 }
                 if (!"ask_user".equals(root.path("name").asText())) {
                     // 普通工具行是结构化展示：只给工具名、文案、状态与耗时，不含参数和结果。
@@ -177,6 +176,10 @@ public class VisibleMessageCodec {
                 return new VisibleMessageContent("REPORT", data);
             }
             if (root.isObject() && !root.has("type") && root.path("text").isTextual()) {
+                if ("ASSISTANT_STEP".equals(kind) && root.path("callId").isTextual()
+                        && !root.path("callId").asText().isBlank()) {
+                    return new VisibleMessageContent("TEXT", copyFields(root, "text", "callId"));
+                }
                 return text(root.path("text").asText());
             }
             return text(root.isTextual() ? root.asText() : "该历史消息暂时无法展示。");

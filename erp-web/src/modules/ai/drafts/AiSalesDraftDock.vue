@@ -16,7 +16,7 @@ const emit = defineEmits<{ open: [] }>();
   <div class="draft-card" data-ai-sales-draft>
     <span class="draft-card-icon" aria-hidden="true"><ClipboardCheck class="size-4" /></span>
     <div class="draft-card-body">
-      <p class="draft-card-title">{{ action === 'UPDATE' ? 'AI 销售单修改待确认' : 'AI 销售草稿待确认' }}</p>
+      <p class="draft-card-title">{{ action === 'UPDATE' ? '修改销售单' : '创建销售单' }}</p>
       <p class="draft-card-hint">
         {{ action === 'UPDATE'
           ? `共 ${itemCount} 行明细，修改尚未保存。点开查看完整信息后，才能保存修改、继续编辑或驳回说明。`

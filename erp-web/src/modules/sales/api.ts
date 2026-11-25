@@ -502,7 +502,7 @@ function buildOrderItems(orderId: string, salesNo: string, payload: SalesOrderFo
   });
 }
 
-export function createSalesOrder(payload: SalesOrderFormPayload) {
+export function createSalesOrder(payload: SalesOrderFormPayload, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) {
     const customer = mockCustomers.find(item => item.customerId === payload.customerId);
     if (!customer || customer.status === 0) return Promise.reject(new Error('请选择启用状态的客户'));
@@ -541,10 +541,10 @@ export function createSalesOrder(payload: SalesOrderFormPayload) {
     return Promise.resolve(created);
   }
   const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '销售单价') })) };
-  return postResult<SalesOrderDetail, typeof request>('/sales/orders', request).then(normalizeOrderDetail);
+  return http.post('/sales/orders', request, requestConfig).then(response => normalizeOrderDetail(response.data.data as SalesOrderDetail));
 }
 
-export async function updateSalesOrder(salesOrderId: string, payload: SalesOrderFormPayload) {
+export async function updateSalesOrder(salesOrderId: string, payload: SalesOrderFormPayload, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) {
     const existing = mockOrders.find(item => item.salesOrderId === salesOrderId);
     if (!existing) return Promise.reject(new Error('销售订单不存在'));
@@ -572,11 +572,11 @@ export async function updateSalesOrder(salesOrderId: string, payload: SalesOrder
     return Promise.resolve(updated);
   }
   const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '销售单价') })) };
-  const response = await http.put(`/sales/orders/${salesOrderId}`, request);
+  const response = await http.put(`/sales/orders/${salesOrderId}`, request, requestConfig);
   return normalizeOrderDetail(response.data.data as SalesOrderDetail);
 }
 
-export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 'approve' | 'cancel', version: number) {
+export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 'approve' | 'cancel', version: number, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) {
     const timestamp = nowText();
     mockOrders = mockOrders.map(item => {
@@ -604,7 +604,7 @@ export function updateSalesOrderStatus(salesOrderId: string, action: 'submit' | 
     });
     return Promise.resolve(null);
   }
-  return postResult<null, { version: number }>(`/sales/orders/${salesOrderId}/${action}`, { version });
+  return http.post(`/sales/orders/${salesOrderId}/${action}`, { version }, requestConfig).then(response => response.data.data as null);
 }
 
 export async function listEnabledSalesProductOptions(keyword = '', pageSize = 10) {

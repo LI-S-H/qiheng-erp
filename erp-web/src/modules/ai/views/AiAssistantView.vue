@@ -180,29 +180,146 @@ function handleActionSettled() {
 /** 等待用户处置的销售草稿；与采购草稿互斥，同一时刻只会有一份。 */
 const pendingSalesDraft = runtimeField('pendingSalesDraft');
 const salesDraftDialogOpen = ref(false);
+const closingSales = ref<{ id: string; callId: string } | null>(null);
 
 /** 把销售草稿事件收敛成可校验的结构；格式异常时按缺少草稿处理。 */
 function pendingSalesDraftFrom(value: unknown): SalesDraftRequest | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
-  try {
-    return parseSalesDraftRequest(value as Record<string, unknown>);
-  } catch {
-    return null;
+  const item = value as Record<string, unknown>;
+  // 旧事件结构：draftRequestId + draft
+  if (typeof item.draftRequestId === 'string' && item.draft) {
+    try {
+      return parseSalesDraftRequest(item);
+    } catch {
+      return null;
+    }
   }
+  // 新事件结构：callId + action + arguments（与 ai_message 的 TOOL_CALL 内容一致）
+  if (typeof item.callId === 'string' && typeof item.arguments === 'string') {
+    try {
+      const parsed = JSON.parse(item.arguments);
+      const draft = parsed?.request && typeof parsed.request === 'object' ? parsed.request : parsed;
+      return {
+        draftRequestId: item.callId,
+        action: item.action === 'UPDATE' ? 'UPDATE' : 'CREATE',
+        draft,
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /** 打开销售草稿确认页；必须点开详情后才能处置。 */
 function openSalesDraftDialog() {
-  if (!pendingSalesDraft.value) return;
+  if (!pendingSalesDraft.value || closingSales.value) return;
   salesDraftDialogOpen.value = true;
 }
 
-/** 销售草稿处置完成后收起确认页并清除等待状态。 */
-function handleSalesDraftSettled() {
-  salesDraftDialogOpen.value = false;
-  pendingSalesDraft.value = null;
+/** 打开历史里的待确认草稿：参数来自工具调用记录，确认仍走原 resolve 接口。 */
+function openOrderTool(data: { callId: string; action?: string; arguments?: string; salesOrderId?: string; orderNo?: string; reason?: string }) {
+  if (closingSales.value) return;
+  if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
+    pendingSalesAction.value = {
+      actionRequestId: data.callId,
+      toolCallId: data.callId,
+      action: data.action,
+      salesOrderId: data.salesOrderId || '',
+      orderNo: data.orderNo || '',
+      reason: data.reason || '',
+    };
+    salesActionDialogOpen.value = true;
+    return;
+  }
+  if (!data.arguments) return;
+  try {
+    const parsed = JSON.parse(data.arguments);
+    const draft = parsed?.request && typeof parsed.request === 'object' ? parsed.request : parsed;
+    pendingSalesDraft.value = {
+      draftRequestId: data.callId,
+      action: data.action === 'UPDATE' ? 'UPDATE' : 'CREATE',
+      draft,
+    };
+    salesDraftDialogOpen.value = true;
+  } catch {
+    // 参数无法解析时不打开弹窗，避免展示不完整数据。
+  }
+}
+
+/** 销售草稿处置完成后收起确认页，并接上后端已经启动的恢复运行。 */
+// 按会话和调用编号保留已提交状态，旧历史不能重新恢复同一张卡片。
+const settledSalesCalls = new Map<string, Set<string>>();
+
+function settleSalesCall(id: string, callId: string) {
+  if (!callId) return;
+  const calls = settledSalesCalls.get(id) || new Set<string>();
+  calls.add(callId);
+  settledSalesCalls.set(id, calls);
+}
+
+async function reconnectAfterSales(id: string, callId: string, epoch: number, userId: string | undefined) {
+  try {
+    for (let attempt = 0; attempt < 40 && isCurrent(epoch, userId, id); attempt++) {
+      const state = runs.get(id);
+      if (!state.streaming && !state.querying && !state.watching) {
+        const runtime = await getMainAgentRuntime(id);
+        if (!isCurrent(epoch, userId, id)) return;
+        const draft = pendingSalesDraftFrom(runtime?.salesDraft);
+        const action = pendingSalesActionFrom(runtime?.salesAction);
+        const pendingId = draft?.draftRequestId || action?.actionRequestId;
+        if (runtime && (runtime.status !== 'WAITING_USER' || (pendingId && pendingId !== callId))) {
+          await reconnectRun(id, epoch, userId);
+          return;
+        }
+      }
+      await new Promise(resolve => window.setTimeout(resolve, 250));
+    }
+    if (isCurrent(epoch, userId, id)) warning.value = '审批已提交，运行状态暂未更新，请重新进入会话查看。';
+  } catch (cause) {
+    if (isCurrent(epoch, userId, id)) warning.value = `审批已提交，恢复连接失败：${getApiErrorMessage(cause) || '请重新进入会话查看'}`;
+  }
+}
+
+async function finishSalesTransition(kind: 'draft' | 'action', context: { conversationId: string; callId: string }) {
+  const id = context.conversationId;
+  const userId = auth.user?.userId;
+  const callId = context.callId;
+  if (!id || !callId) return;
+  const state = runs.get(id);
+  const clearSettled = () => {
+    if (kind === 'draft' && state.pendingSalesDraft?.draftRequestId === callId) state.pendingSalesDraft = null;
+    if (kind === 'action' && state.pendingSalesAction?.actionRequestId === callId) state.pendingSalesAction = null;
+  };
+  settleSalesCall(id, callId);
+  const currentCallId = kind === 'draft' ? state.pendingSalesDraft?.draftRequestId : state.pendingSalesAction?.actionRequestId;
+  if (!userId || store.activeId !== id || currentCallId !== callId || closingSales.value) {
+    clearSettled();
+    return;
+  }
+  const epoch = requestEpoch;
+  closingSales.value = { id, callId };
+  if (kind === 'draft') salesDraftDialogOpen.value = false;
+  else salesActionDialogOpen.value = false;
+  // 先让弹窗和遮罩退出，保留请求及背景；后台已恢复执行，稍后订阅不会重复提交。
+  await nextTick();
+  const elements = document.querySelectorAll('[data-sales-draft-dialog][data-state="closed"], [data-sales-action-dialog][data-state="closed"], [data-sales-confirm-overlay][data-state="closed"], [data-confirm-dialog][data-state="closed"], .sales-approval-overlay[data-state="closed"]');
+  const animations = [...elements].flatMap(element => element.getAnimations().filter(animation => animation.playState === 'running'));
+  if (animations.length) {
+    await Promise.race([
+      Promise.all(animations.map(animation => animation.finished.catch(() => undefined))),
+      new Promise(resolve => window.setTimeout(resolve, 500)),
+    ]);
+  }
+  clearSettled();
+  if (closingSales.value?.id === id && closingSales.value.callId === callId) closingSales.value = null;
+  if (isCurrent(epoch, userId, id)) void reconnectAfterSales(id, callId, epoch, userId);
+}
+
+function handleSalesDraftSettled(context: { conversationId: string; callId: string }) {
+  void finishSalesTransition('draft', context);
 }
 
 /** 等待用户确认的销售单提交或取消动作。 */
@@ -214,23 +331,38 @@ function pendingSalesActionFrom(value: unknown): SalesActionRequest | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
-  try {
-    return parseSalesActionRequest(value as Record<string, unknown>);
-  } catch {
-    return null;
+  const item = value as Record<string, unknown>;
+  // 旧事件结构：actionRequestId + action + salesOrderId
+  if (typeof item.actionRequestId === 'string') {
+    try {
+      return parseSalesActionRequest(item);
+    } catch {
+      return null;
+    }
   }
+  // 新事件结构：callId + action + arguments（与 ai_message 的 TOOL_CALL 内容一致）
+  if (typeof item.callId === 'string' && (item.action === 'SUBMIT' || item.action === 'CANCEL')) {
+    return {
+      actionRequestId: item.callId,
+      toolCallId: item.callId,
+      action: item.action,
+      salesOrderId: typeof item.salesOrderId === 'string' ? item.salesOrderId : '',
+      orderNo: typeof item.orderNo === 'string' ? item.orderNo : '',
+      reason: typeof item.reason === 'string' ? item.reason : '',
+    };
+  }
+  return null;
 }
 
 /** 打开销售动作确认页；必须点开详情后才能提交或取消。 */
 function openSalesActionDialog() {
-  if (!pendingSalesAction.value) return;
+  if (!pendingSalesAction.value || closingSales.value) return;
   salesActionDialogOpen.value = true;
 }
 
 /** 销售动作处置完成后收起确认页并清除等待状态。 */
-function handleSalesActionSettled() {
-  salesActionDialogOpen.value = false;
-  pendingSalesAction.value = null;
+function handleSalesActionSettled(context: { conversationId: string; callId: string }) {
+  void finishSalesTransition('action', context);
 }
 const small = useMediaQuery('(max-width: 900px)');
 const phone = useMediaQuery('(max-width: 640px)');
@@ -258,6 +390,7 @@ const locked = computed(
     busy.value ||
     switching.value ||
     store.historyLoading ||
+    (currentRun.value.refreshNeeded && !currentRun.value.streaming && currentRun.value.liveItems.length > 0) ||
     Boolean(store.activeId && !store.detail),
 );
 const runStatus = computed(() => currentRun.value.runStatus || 'IDLE');
@@ -273,12 +406,31 @@ const displayedMessages = computed(() => {
   if (!liveRunId.value) {
     return messages;
   }
-  // 实时快照已有的工具行不再重复显示历史行；追问仍由原有逻辑处理。
+  // 只隐藏已经由实时条目覆盖的历史行，不能因存在任意实时条目而隐藏整轮历史。
   const liveToolIds = new Set(liveItems.value.filter(item => item.type === 'tool').map(item => item.id));
-  return messages.filter(message => message.requestId !== liveRunId.value ||
-    !((message.kind === 'TOOL_CALL' && message.content.type === 'TOOL_STEP' && liveToolIds.has(message.content.data.callId)) ||
-      (!currentRun.value.snapshotTruncated && ((liveItems.value.length > 0 && (message.kind === 'ASSISTANT_STEP' || message.kind === 'ASSISTANT_FINAL')) ||
-        (waiting.value && message.kind === 'TOOL_CALL')))));
+  const completedLiveTexts = new Map<string, number>();
+  for (const item of liveItems.value) {
+    if (item.type === 'text' && (item.completed || currentRun.value.completedTextIds.has(item.id))) {
+      completedLiveTexts.set(item.text, (completedLiveTexts.get(item.text) || 0) + 1);
+    }
+  }
+  const orderIds = new Set(messages.filter(message => message.content.type === 'ORDER_TOOL')
+    .map(message => message.content.type === 'ORDER_TOOL' ? message.content.data.callId : ''));
+  return messages.filter(message => {
+    if (message.requestId !== liveRunId.value) return true;
+    if (message.kind === 'TOOL_CALL' && message.content.type === 'TOOL_STEP' && liveToolIds.has(message.content.data.callId)) return false;
+    if (message.kind === 'ASSISTANT_STEP' && message.content.type === 'TEXT'
+        && !(message.content.data.callId && orderIds.has(message.content.data.callId))) {
+      const count = completedLiveTexts.get(message.content.data.text) || 0;
+      if (count > 0) {
+        completedLiveTexts.set(message.content.data.text, count - 1);
+        return false;
+      }
+    }
+    if (message.kind === 'ASSISTANT_FINAL' && message.content.type === 'TEXT'
+        && currentRun.value.streaming && (completedLiveTexts.get(message.content.data.text) || 0) > 0) return false;
+    return !(!currentRun.value.snapshotTruncated && waiting.value && message.kind === 'TOOL_CALL');
+  });
 });
 const displayedPendingText = computed(() => liveRunId.value && displayedMessages.value.some(
   message => message.requestId === liveRunId.value && message.kind === 'USER_INPUT',
@@ -309,6 +461,52 @@ const analysisBlocks = computed<AiAnalysisBlock[]>(() => {
   }
   return [...blocks.values()];
 });
+/** 刷新后从历史里最后一条待确认记录恢复底部操作卡片。 */
+watch(displayedMessages, messages => {
+  if (closingSales.value?.id === store.activeId) return;
+  const resolved = new Set(messages
+    .filter(message => message.kind === 'TOOL_RESULT' && message.content.type === 'ORDER_TOOL')
+    .map(message => message.content.type === 'ORDER_TOOL' ? message.content.data.callId : ''));
+  const settled = settledSalesCalls.get(store.activeId || '');
+  for (const id of resolved) settled?.delete(id);
+  const pending = [...messages].reverse().find(message =>
+    message.kind === 'TOOL_CALL'
+    && message.content.type === 'ORDER_TOOL'
+    && !resolved.has(message.content.data.callId)
+    && !settled?.has(message.content.data.callId)
+    && (!message.content.data.status || message.content.data.status === 'waiting'));
+  if (!pending || pending.content.type !== 'ORDER_TOOL') {
+    pendingSalesDraft.value = null;
+    pendingSalesAction.value = null;
+    return;
+  }
+  const data = pending.content.data;
+  if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
+    pendingSalesDraft.value = null;
+    pendingSalesAction.value = {
+      actionRequestId: data.callId,
+      toolCallId: data.callId,
+      action: data.action,
+      salesOrderId: data.salesOrderId || '',
+      orderNo: data.orderNo || '',
+      reason: data.reason || '',
+    };
+    return;
+  }
+  pendingSalesAction.value = null;
+  if (!data.arguments) return;
+  try {
+    const parsed = JSON.parse(data.arguments);
+    const draft = parsed?.request && typeof parsed.request === 'object' ? parsed.request : parsed;
+    pendingSalesDraft.value = {
+      draftRequestId: data.callId,
+      action: data.action === 'UPDATE' ? 'UPDATE' : 'CREATE',
+      draft,
+    };
+  } catch {
+    // 参数无法解析时不恢复卡片。
+  }
+}, { immediate: true });
 /** 本次会话是否存在分析过程；没有内容时不占用右侧面板位置。 */
 const showAnalysisPanel = computed(() => analysisBlocks.value.length > 0);
 /** 分析面板默认收起，用户点击“子智能体正在分析”才展开，可随时收回。 */
@@ -628,11 +826,14 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       if (typeof data.runId !== 'string' || !Array.isArray(data.items)) {
         throw new Error('运行快照格式错误');
       }
+      const previousRunId = state.runId;
       state.runId = data.runId;
       state.snapshotTruncated = data.snapshotTruncated === true;
       state.warning = state.snapshotTruncated ? '运行过程缓存不完整，已保留已保存的历史消息。' : '';
       const snapshotItems = data.items as SnapshotItem[];
-      state.liveItems = snapshotItems.filter((item): item is LiveItem => item.type !== 'analysis' && item.type !== 'report' && item.type !== 'purchase_draft' && item.type !== 'purchase_action' && item.type !== 'sales_draft' && item.type !== 'sales_action');
+      const previousItems = state.refreshNeeded && previousRunId === data.runId ? state.liveItems : [];
+      const incoming = snapshotItems.filter((item): item is LiveItem => item.type === 'text' || item.type === 'tool' || item.type === 'clarification');
+      state.liveItems = [...previousItems.filter(old => !incoming.some(item => item.type === old.type && item.id === old.id)), ...incoming];
       state.finalMessageId = typeof data.finalMessageId === 'string' ? data.finalMessageId : '';
       state.completedTextIds = new Set(state.liveItems.filter(item => item.type === 'text' && item.completed).map(item => item.id));
       state.liveText = state.liveItems.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
@@ -689,9 +890,9 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.liveMessageId = data.messageId;
       state.liveText += data.delta;
-      const last = state.liveItems[state.liveItems.length - 1];
-      if (last?.type === 'text' && last.id === data.messageId) {
-        last.text += data.delta;
+      const existing = state.liveItems.find(item => item.type === 'text' && item.id === data.messageId);
+      if (existing?.type === 'text') {
+        existing.text += data.delta;
       } else {
         state.liveItems.push({ type: 'text', id: data.messageId, text: data.delta });
       }
@@ -705,8 +906,9 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       const item = state.liveItems.find(entry => entry.type === 'text' && entry.id === data.messageId);
       if (item?.type === 'text') {
         item.text = data.text;
+        item.completed = true;
       } else {
-        state.liveItems.push({ type: 'text', id: data.messageId, text: data.text });
+        state.liveItems.push({ type: 'text', id: data.messageId, text: data.text, completed: true });
       }
       state.completedTextIds.add(data.messageId);
       state.liveMessageId = data.messageId;
@@ -900,7 +1102,17 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       break;
     case 'run_completed':
+      if (data.status === 'WAITING_USER') {
+        // 人工确认暂停不是最终答复，保留当前进度文字，等恢复后再收起。
+        state.runStatus = 'WAITING_USER';
+        break;
+      }
       state.runStatus = 'COMPLETED';
+      state.pendingSalesDraft = null;
+      state.pendingSalesAction = null;
+      state.pendingDraft = null;
+      state.pendingAction = null;
+      state.pendingClarification = null;
       state.finalMessageId = typeof data.finalMessageId === 'string' ? data.finalMessageId : '';
       clearFailureHold(state);
       state.settleSuccess?.();
@@ -908,6 +1120,8 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       break;
     case 'run_failed':
       state.runStatus = 'FAILED';
+      state.pendingSalesDraft = null;
+      state.pendingSalesAction = null;
       state.error = String(data.message || '任务执行失败');
       state.failureCode = String(data.code || '');
       state.steps = [];
@@ -921,6 +1135,26 @@ async function scrollToLatest() {
     scrollArea.value.scrollTop = scrollArea.value.scrollHeight;
   }
 }
+// 只跟随原本靠近底部的用户；人工向上滚动后不强制拉回。
+const followLatest = ref(true);
+function trackConversationScroll() {
+  const area = scrollArea.value;
+  if (area) followLatest.value = area.scrollHeight - area.clientHeight - area.scrollTop < 48;
+}
+watch(scrollArea, (area, _previous, onCleanup) => {
+  if (!area || typeof ResizeObserver === 'undefined') return;
+  const observer = new ResizeObserver(() => {
+    if (followLatest.value && !switching.value) area.scrollTop = area.scrollHeight;
+  });
+  observer.observe(area);
+  onCleanup(() => observer.disconnect());
+});
+watch([pendingSalesDraft, pendingSalesAction], async ([draft, action]) => {
+  if (!draft && !action) return;
+  const follow = followLatest.value;
+  await nextTick();
+  if (follow && !switching.value) await scrollToLatest();
+}, { flush: 'pre' });
 // 新错误位于对话末尾，出现时滚动到提示，避免被历史消息遮住。
 watch(error, value => {
   if (value && !switching.value) {
@@ -949,7 +1183,8 @@ async function performReload(id: string, epoch: number, userId: string | undefin
     return;
   }
   try {
-    await store.loadConversation(id, { silent: true });
+    const loaded = await store.loadConversation(id, { silent: true });
+    if (!loaded) throw new Error('历史消息未能接管当前回复');
     if (isCurrent(epoch, userId, id)) {
       const state = runs.get(id);
       // 只有确认当前轮输入已进入历史，才移除“正在提交”的临时气泡。
@@ -963,13 +1198,37 @@ async function performReload(id: string, epoch: number, userId: string | undefin
         state.pendingText = '';
       }
       // 本轮结束后历史已经接管展示，避免临时流和数据库消息重复。
-      if (!state.streaming) {
+      const savedTexts = new Map<string, number>();
+      for (const message of store.messages) {
+        if (message.requestId === state.runId && (message.kind === 'ASSISTANT_STEP' || message.kind === 'ASSISTANT_FINAL')
+            && message.content.type === 'TEXT') {
+          const text = message.content.data.text;
+          savedTexts.set(text, (savedTexts.get(text) || 0) + 1);
+        }
+      }
+      const hasSavedFinal = store.messages.some(message => message.requestId === state.runId && message.kind === 'ASSISTANT_FINAL');
+      // 服务端终态携带最终文本的 messageId，可明确与已保存的本轮最终回复关联。
+      const awaitingHistory = Boolean(state.runId && state.liveItems.some(item => {
+        if (item.type !== 'text' || !item.text) return false;
+        const count = savedTexts.get(item.text) || 0;
+        if (count > 0) {
+          savedTexts.set(item.text, count - 1);
+          return false;
+        }
+        return !(state.finalMessageId && item.id === state.finalMessageId && hasSavedFinal);
+      }));
+      if (awaitingHistory && !state.streaming) {
+        state.warning = '部分回复尚未同步到历史，请重新进入会话确认后再继续。';
+      } else if (!awaitingHistory && state.warning === '部分回复尚未同步到历史，请重新进入会话确认后再继续。') {
+        state.warning = '';
+      }
+      if (!state.streaming && !awaitingHistory) {
         state.liveText = '';
         state.liveItems = [];
         state.completedTextIds.clear();
         state.steps = [];
       }
-      state.refreshNeeded = false;
+      state.refreshNeeded = awaitingHistory;
     }
     if (isCurrent(epoch, userId, id)) {
       await store.loadConversations();
@@ -993,6 +1252,12 @@ async function reconnectRun(id: string, epoch: number, userId: string | undefine
   }
   if (runtime.status === 'INTERRUPTED') {
     state.runStatus = 'INTERRUPTED';
+    return;
+  }
+  if (runtime.status === 'WAITING_USER') {
+    // 人工确认暂停：待确认记录已经在 ai_message 里，刷新历史即可渲染卡片和进度。
+    state.runStatus = 'WAITING_USER';
+    await reload(id, epoch, userId);
     return;
   }
   if (runtime.status !== 'RUNNING' && runtime.status !== 'WAITING_USER') {
@@ -1054,7 +1319,7 @@ async function reconnectRun(id: string, epoch: number, userId: string | undefine
       }
       if (valid()) {
         stopSteps(state, state.error ? 'failed' : 'interrupted');
-        runs.disconnect(id, version);
+        runs.disconnect(id, version, state.refreshNeeded);
         void store.loadConversations().catch(() => undefined);
       }
     }
@@ -1181,7 +1446,7 @@ async function run(answer?: string) {
       }
         if (valid()) {
           stopSteps(state, state.error ? 'failed' : 'interrupted');
-          runs.disconnect(id, version);
+          runs.disconnect(id, version, state.refreshNeeded);
           void store.loadConversations().catch(() => undefined);
           if (reconnect && store.activeId === id && !switching.value) {
             await reconnectRun(id, requestEpoch, userId).catch(() => undefined);
@@ -1520,8 +1785,8 @@ onBeforeUnmount(() => {
       <div class="conversation-body" :aria-busy="readingConversation" data-ai-conversation-region>
       <div v-if="switching" class="conversation-switch-progress" role="progressbar" aria-label="正在切换会话"><span /></div>
       <AiMessageNavigator :messages="displayedMessages" :scroll-container="scrollArea" :inert="readingConversation || undefined" />
-      <div ref="scrollArea" class="conversation-scroll" :inert="readingConversation || undefined">
-        <div class="conversation-stream" :class="{ 'conversation-enter': !switching, 'conversation-switching': switching }">
+      <div ref="scrollArea" class="conversation-scroll" :inert="readingConversation || undefined" @scroll="trackConversationScroll">
+        <div class="conversation-stream" :class="{ 'conversation-switching': switching }">
           <div v-if="warning && !switching" class="request-warning" role="status">{{ warning }}</div>
           <div v-if="showWelcome" class="welcome-state">
             <span class="welcome-symbol"><MessageSquare class="size-7" stroke-width="1.5" /></span>
@@ -1564,9 +1829,11 @@ onBeforeUnmount(() => {
             :report-run-id="switching ? switchSnapshot?.reportRunId : liveRunId"
             :final-message-id="switching ? switchSnapshot?.finalMessageId : currentRun.finalMessageId"
             :run-terminal="switching ? switchSnapshot?.runTerminal : runTerminal"
+            :paused="switching ? false : (runStatus === 'WAITING_USER' && Boolean(pendingSalesDraft || pendingSalesAction))"
             @open-analysis="openAnalysis"
             @open-report-process="openReportProcess"
             @open-report="openReport"
+            @open-order-tool="openOrderTool"
             >
             <template #clarification>
               <button type="button" class="question-status" data-testid="clarification-pending-status" aria-label="继续回答补充问题" :disabled="switching" @click="focusQuestion">
@@ -1611,6 +1878,7 @@ onBeforeUnmount(() => {
         :disabled="
           switching ||
           store.historyLoading ||
+          (currentRun.refreshNeeded && !currentRun.streaming && currentRun.liveItems.length > 0) ||
           backingOff ||
           Boolean(pendingDraft) ||
           Boolean(pendingAction) ||
@@ -1653,7 +1921,6 @@ onBeforeUnmount(() => {
               />
             </div>
           </Transition>
-          <Transition name="question-dock" appear>
             <div v-if="pendingSalesDraft && !switching" class="agent-question-dock" data-ai-sales-draft-dock>
               <AiSalesDraftDock
                 :item-count="pendingSalesDraft.draft.items.length"
@@ -1662,8 +1929,6 @@ onBeforeUnmount(() => {
                 @open="openSalesDraftDialog"
               />
             </div>
-          </Transition>
-          <Transition name="question-dock" appear>
             <div v-if="pendingSalesAction && !switching" class="agent-question-dock" data-ai-sales-action-dock>
               <AiSalesActionDock
                 :action="pendingSalesAction.action"
@@ -1672,7 +1937,6 @@ onBeforeUnmount(() => {
                 @open="openSalesActionDialog"
               />
             </div>
-          </Transition>
         </template>
       </AiComposerDock>
     </main>
@@ -1762,13 +2026,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.conversation-enter { animation: conversation-enter 160ms ease-out; }
 /* 切换时只做透明度过渡：内容高度和滚动位置都会变化，再加位移与模糊会放大跳动感。 */
 .conversation-switching {
   opacity: .55;
   transition: opacity 160ms ease-out;
 }
-@keyframes conversation-enter { from { opacity: .55; } to { opacity: 1; } }
 .conversation-switch-progress {
   position: absolute;
   inset: 0 0 auto 0;
@@ -1787,7 +2049,7 @@ onBeforeUnmount(() => {
 }
 @keyframes conversation-switch-progress { from { transform: translateX(-110%); } to { transform: translateX(330%); } }
 @media (prefers-reduced-motion: reduce) {
-  .conversation-enter, .conversation-switching { animation: none; transition: none; }
+  .conversation-switching { animation: none; transition: none; }
   .conversation-switch-progress span { animation: none; width: 100%; opacity: .45; }
 }
 .graph-workspace {
@@ -1823,9 +2085,9 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
 }
 .question-dock-enter-active,
-.question-dock-leave-active { transition: grid-template-rows 280ms cubic-bezier(0.38, 0, 0.24, 1), opacity 240ms cubic-bezier(0.38, 0, 0.24, 1), transform 280ms cubic-bezier(0.38, 0, 0.24, 1); }
+.question-dock-leave-active { transition: grid-template-rows 280ms cubic-bezier(0.38, 0, 0.24, 1), margin-bottom 280ms cubic-bezier(0.38, 0, 0.24, 1), opacity 240ms cubic-bezier(0.38, 0, 0.24, 1), transform 280ms cubic-bezier(0.38, 0, 0.24, 1); }
 .question-dock-enter-from,
-.question-dock-leave-to { grid-template-rows: minmax(0, 0fr); opacity: 0; transform: translateY(6px); }
+.question-dock-leave-to { grid-template-rows: minmax(0, 0fr); margin-bottom: 0; opacity: 0; transform: translateY(6px); }
 @media (prefers-reduced-motion: reduce) {
   .question-dock-enter-active, .question-dock-leave-active { transition: none; }
 }

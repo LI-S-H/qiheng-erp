@@ -8,6 +8,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RunEventChannelTest {
     @Test
+    void pausedRunResubscribesAsWaitingInsteadOfFailure() {
+        var channel = new RunEventChannel("r");
+        channel.publish("sales_order_draft", Map.of("callId", "sales-1", "action", "CREATE"));
+        channel.publish("run_completed", Map.of("runId", "r", "status", "WAITING_USER"));
+        var events = channel.subscribe().collectList().block();
+        assertThat(events).extracting(RunEventChannel.Event::event).containsExactly("run_snapshot", "run_completed");
+        assertThat(events.getLast().data()).containsEntry("status", "WAITING_USER").doesNotContainKey("eventSeq");
+    }
+
+    @Test
+    void failedRunResubscriptionPreservesFailureDetails() {
+        var channel = new RunEventChannel("r");
+        channel.publish("run_failed", Map.of("code", "MODEL_CALL_FAILED", "message", "模型调用失败"));
+        var events = channel.subscribe().collectList().block();
+        assertThat(events).extracting(RunEventChannel.Event::event).containsExactly("run_snapshot", "run_failed");
+        assertThat(events.getLast().data()).containsEntry("status", "FAILED")
+                .containsEntry("code", "MODEL_CALL_FAILED").containsEntry("message", "模型调用失败");
+    }
+    @Test
     void snapshotAndLaterEventsDoNotRestartOrLoseContent() {
         var channel = new RunEventChannel("r");
         channel.publish("text_delta", Map.of("messageId", "m", "delta", "第一段"));

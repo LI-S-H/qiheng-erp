@@ -2,6 +2,8 @@ package com.qiheng.erp.ai.config;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.hook.Hook;
+import com.alibaba.cloud.ai.graph.agent.hook.hip.HumanInTheLoopHook;
+import com.alibaba.cloud.ai.graph.agent.hook.hip.ToolConfig;
 import com.alibaba.cloud.ai.graph.agent.hook.skills.ReadSkillTool;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
@@ -30,10 +32,12 @@ import com.qiheng.erp.ai.draft.PurchaseOrderDraftTool;
 import com.qiheng.erp.ai.draft.UpdatePurchaseOrderDraftTool;
 import com.qiheng.erp.ai.sales.CancelSalesOrderTool;
 import com.qiheng.erp.ai.sales.SalesOrderActionService;
+import com.qiheng.erp.ai.sales.SalesOrderConfirmationService;
 import com.qiheng.erp.ai.sales.SalesOrderDraftArgumentsInterceptor;
 import com.qiheng.erp.ai.sales.SalesOrderDraftService;
 import com.qiheng.erp.ai.sales.SalesOrderDraftTool;
 import com.qiheng.erp.ai.sales.SubmitSalesOrderTool;
+import com.qiheng.erp.security.service.LoginUserService;
 import com.qiheng.erp.ai.sales.UpdateSalesOrderDraftTool;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
@@ -175,6 +179,19 @@ public class MainAgentConfiguration {
         if (experienceInjection != null) {
             hooks.add(experienceInjection.create("MAIN"));
         }
+        // 销售草稿、提交与取消共用一个确认节点，避免重复注册同名节点。
+        if (salesDrafts != null || salesActions != null) {
+            var hitl = HumanInTheLoopHook.builder();
+            if (salesDrafts != null) {
+                hitl.approvalOn("prepare_sales_order_draft", ToolConfig.builder().build())
+                        .approvalOn("update_sales_order_draft", ToolConfig.builder().build());
+            }
+            if (salesActions != null) {
+                hitl.approvalOn("submit_sales_order", ToolConfig.builder().build())
+                        .approvalOn("cancel_sales_order", ToolConfig.builder().build());
+            }
+            hooks.add(hitl.build());
+        }
         var builder = ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
                 .methodTools(tools.toArray())
                 .hooks(hooks)
@@ -198,6 +215,26 @@ public class MainAgentConfiguration {
         var options = ((OpenAiChatOptions) openAi.getDefaultOptions()).copy();
         options.setParallelToolCalls(false);
         return openAi.mutate().defaultOptions(options).build();
+    }
+
+    /**
+     * 组装销售单确认结果的恢复入口。
+     *
+     * @param mainAgent 主智能体图
+     * @param saver 检查点存储
+     * @param runs 主智能体运行入口
+     * @param conversations 会话数据访问
+     * @param users 登录用户查询
+     * @param mapper JSON 序列化组件
+     * @return 销售单确认服务
+     */
+    @Bean
+    public SalesOrderConfirmationService salesOrderConfirmationService(ReactAgent mainAgent, RedisSaver saver,
+                                                                      MainAgentService runs,
+                                                                      AiConversationMapper conversations,
+                                                                      LoginUserService users, ObjectMapper mapper,
+                                                                      ConversationMessageStore messages) {
+        return new SalesOrderConfirmationService(mainAgent, saver, runs, conversations, users, mapper, messages);
     }
 
     /**

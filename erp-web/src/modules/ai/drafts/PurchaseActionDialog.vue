@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { isPastDate } from '@/shared/utils/date';
 import { getPurchaseOrderDetail, updatePurchaseOrder, updatePurchaseOrderStatus } from '@/modules/purchase/api';
 import type { PurchaseOrderDetail, PurchaseOrderFormPayload } from '@/modules/purchase/types';
+import { ORDER_CONFIRM_REQUEST_CONFIG } from './order-confirm-request';
 import { resolvePurchaseAction, type PurchaseActionRequest } from './purchase-action';
 
 const props = defineProps<{
@@ -20,7 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:open': [value: boolean];
-  settled: [];
+  settled: [context: { conversationId: string; callId: string }];
 }>();
 
 const loading = ref(false);
@@ -85,6 +87,10 @@ function askSubmit() {
     toast.error('提交审核前需要填写预计到货日期');
     return;
   }
+  if (isPastDate(arrivalDate.value)) {
+    toast.error('预计到货日期不能早于今天');
+    return;
+  }
   Object.assign(confirmState, {
     open: true,
     title: '确认提交审核？',
@@ -118,7 +124,7 @@ async function reject() {
       orderNo: orderNo.value,
       reason: reason.value.trim() || undefined,
     });
-    emit('settled');
+    emit('settled', { conversationId: props.conversationId, callId: request.actionRequestId });
     emit('update:open', false);
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '未能把结果交回 AI，请重新发起');
@@ -146,11 +152,11 @@ async function submitOrder() {
   try {
     let current = detail;
     if (arrivalDate.value !== (detail.expectedArrivalDate || '')) {
-      await updatePurchaseOrder(detail.purchaseOrderId, buildPayload(current, arrivalDate.value));
+      await updatePurchaseOrder(detail.purchaseOrderId, buildPayload(current, arrivalDate.value), ORDER_CONFIRM_REQUEST_CONFIG);
       current = await getPurchaseOrderDetail(detail.purchaseOrderId);
       order.value = current;
     }
-    await updatePurchaseOrderStatus(current.purchaseOrderId, 'submit', current.version);
+    await updatePurchaseOrderStatus(current.purchaseOrderId, 'submit', current.version, ORDER_CONFIRM_REQUEST_CONFIG);
     await resolvePurchaseAction(props.conversationId, request, {
       status: 'submitted',
       purchaseOrderId: request.purchaseOrderId,
@@ -159,7 +165,7 @@ async function submitOrder() {
       arrivalDate: arrivalDate.value || undefined,
     });
     toast.success(`采购单 ${current.purchaseNo} 已提交审核`);
-    emit('settled');
+    emit('settled', { conversationId: props.conversationId, callId: request.actionRequestId });
     emit('update:open', false);
   } catch (error) {
     await reportFailure(getApiErrorMessage(error) || '提交审核失败，请稍后重试');
@@ -175,7 +181,7 @@ async function cancelOrder() {
   if (!request || !detail) return;
   submitting.value = true;
   try {
-    await updatePurchaseOrderStatus(detail.purchaseOrderId, 'cancel', detail.version);
+    await updatePurchaseOrderStatus(detail.purchaseOrderId, 'cancel', detail.version, ORDER_CONFIRM_REQUEST_CONFIG);
     await resolvePurchaseAction(props.conversationId, request, {
       status: 'cancelled',
       purchaseOrderId: request.purchaseOrderId,
@@ -184,7 +190,7 @@ async function cancelOrder() {
       reason: reason.value.trim() || undefined,
     });
     toast.success(`采购单 ${detail.purchaseNo} 已取消`);
-    emit('settled');
+    emit('settled', { conversationId: props.conversationId, callId: request.actionRequestId });
     emit('update:open', false);
   } catch (error) {
     await reportFailure(getApiErrorMessage(error) || '取消失败，请稍后重试');
@@ -206,7 +212,7 @@ async function reportFailure(message: string) {
       error: message,
       orderParams: order.value ? currentParams(order.value) : undefined,
     });
-    emit('settled');
+    emit('settled', { conversationId: props.conversationId, callId: request.actionRequestId });
     emit('update:open', false);
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '未能把结果交回 AI，请重新发起');

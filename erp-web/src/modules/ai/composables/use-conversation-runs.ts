@@ -17,10 +17,10 @@ export type LiveItem =
 export type SnapshotItem =
   | LiveItem
   | { type: 'analysis'; id: string; goal: string; steps: AiAnalysisStep[]; completion: string | null; summary: string | null }
-  | { type: 'purchase_draft'; id: string; draftRequestId: string; draft: unknown }
-  | { type: 'purchase_action'; id: string; actionRequestId: string; action: unknown }
-  | { type: 'sales_draft'; id: string; draftRequestId: string; draft: unknown }
-  | { type: 'sales_action'; id: string; actionRequestId: string; action: unknown }
+  | { type: 'purchase_draft'; id: string; callId?: string; draftRequestId?: string; action?: string; arguments?: string }
+  | { type: 'purchase_action'; id: string; callId?: string; actionRequestId?: string; action?: string; purchaseOrderId?: string }
+  | { type: 'sales_draft'; id: string; callId?: string; draftRequestId?: string; action?: string; arguments?: string }
+  | { type: 'sales_action'; id: string; callId?: string; actionRequestId?: string; action?: string; salesOrderId?: string }
   | ({ type: 'report' } & AiReportProcess);
 
 /** 单个会话的运行状态；会话之间彼此隔离。 */

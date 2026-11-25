@@ -44,7 +44,16 @@ export interface PurchaseDraftLine {
 export type PurchaseDraftReceipt =
   | { status: 'created'; orderNo: string; purchaseOrderId: string; orderStatus?: string }
   | { status: 'updated'; orderNo: string; purchaseOrderId: string; orderStatus?: string }
-  | { status: 'edited'; orderNo: string; purchaseOrderId: string; orderStatus?: string; finalParams: PurchaseDraftHeader; userNote: string }
+  | {
+      status: 'edited';
+      orderNo: string;
+      purchaseOrderId: string;
+      orderStatus?: string;
+      finalParams: PurchaseDraftHeader;
+      /** 卡片打开时的参数，作为“用户改了什么”的比较基线。 */
+      originalParams: PurchaseDraftHeader;
+      userNote: string;
+    }
   | { status: 'failed'; orderNo?: string; purchaseOrderId?: string; error: string; finalParams?: PurchaseDraftHeader }
   | { status: 'rejected'; orderNo?: string; purchaseOrderId?: string; reasons: string[]; suggestion: string };
 
@@ -58,9 +67,31 @@ export const PURCHASE_DRAFT_REJECT_REASONS = [
   '其他',
 ] as const;
 
-/** 把后端返回值收敛成可校验的草稿；数值字段允许数字字符串。 */
+/** 新事件用 callId + arguments，旧事件用 draftRequestId + draft；统一成旧结构再解析。 */
+function normalizeDraftSource(data: Record<string, unknown>): Record<string, unknown> {
+  if (typeof data.callId !== 'string' || typeof data.arguments !== 'string') {
+    return data;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data.arguments);
+  } catch {
+    return { ...data, draftRequestId: data.callId, draft: null };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ...data, draftRequestId: data.callId, draft: null };
+  }
+  const root = parsed as Record<string, unknown>;
+  const draft = root.request && typeof root.request === 'object' && !Array.isArray(root.request)
+    ? root.request
+    : root;
+  return { ...data, draftRequestId: data.callId, draft };
+}
+
+/** 把后端返回值收敛成可校验的草稿；兼容 callId + arguments 新结构和旧 draft 结构。 */
 export function parsePurchaseDraftRequest(data: Record<string, unknown>): PurchaseDraftRequest {
-  const draft = data.draft;
+  const source = normalizeDraftSource(data);
+  const draft = source.draft;
   if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
     throw new Error('采购草稿缺少单据内容');
   }
@@ -81,7 +112,7 @@ export function parsePurchaseDraftRequest(data: Record<string, unknown>): Purcha
       remark: typeof line.remark === 'string' && line.remark.trim() ? line.remark.trim() : null,
     };
   });
-  const action = data.action === 'UPDATE' ? 'UPDATE' : 'CREATE';
+  const action = source.action === 'UPDATE' ? 'UPDATE' : 'CREATE';
   const supplierId = typeof value.supplierId === 'string' ? value.supplierId : '';
   const warehouseId = typeof value.warehouseId === 'string' ? value.warehouseId : '';
   // 创建必须有完整参数；修改允许只带变化字段，其余以单据详情为底。
@@ -97,8 +128,8 @@ export function parsePurchaseDraftRequest(data: Record<string, unknown>): Purcha
     }
   }
   return {
-    draftRequestId: String(data.draftRequestId ?? ''),
-    toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined,
+    draftRequestId: String(source.draftRequestId ?? ''),
+    toolCallId: typeof source.toolCallId === 'string' ? source.toolCallId : undefined,
     action,
     draft: {
       purchaseOrderId: typeof value.purchaseOrderId === 'string' ? value.purchaseOrderId : null,

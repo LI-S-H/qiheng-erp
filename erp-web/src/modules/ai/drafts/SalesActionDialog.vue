@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { getSalesOrderDetail, updateSalesOrder, updateSalesOrderStatus } from '@/modules/sales/api';
 import type { SalesOrderDetail, SalesOrderFormPayload } from '@/modules/sales/types';
+import { ORDER_CONFIRM_REQUEST_CONFIG } from './order-confirm-request';
 import { resolveSalesAction, type SalesActionRequest } from './sales-action';
 
 const props = defineProps<{
@@ -117,11 +118,11 @@ async function submitOrder() {
   try {
     let current = detail;
     if (delivery !== (detail.expectedDeliveryDate || '')) {
-      await updateSalesOrder(detail.salesOrderId, buildPayload(current, delivery), { skipPageLoading: true });
+      await updateSalesOrder(detail.salesOrderId, buildPayload(current, delivery), ORDER_CONFIRM_REQUEST_CONFIG);
       current = await getSalesOrderDetail(detail.salesOrderId);
       if (props.conversationId === conversationId && props.request?.actionRequestId === request.actionRequestId) order.value = current;
     }
-    await updateSalesOrderStatus(current.salesOrderId, 'submit', current.version, { skipPageLoading: true });
+    await updateSalesOrderStatus(current.salesOrderId, 'submit', current.version, ORDER_CONFIRM_REQUEST_CONFIG);
     await resolveSalesAction(conversationId, request, {
       status: 'submitted', salesOrderId: request.salesOrderId,
       orderNo: current.salesNo || fallbackOrderNo, orderStatus: 'SUBMITTED',
@@ -146,7 +147,7 @@ async function cancelOrder() {
   const cancelReason = reason.value.trim();
   submitting.value = true;
   try {
-    await updateSalesOrderStatus(detail.salesOrderId, 'cancel', detail.version, { skipPageLoading: true });
+    await updateSalesOrderStatus(detail.salesOrderId, 'cancel', detail.version, ORDER_CONFIRM_REQUEST_CONFIG);
     await resolveSalesAction(conversationId, request, {
       status: 'cancelled', salesOrderId: request.salesOrderId,
       orderNo: detail.salesNo || fallbackOrderNo, orderStatus: 'CANCELLED',

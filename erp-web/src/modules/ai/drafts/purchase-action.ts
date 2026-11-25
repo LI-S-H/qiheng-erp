@@ -23,22 +23,51 @@ export type PurchaseActionReceipt =
       orderParams?: Record<string, unknown>;
     };
 
-/** 把后端事件收敛成可校验的动作请求；格式异常时按缺少动作处理。 */
+/** 把后端事件收敛成可校验的动作请求；兼容 callId + arguments 新结构和旧结构。 */
 export function parsePurchaseActionRequest(data: Record<string, unknown>): PurchaseActionRequest {
-  const action = data.action === 'SUBMIT' || data.action === 'CANCEL' ? data.action : null;
-  if (!action || typeof data.actionRequestId !== 'string' || !data.actionRequestId) {
+  const source = normalizeActionSource(data);
+  const action = source.action === 'SUBMIT' || source.action === 'CANCEL' ? source.action : null;
+  if (!action || typeof source.actionRequestId !== 'string' || !source.actionRequestId) {
     throw new Error('采购单动作格式错误');
   }
-  if (typeof data.purchaseOrderId !== 'string' || !data.purchaseOrderId) {
+  if (typeof source.purchaseOrderId !== 'string' || !source.purchaseOrderId) {
     throw new Error('采购单动作缺少单据编号');
   }
   return {
-    actionRequestId: data.actionRequestId,
-    toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined,
+    actionRequestId: source.actionRequestId,
+    toolCallId: typeof source.toolCallId === 'string' ? source.toolCallId : undefined,
     action,
-    purchaseOrderId: data.purchaseOrderId,
-    orderNo: typeof data.orderNo === 'string' ? data.orderNo : '',
-    reason: typeof data.reason === 'string' ? data.reason : '',
+    purchaseOrderId: source.purchaseOrderId,
+    orderNo: typeof source.orderNo === 'string' ? source.orderNo : '',
+    reason: typeof source.reason === 'string' ? source.reason : '',
+  };
+}
+
+/** 新事件用 callId + arguments，旧事件直接带 actionRequestId；统一成旧结构。 */
+function normalizeActionSource(data: Record<string, unknown>): Record<string, unknown> {
+  if (typeof data.callId !== 'string') {
+    return data;
+  }
+  let parsed: unknown = null;
+  if (typeof data.arguments === 'string') {
+    try {
+      parsed = JSON.parse(data.arguments);
+    } catch {
+      parsed = null;
+    }
+  }
+  const root = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
+  const args = root.request && typeof root.request === 'object' && !Array.isArray(root.request)
+    ? root.request as Record<string, unknown>
+    : root;
+  return {
+    ...data,
+    actionRequestId: data.callId,
+    purchaseOrderId: data.purchaseOrderId ?? args.purchaseOrderId,
+    orderNo: data.orderNo ?? args.orderNo,
+    reason: data.reason ?? args.reason,
   };
 }
 

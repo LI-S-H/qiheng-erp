@@ -229,7 +229,7 @@ function askConfirm(action: ConfirmAction) {
   if (action === 'discard') { cancelEdit(); return; }
   if (action === 'close') { emit('update:open', false); return; }
   if (!validate()) return;
-  void submitSave(action === 'create' ? 'confirmed' : 'edited');
+  void submitSave();
 }
 
 /** 成功后同时关闭两层弹窗，让遮罩和预览同步退出。 */
@@ -251,38 +251,41 @@ function handleOpenChange(value: boolean) {
 }
 
 /** 保存销售单并把结果交回 AI；系统拒绝时同样交回原因。 */
-async function submitSave(kind: 'confirmed' | 'edited') {
+async function submitSave() {
   const request = props.request;
   if (!request) return;
   const conversationId = props.conversationId;
   const header = currentHeader();
+  const initial = initialHeader();
   const orderLines = lines.value.map(line => ({ ...line }));
   const update = isUpdate.value;
   const version = orderVersion.value;
   submitting.value = true;
   try {
     const note = form.userNote.trim();
+    // 用户直接确认模型建议时只回“批准”；改了参数或补充说明才回差异和基线。
+    const edited = !sameParams(initial, header) || note.length > 0;
     if (update) {
       const orderId = request.draft.salesOrderId;
       if (!orderId || version === null) {
         throw new Error('销售单信息不完整，请关闭后重新发起');
       }
       const updated = await updateSalesOrderFromDraft(orderId, version, header, orderLines);
-      await resolveSalesDraft(conversationId, request, kind === 'confirmed'
-        ? { status: 'updated', orderNo: updated.salesNo, salesOrderId: orderId, orderStatus: updated.status }
-        : {
+      await resolveSalesDraft(conversationId, request, edited
+        ? {
             status: 'edited', orderNo: updated.salesNo, salesOrderId: orderId, orderStatus: updated.status,
-            finalParams: header, userNote: note,
-          });
+            finalParams: header, originalParams: initial, userNote: note,
+          }
+        : { status: 'updated', orderNo: updated.salesNo, salesOrderId: orderId, orderStatus: updated.status });
       toast.success(`销售单 ${updated.salesNo} 已保存`);
     } else {
       const created = await createSalesOrderFromDraft(header, orderLines);
-      await resolveSalesDraft(conversationId, request, kind === 'confirmed'
-        ? { status: 'created', orderNo: created.salesNo, salesOrderId: created.salesOrderId }
-        : {
+      await resolveSalesDraft(conversationId, request, edited
+        ? {
             status: 'edited', orderNo: created.salesNo, salesOrderId: created.salesOrderId,
-            finalParams: header, userNote: note,
-          });
+            finalParams: header, originalParams: initial, userNote: note,
+          }
+        : { status: 'created', orderNo: created.salesNo, salesOrderId: created.salesOrderId });
       toast.success(`销售单 ${created.salesNo} 已创建`);
     }
     finishConfirmation(conversationId, request);
@@ -354,6 +357,8 @@ async function submitReject() {
   try {
     await resolveSalesDraft(conversationId, request, {
       status: 'rejected',
+      ...(isUpdate.value && existingOrderNo.value ? { orderNo: existingOrderNo.value } : {}),
+      ...(isUpdate.value && request.draft.salesOrderId ? { salesOrderId: request.draft.salesOrderId } : {}),
       reasons: rejectReasons.value,
       suggestion: rejectNote.value.trim(),
     });
@@ -474,6 +479,27 @@ function currentHeader(): SalesDraftHeader {
       remark: line.remark.trim() || null,
     })),
   };
+}
+
+/** 卡片打开时的业务参数；用户是否改过参数以它为基线。 */
+function initialHeader(): SalesDraftHeader {
+  return {
+    customerId: customerId.value,
+    warehouseId: originalForm.warehouseId,
+    expectedDeliveryDate: originalForm.expectedDeliveryDate || null,
+    remark: originalForm.remark.trim() || null,
+    items: originalLines.value.map(line => ({
+      productId: line.productId,
+      quantity: Number(line.quantity),
+      unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+      remark: line.remark.trim() || null,
+    })),
+  };
+}
+
+/** 参数是否完全一致；字段顺序固定，直接按序列化结果判断。 */
+function sameParams(left: SalesDraftHeader, right: SalesDraftHeader) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /** 明细行小计。 */

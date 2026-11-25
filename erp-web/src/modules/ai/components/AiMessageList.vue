@@ -121,7 +121,9 @@ function parseOrderResult(order: OrderToolMessage): Record<string, unknown> {
 function historyDataOf(order: OrderToolMessage) {
   const parsed = parseOrderResult(order);
   const data = order.content.data;
-  const orderId = String(parsed.orderId || parsed.salesOrderId || data.salesOrderId || '');
+  const purchase = data.orderType === 'PURCHASE';
+  const orderId = String(parsed.orderId || parsed.salesOrderId || parsed.purchaseOrderId
+    || data.salesOrderId || data.purchaseOrderId || '');
   // 旧记录没有 result，用顶层 status 映射成业务状态。
   const legacyStatus = data.status === 'submitted' ? 'SUBMITTED'
     : data.status === 'cancelled' ? 'CANCELLED'
@@ -130,12 +132,16 @@ function historyDataOf(order: OrderToolMessage) {
   return {
     action: data.action,
     status: ((parsed.status as string) || data.status || 'created') as 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled',
-    salesOrderId: orderId,
+    salesOrderId: purchase ? undefined : orderId,
+    purchaseOrderId: purchase ? orderId : undefined,
     orderNo: (typeof parsed.orderNo === 'string' ? parsed.orderNo : data.orderNo) || undefined,
     orderStatus: (typeof parsed.orderStatus === 'string' ? parsed.orderStatus : legacyStatus),
+    changedFields: Array.isArray(parsed.changedFields) ? parsed.changedFields as string[] : undefined,
+    userNote: typeof parsed.userNote === 'string' ? parsed.userNote : undefined,
     error: typeof parsed.error === 'string' ? parsed.error : undefined,
     reasons: Array.isArray(parsed.reasons) ? parsed.reasons as string[] : undefined,
     suggestion: typeof parsed.suggestion === 'string' ? parsed.suggestion : undefined,
+    reason: typeof parsed.reason === 'string' ? parsed.reason : undefined,
   };
 }
 const answers = computed(() => clarificationAnswers(props.messages));
@@ -545,7 +551,10 @@ function toolSummary(step: AiConversationMessage) {
             <p class="message-bubble">{{ receipt.content.type === 'TEXT' ? receipt.content.data.text : '' }}</p>
           </details>
 
-          <AiSalesDraftHistory v-for="order in turn.resultOrders" :key="order.messageId" :data="historyDataOf(order)" />
+          <template v-for="order in turn.resultOrders" :key="order.messageId">
+            <AiPurchaseDraftHistory v-if="order.content.data.orderType === 'PURCHASE'" :data="historyDataOf(order)" />
+            <AiSalesDraftHistory v-else :data="historyDataOf(order)" />
+          </template>
           <AiPurchaseDraftHistory v-for="draft in turn.drafts" :key="draft.messageId" :data="draft.content.data" />
         </div>
       </article>

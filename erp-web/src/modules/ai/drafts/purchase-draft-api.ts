@@ -1,6 +1,7 @@
 import { http } from '@/api/http';
 import { createPurchaseOrder, getSupplierDetail, listSupplierProducts, updatePurchaseOrder } from '@/modules/purchase/api';
 import { getWarehouseDetail } from '@/modules/warehouse/warehouses/api';
+import { ORDER_CONFIRM_REQUEST_CONFIG } from './order-confirm-request';
 import type { PurchaseDraftHeader, PurchaseDraftLine, PurchaseDraftRequest, PurchaseDraftReceipt } from './purchase-draft-types';
 
 /** 草稿确认页需要的展示信息：名称按编号回查，不在前端拼推测值。 */
@@ -121,7 +122,7 @@ export async function createPurchaseOrderFromDraft(draft: PurchaseDraftHeader, l
       unitPrice: line.unitPrice!,
       remark: line.remark,
     })),
-  });
+  }, ORDER_CONFIRM_REQUEST_CONFIG);
   return { purchaseNo: order.purchaseNo, purchaseOrderId: order.purchaseOrderId };
 }
 
@@ -147,7 +148,7 @@ export async function updatePurchaseOrderFromDraft(
       unitPrice: line.unitPrice!,
       remark: line.remark,
     })),
-  });
+  }, ORDER_CONFIRM_REQUEST_CONFIG);
   return { purchaseNo: order.purchaseNo, purchaseOrderId: order.purchaseOrderId, status: order.status };
 }
 

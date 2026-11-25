@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { isPastDate } from '@/shared/utils/date';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import { getPurchaseOrderDetail, listEnabledWarehouseOptions } from '@/modules/purchase/api';
 import { getWarehouseDetail } from '@/modules/warehouse/warehouses/api';
@@ -40,7 +41,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:open': [value: boolean];
-  settled: [];
+  settled: [context: { conversationId: string; callId: string }];
 }>();
 
 /** 确认动作：创建、保存编辑、放弃编辑。 */
@@ -284,9 +285,9 @@ function runConfirm() {
   } else if (action === 'close') {
     emit('update:open', false);
   } else if (action === 'create') {
-    void submitSave('confirmed');
+    void submitSave();
   } else if (action === 'update') {
-    void submitSave('edited');
+    void submitSave();
   }
 }
 
@@ -304,36 +305,40 @@ function handleOpenChange(value: boolean) {
 }
 
 /** 保存采购单并把结果交回 AI；系统拒绝时同样交回原因。 */
-async function submitSave(kind: 'confirmed' | 'edited') {
+async function submitSave() {
   const request = props.request;
   if (!request) return;
   submitting.value = true;
   try {
     const note = form.userNote.trim();
+    const header = currentHeader();
+    const initial = initialHeader();
+    // 用户直接确认模型建议时只回“批准”；改了参数或补充说明才回差异和基线。
+    const edited = !sameParams(initial, header) || note.length > 0;
     if (isUpdate.value) {
       const orderId = request.draft.purchaseOrderId;
       if (!orderId || orderVersion.value === null) {
         throw new Error('采购单信息不完整，请关闭后重新发起');
       }
-      const updated = await updatePurchaseOrderFromDraft(orderId, orderVersion.value, currentHeader(), lines.value);
-      await resolvePurchaseDraft(props.conversationId, request, kind === 'confirmed'
-        ? { status: 'updated', orderNo: updated.purchaseNo, purchaseOrderId: orderId, orderStatus: updated.status }
-        : {
+      const updated = await updatePurchaseOrderFromDraft(orderId, orderVersion.value, header, lines.value);
+      await resolvePurchaseDraft(props.conversationId, request, edited
+        ? {
             status: 'edited', orderNo: updated.purchaseNo, purchaseOrderId: orderId, orderStatus: updated.status,
-            finalParams: currentHeader(), userNote: note,
-          });
+            finalParams: header, originalParams: initial, userNote: note,
+          }
+        : { status: 'updated', orderNo: updated.purchaseNo, purchaseOrderId: orderId, orderStatus: updated.status });
       toast.success(`采购单 ${updated.purchaseNo} 已保存`);
     } else {
-      const created = await createPurchaseOrderFromDraft(currentHeader(), lines.value);
-      await resolvePurchaseDraft(props.conversationId, request, kind === 'confirmed'
-        ? { status: 'created', orderNo: created.purchaseNo, purchaseOrderId: created.purchaseOrderId }
-        : {
+      const created = await createPurchaseOrderFromDraft(header, lines.value);
+      await resolvePurchaseDraft(props.conversationId, request, edited
+        ? {
             status: 'edited', orderNo: created.purchaseNo, purchaseOrderId: created.purchaseOrderId,
-            finalParams: currentHeader(), userNote: note,
-          });
+            finalParams: header, originalParams: initial, userNote: note,
+          }
+        : { status: 'created', orderNo: created.purchaseNo, purchaseOrderId: created.purchaseOrderId });
       toast.success(`采购单 ${created.purchaseNo} 已创建`);
     }
-    emit('settled');
+    emit('settled', { conversationId: props.conversationId, callId: request.draftRequestId });
     emit('update:open', false);
   } catch (error) {
     await reportFailure(getApiErrorMessage(error)
@@ -356,7 +361,7 @@ async function reportFailure(message: string) {
       finalParams: currentHeader(),
       ...(orderId ? { purchaseOrderId: orderId } : {}),
     });
-    emit('settled');
+    emit('settled', { conversationId: props.conversationId, callId: request.draftRequestId });
     emit('update:open', false);
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '未能把创建结果交回 AI，请重新发起采购需求');
@@ -407,12 +412,14 @@ async function submitReject() {
   try {
     await resolvePurchaseDraft(props.conversationId, request, {
       status: 'rejected',
+      ...(isUpdate.value && existingOrderNo.value ? { orderNo: existingOrderNo.value } : {}),
+      ...(isUpdate.value && request.draft.purchaseOrderId ? { purchaseOrderId: request.draft.purchaseOrderId } : {}),
       reasons: rejectReasons.value,
       suggestion: rejectNote.value.trim(),
     });
     rejectOpen.value = false;
     toast.success('已驳回采购草稿，AI 将按你的意见调整');
-    emit('settled');
+    emit('settled', { conversationId: props.conversationId, callId: request.draftRequestId });
     emit('update:open', false);
   } catch (error) {
     toast.error(getApiErrorMessage(error) || '驳回失败，请稍后重试');
@@ -425,6 +432,7 @@ async function submitReject() {
 function validate() {
   Object.keys(errors).forEach(key => delete errors[key]);
   if (!form.warehouseId) errors.warehouseId = '请选择入库仓库';
+  if (isPastDate(form.expectedArrivalDate)) errors.expectedArrivalDate = '预计到货日期不能早于今天';
   if (form.remark.trim().length > 500) errors.remark = '备注不能超过 500 个字符';
   if (!lines.value.length) errors.items = '请至少保留一行明细';
   lines.value.forEach((line, index) => {
@@ -535,6 +543,27 @@ function currentHeader(): PurchaseDraftHeader {
   };
 }
 
+/** 卡片打开时的业务参数；用户是否改过参数以它为基线。 */
+function initialHeader(): PurchaseDraftHeader {
+  return {
+    supplierId: supplierId.value,
+    warehouseId: originalForm.warehouseId,
+    expectedArrivalDate: originalForm.expectedArrivalDate || null,
+    remark: originalForm.remark.trim() || null,
+    items: originalLines.value.map(line => ({
+      productId: line.productId,
+      quantity: Number(line.quantity),
+      unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+      remark: line.remark.trim() || null,
+    })),
+  };
+}
+
+/** 参数是否完全一致；字段顺序固定，直接按序列化结果判断。 */
+function sameParams(left: PurchaseDraftHeader, right: PurchaseDraftHeader) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /** 明细行小计。 */
 function lineAmount(line: PurchaseDraftLine) {
   return Number(line.quantity || 0) * Number(line.unitPrice || 0);
@@ -603,7 +632,8 @@ function formatMoney(value: number) {
             </div>
             <div class="space-y-1">
               <Label>预计到货</Label>
-              <OrderDatePicker v-model="form.expectedArrivalDate" :disabled="readonly" />
+              <OrderDatePicker v-model="form.expectedArrivalDate" :disabled="readonly" :invalid="Boolean(errors.expectedArrivalDate)" />
+              <p v-if="errors.expectedArrivalDate" class="text-xs text-destructive">{{ errors.expectedArrivalDate }}</p>
             </div>
           </div>
 

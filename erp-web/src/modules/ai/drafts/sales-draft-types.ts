@@ -45,7 +45,16 @@ export interface SalesDraftLine {
 export type SalesDraftReceipt =
   | { status: 'created'; orderNo: string; salesOrderId: string; orderStatus?: string }
   | { status: 'updated'; orderNo: string; salesOrderId: string; orderStatus?: string }
-  | { status: 'edited'; orderNo: string; salesOrderId: string; orderStatus?: string; finalParams: SalesDraftHeader; userNote: string }
+  | {
+      status: 'edited';
+      orderNo: string;
+      salesOrderId: string;
+      orderStatus?: string;
+      finalParams: SalesDraftHeader;
+      /** 卡片打开时的参数，作为“用户改了什么”的比较基线。 */
+      originalParams: SalesDraftHeader;
+      userNote: string;
+    }
   | { status: 'failed'; orderNo?: string; salesOrderId?: string; error: string; finalParams?: SalesDraftHeader }
   | { status: 'rejected'; orderNo?: string; salesOrderId?: string; reasons: string[]; suggestion: string };
 

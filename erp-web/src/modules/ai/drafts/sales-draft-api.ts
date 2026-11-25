@@ -2,6 +2,7 @@ import { http } from '@/api/http';
 import { createSalesOrder, getCustomerDetail, getSalesOrderDetail, listEnabledSalesProductOptions, updateSalesOrder } from '@/modules/sales/api';
 import { getProductDetail } from '@/modules/product/products/api';
 import { getWarehouseDetail } from '@/modules/warehouse/warehouses/api';
+import { ORDER_CONFIRM_REQUEST_CONFIG } from './order-confirm-request';
 import type { SalesDraftHeader, SalesDraftLine, SalesDraftRequest, SalesDraftReceipt } from './sales-draft-types';
 
 /** 草稿确认页需要的展示信息：名称一律按编号回查，不由模型提供。 */
@@ -99,7 +100,7 @@ export async function createSalesOrderFromDraft(draft: SalesDraftHeader, lines: 
       unitPrice: line.unitPrice ?? 0,
       remark: line.remark,
     })),
-  }, { skipPageLoading: true });
+  }, ORDER_CONFIRM_REQUEST_CONFIG);
   return { salesNo: order.salesNo, salesOrderId: order.salesOrderId };
 }
 
@@ -124,7 +125,7 @@ export async function updateSalesOrderFromDraft(
       unitPrice: line.unitPrice ?? 0,
       remark: line.remark,
     })),
-  }, { skipPageLoading: true });
+  }, ORDER_CONFIRM_REQUEST_CONFIG);
   return { salesNo: order.salesNo, salesOrderId: order.salesOrderId, status: order.status };
 }
 

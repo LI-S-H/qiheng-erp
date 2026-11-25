@@ -1134,7 +1134,7 @@ export function getPurchaseOrderDetail(purchaseOrderId: string) {
   return getResult<PurchaseOrderDetail>(`/purchase/orders/${purchaseOrderId}`, undefined, { skipPageLoading: true }).then(normalizeOrderDetail);
 }
 
-export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
+export function createPurchaseOrder(payload: PurchaseOrderFormPayload, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) {
     const supplier = mockSuppliers.find(item => item.supplierId === payload.supplierId);
     if (!supplier || supplier.status === 0) return Promise.reject(new Error('请选择启用状态的供应商'));
@@ -1195,10 +1195,11 @@ export function createPurchaseOrder(payload: PurchaseOrderFormPayload) {
     return Promise.resolve(created);
   }
   const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '采购单价') })) };
-  return postResult<PurchaseOrderDetail, typeof request>('/purchase/orders', request).then(normalizeOrderDetail);
+  return http.post<Result<PurchaseOrderDetail>>('/purchase/orders', request, requestConfig)
+    .then(response => normalizeOrderDetail(response.data.data));
 }
 
-export async function updatePurchaseOrder(purchaseOrderId: string, payload: PurchaseOrderFormPayload) {
+export async function updatePurchaseOrder(purchaseOrderId: string, payload: PurchaseOrderFormPayload, requestConfig?: AxiosRequestConfig) {
   if (useMockApi) {
     const existing = mockOrders.find(item => item.purchaseOrderId === purchaseOrderId);
     if (!existing) return Promise.reject(new Error('采购订单不存在'));
@@ -1249,11 +1250,16 @@ export async function updatePurchaseOrder(purchaseOrderId: string, payload: Purc
     return Promise.resolve(updated);
   }
   const request = { ...payload, items: payload.items.map(item => ({ ...item, unitPrice: serializeMoney(item.unitPrice, '采购单价') })) };
-  const response = await http.put(`/purchase/orders/${purchaseOrderId}`, request);
-  return normalizeOrderDetail(response.data.data as PurchaseOrderDetail);
+  const response = await http.put<Result<PurchaseOrderDetail>>(`/purchase/orders/${purchaseOrderId}`, request, requestConfig);
+  return normalizeOrderDetail(response.data.data);
 }
 
-export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'submit' | 'approve' | 'cancel', version: number) {
+export function updatePurchaseOrderStatus(
+  purchaseOrderId: string,
+  action: 'submit' | 'approve' | 'cancel',
+  version: number,
+  requestConfig?: AxiosRequestConfig,
+) {
   if (useMockApi) {
     const timestamp = nowText();
     mockOrders = mockOrders.map(item => {
@@ -1304,7 +1310,8 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string, action: 'subm
     });
     return Promise.resolve(null);
   }
-  return postResult<null, { version: number }>(`/purchase/orders/${purchaseOrderId}/${action}`, { version });
+  return http.post<Result<null>>(`/purchase/orders/${purchaseOrderId}/${action}`, { version }, requestConfig)
+    .then(response => response.data.data);
 }
 
 function mockProductSnapshotById(productId: string) {

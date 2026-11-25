@@ -144,10 +144,9 @@ function openDraftDialog() {
   draftDialogOpen.value = true;
 }
 
-/** 处置完成后收起确认页并清除等待状态，结果由服务端事件或本地操作确认。 */
-function handleDraftSettled() {
-  draftDialogOpen.value = false;
-  pendingDraft.value = null;
+/** 处置完成后收起确认页，并接上采购单的恢复运行。 */
+function handleDraftSettled(context: { conversationId: string; callId: string }) {
+  void finishOrderTransition('draft', context, 'PURCHASE');
 }
 
 /** 等待用户确认的提交或取消动作。 */
@@ -172,15 +171,14 @@ function openActionDialog() {
   actionDialogOpen.value = true;
 }
 
-/** 动作处置完成后收起确认页并清除等待状态。 */
-function handleActionSettled() {
-  actionDialogOpen.value = false;
-  pendingAction.value = null;
+/** 动作处置完成后收起确认页，并接上采购单的恢复运行。 */
+function handleActionSettled(context: { conversationId: string; callId: string }) {
+  void finishOrderTransition('action', context, 'PURCHASE');
 }
 /** 等待用户处置的销售草稿；与采购草稿互斥，同一时刻只会有一份。 */
 const pendingSalesDraft = runtimeField('pendingSalesDraft');
 const salesDraftDialogOpen = ref(false);
-const closingSales = ref<{ id: string; callId: string } | null>(null);
+const closingOrder = ref<{ id: string; callId: string } | null>(null);
 
 /** 把销售草稿事件收敛成可校验的结构；格式异常时按缺少草稿处理。 */
 function pendingSalesDraftFrom(value: unknown): SalesDraftRequest | null {
@@ -215,13 +213,50 @@ function pendingSalesDraftFrom(value: unknown): SalesDraftRequest | null {
 
 /** 打开销售草稿确认页；必须点开详情后才能处置。 */
 function openSalesDraftDialog() {
-  if (!pendingSalesDraft.value || closingSales.value) return;
+  if (!pendingSalesDraft.value || closingOrder.value) return;
   salesDraftDialogOpen.value = true;
 }
 
 /** 打开历史里的待确认草稿：参数来自工具调用记录，确认仍走原 resolve 接口。 */
-function openOrderTool(data: { callId: string; action?: string; arguments?: string; salesOrderId?: string; orderNo?: string; reason?: string }) {
-  if (closingSales.value) return;
+function openOrderTool(data: {
+  callId: string;
+  action?: string;
+  arguments?: string;
+  orderType?: 'SALES' | 'PURCHASE';
+  salesOrderId?: string;
+  purchaseOrderId?: string;
+  orderNo?: string;
+  reason?: string;
+}) {
+  if (closingOrder.value) return;
+  if (data.orderType === 'PURCHASE') {
+    if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
+      pendingAction.value = {
+        actionRequestId: data.callId,
+        toolCallId: data.callId,
+        action: data.action,
+        purchaseOrderId: data.purchaseOrderId || '',
+        orderNo: data.orderNo || '',
+        reason: data.reason || '',
+      };
+      actionDialogOpen.value = true;
+      return;
+    }
+    if (!data.arguments) return;
+    try {
+      const parsed = JSON.parse(data.arguments);
+      const draft = parsed?.request && typeof parsed.request === 'object' ? parsed.request : parsed;
+      pendingDraft.value = {
+        draftRequestId: data.callId,
+        action: data.action === 'UPDATE' ? 'UPDATE' : 'CREATE',
+        draft,
+      };
+      draftDialogOpen.value = true;
+    } catch {
+      // 参数无法解析时不打开弹窗，避免展示不完整数据。
+    }
+    return;
+  }
   if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
     pendingSalesAction.value = {
       actionRequestId: data.callId,
@@ -251,24 +286,29 @@ function openOrderTool(data: { callId: string; action?: string; arguments?: stri
 
 /** 销售草稿处置完成后收起确认页，并接上后端已经启动的恢复运行。 */
 // 按会话和调用编号保留已提交状态，旧历史不能重新恢复同一张卡片；需要响应式，确认后立即结束等待提示。
-const settledSalesCalls = reactive(new Map<string, Set<string>>());
+const settledOrderCalls = reactive(new Map<string, Set<string>>());
 
-function settleSalesCall(id: string, callId: string) {
+function settleOrderCall(id: string, callId: string) {
   if (!callId) return;
-  const calls = settledSalesCalls.get(id) || new Set<string>();
+  const calls = settledOrderCalls.get(id) || new Set<string>();
   calls.add(callId);
-  settledSalesCalls.set(id, calls);
+  settledOrderCalls.set(id, calls);
 }
 
-async function reconnectAfterSales(id: string, callId: string, epoch: number, userId: string | undefined) {
+async function reconnectAfterOrder(id: string, callId: string, epoch: number, userId: string | undefined,
+                                   orderType: 'SALES' | 'PURCHASE') {
   try {
     for (let attempt = 0; attempt < 40 && isCurrent(epoch, userId, id); attempt++) {
       const state = runs.get(id);
       if (!state.streaming && !state.querying && !state.watching) {
         const runtime = await getMainAgentRuntime(id);
         if (!isCurrent(epoch, userId, id)) return;
-        const draft = pendingSalesDraftFrom(runtime?.salesDraft);
-        const action = pendingSalesActionFrom(runtime?.salesAction);
+        const draft = orderType === 'PURCHASE'
+          ? pendingDraftFrom(runtime?.draft)
+          : pendingSalesDraftFrom(runtime?.salesDraft);
+        const action = orderType === 'PURCHASE'
+          ? pendingActionFrom(runtime?.action)
+          : pendingSalesActionFrom(runtime?.salesAction);
         const pendingId = draft?.draftRequestId || action?.actionRequestId;
         if (runtime && (runtime.status !== 'WAITING_USER' || (pendingId && pendingId !== callId))) {
           await reconnectRun(id, epoch, userId);
@@ -283,28 +323,50 @@ async function reconnectAfterSales(id: string, callId: string, epoch: number, us
   }
 }
 
-async function finishSalesTransition(kind: 'draft' | 'action', context: { conversationId: string; callId: string }) {
+async function finishOrderTransition(kind: 'draft' | 'action',
+                                     context: { conversationId: string; callId: string },
+                                     orderType: 'SALES' | 'PURCHASE') {
   const id = context.conversationId;
   const userId = auth.user?.userId;
   const callId = context.callId;
   if (!id || !callId) return;
   const state = runs.get(id);
+  const currentDraftId = orderType === 'PURCHASE'
+    ? state.pendingDraft?.draftRequestId
+    : state.pendingSalesDraft?.draftRequestId;
+  const currentActionId = orderType === 'PURCHASE'
+    ? state.pendingAction?.actionRequestId
+    : state.pendingSalesAction?.actionRequestId;
   const clearSettled = () => {
-    if (kind === 'draft' && state.pendingSalesDraft?.draftRequestId === callId) state.pendingSalesDraft = null;
-    if (kind === 'action' && state.pendingSalesAction?.actionRequestId === callId) state.pendingSalesAction = null;
+    if (kind === 'draft' && currentDraftId === callId) {
+      if (orderType === 'PURCHASE') state.pendingDraft = null;
+      else state.pendingSalesDraft = null;
+    }
+    if (kind === 'action' && currentActionId === callId) {
+      if (orderType === 'PURCHASE') state.pendingAction = null;
+      else state.pendingSalesAction = null;
+    }
   };
-  settleSalesCall(id, callId);
-  const currentCallId = kind === 'draft' ? state.pendingSalesDraft?.draftRequestId : state.pendingSalesAction?.actionRequestId;
-  if (!userId || store.activeId !== id || currentCallId !== callId || closingSales.value) {
+  settleOrderCall(id, callId);
+  const currentCallId = kind === 'draft' ? currentDraftId : currentActionId;
+  if (!userId || store.activeId !== id || currentCallId !== callId || closingOrder.value) {
     clearSettled();
     return;
   }
   const epoch = requestEpoch;
-  closingSales.value = { id, callId };
-  if (kind === 'draft') salesDraftDialogOpen.value = false;
-  else salesActionDialogOpen.value = false;
+  closingOrder.value = { id, callId };
+  if (kind === 'draft') {
+    if (orderType === 'PURCHASE') draftDialogOpen.value = false;
+    else salesDraftDialogOpen.value = false;
+  } else if (orderType === 'PURCHASE') {
+    actionDialogOpen.value = false;
+  } else {
+    salesActionDialogOpen.value = false;
+  }
   // 先让弹窗和遮罩退出，保留请求及背景；后台已恢复执行，稍后订阅不会重复提交。
   await nextTick();
+  // 先结束等待状态，关闭动画可以继续播放，不能反过来阻塞提示消失。
+  clearSettled();
   const elements = document.querySelectorAll('[data-sales-draft-dialog][data-state="closed"], [data-sales-action-dialog][data-state="closed"], [data-sales-confirm-overlay][data-state="closed"], [data-confirm-dialog][data-state="closed"], .sales-approval-overlay[data-state="closed"]');
   const animations = [...elements].flatMap(element => element.getAnimations().filter(animation => animation.playState === 'running'));
   if (animations.length) {
@@ -313,13 +375,12 @@ async function finishSalesTransition(kind: 'draft' | 'action', context: { conver
       new Promise(resolve => window.setTimeout(resolve, 500)),
     ]);
   }
-  clearSettled();
-  if (closingSales.value?.id === id && closingSales.value.callId === callId) closingSales.value = null;
-  if (isCurrent(epoch, userId, id)) void reconnectAfterSales(id, callId, epoch, userId);
+  if (closingOrder.value?.id === id && closingOrder.value.callId === callId) closingOrder.value = null;
+  if (isCurrent(epoch, userId, id)) void reconnectAfterOrder(id, callId, epoch, userId, orderType);
 }
 
 function handleSalesDraftSettled(context: { conversationId: string; callId: string }) {
-  void finishSalesTransition('draft', context);
+  void finishOrderTransition('draft', context, 'SALES');
 }
 
 /** 等待用户确认的销售单提交或取消动作。 */
@@ -356,13 +417,13 @@ function pendingSalesActionFrom(value: unknown): SalesActionRequest | null {
 
 /** 打开销售动作确认页；必须点开详情后才能提交或取消。 */
 function openSalesActionDialog() {
-  if (!pendingSalesAction.value || closingSales.value) return;
+  if (!pendingSalesAction.value || closingOrder.value) return;
   salesActionDialogOpen.value = true;
 }
 
 /** 销售动作处置完成后收起确认页并清除等待状态。 */
 function handleSalesActionSettled(context: { conversationId: string; callId: string }) {
-  void finishSalesTransition('action', context);
+  void finishOrderTransition('action', context, 'SALES');
 }
 const small = useMediaQuery('(max-width: 900px)');
 const phone = useMediaQuery('(max-width: 640px)');
@@ -463,11 +524,11 @@ const analysisBlocks = computed<AiAnalysisBlock[]>(() => {
 });
 /** 刷新后从历史里最后一条待确认记录恢复底部操作卡片。 */
 watch(displayedMessages, messages => {
-  if (closingSales.value?.id === store.activeId) return;
+  if (closingOrder.value?.id === store.activeId) return;
   const resolved = new Set(messages
     .filter(message => message.kind === 'TOOL_RESULT' && message.content.type === 'ORDER_TOOL')
     .map(message => message.content.type === 'ORDER_TOOL' ? message.content.data.callId : ''));
-  const settled = settledSalesCalls.get(store.activeId || '');
+  const settled = settledOrderCalls.get(store.activeId || '');
   for (const id of resolved) settled?.delete(id);
   const pending = [...messages].reverse().find(message =>
     message.kind === 'TOOL_CALL'
@@ -478,31 +539,49 @@ watch(displayedMessages, messages => {
   if (!pending || pending.content.type !== 'ORDER_TOOL') {
     pendingSalesDraft.value = null;
     pendingSalesAction.value = null;
+    pendingDraft.value = null;
+    pendingAction.value = null;
     return;
   }
   const data = pending.content.data;
+  const purchase = data.orderType === 'PURCHASE';
   if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
     pendingSalesDraft.value = null;
-    pendingSalesAction.value = {
+    pendingDraft.value = null;
+    const action = {
       actionRequestId: data.callId,
       toolCallId: data.callId,
       action: data.action,
-      salesOrderId: data.salesOrderId || '',
       orderNo: data.orderNo || '',
       reason: data.reason || '',
     };
+    if (purchase) {
+      pendingSalesAction.value = null;
+      pendingAction.value = { ...action, purchaseOrderId: data.purchaseOrderId || '' };
+    } else {
+      pendingAction.value = null;
+      pendingSalesAction.value = { ...action, salesOrderId: data.salesOrderId || '' };
+    }
     return;
   }
   pendingSalesAction.value = null;
+  pendingAction.value = null;
   if (!data.arguments) return;
   try {
     const parsed = JSON.parse(data.arguments);
     const draft = parsed?.request && typeof parsed.request === 'object' ? parsed.request : parsed;
-    pendingSalesDraft.value = {
+    const request = {
       draftRequestId: data.callId,
-      action: data.action === 'UPDATE' ? 'UPDATE' : 'CREATE',
+      action: data.action === 'UPDATE' ? 'UPDATE' as const : 'CREATE' as const,
       draft,
     };
+    if (purchase) {
+      pendingSalesDraft.value = null;
+      pendingDraft.value = request;
+    } else {
+      pendingDraft.value = null;
+      pendingSalesDraft.value = request;
+    }
   } catch {
     // 参数无法解析时不恢复卡片。
   }
@@ -1122,6 +1201,8 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.runStatus = 'FAILED';
       state.pendingSalesDraft = null;
       state.pendingSalesAction = null;
+      state.pendingDraft = null;
+      state.pendingAction = null;
       state.error = String(data.message || '任务执行失败');
       state.failureCode = String(data.code || '');
       state.steps = [];
@@ -1149,8 +1230,8 @@ watch(scrollArea, (area, _previous, onCleanup) => {
   observer.observe(area);
   onCleanup(() => observer.disconnect());
 });
-watch([pendingSalesDraft, pendingSalesAction], async ([draft, action]) => {
-  if (!draft && !action) return;
+watch([pendingDraft, pendingAction, pendingSalesDraft, pendingSalesAction], async ([purchaseDraft, purchaseAction, draft, action]) => {
+  if (!purchaseDraft && !purchaseAction && !draft && !action) return;
   const follow = followLatest.value;
   await nextTick();
   if (follow && !switching.value) await scrollToLatest();
@@ -1829,8 +1910,8 @@ onBeforeUnmount(() => {
             :report-run-id="switching ? switchSnapshot?.reportRunId : liveRunId"
             :final-message-id="switching ? switchSnapshot?.finalMessageId : currentRun.finalMessageId"
             :run-terminal="switching ? switchSnapshot?.runTerminal : runTerminal"
-            :paused="switching ? false : (runStatus === 'WAITING_USER' && Boolean(pendingSalesDraft || pendingSalesAction))"
-            :settled-order-calls="switching ? undefined : settledSalesCalls.get(store.activeId || '')"
+            :paused="switching ? false : (runStatus === 'WAITING_USER' && Boolean(pendingDraft || pendingAction || pendingSalesDraft || pendingSalesAction))"
+            :settled-order-calls="switching ? undefined : settledOrderCalls.get(store.activeId || '')"
             @open-analysis="openAnalysis"
             @open-report-process="openReportProcess"
             @open-report="openReport"

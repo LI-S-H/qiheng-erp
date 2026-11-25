@@ -255,7 +255,7 @@ function confirmRemove() {
         </button>
       </div>
       <div class="sidebar-list">
-        <p v-if="loading" class="sidebar-note" role="status">正在加载会话…</p>
+        <p v-if="loading && !conversations.length" class="sidebar-note" role="status">正在加载会话…</p>
         <p v-else-if="!conversations.length" class="sidebar-note">
           还没有会话，点击上方“新建会话”开始分析。
         </p>

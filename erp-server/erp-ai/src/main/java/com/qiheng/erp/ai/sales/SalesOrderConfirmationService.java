@@ -3,6 +3,7 @@ package com.qiheng.erp.ai.sales;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.checkpoint.Checkpoint;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,6 +13,7 @@ import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
+import com.qiheng.erp.ai.order.OrderToolNames;
 import com.qiheng.erp.ai.sql.scope.PermissionCodes;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -108,33 +110,43 @@ public final class SalesOrderConfirmationService {
     private ResumedRun resolveReceipt(long userId, long conversationId, String toolCallId,
                                             String payload) throws Exception {
         requireAccess(userId, conversationId);
+        // 只读快检：常见失效直接返回接口错误，避免用户等后台运行才发现。
         var config = configOf(userId, conversationId);
-        var checkpoint = saver.get(config)
-                .orElseThrow(() -> new IllegalStateException("没有待确认的销售单操作"));
-        if (checkpoint.getNextNodeId() == null || !checkpoint.getNextNodeId().startsWith(HITL_NODE_PREFIX)) {
-            throw new IllegalStateException("确认已失效，请重新发起");
-        }
-        var messages = (List<?>) checkpoint.getState().get("messages");
-        if (messages == null || messages.isEmpty()
-                || !(messages.getLast() instanceof AssistantMessage assistant)) {
-            throw new IllegalStateException("没有待确认的销售单操作");
-        }
-        var call = assistant.getToolCalls().stream()
-                .filter(item -> item.id().equals(toolCallId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("确认已失效，请重新发起"));
-        agent.getAndCompileGraph().updateState(
-                RunnableConfig.builder(config).checkPointId(checkpoint.getId()).build(),
-                Map.of("messages", List.of(ToolResponseMessage.builder()
-                        .responses(List.of(new ToolResponseMessage.ToolResponse(call.id(), call.name(), payload)))
-                        .build())));
+        requirePendingCall(saver.get(config).orElseThrow(MainAgentService.ConfirmationExpiredException::new),
+                toolCallId);
         // 恢复运行沿用原轮次，历史消息不会被拆成两段。
         String runId = runs.currentRunIdForUser(userId, conversationId);
         if (runId == null) {
             runId = UUID.randomUUID().toString();
         }
-        recordResult(userId, conversationId, runId, call, payload);
-        return new ResumedRun(runId, runs.resumeForUser(userId, conversationId, runId));
+        String resumedRunId = runId;
+        var outputs = runs.resumeAfterConfirmation(userId, conversationId, runId, (runConfig, checkpoint) -> {
+            // 锁内二次校验，避免快检之后确认已被其他请求处理。
+            var call = requirePendingCall(checkpoint, toolCallId);
+            agent.getAndCompileGraph().updateState(
+                    RunnableConfig.builder(runConfig).checkPointId(checkpoint.getId()).build(),
+                    Map.of("messages", List.of(ToolResponseMessage.builder()
+                            .responses(List.of(new ToolResponseMessage.ToolResponse(call.id(), call.name(), payload)))
+                            .build())));
+            recordResult(userId, conversationId, resumedRunId, call, payload);
+        });
+        return new ResumedRun(runId, outputs);
+    }
+
+    /** 读取待确认的工具调用；检查点已推进或调用编号不匹配时视为确认失效。 */
+    private AssistantMessage.ToolCall requirePendingCall(Checkpoint checkpoint, String toolCallId) {
+        if (checkpoint.getNextNodeId() == null || !checkpoint.getNextNodeId().startsWith(HITL_NODE_PREFIX)) {
+            throw new MainAgentService.ConfirmationExpiredException();
+        }
+        var messages = (List<?>) checkpoint.getState().get("messages");
+        if (messages == null || messages.isEmpty()
+                || !(messages.getLast() instanceof AssistantMessage assistant)) {
+            throw new MainAgentService.ConfirmationExpiredException();
+        }
+        return assistant.getToolCalls().stream()
+                .filter(item -> item.id().equals(toolCallId))
+                .findFirst()
+                .orElseThrow(MainAgentService.ConfirmationExpiredException::new);
     }
 
     /** 保存一条工具结果，供历史回看；失败不影响已经完成的确认。 */
@@ -162,13 +174,7 @@ public final class SalesOrderConfirmationService {
 
     /** 工具名对应的动作。 */
     private String actionOf(String name) {
-        return switch (name) {
-            case "prepare_sales_order_draft" -> "CREATE";
-            case "update_sales_order_draft" -> "UPDATE";
-            case "submit_sales_order" -> "SUBMIT";
-            case "cancel_sales_order" -> "CANCEL";
-            default -> name;
-        };
+        return OrderToolNames.actionOf(name);
     }
 
     /** 校验会话归属与 AI 使用权限。 */

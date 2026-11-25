@@ -1,41 +1,21 @@
 package com.qiheng.erp.ai.sales;
 
-import com.alibaba.cloud.ai.graph.NodeOutput;
-import com.alibaba.cloud.ai.graph.agent.tools.ToolContextHelper;
-import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
-import com.qiheng.erp.ai.context.AgentToolContext;
-import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
-import java.util.function.Consumer;
-
 /**
- * 取消销售单工具：等待用户确认后把结果交回模型。
+ * 取消销售单工具：只声明参数结构，执行由人工确认节点接管。
  *
  * @author Li
  * @since 2026-11-23
  */
 public final class CancelSalesOrderTool {
 
-    private final SalesOrderActionService actions;
-
     /**
-     * 注入负责等待用户处置的动作服务。
-     *
-     * @param actions 动作服务
-     */
-    public CancelSalesOrderTool(SalesOrderActionService actions) {
-        this.actions = actions;
-    }
-
-    /**
-     * 取消销售单并等待用户确认。
+     * 声明取消销售单的参数结构；图会在工具执行前停在人工确认节点。
      *
      * @param request 销售单标识与原因
-     * @param context 工具上下文
-     * @return 用户处置结果
-     * @throws Exception 等待被中断或超时
+     * @return 不会返回；误配置直接抛出明确错误
      */
     @Tool(name = "cancel_sales_order", description = "取消销售单。"
             + "用户明确要求取消、作废、不再销售，或你建议取消且用户已经同意时才调用；建议取消必须先征求用户同意，不要直接调用。"
@@ -44,14 +24,7 @@ public final class CancelSalesOrderTool {
             + "返回的结论文字会说明是已取消、暂不取消还是取消失败，按 sales-order 技能处理。")
     public String cancel(
             @ToolParam(description = "销售单标识：salesOrderId 必填，orderNo 和 reason 可选")
-            SalesOrderActionRequest request,
-            ToolContext context) throws Exception {
-        var identity = ToolContextHelper.getMetadata(context, AgentToolContext.CONTEXT_KEY, AgentToolContext.class)
-                .orElseThrow(() -> new IllegalStateException("缺少可信销售单工具上下文"));
-        @SuppressWarnings("unchecked")
-        var events = (Consumer<NodeOutput>) context.getContext().get(SalesOrderActionService.EVENT_KEY);
-        Object runId = context.getContext().get(TrustedToolContextInterceptor.CURRENT_RUN_ID);
-        return actions.request(SalesOrderActionType.CANCEL, identity.userId(), identity.conversationId(),
-                runId instanceof String value ? value : null, request, events);
+            SalesOrderActionRequest request) {
+        throw new IllegalStateException("销售单取消必须由人工确认节点处理，工具方法不应直接执行");
     }
 }

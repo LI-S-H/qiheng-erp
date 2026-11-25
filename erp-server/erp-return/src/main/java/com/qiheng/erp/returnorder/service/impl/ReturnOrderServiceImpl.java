@@ -33,6 +33,7 @@ import com.qiheng.erp.returnorder.domain.enums.ReturnStatus;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderItemVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderVo;
+import com.qiheng.erp.returnorder.domain.vo.ReturnableSourceDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnableSourceOrderVo;
 import com.qiheng.erp.returnorder.mapper.ReturnOrderItemMapper;
 import com.qiheng.erp.returnorder.mapper.ReturnOrderMapper;
@@ -216,6 +217,53 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
             vo.setAvailableReturnQty(toDecimal(available));
             return vo;
         }).toList();
+    }
+
+    /**
+     * 按来源单主键查询表头与可退明细。
+     * @param returnType 退货方向
+     * @param sourceOrderId 来源单ID
+     * @return 来源单表头与可退明细
+     */
+    @Override
+    public ReturnableSourceDetailVo getReturnableSource(ReturnType returnType, Long sourceOrderId) {
+        ReturnSourceProvider provider = requireProvider(returnType);
+        ReturnSourceOrder source = provider.getSourceOrder(sourceOrderId);
+        ReturnableSourceDetailVo vo = new ReturnableSourceDetailVo();
+        vo.setReturnType(returnType.name());
+        vo.setSourceOrderId(source.sourceOrderId());
+        vo.setSourceOrderNo(source.sourceOrderNo());
+        vo.setSourceOrderStatus(source.status());
+        vo.setPartyId(source.partyId());
+        vo.setPartyCode(source.partyCode());
+        vo.setPartyName(source.partyName());
+        vo.setWarehouseId(source.warehouseId());
+        vo.setWarehouseName(source.warehouseName());
+        vo.setItems(listSourceItems(returnType, sourceOrderId));
+        return vo;
+    }
+
+    /**
+     * 按来源单号精确查询表头与可退明细。
+     * @param returnType 退货方向
+     * @param sourceOrderNo 来源单号
+     * @return 来源单表头与可退明细
+     */
+    @Override
+    public ReturnableSourceDetailVo getReturnableSourceByNo(ReturnType returnType, String sourceOrderNo) {
+        if (StrUtil.isBlank(sourceOrderNo)) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "来源订单号不能为空");
+        }
+        ReturnSourceProvider provider = requireProvider(returnType);
+        String no = sourceOrderNo.trim();
+        ReturnSourceOrder matched = provider.searchSourceOrders(no, 10).stream()
+                .filter(source -> no.equals(source.sourceOrderNo()))
+                .findFirst()
+                .orElse(null);
+        if (matched == null) {
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "来源订单不存在或不符合退货条件");
+        }
+        return getReturnableSource(returnType, matched.sourceOrderId());
     }
 
     /**

@@ -2,8 +2,6 @@ package com.qiheng.erp.ai.agent;
 
 import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.action.PurchaseOrderActionService;
-import com.qiheng.erp.ai.sales.SalesOrderActionService;
-import com.qiheng.erp.ai.sales.SalesOrderDraftService;
 import com.qiheng.erp.ai.draft.PurchaseDraftService;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
@@ -28,6 +26,7 @@ import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
+import com.qiheng.erp.ai.order.OrderToolNames;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.qiheng.erp.ai.sql.scope.PermissionCodes;
@@ -76,8 +75,40 @@ public final class MainAgentService {
     /** 人工确认节点前缀；命中表示图停在工具执行前。 */
     private static final String HITL_NODE_PREFIX = "_AGENT_HOOK_HITL";
 
+    /** 用户未确认时写回模型的工具结果。 */
+    private static final String CANCELLED_MODEL_RESULT =
+            "{\"status\":\"CANCELLED\",\"message\":\"用户未确认，已放弃本次操作。\"}";
+
+    /** 用户未确认时写回页面的工具结果说明。 */
+    private static final String CANCELLED_DISPLAY_MESSAGE = "用户未确认，已放弃本次操作。";
+
     /** 查询当前进程中的运行信息；进程重启后不作为历史记录使用。 */
     public record RuntimeSnapshot(String runId, String status, Map<String, Object> question) {}
+
+    /** 确认已失效：检查点不再停在待确认调用，或调用编号不匹配。 */
+    public static final class ConfirmationExpiredException extends IllegalStateException {
+
+        /**
+         * 使用统一提示构造异常。
+         */
+        public ConfirmationExpiredException() {
+            super("确认已失效，请重新发起");
+        }
+    }
+
+    /** 锁内执行的确认写入；由业务服务提供回执内容，主智能体负责检查点与恢复。 */
+    @FunctionalInterface
+    public interface ConfirmationApplier {
+
+        /**
+         * 在会话锁内写入工具结果并保存记录。
+         *
+         * @param config 本轮运行配置
+         * @param checkpoint 当前检查点
+         * @throws Exception 写入失败
+         */
+        void apply(RunnableConfig config, Checkpoint checkpoint) throws Exception;
+    }
 
     /**
      * 读取当前会话最近的运行标识；恢复运行时沿用它，避免历史被拆成两轮。
@@ -237,7 +268,7 @@ public final class MainAgentService {
                     // 用户没确认就发了新消息：作废待确认草稿，避免两个状态并存。
                     if (checkpoint.isPresent() && checkpoint.get().getNextNodeId() != null
                             && checkpoint.get().getNextNodeId().startsWith(HITL_NODE_PREFIX)) {
-                        cancelPendingConfirmation(checkpoint.get(), config);
+                        cancelPendingConfirmation(checkpoint.get(), config, userId, conversationId);
                     }
                     if (checkpoint.isPresent() && "_AGENT_TOOL_".equals(checkpoint.get().getNextNodeId())) {
                         var current = checkpoint.get();
@@ -277,14 +308,16 @@ public final class MainAgentService {
     }
 
     /**
-     * 恢复一次停在人工确认节点的运行；工具结果由调用方先写入检查点。
+     * 在会话锁内写入确认结果并恢复运行；检查、写结果、启动恢复共用同一把锁。
      *
      * @param userId 会话所属用户
      * @param conversationId 会话编号
      * @param runId 恢复运行标识，沿用原轮次
+     * @param applier 锁内执行的确认写入
      * @return 内部图事件流
      */
-    public Flux<NodeOutput> resumeForUser(long userId, long conversationId, String runId) {
+    public Flux<NodeOutput> resumeAfterConfirmation(long userId, long conversationId, String runId,
+                                                    ConfirmationApplier applier) {
         String businessDate = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
         var config = baseConfig(userId, conversationId, businessDate);
         return Flux.defer(() -> {
@@ -299,8 +332,19 @@ public final class MainAgentService {
                     sink.error(new IllegalStateException("会话正在执行其他任务"));
                     return;
                 }
+                if (sink.isCancelled()) {
+                    lock.unlockAsync(owner).whenComplete((ignored, error) -> {
+                        if (error != null) {
+                            log.error("主智能体取消订阅后释放会话锁失败 conversationId={}", conversationId, error);
+                        }
+                    });
+                    return;
+                }
                 try {
                     checkAccess(userId, conversationId);
+                    // 锁内重新读取检查点，避免快检之后状态已被其他请求改变。
+                    var checkpoint = saver.get(config).orElseThrow(ConfirmationExpiredException::new);
+                    applier.apply(config, checkpoint);
                     var traces = new AiAgentTraceRecorder(traceMapper, mapper,
                             new AiAgentTraceRecorder.Scope(userId, conversationId, runId, "MAIN"));
                     var recorder = new AgentRunRecorder(messageStore, mapper, traces, userId, conversationId, runId);
@@ -401,16 +445,6 @@ public final class MainAgentService {
                 })
                 .addMetadata(PurchaseOrderActionService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
                     // 提交和取消同样是一次等待用户确认的动作。
-                    var action = events.questionEvent(event);
-                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(action.state().data())));
-                    events.toolEvent(action);
-                })
-                .addMetadata(SalesOrderDraftService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
-                    var draft = events.questionEvent(event);
-                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(draft.state().data())));
-                    events.toolEvent(draft);
-                })
-                .addMetadata(SalesOrderActionService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
                     var action = events.questionEvent(event);
                     runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(action.state().data())));
                     events.toolEvent(action);
@@ -720,7 +754,8 @@ public final class MainAgentService {
     }
 
     /** 新消息到来时作废尚未确认的草稿或动作，避免旧确认和新消息并存。 */
-    private void cancelPendingConfirmation(Checkpoint checkpoint, RunnableConfig config) throws Exception {
+    private void cancelPendingConfirmation(Checkpoint checkpoint, RunnableConfig config,
+                                           long userId, long conversationId) throws Exception {
         var messages = (List<?>) checkpoint.getState().get("messages");
         if (messages == null || messages.isEmpty()
                 || !(messages.getLast() instanceof AssistantMessage assistant)
@@ -728,12 +763,63 @@ public final class MainAgentService {
             return;
         }
         var responses = assistant.getToolCalls().stream()
-                .map(call -> new ToolResponseMessage.ToolResponse(call.id(), call.name(),
-                        "{\"status\":\"CANCELLED\",\"message\":\"用户未确认，已放弃本次操作。\"}"))
+                .map(call -> new ToolResponseMessage.ToolResponse(call.id(), call.name(), CANCELLED_MODEL_RESULT))
                 .toList();
+        // 先作废检查点：即使展示记录写入失败，新消息也不会和旧确认并存。
         agent.getAndCompileGraph().updateState(
                 RunnableConfig.builder(config).checkPointId(checkpoint.getId()).build(),
                 Map.of("messages", List.of(ToolResponseMessage.builder().responses(responses).build())));
+        recordCancelledCalls(assistant.getToolCalls(), userId, conversationId);
+    }
+
+    /** 补写被作废调用的展示结果，避免刷新后旧确认卡重新出现。 */
+    private void recordCancelledCalls(List<AssistantMessage.ToolCall> calls, long userId, long conversationId) {
+        // 新消息的输入行尚未保存，这里取到的仍是上一轮（等待确认的那一轮）的运行标识。
+        String runId = messageStore.latestRunId(userId, conversationId);
+        if (runId == null || runId.isBlank()) {
+            log.warn("待确认调用作废时找不到原轮次，跳过展示记录 conversationId={}", conversationId);
+            return;
+        }
+        String result;
+        try {
+            var body = new LinkedHashMap<String, Object>();
+            body.put("status", "cancelled");
+            body.put("message", CANCELLED_DISPLAY_MESSAGE);
+            result = mapper.writeValueAsString(body);
+        } catch (Exception error) {
+            log.warn("待确认调用作废记录序列化失败 conversationId={}", conversationId, error);
+            return;
+        }
+        for (var call : calls) {
+            try {
+                var content = new LinkedHashMap<String, Object>();
+                content.put("callId", call.id());
+                content.put("name", call.name());
+                content.put("action", OrderToolNames.actionOf(call.name()));
+                String orderType = OrderToolNames.orderTypeOf(call.name());
+                if (orderType != null) {
+                    content.put("orderType", orderType);
+                }
+                content.put("result", result);
+                messageStore.append(new AiMessage()
+                        .setUserId(userId)
+                        .setConversationId(conversationId)
+                        .setRequestId(runId)
+                        .setMessageKey(runId + ":tool-result:" + call.id())
+                        .setRole("assistant")
+                        .setKind("TOOL_RESULT")
+                        .setContent(mapper.writeValueAsString(content)));
+            } catch (Exception error) {
+                // 展示记录失败不影响用户已经发送的新消息。
+                log.warn("待确认调用作废记录写入失败 runId={} callId={}", runId, call.id(), error);
+            }
+        }
+        try {
+            // 原轮次不会再有结果，标成已取消，避免长期停在等待用户。
+            messageStore.updateRunStatus(userId, conversationId, runId, "CANCELLED", null);
+        } catch (Exception error) {
+            log.warn("待确认调用作废时更新原轮次状态失败 runId={}", runId, error);
+        }
     }
 
     /** 把停在人工确认节点的工具调用写成一条待确认记录，并推送同一份内容。 */

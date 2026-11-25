@@ -12,6 +12,7 @@ import com.qiheng.erp.returnorder.domain.entity.ReturnOrder;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderItemVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderVo;
+import com.qiheng.erp.returnorder.domain.vo.ReturnableSourceDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnableSourceOrderVo;
 import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBill;
 import com.qiheng.erp.warehouse.domain.inbound.entity.InboundBillItem;
@@ -39,6 +40,12 @@ public interface IReturnOrderService extends IService<ReturnOrder> {
 
     /** 查询来源订单中可退的商品明细。 */
     List<ReturnOrderItemVo> listSourceItems(ReturnType returnType, Long sourceOrderId);
+
+    /** 按来源单主键查询来源单表头与可退明细。 */
+    ReturnableSourceDetailVo getReturnableSource(ReturnType returnType, Long sourceOrderId);
+
+    /** 按来源单号精确查询来源单表头与可退明细。 */
+    ReturnableSourceDetailVo getReturnableSourceByNo(ReturnType returnType, String sourceOrderNo);
 
     /** 创建退货单草稿，返回包含明细的详情。 */
     ReturnOrderDetailVo createDraft(ReturnOrderCreateDto dto);

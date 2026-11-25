@@ -23,6 +23,11 @@
             <groupId>com.qiheng</groupId>
             <artifactId>erp-security</artifactId>
         </dependency>
+        <!-- 退货单只读查询与预检复用退货模块的计算口径。 -->
+        <dependency>
+            <groupId>com.qiheng</groupId>
+            <artifactId>erp-return</artifactId>
+        </dependency>
 
         <!-- Spring AI OpenAI 兼容协议(用于 DeepSeek / 后续豆包等) -->
         <dependency>

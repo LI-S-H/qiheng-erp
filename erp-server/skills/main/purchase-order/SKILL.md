@@ -155,4 +155,5 @@ description: 采购单创建、编辑、提交、取消的操作指导。负责�
 
 - 缺口计算：`replenishment`
 - 采购量、货值、到货可行性：`purchase`
+- 退回供应商的单据操作：`return-order`
 - 候选供应商和评分：`supplier-selection`

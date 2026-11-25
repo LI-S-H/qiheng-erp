@@ -19,11 +19,11 @@ public record SalesOrderDraftRequest(
         String salesOrderId,
 
         @JsonProperty(required = true)
-        @JsonPropertyDescription("必填，客户 ID。必须是系统内真实存在的客户编号，不要编造。")
+        @JsonPropertyDescription("必填，客户主键 ID（纯数字），不是 C0001 这类客户编码；用户给编码时先查询主键，不要编造。")
         String customerId,
 
         @JsonProperty(required = true)
-        @JsonPropertyDescription("必填，出库仓库 ID。必须是系统内真实存在的仓库编号，不要编造。")
+        @JsonPropertyDescription("必填，出库仓库主键 ID（纯数字），不是 WH000001 这类仓库编码；用户给编码时先查询主键，不要编造。")
         String warehouseId,
 
         @Nullable
@@ -46,7 +46,7 @@ public record SalesOrderDraftRequest(
      */
     public record Item(
             @JsonProperty(required = true)
-            @JsonPropertyDescription("必填，产品 ID。必须是启用状态的产品。")
+            @JsonPropertyDescription("必填，产品主键 ID（纯数字），不是 P001029 这类产品编码；用户给编码时先查询主键。")
             String productId,
 
             @JsonProperty(required = true)

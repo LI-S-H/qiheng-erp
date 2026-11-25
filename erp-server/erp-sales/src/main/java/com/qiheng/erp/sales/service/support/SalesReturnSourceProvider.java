@@ -101,6 +101,7 @@ public class SalesReturnSourceProvider implements ReturnSourceProvider {
     private ReturnSourceOrder toSourceOrder(SalesOrder order) {
         return new ReturnSourceOrder(order.getId(), order.getSalesNo(), order.getCustomerId(),
                 order.getCustomerCode(), order.getCustomerName(), order.getWarehouseId(), order.getWarehouseName(),
-                order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate());
+                order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate(),
+                order.getStatus());
     }
 }

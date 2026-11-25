@@ -26,6 +26,7 @@ public final class AiToolLabels {
             Map.entry("update_sales_order_draft", "修改销售单"),
             Map.entry("submit_sales_order", "提交销售审核"),
             Map.entry("cancel_sales_order", "取消销售单"),
+            Map.entry("query_returnable_items", "查询可退明细"),
             Map.entry("createReport", "生成报告"),
             Map.entry("analyzeData", "子智能体分析"),
             Map.entry("query_sql_data", "查询业务数据"),

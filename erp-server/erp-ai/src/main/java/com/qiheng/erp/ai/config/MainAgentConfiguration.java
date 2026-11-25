@@ -31,12 +31,12 @@ import com.qiheng.erp.ai.draft.PurchaseDraftService;
 import com.qiheng.erp.ai.draft.PurchaseOrderDraftTool;
 import com.qiheng.erp.ai.draft.UpdatePurchaseOrderDraftTool;
 import com.qiheng.erp.ai.sales.CancelSalesOrderTool;
-import com.qiheng.erp.ai.sales.SalesOrderActionService;
 import com.qiheng.erp.ai.sales.SalesOrderConfirmationService;
-import com.qiheng.erp.ai.sales.SalesOrderDraftArgumentsInterceptor;
-import com.qiheng.erp.ai.sales.SalesOrderDraftService;
 import com.qiheng.erp.ai.sales.SalesOrderDraftTool;
 import com.qiheng.erp.ai.sales.SubmitSalesOrderTool;
+import com.qiheng.erp.ai.returnorder.ReturnableItemQueryService;
+import com.qiheng.erp.ai.returnorder.ReturnableItemTool;
+import com.qiheng.erp.returnorder.service.IReturnOrderService;
 import com.qiheng.erp.security.service.LoginUserService;
 import com.qiheng.erp.ai.sales.UpdateSalesOrderDraftTool;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
@@ -127,8 +127,6 @@ public class MainAgentConfiguration {
      * @param skillFileTool 主智能体读取技能支持文件的工具
      * @param drafts 采购草稿服务
      * @param actions 采购单提交与取消服务
-     * @param salesDrafts 销售草稿服务
-     * @param salesActions 销售单提交与取消服务
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
@@ -140,7 +138,7 @@ public class MainAgentConfiguration {
                                 @Qualifier("mainSkillRegistry") SkillRegistry skills,
                                 @Qualifier("mainReadSkillFileTool") ReadSkillFileTool skillFileTool,
                                 PurchaseDraftService drafts, PurchaseOrderActionService actions,
-                                SalesOrderDraftService salesDrafts, SalesOrderActionService salesActions)
+                                IReturnOrderService returnOrders, LoginUserService users)
             throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
         var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool,
@@ -153,13 +151,13 @@ public class MainAgentConfiguration {
             tools.add(new SubmitPurchaseOrderTool(actions));
             tools.add(new CancelPurchaseOrderTool(actions));
         }
-        if (salesDrafts != null) {
-            tools.add(new SalesOrderDraftTool(salesDrafts));
-            tools.add(new UpdateSalesOrderDraftTool(salesDrafts));
-        }
-        if (salesActions != null) {
-            tools.add(new SubmitSalesOrderTool(salesActions));
-            tools.add(new CancelSalesOrderTool(salesActions));
+        // 销售单工具只负责声明参数结构；实际执行由人工确认节点接管。
+        tools.add(new SalesOrderDraftTool());
+        tools.add(new UpdateSalesOrderDraftTool());
+        tools.add(new SubmitSalesOrderTool());
+        tools.add(new CancelSalesOrderTool());
+        if (returnOrders != null && users != null) {
+            tools.add(new ReturnableItemTool(new ReturnableItemQueryService(returnOrders, users)));
         }
         if (skillFileTool != null) {
             tools.add(skillFileTool);
@@ -180,18 +178,12 @@ public class MainAgentConfiguration {
             hooks.add(experienceInjection.create("MAIN"));
         }
         // 销售草稿、提交与取消共用一个确认节点，避免重复注册同名节点。
-        if (salesDrafts != null || salesActions != null) {
-            var hitl = HumanInTheLoopHook.builder();
-            if (salesDrafts != null) {
-                hitl.approvalOn("prepare_sales_order_draft", ToolConfig.builder().build())
-                        .approvalOn("update_sales_order_draft", ToolConfig.builder().build());
-            }
-            if (salesActions != null) {
-                hitl.approvalOn("submit_sales_order", ToolConfig.builder().build())
-                        .approvalOn("cancel_sales_order", ToolConfig.builder().build());
-            }
-            hooks.add(hitl.build());
-        }
+        hooks.add(HumanInTheLoopHook.builder()
+                .approvalOn("prepare_sales_order_draft", ToolConfig.builder().build())
+                .approvalOn("update_sales_order_draft", ToolConfig.builder().build())
+                .approvalOn("submit_sales_order", ToolConfig.builder().build())
+                .approvalOn("cancel_sales_order", ToolConfig.builder().build())
+                .build());
         var builder = ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
                 .methodTools(tools.toArray())
                 .hooks(hooks)
@@ -199,7 +191,7 @@ public class MainAgentConfiguration {
                         new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
                         new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()),
                         new PurchaseDraftArgumentsInterceptor(new ObjectMapper()),
-                        new SalesOrderDraftArgumentsInterceptor(new ObjectMapper()), new BusinessGraphInterceptor(businessGraph));
+                        new BusinessGraphInterceptor(businessGraph));
         if (skills != null) {
             builder.interceptors(new SkillIndexInterceptor(skills));
             builder.tools(ReadSkillTool.createReadSkillToolCallback(skills, ""));
@@ -302,33 +294,4 @@ public class MainAgentConfiguration {
         return new PurchaseOrderActionService(conversations, users, messages, mapper);
     }
 
-    /**
-     * 组装销售草稿服务。
-     *
-     * @param conversations 会话数据访问
-     * @param users 用户数据访问
-     * @param messages 会话消息存储
-     * @param mapper JSON 序列化组件
-     * @return 销售草稿服务
-     */
-    @Bean
-    public SalesOrderDraftService salesOrderDraftService(AiConversationMapper conversations,
-            LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
-        return new SalesOrderDraftService(conversations, users, messages, mapper);
     }
-
-    /**
-     * 组装销售单提交与取消服务。
-     *
-     * @param conversations 会话数据访问
-     * @param users 用户数据访问
-     * @param messages 会话消息存储
-     * @param mapper JSON 序列化组件
-     * @return 销售单动作服务
-     */
-    @Bean
-    public SalesOrderActionService salesOrderActionService(AiConversationMapper conversations,
-            LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
-        return new SalesOrderActionService(conversations, users, messages, mapper);
-    }
-}

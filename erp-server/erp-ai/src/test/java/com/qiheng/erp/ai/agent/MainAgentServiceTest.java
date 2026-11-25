@@ -217,6 +217,96 @@ class MainAgentServiceTest {
         verify(agent, never()).getAndCompileGraph();
     }
 
+    @Test
+    void resumeAfterConfirmationAppliesInsideConversationLock() throws Exception {
+        var conversations = mock(AiConversationMapper.class);
+        when(conversations.selectOwned(101L, 1L)).thenReturn(new AiConversation());
+        var users = mock(LoginUserService.class);
+        var user = new LoginUser();
+        user.setPermissionCodes(List.of("ai:assistant:use"));
+        when(users.findByUserId(1L)).thenReturn(user);
+        var locks = mock(ConversationExecutionLock.class);
+        var lock = mock(RLock.class);
+        when(locks.of(101)).thenReturn(lock);
+        when(lock.tryLockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>(true));
+        when(lock.unlockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>((Void) null));
+        var checkpoint = mock(Checkpoint.class);
+        var saver = mock(RedisSaver.class);
+        when(saver.get(any(RunnableConfig.class))).thenReturn(Optional.of(checkpoint));
+        var agent = mock(ReactAgent.class);
+        var end = endOutput();
+        when(agent.stream(anyMap(), any(RunnableConfig.class))).thenReturn(Flux.just(end));
+        var service = new MainAgentService(agent, saver, conversations, users, locks,
+                mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
+        var applied = new java.util.concurrent.atomic.AtomicBoolean();
+
+        service.resumeAfterConfirmation(1, 101, "run", (config, current) -> applied.set(true)).blockLast();
+
+        assertThat(applied).isTrue();
+        verify(lock).tryLockAsync(anyLong());
+        verify(agent).stream(anyMap(), any(RunnableConfig.class));
+        verify(lock).unlockAsync(anyLong());
+    }
+
+    @Test
+    void resumeAfterConfirmationReportsBusyWhenLockIsHeld() throws Exception {
+        var conversations = mock(AiConversationMapper.class);
+        when(conversations.selectOwned(101L, 1L)).thenReturn(new AiConversation());
+        var users = mock(LoginUserService.class);
+        var user = new LoginUser();
+        user.setPermissionCodes(List.of("ai:assistant:use"));
+        when(users.findByUserId(1L)).thenReturn(user);
+        var locks = mock(ConversationExecutionLock.class);
+        var lock = mock(RLock.class);
+        when(locks.of(101)).thenReturn(lock);
+        when(lock.tryLockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>(false));
+        var service = new MainAgentService(mock(ReactAgent.class), mock(RedisSaver.class), conversations, users,
+                locks, mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
+
+        assertThatThrownBy(() -> service.resumeAfterConfirmation(1, 101, "run", (config, current) -> { })
+                .blockLast()).hasMessage("会话正在执行其他任务");
+    }
+
+    @Test
+    void cancelPendingConfirmationWritesCancelledRecordForPreviousRun() throws Exception {
+        var store = mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class);
+        when(store.latestRunId(1, 101)).thenReturn("run-old");
+        var agent = mock(ReactAgent.class);
+        var graph = mock(com.alibaba.cloud.ai.graph.CompiledGraph.class);
+        when(agent.getAndCompileGraph()).thenReturn(graph);
+        var service = new MainAgentService(agent, mock(RedisSaver.class), mock(AiConversationMapper.class),
+                mock(LoginUserService.class), mock(ConversationExecutionLock.class), store,
+                new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class));
+        var checkpoint = mock(Checkpoint.class);
+        when(checkpoint.getId()).thenReturn("checkpoint");
+        var call = new AssistantMessage.ToolCall("c1", "function", "prepare_sales_order_draft", "{}");
+        when(checkpoint.getState()).thenReturn(Map.of("messages", List.of(
+                AssistantMessage.builder().toolCalls(List.of(call)).build())));
+        var config = RunnableConfig.builder().threadId("main:1:101").build();
+        var method = MainAgentService.class.getDeclaredMethod("cancelPendingConfirmation", Checkpoint.class,
+                RunnableConfig.class, long.class, long.class);
+        method.setAccessible(true);
+
+        method.invoke(service, checkpoint, config, 1L, 101L);
+
+        var state = ArgumentCaptor.forClass(Map.class);
+        verify(graph).updateState(any(RunnableConfig.class), state.capture());
+        var response = (org.springframework.ai.chat.messages.ToolResponseMessage)
+                ((List<?>) state.getValue().get("messages")).getFirst();
+        assertThat(response.getResponses().getFirst().responseData()).contains("CANCELLED");
+
+        var saved = ArgumentCaptor.forClass(com.qiheng.erp.ai.domain.entity.AiMessage.class);
+        verify(store).append(saved.capture());
+        assertThat(saved.getValue().getKind()).isEqualTo("TOOL_RESULT");
+        assertThat(saved.getValue().getRequestId()).isEqualTo("run-old");
+        assertThat(saved.getValue().getMessageKey()).isEqualTo("run-old:tool-result:c1");
+        assertThat(saved.getValue().getContent()).contains("cancelled")
+                .contains("prepare_sales_order_draft").contains("\"action\":\"CREATE\"");
+        verify(store).updateRunStatus(1L, 101L, "run-old", "CANCELLED", null);
+    }
+
     /** 模拟框架正常执行到结束节点。 */
     private static com.alibaba.cloud.ai.graph.NodeOutput endOutput() {
         var output = mock(com.alibaba.cloud.ai.graph.NodeOutput.class);

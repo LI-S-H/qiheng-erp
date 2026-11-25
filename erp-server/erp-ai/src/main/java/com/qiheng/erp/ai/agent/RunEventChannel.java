@@ -103,9 +103,7 @@ public final class RunEventChannel {
             case "purchase_action" -> applyAction(data);
             case "purchase_action_resolved" -> applyTerminal("RUNNING");
             case "sales_order_draft" -> applySalesDraft(data);
-            case "sales_order_draft_resolved" -> applyTerminal("RUNNING");
             case "sales_order_action" -> applySalesAction(data);
-            case "sales_order_action_resolved" -> applyTerminal("RUNNING");
             case "run_completed" -> {
                 // 人工确认暂停不是最终完成，待确认内容必须留在快照里供刷新恢复。
                 if ("WAITING_USER".equals(data.get("status"))) {
@@ -275,11 +273,11 @@ public final class RunEventChannel {
         items.put(key, item);
     }
 
-    /** 登记一份待确认的销售草稿。 */
+    /** 登记一份待确认的销售草稿；新事件以 callId 作为标识。 */
     private void applySalesDraft(Map<String, Object> data) {
         status = "WAITING_USER";
         salesDraft = Map.copyOf(data);
-        String id = String.valueOf(data.get("draftRequestId"));
+        String id = firstText(data.get("callId"), data.get("draftRequestId"));
         String key = "salesDraft:" + id;
         if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
             snapshotTruncated = true;
@@ -288,17 +286,18 @@ public final class RunEventChannel {
         var item = new LinkedHashMap<String, Object>();
         item.put("type", "sales_order_draft");
         item.put("id", id);
-        item.put("draftRequestId", data.get("draftRequestId"));
+        item.put("callId", data.get("callId"));
         item.put("action", data.get("action"));
-        item.put("draft", data.get("draft"));
+        item.put("orderType", data.get("orderType"));
+        item.put("arguments", data.get("arguments"));
         items.put(key, item);
     }
 
-    /** 登记一次等待用户确认的销售单动作。 */
+    /** 登记一次等待用户确认的销售单动作；新事件以 callId 作为标识。 */
     private void applySalesAction(Map<String, Object> data) {
         status = "WAITING_USER";
         salesAction = Map.copyOf(data);
-        String id = String.valueOf(data.get("actionRequestId"));
+        String id = firstText(data.get("callId"), data.get("actionRequestId"));
         String key = "salesAction:" + id;
         if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
             snapshotTruncated = true;
@@ -307,11 +306,23 @@ public final class RunEventChannel {
         var item = new LinkedHashMap<String, Object>();
         item.put("type", "sales_order_action");
         item.put("id", id);
-        item.put("actionRequestId", data.get("actionRequestId"));
+        item.put("callId", data.get("callId"));
         item.put("action", data.get("action"));
         item.put("salesOrderId", data.get("salesOrderId"));
         item.put("orderNo", data.get("orderNo"));
+        item.put("reason", data.get("reason"));
         items.put(key, item);
+    }
+
+    /** 取第一个非空文本标识；新旧事件结构都能定位同一条记录。 */
+    private static String firstText(Object primary, Object fallback) {
+        if (primary instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        if (fallback instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        return "";
     }
 
     /** 结束本轮状态并清除待回答的追问。 */
@@ -356,28 +367,6 @@ public final class RunEventChannel {
     public synchronized void actionResolved(String actionRequestId) {
         if (!closed && action != null && actionRequestId.equals(action.get("actionRequestId"))) {
             publish("purchase_action_resolved", Map.of("actionRequestId", actionRequestId));
-        }
-    }
-
-    /**
-     * 用户处置销售草稿成功后撤销待确认状态。
-     *
-     * @param draftRequestId 本次处置对应的草稿编号
-     */
-    public synchronized void salesDraftResolved(String draftRequestId) {
-        if (!closed && salesDraft != null && draftRequestId.equals(salesDraft.get("draftRequestId"))) {
-            publish("sales_order_draft_resolved", Map.of("draftRequestId", draftRequestId));
-        }
-    }
-
-    /**
-     * 用户处置销售单动作成功后撤销待确认状态。
-     *
-     * @param actionRequestId 本次处置对应的动作编号
-     */
-    public synchronized void salesActionResolved(String actionRequestId) {
-        if (!closed && salesAction != null && actionRequestId.equals(salesAction.get("actionRequestId"))) {
-            publish("sales_order_action_resolved", Map.of("actionRequestId", actionRequestId));
         }
     }
 

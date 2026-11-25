@@ -91,7 +91,7 @@ class MainAgentControllerTest {
         var pending = NodeOutput.of("sales_order_draft", "main_agent", new OverAllState(Map.of("callId", "sales-2")), null);
         when(service.resolveForUser(eq(1L), eq(1L), eq("draft"), any()))
                 .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("original", Flux.just(text, pending)));
-        var controller = new MainAgentController(agents, null, null, null, null, null, sales);
+        var controller = new MainAgentController(agents, null, null, null, sales);
         var draft = new com.qiheng.erp.ai.sales.SalesOrderDraftReceipt("created", null, null, null, null, null, null, null, null);
         controller.resolveSalesDraft("1", "draft", draft);
         var snapshot = controller.runtime("1").getData();
@@ -111,7 +111,7 @@ class MainAgentControllerTest {
                 .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("original", Flux.never()));
         when(service.resolveActionForUser(eq(1L), eq(1L), eq("action"), any()))
                 .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("fallback", Flux.never()));
-        var controller = new MainAgentController(agents, null, null, null, null, null, sales);
+        var controller = new MainAgentController(agents, null, null, null, sales);
         var draft = new com.qiheng.erp.ai.sales.SalesOrderDraftReceipt("created", null, null, null, null, null, null, null, null);
         var action = mock(com.qiheng.erp.ai.sales.SalesOrderActionReceipt.class);
 

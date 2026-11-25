@@ -15,10 +15,8 @@ import com.qiheng.erp.ai.action.PurchaseOrderActionService;
 import com.qiheng.erp.ai.draft.PurchaseDraftReceipt;
 import com.qiheng.erp.ai.draft.PurchaseDraftService;
 import com.qiheng.erp.ai.sales.SalesOrderActionReceipt;
-import com.qiheng.erp.ai.sales.SalesOrderActionService;
 import com.qiheng.erp.ai.sales.SalesOrderConfirmationService;
 import com.qiheng.erp.ai.sales.SalesOrderDraftReceipt;
-import com.qiheng.erp.ai.sales.SalesOrderDraftService;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.common.util.IdUtil;
 import jakarta.validation.Valid;
@@ -58,8 +56,6 @@ public class MainAgentController {
     private final ObjectProvider<ClarificationService> clarifications;
     private final ObjectProvider<PurchaseDraftService> drafts;
     private final ObjectProvider<PurchaseOrderActionService> actions;
-    private final ObjectProvider<SalesOrderDraftService> salesDrafts;
-    private final ObjectProvider<SalesOrderActionService> salesActions;
     private final ObjectProvider<SalesOrderConfirmationService> salesConfirmations;
     private final ConcurrentHashMap<String, RunEventChannel> channels = new ConcurrentHashMap<>();
 
@@ -70,7 +66,7 @@ public class MainAgentController {
      * @param clarifications 追问服务
      */
     public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications) {
-        this(agents, clarifications, null, null, null, null, null);
+        this(agents, clarifications, null, null, null);
     }
 
     /**
@@ -82,7 +78,7 @@ public class MainAgentController {
      */
     public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications,
                                ObjectProvider<PurchaseDraftService> drafts) {
-        this(agents, clarifications, drafts, null, null, null, null);
+        this(agents, clarifications, drafts, null, null);
     }
 
     /**
@@ -92,22 +88,17 @@ public class MainAgentController {
      * @param clarifications 追问服务
      * @param drafts 采购草稿服务
      * @param actions 采购单提交与取消服务
-     * @param salesDrafts 销售草稿服务
-     * @param salesActions 销售单提交与取消服务
+     * @param salesConfirmations 销售单确认服务
      */
     @Autowired
     public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications,
                                ObjectProvider<PurchaseDraftService> drafts,
                                ObjectProvider<PurchaseOrderActionService> actions,
-                               ObjectProvider<SalesOrderDraftService> salesDrafts,
-                               ObjectProvider<SalesOrderActionService> salesActions,
                                ObjectProvider<SalesOrderConfirmationService> salesConfirmations) {
         this.agents = agents;
         this.clarifications = clarifications;
         this.drafts = drafts;
         this.actions = actions;
-        this.salesDrafts = salesDrafts;
-        this.salesActions = salesActions;
         this.salesConfirmations = salesConfirmations;
     }
 
@@ -133,116 +124,8 @@ public class MainAgentController {
         long userId = UserContext.requireCurrentUser().getUserId();
         String requestedRunId = UUID.randomUUID().toString();
         Flux<NodeOutput> outputs = agent.streamForCurrentUser(id, body.content(), requestedRunId);
-        Flux<ServerSentEvent<Object>> producer = Flux.defer(() -> {
-            var runId = new AtomicReference<>(requestedRunId);
-            var messageId = new AtomicReference<>(UUID.randomUUID().toString());
-            var finalText = new AtomicReference<String>();
-            var modelFailure = new AtomicInteger();
-            var completed = new AtomicInteger();
-            var paused = new AtomicInteger();
-            var emittedToolTexts = new HashSet<String>();
-            var fallbackTextIds = new HashMap<String, String>();
-            return outputs.<ServerSentEvent<Object>>handle((output, sink) -> {
-                String node = output.node();
-                if ("run_started".equals(node)) {
-                    runId.set(String.valueOf(output.state().data().get("runId")));
-                    sink.next(event(node, output.state().data()));
-                } else if ("model_tool_fallback".equals(node)) {
-                    if (output.state().data().get("callId") instanceof String callId) fallbackTextIds.put(callId, messageId.get());
-                    messageId.set(UUID.randomUUID().toString());
-                } else if (node != null && node.endsWith("message_recording.afterModel")) {
-                    // 使用图内有序完成节点，不依赖工具回调与模型流之间的线程调度。
-                    Object messages = output.state().data().get("messages");
-                    if (messages instanceof List<?> list && !list.isEmpty()
-                            && list.getLast() instanceof AssistantMessage assistant
-                            && !assistant.getToolCalls().isEmpty()) {
-                        String text = assistant.getText();
-                        if (text != null && !text.isBlank()) {
-                            sink.next(event("text_completed", Map.of("messageId", messageId.get(), "text", text)));
-                            assistant.getToolCalls().forEach(call -> emittedToolTexts.add(call.id()));
-                        }
-                        messageId.set(UUID.randomUUID().toString());
-                    }
-                } else if ("confirmation_text".equals(node)) {
-                    var data = output.state().data();
-                    if (data.get("callId") instanceof String callId && data.get("text") instanceof String text
-                            && !text.isBlank() && emittedToolTexts.add(callId)) {
-                        String textId = fallbackTextIds.getOrDefault(callId, messageId.get());
-                        sink.next(event("text_completed", Map.of("messageId", textId, "text", text)));
-                        if (textId.equals(messageId.get())) messageId.set(UUID.randomUUID().toString());
-                    }
-                } else if ("ask_user".equals(node)) {
-                    var data = new LinkedHashMap<String, Object>(output.state().data());
-                    data.put("runId", runId.get());
-                    sink.next(event("question", data));
-                } else if ("purchase_draft".equals(node)) {
-                    // 草稿确认与追问共用等待通道，事件名区分页面展示方式。
-                    var data = new LinkedHashMap<String, Object>(output.state().data());
-                    data.put("runId", runId.get());
-                    sink.next(event("purchase_draft", data));
-                } else if ("purchase_action".equals(node)) {
-                    var data = new LinkedHashMap<String, Object>(output.state().data());
-                    data.put("runId", runId.get());
-                    sink.next(event("purchase_action", data));
-                } else if ("sales_order_draft".equals(node)) {
-                    var data = new LinkedHashMap<String, Object>(output.state().data());
-                    data.put("runId", runId.get());
-                    sink.next(event("sales_order_draft", data));
-                    completed.set(1);
-                    paused.set(1);
-                } else if ("sales_order_action".equals(node)) {
-                    var data = new LinkedHashMap<String, Object>(output.state().data());
-                    data.put("runId", runId.get());
-                    sink.next(event("sales_order_action", data));
-                    completed.set(1);
-                    paused.set(1);
-                // 分析子过程与工具状态共用事件协议：事件名独立，过程数据在 data 内，并带父级工具调用编号。
-                } else if ("tool_started".equals(node) || "tool_finished".equals(node)
-                        || "analysis_started".equals(node) || "analysis_step".equals(node)
-                        || "analysis_summary".equals(node) || "report_progress".equals(node) || "report_ready".equals(node)) {
-                    var data = new LinkedHashMap<String, Object>(output.state().data());
-                    data.put("runId", runId.get());
-                    sink.next(event(node, data));
-                } else if (output instanceof StreamingOutput<?> streaming
-                        && streaming.getOutputType() == OutputType.AGENT_MODEL_STREAMING
-                        && streaming.chunk() != null && !streaming.chunk().isEmpty()) {
-                    sink.next(event("text_delta", Map.of("messageId", messageId.get(), "delta", streaming.chunk())));
-                } else if (output.isEND()) {
-                    var messages = output.state().data().get("messages");
-                    if (messages instanceof List<?> list && !list.isEmpty()
-                            && list.getLast() instanceof AssistantMessage last
-                            && last.getToolCalls().isEmpty() && last.getText() != null && !last.getText().isBlank()) {
-                        // 模型调用失败时框架返回错误文本，不能当作答复展示，改发失败事件。
-                        if (AgentModelFailure.isFailure(last.getText())) {
-                            modelFailure.set(1);
-                        } else {
-                            finalText.set(last.getText());
-                        }
-                    }
-                    completed.set(1);
-                }
-            }).concatWith(Flux.defer(() -> {
-                if (completed.get() != 1) {
-                    return Flux.empty();
-                }
-                if (paused.get() == 1) {
-                    return Flux.just(event("run_completed", Map.of("runId", runId.get(), "status", "WAITING_USER")));
-                }
-                if (modelFailure.get() == 1) {
-                    return Flux.just(event("run_failed", Map.of(
-                            "runId", runId.get() == null ? "" : runId.get(), "status", "FAILED",
-                            "code", AgentModelFailure.ERROR_CODE, "message", AgentModelFailure.RESULT_MESSAGE)));
-                }
-                var end = event("run_completed", finalText.get() == null
-                        ? Map.of("runId", runId.get(), "status", "COMPLETED")
-                        : Map.of("runId", runId.get(), "status", "COMPLETED", "finalMessageId", messageId.get()));
-                return finalText.get() == null ? Flux.just(end) : Flux.just(
-                        event("text_completed", Map.of("messageId", messageId.get(), "text", finalText.get())), end);
-            }))
-                    .onErrorResume(error -> Flux.just(event("run_failed", Map.of(
-                            "runId", runId.get() == null ? "" : runId.get(), "status", "FAILED",
-                            "message", "本次任务执行失败，请稍后重试。"))));
-        });
+        // 启动与恢复共用同一套事件转换，后续新增事件只改一处。
+        Flux<ServerSentEvent<Object>> producer = toEvents(outputs, requestedRunId);
         return Flux.defer(() -> {
             String key = userId + ":" + id;
             var channel = new RunEventChannel(requestedRunId);
@@ -564,8 +447,10 @@ public class MainAgentController {
                 return finalText.get() == null ? Flux.just(end) : Flux.just(
                         event("text_completed", Map.of("messageId", messageId.get(), "text", finalText.get())), end);
             }))
-                    .onErrorResume(error -> Flux.just(event("run_failed", Map.of(
-                            "runId", runId.get() == null ? "" : runId.get(), "status", "FAILED",
+                    .onErrorResume(error -> Flux.just(event("run_failed", error instanceof MainAgentService.ConfirmationExpiredException
+                            ? Map.of("runId", runId.get() == null ? "" : runId.get(), "status", "FAILED",
+                            "code", "CONFIRMATION_EXPIRED", "message", error.getMessage())
+                            : Map.of("runId", runId.get() == null ? "" : runId.get(), "status", "FAILED",
                             "message", "本次任务执行失败，请稍后重试。"))));
         });
     }

@@ -64,7 +64,8 @@ public class PurchaseReturnSourceProvider implements ReturnSourceProvider {
                 .getRecords().stream()
                 .map(order -> new ReturnSourceOrder(order.getId(), order.getPurchaseNo(), order.getSupplierId(),
                         order.getSupplierCode(), order.getSupplierName(), order.getWarehouseId(), order.getWarehouseName(),
-                        order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate())).toList();
+                        order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate(),
+                        order.getStatus())).toList();
     }
 
     /** 根据主键读取采购订单并转换为退货来源快照。 */
@@ -76,7 +77,8 @@ public class PurchaseReturnSourceProvider implements ReturnSourceProvider {
         }
         return new ReturnSourceOrder(order.getId(), order.getPurchaseNo(), order.getSupplierId(), order.getSupplierCode(),
                 order.getSupplierName(), order.getWarehouseId(), order.getWarehouseName(),
-                order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate());
+                order.getApprovedAt() == null ? null : order.getApprovedAt().toLocalDate(),
+                order.getStatus());
     }
 
     /**

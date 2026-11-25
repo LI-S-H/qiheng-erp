@@ -19,5 +19,7 @@ public record ReturnSourceOrder(
         // 仓库名称
         String warehouseName,
         // 来源订单审批日（用于 TOP 商品排行口径与 30 天窗口判断；为空时回退到退货单自身的 approvedAt）
-        LocalDate approvedDay) {
+        LocalDate approvedDay,
+        // 来源订单当前状态编码
+        String status) {
 }

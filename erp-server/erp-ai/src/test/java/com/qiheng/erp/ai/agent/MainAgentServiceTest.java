@@ -91,7 +91,7 @@ class MainAgentServiceTest {
         verify(graph).updateState(any(RunnableConfig.class), update.capture());
         var result = (org.springframework.ai.chat.messages.ToolResponseMessage) ((List<?>) update.getValue().get("messages")).getFirst();
         assertThat(result.getResponses().getFirst().id()).isEqualTo("call1");
-        assertThat(result.getResponses().getFirst().responseData()).contains("INTERRUPTED");
+        assertThat(result.getResponses().getFirst().responseData()).contains("上次工具调用中断");
         assertThatThrownBy(() -> service.streamForUser(2, 101, "继续").blockLast())
                 .hasMessage("会话不存在或无权访问");
         when(lock.tryLockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>(false));
@@ -200,7 +200,8 @@ class MainAgentServiceTest {
         when(lock.unlockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>((Void) null));
         var call = new AssistantMessage.ToolCall("ask1", "function", "ask_user", "{}");
         var response = org.springframework.ai.chat.messages.ToolResponseMessage.builder().responses(List.of(
-                new org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse("ask1", "ask_user", "{\"status\":\"INTERRUPTED\"}"))).build();
+                new org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse("ask1", "ask_user",
+                        "上次工具调用中断，未取得可确认的结果。"))).build();
         var checkpoint = mock(Checkpoint.class);
         when(checkpoint.getNextNodeId()).thenReturn("_AGENT_TOOL_");
         when(checkpoint.getState()).thenReturn(Map.of("messages", List.of(
@@ -295,7 +296,7 @@ class MainAgentServiceTest {
         verify(graph).updateState(any(RunnableConfig.class), state.capture());
         var response = (org.springframework.ai.chat.messages.ToolResponseMessage)
                 ((List<?>) state.getValue().get("messages")).getFirst();
-        assertThat(response.getResponses().getFirst().responseData()).contains("CANCELLED");
+        assertThat(response.getResponses().getFirst().responseData()).contains("用户未确认");
 
         var saved = ArgumentCaptor.forClass(com.qiheng.erp.ai.domain.entity.AiMessage.class);
         verify(store).append(saved.capture());

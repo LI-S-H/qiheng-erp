@@ -49,6 +49,32 @@ class VisibleMessageCodecTest {
     }
 
     @Test
+    void decodesPurchaseOrderToolCallWithCallId() {
+        var content = codec.toView(message("TOOL_CALL",
+                "{\"callId\":\"p1\",\"name\":\"prepare_purchase_order_draft\",\"label\":\"创建采购草稿单\","
+                        + "\"action\":\"CREATE\",\"orderType\":\"PURCHASE\",\"status\":\"waiting\","
+                        + "\"purchaseOrderId\":\"7001\",\"arguments\":\"{}\"}"))
+                .content();
+
+        assertThat(content.type()).isEqualTo("ORDER_TOOL");
+        assertThat(content.data()).containsEntry("callId", "p1")
+                .containsEntry("orderType", "PURCHASE")
+                .containsEntry("purchaseOrderId", "7001");
+    }
+
+    @Test
+    void keepsLegacyPurchaseOrderRecordWithoutCallId() {
+        var content = codec.toView(message("TOOL_CALL",
+                "{\"name\":\"prepare_purchase_order_draft\",\"action\":\"CREATE\","
+                        + "\"status\":\"created\",\"purchaseOrderId\":\"7001\",\"orderNo\":\"PO001\"}"))
+                .content();
+
+        assertThat(content.type()).isEqualTo("PURCHASE_ORDER");
+        assertThat(content.data()).containsEntry("purchaseOrderId", "7001")
+                .containsEntry("orderNo", "PO001");
+    }
+
+    @Test
     void keepsPlainToolRow() {
         var content = codec.toView(message("TOOL_CALL",
                 "{\"callId\":\"c2\",\"name\":\"query_sql_data\",\"label\":\"查询业务数据\","

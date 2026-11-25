@@ -27,7 +27,7 @@ public record PurchaseOrderDraftRequest(
         String warehouseId,
 
         @Nullable
-        @JsonPropertyDescription("预计到货日期，格式 yyyy-MM-dd；没有明确依据时留空。")
+        @JsonPropertyDescription("预计到货日期，格式 yyyy-MM-dd；没有明确依据时留空；填写时不得早于今天。")
         String expectedArrivalDate,
 
         @Nullable

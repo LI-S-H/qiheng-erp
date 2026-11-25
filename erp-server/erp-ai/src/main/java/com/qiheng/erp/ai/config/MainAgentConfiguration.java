@@ -24,14 +24,13 @@ import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor;
 import com.qiheng.erp.ai.clarification.AskUserArgumentsInterceptor;
 import com.qiheng.erp.ai.action.CancelPurchaseOrderTool;
-import com.qiheng.erp.ai.action.PurchaseOrderActionService;
 import com.qiheng.erp.ai.action.SubmitPurchaseOrderTool;
-import com.qiheng.erp.ai.draft.PurchaseDraftArgumentsInterceptor;
-import com.qiheng.erp.ai.draft.PurchaseDraftService;
 import com.qiheng.erp.ai.draft.PurchaseOrderDraftTool;
 import com.qiheng.erp.ai.draft.UpdatePurchaseOrderDraftTool;
+import com.qiheng.erp.ai.order.OrderConfirmationService;
+import com.qiheng.erp.ai.order.PurchaseOrderConfirmationStrategy;
+import com.qiheng.erp.ai.order.SalesOrderConfirmationStrategy;
 import com.qiheng.erp.ai.sales.CancelSalesOrderTool;
-import com.qiheng.erp.ai.sales.SalesOrderConfirmationService;
 import com.qiheng.erp.ai.sales.SalesOrderDraftTool;
 import com.qiheng.erp.ai.sales.SubmitSalesOrderTool;
 import com.qiheng.erp.ai.returnorder.ReturnableItemQueryService;
@@ -108,7 +107,7 @@ public class MainAgentConfiguration {
                                 ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
             throws IOException {
         return mainAgent(model, saver, sql, dataset, businessGraph, clarification, datasetList, results,
-                analysisTool, null, null, null, null, null, null);
+                analysisTool, null, null, null, null);
     }
 
     /**
@@ -125,8 +124,6 @@ public class MainAgentConfiguration {
      * @param analysisTool 分析任务工具
      * @param skills 主智能体技能注册表
      * @param skillFileTool 主智能体读取技能支持文件的工具
-     * @param drafts 采购草稿服务
-     * @param actions 采购单提交与取消服务
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
@@ -137,21 +134,16 @@ public class MainAgentConfiguration {
                                 AnalysisResultTool results, AnalysisTool analysisTool,
                                 @Qualifier("mainSkillRegistry") SkillRegistry skills,
                                 @Qualifier("mainReadSkillFileTool") ReadSkillFileTool skillFileTool,
-                                PurchaseDraftService drafts, PurchaseOrderActionService actions,
                                 IReturnOrderService returnOrders, LoginUserService users)
             throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
         var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool,
                 new AskUserTool(clarification)));
-        if (drafts != null) {
-            tools.add(new PurchaseOrderDraftTool(drafts));
-            tools.add(new UpdatePurchaseOrderDraftTool(drafts));
-        }
-        if (actions != null) {
-            tools.add(new SubmitPurchaseOrderTool(actions));
-            tools.add(new CancelPurchaseOrderTool(actions));
-        }
-        // 销售单工具只负责声明参数结构；实际执行由人工确认节点接管。
+        // 采购单与销售单工具只声明参数结构；实际执行由人工确认节点接管。
+        tools.add(new PurchaseOrderDraftTool());
+        tools.add(new UpdatePurchaseOrderDraftTool());
+        tools.add(new SubmitPurchaseOrderTool());
+        tools.add(new CancelPurchaseOrderTool());
         tools.add(new SalesOrderDraftTool());
         tools.add(new UpdateSalesOrderDraftTool());
         tools.add(new SubmitSalesOrderTool());
@@ -177,8 +169,12 @@ public class MainAgentConfiguration {
         if (experienceInjection != null) {
             hooks.add(experienceInjection.create("MAIN"));
         }
-        // 销售草稿、提交与取消共用一个确认节点，避免重复注册同名节点。
+        // 采购与销售的草稿、提交、取消共用一个确认节点，避免重复注册同名节点。
         hooks.add(HumanInTheLoopHook.builder()
+                .approvalOn("prepare_purchase_order_draft", ToolConfig.builder().build())
+                .approvalOn("update_purchase_order_draft", ToolConfig.builder().build())
+                .approvalOn("submit_purchase_order", ToolConfig.builder().build())
+                .approvalOn("cancel_purchase_order", ToolConfig.builder().build())
                 .approvalOn("prepare_sales_order_draft", ToolConfig.builder().build())
                 .approvalOn("update_sales_order_draft", ToolConfig.builder().build())
                 .approvalOn("submit_sales_order", ToolConfig.builder().build())
@@ -190,7 +186,6 @@ public class MainAgentConfiguration {
                 .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
                         new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
                         new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()),
-                        new PurchaseDraftArgumentsInterceptor(new ObjectMapper()),
                         new BusinessGraphInterceptor(businessGraph));
         if (skills != null) {
             builder.interceptors(new SkillIndexInterceptor(skills));
@@ -210,7 +205,7 @@ public class MainAgentConfiguration {
     }
 
     /**
-     * 组装销售单确认结果的恢复入口。
+     * 组装单据确认结果的恢复入口。
      *
      * @param mainAgent 主智能体图
      * @param saver 检查点存储
@@ -218,15 +213,17 @@ public class MainAgentConfiguration {
      * @param conversations 会话数据访问
      * @param users 登录用户查询
      * @param mapper JSON 序列化组件
-     * @return 销售单确认服务
+     * @param messages 会话消息存储
+     * @return 单据确认服务
      */
     @Bean
-    public SalesOrderConfirmationService salesOrderConfirmationService(ReactAgent mainAgent, RedisSaver saver,
-                                                                      MainAgentService runs,
-                                                                      AiConversationMapper conversations,
-                                                                      LoginUserService users, ObjectMapper mapper,
-                                                                      ConversationMessageStore messages) {
-        return new SalesOrderConfirmationService(mainAgent, saver, runs, conversations, users, mapper, messages);
+    public OrderConfirmationService orderConfirmationService(ReactAgent mainAgent, RedisSaver saver,
+                                                            MainAgentService runs,
+                                                            AiConversationMapper conversations,
+                                                            LoginUserService users, ObjectMapper mapper,
+                                                            ConversationMessageStore messages) {
+        return new OrderConfirmationService(mainAgent, saver, runs, conversations, users, mapper, messages,
+                List.of(new SalesOrderConfirmationStrategy(), new PurchaseOrderConfirmationStrategy()));
     }
 
     /**
@@ -262,36 +259,6 @@ public class MainAgentConfiguration {
     public ClarificationService clarificationService(AiConversationMapper conversations,
             LoginUserService users, ObjectMapper mapper) {
         return new ClarificationService(conversations, users, mapper);
-    }
-
-    /**
-     * 组装采购草稿服务。
-     *
-     * @param conversations 会话数据访问
-     * @param users 用户数据访问
-     * @param messages 会话消息存储
-     * @param mapper JSON 序列化组件
-     * @return 采购草稿服务
-     */
-    @Bean
-    public PurchaseDraftService purchaseDraftService(AiConversationMapper conversations,
-            LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
-        return new PurchaseDraftService(conversations, users, messages, mapper);
-    }
-
-    /**
-     * 组装采购单提交与取消服务。
-     *
-     * @param conversations 会话数据访问
-     * @param users 用户数据访问
-     * @param messages 会话消息存储
-     * @param mapper JSON 序列化组件
-     * @return 采购单动作服务
-     */
-    @Bean
-    public PurchaseOrderActionService purchaseOrderActionService(AiConversationMapper conversations,
-            LoginUserService users, ConversationMessageStore messages, ObjectMapper mapper) {
-        return new PurchaseOrderActionService(conversations, users, messages, mapper);
     }
 
     }

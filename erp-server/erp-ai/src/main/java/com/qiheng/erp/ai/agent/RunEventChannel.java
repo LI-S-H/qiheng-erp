@@ -99,9 +99,7 @@ public final class RunEventChannel {
             case "question" -> applyQuestion(data);
             case "question_answered" -> applyTerminal("RUNNING");
             case "purchase_draft" -> applyDraft(data);
-            case "purchase_draft_resolved" -> applyTerminal("RUNNING");
             case "purchase_action" -> applyAction(data);
-            case "purchase_action_resolved" -> applyTerminal("RUNNING");
             case "sales_order_draft" -> applySalesDraft(data);
             case "sales_order_action" -> applySalesAction(data);
             case "run_completed" -> {
@@ -237,9 +235,7 @@ public final class RunEventChannel {
     private void applyDraft(Map<String, Object> data) {
         status = "WAITING_USER";
         draft = Map.copyOf(data);
-        Object callId = data.get("toolCallId");
-        String id = callId instanceof String value && !value.isBlank()
-                ? value : String.valueOf(data.get("draftRequestId"));
+        String id = firstText(data.get("callId"), data.get("draftRequestId"));
         String key = "draft:" + id;
         if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
             snapshotTruncated = true;
@@ -248,8 +244,10 @@ public final class RunEventChannel {
         var item = new LinkedHashMap<String, Object>();
         item.put("type", "purchase_draft");
         item.put("id", id);
-        item.put("draftRequestId", data.get("draftRequestId"));
-        item.put("draft", data.get("draft"));
+        item.put("callId", data.get("callId"));
+        item.put("action", data.get("action"));
+        item.put("orderType", data.get("orderType"));
+        item.put("arguments", data.get("arguments"));
         items.put(key, item);
     }
 
@@ -257,7 +255,7 @@ public final class RunEventChannel {
     private void applyAction(Map<String, Object> data) {
         status = "WAITING_USER";
         action = Map.copyOf(data);
-        String id = String.valueOf(data.get("actionRequestId"));
+        String id = firstText(data.get("callId"), data.get("actionRequestId"));
         String key = "action:" + id;
         if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
             snapshotTruncated = true;
@@ -266,10 +264,11 @@ public final class RunEventChannel {
         var item = new LinkedHashMap<String, Object>();
         item.put("type", "purchase_action");
         item.put("id", id);
-        item.put("actionRequestId", data.get("actionRequestId"));
+        item.put("callId", data.get("callId"));
         item.put("action", data.get("action"));
         item.put("purchaseOrderId", data.get("purchaseOrderId"));
         item.put("orderNo", data.get("orderNo"));
+        item.put("reason", data.get("reason"));
         items.put(key, item);
     }
 
@@ -344,29 +343,6 @@ public final class RunEventChannel {
         // 答案提交期间可能已出现新的追问，不能清除新问题。
         if (!closed && question != null && questionRequestId.equals(question.get("questionRequestId"))) {
             publish("question_answered", Map.of("questionRequestId", questionRequestId));
-        }
-    }
-
-    /**
-     * 用户处置草稿成功后撤销待确认状态；不改变已展示的历史。
-     *
-     * @param draftRequestId 本次处置对应的草稿编号
-     */
-    public synchronized void draftResolved(String draftRequestId) {
-        // 处置期间可能已出现新的草稿，不能清除新草稿。
-        if (!closed && draft != null && draftRequestId.equals(draft.get("draftRequestId"))) {
-            publish("purchase_draft_resolved", Map.of("draftRequestId", draftRequestId));
-        }
-    }
-
-    /**
-     * 用户处置采购单动作成功后撤销待确认状态。
-     *
-     * @param actionRequestId 本次处置对应的动作编号
-     */
-    public synchronized void actionResolved(String actionRequestId) {
-        if (!closed && action != null && actionRequestId.equals(action.get("actionRequestId"))) {
-            publish("purchase_action_resolved", Map.of("actionRequestId", actionRequestId));
         }
     }
 

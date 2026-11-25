@@ -1,8 +1,6 @@
 package com.qiheng.erp.ai.agent;
 
 import com.qiheng.erp.ai.clarification.ClarificationService;
-import com.qiheng.erp.ai.action.PurchaseOrderActionService;
-import com.qiheng.erp.ai.draft.PurchaseDraftService;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.OverAllState;
@@ -77,7 +75,14 @@ public final class MainAgentService {
 
     /** 用户未确认时写回模型的工具结果。 */
     private static final String CANCELLED_MODEL_RESULT =
-            "{\"status\":\"CANCELLED\",\"message\":\"用户未确认，已放弃本次操作。\"}";
+            "用户未确认并开始了新的消息，本次操作已放弃，未生成或修改单据。";
+
+    /** 工具调用中断后写回模型的结论。 */
+    private static final String INTERRUPTED_MODEL_RESULT =
+            "上次工具调用中断，未取得可确认的结果，请结合新消息判断下一步。";
+
+    /** 识别中断结果用的文本标记。 */
+    private static final String INTERRUPTED_MARKER = "上次工具调用中断";
 
     /** 用户未确认时写回页面的工具结果说明。 */
     private static final String CANCELLED_DISPLAY_MESSAGE = "用户未确认，已放弃本次操作。";
@@ -277,7 +282,7 @@ public final class MainAgentService {
                             var assistant = (AssistantMessage) messages.getLast();
                             var responses = assistant.getToolCalls().stream().map(call ->
                                     new ToolResponseMessage.ToolResponse(call.id(), call.name(),
-                                            "{\"status\":\"INTERRUPTED\",\"message\":\"上次工具调用中断，未取得可确认的结果，请结合新消息判断下一步。\"}"))
+                                            INTERRUPTED_MODEL_RESULT))
                                     .toList();
                             var result = ToolResponseMessage.builder().responses(responses).build();
                             // 先写入原调用的中断结果，避免新消息之前缺少工具响应。
@@ -436,18 +441,6 @@ public final class MainAgentService {
                     var question = events.questionEvent(event);
                     runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(question.state().data())));
                     events.toolEvent(question);
-                })
-                .addMetadata(PurchaseDraftService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
-                    // 草稿确认与追问一样会阻塞本轮，线程一直等在同一次工具调用里。
-                    var draft = events.questionEvent(event);
-                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(draft.state().data())));
-                    events.toolEvent(draft);
-                })
-                .addMetadata(PurchaseOrderActionService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
-                    // 提交和取消同样是一次等待用户确认的动作。
-                    var action = events.questionEvent(event);
-                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(action.state().data())));
-                    events.toolEvent(action);
                 })
                 .build();
         // 新消息交由模型结合已配对的工具历史处理。
@@ -854,6 +847,21 @@ public final class MainAgentService {
                 content.put("orderNo", text(arguments, "orderNo"));
                 content.put("reason", text(arguments, "reason"));
             }
+            case "prepare_purchase_order_draft", "update_purchase_order_draft" -> {
+                event = "purchase_draft";
+                content.put("action", "prepare_purchase_order_draft".equals(call.name())
+                        ? "CREATE" : "UPDATE");
+                content.put("orderType", "PURCHASE");
+            }
+            case "submit_purchase_order", "cancel_purchase_order" -> {
+                event = "purchase_action";
+                content.put("action", "submit_purchase_order".equals(call.name()) ? "SUBMIT" : "CANCEL");
+                content.put("orderType", "PURCHASE");
+                var arguments = parseArguments(call.arguments());
+                content.put("purchaseOrderId", text(arguments, "purchaseOrderId"));
+                content.put("orderNo", text(arguments, "orderNo"));
+                content.put("reason", text(arguments, "reason"));
+            }
             default -> {
                 return;
             }
@@ -892,8 +900,12 @@ public final class MainAgentService {
         return switch (name) {
             case "prepare_sales_order_draft" -> "创建销售草稿单";
             case "update_sales_order_draft" -> "修改销售草稿单";
-            case "submit_sales_order" -> "提交销售草稿单";
-            case "cancel_sales_order" -> "取消销售草稿单";
+            case "submit_sales_order" -> "提交销售单";
+            case "cancel_sales_order" -> "取消销售单";
+            case "prepare_purchase_order_draft" -> "创建采购草稿单";
+            case "update_purchase_order_draft" -> "修改采购草稿单";
+            case "submit_purchase_order" -> "提交采购单";
+            case "cancel_purchase_order" -> "取消采购单";
             default -> name;
         };
     }
@@ -943,7 +955,7 @@ public final class MainAgentService {
         return response.getResponses().size() == assistant.getToolCalls().size()
                 && assistant.getToolCalls().stream().allMatch(call -> response.getResponses().stream().anyMatch(item ->
                 call.id().equals(item.id()) && call.name().equals(item.name())
-                        && item.responseData().contains("\"status\":\"INTERRUPTED\"")));
+                        && item.responseData().contains(INTERRUPTED_MARKER)));
     }
 
     /**

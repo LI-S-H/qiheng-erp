@@ -6,6 +6,7 @@ import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.agent.MainAgentService;
+import com.qiheng.erp.ai.order.OrderConfirmationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import reactor.core.publisher.Flux;
@@ -42,6 +43,25 @@ class MainAgentControllerTest {
                 .filter(e -> !"run_snapshot".equals(e.event())).collectList().block();
         assertThat(events).extracting(e -> e.event()).containsExactly("text_completed", "sales_order_draft", "run_completed");
         assertThat(((Map<?, ?>) events.getFirst().data()).get("text")).isEqualTo("请确认草稿");
+    }
+
+    @Test
+    void purchaseApprovalPausesWithWaitingUser() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var draft = NodeOutput.of("purchase_draft", "main_agent", new OverAllState(Map.of("callId", "p1")), null);
+        var action = NodeOutput.of("purchase_action", "main_agent", new OverAllState(Map.of("callId", "p2")), null);
+        when(agent.streamForCurrentUser(eq(1L), eq("采购"), anyString())).thenReturn(Flux.just(draft, action));
+        var events = new MainAgentController(agents, null)
+                .stream("1", new MainAgentController.MessageRequest("采购"))
+                .filter(e -> !"run_snapshot".equals(e.event()))
+                .collectList()
+                .block();
+
+        assertThat(events).extracting(e -> e.event())
+                .containsExactly("purchase_draft", "purchase_action", "run_completed");
+        assertThat(((Map<?, ?>) events.getLast().data()).get("status")).isEqualTo("WAITING_USER");
     }
 
     @Test
@@ -82,16 +102,16 @@ class MainAgentControllerTest {
     @Test
     void resumedRunSnapshotRetainsConfirmationTextWhenHookIsMissing() throws Exception {
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<com.qiheng.erp.ai.sales.SalesOrderConfirmationService> sales = mock(ObjectProvider.class);
-        var service = mock(com.qiheng.erp.ai.sales.SalesOrderConfirmationService.class);
+        ObjectProvider<OrderConfirmationService> sales = mock(ObjectProvider.class);
+        var service = mock(OrderConfirmationService.class);
         when(agents.getObject()).thenReturn(mock(MainAgentService.class));
         when(sales.getIfAvailable()).thenReturn(service);
         when(sales.getObject()).thenReturn(service);
         var text = NodeOutput.of("confirmation_text", "main_agent", new OverAllState(Map.of("callId", "sales-2", "text", "请确认新修改")), null);
         var pending = NodeOutput.of("sales_order_draft", "main_agent", new OverAllState(Map.of("callId", "sales-2")), null);
-        when(service.resolveForUser(eq(1L), eq(1L), eq("draft"), any()))
-                .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("original", Flux.just(text, pending)));
-        var controller = new MainAgentController(agents, null, null, null, sales);
+        when(service.resolveDraftForUser(eq(1L), eq(1L), eq("draft"), any()))
+                .thenReturn(new OrderConfirmationService.ResumedRun("original", Flux.just(text, pending)));
+        var controller = new MainAgentController(agents, null, sales);
         var draft = new com.qiheng.erp.ai.sales.SalesOrderDraftReceipt("created", null, null, null, null, null, null, null, null);
         controller.resolveSalesDraft("1", "draft", draft);
         var snapshot = controller.runtime("1").getData();
@@ -102,16 +122,16 @@ class MainAgentControllerTest {
     @Test
     void resumedSalesSnapshotUsesOriginalRunIdBeforeAnyGraphEvent() throws Exception {
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<com.qiheng.erp.ai.sales.SalesOrderConfirmationService> sales = mock(ObjectProvider.class);
-        var service = mock(com.qiheng.erp.ai.sales.SalesOrderConfirmationService.class);
+        ObjectProvider<OrderConfirmationService> sales = mock(ObjectProvider.class);
+        var service = mock(OrderConfirmationService.class);
         when(agents.getObject()).thenReturn(mock(MainAgentService.class));
         when(sales.getIfAvailable()).thenReturn(service);
         when(sales.getObject()).thenReturn(service);
-        when(service.resolveForUser(eq(1L), eq(1L), eq("draft"), any()))
-                .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("original", Flux.never()));
+        when(service.resolveDraftForUser(eq(1L), eq(1L), eq("draft"), any()))
+                .thenReturn(new OrderConfirmationService.ResumedRun("original", Flux.never()));
         when(service.resolveActionForUser(eq(1L), eq(1L), eq("action"), any()))
-                .thenReturn(new com.qiheng.erp.ai.sales.SalesOrderConfirmationService.ResumedRun("fallback", Flux.never()));
-        var controller = new MainAgentController(agents, null, null, null, sales);
+                .thenReturn(new OrderConfirmationService.ResumedRun("fallback", Flux.never()));
+        var controller = new MainAgentController(agents, null, sales);
         var draft = new com.qiheng.erp.ai.sales.SalesOrderDraftReceipt("created", null, null, null, null, null, null, null, null);
         var action = mock(com.qiheng.erp.ai.sales.SalesOrderActionReceipt.class);
 

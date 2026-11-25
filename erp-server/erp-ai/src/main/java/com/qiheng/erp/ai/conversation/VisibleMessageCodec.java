@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.domain.vo.ChatMessageVO;
 import com.qiheng.erp.ai.domain.vo.VisibleMessageContent;
+import com.qiheng.erp.ai.order.OrderToolNames;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -51,10 +52,9 @@ public class VisibleMessageCodec {
         return decode(raw, null);
     }
 
-    /** 判断是否为等待用户处置的销售单工具。 */
+    /** 判断是否为等待用户处置的单据工具。 */
     private static boolean isOrderTool(String name) {
-        return "prepare_sales_order_draft".equals(name) || "update_sales_order_draft".equals(name)
-                || "submit_sales_order".equals(name) || "cancel_sales_order".equals(name);
+        return OrderToolNames.isOrderTool(name);
     }
 
     /** 按白名单复制字段，避免把内部结构暴露给页面。 */
@@ -111,13 +111,15 @@ public class VisibleMessageCodec {
                 }
             }
             if (("TOOL_CALL".equals(kind) || "TOOL_RESULT".equals(kind)) && root.isObject()) {
-                // 草稿工具：调用记录带原始参数，结果记录带业务回执，前端按 callId 配对渲染。
-                if ("TOOL_CALL".equals(kind) && isOrderTool(root.path("name").asText())) {
+                // 单据工具：调用记录带原始参数，结果记录带业务回执，前端按 callId 配对渲染。
+                // 旧采购记录没有 callId，继续走下面的 PURCHASE_ORDER 兼容分支。
+                boolean orderTool = isOrderTool(root.path("name").asText()) && root.has("callId");
+                if ("TOOL_CALL".equals(kind) && orderTool) {
                     return new VisibleMessageContent("ORDER_TOOL", copyFields(root,
                             "callId", "name", "label", "action", "orderType", "status", "arguments",
-                            "salesOrderId", "orderNo", "reason"));
+                            "salesOrderId", "purchaseOrderId", "orderNo", "reason"));
                 }
-                if ("TOOL_RESULT".equals(kind) && isOrderTool(root.path("name").asText())) {
+                if ("TOOL_RESULT".equals(kind) && orderTool) {
                     return new VisibleMessageContent("ORDER_TOOL", copyFields(root,
                             "callId", "name", "action", "orderType", "result"));
                 }

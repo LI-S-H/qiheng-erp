@@ -18,6 +18,23 @@ class RunEventChannelTest {
     }
 
     @Test
+    void purchaseDraftSnapshotUsesCallIdAndArguments() {
+        var channel = new RunEventChannel("r");
+        channel.publish("purchase_draft", Map.of("callId", "p1", "action", "CREATE",
+                "orderType", "PURCHASE", "arguments", "{}"));
+        var snapshot = channel.snapshot();
+
+        assertThat(snapshot).containsEntry("status", "WAITING_USER");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> draft = (Map<String, Object>) snapshot.get("draft");
+        assertThat(draft)
+                .containsEntry("callId", "p1")
+                .containsEntry("orderType", "PURCHASE")
+                .containsEntry("arguments", "{}");
+        assertThat((List<?>) snapshot.get("items")).hasSize(1);
+    }
+
+    @Test
     void failedRunResubscriptionPreservesFailureDetails() {
         var channel = new RunEventChannel("r");
         channel.publish("run_failed", Map.of("code", "MODEL_CALL_FAILED", "message", "模型调用失败"));

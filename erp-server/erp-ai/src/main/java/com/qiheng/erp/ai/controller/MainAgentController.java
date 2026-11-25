@@ -11,11 +11,9 @@ import com.qiheng.erp.ai.agent.RunEventChannel;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.ai.clarification.ClarificationAnswer;
 import com.qiheng.erp.ai.action.PurchaseOrderActionReceipt;
-import com.qiheng.erp.ai.action.PurchaseOrderActionService;
 import com.qiheng.erp.ai.draft.PurchaseDraftReceipt;
-import com.qiheng.erp.ai.draft.PurchaseDraftService;
+import com.qiheng.erp.ai.order.OrderConfirmationService;
 import com.qiheng.erp.ai.sales.SalesOrderActionReceipt;
-import com.qiheng.erp.ai.sales.SalesOrderConfirmationService;
 import com.qiheng.erp.ai.sales.SalesOrderDraftReceipt;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.common.util.IdUtil;
@@ -54,9 +52,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MainAgentController {
     private final ObjectProvider<MainAgentService> agents;
     private final ObjectProvider<ClarificationService> clarifications;
-    private final ObjectProvider<PurchaseDraftService> drafts;
-    private final ObjectProvider<PurchaseOrderActionService> actions;
-    private final ObjectProvider<SalesOrderConfirmationService> salesConfirmations;
+    private final ObjectProvider<OrderConfirmationService> confirmations;
     private final ConcurrentHashMap<String, RunEventChannel> channels = new ConcurrentHashMap<>();
 
     /**
@@ -65,41 +61,25 @@ public class MainAgentController {
      * @param agents 主智能体服务
      * @param clarifications 追问服务
      */
-    public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications) {
-        this(agents, clarifications, null, null, null);
+    public MainAgentController(ObjectProvider<MainAgentService> agents,
+                               ObjectProvider<ClarificationService> clarifications) {
+        this(agents, clarifications, null);
     }
 
     /**
-     * 兼容只注入采购草稿服务的调用方。
+     * 注入单据确认服务。
      *
      * @param agents 主智能体服务
      * @param clarifications 追问服务
-     * @param drafts 采购草稿服务
-     */
-    public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications,
-                               ObjectProvider<PurchaseDraftService> drafts) {
-        this(agents, clarifications, drafts, null, null);
-    }
-
-    /**
-     * 注入全部等待用户处置的服务。
-     *
-     * @param agents 主智能体服务
-     * @param clarifications 追问服务
-     * @param drafts 采购草稿服务
-     * @param actions 采购单提交与取消服务
-     * @param salesConfirmations 销售单确认服务
+     * @param confirmations 单据确认服务
      */
     @Autowired
-    public MainAgentController(ObjectProvider<MainAgentService> agents, ObjectProvider<ClarificationService> clarifications,
-                               ObjectProvider<PurchaseDraftService> drafts,
-                               ObjectProvider<PurchaseOrderActionService> actions,
-                               ObjectProvider<SalesOrderConfirmationService> salesConfirmations) {
+    public MainAgentController(ObjectProvider<MainAgentService> agents,
+                               ObjectProvider<ClarificationService> clarifications,
+                               ObjectProvider<OrderConfirmationService> confirmations) {
         this.agents = agents;
         this.clarifications = clarifications;
-        this.drafts = drafts;
-        this.actions = actions;
-        this.salesConfirmations = salesConfirmations;
+        this.confirmations = confirmations;
     }
 
     /** 本轮用户输入。 */
@@ -228,25 +208,16 @@ public class MainAgentController {
      * @param draftRequestId 草稿请求编号
      * @param body 处置结果
      * @return 空结果
+     * @throws Exception 校验或写入失败
      */
     @PostMapping("/{conversationId}/drafts/{draftRequestId}/resolve")
     public Result<Void> resolveDraft(@PathVariable String conversationId, @PathVariable String draftRequestId,
-                                     @RequestBody PurchaseDraftReceipt body) {
+                                     @RequestBody PurchaseDraftReceipt body) throws Exception {
         long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
-        if (drafts == null || drafts.getIfAvailable() == null) {
-            throw new IllegalStateException("采购草稿功能未启用");
-        }
-        var service = drafts.getObject();
-        var active = channel(id);
-        if (active == null) {
-            service.resolveForCurrentUser(id, draftRequestId, body);
-        } else {
-            // 处置生效与快照切换在同一把锁内，避免重连时取到已经处置的草稿。
-            synchronized (active) {
-                service.resolveForCurrentUser(id, draftRequestId, body);
-                active.draftResolved(draftRequestId);
-            }
-        }
+        OrderConfirmationService service = requireConfirmations("采购草稿确认功能未启用");
+        long userId = UserContext.requireCurrentUser().getUserId();
+        var resumed = service.resolveDraftForUser(userId, id, draftRequestId, body);
+        startBackgroundRun(id, userId, resumed.outputs(), resumed.runId());
         return Result.ok();
     }
 
@@ -257,24 +228,16 @@ public class MainAgentController {
      * @param actionRequestId 动作请求编号
      * @param body 处置结果
      * @return 空结果
+     * @throws Exception 校验或写入失败
      */
     @PostMapping("/{conversationId}/actions/{actionRequestId}/resolve")
     public Result<Void> resolveAction(@PathVariable String conversationId, @PathVariable String actionRequestId,
-                                      @RequestBody PurchaseOrderActionReceipt body) {
+                                      @RequestBody PurchaseOrderActionReceipt body) throws Exception {
         long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
-        if (actions == null || actions.getIfAvailable() == null) {
-            throw new IllegalStateException("采购单操作功能未启用");
-        }
-        var service = actions.getObject();
-        var active = channel(id);
-        if (active == null) {
-            service.resolveForCurrentUser(id, actionRequestId, body);
-        } else {
-            synchronized (active) {
-                service.resolveForCurrentUser(id, actionRequestId, body);
-                active.actionResolved(actionRequestId);
-            }
-        }
+        OrderConfirmationService service = requireConfirmations("采购单操作功能未启用");
+        long userId = UserContext.requireCurrentUser().getUserId();
+        var resumed = service.resolveActionForUser(userId, id, actionRequestId, body);
+        startBackgroundRun(id, userId, resumed.outputs(), resumed.runId());
         return Result.ok();
     }
 
@@ -290,11 +253,9 @@ public class MainAgentController {
     public Result<Void> resolveSalesDraft(@PathVariable String conversationId, @PathVariable String draftRequestId,
                                           @RequestBody SalesOrderDraftReceipt body) throws Exception {
         long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
-        if (salesConfirmations == null || salesConfirmations.getIfAvailable() == null) {
-            throw new IllegalStateException("销售草稿确认功能未启用");
-        }
+        OrderConfirmationService service = requireConfirmations("销售草稿确认功能未启用");
         long userId = UserContext.requireCurrentUser().getUserId();
-        var resumed = salesConfirmations.getObject().resolveForUser(userId, id, draftRequestId, body);
+        var resumed = service.resolveDraftForUser(userId, id, draftRequestId, body);
         startBackgroundRun(id, userId, resumed.outputs(), resumed.runId());
         return Result.ok();
     }
@@ -311,13 +272,19 @@ public class MainAgentController {
     public Result<Void> resolveSalesAction(@PathVariable String conversationId, @PathVariable String actionRequestId,
                                            @RequestBody SalesOrderActionReceipt body) throws Exception {
         long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
-        if (salesConfirmations == null || salesConfirmations.getIfAvailable() == null) {
-            throw new IllegalStateException("销售单操作功能未启用");
-        }
+        OrderConfirmationService service = requireConfirmations("销售单操作功能未启用");
         long userId = UserContext.requireCurrentUser().getUserId();
-        var resumed = salesConfirmations.getObject().resolveActionForUser(userId, id, actionRequestId, body);
+        var resumed = service.resolveActionForUser(userId, id, actionRequestId, body);
         startBackgroundRun(id, userId, resumed.outputs(), resumed.runId());
         return Result.ok();
+    }
+
+    /** 取得单据确认服务；未启用时返回明确的业务错误。 */
+    private OrderConfirmationService requireConfirmations(String message) {
+        if (confirmations == null || confirmations.getIfAvailable() == null) {
+            throw new IllegalStateException(message);
+        }
+        return confirmations.getObject();
     }
 
     /** 启动一次恢复运行，并把事件写入会话通道供页面重新订阅。 */
@@ -390,10 +357,14 @@ public class MainAgentController {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());
                     sink.next(event("purchase_draft", data));
+                    completed.set(1);
+                    paused.set(1);
                 } else if ("purchase_action".equals(node)) {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());
                     sink.next(event("purchase_action", data));
+                    completed.set(1);
+                    paused.set(1);
                 } else if ("sales_order_draft".equals(node)) {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());

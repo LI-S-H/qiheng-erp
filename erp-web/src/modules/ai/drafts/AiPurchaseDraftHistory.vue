@@ -44,7 +44,7 @@ const statusMeta = computed(() => {
     'CREATE:edited': { label: '修改后创建', className: 'border-sky-200 bg-sky-50 text-sky-700' },
     'UPDATE:edited': { label: '修改后保存', className: 'border-sky-200 bg-sky-50 text-sky-700' },
     'SUBMIT:submitted': { label: '已提交审核', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-    'CANCEL:cancelled': { label: '已取消', className: 'border-muted bg-muted text-muted-foreground' },
+    'CANCEL:cancelled': { label: '已取消', className: 'border-rose-200 bg-rose-50 text-rose-700' },
     'CREATE:rejected': { label: '已驳回', className: 'border-muted bg-muted text-muted-foreground' },
     'UPDATE:rejected': { label: '修改已驳回', className: 'border-muted bg-muted text-muted-foreground' },
     'SUBMIT:rejected': { label: '暂不提交', className: 'border-muted bg-muted text-muted-foreground' },

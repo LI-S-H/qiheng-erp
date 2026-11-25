@@ -29,6 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
+import { isPastDate } from '@/shared/utils/date';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import { formatQtyByPrecision } from '@/shared/utils/qty';
 import {
@@ -97,7 +98,7 @@ const statusClassNames: Record<PurchaseOrderStatus, string> = {
   APPROVED: 'border-blue-200 bg-blue-50 text-blue-700',
   PARTIAL_INBOUND: 'border-blue-200 bg-blue-50 text-blue-700',
   INBOUND_DONE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  CANCELLED: 'border-slate-200 bg-slate-50 text-slate-600',
+  CANCELLED: 'border-rose-200 bg-rose-50 text-rose-700',
 };
 
 const statusOptions: Array<{ value: PurchaseOrderStatus | 'all'; label: string }> = [
@@ -620,6 +621,7 @@ function validateForm() {
   if (!form.warehouseId) formErrors.warehouseId = '请选择入库仓库';
   if (draftItems.value.length === 0) formErrors.items = '请添加至少一个产品';
   if (dialogMode.value === 'edit' && editingOrder.value?.status === 'SUBMITTED' && !form.expectedArrivalDate) formErrors.expectedArrivalDate = '已提交采购单必须维护预计到货日期';
+  if (isPastDate(form.expectedArrivalDate)) formErrors.expectedArrivalDate = '预计到货日期不能早于今天';
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   draftItems.value.forEach((item, index) => {
     if (!item.productId) formErrors[`items.${index}.productId`] = '请选择产品';
@@ -744,6 +746,10 @@ function runDetailAction(row: PurchaseOrderListItem) {
   if (detailActionMode.value === 'view') return;
   if (!row.expectedArrivalDate) {
     toast.warning('提交或审核前必须先维护预计到货日期');
+    return;
+  }
+  if (isPastDate(row.expectedArrivalDate)) {
+    toast.warning('预计到货日期不能早于今天');
     return;
   }
   confirmOrderAction(row, detailActionMode.value as 'submit' | 'approve');

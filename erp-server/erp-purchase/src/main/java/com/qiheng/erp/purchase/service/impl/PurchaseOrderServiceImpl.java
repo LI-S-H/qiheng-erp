@@ -274,6 +274,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     public PurchaseOrderDetailVo createDraft(PurchaseOrderCreateDto dto) {
         Long supplierId = IdUtil.parseRequiredLongId(dto.getSupplierId(), "供应商ID");
         Long warehouseId = IdUtil.parseRequiredLongId(dto.getWarehouseId(), "仓库ID");
+        validateExpectedArrivalDate(dto.getExpectedArrivalDate());
         // 查询供应商快照
         Supplier supplier = supplierMapper.selectById(supplierId);
         if (supplier == null) {
@@ -358,6 +359,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     public PurchaseOrderDetailVo update(Long purchaseOrderId, PurchaseOrderUpdateDto dto) {
         Long supplierId = IdUtil.parseRequiredLongId(dto.getSupplierId(), "供应商ID");
         Long warehouseId = IdUtil.parseRequiredLongId(dto.getWarehouseId(), "仓库ID");
+        validateExpectedArrivalDate(dto.getExpectedArrivalDate());
         // 查询原订单
         PurchaseOrder order = purchaseOrderMapper.selectById(purchaseOrderId);
         if (order == null) {
@@ -471,9 +473,12 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     @Transactional(rollbackFor = Exception.class)
     public void submit(Long purchaseOrderId, Integer version) {
         PurchaseOrder order = loadAndCheckStatus(purchaseOrderId, version, "仅草稿状态可提交", PurchaseOrderStatus.DRAFT);
-        // 校验预计到货日期非空
+        // 校验预计到货日期非空且不早于今天
         if (order.getExpectedArrivalDate() == null) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计到货日期不能为空");
+        }
+        if (order.getExpectedArrivalDate().isBefore(LocalDate.now())) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计到货日期不能早于今天");
         }
         // 重新校验供应商、仓库、产品、供货关系
         revalidateOrderBusiness(order);
@@ -501,9 +506,12 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
     public void approve(Long purchaseOrderId, Integer version) {
         PurchaseOrder order = loadAndCheckStatus(purchaseOrderId, version, "仅待审核状态可审核", PurchaseOrderStatus.SUBMITTED);
-        // 校验预计到货日期非空
+        // 校验预计到货日期非空且不早于今天
         if (order.getExpectedArrivalDate() == null) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计到货日期不能为空");
+        }
+        if (order.getExpectedArrivalDate().isBefore(LocalDate.now())) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计到货日期不能早于今天");
         }
         // 重新校验供应商、仓库、产品、供货关系
         revalidateOrderBusiness(order);
@@ -854,6 +862,17 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
                 throw new BizException(ErrorCode.OPERATION_FAILED.getCode(),
                         "入库单[" + bill.getInboundNo() + "]状态已变更，无法取消采购订单");
             }
+        }
+    }
+
+    /**
+     * 草稿允许预计到货为空，但填写后不得早于当前业务日。
+     *
+     * @param expectedArrivalDate 预计到货日期
+     */
+    private void validateExpectedArrivalDate(LocalDate expectedArrivalDate) {
+        if (expectedArrivalDate != null && expectedArrivalDate.isBefore(LocalDate.now())) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "预计到货日期不能早于今天");
         }
     }
 

@@ -10,7 +10,7 @@ npm run smoke:product-categories
 
 `build` 执行 TypeScript 检查与生产构建；`smoke:product-categories` 是分类页面浏览器冒烟检查。其他脚本包括 `smoke:system-depts`、`smoke:purchase`、`smoke:sales` 和 `smoke:warehouse-stocks`，完整列表以 `package.json` 为准。
 
-AI 单据确认相关脚本包括 `test:ai-return-hitl`（模拟接口回归，覆盖创建、修改、动作、驳回、弹窗居中和层级）、`test:ai-return-all-actions`（真实后端与真实模型的创建、编辑、提交、取消）、`test:ai-sales-edit-reject-live`（真实销售单编辑态驳回，校验不写入）以及采购侧 `test:ai-purchase-hitl`。真实链路脚本需要 8081 后端和 5137 前端同时运行。
+AI 单据确认相关脚本包括 `test:ai-return-hitl`（模拟接口回归，覆盖创建、修改、动作、驳回、弹窗居中和层级）、`test:ai-return-all-actions`（真实后端与真实模型的创建、编辑、提交、取消）、`test:ai-sales-edit-reject-live`（真实销售单编辑态驳回，校验不写入）、`test:ai-conversation-selection`（会话读取失败回退与未读点）、`test:ai-completion-toast`（后台完成提示位于会话区右上角的几何与视觉断言）以及采购侧 `test:ai-purchase-hitl`。真实链路脚本需要 8081 后端和 5137 前端同时运行。
 
 现有冒烟辅助程序使用 Playwright，并配置 Windows 上的 Microsoft Edge 可执行文件；运行机器需要浏览器、依赖、端口及相应的测试环境。脚本可启动开发服务器，也可通过 `SMOKE_BASE_URL` 指向已有的测试服务；确认目标环境和测试数据后再运行。脚本可能创建截图或修改模拟数据。
 

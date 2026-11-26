@@ -50,6 +50,8 @@
     "test:ai-return-hitl": "node scripts/test-ai-return-hitl.cjs",
     "test:ai-return-all-actions": "node scripts/test-ai-return-all-actions-live.cjs",
     "test:ai-sales-edit-reject-live": "node scripts/test-ai-sales-edit-reject-live.cjs",
+    "test:ai-conversation-selection": "node scripts/test-ai-conversation-selection.cjs",
+    "test:ai-completion-toast": "node scripts/test-ai-completion-toast.cjs",
     "test:ai-ask-user-hitl": "node scripts/test-ai-ask-user-hitl.cjs",
     "test:ai-sse": "node scripts/test-ai-sse.cjs",
     "smoke:purchase": "node scripts/smoke-purchase.cjs",

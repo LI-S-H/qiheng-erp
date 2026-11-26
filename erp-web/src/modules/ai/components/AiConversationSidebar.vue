@@ -23,6 +23,8 @@ import { conversationDateGroup } from '../conversation-time';
 const props = defineProps<{
   conversations: AiConversationSummary[];
   activeId: string | null;
+  /** 有未读消息的会话 ID，由父级按最近回复与本机已读时间计算。 */
+  unreadIds?: string[];
   loading: boolean;
   /** 只在创建尚未取得 ID 或切换读取时暂时锁定；后台运行不锁住会话列表。 */
   busy: boolean;
@@ -292,7 +294,8 @@ function confirmRemove() {
                     <span class="conversation-title-line"><span class="conversation-title">{{ item.title }}</span><LoaderCircle v-if="runningIds?.includes(item.conversationId)" class="conversation-running animate-spin" aria-label="会话正在运行" /></span>
                     <time>{{ item.updatedAt }}</time>
                   </button>
-                  <div class="conversation-actions">
+                  <div class="conversation-actions" :class="{ 'has-unread': unreadIds?.includes(item.conversationId) && item.conversationId !== activeId }">
+                    <span v-if="unreadIds?.includes(item.conversationId) && item.conversationId !== activeId" class="conversation-unread-dot" aria-label="有未读消息" />
                     <button
                       type="button"
                       aria-label="重命名会话"
@@ -559,6 +562,7 @@ function confirmRemove() {
   white-space: nowrap;
 }
 .conversation-title-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.conversation-unread-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 999px; background: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent); }
 .conversation-title-line .conversation-title { min-width: 0; flex: 1; }
 .conversation-running { width: 12px; height: 12px; flex-shrink: 0; color: var(--primary); }
 .conversation-row.is-active .conversation-title {
@@ -574,7 +578,15 @@ function confirmRemove() {
   display: none;
   gap: 2px;
   padding-right: 6px;
+  align-items: center;
 }
+.conversation-actions.has-unread { display: flex; }
+.conversation-actions.has-unread button { display: none; }
+.conversation-actions.has-unread .conversation-unread-dot { display: block; }
+.conversation-row:hover .conversation-actions.has-unread button,
+.conversation-row:focus-within .conversation-actions.has-unread button { display: grid; }
+.conversation-row:hover .conversation-actions.has-unread .conversation-unread-dot,
+.conversation-row:focus-within .conversation-actions.has-unread .conversation-unread-dot { display: none; }
 .conversation-row:hover .conversation-actions,
 .conversation-row:focus-within .conversation-actions {
   display: flex;

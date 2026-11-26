@@ -5,11 +5,13 @@ import { useElementBounding, useMediaQuery } from '@vueuse/core';
 import { useRoute, useRouter } from 'vue-router';
 import {
   ArrowRight,
+  CircleCheck,
   MessageSquare,
   Home,
   LoaderCircle,
   Menu,
   TriangleAlert,
+  X,
 } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -68,6 +70,11 @@ const queryError = ref('');
 const answering = ref(false);
 const error = runtimeField('error');
 const warning = runtimeField('warning');
+/** 会话读取失败回退提示；此时可能还没有 activeId，不能写运行时字段。 */
+const conversationNotice = ref('');
+const conversationLoadFailed = ref(false);
+/** 非当前会话的输出完成提示；只在 AI 助手页面内生效。 */
+const backgroundCompletion = ref<{ id: string; title: string } | null>(null);
 const querying = runtimeField('querying');
 const watching = runtimeField('watching');
 const creating = ref(false);
@@ -610,12 +617,24 @@ const workspaceStyle = computed(() => ({
 }));
 let requestEpoch = 0;
 let disposed = false;
+let lastInitKey = '';
 const refreshes = new Map<string, Promise<void>>();
 
 const busy = computed(() => creating.value || ((querying.value || watching.value) && !waiting.value));
 const runningConversationIds = computed(() => Array.from(runs.states.entries())
   .filter(([id, state]) => id !== 'new' && (state.querying || state.watching || state.runStatus === 'RUNNING'))
   .map(([id]) => id));
+/** 侧栏未读点：最近回复晚于本机已读时间，当前打开的会话不计入。 */
+const unreadConversationIds = computed(() => store.conversations
+  .filter(item => store.isUnread(item.conversationId))
+  .map(item => item.conversationId));
+watch(
+  () => [store.activeId, store.messages[store.messages.length - 1]?.createdAt] as const,
+  () => {
+    if (store.activeId) store.markRead(store.activeId);
+  },
+  { flush: 'post' },
+);
 const locked = computed(
   () =>
     busy.value ||
@@ -1495,6 +1514,10 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       clearFailureHold(state);
       state.settleSuccess?.();
       state.settleSuccess = null;
+      if (id !== store.activeId) {
+        const summary = store.conversations.find(item => item.conversationId === id);
+        backgroundCompletion.value = { id, title: summary?.title || '会话' };
+      }
       break;
     case 'run_failed':
       state.runStatus = 'FAILED';
@@ -1888,10 +1911,11 @@ async function waitForSwitchTransition(started: number) {
   }
 }
 
-async function openConversation(id: string, force = false) {
+async function openConversation(id: string, force = false): Promise<boolean> {
   if (creating.value || switching.value || (!force && id === store.activeId && store.detail)) {
-    return;
+    return false;
   }
+  conversationLoadFailed.value = false;
   switchSnapshot.value = captureSwitchSnapshot();
   cancelTransient();
   switching.value = true;
@@ -1899,19 +1923,22 @@ async function openConversation(id: string, force = false) {
   // 面板宽度与开合由用户控制；切换只更新内容，不让工作区先收起再展开。
   const epoch = requestEpoch;
   const userId = auth.user?.userId;
+  // 用户切到哪个会话就立即记住，读取过程中页面重建也不会回到上一条。
+  storageSet(scopedDraftKey(userId, null, 'activeConversation'), id);
   try {
     const loaded = await store.loadConversation(id);
     if (!loaded || !isCurrent(epoch, userId, id)) {
-      return;
+      return false;
     }
     storageSet(scopedDraftKey(userId, null, 'activeConversation'), id);
+    store.markRead(id);
     const state = runs.get(id);
     // 切换读取期间后台可能刚好收尾；再取一次最新流水，避免用旧 RUNNING 快照覆盖终态。
     if (state.refreshNeeded && !state.streaming) {
       await reload(id, epoch, userId);
     }
     if (!isCurrent(epoch, userId, id)) {
-      return;
+      return false;
     }
     try {
       await reconnectRun(id, epoch, userId);
@@ -1921,7 +1948,7 @@ async function openConversation(id: string, force = false) {
       }
     }
     if (!isCurrent(epoch, userId, id)) {
-      return;
+      return false;
     }
     if (reconcileSubmittedDraft(id)) {
       state.error = '';
@@ -1929,10 +1956,14 @@ async function openConversation(id: string, force = false) {
     restoreQuery();
     restoreClarification();
     mobileSidebarOpen.value = false;
+    return true;
   } catch (cause) {
     if (isCurrent(epoch, userId, id)) {
-      error.value = getApiErrorMessage(cause) || '会话读取失败，请重试';
+      conversationLoadFailed.value = true;
+      if (store.activeId === id) error.value = getApiErrorMessage(cause) || '会话读取失败，请重试';
+      if (store.activeId === id) store.clearActive();
     }
+    return false;
   } finally {
     await waitForSwitchTransition(switchStarted);
     if (isCurrent(epoch, userId)) {
@@ -1954,6 +1985,31 @@ async function openConversation(id: string, force = false) {
     }
   }
 }
+
+/** 打开会话；读取失败时自动回退到最近回复的那一条会话。 */
+async function selectConversation(id: string) {
+  conversationNotice.value = '';
+  const ok = await openConversation(id);
+  if (ok) return true;
+  if (store.activeId === id && store.detail) return true;
+  if (!conversationLoadFailed.value) return false;
+  const fallback = store.conversations.find(item => item.conversationId !== id);
+  if (!fallback) return false;
+  conversationNotice.value = '会话读取失败，已切换到最近回复的会话';
+  return openConversation(fallback.conversationId);
+}
+
+/** 点击后台完成提示，直接切到对应会话。 */
+async function openBackgroundCompletion() {
+  const target = backgroundCompletion.value;
+  if (!target) return;
+  backgroundCompletion.value = null;
+  await selectConversation(target.id);
+}
+watch(() => store.activeId, id => {
+  if (id && backgroundCompletion.value?.id === id) backgroundCompletion.value = null;
+});
+
 async function createConversation() {
   if (creating.value || switching.value) {
     return;
@@ -2062,6 +2118,13 @@ function submit() {
 watch(
   () => [auth.user?.userId, auth.token] as const,
   async ([userId]) => {
+    const initKey = String(userId || '');
+    if (!userId) {
+      switching.value = false;
+      return;
+    }
+    if (initKey === lastInitKey) return;
+    lastInitKey = initKey;
     cancelTransient();
     runs.reset();
     creating.value = false;
@@ -2071,28 +2134,21 @@ watch(
     clarificationDraft.value = { answers: {}, note: '' };
     query.value = '';
     const epoch = requestEpoch;
-    if (!userId) {
-      switching.value = false;
-      return;
-    }
     try {
+      store.setReadScope(String(userId));
       await store.loadConversations();
       if (!isCurrent(epoch, userId)) {
         return;
       }
+      store.seedReadAt();
       const remembered = typeof route.query.conversationId === 'string'
         ? route.query.conversationId : storageRead(scopedDraftKey(userId, null, 'activeConversation'));
-      if (typeof remembered === 'string' && remembered) {
+      // 上次会话可能还没出现在首批列表里（刚创建或列表分页），仍然优先尝试；失败由 selectConversation 回退。
+      const target = typeof remembered === 'string' && remembered
+        ? remembered : store.conversations[0]?.conversationId;
+      if (target) {
         switching.value = false;
-        await openConversation(remembered);
-        if (!isCurrent(epoch, userId) || (store.activeId === remembered && store.detail)) {
-          return;
-        }
-      }
-      const first = store.conversations[0];
-      if (first) {
-        switching.value = false;
-        await openConversation(first.conversationId);
+        await selectConversation(target);
       } else {
         restoreQuery();
         switching.value = false;
@@ -2118,6 +2174,7 @@ onBeforeUnmount(() => {
       v-if="!small"
       :conversations="store.conversations"
       :active-id="store.activeId"
+      :unread-ids="unreadConversationIds"
       :loading="store.listLoading"
       :busy="creating || switching"
       :running-ids="runningConversationIds"
@@ -2129,7 +2186,7 @@ onBeforeUnmount(() => {
       :load-more-error="store.moreListError"
       :load-more-revision="store.moreListRevision"
       @create="createConversation"
-      @select="openConversation"
+      @select="selectConversation"
       @rename="renameConversation"
       @remove="removeConversation"
       @toggle-collapse="toggleSidebar"
@@ -2183,6 +2240,7 @@ onBeforeUnmount(() => {
       <div ref="scrollArea" class="conversation-scroll" :inert="readingConversation || undefined" @scroll="trackConversationScroll">
         <div class="conversation-stream" :class="{ 'conversation-switching': switching }">
           <div v-if="warning && !switching" class="request-warning" role="status">{{ warning }}</div>
+        <div v-if="conversationNotice && !switching" class="request-warning" role="status">{{ conversationNotice }}</div>
           <div v-if="showWelcome" class="welcome-state">
             <span class="welcome-symbol"><MessageSquare class="size-7" stroke-width="1.5" /></span>
             <h2>今天，你想分析什么？</h2>
@@ -2358,6 +2416,18 @@ onBeforeUnmount(() => {
             </div>
         </template>
       </AiComposerDock>
+      <div v-if="backgroundCompletion" class="ai-completion-toast" data-ai-completion-toast role="status">
+        <button type="button" class="ai-completion-toast__main" @click="openBackgroundCompletion">
+          <span class="ai-completion-toast__icon" aria-hidden="true"><CircleCheck class="size-4" /></span>
+          <span class="ai-completion-toast__text">
+            <strong>「{{ backgroundCompletion.title }}」输出完成</strong>
+            <span>点击查看会话</span>
+          </span>
+        </button>
+        <button type="button" class="ai-completion-toast__close" aria-label="关闭完成提示" @click="backgroundCompletion = null">
+          <X class="size-3.5" aria-hidden="true" />
+        </button>
+      </div>
     </main>
     <template v-if="!small && (showAnalysisPanel || reportProcess)">
       <div
@@ -2405,7 +2475,7 @@ onBeforeUnmount(() => {
           :load-more-error="store.moreListError"
           :load-more-revision="store.moreListRevision"
           @create="createConversation"
-          @select="openConversation"
+          @select="selectConversation"
           @rename="renameConversation"
           @remove="removeConversation"
           @load-more="store.loadMoreConversations()"
@@ -2504,6 +2574,7 @@ onBeforeUnmount(() => {
   width: 52px;
 }
 .conversation-panel {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 56px minmax(0, 1fr) auto;
@@ -2761,6 +2832,96 @@ h1 {
 }
 .request-warning {
   color: var(--muted-foreground);
+}
+.ai-completion-toast {
+  position: absolute;
+  top: 68px;
+  right: 20px;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  width: 336px;
+  max-width: calc(100% - 40px);
+  border: 1px solid #e3e9f2;
+  border-radius: 10px;
+  background: #fff;
+  color: #34465e;
+  box-shadow: 0 10px 28px #283c5817, 0 2px 6px #283c580d;
+  animation: ai-completion-toast-in 200ms cubic-bezier(.22, .61, .36, 1);
+}
+.ai-completion-toast__main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 6px 11px 12px;
+  border: 0;
+  border-radius: 10px 0 0 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+.ai-completion-toast__icon {
+  display: grid;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 7px;
+  background: #e6f3ee;
+  color: #357861;
+}
+.ai-completion-toast__text {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+.ai-completion-toast__text strong {
+  overflow: hidden;
+  color: #34465e;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-completion-toast__text span {
+  color: #8a98aa;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ai-completion-toast__main:hover { background: #f7f9fc; }
+.ai-completion-toast__close {
+  display: grid;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  margin: 8px 8px 0 0;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa9be;
+  cursor: pointer;
+}
+.ai-completion-toast__close:hover { background: #eef3fa; color: #5677a3; }
+.ai-completion-toast :is(button):focus-visible {
+  outline: 1px solid #b6c2d2;
+  outline-offset: -1px;
+}
+@keyframes ai-completion-toast-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (max-width: 640px) {
+  .ai-completion-toast { top: 64px; right: 12px; left: 12px; width: auto; max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-completion-toast { animation: none; }
 }
 .state-note {
   color: var(--muted-foreground);

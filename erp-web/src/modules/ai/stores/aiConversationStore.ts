@@ -21,6 +21,32 @@ function token() {
   return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
 }
 
+/** 读取状态按账号隔离，避免切换账号后把上一个账号的已读位置带过来。 */
+function readAtStorageKey(scope: string) {
+  return `erp_ai_conversation_read_at:${scope}`;
+}
+
+function loadReadAt(scope: string): Record<string, string> {
+  if (!scope) return {};
+  try {
+    const raw = localStorage.getItem(readAtStorageKey(scope));
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === 'string')) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function saveReadAt(scope: string, value: Record<string, string>) {
+  if (!scope) return;
+  try {
+    localStorage.setItem(readAtStorageKey(scope), JSON.stringify(value));
+  } catch {
+    // 本地存储不可用时只影响未读点，不阻断会话列表。
+  }
+}
+
 /** 所有异步回写都验证账号与读取版本；旧请求不能将已切走的会话写回来。 */
 export const useAiConversationStore = defineStore('aiConversation', {
   state: () => ({
@@ -45,11 +71,21 @@ export const useAiConversationStore = defineStore('aiConversation', {
     activitySeq: 0,
     confirmedActivity: {} as Record<string, string>,
     pendingActivity: {} as Record<string, { at: string; baseline: string; version: number; touchedAt: number }>,
+    readScope: '',
+    readAt: {} as Record<string, string>,
   }),
   getters: {
     activeSummary: (state) =>
       state.conversations.find((item) => item.conversationId === state.activeId) || null,
     hasOlder: (state) => state.oldestPage > 1,
+    /** 最近回复时间晚于本机已读时间时显示未读点；当前打开的会话不显示。 */
+    isUnread: (state) => (conversationId: string) => {
+      if (!conversationId || conversationId === state.activeId) return false;
+      const row = state.conversations.find(item => item.conversationId === conversationId);
+      const readTime = conversationTimestamp(state.readAt[conversationId] || '');
+      const updatedTime = conversationTimestamp(row?.updatedAt || '');
+      return readTime !== null && updatedTime !== null && updatedTime > readTime;
+    },
   },
   actions: {
     async loadConversations() {
@@ -73,6 +109,7 @@ export const useAiConversationStore = defineStore('aiConversation', {
         // 已加载的更早会话保留在列表中；刷新首页不能丢掉用户展开的历史。
         rows.push(...this.conversations.filter(item => !included.has(item.conversationId)));
         this.conversations = rows.sort(compareConversationActivity);
+        this.seedReadAt();
         if (!this.loadedMoreConversations) {
           this.nextConversationCursor = page.nextTime && page.nextId ? { time: page.nextTime, id: page.nextId } : null;
           this.hasMoreConversations = page.hasMore;
@@ -100,6 +137,7 @@ export const useAiConversationStore = defineStore('aiConversation', {
         const page = await getAiConversationPage(this.nextConversationCursor, controller.signal);
         if (version !== this.listSeq || account !== this.accountEpoch || auth !== token()) return;
         for (const item of page.records) this.upsertConversationSummary(item, activityVersion);
+        this.seedReadAt();
         this.loadedMoreConversations = true;
         this.moreListRevision += 1;
         this.hasMoreConversations = page.hasMore;
@@ -210,6 +248,37 @@ export const useAiConversationStore = defineStore('aiConversation', {
       this.messages = this.mergeMessages(this.messages, [message]);
     },
 
+    /** 切换账号时加载该账号的已读位置；同一账号重复调用不重置。 */
+    setReadScope(scope: string) {
+      if (!scope || this.readScope === scope) return;
+      this.readScope = scope;
+      this.readAt = loadReadAt(scope);
+    },
+
+    /** 首次见到会话时以当前最近回复时间作为已读基线，避免历史会话全变未读。 */
+    seedReadAt() {
+      let changed = false;
+      for (const item of this.conversations) {
+        if (this.readAt[item.conversationId] === undefined) {
+          this.readAt[item.conversationId] = item.updatedAt;
+          changed = true;
+        }
+      }
+      if (changed) saveReadAt(this.readScope, this.readAt);
+    },
+
+    /** 打开或停留在当前会话时更新已读时间。 */
+    markRead(conversationId: string, at?: string) {
+      if (!conversationId) return;
+      const row = this.conversations.find(item => item.conversationId === conversationId);
+      const next = at || row?.updatedAt || localActivityTime();
+      const current = conversationTimestamp(this.readAt[conversationId] || '');
+      const incoming = conversationTimestamp(next);
+      if (current !== null && (incoming === null || incoming <= current)) return;
+      this.readAt = { ...this.readAt, [conversationId]: next };
+      saveReadAt(this.readScope, this.readAt);
+    },
+
     /** 发送立即进入今天；旧响应不能覆盖这次活动，服务端确认后恢复以服务端时间为准。 */
     touchActivity(conversationId: string, at = localActivityTime()) {
       if (conversationTimestamp(at) === null) return;
@@ -262,6 +331,7 @@ export const useAiConversationStore = defineStore('aiConversation', {
       this.upsertConversationSummary(created);
       this.activeId = created.conversationId;
       this.detail = created;
+      this.markRead(created.conversationId, created.updatedAt);
       return created;
     },
 
@@ -295,6 +365,12 @@ export const useAiConversationStore = defineStore('aiConversation', {
       );
       delete this.pendingActivity[conversationId];
       delete this.confirmedActivity[conversationId];
+      if (this.readAt[conversationId] !== undefined) {
+        const nextReadAt = { ...this.readAt };
+        delete nextReadAt[conversationId];
+        this.readAt = nextReadAt;
+        saveReadAt(this.readScope, this.readAt);
+      }
       if (this.activeId === conversationId) {
         this.clearActive();
       }

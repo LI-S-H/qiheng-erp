@@ -214,6 +214,93 @@ async function checkHistoryRestore(browser) {
   }
 }
 
+const choiceQuestions = [
+  { id: 'warehouse', question: '需要查哪个仓库？', type: 'SINGLE_CHOICE', options: ['一号仓', '二号仓'] },
+  { id: 'range', question: '时间范围？', type: 'SINGLE_CHOICE', options: ['本月', '上月'] },
+];
+
+/** 全部选完后进入“补充信息”步骤：焦点可留给读屏标题，但不能出现整行蓝色焦点框。 */
+async function checkReviewFocus(browser) {
+  const state = {
+    errors: [], runtimeStatus: 'WAITING_USER', answerCalls: [], answerError: '', messages: [],
+  };
+  const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+  await installMocks(page, state);
+  try {
+    await page.goto(`${BASE}/ai/assistant`);
+    await page.locator('.welcome-state').waitFor({ timeout: 15000 });
+    await page.getByRole('button', { name: '新建会话' }).click();
+    await page.waitForFunction(() => !document.querySelector('.conversation-switching'));
+    await page.getByLabel('经营问题').fill('查库存');
+    await page.getByRole('button', { name: '发送需求' }).click();
+    await page.waitForFunction(() => typeof window.__emitLive === 'function');
+    state.messages = [
+      { messageId: 'm1', requestId: 'r', seq: '1', role: 'user', kind: 'USER_INPUT', createdAt: conversation.updatedAt, content: { type: 'TEXT', data: { text: '查库存' } } },
+      { messageId: 'm2', requestId: 'r', seq: '2', role: 'assistant', kind: 'TOOL_CALL', createdAt: conversation.updatedAt, content: { type: 'TOOL_CALL', data: { callId: 'q1', name: 'ask_user', arguments: JSON.stringify({ questions: choiceQuestions }) } } },
+    ];
+    await page.evaluate(questions => {
+      window.__emitLive('question', { questionRequestId: 'q1', toolCallId: 'q1', questions });
+      window.__emitLive('run_completed', { runId: 'r', status: 'WAITING_USER' });
+      window.__finishLive();
+    }, choiceQuestions);
+    const dock = page.locator('[data-ai-question-dock]');
+    await dock.waitFor({ timeout: 15000 });
+    await dock.locator('[data-testid="question-0-option-0"]').click();
+    await page.waitForFunction(() => document.querySelector('[data-testid="clarification-progress"]')?.textContent?.includes('2 / 2'), null, { timeout: 5000 });
+    await dock.locator('[data-testid="question-1-option-0"]').click();
+    await page.locator('[data-testid="clarification-review"]').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(350);
+
+    const focus = await page.evaluate(() => {
+      const element = document.activeElement;
+      const style = element ? getComputedStyle(element) : null;
+      return {
+        isReviewTitle: Boolean(element?.matches('[data-testid="clarification-review"] [data-question-title]')),
+        tag: element?.tagName || '',
+        outlineStyle: style?.outlineStyle || '',
+        boxShadow: style?.boxShadow || '',
+      };
+    });
+    assert.equal(focus.isReviewTitle, true, `补充信息步骤应聚焦标题供读屏播报，实际 ${JSON.stringify(focus)}`);
+    assert.equal(focus.outlineStyle, 'none', `补充信息标题不应显示浏览器焦点框：${JSON.stringify(focus)}`);
+    assert.equal(focus.boxShadow, 'none', `补充信息标题不应显示焦点辉光：${JSON.stringify(focus)}`);
+
+    const titleBox = await page.locator('[data-testid="clarification-review"] [data-question-title]').boundingBox();
+    assert.ok(titleBox, '未找到补充信息标题');
+    const shot = await page.screenshot({
+      clip: {
+        x: Math.max(0, Math.round(titleBox.x) - 4),
+        y: Math.max(0, Math.round(titleBox.y) - 4),
+        width: Math.round(titleBox.width) + 8,
+        height: Math.round(titleBox.height) + 8,
+      },
+    });
+    const bluePixels = await page.evaluate(async dataUrl => {
+      const image = new Image();
+      image.src = dataUrl;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d');
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let blue = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index + 2] - pixels[index] > 25 && pixels[index + 2] - pixels[index + 1] > 10) blue += 1;
+      }
+      return blue;
+    }, `data:image/png;base64,${shot.toString('base64')}`);
+    // 标题文字本身是蓝灰色，抗锯齿会产生少量蓝色像素；焦点框会形成整圈高密度蓝色，阈值取 500 区分两者。
+    assert.ok(bluePixels < 500, `补充信息标题仍有蓝色焦点框，蓝色像素 ${bluePixels}`);
+    await page.screenshot({ path: path.join(screenshotDir, 'ask-review-focus.png') });
+    assert.deepEqual(state.errors, []);
+    console.log('ASK_USER_REVIEW_FOCUS_OK bluePixels=', bluePixels);
+  } finally {
+    await page.close();
+  }
+}
+
 (async () => {
   const browser = await chromium.launch({
     headless: true,
@@ -222,6 +309,7 @@ async function checkHistoryRestore(browser) {
   try {
     await checkLive(browser);
     await checkHistoryRestore(browser);
+    await checkReviewFocus(browser);
   } finally {
     await browser.close();
   }

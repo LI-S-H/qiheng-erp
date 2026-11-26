@@ -356,7 +356,7 @@ defineExpose({ submit });
         </p>
       </template>
       <div v-else class="answer-review" data-testid="clarification-review">
-        <h3 :id="`${formId}-question-title`" tabindex="-1" data-question-title>补充信息</h3>
+        <h3 :id="`${formId}-question-title`" class="clarification-review-title" tabindex="-1" data-question-title>补充信息</h3>
         <label :for="`${formId}-note`" class="note-label">其他补充 <span>（选填）</span></label>
         <Textarea :id="`${formId}-note`" aria-label="其他补充" :model-value="draft.note" :disabled="controlsLocked"
           placeholder="还有什么需要助手知道？" maxlength="10000" class="question-answer note-text"
@@ -416,6 +416,9 @@ defineExpose({ submit });
 .question-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #c8d1de transparent; }
 .question-step { padding: 9px 16px 13px; }
 .question-body h3 { margin: 0 0 13px; color: var(--question-heading); font-size: 13px; font-weight: 500; line-height: 22px; overflow-wrap: anywhere; }
+/* 进入“补充信息”步骤时会把焦点移到标题用于读屏播报；标题不是可交互控件，不能显示浏览器焦点框。 */
+.question-body h3.clarification-review-title:focus,
+.question-body h3.clarification-review-title:focus-visible { outline: none; box-shadow: none; }
 .answer-options { display: flex; flex-direction: column; gap: 5px; }
 .answer-row { min-width: 0; }
 .question-option { display: flex; align-items: center; gap: 9px; box-sizing: border-box; width: 100%; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 6px; background: #f7f9fc; box-shadow: inset 0 0 0 1px transparent; color: var(--question-copy); text-align: start; cursor: pointer; touch-action: manipulation; transition: background-color 200ms var(--question-ease), box-shadow 200ms var(--question-ease), transform 200ms var(--question-ease), color 200ms var(--question-ease); }

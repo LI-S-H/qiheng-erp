@@ -30,6 +30,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { usePagedQuery } from '@/shared/composables/use-paged-query';
 import { useTextTableColumns } from '@/shared/composables/use-text-table-columns';
+import { isPastDate } from '@/shared/utils/date';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import { formatQtyByPrecision } from '@/shared/utils/qty';
 import {
@@ -441,6 +442,7 @@ function validateForm() {
   if (!form.warehouseId) formErrors.warehouseId = '请选择出库仓库';
   if (draftItems.value.length === 0) formErrors.items = '请添加至少一个产品';
   if (dialogMode.value === 'edit' && editingOrder.value?.status === 'SUBMITTED' && !form.expectedDeliveryDate) formErrors.expectedDeliveryDate = '已提交销售单必须维护预计发货日期';
+  if (isPastDate(form.expectedDeliveryDate)) formErrors.expectedDeliveryDate = '预计发货日期不能早于今天';
   if (form.remark.trim().length > 500) formErrors.remark = '备注不能超过 500 个字符';
   draftItems.value.forEach((item, index) => {
     if (!item.productId) formErrors[`items.${index}.productId`] = '请选择产品';
@@ -553,6 +555,10 @@ function runDetailAction(row: SalesOrderListItem) {
   if (detailActionMode.value === 'view') return;
   if (!row.expectedDeliveryDate) {
     toast.warning('提交或审核前必须先维护预计发货日期');
+    return;
+  }
+  if (isPastDate(row.expectedDeliveryDate)) {
+    toast.warning('预计发货日期不能早于今天');
     return;
   }
   confirmOrderAction(row, detailActionMode.value as 'submit' | 'approve');

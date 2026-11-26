@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { isPastDate } from '@/shared/utils/date';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import { listEnabledSalesWarehouseOptions } from '@/modules/sales/api';
 import { getWarehouseDetail } from '@/modules/warehouse/warehouses/api';
@@ -376,6 +377,7 @@ async function submitReject() {
 function validate() {
   Object.keys(errors).forEach(key => delete errors[key]);
   if (!form.warehouseId) errors.warehouseId = '请选择出库仓库';
+  if (isPastDate(form.expectedDeliveryDate)) errors.expectedDeliveryDate = '预计发货日期不能早于今天';
   if (form.remark.trim().length > 500) errors.remark = '备注不能超过 500 个字符';
   if (!lines.value.length) errors.items = '请至少保留一行明细';
   lines.value.forEach((line, index) => {
@@ -574,7 +576,8 @@ function formatMoney(value: number) {
             </div>
             <div class="space-y-1">
               <Label>预计发货</Label>
-              <OrderDatePicker v-model="form.expectedDeliveryDate" :disabled="readonly" />
+              <OrderDatePicker v-model="form.expectedDeliveryDate" :disabled="readonly" :invalid="Boolean(errors.expectedDeliveryDate)" />
+              <p v-if="errors.expectedDeliveryDate" class="text-xs text-destructive">{{ errors.expectedDeliveryDate }}</p>
             </div>
           </div>
 

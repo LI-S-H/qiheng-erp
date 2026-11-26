@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogScrollArea, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { isPastDate } from '@/shared/utils/date';
 import { getSalesOrderDetail, updateSalesOrder, updateSalesOrderStatus } from '@/modules/sales/api';
 import type { SalesOrderDetail, SalesOrderFormPayload } from '@/modules/sales/types';
 import { ORDER_CONFIRM_REQUEST_CONFIG } from './order-confirm-request';
@@ -74,6 +75,7 @@ function runConfirm() {
   if (busy.value) return;
   if (isSubmit.value) {
     if (!deliveryDate.value) { toast.error('提交审核前需要填写预计发货日期'); return; }
+    if (isPastDate(deliveryDate.value)) { toast.error('预计发货日期不能早于今天'); return; }
     void submitOrder();
   } else {
     void cancelOrder();

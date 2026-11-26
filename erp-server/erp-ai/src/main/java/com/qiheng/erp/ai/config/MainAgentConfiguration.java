@@ -10,6 +10,7 @@ import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.MessageRecordingHook;
 import com.qiheng.erp.ai.agent.AskUserValidationHook;
+import com.qiheng.erp.ai.agent.OrderToolPermissionHook;
 import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.experience.ExperienceInjectionFactory;
 import com.qiheng.erp.ai.experience.tool.SearchExperienceToolFactory;
@@ -193,8 +194,11 @@ public class MainAgentConfiguration {
                 .approvalOn("cancel_return_order", ToolConfig.builder().build())
                 .approvalOn("ask_user", ToolConfig.builder().build())
                 .build());
-        // AFTER_MODEL Hook 按 order 倒序执行：校验 100 > HITL 0 > 记录 -100，保证校验先于 HITL。
+        // AFTER_MODEL Hook 按 order 倒序执行：校验 100 > 订单权限 90 > HITL 0 > 记录 -100，保证校验先于 HITL。
         hooks.add(new AskUserValidationHook(new ObjectMapper()));
+        if (users != null && returnOrders != null) {
+            hooks.add(new OrderToolPermissionHook(users, returnOrders));
+        }
         var builder = ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
                 .methodTools(tools.toArray())
                 .hooks(hooks)

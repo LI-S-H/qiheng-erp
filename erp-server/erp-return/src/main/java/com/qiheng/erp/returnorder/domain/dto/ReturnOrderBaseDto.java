@@ -35,6 +35,7 @@ public class ReturnOrderBaseDto {
     private LocalDate expectedExecutionDate;
 
     @NotBlank(message = "处理方式不能为空")
+    @Pattern(regexp = "REFUND|EXCHANGE|OTHER", message = "处理方式只能是 REFUND、EXCHANGE 或 OTHER")
     @Schema(description = "处理方式：REFUND/EXCHANGE/OTHER")
     private String handlingType;
 

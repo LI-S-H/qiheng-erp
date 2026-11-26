@@ -6,16 +6,12 @@ import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.checkpoint.Checkpoint;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.qiheng.erp.ai.action.PurchaseOrderActionReceipt;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
-import com.qiheng.erp.ai.draft.PurchaseDraftReceipt;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
-import com.qiheng.erp.ai.sales.SalesOrderActionReceipt;
-import com.qiheng.erp.ai.sales.SalesOrderDraftReceipt;
 import com.qiheng.erp.ai.sql.scope.PermissionCodes;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.slf4j.Logger;
@@ -186,6 +182,10 @@ public final class OrderConfirmationService {
             if (orderType != null) {
                 content.put("orderType", orderType);
             }
+            Object returnType = displayRecord.get("returnType");
+            if (returnType instanceof String value && !value.isBlank()) {
+                content.put("returnType", value);
+            }
             content.put("result", mapper.writeValueAsString(displayRecord));
             messages.append(new AiMessage()
                     .setUserId(userId)
@@ -202,10 +202,7 @@ public final class OrderConfirmationService {
 
     /** 用户改动以卡片打开时的参数为基线；旧回执没有基线时退回模型参数。 */
     private Map<String, Object> originalParamsOf(Object receipt, Map<String, Object> fallback) {
-        if (receipt instanceof PurchaseDraftReceipt value && value.originalParams() != null) {
-            return value.originalParams();
-        }
-        if (receipt instanceof SalesOrderDraftReceipt value && value.originalParams() != null) {
+        if (receipt instanceof OrderReceipt value && value.originalParams() != null) {
             return value.originalParams();
         }
         return fallback;
@@ -221,19 +218,10 @@ public final class OrderConfirmationService {
 
     /** 读取回执里的处置状态。 */
     private String statusOf(Object receipt) {
-        if (receipt instanceof SalesOrderDraftReceipt value) {
-            return value.status();
+        if (!(receipt instanceof OrderReceipt value)) {
+            throw new IllegalArgumentException("不支持的确认回执");
         }
-        if (receipt instanceof SalesOrderActionReceipt value) {
-            return value.status();
-        }
-        if (receipt instanceof PurchaseDraftReceipt value) {
-            return value.status();
-        }
-        if (receipt instanceof PurchaseOrderActionReceipt value) {
-            return value.status();
-        }
-        throw new IllegalArgumentException("不支持的确认回执");
+        return value.status();
     }
 
     /** 校验处置状态与工具动作是否匹配。 */

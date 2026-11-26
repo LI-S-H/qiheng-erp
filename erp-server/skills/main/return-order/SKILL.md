@@ -16,6 +16,8 @@ description: 退货单创建、编辑、提交、取消的操作指导。用户�
 
 AI 不提供删除。用户要删除草稿时，提示到销售退货或采购退货页面操作。
 
+AI 不提供审核通过。审核会生成退货入库/出库工作单并影响库存，必须由用户在销售退货或采购退货页面操作。
+
 ## 先判断退货方向
 
 退货单分两类，方向决定来源单类型、可退口径和执行方向，不能混：
@@ -46,11 +48,11 @@ AI 不提供删除。用户要删除草稿时，提示到销售退货或采购�
 ## 仓库规则
 
 - 退货仓库必须等于来源单仓库，系统不允许换仓退货
-- 用户要求从别的仓退时，说明只能按原单仓库退；如果原仓没有库存，需要先把货调拨回原仓
+- 用户要求从别的仓退时，说明只能按原单仓库退；原仓可用库存不足时不能采购退货出库，需要先用入库或库存调整补足原仓库存，再发起退货。不要承诺换仓或调拨。
 
 ## 创建
 
-调用 `prepare_return_order_draft`，一次一份。参数：
+调用 `prepare_return_order_draft`。参数：
 
 - `returnType`：必填，`SALES_RETURN` 或 `PURCHASE_RETURN`
 - `sourceOrderId`：必填，来源单 ID
@@ -85,18 +87,18 @@ AI 不提供删除。用户要删除草稿时，提示到销售退货或采购�
 
 ## 编辑
 
-调用 `update_return_order_draft`，传 `returnOrderId` 和要改的字段。
+调用 `update_return_order_draft`，传 `returnOrderId`（退货单数字 ID，不是 PR/SR 单号）和完整业务参数：`returnType`、`sourceOrderId`、`warehouseId`、`handlingType`、`reasonCode`、`returnReason`、完整的 `items`。确认卡片会用单据详情做展示底稿，但工具参数不能缺必填项。
 
 - 只有草稿和待审核可以编辑
 - 来源单和仓库不能改；明细要传完整的 items
-- 不需要自己查当前单据，确认卡片会以单据详情为底
-- 改数量时要重新核对可退上限，把其他退货单的占用算进去
+- 修改数量时要按排除当前退货单自身占用后的可退上限核对
+- 如果上下文里没有当前退货单的完整参数，先用 `query_sql_data` 查 `return_order` / `return_order_item`，或让用户确认；`query_returnable_items` 只用于按排除自身后的上限核对数量。不要猜。确认卡片只做展示底稿，不替工具补必填参数。
 
 回执处理与创建类似：确认保存、修改后保存、驳回、保存失败。
 
 ## 提交
 
-调用 `submit_return_order`，只传 `returnOrderId`。
+调用 `submit_return_order`，只传 `returnOrderId`（退货单数字 ID，不是 PR/SR 单号；用查询结果里的 id 字段）。
 
 - 仅草稿可提交
 - 预计执行日期必须已填写且不早于今天；为空时用户需要在卡片上补，不要编造
@@ -111,7 +113,7 @@ AI 不提供删除。用户要删除草稿时，提示到销售退货或采购�
 
 ## 取消
 
-调用 `cancel_return_order`，传 `returnOrderId` 和从用户话里提取的 `reason`。
+调用 `cancel_return_order`，传 `returnOrderId`（退货单数字 ID，不是 PR/SR 单号；用查询结果里的 id 字段）和从用户话里提取的 `reason`。
 
 - 已部分执行、已完成、已取消的不能取消
 - 草稿、待审核可以取消

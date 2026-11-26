@@ -35,6 +35,46 @@ class RunEventChannelTest {
     }
 
     @Test
+    void returnDraftAndActionSnapshotsKeepDirectionAndOrderId() {
+        var channel = new RunEventChannel("r");
+        channel.publish("return_order_draft", Map.of("callId", "r1", "action", "CREATE",
+                "orderType", "RETURN", "returnType", "SALES_RETURN", "arguments", "{}"));
+        Map<String, Object> draftSnapshot = channel.snapshot();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> draft = (Map<String, Object>) draftSnapshot.get("returnDraft");
+        assertThat(draft).containsEntry("returnType", "SALES_RETURN")
+                .containsEntry("orderType", "RETURN");
+
+        channel.publish("return_order_action", Map.of("callId", "r2", "action", "SUBMIT",
+                "returnOrderId", "8001", "orderNo", "SR001", "reason", ""));
+        Map<String, Object> snapshot = channel.snapshot();
+        assertThat(snapshot).containsEntry("status", "WAITING_USER")
+                .containsEntry("returnDraft", null);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> action = (Map<String, Object>) snapshot.get("returnAction");
+        assertThat(action).containsEntry("returnOrderId", "8001")
+                .containsEntry("action", "SUBMIT");
+    }
+
+    @Test
+    void returnPendingStatesAreMutuallyExclusive() {
+        var channel = new RunEventChannel("r");
+        channel.publish("return_order_draft", Map.of("callId", "r1", "action", "CREATE",
+                "orderType", "RETURN", "returnType", "SALES_RETURN", "arguments", "{}"));
+        channel.publish("return_order_action", Map.of("callId", "r2", "action", "SUBMIT",
+                "returnOrderId", "8001", "orderNo", "SR001", "reason", ""));
+        Map<String, Object> actionSnapshot = channel.snapshot();
+        assertThat(actionSnapshot).containsEntry("returnDraft", null);
+        assertThat(actionSnapshot.get("returnAction")).isNotNull();
+
+        channel.publish("question", Map.of("questionRequestId", "q", "questions", List.of()));
+        Map<String, Object> questionSnapshot = channel.snapshot();
+        assertThat(questionSnapshot).containsEntry("returnDraft", null)
+                .containsEntry("returnAction", null);
+    }
+
+    @Test
     void failedRunResubscriptionPreservesFailureDetails() {
         var channel = new RunEventChannel("r");
         channel.publish("run_failed", Map.of("code", "MODEL_CALL_FAILED", "message", "模型调用失败"));

@@ -18,6 +18,8 @@ import com.qiheng.erp.ai.draft.PurchaseDraftReceipt;
 import com.qiheng.erp.ai.order.OrderConfirmationService;
 import com.qiheng.erp.ai.sales.SalesOrderActionReceipt;
 import com.qiheng.erp.ai.sales.SalesOrderDraftReceipt;
+import com.qiheng.erp.ai.returnorder.ReturnOrderActionReceipt;
+import com.qiheng.erp.ai.returnorder.ReturnOrderDraftReceipt;
 import com.qiheng.erp.common.result.Result;
 import com.qiheng.erp.common.util.IdUtil;
 import jakarta.validation.Valid;
@@ -294,6 +296,44 @@ public class MainAgentController {
         return Result.ok();
     }
 
+    /**
+     * 提交用户对退货草稿的处置结果。
+     *
+     * @param conversationId 会话编号
+     * @param draftRequestId 草稿请求编号
+     * @param body 处置结果
+     * @return 空结果
+     */
+    @PostMapping("/{conversationId}/return-drafts/{draftRequestId}/resolve")
+    public Result<Void> resolveReturnDraft(@PathVariable String conversationId, @PathVariable String draftRequestId,
+                                           @RequestBody ReturnOrderDraftReceipt body) throws Exception {
+        long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
+        OrderConfirmationService service = requireConfirmations("退货草稿确认功能未启用");
+        long userId = UserContext.requireCurrentUser().getUserId();
+        var resumed = service.resolveDraftForUser(userId, id, draftRequestId, body);
+        startBackgroundRun(id, userId, resumed.outputs(), resumed.runId());
+        return Result.ok();
+    }
+
+    /**
+     * 提交用户对退货单动作（提交审核、取消）的处置结果。
+     *
+     * @param conversationId 会话编号
+     * @param actionRequestId 动作请求编号
+     * @param body 处置结果
+     * @return 空结果
+     */
+    @PostMapping("/{conversationId}/return-actions/{actionRequestId}/resolve")
+    public Result<Void> resolveReturnAction(@PathVariable String conversationId, @PathVariable String actionRequestId,
+                                            @RequestBody ReturnOrderActionReceipt body) throws Exception {
+        long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
+        OrderConfirmationService service = requireConfirmations("退货单操作功能未启用");
+        long userId = UserContext.requireCurrentUser().getUserId();
+        var resumed = service.resolveActionForUser(userId, id, actionRequestId, body);
+        startBackgroundRun(id, userId, resumed.outputs(), resumed.runId());
+        return Result.ok();
+    }
+
     /** 取得单据确认服务；未启用时返回明确的业务错误。 */
     private OrderConfirmationService requireConfirmations(String message) {
         if (confirmations == null || confirmations.getIfAvailable() == null) {
@@ -397,6 +437,18 @@ public class MainAgentController {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());
                     sink.next(event("sales_order_action", data));
+                    completed.set(1);
+                    paused.set(1);
+                } else if ("return_order_draft".equals(node)) {
+                    var data = new LinkedHashMap<String, Object>(output.state().data());
+                    data.put("runId", runId.get());
+                    sink.next(event("return_order_draft", data));
+                    completed.set(1);
+                    paused.set(1);
+                } else if ("return_order_action".equals(node)) {
+                    var data = new LinkedHashMap<String, Object>(output.state().data());
+                    data.put("runId", runId.get());
+                    sink.next(event("return_order_action", data));
                     completed.set(1);
                     paused.set(1);
                 } else if ("tool_started".equals(node) || "tool_finished".equals(node)

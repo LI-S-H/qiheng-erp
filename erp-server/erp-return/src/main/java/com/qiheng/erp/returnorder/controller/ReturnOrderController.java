@@ -109,6 +109,7 @@ public class ReturnOrderController {
      *
      * @param returnType 退货方向，用于选择来源业务模块
      * @param sourceOrderId 来源订单 ID
+     * @param excludeReturnOrderId 编辑退货单时排除当前退货单自身占用，可为空
      * @return 可退来源明细
      */
     @GetMapping("/source-orders/{sourceOrderId}/items")
@@ -117,10 +118,16 @@ public class ReturnOrderController {
             @Parameter(description = "退货类型", required = true)
             @RequestParam ReturnType returnType,
             @Parameter(description = "来源订单ID", required = true)
-            @PathVariable String sourceOrderId) {
+            @PathVariable String sourceOrderId,
+            @Parameter(description = "编辑退货单时排除当前退货单自身占用")
+            @RequestParam(required = false) String excludeReturnOrderId) {
         checkQueryPermission(returnType);
-        log.info("查询来源订单的可退明细，returnType: {}, sourceOrderId: {}", returnType, sourceOrderId);
-        return Result.ok(returnOrderService.listSourceItems(returnType, IdUtil.parseRequiredLongId(sourceOrderId, "来源订单ID")));
+        log.info("查询来源订单的可退明细，returnType: {}, sourceOrderId: {}, excludeReturnOrderId: {}",
+                returnType, sourceOrderId, excludeReturnOrderId);
+        Long excludeId = excludeReturnOrderId == null || excludeReturnOrderId.isBlank()
+                ? null : IdUtil.parseRequiredLongId(excludeReturnOrderId, "排除退货单ID");
+        return Result.ok(returnOrderService.listSourceItems(returnType,
+                IdUtil.parseRequiredLongId(sourceOrderId, "来源订单ID"), excludeId));
     }
 
     /**

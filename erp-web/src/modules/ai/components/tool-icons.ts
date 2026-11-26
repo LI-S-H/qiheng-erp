@@ -34,6 +34,10 @@ export function toolIcon(name?: string): Component {
     case 'update_sales_order_draft':
     case 'submit_sales_order':
     case 'cancel_sales_order':
+    case 'prepare_return_order_draft':
+    case 'update_return_order_draft':
+    case 'submit_return_order':
+    case 'cancel_return_order':
       return FileText;
     default:
       return Wrench;

@@ -2,6 +2,7 @@ package com.qiheng.erp.ai.returnorder;
 
 import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.returnorder.domain.port.ReturnType;
+import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderItemVo;
 import com.qiheng.erp.returnorder.domain.vo.ReturnableSourceDetailVo;
 import com.qiheng.erp.returnorder.service.IReturnOrderService;
@@ -53,6 +54,21 @@ class ReturnableItemQueryServiceTest {
 
         assertThatThrownBy(() -> service().load(7L, "SALES_RETURN", "SO2026112300001"))
                 .hasMessageContaining("退货查询权限");
+    }
+
+    @Test
+    void loadsByReturnOrderIdAndExcludesItself() {
+        when(users.findByUserId(7L)).thenReturn(user("return:query"));
+        ReturnOrderDetailVo detail = new ReturnOrderDetailVo();
+        detail.setReturnType("SALES_RETURN");
+        detail.setSourceOrderId(1_001L);
+        when(returnOrders.getDetail(9_001L)).thenReturn(detail);
+        when(returnOrders.getReturnableSource(ReturnType.SALES_RETURN, 1_001L, 9_001L))
+                .thenReturn(source());
+
+        ReturnableSourceDetailVo result = service().loadForEdit(7L, "9001");
+
+        assertThat(result.getSourceOrderNo()).isEqualTo("SO2026112300001");
     }
 
     @Test

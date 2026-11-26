@@ -105,12 +105,14 @@ export type AiMessageContent =
         name: string;
         label?: string;
         action?: 'CREATE' | 'UPDATE' | 'SUBMIT' | 'CANCEL';
-        orderType?: 'SALES' | 'PURCHASE';
+        orderType?: 'SALES' | 'PURCHASE' | 'RETURN';
+        returnType?: 'SALES_RETURN' | 'PURCHASE_RETURN';
         status?: string;
         arguments?: string;
         result?: string;
         salesOrderId?: string;
         purchaseOrderId?: string;
+        returnOrderId?: string;
         orderNo?: string;
         reason?: string;
       };

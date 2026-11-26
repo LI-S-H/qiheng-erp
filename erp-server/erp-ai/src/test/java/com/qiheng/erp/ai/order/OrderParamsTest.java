@@ -51,6 +51,50 @@ class OrderParamsTest {
     }
 
     @Test
+    void sanitizeAndDiffUseReturnItemFields() {
+        Map<String, Object> params = Map.of(
+                "sourceOrderId", "10",
+                "warehouseId", "20",
+                "expectedExecutionDate", "2026-12-01",
+                "handlingType", "REFUND",
+                "reasonCode", "QUALITY_ISSUE",
+                "returnReason", "质量问题",
+                "remark", "备注",
+                "items", List.of(Map.of(
+                        "sourceOrderItemId", "30",
+                        "requestedQty", new BigDecimal("2.00"),
+                        "remark", "坏件",
+                        "productId", "4")));
+
+        Map<String, Object> actual = OrderParams.sanitize(params, OrderTypeProfile.SALES_RETURN);
+
+        assertThat(actual).containsEntry("sourceOrderId", "10")
+                .containsEntry("handlingType", "REFUND")
+                .containsEntry("reasonCode", "QUALITY_ISSUE");
+        List<?> items = (List<?>) actual.get("items");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> item = (Map<String, Object>) items.getFirst();
+        assertThat(item).containsEntry("sourceOrderItemId", "30")
+                .containsEntry("requestedQty", new BigDecimal("2.00"))
+                .doesNotContainKey("productId");
+
+        Map<String, Object> same = Map.of(
+                "sourceOrderId", "10",
+                "warehouseId", "20",
+                "expectedExecutionDate", "2026-12-01",
+                "handlingType", "REFUND",
+                "reasonCode", "QUALITY_ISSUE",
+                "returnReason", "质量问题",
+                "remark", "备注",
+                "items", List.of(Map.of(
+                        "sourceOrderItemId", "30",
+                        "requestedQty", new BigDecimal("2"),
+                        "remark", "坏件")));
+        assertThat(OrderParams.diff(actual, OrderParams.sanitize(same, OrderTypeProfile.SALES_RETURN),
+                OrderTypeProfile.SALES_RETURN)).isEmpty();
+    }
+
+    @Test
     void sanitizeReturnsNullWhenItemsMissingOrEmpty() {
         Map<String, Object> withoutItems = Map.of("customerId", "2", "warehouseId", "3");
         Map<String, Object> emptyItems = Map.of("customerId", "2", "warehouseId", "3", "items", List.of());

@@ -32,10 +32,20 @@ import AiSalesDraftDock from '../drafts/AiSalesDraftDock.vue';
 import SalesDraftDialog from '../drafts/SalesDraftDialog.vue';
 import AiSalesActionDock from '../drafts/AiSalesActionDock.vue';
 import SalesActionDialog from '../drafts/SalesActionDialog.vue';
+import AiReturnDraftDock from '../drafts/AiReturnDraftDock.vue';
+import ReturnDraftDialog from '../drafts/ReturnDraftDialog.vue';
+import AiReturnActionDock from '../drafts/AiReturnActionDock.vue';
+import ReturnActionDialog from '../drafts/ReturnActionDialog.vue';
 import { parsePurchaseDraftRequest, type PurchaseDraftRequest } from '../drafts/purchase-draft-types';
 import { parsePurchaseActionRequest, type PurchaseActionRequest } from '../drafts/purchase-action';
 import { parseSalesDraftRequest, type SalesDraftRequest } from '../drafts/sales-draft-types';
 import { parseSalesActionRequest, type SalesActionRequest } from '../drafts/sales-action';
+import {
+  parseReturnActionRequest,
+  parseReturnDraftRequest,
+  type ReturnActionRequest,
+  type ReturnDraftRequest,
+} from '../drafts/return-draft-types';
 import { usePanelResize } from '../composables/use-panel-resize';
 import { clearFailureHold, holdTransientFailure, useConversationRuns, type ConversationRun, type LiveItem, type SnapshotItem } from '../composables/use-conversation-runs';
 import type { ClarificationDraft, ClarificationQuestion } from '../clarification/clarification-types';
@@ -222,13 +232,43 @@ function openOrderTool(data: {
   callId: string;
   action?: string;
   arguments?: string;
-  orderType?: 'SALES' | 'PURCHASE';
+  orderType?: 'SALES' | 'PURCHASE' | 'RETURN';
+  returnType?: 'SALES_RETURN' | 'PURCHASE_RETURN';
   salesOrderId?: string;
   purchaseOrderId?: string;
+  returnOrderId?: string;
   orderNo?: string;
   reason?: string;
 }) {
   if (closingOrder.value) return;
+  if (data.orderType === 'RETURN') {
+    if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
+      pendingReturnAction.value = {
+        actionRequestId: data.callId,
+        toolCallId: data.callId,
+        action: data.action as 'SUBMIT' | 'CANCEL',
+        returnType: data.returnType,
+        returnOrderId: data.returnOrderId || '',
+        orderNo: data.orderNo || '',
+        reason: data.reason || '',
+      };
+      returnActionDialogOpen.value = true;
+      return;
+    }
+    try {
+      pendingReturnDraft.value = parseReturnDraftRequest({
+        callId: data.callId,
+        action: data.action,
+        arguments: data.arguments,
+        returnType: data.returnType,
+        returnOrderId: data.returnOrderId,
+      });
+      returnDraftDialogOpen.value = true;
+    } catch {
+      // 参数无法解析时不打开弹窗，避免展示不完整数据。
+    }
+    return;
+  }
   if (data.orderType === 'PURCHASE') {
     if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
       pendingAction.value = {
@@ -447,6 +487,114 @@ function openSalesActionDialog() {
 function handleSalesActionSettled(context: { conversationId: string; callId: string }) {
   void finishOrderTransition('action', context, 'SALES');
 }
+
+/** 等待用户处置的退货草稿；与采购/销售草稿互斥。 */
+const pendingReturnDraft = runtimeField('pendingReturnDraft');
+const returnDraftDialogOpen = ref(false);
+
+function pendingReturnDraftFrom(value: unknown): ReturnDraftRequest | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  try {
+    return parseReturnDraftRequest(value as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
+function openReturnDraftDialog() {
+  if (!pendingReturnDraft.value || closingOrder.value) return;
+  returnDraftDialogOpen.value = true;
+}
+
+function handleReturnDraftSettled(context: { conversationId: string; callId: string }) {
+  void finishReturnTransition('draft', context);
+}
+
+/** 等待用户确认的退货单提交或取消动作。 */
+const pendingReturnAction = runtimeField('pendingReturnAction');
+const returnActionDialogOpen = ref(false);
+
+function pendingReturnActionFrom(value: unknown): ReturnActionRequest | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return parseReturnActionRequest(value as Record<string, unknown>);
+}
+
+function openReturnActionDialog() {
+  if (!pendingReturnAction.value || closingOrder.value) return;
+  returnActionDialogOpen.value = true;
+}
+
+function handleReturnActionSettled(context: { conversationId: string; callId: string }) {
+  void finishReturnTransition('action', context);
+}
+
+type PendingBusinessKey = 'pendingDraft' | 'pendingAction' | 'pendingSalesDraft'
+  | 'pendingSalesAction' | 'pendingReturnDraft' | 'pendingReturnAction';
+
+/** 实时事件进入新业务卡片前，清掉其他仍在等待的卡片，避免同时出现多张过期确认页。 */
+function clearBusinessPending(state: ConversationRun, keep: PendingBusinessKey) {
+  if (keep !== 'pendingDraft') state.pendingDraft = null;
+  if (keep !== 'pendingAction') state.pendingAction = null;
+  if (keep !== 'pendingSalesDraft') state.pendingSalesDraft = null;
+  if (keep !== 'pendingSalesAction') state.pendingSalesAction = null;
+  if (keep !== 'pendingReturnDraft') state.pendingReturnDraft = null;
+  if (keep !== 'pendingReturnAction') state.pendingReturnAction = null;
+  state.pendingClarification = null;
+}
+
+/** 退货确认完成后收起弹窗，并接上后端已启动的恢复运行。 */
+async function finishReturnTransition(kind: 'draft' | 'action', context: { conversationId: string; callId: string }) {
+  const id = context.conversationId;
+  const userId = auth.user?.userId;
+  const callId = context.callId;
+  if (!id || !callId) return;
+  const state = runs.get(id);
+  const currentDraftId = state.pendingReturnDraft?.draftRequestId;
+  const currentActionId = state.pendingReturnAction?.actionRequestId;
+  const currentCallId = kind === 'draft' ? currentDraftId : currentActionId;
+  settleOrderCall(id, callId);
+  if (kind === 'draft' && currentDraftId === callId) state.pendingReturnDraft = null;
+  if (kind === 'action' && currentActionId === callId) state.pendingReturnAction = null;
+  if (!userId || store.activeId !== id || currentCallId !== callId || closingOrder.value) {
+    return;
+  }
+  const epoch = requestEpoch;
+  closingOrder.value = { id, callId };
+  if (kind === 'draft') returnDraftDialogOpen.value = false;
+  else returnActionDialogOpen.value = false;
+  await nextTick();
+  if (closingOrder.value?.id === id && closingOrder.value.callId === callId) closingOrder.value = null;
+  if (isCurrent(epoch, userId, id)) void reconnectAfterReturnOrder(id, callId, epoch, userId);
+}
+
+async function reconnectAfterReturnOrder(id: string, callId: string, epoch: number, userId: string | undefined) {
+  try {
+    for (let attempt = 0; attempt < 40 && isCurrent(epoch, userId, id); attempt++) {
+      const state = runs.get(id);
+      if (!state.streaming && !state.querying && !state.watching) {
+        const runtime = await getMainAgentRuntime(id);
+        if (!isCurrent(epoch, userId, id)) return;
+        const draft = pendingReturnDraftFrom(runtime?.returnDraft);
+        const action = pendingReturnActionFrom(runtime?.returnAction);
+        const nextQuestionId = (runtime?.question as { questionRequestId?: unknown } | undefined)?.questionRequestId;
+        const pendingId = draft?.draftRequestId || action?.actionRequestId;
+        if (runtime && (runtime.status !== 'WAITING_USER' || (pendingId && pendingId !== callId)
+            || typeof nextQuestionId === 'string')) {
+          await reconnectRun(id, epoch, userId);
+          return;
+        }
+      }
+      await new Promise(resolve => window.setTimeout(resolve, 250));
+    }
+    if (isCurrent(epoch, userId, id)) warning.value = '退货确认已提交，运行状态暂未更新，请重新进入会话查看。';
+  } catch (cause) {
+    if (isCurrent(epoch, userId, id)) warning.value = `退货确认已提交，恢复连接失败：${getApiErrorMessage(cause) || '请重新进入会话查看'}`;
+  }
+}
 const small = useMediaQuery('(max-width: 900px)');
 const phone = useMediaQuery('(max-width: 640px)');
 const conversationResize = usePanelResize({
@@ -550,7 +698,8 @@ function restoreClarificationFromHistory(messages: AiConversationMessage[]) {
     return;
   }
   // 当前已有草稿或动作卡片时，优先展示当前业务卡片，避免旧问题混入。
-  if (pendingDraft.value || pendingAction.value || pendingSalesDraft.value || pendingSalesAction.value) {
+  if (pendingDraft.value || pendingAction.value || pendingSalesDraft.value || pendingSalesAction.value
+    || pendingReturnDraft.value || pendingReturnAction.value) {
     return;
   }
   const currentRunId = currentRun.value.runId;
@@ -591,13 +740,52 @@ watch(displayedMessages, messages => {
     pendingSalesAction.value = null;
     pendingDraft.value = null;
     pendingAction.value = null;
+    pendingReturnDraft.value = null;
+    pendingReturnAction.value = null;
     return;
   }
   const data = pending.content.data;
+  if (data.orderType === 'RETURN') {
+    if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
+      pendingDraft.value = null;
+      pendingAction.value = null;
+      pendingSalesDraft.value = null;
+      pendingSalesAction.value = null;
+      pendingReturnDraft.value = null;
+      pendingReturnAction.value = parseReturnActionRequest({
+        callId: data.callId,
+        action: data.action,
+        returnOrderId: data.returnOrderId,
+        returnType: data.returnType,
+        orderNo: data.orderNo,
+        reason: data.reason,
+      });
+      return;
+    }
+    pendingDraft.value = null;
+    pendingAction.value = null;
+    pendingSalesDraft.value = null;
+    pendingSalesAction.value = null;
+    pendingReturnAction.value = null;
+    try {
+      pendingReturnDraft.value = parseReturnDraftRequest({
+        callId: data.callId,
+        action: data.action,
+        arguments: data.arguments,
+        returnType: data.returnType,
+        returnOrderId: data.returnOrderId,
+      });
+    } catch {
+      pendingReturnDraft.value = null;
+    }
+    return;
+  }
   const purchase = data.orderType === 'PURCHASE';
   if (data.action === 'SUBMIT' || data.action === 'CANCEL') {
     pendingSalesDraft.value = null;
     pendingDraft.value = null;
+    pendingReturnDraft.value = null;
+    pendingReturnAction.value = null;
     const action = {
       actionRequestId: data.callId,
       toolCallId: data.callId,
@@ -616,6 +804,8 @@ watch(displayedMessages, messages => {
   }
   pendingSalesAction.value = null;
   pendingAction.value = null;
+  pendingReturnDraft.value = null;
+  pendingReturnAction.value = null;
   if (!data.arguments) return;
   try {
     const parsed = JSON.parse(data.arguments);
@@ -637,7 +827,8 @@ watch(displayedMessages, messages => {
   }
 }, { immediate: true });
 /** 历史、运行状态或业务卡片变化后统一尝试恢复追问，避免旧问题压过当前卡片。 */
-watch([displayedMessages, runStatus, pendingDraft, pendingAction, pendingSalesDraft, pendingSalesAction], () => {
+watch([displayedMessages, runStatus, pendingDraft, pendingAction, pendingSalesDraft, pendingSalesAction,
+  pendingReturnDraft, pendingReturnAction], () => {
   restoreClarificationFromHistory(displayedMessages.value);
 }, { immediate: true });
 /** 本次会话是否存在分析过程；没有内容时不占用右侧面板位置。 */
@@ -739,6 +930,10 @@ watch(() => store.activeId, () => {
   // 草稿确认页属于原会话，切换后不能停留在新会话上方。
   draftDialogOpen.value = false;
   actionDialogOpen.value = false;
+  salesDraftDialogOpen.value = false;
+  salesActionDialogOpen.value = false;
+  returnDraftDialogOpen.value = false;
+  returnActionDialogOpen.value = false;
 });
 const showWelcome = computed(() => switching.value && switchSnapshot.value
   ? switchSnapshot.value.welcome
@@ -752,6 +947,18 @@ const statusLabel = computed(() => {
   }
   if (pendingAction.value) {
     return pendingAction.value.action === 'SUBMIT' ? '等待你确认提交审核' : '等待你确认取消采购单';
+  }
+  if (pendingSalesDraft.value) {
+    return '等待你确认销售草稿';
+  }
+  if (pendingSalesAction.value) {
+    return pendingSalesAction.value.action === 'SUBMIT' ? '等待你确认提交销售审核' : '等待你确认取消销售单';
+  }
+  if (pendingReturnDraft.value) {
+    return '等待你确认退货草稿';
+  }
+  if (pendingReturnAction.value) {
+    return pendingReturnAction.value.action === 'SUBMIT' ? '等待你确认提交退货审核' : '等待你确认取消退货单';
   }
   if (busy.value) {
     return steps.value.find((step) => step.status === 'running')?.label || '正在思考';
@@ -1004,6 +1211,8 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.pendingAction = data.status === 'WAITING_USER' ? pendingActionFrom(data.action) : null;
       state.pendingSalesDraft = data.status === 'WAITING_USER' ? pendingSalesDraftFrom(data.salesDraft) : null;
       state.pendingSalesAction = data.status === 'WAITING_USER' ? pendingSalesActionFrom(data.salesAction) : null;
+      state.pendingReturnDraft = data.status === 'WAITING_USER' ? pendingReturnDraftFrom(data.returnDraft) : null;
+      state.pendingReturnAction = data.status === 'WAITING_USER' ? pendingReturnActionFrom(data.returnAction) : null;
       break;
     }
     case 'run_started':
@@ -1172,6 +1381,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
         throw new Error('采购草稿事件格式错误');
       }
       state.pendingDraft = draft;
+      clearBusinessPending(state, 'pendingDraft');
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1190,6 +1400,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
         throw new Error('采购单动作格式错误');
       }
       state.pendingAction = action;
+      clearBusinessPending(state, 'pendingAction');
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1208,6 +1419,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
         throw new Error('销售草稿事件格式错误');
       }
       state.pendingSalesDraft = draft;
+      clearBusinessPending(state, 'pendingSalesDraft');
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1226,6 +1438,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
         throw new Error('销售单动作格式错误');
       }
       state.pendingSalesAction = action;
+      clearBusinessPending(state, 'pendingSalesAction');
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1238,6 +1451,32 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
         state.runStatus = 'RUNNING';
       }
       break;
+    case 'return_order_draft': {
+      const draft = pendingReturnDraftFrom(data);
+      if (!draft) {
+        throw new Error('退货草稿事件格式错误');
+      }
+      state.pendingReturnDraft = draft;
+      clearBusinessPending(state, 'pendingReturnDraft');
+      state.runStatus = 'WAITING_USER';
+      state.steps = [];
+      state.settleSuccess?.();
+      state.settleSuccess = null;
+      break;
+    }
+    case 'return_order_action': {
+      const action = pendingReturnActionFrom(data);
+      if (!action) {
+        throw new Error('退货单动作格式错误');
+      }
+      state.pendingReturnAction = action;
+      clearBusinessPending(state, 'pendingReturnAction');
+      state.runStatus = 'WAITING_USER';
+      state.steps = [];
+      state.settleSuccess?.();
+      state.settleSuccess = null;
+      break;
+    }
     case 'run_completed':
       if (data.status === 'WAITING_USER') {
         // 人工确认暂停不是最终答复，保留当前进度文字，等恢复后再收起。
@@ -1249,6 +1488,8 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.pendingSalesAction = null;
       state.pendingDraft = null;
       state.pendingAction = null;
+      state.pendingReturnDraft = null;
+      state.pendingReturnAction = null;
       state.pendingClarification = null;
       state.finalMessageId = typeof data.finalMessageId === 'string' ? data.finalMessageId : '';
       clearFailureHold(state);
@@ -1261,6 +1502,8 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.pendingSalesAction = null;
       state.pendingDraft = null;
       state.pendingAction = null;
+      state.pendingReturnDraft = null;
+      state.pendingReturnAction = null;
       state.error = String(data.message || '任务执行失败');
       state.failureCode = String(data.code || '');
       state.steps = [];
@@ -1288,8 +1531,8 @@ watch(scrollArea, (area, _previous, onCleanup) => {
   observer.observe(area);
   onCleanup(() => observer.disconnect());
 });
-watch([pendingDraft, pendingAction, pendingSalesDraft, pendingSalesAction], async ([purchaseDraft, purchaseAction, draft, action]) => {
-  if (!purchaseDraft && !purchaseAction && !draft && !action) return;
+watch([pendingDraft, pendingAction, pendingSalesDraft, pendingSalesAction, pendingReturnDraft, pendingReturnAction], async values => {
+  if (!values.some(Boolean)) return;
   const follow = followLatest.value;
   await nextTick();
   if (follow && !switching.value) await scrollToLatest();
@@ -1981,7 +2224,7 @@ onBeforeUnmount(() => {
             :report-run-id="switching ? switchSnapshot?.reportRunId : liveRunId"
             :final-message-id="switching ? switchSnapshot?.finalMessageId : currentRun.finalMessageId"
             :run-terminal="switching ? switchSnapshot?.runTerminal : runTerminal"
-            :paused="switching ? false : (runStatus === 'WAITING_USER' && Boolean(pendingDraft || pendingAction || pendingSalesDraft || pendingSalesAction))"
+            :paused="switching ? false : (runStatus === 'WAITING_USER' && Boolean(pendingDraft || pendingAction || pendingSalesDraft || pendingSalesAction || pendingReturnDraft || pendingReturnAction))"
             :settled-order-calls="switching ? undefined : settledOrderCalls.get(store.activeId || '')"
             @open-analysis="openAnalysis"
             @open-report-process="openReportProcess"
@@ -2037,6 +2280,8 @@ onBeforeUnmount(() => {
           Boolean(pendingAction) ||
           Boolean(pendingSalesDraft) ||
           Boolean(pendingSalesAction) ||
+          Boolean(pendingReturnDraft) ||
+          Boolean(pendingReturnAction) ||
           Boolean(store.activeId && !store.detail) ||
           (runStatus === 'RUNNING' && !watching)
         "
@@ -2091,6 +2336,24 @@ onBeforeUnmount(() => {
                 :order-no="pendingSalesAction.orderNo"
                 :disabled="answering || switching"
                 @open="openSalesActionDialog"
+              />
+            </div>
+            <div v-if="pendingReturnDraft && !switching" class="agent-question-dock" data-ai-return-draft-dock>
+              <AiReturnDraftDock
+                :item-count="pendingReturnDraft.draft.items.length"
+                :return-type="pendingReturnDraft.draft.returnType"
+                :action="pendingReturnDraft.action"
+                :disabled="answering || switching"
+                @open="openReturnDraftDialog"
+              />
+            </div>
+            <div v-if="pendingReturnAction && !switching" class="agent-question-dock" data-ai-return-action-dock>
+              <AiReturnActionDock
+                :action="pendingReturnAction.action"
+                :order-no="pendingReturnAction.orderNo"
+                :return-type="pendingReturnAction.returnType"
+                :disabled="answering || switching"
+                @open="openReturnActionDialog"
               />
             </div>
         </template>
@@ -2177,6 +2440,20 @@ onBeforeUnmount(() => {
       :conversation-id="store.activeId || ''"
       @update:open="salesActionDialogOpen = $event"
       @settled="handleSalesActionSettled"
+    />
+    <ReturnDraftDialog
+      :open="returnDraftDialogOpen"
+      :request="pendingReturnDraft"
+      :conversation-id="store.activeId || ''"
+      @update:open="returnDraftDialogOpen = $event"
+      @settled="handleReturnDraftSettled"
+    />
+    <ReturnActionDialog
+      :open="returnActionDialogOpen"
+      :request="pendingReturnAction"
+      :conversation-id="store.activeId || ''"
+      @update:open="returnActionDialogOpen = $event"
+      @settled="handleReturnActionSettled"
     />
   </section>
 </template>

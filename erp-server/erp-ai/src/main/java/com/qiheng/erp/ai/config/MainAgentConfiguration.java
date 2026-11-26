@@ -28,7 +28,12 @@ import com.qiheng.erp.ai.draft.PurchaseOrderDraftTool;
 import com.qiheng.erp.ai.draft.UpdatePurchaseOrderDraftTool;
 import com.qiheng.erp.ai.order.OrderConfirmationService;
 import com.qiheng.erp.ai.order.PurchaseOrderConfirmationStrategy;
+import com.qiheng.erp.ai.order.ReturnOrderConfirmationStrategy;
 import com.qiheng.erp.ai.order.SalesOrderConfirmationStrategy;
+import com.qiheng.erp.ai.returnorder.CancelReturnOrderTool;
+import com.qiheng.erp.ai.returnorder.ReturnOrderDraftTool;
+import com.qiheng.erp.ai.returnorder.SubmitReturnOrderTool;
+import com.qiheng.erp.ai.returnorder.UpdateReturnOrderDraftTool;
 import com.qiheng.erp.ai.sales.CancelSalesOrderTool;
 import com.qiheng.erp.ai.sales.SalesOrderDraftTool;
 import com.qiheng.erp.ai.sales.SubmitSalesOrderTool;
@@ -147,6 +152,10 @@ public class MainAgentConfiguration {
         tools.add(new UpdateSalesOrderDraftTool());
         tools.add(new SubmitSalesOrderTool());
         tools.add(new CancelSalesOrderTool());
+        tools.add(new ReturnOrderDraftTool());
+        tools.add(new UpdateReturnOrderDraftTool());
+        tools.add(new SubmitReturnOrderTool());
+        tools.add(new CancelReturnOrderTool());
         if (returnOrders != null && users != null) {
             tools.add(new ReturnableItemTool(new ReturnableItemQueryService(returnOrders, users)));
         }
@@ -178,6 +187,10 @@ public class MainAgentConfiguration {
                 .approvalOn("update_sales_order_draft", ToolConfig.builder().build())
                 .approvalOn("submit_sales_order", ToolConfig.builder().build())
                 .approvalOn("cancel_sales_order", ToolConfig.builder().build())
+                .approvalOn("prepare_return_order_draft", ToolConfig.builder().build())
+                .approvalOn("update_return_order_draft", ToolConfig.builder().build())
+                .approvalOn("submit_return_order", ToolConfig.builder().build())
+                .approvalOn("cancel_return_order", ToolConfig.builder().build())
                 .approvalOn("ask_user", ToolConfig.builder().build())
                 .build());
         // AFTER_MODEL Hook 按 order 倒序执行：校验 100 > HITL 0 > 记录 -100，保证校验先于 HITL。
@@ -225,7 +238,8 @@ public class MainAgentConfiguration {
                                                             LoginUserService users, ObjectMapper mapper,
                                                             ConversationMessageStore messages) {
         return new OrderConfirmationService(mainAgent, saver, runs, conversations, users, mapper, messages,
-                List.of(new SalesOrderConfirmationStrategy(), new PurchaseOrderConfirmationStrategy()));
+                List.of(new SalesOrderConfirmationStrategy(), new PurchaseOrderConfirmationStrategy(),
+                new ReturnOrderConfirmationStrategy()));
     }
 
     /**

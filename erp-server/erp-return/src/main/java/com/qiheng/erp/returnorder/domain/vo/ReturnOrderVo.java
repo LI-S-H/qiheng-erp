@@ -22,7 +22,7 @@ public class ReturnOrderVo {
     @Schema(description = "退货单编号")
     private String returnNo;
 
-    @Schema(description = "退货类型，如 PURCHASE_RETURN-采购退货、SALE_RETURN-销售退货")
+    @Schema(description = "退货类型，如 PURCHASE_RETURN-采购退货、SALES_RETURN-销售退货")
     private String returnType;
 
     @Schema(description = "来源订单ID（如采购订单ID）")
@@ -53,7 +53,7 @@ public class ReturnOrderVo {
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate expectedExecutionDate;
 
-    @Schema(description = "处理方式，如 RETURN_TO_SUPPLIER-退供应商、REFUND_ONLY-仅退款等")
+    @Schema(description = "处理方式：REFUND-退款、EXCHANGE-换货、OTHER-其他")
     private String handlingType;
 
     @Schema(description = "退货原因编码")

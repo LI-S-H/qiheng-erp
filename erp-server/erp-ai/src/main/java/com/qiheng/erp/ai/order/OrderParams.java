@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 单据参数清洗与变化比较：只保留业务字段，数字按数值比较。
@@ -32,7 +33,7 @@ public final class OrderParams {
 
         Map<String, Object> target = new LinkedHashMap<>();
         for (String field : profile.headerFields()) {
-            target.put(field, normalizeValue(field, params.get(field)));
+            target.put(field, normalizeValue(field, params.get(field), profile.numericFields()));
         }
 
         if (!(params.get("items") instanceof List<?> lines) || lines.isEmpty()) {
@@ -47,10 +48,10 @@ public final class OrderParams {
 
             Map<String, Object> item = new LinkedHashMap<>();
             for (String field : profile.itemFields()) {
-                item.put(field, normalizeValue(field, source.get(field)));
+                item.put(field, normalizeValue(field, source.get(field), profile.numericFields()));
             }
 
-            if (item.get("productId") == null || item.get("quantity") == null) {
+            if (item.get(profile.itemIdField()) == null || item.get(profile.itemQtyField()) == null) {
                 return null;
             }
             items.add(item);
@@ -72,7 +73,7 @@ public final class OrderParams {
                                     OrderTypeProfile profile) {
         List<String> changes = new ArrayList<>();
         for (String field : profile.headerFields()) {
-            if (!sameValue(draft.get(field), finalParams.get(field))) {
+            if (!sameValue(draft.get(field), finalParams.get(field), field, profile.numericFields())) {
                 changes.add(field);
             }
         }
@@ -95,7 +96,7 @@ public final class OrderParams {
             }
 
             for (String field : profile.itemFields()) {
-                if (!sameValue(source.get(field), target.get(field))) {
+                if (!sameValue(source.get(field), target.get(field), field, profile.numericFields())) {
                     changes.add("items[" + index + "]." + field);
                 }
             }
@@ -103,12 +104,12 @@ public final class OrderParams {
         return changes;
     }
 
-    /** 统一字段的展示形式：数量/单价转 BigDecimal，其他字段去空格。 */
-    private static Object normalizeValue(String field, Object value) {
+    /** 统一字段的展示形式：数量/金额按数值处理，其他字段去空格。 */
+    private static Object normalizeValue(String field, Object value, Set<String> numericFields) {
         if (value == null) {
             return null;
         }
-        if ("quantity".equals(field) || "unitPrice".equals(field)) {
+        if (numericFields.contains(field)) {
             if (value instanceof BigDecimal decimal) {
                 return decimal;
             }
@@ -129,9 +130,9 @@ public final class OrderParams {
     }
 
     /** 比较两个值；数字按数值比较，避免 100 与 100.00 被当成变化。 */
-    private static boolean sameValue(Object left, Object right) {
-        Object one = normalizeValue("quantity", left);
-        Object two = normalizeValue("quantity", right);
+    private static boolean sameValue(Object left, Object right, String field, Set<String> numericFields) {
+        Object one = normalizeValue(field, left, numericFields);
+        Object two = normalizeValue(field, right, numericFields);
         if (one instanceof BigDecimal first && two instanceof BigDecimal second) {
             return first.compareTo(second) == 0;
         }

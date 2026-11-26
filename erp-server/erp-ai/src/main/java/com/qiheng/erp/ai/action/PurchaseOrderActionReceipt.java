@@ -1,5 +1,7 @@
 package com.qiheng.erp.ai.action;
 
+import com.qiheng.erp.ai.order.OrderReceipt;
+
 import java.util.Map;
 
 /**
@@ -16,7 +18,7 @@ public record PurchaseOrderActionReceipt(
         String error,
         String reason,
         String arrivalDate,
-        Map<String, Object> orderParams) {
+        Map<String, Object> orderParams) implements OrderReceipt {
 
     /** 用户同意提交。 */
     public static final String STATUS_SUBMITTED = "submitted";

@@ -20,6 +20,7 @@ public final class PurchaseOrderDraftTool {
     @Tool(name = "prepare_purchase_order_draft", description = "把采购单草稿交给用户确认，并在用户处置后返回结果。"
             + "只在需要生成采购草稿请用户确认时调用；供应商、仓库和产品必须传数字主键 ID，"
             + "不能传 S0001、WH000001、P001029 这类业务编码；用户只给编码时先用查询工具把编码换成主键 ID，再生成草稿，编码会被业务接口拒绝。"
+            + "单价可以省略，确认卡片会按供货关系最新报价回填；没有有效报价时让用户补价或先维护供货关系，不要编造。"
             + "返回的是结论文本：第一句说明用户做了什么，需要精确数值时再读后面的参数块。"
             + "处置结果按 purchase-order 技能处理。")
     public String prepare(

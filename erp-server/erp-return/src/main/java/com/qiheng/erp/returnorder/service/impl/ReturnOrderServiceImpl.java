@@ -79,6 +79,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -179,11 +180,17 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      */
     @Override
     public List<ReturnOrderItemVo> listSourceItems(ReturnType returnType, Long sourceOrderId) {
+        return listSourceItems(returnType, sourceOrderId, null);
+    }
+
+    @Override
+    public List<ReturnOrderItemVo> listSourceItems(ReturnType returnType, Long sourceOrderId,
+                                                   Long excludeReturnOrderId) {
         ReturnSourceProvider provider = requireProvider(returnType);
         // 1. 查询来源订单
         ReturnSourceOrder sourceOrder = provider.getSourceOrder(sourceOrderId);
-        // 2. 计算占用数量（排除自身）
-        Map<Long, Long> occupied = buildOccupiedMap(returnType, sourceOrderId, null);
+        // 2. 计算占用数量（编辑时排除当前退货单自身）
+        Map<Long, Long> occupied = buildOccupiedMap(returnType, sourceOrderId, excludeReturnOrderId);
         // 3. 查询来源订单明细
         List<ReturnSourceItem> sourceItems = provider.listSourceItems(List.of(sourceOrderId))
                 .getOrDefault(sourceOrderId, List.of());
@@ -227,6 +234,19 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      */
     @Override
     public ReturnableSourceDetailVo getReturnableSource(ReturnType returnType, Long sourceOrderId) {
+        return getReturnableSource(returnType, sourceOrderId, null);
+    }
+
+    /**
+     * 按来源单主键查询表头与可退明细；编辑退货单时排除当前退货单自身占用。
+     * @param returnType 退货方向
+     * @param sourceOrderId 来源单ID
+     * @param excludeReturnOrderId 要排除的退货单ID，可为空
+     * @return 来源单表头与可退明细
+     */
+    @Override
+    public ReturnableSourceDetailVo getReturnableSource(ReturnType returnType, Long sourceOrderId,
+                                                        Long excludeReturnOrderId) {
         ReturnSourceProvider provider = requireProvider(returnType);
         ReturnSourceOrder source = provider.getSourceOrder(sourceOrderId);
         ReturnableSourceDetailVo vo = new ReturnableSourceDetailVo();
@@ -239,7 +259,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         vo.setPartyName(source.partyName());
         vo.setWarehouseId(source.warehouseId());
         vo.setWarehouseName(source.warehouseName());
-        vo.setItems(listSourceItems(returnType, sourceOrderId));
+        vo.setItems(listSourceItems(returnType, sourceOrderId, excludeReturnOrderId));
         return vo;
     }
 
@@ -251,6 +271,19 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
      */
     @Override
     public ReturnableSourceDetailVo getReturnableSourceByNo(ReturnType returnType, String sourceOrderNo) {
+        return getReturnableSourceByNo(returnType, sourceOrderNo, null);
+    }
+
+    /**
+     * 按来源单号精确查询表头与可退明细；编辑退货单时排除当前退货单自身占用。
+     * @param returnType 退货方向
+     * @param sourceOrderNo 来源单号
+     * @param excludeReturnOrderId 要排除的退货单ID，可为空
+     * @return 来源单表头与可退明细
+     */
+    @Override
+    public ReturnableSourceDetailVo getReturnableSourceByNo(ReturnType returnType, String sourceOrderNo,
+                                                            Long excludeReturnOrderId) {
         if (StrUtil.isBlank(sourceOrderNo)) {
             throw new BizException(ErrorCode.PARAM_ERROR.getCode(), "来源订单号不能为空");
         }
@@ -263,7 +296,7 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         if (matched == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "来源订单不存在或不符合退货条件");
         }
-        return getReturnableSource(returnType, matched.sourceOrderId());
+        return getReturnableSource(returnType, matched.sourceOrderId(), excludeReturnOrderId);
     }
 
     /**
@@ -342,6 +375,11 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         // 4. 校验前端传递的ID是否正确
         Long sourceOrderId = IdUtil.parseRequiredLongId(dto.getSourceOrderId(), "来源订单ID");
         Long warehouseId = IdUtil.parseRequiredLongId(dto.getWarehouseId(), "退货仓库ID");
+        if (!Objects.equals(existing.getSourceOrderId(), sourceOrderId)
+                || !Objects.equals(existing.getWarehouseId(), warehouseId)) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(),
+                    "退货单来源单和仓库不能修改，请删除或取消后重新创建");
+        }
         // 5. 构建来源订单上下文(来源订单快照,来源单ID -> 明细映射表,产品ID -> 库存可用数量映射表)
         SourceContext ctx = resolveSourceContext(returnType, sourceOrderId);
         if (!warehouseId.equals(ctx.sourceOrder.warehouseId())) {
@@ -579,6 +617,8 @@ public class ReturnOrderServiceImpl extends ServiceImpl<ReturnOrderMapper, Retur
         if (existing == null) {
             throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "退货单不存在");
         }
+        // 按业务方向校验管理权限（采购退货需 purchase:manage，销售退货需 sales:manage）
+        checkManagePermission(existing.getReturnType());
         // 2. 加锁退货单，与仓储 confirmBill（出入库确认）互斥，防止 TOCTOU 导致状态机错乱
         //    （取消已确认的工作单、或确认已取消的工作单）。锁内必须重新加载退货单，防止锁外读到的状态已过期。
         if (ReturnStatus.APPROVED.name().equals(existing.getStatus())) {

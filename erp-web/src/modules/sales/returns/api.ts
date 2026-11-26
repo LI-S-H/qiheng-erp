@@ -277,13 +277,13 @@ async function sourceDetail(sourceOrderId: string) {
   return getSalesOrderDetail(sourceOrderId);
 }
 
-async function mockSourceItems(sourceOrderId: string): Promise<ReturnableSourceOrderItem[]> {
+async function mockSourceItems(sourceOrderId: string, excludeReturnOrderId?: string): Promise<ReturnableSourceOrderItem[]> {
   await ensureMockReturns();
   const source = await sourceDetail(sourceOrderId);
   return source.items
     .filter(item => item.outboundQty > 0)
     .map(item => {
-      const occupiedQty = occupiedQuantity(item.salesOrderItemId);
+      const occupiedQty = occupiedQuantity(item.salesOrderItemId, excludeReturnOrderId);
       return normalizeSourceItem({
         sourceOrderItemId: item.salesOrderItemId,
         productId: item.productId,
@@ -432,7 +432,7 @@ export async function updateSalesReturn(returnOrderId: string, payload: ReturnOr
   }
   const rows = await ensureMockReturns();
   const row = rows.find(item => item.returnOrderId === returnOrderId);
-  if (!row || row.status !== 'DRAFT') throw new Error('只有销售退货草稿可以编辑');
+  if (!row || !['DRAFT', 'SUBMITTED'].includes(row.status)) throw new Error('只有草稿或待审核的销售退货单可以编辑');
   if (row.version !== payload.version) throw new Error('数据已被其他人修改，请刷新后重试');
   const source = await sourceDetail(payload.sourceOrderId);
   row.sourceOrderId = source.salesOrderId;
@@ -561,9 +561,12 @@ export async function searchSalesReturnSourceOrders(keyword = ''): Promise<Retur
   return rows.filter(row => row.fulfilledItemCount > 0).slice(0, 10);
 }
 
-export async function listSalesReturnSourceItems(sourceOrderId: string): Promise<ReturnableSourceOrderItem[]> {
-  if (useMockApi) return mockSourceItems(sourceOrderId);
-  const items = await getResult<ReturnableSourceOrderItem[]>(`${RETURN_API}/source-orders/${sourceOrderId}/items`, { returnType: 'SALES_RETURN' }, { skipPageLoading: true });
+export async function listSalesReturnSourceItems(sourceOrderId: string, excludeReturnOrderId?: string): Promise<ReturnableSourceOrderItem[]> {
+  if (useMockApi) return mockSourceItems(sourceOrderId, excludeReturnOrderId);
+  const items = await getResult<ReturnableSourceOrderItem[]>(`${RETURN_API}/source-orders/${sourceOrderId}/items`, {
+    returnType: 'SALES_RETURN',
+    ...(excludeReturnOrderId ? { excludeReturnOrderId } : {}),
+  }, { skipPageLoading: true });
   return items.map(normalizeSourceItem);
 }
 

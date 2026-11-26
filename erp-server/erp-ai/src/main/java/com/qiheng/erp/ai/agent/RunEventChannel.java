@@ -39,6 +39,8 @@ public final class RunEventChannel {
     private Map<String, Object> action;
     private Map<String, Object> salesDraft;
     private Map<String, Object> salesAction;
+    private Map<String, Object> returnDraft;
+    private Map<String, Object> returnAction;
     private long eventSeq;
     private boolean closed;
     private Event terminalEvent;
@@ -102,6 +104,8 @@ public final class RunEventChannel {
             case "purchase_action" -> applyAction(data);
             case "sales_order_draft" -> applySalesDraft(data);
             case "sales_order_action" -> applySalesAction(data);
+            case "return_order_draft" -> applyReturnDraft(data);
+            case "return_order_action" -> applyReturnAction(data);
             case "run_completed" -> {
                 // 人工确认暂停不是最终完成，待确认内容必须留在快照里供刷新恢复。
                 if ("WAITING_USER".equals(data.get("status"))) {
@@ -214,6 +218,7 @@ public final class RunEventChannel {
     /** 登记一次追问，并把本轮状态切换为等待用户。 */
     private void applyQuestion(Map<String, Object> data) {
         status = "WAITING_USER";
+        clearPendingBusiness();
         question = Map.copyOf(data);
         Object callId = data.get("toolCallId");
         String id = callId instanceof String value && !value.isBlank()
@@ -234,6 +239,7 @@ public final class RunEventChannel {
     /** 登记一份待用户处置的采购草稿，并把本轮状态切换为等待用户。 */
     private void applyDraft(Map<String, Object> data) {
         status = "WAITING_USER";
+        clearPendingBusiness();
         draft = Map.copyOf(data);
         String id = firstText(data.get("callId"), data.get("draftRequestId"));
         String key = "draft:" + id;
@@ -254,6 +260,7 @@ public final class RunEventChannel {
     /** 登记一次等待用户确认的采购单动作。 */
     private void applyAction(Map<String, Object> data) {
         status = "WAITING_USER";
+        clearPendingBusiness();
         action = Map.copyOf(data);
         String id = firstText(data.get("callId"), data.get("actionRequestId"));
         String key = "action:" + id;
@@ -275,6 +282,7 @@ public final class RunEventChannel {
     /** 登记一份待确认的销售草稿；新事件以 callId 作为标识。 */
     private void applySalesDraft(Map<String, Object> data) {
         status = "WAITING_USER";
+        clearPendingBusiness();
         salesDraft = Map.copyOf(data);
         String id = firstText(data.get("callId"), data.get("draftRequestId"));
         String key = "salesDraft:" + id;
@@ -295,6 +303,7 @@ public final class RunEventChannel {
     /** 登记一次等待用户确认的销售单动作；新事件以 callId 作为标识。 */
     private void applySalesAction(Map<String, Object> data) {
         status = "WAITING_USER";
+        clearPendingBusiness();
         salesAction = Map.copyOf(data);
         String id = firstText(data.get("callId"), data.get("actionRequestId"));
         String key = "salesAction:" + id;
@@ -311,6 +320,62 @@ public final class RunEventChannel {
         item.put("orderNo", data.get("orderNo"));
         item.put("reason", data.get("reason"));
         items.put(key, item);
+    }
+
+    /** 登记一份待确认的退货草稿。 */
+    private void applyReturnDraft(Map<String, Object> data) {
+        status = "WAITING_USER";
+        clearPendingBusiness();
+        returnDraft = Map.copyOf(data);
+        String id = firstText(data.get("callId"), data.get("draftRequestId"));
+        String key = "returnDraft:" + id;
+        if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
+            snapshotTruncated = true;
+            return;
+        }
+        var item = new LinkedHashMap<String, Object>();
+        item.put("type", "return_order_draft");
+        item.put("id", id);
+        item.put("callId", data.get("callId"));
+        item.put("action", data.get("action"));
+        item.put("orderType", data.get("orderType"));
+        item.put("returnType", data.get("returnType"));
+        item.put("returnOrderId", data.get("returnOrderId"));
+        item.put("arguments", data.get("arguments"));
+        items.put(key, item);
+    }
+
+    /** 登记一次等待用户确认的退货单动作。 */
+    private void applyReturnAction(Map<String, Object> data) {
+        status = "WAITING_USER";
+        clearPendingBusiness();
+        returnAction = Map.copyOf(data);
+        String id = firstText(data.get("callId"), data.get("actionRequestId"));
+        String key = "returnAction:" + id;
+        if (items.size() >= MAX_ITEMS && !items.containsKey(key)) {
+            snapshotTruncated = true;
+            return;
+        }
+        var item = new LinkedHashMap<String, Object>();
+        item.put("type", "return_order_action");
+        item.put("id", id);
+        item.put("callId", data.get("callId"));
+        item.put("action", data.get("action"));
+        item.put("returnOrderId", data.get("returnOrderId"));
+        item.put("orderNo", data.get("orderNo"));
+        item.put("reason", data.get("reason"));
+        items.put(key, item);
+    }
+
+    /** 进入新的待确认状态前清理其他业务卡片，避免刷新后同时恢复多张过期卡片。 */
+    private void clearPendingBusiness() {
+        question = null;
+        draft = null;
+        action = null;
+        salesDraft = null;
+        salesAction = null;
+        returnDraft = null;
+        returnAction = null;
     }
 
     /** 取第一个非空文本标识；新旧事件结构都能定位同一条记录。 */
@@ -332,6 +397,8 @@ public final class RunEventChannel {
         action = null;
         salesDraft = null;
         salesAction = null;
+        returnDraft = null;
+        returnAction = null;
     }
 
     /**
@@ -379,6 +446,8 @@ public final class RunEventChannel {
         snapshot.put("action", action);
         snapshot.put("salesDraft", salesDraft);
         snapshot.put("salesAction", salesAction);
+        snapshot.put("returnDraft", returnDraft);
+        snapshot.put("returnAction", returnAction);
         snapshot.put("eventSeq", eventSeq);
         snapshot.put("snapshotTruncated", snapshotTruncated);
         if (finalMessageId != null) {

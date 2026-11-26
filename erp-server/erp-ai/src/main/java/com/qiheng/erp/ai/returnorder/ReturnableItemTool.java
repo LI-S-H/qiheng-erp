@@ -36,15 +36,18 @@ public final class ReturnableItemTool {
      */
     @Tool(name = "query_returnable_items", description = "查询某张来源订单当前还能退多少。"
             + "创建退货单草稿前必须先调用：传退货方向和来源单号，返回来源单状态、仓库、每行已履行量、已占用、仓库可用库存和最终可退量。"
+            + "修改已有退货单时传 returnOrderId，工具会排除当前退货单自身占用，避免把自己的申请量算成不可退。"
             + "退货数量不能超过返回的最终可退量；查不到来源单或可退为 0 时，向用户说明原因，不要编造数量。")
     public Object query(
-            @ToolParam(description = "退货方向与来源单号")
+            @ToolParam(description = "退货方向、来源单号或退货单 ID")
             ReturnableItemQuery request,
             ToolContext context) {
         AgentToolContext identity = ToolContextHelper.getMetadata(context, AgentToolContext.CONTEXT_KEY, AgentToolContext.class)
                 .orElseThrow(() -> new IllegalStateException("缺少可信可退明细工具上下文"));
         try {
-            ReturnableSourceDetailVo source = queries.load(identity.userId(), request.returnType(), request.sourceOrderNo());
+            ReturnableSourceDetailVo source = request.returnOrderId() == null || request.returnOrderId().isBlank()
+                    ? queries.load(identity.userId(), request.returnType(), request.sourceOrderNo())
+                    : queries.loadForEdit(identity.userId(), request.returnOrderId());
             return source;
         } catch (IllegalArgumentException | BizException error) {
             return error.getMessage();

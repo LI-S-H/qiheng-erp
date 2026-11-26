@@ -19,7 +19,7 @@ public final class CancelSalesOrderTool {
      */
     @Tool(name = "cancel_sales_order", description = "取消销售单。"
             + "用户明确要求取消、作废、不再销售，或你建议取消且用户已经同意时才调用；建议取消必须先征求用户同意，不要直接调用。"
-            + "已出库或已取消的单据不要调用。"
+            + "已出库、部分出库或已取消的单据不要调用。"
             + "从用户的话里提取取消原因作为 reason，没有就留空。"
             + "返回的结论文字会说明是已取消、暂不取消还是取消失败，按 sales-order 技能处理。")
     public String cancel(

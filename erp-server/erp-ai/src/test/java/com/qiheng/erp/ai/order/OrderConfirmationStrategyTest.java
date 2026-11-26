@@ -2,6 +2,8 @@ package com.qiheng.erp.ai.order;
 
 import com.qiheng.erp.ai.action.PurchaseOrderActionReceipt;
 import com.qiheng.erp.ai.draft.PurchaseDraftReceipt;
+import com.qiheng.erp.ai.returnorder.ReturnOrderActionReceipt;
+import com.qiheng.erp.ai.returnorder.ReturnOrderDraftReceipt;
 import com.qiheng.erp.ai.sales.SalesOrderActionReceipt;
 import com.qiheng.erp.ai.sales.SalesOrderDraftReceipt;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ class OrderConfirmationStrategyTest {
 
     private final SalesOrderConfirmationStrategy sales = new SalesOrderConfirmationStrategy();
     private final PurchaseOrderConfirmationStrategy purchase = new PurchaseOrderConfirmationStrategy();
+    private final ReturnOrderConfirmationStrategy returns = new ReturnOrderConfirmationStrategy();
 
     @Test
     void salesDraftReceiptMapsToCommonConfirmation() {
@@ -77,6 +80,44 @@ class OrderConfirmationStrategyTest {
         assertThat(confirmation.profile()).isEqualTo(OrderTypeProfile.PURCHASE);
         assertThat(confirmation.extraLabel()).isEqualTo("预计到货");
         assertThat(confirmation.extraValue()).isEqualTo("2026-12-02");
+    }
+
+    @Test
+    void returnDraftReceiptMapsDirectionProfile() {
+        ReturnOrderDraftReceipt receipt = new ReturnOrderDraftReceipt(
+                "created", "SR001", "8001", "SALES_RETURN", "DRAFT", null,
+                null, null, List.of(), null, null);
+
+        OrderDraftConfirmation confirmation = returns.draftConfirmation(receipt, "CREATE", Map.of());
+
+        assertThat(confirmation.profile()).isEqualTo(OrderTypeProfile.SALES_RETURN);
+        assertThat(confirmation.create()).isTrue();
+        assertThat(confirmation.orderId()).isEqualTo("8001");
+        assertThat(confirmation.orderNo()).isEqualTo("SR001");
+    }
+
+    @Test
+    void returnActionReceiptUsesExecutionDateAndDirection() {
+        ReturnOrderActionReceipt receipt = new ReturnOrderActionReceipt(
+                "submitted", "8001", "PURCHASE_RETURN", "PR001", "SUBMITTED",
+                null, null, "2026-12-03", null);
+
+        OrderActionConfirmation confirmation = returns.actionConfirmation(receipt, "SUBMIT");
+
+        assertThat(confirmation.profile()).isEqualTo(OrderTypeProfile.PURCHASE_RETURN);
+        assertThat(confirmation.extraLabel()).isEqualTo("预计执行");
+        assertThat(confirmation.extraValue()).isEqualTo("2026-12-03");
+    }
+
+    @Test
+    void returnStrategyRejectsMissingDirection() {
+        ReturnOrderDraftReceipt receipt = new ReturnOrderDraftReceipt(
+                "created", "SR001", "8001", null, "DRAFT", null,
+                null, null, List.of(), null, null);
+
+        assertThatThrownBy(() -> returns.draftConfirmation(receipt, "CREATE", Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("returnType");
     }
 
     @Test

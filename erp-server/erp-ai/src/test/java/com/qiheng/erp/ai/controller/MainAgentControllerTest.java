@@ -193,6 +193,31 @@ class MainAgentControllerTest {
         assertThat(((Map<?, ?>) events.get(2).data()).get("status")).isEqualTo("WAITING_USER");
     }
 
+    /** 退货草稿进入 HITL 后必须暂停并发送 WAITING_USER。 */
+    @Test
+    void returnDraftPausesRunWithWaitingStatus() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var fragment = mock(StreamingOutput.class);
+        when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
+        when(fragment.chunk()).thenReturn("说明");
+        var draft = NodeOutput.of("return_order_draft", "main_agent", new OverAllState(Map.of(
+                "callId", "return-1", "action", "CREATE", "orderType", "RETURN",
+                "returnType", "SALES_RETURN", "arguments", "{}")), null);
+        when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.just(fragment, draft));
+
+        var events = new MainAgentController(agents, clarifications)
+                .stream("1", new MainAgentController.MessageRequest("查询"))
+                .filter(e -> !"run_snapshot".equals(e.event()))
+                .collectList().block();
+
+        assertThat(events).extracting(e -> e.event())
+                .containsExactly("text_delta", "return_order_draft", "run_completed");
+        assertThat(((Map<?, ?>) events.get(2).data()).get("status")).isEqualTo("WAITING_USER");
+    }
+
     /** 追问检查点过期应转为业务错误，而不是 500。 */
     @Test
     void expiredAnswerReturnsBusinessError() throws Exception {

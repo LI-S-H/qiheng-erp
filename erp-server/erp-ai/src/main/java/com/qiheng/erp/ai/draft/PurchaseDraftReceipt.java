@@ -1,5 +1,7 @@
 package com.qiheng.erp.ai.draft;
 
+import com.qiheng.erp.ai.order.OrderReceipt;
+
 import java.util.List;
 import java.util.Map;
 
@@ -25,7 +27,7 @@ public record PurchaseDraftReceipt(
         String userNote,
         List<String> reasons,
         String suggestion,
-        Map<String, Object> originalParams) {
+        Map<String, Object> originalParams) implements OrderReceipt {
 
     /** 兼容不携带基线参数的旧调用。 */
     public PurchaseDraftReceipt(String status, String orderNo, String purchaseOrderId, String orderStatus,

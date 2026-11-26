@@ -70,6 +70,9 @@ public final class OrderConfirmationTexts {
     public static Map<String, Object> draftRecord(OrderDraftConfirmation confirmation) {
         Map<String, Object> record = new LinkedHashMap<>();
         record.put("status", confirmation.status());
+        if (confirmation.profile().returnType() != null) {
+            record.put("returnType", confirmation.profile().returnType());
+        }
         putIfPresent(record, "orderId", confirmation.orderId());
         putIfPresent(record, "orderNo", confirmation.orderNo());
         putIfPresent(record, "orderStatus", confirmation.orderStatus());
@@ -105,6 +108,9 @@ public final class OrderConfirmationTexts {
     public static Map<String, Object> actionRecord(OrderActionConfirmation confirmation) {
         Map<String, Object> record = new LinkedHashMap<>();
         record.put("status", confirmation.status());
+        if (confirmation.profile().returnType() != null) {
+            record.put("returnType", confirmation.profile().returnType());
+        }
         putIfPresent(record, "orderId", confirmation.orderId());
         putIfPresent(record, "orderNo", confirmation.orderNo());
         putIfPresent(record, "orderStatus", confirmation.orderStatus());

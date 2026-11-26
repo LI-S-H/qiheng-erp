@@ -16,6 +16,7 @@ import { isPastDate } from '@/shared/utils/date';
 import { MAX_SAFE_MONEY } from '@/shared/utils/money';
 import { getPurchaseOrderDetail, listEnabledWarehouseOptions } from '@/modules/purchase/api';
 import { getWarehouseDetail } from '@/modules/warehouse/warehouses/api';
+import RejectDraftDialog from './RejectDraftDialog.vue';
 import {
   createPurchaseOrderFromDraft,
   findDraftLine,
@@ -377,14 +378,6 @@ function openReject() {
   rejectError.value = '';
 }
 
-/** 切换驳回原因；取消「其他」时清掉必填提示。 */
-function toggleReason(reason: string) {
-  rejectReasons.value = rejectReasons.value.includes(reason)
-    ? rejectReasons.value.filter(item => item !== reason)
-    : [...rejectReasons.value, reason];
-  rejectError.value = '';
-}
-
 /** 驳回面板本身就是一次明确填写，直接提交，不再叠第三层确认。 */
 function askConfirmReject() {
   if (!validateReject()) return;
@@ -422,7 +415,8 @@ async function submitReject() {
     emit('settled', { conversationId: props.conversationId, callId: request.draftRequestId });
     emit('update:open', false);
   } catch (error) {
-    toast.error(getApiErrorMessage(error) || '驳回失败，请稍后重试');
+    rejectError.value = getApiErrorMessage(error) || '驳回失败，请稍后重试';
+    toast.error(rejectError.value);
   } finally {
     submitting.value = false;
   }
@@ -747,38 +741,25 @@ function formatMoney(value: number) {
     </DialogContent>
   </Dialog>
 
-  <Dialog :open="rejectOpen" @update:open="rejectOpen = $event">
-    <DialogContent placement="app-content" overlay-class="bg-slate-950/45" class="sm:max-w-lg" data-purchase-draft-reject>
-      <DialogHeader>
-        <DialogTitle>驳回采购草稿</DialogTitle>
-        <DialogDescription>说明不合适的地方，AI 会按你的意见重新规划。</DialogDescription>
-      </DialogHeader>
-      <div class="space-y-3">
-        <div class="flex flex-wrap gap-2">
-          <button
-            v-for="reason in rejectOptions"
-            :key="reason"
-            type="button"
-            class="rounded-md border px-3 py-1.5 text-sm transition-colors"
-            :class="rejectReasons.includes(reason) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted/40'"
-            :aria-pressed="rejectReasons.includes(reason)"
-            @click="toggleReason(reason)"
-          >
-            {{ reason }}
-          </button>
-        </div>
-        <div class="space-y-1">
-          <Label>补充要求 <span v-if="rejectOtherSelected" class="text-destructive">*</span></Label>
-          <Textarea v-model="rejectNote" rows="3" maxlength="500" :placeholder="rejectOtherSelected ? '选择「其他」时必须说明具体要求' : '例如：希望分两批到货，首批 30 天内'" @input="rejectError = ''" />
-        </div>
-        <p v-if="rejectError" class="text-xs text-destructive">{{ rejectError }}</p>
-      </div>
-      <DialogFooter>
-        <Button variant="outline" :disabled="submitting" @click="rejectOpen = false">取消</Button>
-        <Button :disabled="submitting" @click="askConfirmReject">提交驳回</Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+  <RejectDraftDialog
+    :open="rejectOpen"
+    title="驳回采购草稿"
+    description="说明不合适的地方，AI 会按你的意见重新规划。"
+    :options="rejectOptions"
+    :reasons="rejectReasons"
+    :note="rejectNote"
+    :error="rejectError"
+    :busy="submitting"
+    :note-required="rejectOtherSelected"
+    :note-placeholder="rejectOtherSelected ? '选择「其他」时必须说明具体要求' : '例如：希望分两批到货，首批 30 天内'"
+    confirm-text="提交驳回"
+    confirm-test-id="purchase-draft-reject-confirm"
+    data-purchase-draft-reject
+    @update:open="rejectOpen = $event"
+    @update:reasons="rejectReasons = $event; rejectError = ''"
+    @update:note="rejectNote = $event; rejectError = ''"
+    @confirm="askConfirmReject"
+  />
 
   <ConfirmDialog
     placement="app-content"

@@ -64,7 +64,7 @@ public final class OrderToolNames {
      * 工具名对应的单据类型；退货方向由参数决定，名称无法区分。
      *
      * @param name 工具名称
-     * @return SALES / PURCHASE；无法判断时返回 null
+     * @return SALES / PURCHASE / RETURN；无法判断时返回 null
      */
     public static String orderTypeOf(String name) {
         if (SALES_TOOLS.contains(name)) {
@@ -72,6 +72,9 @@ public final class OrderToolNames {
         }
         if (PURCHASE_TOOLS.contains(name)) {
             return "PURCHASE";
+        }
+        if (RETURN_TOOLS.contains(name)) {
+            return "RETURN";
         }
         return null;
     }

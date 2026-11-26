@@ -6,7 +6,7 @@ import AiReportMessage from './AiReportMessage.vue';
 import AiClarificationHistory from '../clarification/AiClarificationHistory.vue';
 import AiPurchaseDraftHistory from '../drafts/AiPurchaseDraftHistory.vue';
 import AiSalesDraftHistory from '../drafts/AiSalesDraftHistory.vue';
-import AiOrderToolCard from './AiOrderToolCard.vue';
+import AiReturnDraftHistory from '../drafts/AiReturnDraftHistory.vue';
 import { toolIcon } from './tool-icons';
 import type { AiConversationMessage, AiMessageContent } from '../types';
 import type { ClarificationQuestion } from '../clarification/clarification-types';
@@ -122,8 +122,9 @@ function historyDataOf(order: OrderToolMessage) {
   const parsed = parseOrderResult(order);
   const data = order.content.data;
   const purchase = data.orderType === 'PURCHASE';
-  const orderId = String(parsed.orderId || parsed.salesOrderId || parsed.purchaseOrderId
-    || data.salesOrderId || data.purchaseOrderId || '');
+  const isReturn = data.orderType === 'RETURN';
+  const orderId = String(parsed.orderId || parsed.salesOrderId || parsed.purchaseOrderId || parsed.returnOrderId
+    || data.salesOrderId || data.purchaseOrderId || data.returnOrderId || '');
   // 旧记录没有 result，用顶层 status 映射成业务状态。
   const legacyStatus = data.status === 'submitted' ? 'SUBMITTED'
     : data.status === 'cancelled' ? 'CANCELLED'
@@ -132,8 +133,10 @@ function historyDataOf(order: OrderToolMessage) {
   return {
     action: data.action,
     status: ((parsed.status as string) || data.status || 'created') as 'created' | 'updated' | 'edited' | 'rejected' | 'failed' | 'submitted' | 'cancelled',
-    salesOrderId: purchase ? undefined : orderId,
+    salesOrderId: purchase || isReturn ? undefined : orderId,
     purchaseOrderId: purchase ? orderId : undefined,
+    returnOrderId: isReturn ? orderId : undefined,
+    returnType: data.returnType,
     orderNo: (typeof parsed.orderNo === 'string' ? parsed.orderNo : data.orderNo) || undefined,
     orderStatus: (typeof parsed.orderStatus === 'string' ? parsed.orderStatus : legacyStatus),
     changedFields: Array.isArray(parsed.changedFields) ? parsed.changedFields as string[] : undefined,
@@ -552,7 +555,8 @@ function toolSummary(step: AiConversationMessage) {
           </details>
 
           <template v-for="order in turn.resultOrders" :key="order.messageId">
-            <AiPurchaseDraftHistory v-if="order.content.data.orderType === 'PURCHASE'" :data="historyDataOf(order)" />
+            <AiReturnDraftHistory v-if="order.content.data.orderType === 'RETURN'" :data="historyDataOf(order)" />
+            <AiPurchaseDraftHistory v-else-if="order.content.data.orderType === 'PURCHASE'" :data="historyDataOf(order)" />
             <AiSalesDraftHistory v-else :data="historyDataOf(order)" />
           </template>
           <AiPurchaseDraftHistory v-for="draft in turn.drafts" :key="draft.messageId" :data="draft.content.data" />

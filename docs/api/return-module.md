@@ -13,8 +13,8 @@
 | `POST /returns/{returnOrderId}/submit`、`approve`、`cancel` | 提交、审核、取消统一退货单 | 已实现；提交幂等，审核与取消使用乐观锁和事务 |
 | `GET /returns/source-orders?returnType=PURCHASE_RETURN` | 搜索可退采购来源订单 | 已实现 |
 | `GET /returns/source-orders?returnType=SALES_RETURN` | 搜索可退销售来源订单 | 已实现 |
-| `GET /returns/source-orders/{sourceOrderId}/items?returnType=PURCHASE_RETURN` | 查询采购来源订单的可退明细 | 已实现 |
-| `GET /returns/source-orders/{sourceOrderId}/items?returnType=SALES_RETURN` | 查询销售来源订单的可退明细 | 已实现 |
+| `GET /returns/source-orders/{sourceOrderId}/items?returnType=PURCHASE_RETURN` | 查询采购来源订单的可退明细 | 已实现；编辑退货单时可选 `excludeReturnOrderId` 排除自身占用 |
+| `GET /returns/source-orders/{sourceOrderId}/items?returnType=SALES_RETURN` | 查询销售来源订单的可退明细 | 已实现；编辑退货单时可选 `excludeReturnOrderId` 排除自身占用 |
 
 列表参数为 `returnType`、`returnNo`、`sourceOrderNo`、`partyId`、`warehouseId`、`status`、`pageNum`、`pageSize`。`partyId` 在采购退货中表示供应商 ID，在销售退货中表示客户 ID；所有有效筛选条件按 AND 组合。
 
@@ -30,6 +30,8 @@
 - 采购退货：`availableReturnQty = max(0, min(sourceFulfilledQty - occupiedQty, stockAvailableQty))`，其中 `stockAvailableQty = warehouse_stock.stock_qty - warehouse_stock.locked_qty`。
 
 草稿不占用可退额度；提交后按申请数量占用，审核后按审核数量占用。提交与审核都会锁定同一来源订单并重新聚合校验，前端显示值不能作为最终依据。
+
+退货单创建后来源单和退货仓库不可修改；选错时应删除或取消后重新创建。编辑状态下查询可退数量必须传 `excludeReturnOrderId`，排除当前退货单自身占用，否则会把自己的申请量重复算成不可退。
 
 ## 仓储执行与回写
 

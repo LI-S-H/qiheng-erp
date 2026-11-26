@@ -4,6 +4,7 @@ import type { PurchaseDraftRequest } from '../drafts/purchase-draft-types';
 import type { PurchaseActionRequest } from '../drafts/purchase-action';
 import type { SalesDraftRequest } from '../drafts/sales-draft-types';
 import type { SalesActionRequest } from '../drafts/sales-action';
+import type { ReturnActionRequest, ReturnDraftRequest } from '../drafts/return-draft-types';
 import type { AiAnalysisBlock, AiAnalysisStep, AiProgressStep, AiRunStatus } from '../types';
 import type { AiReportCard, AiReportProcess } from '../contracts/report-contract';
 
@@ -21,6 +22,8 @@ export type SnapshotItem =
   | { type: 'purchase_action'; id: string; callId?: string; actionRequestId?: string; action?: string; purchaseOrderId?: string }
   | { type: 'sales_draft'; id: string; callId?: string; draftRequestId?: string; action?: string; arguments?: string }
   | { type: 'sales_action'; id: string; callId?: string; actionRequestId?: string; action?: string; salesOrderId?: string }
+  | { type: 'return_order_draft'; id: string; callId?: string; draftRequestId?: string; action?: string; arguments?: string }
+  | { type: 'return_order_action'; id: string; callId?: string; actionRequestId?: string; action?: string; returnOrderId?: string }
   | ({ type: 'report' } & AiReportProcess);
 
 /** 单个会话的运行状态；会话之间彼此隔离。 */
@@ -55,6 +58,10 @@ export interface ConversationRun {
   pendingSalesDraft: SalesDraftRequest | null;
   /** 等待用户确认的销售单提交或取消动作。 */
   pendingSalesAction: SalesActionRequest | null;
+  /** 等待用户确认的退货草稿；与采购/销售草稿互斥。 */
+  pendingReturnDraft: ReturnDraftRequest | null;
+  /** 等待用户确认的退货单提交或取消动作。 */
+  pendingReturnAction: ReturnActionRequest | null;
   recentAnswers: Record<string, { callId: string; questions: ClarificationQuestion[]; answer: string; questionAnswers: Record<string, string>; note: string }>;
   refreshNeeded: boolean;
   settleSuccess: (() => void) | null;
@@ -110,7 +117,8 @@ export function useConversationRuns() {
         pendingText: '', liveText: '', liveMessageId: '', liveItems: [], completedTextIds: new Set(),
         eventSeq: 0, snapshotTruncated: false, runId: '', error: '', warning: '', steps: [], analyses: {},
         reportProcesses: {}, reportCards: {}, finalMessageId: '',
-        pendingClarification: null, pendingDraft: null, pendingAction: null, pendingSalesDraft: null, pendingSalesAction: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
+        pendingClarification: null, pendingDraft: null, pendingAction: null, pendingSalesDraft: null, pendingSalesAction: null,
+        pendingReturnDraft: null, pendingReturnAction: null, recentAnswers: {}, refreshNeeded: false, settleSuccess: null,
         failureCode: '', failureCount: 0, retryAt: 0,
       });
     }

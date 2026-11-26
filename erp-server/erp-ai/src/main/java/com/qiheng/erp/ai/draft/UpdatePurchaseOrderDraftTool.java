@@ -19,7 +19,7 @@ public final class UpdatePurchaseOrderDraftTool {
      */
     @Tool(name = "update_purchase_order_draft", description = "修改已经存在的采购单参数，交用户确认后保存。"
             + "只在采购单已创建、用户明确要求修改数量、单价、仓库、到货日期或明细时调用；单据还不存在时不要调用，先走创建流程。"
-            + "必须传 purchaseOrderId；明细要传完整的 items，没提到的字段可以省略，确认卡片会以单据现值为底。"
+            + "必须传 purchaseOrderId；供应商、入库仓库和完整 items 必须一起传，确认卡片只用单据详情做展示底稿，不能替你补工具参数。日期、备注、单价可以省略。"
             + "供应商、仓库、产品必须传数字主键 ID，不能传 S0001、WH000001、P001029 这类业务编码。"
             + "返回的结论文本会说明是已保存、修改后保存、被驳回还是修改未保存，按 purchase-order 技能处理。")
     public String update(

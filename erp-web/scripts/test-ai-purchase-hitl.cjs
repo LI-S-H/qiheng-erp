@@ -222,6 +222,142 @@ async function check(browser, scenario) {
   }
 }
 
+/** 断言弹窗在业务内容区水平居中、在视口垂直居中，且不向右溢出。 */
+async function assertCentered(page, selector, label) {
+  const metrics = await page.evaluate(sel => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const sidebar = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-shell-sidebar-width')) || 0;
+    return {
+      cx: rect.x + rect.width / 2,
+      cy: rect.y + rect.height / 2,
+      right: rect.right,
+      width: innerWidth,
+      height: innerHeight,
+      sidebar,
+    };
+  }, selector);
+  assert.ok(metrics, `${label} 未找到`);
+  const expectedX = metrics.sidebar + (metrics.width - metrics.sidebar) / 2;
+  assert.ok(Math.abs(metrics.cx - expectedX) <= 1, `${label} X 轴未在内容区居中：${JSON.stringify(metrics)}`);
+  assert.ok(Math.abs(metrics.cy - metrics.height / 2) <= 1, `${label} Y 轴未在视口居中：${JSON.stringify(metrics)}`);
+  assert.ok(metrics.right <= metrics.width - 8, `${label} 右侧溢出：${JSON.stringify(metrics)}`);
+}
+
+/** 采购驳回：父弹窗锁住、驳回层在上、取消只关上层、确认后两层一起收。 */
+async function checkReject(browser) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  const receipts = [];
+  let resolved = false;
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    localStorage.setItem('erp_auth_token', 'test-token');
+    localStorage.setItem('erp_auth_token_name', 'satoken');
+    const original = window.fetch.bind(window);
+    window.fetch = async (...args) => {
+      if (!String(args[0]).includes('/messages/stream')) return original(...args);
+      const encoder = new TextEncoder();
+      return new Response(new ReadableStream({
+        start(controller) {
+          window.__emitLive = (event, data) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+          window.__emitLive('run_started', { runId: 'r', conversationId: '123' });
+        },
+      }), { headers: { 'content-type': 'text/event-stream' } });
+    };
+  });
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (!url.pathname.startsWith('/api/')) return route.continue();
+    const pathname = url.pathname.replace(/^\/api/, '');
+    const method = request.method();
+    let data = null;
+    if (pathname === '/auth/me') data = user;
+    else if (pathname === '/ai/assistant/overview') data = { refreshedAt: conversation.updatedAt, quickPrompts: [], conversations: [] };
+    else if (pathname === '/ai/assistant/conversations' && method === 'POST') data = conversation;
+    else if (pathname === '/ai/assistant/conversations') data = { records: [], hasMore: false, nextBeforeTime: null, nextBeforeId: null };
+    else if (pathname === '/ai/assistant/conversations/123') data = conversation;
+    else if (pathname.endsWith('/runtime')) data = { status: resolved ? 'COMPLETED' : 'WAITING_USER' };
+    else if (pathname.endsWith('/messages')) data = { records: [], pageNum: 1, pageSize: 50, total: 0 };
+    else if (/drafts\/.*\/resolve/.test(pathname)) {
+      receipts.push(request.postDataJSON());
+      resolved = true;
+      data = null;
+    } else if (pathname.startsWith('/purchase/suppliers/')) data = { supplierCode: 'S1', supplierName: '测试供应商' };
+    else if (pathname.startsWith('/purchase/supplier-products')) data = { records: [], total: 0, pageNum: 1, pageSize: 10 };
+    else if (pathname.startsWith('/purchase/orders')) data = order;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, message: '成功', data }) });
+  });
+
+  const draftArguments = JSON.stringify({
+    supplierId: '5', warehouseId: '6', expectedArrivalDate: '2026-12-02', remark: '',
+    items: [{ productId: '4', quantity: 1, unitPrice: 10, remark: '' }],
+  });
+
+  try {
+    await page.goto(process.env.AI_UI_URL || 'http://127.0.0.1:5137/ai/assistant');
+    await page.locator('.welcome-state').waitFor({ timeout: 10000 });
+    await page.getByRole('button', { name: '新建会话' }).click();
+    await page.waitForFunction(() => !document.querySelector('.conversation-switching'));
+    await page.getByLabel('经营问题').fill('创建采购单');
+    await page.getByRole('button', { name: '发送需求' }).click();
+    await page.waitForFunction(() => typeof window.__emitLive === 'function');
+    await page.evaluate(args => {
+      window.__emitLive('purchase_draft', { callId: 'call-1', action: 'CREATE', orderType: 'PURCHASE', arguments: args });
+    }, draftArguments);
+    await page.locator('[data-testid="purchase-draft-open"]:visible').first().click();
+    const dialog = page.locator('[data-purchase-draft-dialog]');
+    await dialog.waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => !document.querySelector('[data-page-loading]'), null, { timeout: 5000 });
+
+    for (const [width, height] of [[1440, 900], [1366, 768], [900, 600]]) {
+      await page.setViewportSize({ width, height });
+      await page.waitForTimeout(300);
+      await assertCentered(page, '[data-purchase-draft-dialog]', `采购弹窗 ${width}x${height}`);
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(300);
+
+    await dialog.getByRole('button', { name: '驳回并说明', exact: true }).click();
+    const reject = page.locator('[data-purchase-draft-reject]');
+    await reject.waitFor({ timeout: 10000 });
+    assert.equal(await page.evaluate(() => document.querySelector('[data-purchase-draft-dialog]').inert), true, '采购驳回打开后父弹窗未 inert');
+    const layers = await page.evaluate(() => {
+      const parent = document.querySelector('[data-purchase-draft-dialog]');
+      const reject = document.querySelector('[data-purchase-draft-reject]');
+      const overlays = Array.from(document.querySelectorAll('[data-slot="dialog-overlay"]'));
+      return {
+        parentZ: Number(getComputedStyle(parent).zIndex),
+        rejectZ: Number(getComputedStyle(reject).zIndex),
+        overlayZs: overlays.map(el => Number(getComputedStyle(el).zIndex)),
+      };
+    });
+    assert.ok(layers.rejectZ > layers.parentZ, `采购驳回层未高于父弹窗：${JSON.stringify(layers)}`);
+    assert.ok(Math.max(...layers.overlayZs) > layers.parentZ, `采购驳回遮罩未盖住父弹窗：${JSON.stringify(layers)}`);
+    await assertCentered(page, '[data-purchase-draft-reject]', '采购驳回弹窗');
+
+    await page.keyboard.press('Escape');
+    await reject.waitFor({ state: 'detached', timeout: 5000 });
+    assert.equal(await dialog.isVisible(), true, 'Esc 后采购父弹窗被误关');
+    assert.equal(await page.evaluate(() => document.querySelector('[data-purchase-draft-dialog]').inert), false, 'Esc 后采购父弹窗仍被锁住');
+
+    await dialog.getByRole('button', { name: '驳回并说明', exact: true }).click();
+    await reject.waitFor({ timeout: 5000 });
+    await reject.locator('button[aria-pressed]').first().click();
+    await page.getByTestId('purchase-draft-reject-confirm').click();
+    await page.waitForFunction(() => !document.querySelector('[data-purchase-draft-reject]'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.querySelector('[data-purchase-draft-dialog]'), null, { timeout: 5000 });
+    assert.ok(resolved, '采购驳回未交回模型');
+    assert.equal(receipts[receipts.length - 1]?.status, 'rejected', `采购驳回回执不正确：${JSON.stringify(receipts)}`);
+    assert.deepEqual(errors, []);
+    console.log('purchase REJECT OK');
+  } finally {
+    await page.close();
+  }
+}
+
 (async () => {
   const browser = await chromium.launch({
     headless: true,
@@ -231,6 +367,7 @@ async function check(browser, scenario) {
     for (const scenario of scenarios) {
       await check(browser, scenario);
     }
+    await checkReject(browser);
   } finally {
     await browser.close();
   }

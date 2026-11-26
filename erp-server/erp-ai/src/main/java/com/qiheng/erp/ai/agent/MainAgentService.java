@@ -732,11 +732,14 @@ public final class MainAgentService {
             "prepare_purchase_order_draft", "update_purchase_order_draft",
             "submit_purchase_order", "cancel_purchase_order",
             "prepare_sales_order_draft", "update_sales_order_draft",
-            "submit_sales_order", "cancel_sales_order");
+            "submit_sales_order", "cancel_sales_order",
+            "prepare_return_order_draft", "update_return_order_draft",
+            "submit_return_order", "cancel_return_order");
 
     /** 等待用户处置时发出的事件节点。 */
     private static final Set<String> WAITING_USER_EVENTS = Set.of(
-            "question", "purchase_draft", "purchase_action", "sales_order_draft", "sales_order_action");
+            "question", "purchase_draft", "purchase_action", "sales_order_draft", "sales_order_action",
+            "return_order_draft", "return_order_action");
 
     /** 判断工具调用是否会阻塞等待用户处置。 */
     private static boolean waitingUserTool(String toolName) {
@@ -794,6 +797,10 @@ public final class MainAgentService {
                 String orderType = OrderToolNames.orderTypeOf(call.name());
                 if (orderType != null) {
                     content.put("orderType", orderType);
+                }
+                String returnType = text(parseArguments(call.arguments()), "returnType");
+                if (!returnType.isBlank()) {
+                    content.put("returnType", returnType);
                 }
                 content.put("result", result);
                 messageStore.append(new AiMessage()
@@ -864,6 +871,29 @@ public final class MainAgentService {
                 content.put("orderNo", text(arguments, "orderNo"));
                 content.put("reason", text(arguments, "reason"));
             }
+            case "prepare_return_order_draft", "update_return_order_draft" -> {
+                event = "return_order_draft";
+                content.put("action", "prepare_return_order_draft".equals(call.name()) ? "CREATE" : "UPDATE");
+                content.put("orderType", "RETURN");
+                var arguments = parseArguments(call.arguments());
+                String returnType = text(arguments, "returnType");
+                if (!returnType.isBlank()) {
+                    content.put("returnType", returnType);
+                }
+                String returnOrderId = text(arguments, "returnOrderId");
+                if (!returnOrderId.isBlank()) {
+                    content.put("returnOrderId", returnOrderId);
+                }
+            }
+            case "submit_return_order", "cancel_return_order" -> {
+                event = "return_order_action";
+                content.put("action", "submit_return_order".equals(call.name()) ? "SUBMIT" : "CANCEL");
+                content.put("orderType", "RETURN");
+                var arguments = parseArguments(call.arguments());
+                content.put("returnOrderId", text(arguments, "returnOrderId"));
+                content.put("orderNo", text(arguments, "orderNo"));
+                content.put("reason", text(arguments, "reason"));
+            }
             case "ask_user" -> {
                 event = "question";
                 content.put("questionRequestId", call.id());
@@ -914,6 +944,10 @@ public final class MainAgentService {
             case "update_purchase_order_draft" -> "修改采购草稿单";
             case "submit_purchase_order" -> "提交采购单";
             case "cancel_purchase_order" -> "取消采购单";
+            case "prepare_return_order_draft" -> "创建退货草稿单";
+            case "update_return_order_draft" -> "修改退货草稿单";
+            case "submit_return_order" -> "提交退货单";
+            case "cancel_return_order" -> "取消退货单";
             case "ask_user" -> "补充信息";
             default -> name;
         };

@@ -46,22 +46,22 @@ public final class ReturnableItemQueryService {
     }
 
     /**
-     * 按来源单 ID 查询来源单表头与可退明细。
+     * 修改已有退货单时按退货单 ID 查询可退明细，并排除自身占用。
      *
      * @param userId 当前用户
-     * @param returnType 退货方向
-     * @param sourceOrderId 来源单 ID
+     * @param returnOrderId 当前退货单 ID
      * @return 来源单与可退明细
      */
-    public ReturnableSourceDetailVo loadById(long userId, String returnType, String sourceOrderId) {
-        ReturnType type = requireType(userId, returnType);
+    public ReturnableSourceDetailVo loadForEdit(long userId, String returnOrderId) {
         long id;
         try {
-            id = Long.parseLong(sourceOrderId == null ? "" : sourceOrderId.trim());
+            id = Long.parseLong(returnOrderId == null ? "" : returnOrderId.trim());
         } catch (NumberFormatException error) {
-            throw new IllegalArgumentException("来源订单 ID 不合法：" + sourceOrderId);
+            throw new IllegalArgumentException("退货单 ID 不合法：" + returnOrderId);
         }
-        return returnOrders.getReturnableSource(type, id);
+        var detail = returnOrders.getDetail(id);
+        ReturnType type = requireType(userId, detail.getReturnType());
+        return returnOrders.getReturnableSource(type, detail.getSourceOrderId(), id);
     }
 
     /** 校验退货查询权限并解析退货方向。 */

@@ -116,12 +116,13 @@ public class VisibleMessageCodec {
                 boolean orderTool = isOrderTool(root.path("name").asText()) && root.has("callId");
                 if ("TOOL_CALL".equals(kind) && orderTool) {
                     return new VisibleMessageContent("ORDER_TOOL", copyFields(root,
-                            "callId", "name", "label", "action", "orderType", "status", "arguments",
-                            "salesOrderId", "purchaseOrderId", "orderNo", "reason"));
+                            "callId", "name", "label", "action", "orderType", "returnType", "status",
+                            "arguments", "salesOrderId", "purchaseOrderId", "returnOrderId",
+                            "orderNo", "reason"));
                 }
                 if ("TOOL_RESULT".equals(kind) && orderTool) {
                     return new VisibleMessageContent("ORDER_TOOL", copyFields(root,
-                            "callId", "name", "action", "orderType", "result"));
+                            "callId", "name", "action", "orderType", "returnType", "result"));
                 }
                 if ("TOOL_CALL".equals(kind) && isPurchaseOrderRecord(root.path("name").asText(),
                         root.path("status").asText())) {

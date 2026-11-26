@@ -131,6 +131,25 @@ class OrderConfirmationTextsTest {
     }
 
     @Test
+    void returnDraftAndActionUseReturnProfileAndRecordType() {
+        Map<String, Object> draft = returnParams("2");
+        Map<String, Object> finalParams = returnParams("1");
+        String text = OrderConfirmationTexts.draftText(draft(
+                OrderTypeProfile.SALES_RETURN, "edited", false, "8001", "SR001", "DRAFT",
+                draft, finalParams, "改退一件", List.of(), null, null), mapper);
+
+        assertThat(text).contains("销售退货单 SR001 已更新。")
+                .contains("修改的字段：items[0].requestedQty");
+
+        Map<String, Object> record = OrderConfirmationTexts.draftRecord(draft(
+                OrderTypeProfile.SALES_RETURN, "edited", false, "8001", "SR001", "DRAFT",
+                draft, finalParams, "改退一件", List.of(), null, null));
+
+        assertThat(record).containsEntry("returnType", "SALES_RETURN")
+                .containsEntry("changedFields", List.of("items[0].requestedQty"));
+    }
+
+    @Test
     void editedRecordCarriesChangedFieldsForHistoryCard() {
         Map<String, Object> finalParams = Map.of(
                 "customerId", "2",
@@ -177,6 +196,21 @@ class OrderConfirmationTextsTest {
                                            Map<String, Object> orderParams) {
         return new OrderActionConfirmation(profile, status, orderId, orderNo, orderStatus, error,
                 reason, actionLabel, extraLabel, extraValue, orderParams);
+    }
+
+    private Map<String, Object> returnParams(String requestedQty) {
+        return Map.of(
+                "sourceOrderId", "10",
+                "warehouseId", "20",
+                "expectedExecutionDate", "2026-12-01",
+                "handlingType", "REFUND",
+                "reasonCode", "QUALITY_ISSUE",
+                "returnReason", "质量问题",
+                "remark", "",
+                "items", List.of(Map.of(
+                        "sourceOrderItemId", "30",
+                        "requestedQty", new BigDecimal(requestedQty),
+                        "remark", "")));
     }
 
     private Map<String, Object> draftParams(String customerId, String warehouseId, String quantity) {

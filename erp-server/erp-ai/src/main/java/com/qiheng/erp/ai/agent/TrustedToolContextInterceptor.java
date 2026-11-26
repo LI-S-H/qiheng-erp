@@ -1,7 +1,5 @@
 package com.qiheng.erp.ai.agent;
 
-import com.qiheng.erp.ai.clarification.ClarificationService;
-
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallHandler;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallRequest;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
@@ -47,8 +45,6 @@ public final class TrustedToolContextInterceptor extends ToolInterceptor {
         context.remove(AnalysisResultTool.CONTEXT_TASK_ID);
         request.getExecutionContext().orElseThrow().config().metadata(AnalysisResultTool.CONTEXT_TASK_ID)
                 .ifPresent(value -> context.put(AnalysisResultTool.CONTEXT_TASK_ID, value));
-        request.getExecutionContext().orElseThrow().config().metadata(ClarificationService.EVENT_KEY)
-                .ifPresent(value -> context.put(ClarificationService.EVENT_KEY, value));
         // 框架复制构建器不会保留执行上下文，后续拦截器仍需读取恢复配置。
         return handler.call(ToolCallRequest.builder(request)
                 .context(context).executionContext(request.getExecutionContext().orElseThrow()).build());

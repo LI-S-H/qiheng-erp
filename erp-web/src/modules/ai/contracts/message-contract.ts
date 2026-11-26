@@ -69,19 +69,34 @@ export function normalizeMessage(value: unknown): AiConversationMessage {
     const resultData = object(result);
     const answers = resultData.answers;
     if (!Array.isArray(answers)) {
-      throw new Error('追问结果缺少答案');
+      // 追问被取消或参数非法重试时没有 answers；转成用户可读文本，不展示原始 JSON。
+      const status = typeof resultData.status === 'string' ? resultData.status : '';
+      const text = status === 'cancelled'
+        ? '本次追问已取消。'
+        : status === 'invalid_arguments'
+          ? '本次追问参数无效，已让 AI 重新整理。'
+          : '本次追问未完成。';
+      content = {
+        type: 'TEXT',
+        data: {
+          text,
+          callId: typeof data.callId === 'string' ? data.callId : '',
+          note: '',
+        },
+      };
+    } else {
+      const rendered = answers.map(value => {
+        const answer = object(value);
+        return [...(Array.isArray(answer.selectedOptions) ? answer.selectedOptions : []), answer.customText].filter(Boolean).join('、');
+      }).filter(Boolean).join('；');
+      const note = typeof resultData.note === 'string' ? resultData.note.trim() : '';
+      const entries = answers.map(value => {
+        const answer = object(value);
+        return [requiredText(answer.questionId, 'questionId'), [...(Array.isArray(answer.selectedOptions) ? answer.selectedOptions : []), answer.customText].filter(Boolean).join('、')];
+      });
+      const questionAnswers = Object.fromEntries(entries);
+      content = { type: 'TEXT', data: { text: [rendered, note].filter(Boolean).join('；') || '已补充信息', callId: requiredText(data.callId, 'callId'), questionAnswers, note } };
     }
-    const rendered = Array.isArray(answers) ? answers.map(value => {
-      const answer = object(value);
-      return [...(Array.isArray(answer.selectedOptions) ? answer.selectedOptions : []), answer.customText].filter(Boolean).join('、');
-    }).filter(Boolean).join('；') : '';
-    const note = typeof resultData.note === 'string' ? resultData.note.trim() : '';
-    const entries = answers.map(value => {
-      const answer = object(value);
-      return [requiredText(answer.questionId, 'questionId'), [...(Array.isArray(answer.selectedOptions) ? answer.selectedOptions : []), answer.customText].filter(Boolean).join('、')];
-    });
-    const questionAnswers = Object.fromEntries(entries);
-    content = { type: 'TEXT', data: { text: [rendered, note].filter(Boolean).join('；') || '已补充信息', callId: requiredText(data.callId, 'callId'), questionAnswers, note } };
   } else if (source.type === 'ANALYSIS') {
     content = normalizeAnalysis(source);
   } else if (source.type === 'PURCHASE_ORDER') {

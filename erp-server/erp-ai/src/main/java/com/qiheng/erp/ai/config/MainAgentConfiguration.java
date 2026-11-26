@@ -9,6 +9,7 @@ import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.MessageRecordingHook;
+import com.qiheng.erp.ai.agent.AskUserValidationHook;
 import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.experience.ExperienceInjectionFactory;
 import com.qiheng.erp.ai.experience.tool.SearchExperienceToolFactory;
@@ -16,13 +17,11 @@ import com.qiheng.erp.ai.agent.interceptor.AnalysisProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ReportProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolRecordingInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
-import com.qiheng.erp.ai.clarification.ClarificationService;
 import java.util.ArrayList;
 import java.util.List;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.BusinessGraphInterceptor;
-import com.qiheng.erp.ai.clarification.AskUserArgumentsInterceptor;
 import com.qiheng.erp.ai.action.CancelPurchaseOrderTool;
 import com.qiheng.erp.ai.action.SubmitPurchaseOrderTool;
 import com.qiheng.erp.ai.draft.PurchaseOrderDraftTool;
@@ -43,7 +42,6 @@ import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
-import com.qiheng.erp.security.service.LoginUserService;
 import com.qiheng.erp.ai.dataset.tool.ReadDatasetTool;
 import com.qiheng.erp.ai.dataset.tool.ListDatasetsTool;
 import com.qiheng.erp.ai.python.tool.AnalysisResultTool;
@@ -51,6 +49,8 @@ import com.qiheng.erp.ai.sql.tool.SqlQueryTool;
 import com.qiheng.erp.ai.analysis.AnalysisTool;
 import com.qiheng.erp.ai.report.ReportTool;
 import com.qiheng.erp.ai.clarification.AskUserTool;
+import com.qiheng.erp.ai.clarification.ClarificationConfirmationService;
+import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.skill.SkillIndexInterceptor;
 import com.qiheng.erp.ai.skill.tool.ReadSkillFileTool;
 import org.springframework.ai.chat.model.ChatModel;
@@ -102,11 +102,34 @@ public class MainAgentConfiguration {
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
+    /**
+     * 兼容旧测试的构造函数；追问已改由图级 HITL 接管，clarification 参数不再使用。
+     *
+     * @param model 主智能体模型
+     * @param saver 检查点存储
+     * @param sql SQL 查询工具
+     * @param dataset 数据集读取工具
+     * @param businessGraph 业务图谱
+     * @param ignored 旧追问服务，仅为兼容测试保留
+     * @param datasetList 数据集列表工具
+     * @param results 分析结果工具
+     * @param analysisTool 分析任务工具
+     * @return 主智能体图
+     * @throws IOException 提示词读取失败
+     */
+    @Deprecated
     public ReactAgent mainAgent(ChatModel model, RedisSaver saver, SqlQueryTool sql, ReadDatasetTool dataset,
-                                BusinessGraphProvider businessGraph, ClarificationService clarification,
+                                BusinessGraphProvider businessGraph, ClarificationService ignored,
                                 ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
             throws IOException {
-        return mainAgent(model, saver, sql, dataset, businessGraph, clarification, datasetList, results,
+        return mainAgent(model, saver, sql, dataset, businessGraph, datasetList, results, analysisTool);
+    }
+
+    public ReactAgent mainAgent(ChatModel model, RedisSaver saver, SqlQueryTool sql, ReadDatasetTool dataset,
+                                BusinessGraphProvider businessGraph,
+                                ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
+            throws IOException {
+        return mainAgent(model, saver, sql, dataset, businessGraph, datasetList, results,
                 analysisTool, null, null, null, null);
     }
 
@@ -130,7 +153,7 @@ public class MainAgentConfiguration {
     @Bean
     public ReactAgent mainAgent(@Qualifier("proChatModel") ChatModel model, RedisSaver saver,
                                 SqlQueryTool sql, ReadDatasetTool dataset, BusinessGraphProvider businessGraph,
-                                ClarificationService clarification, ListDatasetsTool datasetList,
+                                ListDatasetsTool datasetList,
                                 AnalysisResultTool results, AnalysisTool analysisTool,
                                 @Qualifier("mainSkillRegistry") SkillRegistry skills,
                                 @Qualifier("mainReadSkillFileTool") ReadSkillFileTool skillFileTool,
@@ -138,7 +161,7 @@ public class MainAgentConfiguration {
             throws IOException {
         String prompt = new ClassPathResource("prompts/main-agent.md").getContentAsString(StandardCharsets.UTF_8);
         var tools = new ArrayList<Object>(List.of(sql, dataset, datasetList, results, analysisTool,
-                new AskUserTool(clarification)));
+                new AskUserTool()));
         // 采购单与销售单工具只声明参数结构；实际执行由人工确认节点接管。
         tools.add(new PurchaseOrderDraftTool());
         tools.add(new UpdatePurchaseOrderDraftTool());
@@ -179,13 +202,16 @@ public class MainAgentConfiguration {
                 .approvalOn("update_sales_order_draft", ToolConfig.builder().build())
                 .approvalOn("submit_sales_order", ToolConfig.builder().build())
                 .approvalOn("cancel_sales_order", ToolConfig.builder().build())
+                .approvalOn("ask_user", ToolConfig.builder().build())
                 .build());
+        // AFTER_MODEL Hook 按 order 倒序执行：校验 100 > HITL 0 > 记录 -100，保证校验先于 HITL。
+        hooks.add(new AskUserValidationHook(new ObjectMapper()));
         var builder = ReactAgent.builder().name("main_agent").model(mainModel(model)).systemPrompt(prompt)
                 .methodTools(tools.toArray())
                 .hooks(hooks)
                 .interceptors(new TrustedToolContextInterceptor(), new ToolRecordingInterceptor(),
                         new AnalysisProgressContextInterceptor(), new ReportProgressContextInterceptor(),
-                        new ToolJsonInterceptor(new ObjectMapper(), publisher), new AskUserArgumentsInterceptor(new ObjectMapper()),
+                        new ToolJsonInterceptor(new ObjectMapper(), publisher),
                         new BusinessGraphInterceptor(businessGraph));
         if (skills != null) {
             builder.interceptors(new SkillIndexInterceptor(skills));
@@ -248,17 +274,22 @@ public class MainAgentConfiguration {
     }
 
     /**
-     * 组装追问服务。
+     * 组装追问答案的检查点入口。
      *
+     * @param mainAgent 主智能体图
+     * @param saver 检查点存储
+     * @param runs 主智能体运行入口
      * @param conversations 会话数据访问
-     * @param users 用户数据访问
+     * @param users 登录用户查询
      * @param mapper JSON 序列化组件
-     * @return 追问服务
+     * @return 追问确认服务
      */
     @Bean
-    public ClarificationService clarificationService(AiConversationMapper conversations,
-            LoginUserService users, ObjectMapper mapper) {
-        return new ClarificationService(conversations, users, mapper);
+    public ClarificationConfirmationService clarificationConfirmationService(ReactAgent mainAgent, RedisSaver saver,
+                                                                              MainAgentService runs,
+                                                                              AiConversationMapper conversations,
+                                                                              LoginUserService users,
+                                                                              ObjectMapper mapper) {
+        return new ClarificationConfirmationService(mainAgent, saver, runs, conversations, users, mapper);
     }
-
-    }
+}

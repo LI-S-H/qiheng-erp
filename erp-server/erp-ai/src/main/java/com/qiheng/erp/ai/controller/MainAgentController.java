@@ -4,10 +4,13 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
-import com.qiheng.erp.ai.clarification.ClarificationService;
+import com.qiheng.erp.ai.clarification.ClarificationConfirmationService;
 import com.qiheng.erp.ai.agent.AgentModelFailure;
+import com.qiheng.erp.ai.agent.AskUserValidationHook;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.agent.RunEventChannel;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.ai.clarification.ClarificationAnswer;
 import com.qiheng.erp.ai.action.PurchaseOrderActionReceipt;
@@ -20,6 +23,7 @@ import com.qiheng.erp.common.util.IdUtil;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +55,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @SaCheckPermission("ai:assistant:use")
 public class MainAgentController {
     private final ObjectProvider<MainAgentService> agents;
-    private final ObjectProvider<ClarificationService> clarifications;
+    private final ObjectProvider<ClarificationConfirmationService> clarifications;
     private final ObjectProvider<OrderConfirmationService> confirmations;
     private final ConcurrentHashMap<String, RunEventChannel> channels = new ConcurrentHashMap<>();
 
@@ -62,7 +66,7 @@ public class MainAgentController {
      * @param clarifications 追问服务
      */
     public MainAgentController(ObjectProvider<MainAgentService> agents,
-                               ObjectProvider<ClarificationService> clarifications) {
+                               ObjectProvider<ClarificationConfirmationService> clarifications) {
         this(agents, clarifications, null);
     }
 
@@ -75,7 +79,7 @@ public class MainAgentController {
      */
     @Autowired
     public MainAgentController(ObjectProvider<MainAgentService> agents,
-                               ObjectProvider<ClarificationService> clarifications,
+                               ObjectProvider<ClarificationConfirmationService> clarifications,
                                ObjectProvider<OrderConfirmationService> confirmations) {
         this.agents = agents;
         this.clarifications = clarifications;
@@ -86,7 +90,8 @@ public class MainAgentController {
     public record MessageRequest(@NotBlank String content) {}
 
     /** 本轮追问答案。 */
-    public record AnswerRequest(@NotEmpty List<ClarificationAnswer> answers, String note) {}
+    public record AnswerRequest(@NotEmpty @Size(max = 20) List<ClarificationAnswer> answers,
+                                @Size(max = 10000) String note) {}
 
     /**
      * 运行主智能体，将图事件转换为前端协议。
@@ -177,26 +182,36 @@ public class MainAgentController {
     }
 
     /**
-     * 将用户答案交给正在等待的追问工具。
+     * 校验用户答案并恢复检查点。
      *
      * @param conversationId 会话编号
      * @param questionRequestId 追问编号
      * @param body 答案内容
      * @return 空结果
+     * @throws Exception 校验或恢复失败
      */
     @PostMapping("/{conversationId}/questions/{questionRequestId}/answer")
     public Result<Void> answer(@PathVariable String conversationId, @PathVariable String questionRequestId,
-                               @Valid @RequestBody AnswerRequest body) {
+                               @Valid @RequestBody AnswerRequest body) throws Exception {
         long id = IdUtil.parseRequiredLongId(conversationId, "conversationId");
-        var active = channel(id);
-        if (active == null) {
-            clarifications.getObject().answerForCurrentUser(id, questionRequestId, body.answers(), body.note());
-        } else {
-            // 答案生效与快照切换在同一把锁内，避免重连时取到已经回答的旧问题。
-            synchronized (active) {
-                clarifications.getObject().answerForCurrentUser(id, questionRequestId, body.answers(), body.note());
-                active.answered(questionRequestId);
+        ClarificationConfirmationService service = clarifications.getIfAvailable();
+        if (service == null) {
+            throw new IllegalStateException("追问确认功能未启用");
+        }
+        long userId = UserContext.requireCurrentUser().getUserId();
+        try {
+            var resumed = service.resolveForUser(userId, id, questionRequestId, body.answers(), body.note());
+            startBackgroundRun(id, userId, resumed.outputs(), resumed.runId());
+            var active = channel(id);
+            if (active != null) {
+                synchronized (active) {
+                    active.answered(questionRequestId);
+                }
             }
+        } catch (MainAgentService.ConfirmationExpiredException error) {
+            throw new BizException(ErrorCode.STATUS_INVALID.getCode(), "确认已失效，请刷新会话后重试");
+        } catch (IllegalArgumentException error) {
+            throw new BizException(ErrorCode.PARAM_ERROR.getCode(), error.getMessage());
         }
         return Result.ok();
     }
@@ -317,6 +332,7 @@ public class MainAgentController {
             var messageId = new AtomicReference<>(UUID.randomUUID().toString());
             var finalText = new AtomicReference<String>();
             var modelFailure = new AtomicInteger();
+            var validationFailure = new AtomicInteger();
             var completed = new AtomicInteger();
             var paused = new AtomicInteger();
             var emittedToolTexts = new HashSet<String>();
@@ -334,8 +350,12 @@ public class MainAgentController {
                     if (messages instanceof List<?> list && !list.isEmpty()
                             && list.getLast() instanceof AssistantMessage assistant
                             && !assistant.getToolCalls().isEmpty()) {
+                        Object invalidCallId = output.state().data().get(AskUserValidationHook.INVALID_CALL_KEY);
+                        boolean invalidAskUser = invalidCallId instanceof String value
+                                && assistant.getToolCalls().stream().anyMatch(call -> value.equals(call.id()));
                         String text = assistant.getText();
-                        if (text != null && !text.isBlank()) {
+                        // 非法追问尝试的说明文字不进入可见消息，只保留流水。
+                        if (!invalidAskUser && text != null && !text.isBlank()) {
                             sink.next(event("text_completed", Map.of("messageId", messageId.get(), "text", text)));
                             assistant.getToolCalls().forEach(call -> emittedToolTexts.add(call.id()));
                         }
@@ -353,6 +373,12 @@ public class MainAgentController {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());
                     sink.next(event("question", data));
+                } else if ("question".equals(node)) {
+                    var data = new LinkedHashMap<String, Object>(output.state().data());
+                    data.put("runId", runId.get());
+                    sink.next(event("question", data));
+                    completed.set(1);
+                    paused.set(1);
                 } else if ("purchase_draft".equals(node)) {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());
@@ -399,6 +425,10 @@ public class MainAgentController {
                         }
                     }
                     completed.set(1);
+                    Object failedRunId = output.state().data().get(AskUserValidationHook.FAILED_STATE_KEY);
+                    if (failedRunId instanceof String value && value.equals(runId.get())) {
+                        validationFailure.set(1);
+                    }
                 }
             }).concatWith(Flux.defer(() -> {
                 if (completed.get() != 1) {
@@ -406,6 +436,15 @@ public class MainAgentController {
                 }
                 if (paused.get() == 1) {
                     return Flux.just(event("run_completed", Map.of("runId", runId.get(), "status", "WAITING_USER")));
+                }
+                if (validationFailure.get() == 1) {
+                    var failure = event("run_failed", Map.of(
+                            "runId", runId.get() == null ? "" : runId.get(), "status", "FAILED",
+                            "code", "ASK_USER_VALIDATION_FAILED",
+                            "message", "本次追问连续多次参数无效，已停止本轮。"));
+                    return finalText.get() == null ? Flux.just(failure) : Flux.just(
+                            event("text_completed", Map.of("messageId", messageId.get(), "text", finalText.get())),
+                            failure);
                 }
                 if (modelFailure.get() == 1) {
                     return Flux.just(event("run_failed", Map.of(

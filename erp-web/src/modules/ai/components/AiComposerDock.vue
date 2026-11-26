@@ -2,6 +2,7 @@
 import { LoaderCircle, LockKeyhole, Send } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const inputMessage = defineModel<string>({ default: '' });
 const props = withDefaults(
@@ -46,37 +47,44 @@ function onEnter(event: KeyboardEvent) {
       <div v-if="awaitingAnswer" class="ai-composer-placeholder" data-ai-composer-placeholder role="status" aria-label="等待回答补充问题">
         <LockKeyhole class="placeholder-lock" aria-hidden="true" />
         <span>先完成上方补充，助手将继续处理</span>
-        <span class="placeholder-send" aria-hidden="true"><Send />发送</span>
       </div>
       <div v-else-if="clarification" class="composer-mode">
         补充信息<span>选择上方答案，也可以在这里补充说明</span>
       </div>
-      <form v-if="!awaitingAnswer" class="ai-composer" @submit.prevent="submitMessage">
-        <Textarea
-          id="graph-query"
-          v-model="inputMessage"
-          class="ai-composer__input"
-          :placeholder="clarification ? '其他补充（选填）…' : placeholder"
-          rows="1"
-          :aria-label="clarification ? '其他补充' : '经营问题'"
-          :aria-invalid="Boolean(error)"
-          aria-describedby="ai-composer-hint ai-composer-error"
-          :disabled="sending || disabled"
-          maxlength="10000"
-          @keydown.enter.exact="onEnter"
-        />
-        <Button
-          class="ai-composer__send"
-          type="submit"
-          size="sm"
-          :aria-label="clarification ? '提交补充信息' : '发送需求'"
-          :disabled="sending || disabled || (!clarification && !inputMessage.trim())"
-        >
-          <LoaderCircle v-if="sending" class="size-4 animate-spin" />
-          <Send v-else class="size-4" />
-          <span>{{ clarification ? '确认并继续' : '发送' }}</span>
-        </Button>
-      </form>
+      <Tooltip :disabled="!awaitingAnswer" :delay-duration="0" :skip-delay-duration="0">
+        <TooltipTrigger as-child>
+          <form class="ai-composer" :class="{ 'is-locked': awaitingAnswer }" @submit.prevent="submitMessage">
+            <div v-if="awaitingAnswer" class="ai-composer__lock-overlay" aria-hidden="true"></div>
+            <Textarea
+              id="graph-query"
+              v-model="inputMessage"
+              class="ai-composer__input"
+              :placeholder="clarification ? '其他补充（选填）…' : placeholder"
+              rows="1"
+              :aria-label="clarification ? '其他补充' : '经营问题'"
+              :aria-invalid="Boolean(error)"
+              aria-describedby="ai-composer-hint ai-composer-error"
+              :disabled="sending || disabled || awaitingAnswer"
+              maxlength="10000"
+              @keydown.enter.exact="onEnter"
+            />
+            <Button
+              class="ai-composer__send"
+              type="submit"
+              size="sm"
+              :aria-label="clarification ? '提交补充信息' : '发送需求'"
+              :disabled="sending || disabled || awaitingAnswer || (!clarification && !inputMessage.trim())"
+            >
+              <LoaderCircle v-if="sending" class="size-4 animate-spin" />
+              <Send v-else class="size-4" />
+              <span>{{ clarification ? '确认并继续' : '发送' }}</span>
+            </Button>
+          </form>
+        </TooltipTrigger>
+        <TooltipContent v-if="awaitingAnswer" side="top" class="max-w-[260px] text-xs">
+          请先完成上方补充信息
+        </TooltipContent>
+      </Tooltip>
       <p v-if="error && !awaitingAnswer" id="ai-composer-error" class="composer-error" role="alert">{{ error }}</p>
       <div id="ai-composer-hint" class="composer-hint">
         <span>{{ awaitingAnswer ? '回答过程中保留输入位置，避免视线来回跳动' : 'Enter 发送 · Shift + Enter 换行' }}</span><span>当前支持需求规划与信息澄清</span>
@@ -142,6 +150,7 @@ function onEnter(event: KeyboardEvent) {
 }
 .ai-composer {
   display: grid;
+  position: relative;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 8px;
@@ -178,6 +187,21 @@ function onEnter(event: KeyboardEvent) {
   height: 36px;
   margin-bottom: 2px;
   font-size: 13px;
+}
+.ai-composer.is-locked {
+  opacity: .72;
+}
+.ai-composer.is-locked,
+.ai-composer.is-locked .ai-composer__input,
+.ai-composer.is-locked .ai-composer__send {
+  cursor: not-allowed;
+}
+.ai-composer__lock-overlay {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border-radius: inherit;
+  cursor: not-allowed;
 }
 .composer-hint {
   display: flex;

@@ -1,7 +1,5 @@
 package com.qiheng.erp.ai.agent;
 
-import com.qiheng.erp.ai.clarification.ClarificationService;
-
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
@@ -145,6 +143,9 @@ public final class MainAgentService {
         String status = messageStore.latestRunStatus(userId, conversationId);
         if ("RUNNING".equals(status)) {
             return "RUNNING";
+        }
+        if ("FAILED".equals(status)) {
+            return "FAILED";
         }
         // 等待用户确认不是中断，页面按待确认消息继续渲染。
         return "WAITING_USER".equals(status) ? "WAITING_USER" : "IDLE";
@@ -436,12 +437,6 @@ public final class MainAgentService {
                     }
                     recorder.toolCall(request.getToolCallId(), request.getToolName(), request.getArguments(), assistant);
                 })
-                .addMetadata(ClarificationService.EVENT_KEY, (Consumer<NodeOutput>) event -> {
-                    recorder.status("WAITING_USER", null);
-                    var question = events.questionEvent(event);
-                    runs.put(runKey, new RuntimeSnapshot(runId, "WAITING_USER", Map.copyOf(question.state().data())));
-                    events.toolEvent(question);
-                })
                 .build();
         // 新消息交由模型结合已配对的工具历史处理。
         Flux<NodeOutput> stream;
@@ -504,6 +499,13 @@ public final class MainAgentService {
                         // 模型调用失败时图仍然跑到结束节点，但本轮必须记为失败，不能算完成。
                         if (recorder.modelFailed()) {
                             recorder.status("FAILED", "MODEL_CALL_FAILED");
+                            runs.put(runKey, new RuntimeSnapshot(runId, "FAILED", null));
+                            finish(lock, owner, sink, null);
+                            return;
+                        }
+                        // 追问参数连续非法时业务上算失败，但最终说明已经保存。
+                        if (recorder.clarificationValidationFailed()) {
+                            recorder.status("FAILED", "ASK_USER_VALIDATION_FAILED");
                             runs.put(runKey, new RuntimeSnapshot(runId, "FAILED", null));
                             finish(lock, owner, sink, null);
                             return;
@@ -734,7 +736,7 @@ public final class MainAgentService {
 
     /** 等待用户处置时发出的事件节点。 */
     private static final Set<String> WAITING_USER_EVENTS = Set.of(
-            "ask_user", "purchase_draft", "purchase_action", "sales_order_draft", "sales_order_action");
+            "ask_user", "question", "purchase_draft", "purchase_action", "sales_order_draft", "sales_order_action");
 
     /** 判断工具调用是否会阻塞等待用户处置。 */
     private static boolean waitingUserTool(String toolName) {
@@ -862,6 +864,12 @@ public final class MainAgentService {
                 content.put("orderNo", text(arguments, "orderNo"));
                 content.put("reason", text(arguments, "reason"));
             }
+            case "ask_user" -> {
+                event = "question";
+                content.put("questionRequestId", call.id());
+                content.put("toolCallId", call.id());
+                content.put("questions", parseArguments(call.arguments()).get("questions"));
+            }
             default -> {
                 return;
             }
@@ -906,6 +914,7 @@ public final class MainAgentService {
             case "update_purchase_order_draft" -> "修改采购草稿单";
             case "submit_purchase_order" -> "提交采购单";
             case "cancel_purchase_order" -> "取消采购单";
+            case "ask_user" -> "补充信息";
             default -> name;
         };
     }

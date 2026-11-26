@@ -47,6 +47,7 @@
     "test:ai-agent": "node scripts/test-mainagent-ui.cjs",
     "test:ai-purchase-hitl": "node scripts/test-ai-purchase-hitl.cjs",
     "test:ai-purchase-action-hitl": "node scripts/test-ai-purchase-action-hitl.cjs",
+    "test:ai-ask-user-hitl": "node scripts/test-ai-ask-user-hitl.cjs",
     "test:ai-sse": "node scripts/test-ai-sse.cjs",
     "smoke:purchase": "node scripts/smoke-purchase.cjs",
     "smoke:purchase-returns": "node scripts/smoke-purchase-returns.cjs",

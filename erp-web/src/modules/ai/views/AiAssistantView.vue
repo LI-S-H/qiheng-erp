@@ -323,6 +323,28 @@ async function reconnectAfterOrder(id: string, callId: string, epoch: number, us
   }
 }
 
+async function reconnectAfterAnswer(id: string, epoch: number, userId: string | undefined) {
+  try {
+    for (let attempt = 0; attempt < 40 && isCurrent(epoch, userId, id); attempt++) {
+      const state = runs.get(id);
+      if (!state.streaming && !state.querying && !state.watching) {
+        const runtime = await getMainAgentRuntime(id);
+        if (!isCurrent(epoch, userId, id)) return;
+        const nextQuestionId = (runtime?.question as { questionRequestId?: unknown } | undefined)?.questionRequestId;
+        // 恢复运行已开始或模型又提出了新问题，都需要重新订阅事件通道。
+        if (runtime && (runtime.status !== 'WAITING_USER' || typeof nextQuestionId === 'string')) {
+          await reconnectRun(id, epoch, userId);
+          return;
+        }
+      }
+      await new Promise(resolve => window.setTimeout(resolve, 250));
+    }
+    if (isCurrent(epoch, userId, id)) warning.value = '回答已提交，运行状态暂未更新，请重新进入会话查看。';
+  } catch (cause) {
+    if (isCurrent(epoch, userId, id)) warning.value = `回答已提交，恢复连接失败：${getApiErrorMessage(cause) || '请重新进入会话查看'}`;
+  }
+}
+
 async function finishOrderTransition(kind: 'draft' | 'action',
                                      context: { conversationId: string; callId: string },
                                      orderType: 'SALES' | 'PURCHASE') {
@@ -522,6 +544,34 @@ const analysisBlocks = computed<AiAnalysisBlock[]>(() => {
   }
   return [...blocks.values()];
 });
+/** 刷新或服务重启后，从历史里最后一条未回答的追问恢复表单。 */
+function restoreClarificationFromHistory(messages: AiConversationMessage[]) {
+  if (pendingClarification.value || runStatus.value !== 'WAITING_USER') {
+    return;
+  }
+  // 当前已有草稿或动作卡片时，优先展示当前业务卡片，避免旧问题混入。
+  if (pendingDraft.value || pendingAction.value || pendingSalesDraft.value || pendingSalesAction.value) {
+    return;
+  }
+  const currentRunId = currentRun.value.runId;
+  const answered = new Set(messages
+    .filter(message => message.kind === 'TOOL_RESULT' && message.content.type === 'TEXT' && message.content.data.callId)
+    .map(message => message.content.type === 'TEXT' ? message.content.data.callId : ''));
+  const pending = [...messages].reverse().find(message =>
+    message.kind === 'TOOL_CALL'
+    && message.content.type === 'CLARIFICATION'
+    && !answered.has(message.content.data.callId)
+    && (!currentRunId || !message.requestId || message.requestId === currentRunId));
+  if (!pending || pending.content.type !== 'CLARIFICATION') {
+    return;
+  }
+  pendingClarification.value = {
+    questionRequestId: pending.content.data.callId,
+    toolCallId: pending.content.data.callId,
+    questions: pending.content.data.questions,
+  };
+}
+
 /** 刷新后从历史里最后一条待确认记录恢复底部操作卡片。 */
 watch(displayedMessages, messages => {
   if (closingOrder.value?.id === store.activeId) return;
@@ -585,6 +635,10 @@ watch(displayedMessages, messages => {
   } catch {
     // 参数无法解析时不恢复卡片。
   }
+}, { immediate: true });
+/** 历史、运行状态或业务卡片变化后统一尝试恢复追问，避免旧问题压过当前卡片。 */
+watch([displayedMessages, runStatus, pendingDraft, pendingAction, pendingSalesDraft, pendingSalesAction], () => {
+  restoreClarificationFromHistory(displayedMessages.value);
 }, { immediate: true });
 /** 本次会话是否存在分析过程；没有内容时不占用右侧面板位置。 */
 const showAnalysisPanel = computed(() => analysisBlocks.value.length > 0);
@@ -862,6 +916,10 @@ watch(
     const data = currentQuestionData.value;
     if (!switching.value && data?.questionRequestId && auth.user) {
       storageSet(draftKey('clarification', data.questionRequestId), value);
+    }
+    // 用户修正答案后清掉上一次服务端错误，避免误以为修改无效。
+    if (currentRun.value.pendingClarification && currentRun.value.error) {
+      currentRun.value.error = '';
     }
   },
   { deep: true },
@@ -1419,6 +1477,8 @@ async function run(answer?: string) {
     const conversationId = store.activeId;
     const answerRun = runs.get(conversationId);
     const previousError = answerRun.error;
+    const answerEpoch = requestEpoch;
+    const answerUserId = auth.user?.userId;
     try {
       const answers = question.questions.map(item => {
         const value = clarificationDraft.value.answers[item.id];
@@ -1442,7 +1502,18 @@ async function run(answer?: string) {
         answerRun.pendingClarification = null;
         answerRun.runStatus = 'RUNNING';
       }
-    } catch (cause) { answerRun.error = getApiErrorMessage(cause) || '提交回答失败，请重试'; }
+      // 答案成功后后端已启动新的恢复运行，必须主动接上新的事件通道。
+      void reconnectAfterAnswer(conversationId, answerEpoch, answerUserId);
+    } catch (cause) {
+      const message = getApiErrorMessage(cause) || '提交回答失败，请重试';
+      answerRun.error = message;
+      // 检查点已失效时清掉卡片，避免用户被锁在无法提交的问题上。
+      if (message.includes('确认已失效')) {
+        answerRun.pendingClarification = null;
+        answerRun.runStatus = 'IDLE';
+        void reload(conversationId, answerEpoch, answerUserId);
+      }
+    }
     finally { answering.value = false; }
     return;
   }
@@ -1975,6 +2046,7 @@ onBeforeUnmount(() => {
         <template #question>
           <Transition name="question-dock" appear @before-leave="setQuestionInert($event, true)" @before-enter="setQuestionInert($event, false)">
             <div v-if="waiting && currentQuestionData && !switching" ref="questionDock" class="agent-question-dock" data-ai-question-dock>
+              <p v-if="currentRun.error" class="px-1 pb-2 text-xs text-destructive" role="alert" data-ai-question-error>{{ currentRun.error }}</p>
               <AiClarificationForm
                 :key="currentQuestionData.questionRequestId"
                 ref="clarificationForm"

@@ -135,6 +135,15 @@ function questionError(question: ClarificationQuestion) {
     : '请选择一项，或自行填写';
 }
 
+/** 当前题是否已答完整；未答完时禁止进入下一题。 */
+const currentAnswerValid = computed(() => {
+  const question = activeQuestion.value;
+  return !question || !questionError(question);
+});
+
+/** 所有题是否已答完整；未答完时禁止最终提交。 */
+const allAnswered = computed(() => props.questions.every(question => !questionError(question)));
+
 function advance() {
   const question = activeQuestion.value;
   const index = activeIndex.value;
@@ -366,10 +375,10 @@ defineExpose({ submit });
           @click="activate(activeIndex === null ? questions.length - 1 : activeIndex - 1)">
           上一题
         </Button>
-        <Button v-if="activeQuestion" type="button" size="sm" :disabled="controlsLocked" @click="advance">
+        <Button v-if="activeQuestion" type="button" size="sm" :disabled="controlsLocked || !currentAnswerValid" :title="!currentAnswerValid ? '请先完成本题' : undefined" @click="advance">
           {{ activeIndex === questions.length - 1 ? '确认回答' : '下一题' }}
         </Button>
-        <Button v-else type="submit" size="sm" aria-label="提交回答" :disabled="controlsLocked">
+        <Button v-else type="submit" size="sm" aria-label="提交回答" :disabled="controlsLocked || !allAnswered" :title="!allAnswered ? '请先答完所有问题' : undefined">
           <LoaderCircle v-if="busy" class="size-3.5 animate-spin" aria-hidden="true" />
           {{ busy ? '提交中' : '提交回答' }}
         </Button>

@@ -3,6 +3,8 @@ package com.qiheng.erp.ai.agent;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qiheng.erp.ai.clarification.ClarificationRules;
+import com.qiheng.erp.ai.clarification.ClarificationTraceSink;
 import com.qiheng.erp.ai.constant.AiToolLabels;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
@@ -28,7 +30,7 @@ import java.util.Map;
  * @author Li
  * @since 2026-10-27
  */
-final class AgentRunRecorder {
+final class AgentRunRecorder implements ClarificationTraceSink {
     private static final Logger log = LoggerFactory.getLogger(AgentRunRecorder.class);
 
     private final ConversationMessageStore store;
@@ -43,6 +45,9 @@ final class AgentRunRecorder {
 
     /** 本轮是否以模型调用失败结束；失败时不写最终答复，只记流水。 */
     private boolean modelFailed;
+
+    /** 本轮是否因追问参数连续非法而终止；终止仍保存最终说明。 */
+    private boolean clarificationValidationFailed;
 
     /** 本轮各工具调用的名称；结束时据此补全展示行。 */
     private final Map<String, String> toolNames = new LinkedHashMap<>();
@@ -89,6 +94,10 @@ final class AgentRunRecorder {
                 if (!"ask_user".equals(item.name())) {
                     continue;
                 }
+                // 参数非法的重试只进流水，绝不进入用户可见消息。
+                if (invalidAskUserResult(item.responseData())) {
+                    continue;
+                }
                 save("result:" + item.id(), "tool", "TOOL_RESULT",
                         Map.of("callId", item.id(), "name", item.name(), "result", item.responseData()), null);
                 status("RUNNING", null);
@@ -103,6 +112,43 @@ final class AgentRunRecorder {
         content.put("name", name);
         content.put("text", arguments);
         traces.record("TOOL_CALL", content);
+    }
+
+    /** 记录一次非法追问参数；只写流水，不写可见消息。 */
+    @Override
+    public void traceAskUserValidationFailure(String callId, String name, String arguments,
+                                              List<ClarificationRules.FieldError> errors) {
+        traceToolCall(callId, name, arguments);
+        traces.recordText("VALIDATION_ERROR", ClarificationRules.summarize(errors));
+    }
+
+    /** 终止路径没有下一次模型调用，需要显式补写工具结果流水。 */
+    @Override
+    public void traceAskUserToolResult(String callId, String name, String responseData) {
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("callId", callId);
+        content.put("name", name);
+        content.put("text", responseData);
+        traces.record("TOOL_RESULT", content);
+    }
+
+    /** 标记本轮因追问参数连续非法而终止。 */
+    @Override
+    public void markClarificationValidationFailed() {
+        clarificationValidationFailed = true;
+    }
+
+    /** 判断追问结果是否为参数非法的重试回执。 */
+    private boolean invalidAskUserResult(String responseData) {
+        if (responseData == null || responseData.isBlank()) {
+            return false;
+        }
+        try {
+            var root = mapper.readTree(responseData);
+            return root != null && "invalid_arguments".equals(root.path("status").asText());
+        } catch (JsonProcessingException error) {
+            return false;
+        }
     }
 
     /** 人工确认前保存正文及其调用标识，方便历史消息与确认卡片准确配对。 */
@@ -249,6 +295,11 @@ final class AgentRunRecorder {
     /** 本轮是否以模型调用失败结束。 */
     boolean modelFailed() {
         return modelFailed;
+    }
+
+    /** 本轮是否因追问参数连续非法而终止。 */
+    boolean clarificationValidationFailed() {
+        return clarificationValidationFailed;
     }
 
     /** 更新用户输入行上的本轮状态。 */

@@ -24,7 +24,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
-/** 管理当前进程中等待用户回答的追问。 */
+/**
+ * 旧的内存等待式追问服务。
+ *
+ * @deprecated 生产追问已改由图级 HITL 接管，本类仅保留给旧集成测试兼容，不应再被 Spring 注入或生产调用。
+ */
+@Deprecated
 public final class ClarificationService {
     public static final String EVENT_KEY = "clarificationEvent";
     static final String TIMEOUT_MARKER = "ASK_USER_WAIT_TIMEOUT";

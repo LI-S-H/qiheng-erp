@@ -4,7 +4,7 @@ import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
-import com.qiheng.erp.ai.clarification.ClarificationService;
+import com.qiheng.erp.ai.clarification.ClarificationConfirmationService;
 import com.qiheng.erp.ai.agent.MainAgentService;
 import com.qiheng.erp.ai.order.OrderConfirmationService;
 import org.junit.jupiter.api.Test;
@@ -146,7 +146,7 @@ class MainAgentControllerTest {
     void producerWithoutTerminalEventReportsFailure() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.empty());
         var events = new MainAgentController(agents, clarifications).stream("1", new MainAgentController.MessageRequest("查询")).collectList().block();
@@ -157,7 +157,7 @@ class MainAgentControllerTest {
     void fallbackStartsNewSegmentWithoutExposingInternalEvent() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         var fragment = mock(StreamingOutput.class);
         when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
@@ -169,12 +169,148 @@ class MainAgentControllerTest {
         assertThat(events).extracting(e -> e.event()).containsExactly("text_delta", "question", "text_delta");
         assertThat(((Map<?, ?>) events.get(0).data()).get("messageId")).isNotEqualTo(((Map<?, ?>) events.get(2).data()).get("messageId"));
     }
+
+    /** 追问进入 HITL 后必须暂停本轮并发送 WAITING_USER，而不是继续消费后续事件。 */
+    @Test
+    void hitlQuestionPausesRunWithWaitingStatus() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var fragment = mock(StreamingOutput.class);
+        when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
+        when(fragment.chunk()).thenReturn("说明");
+        var question = NodeOutput.of("question", "main_agent",
+                new OverAllState(Map.of("questionRequestId", "q", "questions", List.of())), null);
+        when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.just(fragment, question));
+
+        var events = new MainAgentController(agents, clarifications)
+                .stream("1", new MainAgentController.MessageRequest("查询"))
+                .filter(e -> !"run_snapshot".equals(e.event()))
+                .collectList().block();
+
+        assertThat(events).extracting(e -> e.event()).containsExactly("text_delta", "question", "run_completed");
+        assertThat(((Map<?, ?>) events.get(2).data()).get("status")).isEqualTo("WAITING_USER");
+    }
+
+    /** 追问检查点过期应转为业务错误，而不是 500。 */
+    @Test
+    void expiredAnswerReturnsBusinessError() throws Exception {
+        var service = mock(ClarificationConfirmationService.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
+        when(clarifications.getIfAvailable()).thenReturn(service);
+        when(service.resolveForUser(eq(1L), eq(1L), eq("q"), any(), any()))
+                .thenThrow(new MainAgentService.ConfirmationExpiredException());
+        var controller = new MainAgentController(mock(ObjectProvider.class), clarifications);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.answer("1", "q",
+                        new MainAgentController.AnswerRequest(List.of(
+                                new com.qiheng.erp.ai.clarification.ClarificationAnswer("q", List.of("A"), "")), null)))
+                .isInstanceOf(com.qiheng.erp.common.exception.BizException.class)
+                .hasMessageContaining("确认已失效");
+    }
+
+    /** 答案校验失败应保留具体中文原因，而不是 500。 */
+    @Test
+    void invalidAnswerReturnsBusinessError() throws Exception {
+        var service = mock(ClarificationConfirmationService.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
+        when(clarifications.getIfAvailable()).thenReturn(service);
+        when(service.resolveForUser(eq(1L), eq(1L), eq("q"), any(), any()))
+                .thenThrow(new IllegalArgumentException("回答不符合要求：选项不在候选中"));
+        var controller = new MainAgentController(mock(ObjectProvider.class), clarifications);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.answer("1", "q",
+                        new MainAgentController.AnswerRequest(List.of(
+                                new com.qiheng.erp.ai.clarification.ClarificationAnswer("q", List.of("A"), "")), null)))
+                .isInstanceOf(com.qiheng.erp.common.exception.BizException.class)
+                .hasMessageContaining("选项不在候选中");
+    }
+
+    /** 非法追问尝试的 assistant 文字不能进入实时消息。 */
+    @Test
+    void invalidAskUserAssistantTextIsSuppressed() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r")), null);
+        var call = new org.springframework.ai.chat.messages.AssistantMessage.ToolCall(
+                "call-bad", "function", "ask_user", "{}");
+        var hook = NodeOutput.of("message_recording.afterModel", "main_agent", new OverAllState(Map.of(
+                "messages", List.of(org.springframework.ai.chat.messages.AssistantMessage.builder()
+                        .content("需要补充条件").toolCalls(List.of(call)).build()),
+                com.qiheng.erp.ai.agent.AskUserValidationHook.INVALID_CALL_KEY, "call-bad")), null);
+        when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.just(start, hook));
+
+        var events = new MainAgentController(agents, clarifications)
+                .stream("1", new MainAgentController.MessageRequest("查询"))
+                .filter(e -> !"run_snapshot".equals(e.event()))
+                .collectList().block();
+
+        assertThat(events).extracting(e -> e.event()).doesNotContain("text_completed");
+    }
+
+    /** 上一轮遗留的失败标记不能污染新的运行。 */
+    @Test
+    void previousValidationFailureDoesNotFailNextRun() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r2")), null);
+        var fragment = mock(StreamingOutput.class);
+        when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
+        when(fragment.chunk()).thenReturn("说明");
+        var end = mock(NodeOutput.class);
+        when(end.isEND()).thenReturn(true);
+        when(end.state()).thenReturn(new OverAllState(Map.of(
+                "messages", List.of(new org.springframework.ai.chat.messages.AssistantMessage("本轮正常完成")),
+                com.qiheng.erp.ai.agent.AskUserValidationHook.FAILED_STATE_KEY, "r1")));
+        when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.just(start, fragment, end));
+
+        var events = new MainAgentController(agents, clarifications)
+                .stream("1", new MainAgentController.MessageRequest("查询"))
+                .filter(e -> !"run_snapshot".equals(e.event()))
+                .collectList().block();
+
+        assertThat(events).extracting(e -> e.event())
+                .containsExactly("run_started", "text_delta", "text_completed", "run_completed");
+    }
+
+    /** 追问参数连续非法终止时，先给最终说明再发失败事件。 */
+    @Test
+    void askUserValidationFailureEmitsFinalTextThenFailed() throws Exception {
+        var agent = mock(MainAgentService.class);
+        ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
+        when(agents.getObject()).thenReturn(agent);
+        var fragment = mock(StreamingOutput.class);
+        when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
+        when(fragment.chunk()).thenReturn("说明");
+        var end = mock(NodeOutput.class);
+        when(end.isEND()).thenReturn(true);
+        when(end.state()).thenReturn(new OverAllState(Map.of(
+                "messages", List.of(new org.springframework.ai.chat.messages.AssistantMessage("抱歉，这次没能把需要补充的条件问清楚。")),
+                com.qiheng.erp.ai.agent.AskUserValidationHook.FAILED_STATE_KEY, "r1")));
+        var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r1")), null);
+        when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.just(start, fragment, end));
+
+        var events = new MainAgentController(agents, clarifications)
+                .stream("1", new MainAgentController.MessageRequest("查询"))
+                .filter(e -> !"run_snapshot".equals(e.event()))
+                .collectList().block();
+
+        assertThat(events).extracting(e -> e.event()).containsExactly("run_started", "text_delta", "text_completed", "run_failed");
+        assertThat(((Map<?, ?>) events.get(3).data()).get("code")).isEqualTo("ASK_USER_VALIDATION_FAILED");
+        assertThat(((Map<?, ?>) events.get(2).data()).get("text")).isEqualTo("抱歉，这次没能把需要补充的条件问清楚。");
+    }
     /** 工具事件来自另一条回调，先抵达时不能提前切换文字段。 */
     @Test
     void earlyToolEventDoesNotMoveCompletionToNextSegment() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         var fragment = mock(StreamingOutput.class);
         when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
@@ -192,7 +328,7 @@ class MainAgentControllerTest {
     void orderedAfterModelHookCorrectsToolTextWithoutCheckpoint() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         var fragment = mock(StreamingOutput.class);
         when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
@@ -215,7 +351,7 @@ class MainAgentControllerTest {
     void emitsOnlyModelFragmentsAndToolStatus() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r", "conversationId", "1")), null);
         var fragment = mock(StreamingOutput.class);
@@ -241,7 +377,7 @@ class MainAgentControllerTest {
     void completeTextCorrectsTheSameSegmentBeforeToolAndAtEnd() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r")), null);
         var fragment = mock(StreamingOutput.class);
@@ -268,7 +404,7 @@ class MainAgentControllerTest {
     void invalidQuestionWithoutToolEventStartsANewTextSegment() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r")), null);
         var fragment = mock(StreamingOutput.class);
@@ -291,7 +427,7 @@ class MainAgentControllerTest {
     void questionSeparatesTextMessages() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r", "conversationId", "1")), null);
         var fragment = mock(StreamingOutput.class);
@@ -311,7 +447,7 @@ class MainAgentControllerTest {
     void modelFailureEmitsRunFailedWithCodeInsteadOfAnswer() throws Exception {
         var agent = mock(MainAgentService.class);
         ObjectProvider<MainAgentService> agents = mock(ObjectProvider.class);
-        ObjectProvider<ClarificationService> clarifications = mock(ObjectProvider.class);
+        ObjectProvider<ClarificationConfirmationService> clarifications = mock(ObjectProvider.class);
         when(agents.getObject()).thenReturn(agent);
         var start = NodeOutput.of("run_started", "main_agent", new OverAllState(Map.of("runId", "r")), null);
         var end = mock(NodeOutput.class);

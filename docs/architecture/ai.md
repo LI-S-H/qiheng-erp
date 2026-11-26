@@ -208,10 +208,34 @@ sequenceDiagram
 ```
 
 - 检查点里的 `ToolResponseMessage` 只给模型继续推理；`ai_message` 里的 `TOOL_RESULT` 只给会话历史展示，两者按 `callId` 对应。
-- 工具的 `@Tool` 方法只声明参数结构，正常路径不会执行方法体；参数校验由工具描述、技能、确认页和后端业务接口承担，图级预校验当前未启用。
+- 工具的 `@Tool` 方法只声明参数结构，正常路径不会执行方法体；参数校验由工具描述、技能、确认页和后端业务接口承担。追问参数在 HITL 之前由专门 Hook 预校验，详见下节。
 - 前端确认成功后按 `callId` 结束“等待用户确认”提示；历史加载到 `TOOL_RESULT` 后由历史记录接管。接口失败时保留等待状态并显示原因。
 - 同一 `callId` 重复提交会因检查点已推进而返回“确认已失效”；业务单据已由前端接口创建，重试只补写回执，不会重复执行销售业务。
 - 消息层使用 `ORDER_TOOL` 承载采购和销售确认的 `TOOL_CALL` / `TOOL_RESULT`；采购更早的历史记录仍使用 `PURCHASE_ORDER`，继续兼容展示。
+
+### 追问链路（HITL）
+
+`ask_user` 也已从工具内阻塞迁移到图级人工确认。工具只声明问题参数，图在工具执行前中断并保存检查点；用户答案通过检查点写回后恢复运行，因此刷新页面或服务重启都不会丢失尚未回答的问题。
+
+```mermaid
+flowchart TD
+    A["模型返回 ask_user 工具调用"] --> V["AskUserValidationHook 校验 questions"]
+    V -->|"合法"| H["HITL 中断并保存检查点"]
+    V -->|"非法 1-3 次"| R["追加错误 ToolResponseMessage 回模型"]
+    V -->|"非法第 4 次"| T["错误回执 + 最终说明 + 跳转 END"]
+    H --> Q["SSE question 事件 + TOOL_CALL"]
+    Q --> F["前端追问表单"]
+    F -->|"提交答案"| C["POST /questions/{id}/answer"]
+    C --> K["校验检查点与答案"]
+    K -->|"失败"| E["返回中文错误，卡片保留"]
+    K -->|"成功"| W["写 ToolResponseMessage 并恢复运行"]
+```
+
+- `AskUserValidationHook` 是 `AFTER_MODEL` Hook，`order` 高于 HITL，按倒序执行先于 HITL。参数非法时追加字段级错误 `ToolResponseMessage`，HITL 不再中断，模型继续修正；该次 assistant 文字也不进入可见消息。
+- 连续 3 次非法后第 4 次终止：追加错误回执、给用户的最终说明，并通过 `jump_to=end`（`canJumpTo` 已声明）结束；运行状态记为失败，但最终说明保存到 `ai_message`。
+- 非法尝试的 `TOOL_CALL` / `TOOL_RESULT` 不写用户可见消息，只写 `ai_agent_trace`；校验通过的问答正常展示。
+- 答案提交失败时检查点不推进，修正后可再次提交；重复提交已成功的答案返回“确认已失效”。
+- 前端在追问期间保留主输入框位置但禁止输入，鼠标显示禁止状态；问题未答完时“下一步/提交回答”禁用，回车提交同样被拦截。
 
 ## 分析智能体与 Python 工具
 

@@ -311,6 +311,12 @@ async function checkReject(browser) {
     const dialog = page.locator('[data-purchase-draft-dialog]');
     await dialog.waitFor({ timeout: 10000 });
     await page.waitForFunction(() => !document.querySelector('[data-page-loading]'), null, { timeout: 5000 });
+    // 编辑态也必须能直接驳回，不需要先取消编辑。
+    await dialog.getByRole('button', { name: '编辑并补充说明', exact: true }).click();
+    await page.waitForTimeout(250);
+    const editReject = dialog.getByRole('button', { name: '驳回并说明', exact: true });
+    assert.equal(await editReject.isVisible(), true, '编辑态缺少驳回入口');
+    await page.screenshot({ path: path.join(screenshotDir, 'purchase-edit-reject-button.png') });
 
     for (const [width, height] of [[1440, 900], [1366, 768], [900, 600]]) {
       await page.setViewportSize({ width, height });
@@ -337,6 +343,7 @@ async function checkReject(browser) {
     assert.ok(layers.rejectZ > layers.parentZ, `采购驳回层未高于父弹窗：${JSON.stringify(layers)}`);
     assert.ok(Math.max(...layers.overlayZs) > layers.parentZ, `采购驳回遮罩未盖住父弹窗：${JSON.stringify(layers)}`);
     await assertCentered(page, '[data-purchase-draft-reject]', '采购驳回弹窗');
+    await page.screenshot({ path: path.join(screenshotDir, 'purchase-edit-reject-layer.png') });
 
     await page.keyboard.press('Escape');
     await reject.waitFor({ state: 'detached', timeout: 5000 });
@@ -346,9 +353,13 @@ async function checkReject(browser) {
     await dialog.getByRole('button', { name: '驳回并说明', exact: true }).click();
     await reject.waitFor({ timeout: 5000 });
     await reject.locator('button[aria-pressed]').first().click();
+    await reject.locator('textarea').fill('仅验证编辑态驳回入口，不保存');
+    await page.screenshot({ path: path.join(screenshotDir, 'purchase-edit-reject-filled.png') });
     await page.getByTestId('purchase-draft-reject-confirm').click();
     await page.waitForFunction(() => !document.querySelector('[data-purchase-draft-reject]'), null, { timeout: 5000 });
     await page.waitForFunction(() => !document.querySelector('[data-purchase-draft-dialog]'), null, { timeout: 5000 });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(screenshotDir, 'purchase-edit-reject-settled.png') });
     assert.ok(resolved, '采购驳回未交回模型');
     assert.equal(receipts[receipts.length - 1]?.status, 'rejected', `采购驳回回执不正确：${JSON.stringify(receipts)}`);
     assert.deepEqual(errors, []);

@@ -517,7 +517,7 @@ function quantityStep(precision: number) {
       <DialogFooter class="items-center justify-between gap-3">
         <Button
           variant="outline"
-          class="border-rose-200 bg-white text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800"
+          class="border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800"
           :disabled="busy"
           @click="openReject"
         >

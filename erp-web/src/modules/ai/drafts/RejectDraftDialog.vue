@@ -101,7 +101,13 @@ function close() {
       </div>
       <DialogFooter>
         <Button variant="outline" :disabled="busy" @click="close">取消</Button>
-        <Button :disabled="busy" :data-testid="confirmTestId" @click="emit('confirm')">
+        <Button
+          variant="outline"
+          class="border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800"
+          :disabled="busy"
+          :data-testid="confirmTestId"
+          @click="emit('confirm')"
+        >
           {{ busy ? '提交中...' : confirmText }}
         </Button>
       </DialogFooter>

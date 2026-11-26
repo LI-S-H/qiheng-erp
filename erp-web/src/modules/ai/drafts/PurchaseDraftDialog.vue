@@ -729,11 +729,12 @@ function formatMoney(value: number) {
 
       <DialogFooter>
         <template v-if="readonly">
-          <Button variant="outline" :disabled="busy" @click="openReject">驳回并说明</Button>
+          <Button variant="outline" class="border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800" :disabled="busy" @click="openReject">驳回并说明</Button>
           <Button variant="outline" :disabled="busy" @click="startEdit">编辑并补充说明</Button>
           <Button :disabled="busy" @click="askConfirm('create')">{{ isUpdate ? '确认保存' : '确认创建' }}</Button>
         </template>
         <template v-else>
+          <Button variant="outline" class="border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800" :disabled="busy" @click="openReject">驳回并说明</Button>
           <Button variant="outline" :disabled="busy" @click="askConfirm('discard')">取消编辑</Button>
           <Button :disabled="busy" @click="askConfirm('update')">{{ submitting ? '保存中…' : (isUpdate ? '保存修改' : '保存并创建') }}</Button>
         </template>

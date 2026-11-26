@@ -1,7 +1,5 @@
 package com.qiheng.erp.ai.agent;
 
-import com.qiheng.erp.ai.clarification.ClarificationService;
-
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
@@ -118,7 +116,7 @@ class MainAgentToolRedisTest {
             });
             var agent = new MainAgentConfiguration().mainAgent(model, saver,
                     new SqlQueryTool(sql), new ReadDatasetTool(mock(DatasetManager.class)),
-                    mock(com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider.class), mock(ClarificationService.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+                    mock(com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
             var conversations = mock(AiConversationMapper.class);
             long conversation = Math.abs(UUID.randomUUID().getLeastSignificantBits() / 2);
             when(conversations.selectOwned(conversation, 1L)).thenReturn(new AiConversation());

@@ -3,7 +3,6 @@ package com.qiheng.erp.ai.dataset;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
-import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.config.MainAgentConfiguration;
 import com.qiheng.erp.ai.analysis.AnalysisTool;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
@@ -179,7 +178,7 @@ class MainAnalysisScenariosIT {
                                     new SqlDataField(1, "quantity", "库存数量")),
                             "预览不含单位和安全库存"));
             var main = new MainAgentConfiguration().mainAgent(pro, saver, sql, new ReadDatasetTool(datasets),
-                    businessGraph, mock(ClarificationService.class), new ListDatasetsTool(datasets),
+                    businessGraph, new ListDatasetsTool(datasets),
                     new AnalysisResultTool(results), new AnalysisTool(agent));
             var soft = new org.assertj.core.api.SoftAssertions();
             var scenarios = List.of(

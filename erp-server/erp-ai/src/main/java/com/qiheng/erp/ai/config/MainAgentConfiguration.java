@@ -50,7 +50,6 @@ import com.qiheng.erp.ai.analysis.AnalysisTool;
 import com.qiheng.erp.ai.report.ReportTool;
 import com.qiheng.erp.ai.clarification.AskUserTool;
 import com.qiheng.erp.ai.clarification.ClarificationConfirmationService;
-import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.skill.SkillIndexInterceptor;
 import com.qiheng.erp.ai.skill.tool.ReadSkillFileTool;
 import org.springframework.ai.chat.model.ChatModel;
@@ -102,29 +101,6 @@ public class MainAgentConfiguration {
      * @return 主智能体图
      * @throws IOException 提示词读取失败
      */
-    /**
-     * 兼容旧测试的构造函数；追问已改由图级 HITL 接管，clarification 参数不再使用。
-     *
-     * @param model 主智能体模型
-     * @param saver 检查点存储
-     * @param sql SQL 查询工具
-     * @param dataset 数据集读取工具
-     * @param businessGraph 业务图谱
-     * @param ignored 旧追问服务，仅为兼容测试保留
-     * @param datasetList 数据集列表工具
-     * @param results 分析结果工具
-     * @param analysisTool 分析任务工具
-     * @return 主智能体图
-     * @throws IOException 提示词读取失败
-     */
-    @Deprecated
-    public ReactAgent mainAgent(ChatModel model, RedisSaver saver, SqlQueryTool sql, ReadDatasetTool dataset,
-                                BusinessGraphProvider businessGraph, ClarificationService ignored,
-                                ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)
-            throws IOException {
-        return mainAgent(model, saver, sql, dataset, businessGraph, datasetList, results, analysisTool);
-    }
-
     public ReactAgent mainAgent(ChatModel model, RedisSaver saver, SqlQueryTool sql, ReadDatasetTool dataset,
                                 BusinessGraphProvider businessGraph,
                                 ListDatasetsTool datasetList, AnalysisResultTool results, AnalysisTool analysisTool)

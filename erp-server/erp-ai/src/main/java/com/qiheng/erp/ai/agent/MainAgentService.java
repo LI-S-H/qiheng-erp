@@ -729,14 +729,14 @@ public final class MainAgentService {
 
     /** 会阻塞等待用户处置的工具。 */
     private static final Set<String> WAITING_USER_TOOLS = Set.of(
-            "ask_user", "prepare_purchase_order_draft", "update_purchase_order_draft",
+            "prepare_purchase_order_draft", "update_purchase_order_draft",
             "submit_purchase_order", "cancel_purchase_order",
             "prepare_sales_order_draft", "update_sales_order_draft",
             "submit_sales_order", "cancel_sales_order");
 
     /** 等待用户处置时发出的事件节点。 */
     private static final Set<String> WAITING_USER_EVENTS = Set.of(
-            "ask_user", "question", "purchase_draft", "purchase_action", "sales_order_draft", "sales_order_action");
+            "question", "purchase_draft", "purchase_action", "sales_order_draft", "sales_order_action");
 
     /** 判断工具调用是否会阻塞等待用户处置。 */
     private static boolean waitingUserTool(String toolName) {

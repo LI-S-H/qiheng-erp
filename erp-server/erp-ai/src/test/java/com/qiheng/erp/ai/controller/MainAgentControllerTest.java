@@ -163,10 +163,10 @@ class MainAgentControllerTest {
         when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
         when(fragment.chunk()).thenReturn("说明");
         var fallback = NodeOutput.of("model_tool_fallback", "main_agent", new OverAllState(Map.of()), null);
-        var question = NodeOutput.of("ask_user", "main_agent", new OverAllState(Map.of("questionRequestId", "q", "questions", List.of())), null);
+        var question = NodeOutput.of("question", "main_agent", new OverAllState(Map.of("questionRequestId", "q", "questions", List.of())), null);
         when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.just(fragment, fallback, question, fragment));
         var events = new MainAgentController(agents, clarifications).stream("1", new MainAgentController.MessageRequest("查询")).filter(e -> !"run_snapshot".equals(e.event()) && !"run_failed".equals(e.event())).collectList().block();
-        assertThat(events).extracting(e -> e.event()).containsExactly("text_delta", "question", "text_delta");
+        assertThat(events).extracting(e -> e.event()).containsExactly("text_delta", "question", "text_delta", "run_completed");
         assertThat(((Map<?, ?>) events.get(0).data()).get("messageId")).isNotEqualTo(((Map<?, ?>) events.get(2).data()).get("messageId"));
     }
 
@@ -433,7 +433,7 @@ class MainAgentControllerTest {
         var fragment = mock(StreamingOutput.class);
         when(fragment.getOutputType()).thenReturn(OutputType.AGENT_MODEL_STREAMING);
         when(fragment.chunk()).thenReturn("文字");
-        var question = NodeOutput.of("ask_user", "main_agent", new OverAllState(Map.of("questionRequestId", "q", "questions", List.of())), null);
+        var question = NodeOutput.of("question", "main_agent", new OverAllState(Map.of("questionRequestId", "q", "questions", List.of())), null);
         when(agent.streamForCurrentUser(eq(1L), eq("查询"), anyString())).thenReturn(Flux.just(start, fragment, modelHook("文字"), question, fragment));
         var events = new MainAgentController(agents, clarifications).stream("1", new MainAgentController.MessageRequest("查询"))
                 .filter(e -> !"run_snapshot".equals(e.event()) && !"run_failed".equals(e.event())).collectList().block();

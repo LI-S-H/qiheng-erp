@@ -144,7 +144,7 @@ class RealQwenSqlAgentIT {
                     + "- id：商品编号\n- warehouse_id：仓库编号\n- quantity：库存数量\n- unit_snapshot：库存单位快照\n");
             var agent = new com.qiheng.erp.ai.config.MainAgentConfiguration().mainAgent(
                     planningModel, saver, new SqlQueryTool(service), new com.qiheng.erp.ai.dataset.tool.ReadDatasetTool(datasets),
-                    businessGraph, mock(com.qiheng.erp.ai.clarification.ClarificationService.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+                    businessGraph, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
             var messageStore = mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class);
             var mainService = new MainAgentService(agent, saver, conversations, users,
                     new com.qiheng.erp.ai.conversation.ConversationExecutionLock(redis),

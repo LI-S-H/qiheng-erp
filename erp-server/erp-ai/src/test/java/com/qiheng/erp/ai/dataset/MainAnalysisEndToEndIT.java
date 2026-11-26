@@ -3,7 +3,6 @@ package com.qiheng.erp.ai.dataset;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
-import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.config.MainAgentConfiguration;
 import com.qiheng.erp.ai.analysis.AnalysisTool;
 import com.qiheng.erp.ai.knowledge.graph.BusinessGraphProvider;
@@ -173,7 +172,7 @@ class MainAnalysisEndToEndIT {
                                     new SqlDataField(1, "quantity", "库存数量")),
                             "预览不含单位和安全库存"));
             var main = new MainAgentConfiguration().mainAgent(pro, saver, sql, new ReadDatasetTool(datasets),
-                    mock(BusinessGraphProvider.class), mock(ClarificationService.class), new ListDatasetsTool(datasets),
+                    mock(BusinessGraphProvider.class), new ListDatasetsTool(datasets),
                     new AnalysisResultTool(results), new AnalysisTool(agent));
             var mainConfig = RunnableConfig.builder().threadId("main-analysis-e2e-" + java.util.UUID.randomUUID())
                     .addMetadata(TrustedToolContextInterceptor.TRUSTED_CONTEXT, new AgentToolContext(1001, 2001)).build();

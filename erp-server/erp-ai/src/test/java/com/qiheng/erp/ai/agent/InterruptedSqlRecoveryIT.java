@@ -5,7 +5,6 @@ import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.alibaba.cloud.ai.graph.serializer.plain_text.jackson.SpringAIJacksonStateSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.qiheng.erp.ai.clarification.ClarificationService;
 import com.qiheng.erp.ai.config.MainAgentConfiguration;
 import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
@@ -62,7 +61,7 @@ class InterruptedSqlRecoveryIT {
             var sql = new SqlQueryTool(sqlService); var dataset = new ReadDatasetTool(mock(DatasetManager.class));
             var factory = new MainAgentConfiguration();
             var call = new AssistantMessage.ToolCall("old-sql", "function", "query_sql_data", "{\"requirement\":{\"goal\":\"库存\",\"dataRequirement\":\"FULL\"}}");
-            var clarification = new ClarificationService(conversations, users, new ObjectMapper());
+            
             var oldConfig = RunnableConfig.builder().threadId(thread).build();
             var oldCheckpoint = com.alibaba.cloud.ai.graph.checkpoint.Checkpoint.builder()
                     .id(UUID.randomUUID().toString()).nodeId("model").nextNodeId("_AGENT_TOOL_")
@@ -82,7 +81,7 @@ class InterruptedSqlRecoveryIT {
                 paired.set(result && input);
                 return Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage("继续处理")))));
             });
-            var next = factory.mainAgent(nextModel, saver, sql, dataset, graph, clarification, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
+            var next = factory.mainAgent(nextModel, saver, sql, dataset, graph, org.mockito.Mockito.mock(com.qiheng.erp.ai.dataset.tool.ListDatasetsTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.python.tool.AnalysisResultTool.class), org.mockito.Mockito.mock(com.qiheng.erp.ai.analysis.AnalysisTool.class));
             var main = new MainAgentService(next, saver, conversations, users, new ConversationExecutionLock(redis), mock(ConversationMessageStore.class), new ObjectMapper(), mock(AiAgentTraceMapper.class));
             assertThat(main.streamForUser(1L, conversation, "继续").collectList().block(Duration.ofSeconds(30))).isNotEmpty();
             assertThat(paired).isTrue();

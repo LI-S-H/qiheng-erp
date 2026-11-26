@@ -369,10 +369,6 @@ public class MainAgentController {
                         sink.next(event("text_completed", Map.of("messageId", textId, "text", text)));
                         if (textId.equals(messageId.get())) messageId.set(UUID.randomUUID().toString());
                     }
-                } else if ("ask_user".equals(node)) {
-                    var data = new LinkedHashMap<String, Object>(output.state().data());
-                    data.put("runId", runId.get());
-                    sink.next(event("question", data));
                 } else if ("question".equals(node)) {
                     var data = new LinkedHashMap<String, Object>(output.state().data());
                     data.put("runId", runId.get());

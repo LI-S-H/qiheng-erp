@@ -178,7 +178,8 @@ public class AiAssistantServiceImpl implements AiAssistantService {
                 String.valueOf(conversation.getId()),
                 conversation.getTitle(),
                 conversation.getDescription(),
-                updatedAt
+                updatedAt,
+                "WAITING_USER".equals(conversation.getLastRunStatus())
         );
     }
 
@@ -186,11 +187,15 @@ public class AiAssistantServiceImpl implements AiAssistantService {
      *  转换为会话详情。
      */
     private ConversationDetailVO toDetail(AiConversation conversation) {
+        String updatedAt = format(conversation.getLastMessageAt() == null ? conversation.getUpdateTime() : conversation.getLastMessageAt());
+        boolean awaitingUser = "WAITING_USER".equals(
+                messageMapper.latestRunStatus(conversation.getId(), conversation.getUserId()));
         return new ConversationDetailVO(
                 String.valueOf(conversation.getId()),
                 conversation.getTitle(),
                 conversation.getDescription(),
-                format(conversation.getLastMessageAt() == null ? conversation.getUpdateTime() : conversation.getLastMessageAt())
+                updatedAt,
+                awaitingUser
         );
     }
 

@@ -186,6 +186,8 @@ flowchart TD
 
 订单工具在进入 HITL 之前还会校验当前用户的业务权限：销售创建/修改需要 `sales:create`，提交/取消需要 `sales:manage`；采购对应 `purchase:create` / `purchase:manage`；退货按方向选择对应模块的创建或管理权限。缺少权限时只追加一条 forbidden 工具结果并返回模型节点，不生成确认卡，由模型向用户说明或改用其他有权限的操作。
 
+会话列表会回填 `awaitingUser`：最近一轮的 `run_status` 为 `WAITING_USER` 时返回 `true`，用于刷新后继续提示“待补充信息或待确认单据”；该状态只表示最近一轮停在人工处理，不代表未读。
+
 退货单复用同一套四个工具和图级人工确认：`prepare_return_order_draft` 创建、`update_return_order_draft` 修改、`submit_return_order` 提交审核、`cancel_return_order` 取消。工具只声明参数，业务写入仍由前端调用统一退货接口完成。AI 不提供审核和删除；审核会生成退货入库/出库工作单，必须由人在退货管理页操作。来源单和退货仓库创建后不可修改，选错时取消或删除后重新创建。销售退货可退数量按来源已出库量减其他有效退货单占用；采购退货还受原仓可用库存限制。编辑退货单时查询可退数量必须排除当前退货单自身占用。
 
 ### 单据人工确认链路（HITL）

@@ -36,9 +36,15 @@ public interface AiConversationMapper extends MPJBaseMapper<AiConversation> {
      * <p>刚建好、还没发过消息的会话按创建时间参与排序，否则会在列表里沉底。</p>
      */
     @Select("""
-        SELECT * FROM ai_conversation
-        WHERE user_id = #{userId} AND deleted = 0
-        ORDER BY COALESCE(last_message_at, create_time) DESC, id DESC
+        SELECT c.id, c.user_id, c.title, c.description, c.last_message_at, c.create_time,
+               c.update_time, c.deleted, c.version,
+               (SELECT m.run_status FROM ai_message m
+                 WHERE m.conversation_id = c.id AND m.user_id = c.user_id
+                   AND m.kind = 'USER_INPUT' AND m.deleted = 0
+                 ORDER BY m.seq DESC LIMIT 1) AS last_run_status
+        FROM ai_conversation c
+        WHERE c.user_id = #{userId} AND c.deleted = 0
+        ORDER BY COALESCE(c.last_message_at, c.create_time) DESC, c.id DESC
         LIMIT 50
         """)
     @Options(timeout = 30)
@@ -47,16 +53,22 @@ public interface AiConversationMapper extends MPJBaseMapper<AiConversation> {
     /** 按活动时间和 ID 倒序读取游标页；旧活动时间与消息时间不一致时取较新值。 */
     @Select("""
         <script>
-        SELECT * FROM (
+        SELECT history.id, history.user_id, history.title, history.description, history.create_time,
+               history.update_time, history.deleted, history.version, history.last_message_at,
+               (SELECT m.run_status FROM ai_message m
+                 WHERE m.conversation_id = history.id AND m.user_id = history.user_id
+                   AND m.kind = 'USER_INPUT' AND m.deleted = 0
+                 ORDER BY m.seq DESC LIMIT 1) AS last_run_status
+        FROM (
           SELECT c.id, c.user_id, c.title, c.description, c.create_time, c.update_time, c.deleted, c.version,
                  GREATEST(COALESCE(c.last_message_at, c.create_time), COALESCE((SELECT MAX(m.create_time) FROM ai_message m
                    WHERE m.conversation_id = c.id AND m.deleted = 0), c.create_time)) AS last_message_at
           FROM ai_conversation c WHERE c.user_id = #{userId} AND c.deleted = 0
         ) history
         <if test="beforeTime != null">
-          WHERE last_message_at &lt; #{beforeTime} OR (last_message_at = #{beforeTime} AND id &lt; #{beforeId})
+          WHERE history.last_message_at &lt; #{beforeTime} OR (history.last_message_at = #{beforeTime} AND history.id &lt; #{beforeId})
         </if>
-        ORDER BY last_message_at DESC, id DESC LIMIT 51
+        ORDER BY history.last_message_at DESC, history.id DESC LIMIT 51
         </script>
         """)
     List<AiConversation> selectPage(@Param("userId") long userId, @Param("beforeTime") LocalDateTime beforeTime,

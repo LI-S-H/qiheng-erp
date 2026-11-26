@@ -263,8 +263,8 @@ public class MainAgentConfiguration {
     public MainAgentService mainAgentService(ReactAgent mainAgent, RedisSaver saver, AiConversationMapper conversations,
                                              LoginUserService users, ConversationExecutionLock locks,
                                              ConversationMessageStore messages, ObjectMapper mapper,
-                                             AiAgentTraceMapper traceMapper) {
-        return new MainAgentService(mainAgent, saver, conversations, users, locks, messages, mapper, traceMapper);
+                                             AiAgentTraceMapper traceMapper, IReturnOrderService returnOrders) {
+        return new MainAgentService(mainAgent, saver, conversations, users, locks, messages, mapper, traceMapper, returnOrders);
     }
 
     /**

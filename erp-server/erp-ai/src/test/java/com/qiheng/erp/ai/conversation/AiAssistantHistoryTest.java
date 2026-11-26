@@ -55,7 +55,9 @@ class AiAssistantHistoryTest {
 
         assertThat(detail.conversationId()).isEqualTo("10");
         assertThat(detail.title()).isEqualTo("补货分析");
-        verifyNoInteractions(messages, locks, transactions);
+        assertThat(detail.awaitingUser()).isFalse();
+        verify(messages).latestRunStatus(10L, 1L);
+        verifyNoInteractions(locks, transactions);
     }
 
     /** 新建会话只创建会话记录，不因规划停用而失败。 */
@@ -72,7 +74,8 @@ class AiAssistantHistoryTest {
 
         assertThat(detail.conversationId()).isEqualTo("11");
         verify(conversations).insert(any(AiConversation.class));
-        verifyNoInteractions(messages, locks);
+        verify(messages).latestRunStatus(11L, 1L);
+        verifyNoInteractions(locks);
     }
 
     /** 旧计划、需求和澄清消息仍按保存时的类型从历史分页中读取。 */

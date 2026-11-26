@@ -5212,12 +5212,13 @@ components:
 
     AiConversationSummary:
       type: object
-      required: [conversationId, title, description, updatedAt]
+      required: [conversationId, title, description, updatedAt, awaitingUser]
       properties:
         conversationId: { type: string, description: 会话 ID }
         title: { type: string, description: 会话标题；默认「新的经营会话」，发出第一条需求后自动改为需求前 20 个字 }
         description: { type: string, description: 会话摘要 }
         updatedAt: { type: string, description: 最近消息时间；还没有消息时取创建时间 }
+        awaitingUser: { type: boolean, description: 最近一轮是否停在等待用户处理，包括补充信息和采购/销售/退货单确认 }
 
     AiConversationCursorPage:
       type: object
@@ -5230,13 +5231,14 @@ components:
 
     AiConversationDetail:
       type: object
-      required: [conversationId, title, description, updatedAt]
+      required: [conversationId, title, description, updatedAt, awaitingUser]
       description: 当前用户的会话基本信息，运行期间状态通过本轮实时事件提供。
       properties:
         conversationId: { type: string, description: 会话 ID }
         title: { type: string, description: 会话标题 }
         description: { type: string, description: 会话摘要 }
         updatedAt: { type: string, description: 最近更新时间 }
+        awaitingUser: { type: boolean, description: 最近一轮是否停在等待用户处理，包括补充信息和采购/销售/退货单确认 }
 
     AiReportCard:
       type: object

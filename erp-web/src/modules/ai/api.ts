@@ -34,6 +34,7 @@ function normalizeConversationSummary(value: unknown): AiConversationSummary {
     title: String(item.title || ''),
     description: String(item.description || ''),
     updatedAt: String(item.updatedAt || ''),
+    awaitingUser: item.awaitingUser === true,
   };
 }
 

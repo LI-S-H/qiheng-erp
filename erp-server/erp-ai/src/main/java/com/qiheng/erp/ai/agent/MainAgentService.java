@@ -28,6 +28,8 @@ import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.qiheng.erp.ai.sql.scope.PermissionCodes;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
+import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
+import com.qiheng.erp.returnorder.service.IReturnOrderService;
 import com.qiheng.erp.security.context.UserContext;
 import com.qiheng.erp.security.service.LoginUserService;
 import org.redisson.api.RLock;
@@ -65,6 +67,7 @@ public final class MainAgentService {
     private final ConversationMessageStore messageStore;
     private final ObjectMapper mapper;
     private final AiAgentTraceMapper traceMapper;
+    private final IReturnOrderService returnOrders;
     private final Map<String, RuntimeSnapshot> runs = new ConcurrentHashMap<>();
     private static final AtomicLong LOCK_OWNER = new AtomicLong(UUID.randomUUID().getMostSignificantBits());
 
@@ -180,6 +183,25 @@ public final class MainAgentService {
     public MainAgentService(ReactAgent agent, RedisSaver saver, AiConversationMapper conversations, LoginUserService users,
                             ConversationExecutionLock locks, ConversationMessageStore messageStore,
                             ObjectMapper mapper, AiAgentTraceMapper traceMapper) {
+        this(agent, saver, conversations, users, locks, messageStore, mapper, traceMapper, null);
+    }
+
+    /**
+     * 注入主智能体图、检查点、会话存储与退货单读取能力。
+     *
+     * @param agent 主智能体图
+     * @param saver 检查点存储
+     * @param conversations 会话数据访问
+     * @param users 用户数据访问
+     * @param locks 会话执行锁
+     * @param messageStore 消息存储
+     * @param mapper JSON 序列化组件
+     * @param traceMapper 智能体流水写入通道
+     * @param returnOrders 退货单读取服务；用于在动作事件中补齐退货方向
+     */
+    public MainAgentService(ReactAgent agent, RedisSaver saver, AiConversationMapper conversations, LoginUserService users,
+                            ConversationExecutionLock locks, ConversationMessageStore messageStore,
+                            ObjectMapper mapper, AiAgentTraceMapper traceMapper, IReturnOrderService returnOrders) {
         this.agent = agent;
         this.saver = saver;
         this.conversations = conversations;
@@ -188,6 +210,7 @@ public final class MainAgentService {
         this.messageStore = messageStore;
         this.mapper = mapper;
         this.traceMapper = traceMapper;
+        this.returnOrders = returnOrders;
     }
 
     /**
@@ -890,9 +913,11 @@ public final class MainAgentService {
                 content.put("action", "submit_return_order".equals(call.name()) ? "SUBMIT" : "CANCEL");
                 content.put("orderType", "RETURN");
                 var arguments = parseArguments(call.arguments());
-                content.put("returnOrderId", text(arguments, "returnOrderId"));
+                String returnOrderId = text(arguments, "returnOrderId");
+                content.put("returnOrderId", returnOrderId);
                 content.put("orderNo", text(arguments, "orderNo"));
                 content.put("reason", text(arguments, "reason"));
+                putReturnType(content, returnOrderId);
             }
             case "ask_user" -> {
                 event = "question";
@@ -931,6 +956,21 @@ public final class MainAgentService {
         }
         recorder.traceToolCall(call.id(), call.name(), call.arguments());
         sink.next(NodeOutput.of(event, "main_agent", new OverAllState(content), null));
+    }
+
+    /** 动作事件补齐退货方向，避免提醒退化为通用“退货单”。 */
+    private void putReturnType(Map<String, Object> content, String returnOrderId) {
+        if (returnOrders == null || returnOrderId == null || returnOrderId.isBlank()) {
+            return;
+        }
+        try {
+            ReturnOrderDetailVo detail = returnOrders.getDetail(Long.parseLong(returnOrderId.trim()));
+            if (detail != null && detail.getReturnType() != null && !detail.getReturnType().isBlank()) {
+                content.put("returnType", detail.getReturnType());
+            }
+        } catch (RuntimeException error) {
+            log.warn("退货动作读取退货方向失败 returnOrderId={}", returnOrderId, error);
+        }
     }
 
     /** 待确认工具的中文动作名。 */

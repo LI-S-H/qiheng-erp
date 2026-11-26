@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * @param title          会话标题
  * @param description    会话摘要
  * @param updatedAt      最近更新时间
+ * @param awaitingUser   最近一轮是否停在等待用户处理
  * @author Li
  * @since 2026-10-15
  */
@@ -24,6 +25,9 @@ public record ConversationSummaryVO(
         String description,
 
         @Schema(description = "最近更新时间")
-        String updatedAt
+        String updatedAt,
+
+        @Schema(description = "最近一轮是否停在等待用户处理，包括补充信息和单据确认")
+        boolean awaitingUser
 ) {
 }

@@ -1,25 +1,26 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onScopeDispose, reactive, ref, watch } from 'vue';
+import { computed, markRaw, nextTick, onBeforeUnmount, onScopeDispose, reactive, ref, watch } from 'vue';
 import '@/styles/ai-pilot.css';
 import { useElementBounding, useMediaQuery } from '@vueuse/core';
 import { useRoute, useRouter } from 'vue-router';
+import { toast } from 'vue-sonner';
 import {
   ArrowRight,
-  CircleCheck,
   MessageSquare,
   Home,
   LoaderCircle,
   Menu,
   TriangleAlert,
-  X,
 } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Toaster } from '@/components/ui/sonner';
 import { getApiErrorMessage } from '@/api/http';
 import { useAuthStore } from '@/modules/auth/stores/authStore';
 import AiClarificationForm from '../clarification/AiClarificationForm.vue';
 import AiAnalysisPanel from '../components/AiAnalysisPanel.vue';
 import AiReportProcessPanel from '../components/AiReportProcessPanel.vue';
+import AiRunNoticeToast from '../components/AiRunNoticeToast.vue';
 import { getAiConversationReports } from '../api';
 import { normalizeReportCard, normalizeReportStep, type AiReportCard } from '../contracts/report-contract';
 import AiComposerDock from '../components/AiComposerDock.vue';
@@ -73,8 +74,12 @@ const warning = runtimeField('warning');
 /** 会话读取失败回退提示；此时可能还没有 activeId，不能写运行时字段。 */
 const conversationNotice = ref('');
 const conversationLoadFailed = ref(false);
-/** 非当前会话的输出完成提示；只在 AI 助手页面内生效。 */
-const backgroundCompletion = ref<{ id: string; title: string } | null>(null);
+/** AI 提醒使用独立 toaster，避免和全局提示互相污染。 */
+const AI_NOTICE_TOASTER_ID = 'ai-run-notices';
+const AiRunNoticeComponent = markRaw(AiRunNoticeToast);
+/** 会话维度已登记的待处理提醒，用于切到该会话或状态结束时清理。 */
+const pendingNoticeIds = new Map<string, Set<string>>();
+const activeNoticeIds = new Map<string, Set<string>>();
 const querying = runtimeField('querying');
 const watching = runtimeField('watching');
 const creating = ref(false);
@@ -163,6 +168,7 @@ function openDraftDialog() {
 
 /** 处置完成后收起确认页，并接上采购单的恢复运行。 */
 function handleDraftSettled(context: { conversationId: string; callId: string }) {
+  dismissPendingNotice(context.conversationId, context.callId);
   void finishOrderTransition('draft', context, 'PURCHASE');
 }
 
@@ -190,6 +196,7 @@ function openActionDialog() {
 
 /** 动作处置完成后收起确认页，并接上采购单的恢复运行。 */
 function handleActionSettled(context: { conversationId: string; callId: string }) {
+  dismissPendingNotice(context.conversationId, context.callId);
   void finishOrderTransition('action', context, 'PURCHASE');
 }
 /** 等待用户处置的销售草稿；与采购草稿互斥，同一时刻只会有一份。 */
@@ -449,6 +456,7 @@ async function finishOrderTransition(kind: 'draft' | 'action',
 }
 
 function handleSalesDraftSettled(context: { conversationId: string; callId: string }) {
+  dismissPendingNotice(context.conversationId, context.callId);
   void finishOrderTransition('draft', context, 'SALES');
 }
 
@@ -492,6 +500,7 @@ function openSalesActionDialog() {
 
 /** 销售动作处置完成后收起确认页并清除等待状态。 */
 function handleSalesActionSettled(context: { conversationId: string; callId: string }) {
+  dismissPendingNotice(context.conversationId, context.callId);
   void finishOrderTransition('action', context, 'SALES');
 }
 
@@ -555,6 +564,7 @@ function clearBusinessPending(state: ConversationRun, keep: PendingBusinessKey) 
 
 /** 退货确认完成后收起弹窗，并接上后端已启动的恢复运行。 */
 async function finishReturnTransition(kind: 'draft' | 'action', context: { conversationId: string; callId: string }) {
+  dismissPendingNotice(context.conversationId, context.callId);
   const id = context.conversationId;
   const userId = auth.user?.userId;
   const callId = context.callId;
@@ -620,14 +630,141 @@ let disposed = false;
 let lastInitKey = '';
 const refreshes = new Map<string, Promise<void>>();
 
-const busy = computed(() => creating.value || ((querying.value || watching.value) && !waiting.value));
+/** 是否正在输出：运行状态优先，只有状态未知时才回退到连接状态。 */
+function isRunActive(state: ConversationRun) {
+  if (state.runStatus === 'RUNNING') return true;
+  if (state.runStatus === 'WAITING_USER' || state.runStatus === 'COMPLETED'
+      || state.runStatus === 'FAILED' || state.runStatus === 'INTERRUPTED') {
+    return false;
+  }
+  return state.querying || state.watching;
+}
+const runActive = computed(() => isRunActive(currentRun.value));
+const busy = computed(() => creating.value || ((querying.value || watching.value) && currentRun.value.runStatus !== 'WAITING_USER'));
 const runningConversationIds = computed(() => Array.from(runs.states.entries())
-  .filter(([id, state]) => id !== 'new' && (state.querying || state.watching || state.runStatus === 'RUNNING'))
+  .filter(([id, state]) => id !== 'new' && isRunActive(state))
   .map(([id]) => id));
 /** 侧栏未读点：最近回复晚于本机已读时间，当前打开的会话不计入。 */
 const unreadConversationIds = computed(() => store.conversations
   .filter(item => store.isUnread(item.conversationId))
   .map(item => item.conversationId));
+/** 侧栏待处理点：服务端状态与本地暂停状态任一成立即显示。 */
+const pendingConversationIds = computed(() => store.conversations
+  .filter(item => item.awaitingUser || runs.states.get(item.conversationId)?.runStatus === 'WAITING_USER')
+  .map(item => item.conversationId));
+
+/** 侧栏按会话记录提醒，便于切换会话或本轮结束时统一收起。 */
+function trackNotice(conversationId: string, toastId: string) {
+  const ids = activeNoticeIds.get(conversationId) ?? new Set<string>();
+  ids.add(toastId);
+  activeNoticeIds.set(conversationId, ids);
+}
+
+function untrackNotice(conversationId: string, toastId: string) {
+  const ids = activeNoticeIds.get(conversationId);
+  if (!ids) return;
+  ids.delete(toastId);
+  if (!ids.size) activeNoticeIds.delete(conversationId);
+}
+
+function conversationTitle(conversationId: string) {
+  return store.conversations.find(item => item.conversationId === conversationId)?.title || '会话';
+}
+
+/** 同步列表里该会话的待处理状态，避免等待列表接口刷新时的视觉回跳。 */
+function setConversationAwaiting(conversationId: string, awaiting: boolean) {
+  const item = store.conversations.find(row => row.conversationId === conversationId);
+  if (item && item.awaitingUser !== awaiting) item.awaitingUser = awaiting;
+}
+
+/** 关闭提醒时同步两套记录，避免重连重放同一个 requestId 又弹一次。 */
+function forgetNotice(conversationId: string, toastId: string) {
+  untrackNotice(conversationId, toastId);
+  const requestIds = pendingNoticeIds.get(conversationId);
+  if (!requestIds) return;
+  for (const requestId of [...requestIds]) {
+    if (`ai-pending-${conversationId}-${requestId}` === toastId) {
+      requestIds.delete(requestId);
+    }
+  }
+  if (!requestIds.size) pendingNoticeIds.delete(conversationId);
+}
+
+/** 展示提醒；待处理常驻，输出完成 6 秒后自动收起。 */
+function showRunNotice(conversationId: string, toastId: string, kind: 'pending' | 'completed', action: string, hint: string) {
+  trackNotice(conversationId, toastId);
+  toast.custom(AiRunNoticeComponent, {
+    id: toastId,
+    toasterId: AI_NOTICE_TOASTER_ID,
+    duration: kind === 'pending' ? Infinity : 6000,
+    onAutoClose: () => forgetNotice(conversationId, toastId),
+    onDismiss: () => forgetNotice(conversationId, toastId),
+    componentProps: {
+      kind,
+      title: `「${conversationTitle(conversationId)}」${action}`,
+      hint,
+      onOpen: () => {
+        toast.dismiss(toastId);
+        untrackNotice(conversationId, toastId);
+        void selectConversation(conversationId);
+      },
+    },
+  });
+}
+
+/** 后台会话出现待办时提醒；正在看的会话已经有表单，不重复弹。 */
+function showPendingNotice(conversationId: string, requestId: string, action: string, hint = '点击查看并确认') {
+  if (!requestId) return;
+  setConversationAwaiting(conversationId, true);
+  if (conversationId === store.activeId) return;
+  const requestIds = pendingNoticeIds.get(conversationId) ?? new Set<string>();
+  requestIds.add(requestId);
+  pendingNoticeIds.set(conversationId, requestIds);
+  showRunNotice(conversationId, `ai-pending-${conversationId}-${requestId}`, 'pending', action, hint);
+}
+
+function dismissPendingNotice(conversationId: string, requestId: string) {
+  if (!requestId) return;
+  setConversationAwaiting(conversationId, false);
+  const toastId = `ai-pending-${conversationId}-${requestId}`;
+  const requestIds = pendingNoticeIds.get(conversationId);
+  requestIds?.delete(requestId);
+  if (requestIds && !requestIds.size) pendingNoticeIds.delete(conversationId);
+  toast.dismiss(toastId);
+  untrackNotice(conversationId, toastId);
+}
+
+/** 本轮已经结束或用户已打开会话时，收起该会话的待处理提醒。 */
+function dismissPendingNotices(conversationId: string) {
+  const requestIds = pendingNoticeIds.get(conversationId);
+  if (!requestIds) return;
+  requestIds.forEach(requestId => dismissPendingNotice(conversationId, requestId));
+}
+
+function dismissCompletedNotices(conversationId: string) {
+  const ids = activeNoticeIds.get(conversationId);
+  if (!ids) return;
+  for (const toastId of [...ids]) {
+    if (!toastId.startsWith('ai-completed-')) continue;
+    toast.dismiss(toastId);
+    untrackNotice(conversationId, toastId);
+  }
+}
+
+/** 待处理类型对应到卡片文案，四类单据和追问各自独立。 */
+function returnOrderName(returnType?: string) {
+  if (returnType === 'SALES_RETURN') return '销售退货单';
+  if (returnType === 'PURCHASE_RETURN') return '采购退货单';
+  return '退货单';
+}
+
+function pendingDraftText(returnType?: string) {
+  return `等你确认${returnOrderName(returnType)}草稿`;
+}
+
+function pendingActionText(orderName: string, action: string) {
+  return action === 'CANCEL' ? `等你确认取消${orderName}` : `等你确认提交${orderName}`;
+}
 watch(
   () => [store.activeId, store.messages[store.messages.length - 1]?.createdAt] as const,
   () => {
@@ -979,7 +1116,7 @@ const statusLabel = computed(() => {
   if (pendingReturnAction.value) {
     return pendingReturnAction.value.action === 'SUBMIT' ? '等待你确认提交退货审核' : '等待你确认取消退货单';
   }
-  if (busy.value) {
+  if (runActive.value) {
     return steps.value.find((step) => step.status === 'running')?.label || '正在思考';
   }
   return (
@@ -1376,6 +1513,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.pendingClarification = { questionRequestId: data.questionRequestId, toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined, questions: data.questions as ClarificationQuestion[] };
       const callId = typeof data.toolCallId === 'string' ? data.toolCallId : data.questionRequestId;
+      showPendingNotice(id, data.questionRequestId, '需要你补充信息', '点击继续回答');
       if (!state.liveItems.some(item => item.type === 'clarification' && item.id === callId)) {
         state.liveItems.push({ type: 'clarification', id: callId, questions: state.pendingClarification.questions });
       }
@@ -1389,6 +1527,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       break;
     }
     case 'question_answered':
+      dismissPendingNotice(id, String(data.questionRequestId || ''));
       if (state.pendingClarification?.questionRequestId === data.questionRequestId) {
         state.pendingClarification = null;
         state.runStatus = 'RUNNING';
@@ -1401,6 +1540,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.pendingDraft = draft;
       clearBusinessPending(state, 'pendingDraft');
+      showPendingNotice(id, draft.draftRequestId, '等你确认采购单草稿');
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1408,6 +1548,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       break;
     }
     case 'purchase_draft_resolved':
+      dismissPendingNotice(id, String(data.draftRequestId || ''));
       if (state.pendingDraft?.draftRequestId === data.draftRequestId) {
         state.pendingDraft = null;
         state.runStatus = 'RUNNING';
@@ -1420,6 +1561,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.pendingAction = action;
       clearBusinessPending(state, 'pendingAction');
+      showPendingNotice(id, action.actionRequestId, pendingActionText('采购单', action.action));
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1427,6 +1569,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       break;
     }
     case 'purchase_action_resolved':
+      dismissPendingNotice(id, String(data.actionRequestId || ''));
       if (state.pendingAction?.actionRequestId === data.actionRequestId) {
         state.pendingAction = null;
         state.runStatus = 'RUNNING';
@@ -1439,6 +1582,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.pendingSalesDraft = draft;
       clearBusinessPending(state, 'pendingSalesDraft');
+      showPendingNotice(id, draft.draftRequestId, '等你确认销售单草稿');
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1446,6 +1590,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       break;
     }
     case 'sales_order_draft_resolved':
+      dismissPendingNotice(id, String(data.draftRequestId || ''));
       if (state.pendingSalesDraft?.draftRequestId === data.draftRequestId) {
         state.pendingSalesDraft = null;
         state.runStatus = 'RUNNING';
@@ -1458,6 +1603,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.pendingSalesAction = action;
       clearBusinessPending(state, 'pendingSalesAction');
+      showPendingNotice(id, action.actionRequestId, pendingActionText('销售单', action.action));
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1465,6 +1611,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       break;
     }
     case 'sales_order_action_resolved':
+      dismissPendingNotice(id, String(data.actionRequestId || ''));
       if (state.pendingSalesAction?.actionRequestId === data.actionRequestId) {
         state.pendingSalesAction = null;
         state.runStatus = 'RUNNING';
@@ -1477,6 +1624,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.pendingReturnDraft = draft;
       clearBusinessPending(state, 'pendingReturnDraft');
+      showPendingNotice(id, draft.draftRequestId, pendingDraftText(draft.draft.returnType));
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1490,6 +1638,7 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       }
       state.pendingReturnAction = action;
       clearBusinessPending(state, 'pendingReturnAction');
+      showPendingNotice(id, action.actionRequestId, pendingActionText(returnOrderName(action.returnType), action.action));
       state.runStatus = 'WAITING_USER';
       state.steps = [];
       state.settleSuccess?.();
@@ -1514,9 +1663,11 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       clearFailureHold(state);
       state.settleSuccess?.();
       state.settleSuccess = null;
+      dismissPendingNotices(id);
+      setConversationAwaiting(id, false);
       if (id !== store.activeId) {
-        const summary = store.conversations.find(item => item.conversationId === id);
-        backgroundCompletion.value = { id, title: summary?.title || '会话' };
+        const noticeKey = state.runId || state.finalMessageId || String(Date.now());
+        showRunNotice(id, `ai-completed-${id}-${noticeKey}`, 'completed', '输出完成', '点击查看会话');
       }
       break;
     case 'run_failed':
@@ -1530,6 +1681,8 @@ function handleMainEvent(state: ConversationRun, valid: () => boolean, id: strin
       state.error = String(data.message || '任务执行失败');
       state.failureCode = String(data.code || '');
       state.steps = [];
+      dismissPendingNotices(id);
+      setConversationAwaiting(id, false);
       holdTransientFailure(state);
       break;
   }
@@ -1757,6 +1910,7 @@ async function run(answer?: string) {
         answerText.push(note);
       }
       await submitMainAgentAnswer(conversationId, question.questionRequestId, answers, note);
+      dismissPendingNotice(conversationId, question.questionRequestId);
       if (answerRun.error === previousError) {
         answerRun.error = '';
       }
@@ -1999,15 +2153,15 @@ async function selectConversation(id: string) {
   return openConversation(fallback.conversationId);
 }
 
-/** 点击后台完成提示，直接切到对应会话。 */
-async function openBackgroundCompletion() {
-  const target = backgroundCompletion.value;
-  if (!target) return;
-  backgroundCompletion.value = null;
-  await selectConversation(target.id);
-}
+/** 用户打开某个会话时，只收起该会话的完成提醒；待处理提醒保留到真正处理完。 */
 watch(() => store.activeId, id => {
-  if (id && backgroundCompletion.value?.id === id) backgroundCompletion.value = null;
+  if (id) dismissCompletedNotices(id);
+});
+
+onScopeDispose(() => {
+  activeNoticeIds.forEach(ids => ids.forEach(toastId => toast.dismiss(toastId)));
+  activeNoticeIds.clear();
+  pendingNoticeIds.clear();
 });
 
 async function createConversation() {
@@ -2175,6 +2329,7 @@ onBeforeUnmount(() => {
       :conversations="store.conversations"
       :active-id="store.activeId"
       :unread-ids="unreadConversationIds"
+      :pending-ids="pendingConversationIds"
       :loading="store.listLoading"
       :busy="creating || switching"
       :running-ids="runningConversationIds"
@@ -2227,8 +2382,8 @@ onBeforeUnmount(() => {
           <h1>{{ store.activeSummary?.title || '智能经营助手' }}</h1>
         </div>
         <div class="workspace-actions">
-          <span class="task-status" :class="{ 'agent-running-status': busy || switching }" role="status"
-            ><LoaderCircle v-if="busy || switching" class="size-3.5 animate-spin" /><span
+          <span class="task-status" :class="{ 'agent-running-status': runActive || switching }" role="status"
+            ><LoaderCircle v-if="runActive || switching" class="size-3.5 animate-spin" /><span
               v-else
               class="status-dot"
             />{{ statusLabel }}</span>
@@ -2416,18 +2571,16 @@ onBeforeUnmount(() => {
             </div>
         </template>
       </AiComposerDock>
-      <div v-if="backgroundCompletion" class="ai-completion-toast" data-ai-completion-toast role="status">
-        <button type="button" class="ai-completion-toast__main" @click="openBackgroundCompletion">
-          <span class="ai-completion-toast__icon" aria-hidden="true"><CircleCheck class="size-4" /></span>
-          <span class="ai-completion-toast__text">
-            <strong>「{{ backgroundCompletion.title }}」输出完成</strong>
-            <span>点击查看会话</span>
-          </span>
-        </button>
-        <button type="button" class="ai-completion-toast__close" aria-label="关闭完成提示" @click="backgroundCompletion = null">
-          <X class="size-3.5" aria-hidden="true" />
-        </button>
-      </div>
+      <Toaster
+        :id="AI_NOTICE_TOASTER_ID"
+        class="ai-notice-toaster"
+        position="top-right"
+        :duration="6000"
+        :gap="10"
+        :visible-toasts="3"
+        :close-button="false"
+        :style="{ '--width': '336px' }"
+      />
     </main>
     <template v-if="!small && (showAnalysisPanel || reportProcess)">
       <div
@@ -2464,6 +2617,8 @@ onBeforeUnmount(() => {
         ><AiConversationSidebar
           :conversations="store.conversations"
           :active-id="store.activeId"
+          :unread-ids="unreadConversationIds"
+          :pending-ids="pendingConversationIds"
           :loading="store.listLoading"
           :busy="creating || switching"
           :running-ids="runningConversationIds"
@@ -2833,95 +2988,29 @@ h1 {
 .request-warning {
   color: var(--muted-foreground);
 }
-.ai-completion-toast {
+/* 提醒定位在会话区右上角；折叠、悬停展开和进出动画由 sonner 统一处理。 */
+:deep(.ai-notice-toaster[data-sonner-toaster]) {
+  --width: 336px;
   position: absolute;
   top: 68px;
   right: 20px;
-  z-index: 70;
-  display: flex;
-  align-items: flex-start;
-  width: 336px;
-  max-width: calc(100% - 40px);
-  border: 1px solid #e3e9f2;
-  border-radius: 10px;
-  background: #fff;
-  color: #34465e;
-  box-shadow: 0 10px 28px #283c5817, 0 2px 6px #283c580d;
-  animation: ai-completion-toast-in 200ms cubic-bezier(.22, .61, .36, 1);
+  bottom: auto;
+  left: auto;
 }
-.ai-completion-toast__main {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 11px 6px 11px 12px;
-  border: 0;
-  border-radius: 10px 0 0 10px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 160ms ease;
-}
-.ai-completion-toast__icon {
-  display: grid;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 7px;
-  background: #e6f3ee;
-  color: #357861;
-}
-.ai-completion-toast__text {
-  display: grid;
-  flex: 1;
-  gap: 1px;
-  min-width: 0;
-}
-.ai-completion-toast__text strong {
-  overflow: hidden;
-  color: #34465e;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ai-completion-toast__text span {
-  color: #8a98aa;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.ai-completion-toast__main:hover { background: #f7f9fc; }
-.ai-completion-toast__close {
-  display: grid;
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
-  margin: 8px 8px 0 0;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #9aa9be;
-  cursor: pointer;
-}
-.ai-completion-toast__close:hover { background: #eef3fa; color: #5677a3; }
-.ai-completion-toast :is(button):focus-visible {
-  outline: 1px solid #b6c2d2;
-  outline-offset: -1px;
-}
-@keyframes ai-completion-toast-in {
-  from { opacity: 0; transform: translateX(8px); }
-  to { opacity: 1; transform: none; }
+:deep(.ai-notice-toaster[data-sonner-toaster] [data-sonner-toast]) {
+  width: var(--width);
 }
 @media (max-width: 640px) {
-  .ai-completion-toast { top: 64px; right: 12px; left: 12px; width: auto; max-width: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ai-completion-toast { animation: none; }
+  :deep(.ai-notice-toaster[data-sonner-toaster]) {
+    top: 64px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    --width: auto;
+  }
+  :deep(.ai-notice-toaster[data-sonner-toaster] [data-sonner-toast]) {
+    width: 100%;
+  }
 }
 .state-note {
   color: var(--muted-foreground);

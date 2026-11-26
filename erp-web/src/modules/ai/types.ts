@@ -41,6 +41,8 @@ export interface AiConversationSummary {
   title: string;
   description: string;
   updatedAt: string;
+  /** 最近一轮是否停在等待用户处理；刷新列表后用于恢复待处理标记。 */
+  awaitingUser: boolean;
 }
 
 export type AiRunStatus = 'IDLE' | 'RUNNING' | 'WAITING_USER' | 'COMPLETED' | 'FAILED' | 'INTERRUPTED';

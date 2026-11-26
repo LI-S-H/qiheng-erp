@@ -53,6 +53,11 @@ public class AiConversation implements Serializable {
     @TableField("last_message_at")
     private LocalDateTime lastMessageAt;
 
+    /** 最近一轮的运行状态，由会话列表查询回填，不是会话表字段。 */
+    @Schema(description = "最近一轮运行状态；仅列表查询回填")
+    @TableField(exist = false)
+    private String lastRunStatus;
+
     @Schema(description = "创建时间")
     @TableField("create_time")
     private LocalDateTime createTime;

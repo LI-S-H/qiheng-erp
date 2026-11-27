@@ -5,6 +5,7 @@ import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.common.exception.ServiceUnavailableBizException;
 import com.qiheng.erp.common.mq.SystemExceptionMqPublisher;
 import com.qiheng.erp.common.result.Result;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.RequiredArgsConstructor;
@@ -16,9 +17,14 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import java.io.IOException;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -132,6 +138,35 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * SSE 客户端断开。
+     *
+     * <p>浏览器、网关或代理关闭连接后，服务端继续写事件会抛出该异常；
+     * 这属于客户端状态，不是系统故障，记录 DEBUG 即可，不能写入异常中心。</p>
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException e) {
+        log.debug("SSE 客户端已断开: uri={}, message={}", currentRequestUri(), e.getMessage());
+    }
+
+    /**
+     * IO 异常。
+     *
+     * <p>仅把 SSE 接口上的 broken pipe / 客户端中止连接视为正常断开；
+     * 其他 IO 异常仍按未知异常上报，避免掩盖真正的服务端故障。</p>
+     */
+    @ExceptionHandler(IOException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public Result<Void> handleIOException(IOException e) {
+        if (isSseClientDisconnect(e)) {
+            log.debug("SSE 客户端已断开: uri={}, message={}", currentRequestUri(), e.getMessage());
+            return null;
+        }
+        log.error("IO 异常", e);
+        systemExceptionMqPublisher.publishSystemError(e);
+        return Result.fail(ErrorCode.UNKNOWN.getCode(), ErrorCode.UNKNOWN.getMessage());
+    }
+
+    /**
      * 未知异常
      *
      * <p>除原有日志与响应外，异步投递系统异常消息（发送失败由 Publisher 内部吞掉，
@@ -143,5 +178,48 @@ public class GlobalExceptionHandler {
         log.error("未知异常", e);
         systemExceptionMqPublisher.publishSystemError(e);
         return Result.fail(ErrorCode.UNKNOWN.getCode(), ErrorCode.UNKNOWN.getMessage());
+    }
+
+    /** 判断是否为 SSE 客户端主动断开，避免把正常断连写入系统异常表。 */
+    private boolean isSseClientDisconnect(Throwable error) {
+        if (error instanceof AsyncRequestNotUsableException) {
+            return true;
+        }
+        String message = error.getMessage() == null ? "" : error.getMessage().toLowerCase(Locale.ROOT);
+        boolean aborted = message.contains("broken pipe")
+                || message.contains("你的主机中的软件中止了一个已建立的连接")
+                || message.contains("connection reset by peer")
+                || message.contains("an established connection was aborted")
+                || error.getClass().getName().contains("ClientAbortException");
+        return aborted && isSseRequest();
+    }
+
+    /** 只有 AI 的事件流接口才按客户端断开处理。 */
+    private boolean isSseRequest() {
+        HttpServletRequest request = currentRequest();
+        if (request == null) {
+            return false;
+        }
+        String uri = request.getRequestURI();
+        return uri.contains("/ai/assistant/conversations/")
+                && (uri.endsWith("/events") || uri.endsWith("/messages/stream"));
+    }
+
+    /** 当前请求的“方法 URI”，用于 DEBUG 定位。 */
+    private String currentRequestUri() {
+        HttpServletRequest request = currentRequest();
+        return request == null ? "" : request.getMethod() + " " + request.getRequestURI();
+    }
+
+    /** 获取当前 HTTP 请求；异步或非 HTTP 线程返回 null。 */
+    private HttpServletRequest currentRequest() {
+        try {
+            if (RequestContextHolder.currentRequestAttributes() instanceof ServletRequestAttributes attributes) {
+                return attributes.getRequest();
+            }
+        } catch (IllegalStateException e) {
+            // 无请求上下文，按非 SSE 请求处理
+        }
+        return null;
     }
 }

@@ -292,6 +292,7 @@ paths:
       description: |
         优先返回本进程内任务快照，包括 runId、status、items、question、eventSeq 和 snapshotTruncated。
         没有运行对象时根据最近用户消息返回状态；进程已失去运行对象的未完成任务返回 INTERRUPTED。
+        会话不存在或已删除时返回业务错误 code=10002，不创建运行对象，也不写入系统异常。
         快照是短期内存状态，不能用于跨进程恢复；snapshotTruncated 为 true 时内容可能不完整。
       operationId: aiAssistantRuntime
       security: [{ SaTokenAuth: [] }]

@@ -28,6 +28,8 @@ import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.qiheng.erp.ai.sql.scope.PermissionCodes;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
+import com.qiheng.erp.common.exception.BizException;
+import com.qiheng.erp.common.exception.ErrorCode;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.service.IReturnOrderService;
 import com.qiheng.erp.security.context.UserContext;
@@ -141,7 +143,7 @@ public final class MainAgentService {
     public String latestStatusForCurrentUser(long conversationId) {
         long userId = UserContext.requireCurrentUser().getUserId();
         if (conversations.selectOwned(conversationId, userId) == null) {
-            throw new IllegalArgumentException("会话不存在或无权访问");
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "会话不存在或无权访问");
         }
         String status = messageStore.latestRunStatus(userId, conversationId);
         if ("RUNNING".equals(status)) {
@@ -163,7 +165,7 @@ public final class MainAgentService {
      */
     RuntimeSnapshot currentForUser(long userId, long conversationId) {
         if (conversations.selectOwned(conversationId, userId) == null) {
-            throw new IllegalArgumentException("会话不存在或无权访问");
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "会话不存在或无权访问");
         }
         return runs.get(userId + ":" + conversationId);
     }
@@ -237,7 +239,7 @@ public final class MainAgentService {
     public Flux<NodeOutput> streamForCurrentUser(long conversationId, String input, String runId) throws GraphRunnerException {
         long userId = UserContext.requireCurrentUser().getUserId();
         if (conversations.selectOwned(conversationId, userId) == null) {
-            throw new IllegalArgumentException("会话不存在或无权访问");
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "会话不存在或无权访问");
         }
         var user = users.findByUserId(userId);
         var permissions = PermissionCodes.of(user);
@@ -403,7 +405,7 @@ public final class MainAgentService {
     /** 校验会话归属与 AI 使用权限，启动和恢复共用。 */
     private void checkAccess(long userId, long conversationId) {
         if (conversations.selectOwned(conversationId, userId) == null) {
-            throw new IllegalArgumentException("会话不存在或无权访问");
+            throw new BizException(ErrorCode.DATA_NOT_FOUND.getCode(), "会话不存在或无权访问");
         }
         var user = users.findByUserId(userId);
         var permissions = PermissionCodes.of(user);

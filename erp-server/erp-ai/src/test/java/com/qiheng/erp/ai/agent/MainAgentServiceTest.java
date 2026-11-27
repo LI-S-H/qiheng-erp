@@ -6,6 +6,7 @@ import com.qiheng.erp.ai.domain.entity.AiConversation;
 import com.qiheng.erp.ai.mapper.AiConversationMapper;
 import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
 import com.qiheng.erp.ai.context.AgentToolContext;
+import com.qiheng.erp.common.exception.BizException;
 import com.qiheng.erp.returnorder.domain.vo.ReturnOrderDetailVo;
 import com.qiheng.erp.returnorder.service.IReturnOrderService;
 import com.qiheng.erp.security.domain.dto.LoginUser;
@@ -160,7 +161,10 @@ class MainAgentServiceTest {
             stream.blockLast();
         }
         assertThat(service.currentForUser(1, 101).status()).isEqualTo("COMPLETED");
-        assertThatThrownBy(() -> service.currentForUser(2, 101)).hasMessage("会话不存在或无权访问");
+        assertThatThrownBy(() -> service.currentForUser(2, 101))
+                .isInstanceOf(BizException.class)
+                .hasMessage("会话不存在或无权访问")
+                .satisfies(error -> assertThat(((BizException) error).getCode()).isEqualTo(10002));
         service.streamForUser(1, 101, "继续").blockLast();
         verify(agent).stream(eq("继续"), any(RunnableConfig.class));
         var config = ArgumentCaptor.forClass(RunnableConfig.class);

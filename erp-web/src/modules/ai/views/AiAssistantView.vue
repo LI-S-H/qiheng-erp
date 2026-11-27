@@ -373,6 +373,10 @@ async function reconnectAfterOrder(id: string, callId: string, epoch: number, us
     }
     if (isCurrent(epoch, userId, id)) warning.value = '审批已提交，运行状态暂未更新，请重新进入会话查看。';
   } catch (cause) {
+    if (isConversationMissing(cause)) {
+      await handleMissingConversation(id);
+      return;
+    }
     if (isCurrent(epoch, userId, id)) warning.value = `审批已提交，恢复连接失败：${getApiErrorMessage(cause) || '请重新进入会话查看'}`;
   }
 }
@@ -395,6 +399,10 @@ async function reconnectAfterAnswer(id: string, epoch: number, userId: string | 
     }
     if (isCurrent(epoch, userId, id)) warning.value = '回答已提交，运行状态暂未更新，请重新进入会话查看。';
   } catch (cause) {
+    if (isConversationMissing(cause)) {
+      await handleMissingConversation(id);
+      return;
+    }
     if (isCurrent(epoch, userId, id)) warning.value = `回答已提交，恢复连接失败：${getApiErrorMessage(cause) || '请重新进入会话查看'}`;
   }
 }
@@ -609,6 +617,10 @@ async function reconnectAfterReturnOrder(id: string, callId: string, epoch: numb
     }
     if (isCurrent(epoch, userId, id)) warning.value = '退货确认已提交，运行状态暂未更新，请重新进入会话查看。';
   } catch (cause) {
+    if (isConversationMissing(cause)) {
+      await handleMissingConversation(id);
+      return;
+    }
     if (isCurrent(epoch, userId, id)) warning.value = `退货确认已提交，恢复连接失败：${getApiErrorMessage(cause) || '请重新进入会话查看'}`;
   }
 }
@@ -1172,6 +1184,34 @@ function storageRead(key: string): unknown {
     return JSON.parse(localStorage.getItem(key) || 'null');
   } catch {
     return null;
+  }
+}
+function storageRemove(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // 存储受限时忽略，页面仍可用
+  }
+}
+/** 运行状态接口返回会话不存在时，按本地残留会话处理。 */
+function isConversationMissing(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const value = error as { code?: unknown; message?: unknown };
+  return value.code === 10002
+    || (typeof value.message === 'string' && value.message.includes('会话不存在或无权访问'));
+}
+/** 当前会话已被删除时清掉残留 ID，并回退到最近回复的会话。 */
+async function handleMissingConversation(id: string) {
+  if (store.activeId !== id) return;
+  store.clearActive();
+  storageRemove(scopedDraftKey(auth.user?.userId, null, 'activeConversation'));
+  await store.loadConversations();
+  const fallback = store.conversations.find(item => item.conversationId !== id);
+  if (fallback) {
+    await selectConversation(fallback.conversationId);
+    conversationNotice.value = '会话已被删除，已切换到最近回复的会话';
+  } else {
+    conversationNotice.value = '会话已被删除，请新建会话';
   }
 }
 interface SubmittedDraft {
@@ -2097,6 +2137,13 @@ async function openConversation(id: string, force = false): Promise<boolean> {
     try {
       await reconnectRun(id, epoch, userId);
     } catch (cause) {
+      if (isConversationMissing(cause)) {
+        // 切会话的过渡尚未结束，延后回退，避免 selectConversation 被 switching 拦截。
+        window.setTimeout(() => {
+          void handleMissingConversation(id);
+        }, 350);
+        return false;
+      }
       if (isCurrent(epoch, userId, id)) {
         warning.value = getApiErrorMessage(cause) || '运行状态暂时无法读取';
       }

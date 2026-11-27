@@ -42,6 +42,7 @@ export async function watchMainAgentStream(conversationId: string, onEvent: (eve
 export async function getMainAgentRuntime(conversationId: string): Promise<Record<string, unknown> | null> {
   const response = await http.get(`/ai/assistant/conversations/${encodeURIComponent(conversationId)}/runtime`, {
     skipPageLoading: true,
+    suppressErrorToast: true,
   });
   const value = response.data?.data;
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;

@@ -188,6 +188,8 @@ flowchart TD
 
 会话列表会回填 `awaitingUser`：最近一轮的 `run_status` 为 `WAITING_USER` 时返回 `true`，用于刷新后继续提示“待补充信息或待确认单据”；该状态只表示最近一轮停在人工处理，不代表未读。
 
+SSE 客户端断开（`AsyncRequestNotUsableException`、broken pipe）只记录 DEBUG 日志，不写入 `system_exception`；`/runtime` 查询不存在的会话返回业务错误 `10002`，不按系统异常上报。
+
 退货单复用同一套四个工具和图级人工确认：`prepare_return_order_draft` 创建、`update_return_order_draft` 修改、`submit_return_order` 提交审核、`cancel_return_order` 取消。工具只声明参数，业务写入仍由前端调用统一退货接口完成。AI 不提供审核和删除；审核会生成退货入库/出库工作单，必须由人在退货管理页操作。来源单和退货仓库创建后不可修改，选错时取消或删除后重新创建。销售退货可退数量按来源已出库量减其他有效退货单占用；采购退货还受原仓可用库存限制。编辑退货单时查询可退数量必须排除当前退货单自身占用。
 
 ### 单据人工确认链路（HITL）

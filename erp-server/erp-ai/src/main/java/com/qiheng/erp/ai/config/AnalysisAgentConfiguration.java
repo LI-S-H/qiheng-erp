@@ -31,6 +31,7 @@ import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import com.qiheng.erp.ai.experience.ExperienceTaskService;
 
 /** 配置独立数据分析智能体；暂不向主智能体注册。 */
 @Configuration(proxyBeanMethods = false)
@@ -51,13 +52,16 @@ public class AnalysisAgentConfiguration {
             AnalysisResultTool results, DatasetManager datasetManager, AnalysisResultStore resultStore,
             BusinessGraphProvider businessGraph, ContextCompressionFactory compression,
             @Qualifier("analysisSkillRegistry") SkillRegistry skills,
-            @Qualifier("analysisReadSkillFileTool") ReadSkillFileTool skillFileTool) throws IOException {
+            @Qualifier("analysisReadSkillFileTool") ReadSkillFileTool skillFileTool,
+            ExperienceTaskService experienceTasks) throws IOException {
         String prompt = new ClassPathResource("prompts/analysis-agent.md")
                 .getContentAsString(StandardCharsets.UTF_8);
-        return new AnalysisAgentService(model, tools, sandboxRuntime, prompt, traces, mapper,
+        AnalysisAgentService service = new AnalysisAgentService(model, tools, sandboxRuntime, prompt, traces, mapper,
                 sql.getIfAvailable(), datasets.getIfAvailable(), new ToolJsonInterceptor(mapper, publisher.getIfAvailable()),
                 datasetList.getIfAvailable(), results, datasetManager, resultStore, compression,
                 experienceInjection, experienceTools, skills, skillFileTool,
                 new BusinessGraphInterceptor(businessGraph));
+        service.setExperienceTasks(experienceTasks);
+        return service;
     }
 }

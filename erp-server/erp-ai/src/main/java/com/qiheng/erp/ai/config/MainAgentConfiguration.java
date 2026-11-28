@@ -13,6 +13,7 @@ import com.qiheng.erp.ai.agent.AskUserValidationHook;
 import com.qiheng.erp.ai.agent.OrderToolPermissionHook;
 import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.experience.ExperienceInjectionFactory;
+import com.qiheng.erp.ai.experience.ExperienceTaskService;
 import com.qiheng.erp.ai.experience.tool.SearchExperienceToolFactory;
 import com.qiheng.erp.ai.agent.interceptor.AnalysisProgressContextInterceptor;
 import com.qiheng.erp.ai.agent.interceptor.ReportProgressContextInterceptor;
@@ -263,8 +264,9 @@ public class MainAgentConfiguration {
     public MainAgentService mainAgentService(ReactAgent mainAgent, RedisSaver saver, AiConversationMapper conversations,
                                              LoginUserService users, ConversationExecutionLock locks,
                                              ConversationMessageStore messages, ObjectMapper mapper,
-                                             AiAgentTraceMapper traceMapper, IReturnOrderService returnOrders) {
-        return new MainAgentService(mainAgent, saver, conversations, users, locks, messages, mapper, traceMapper, returnOrders);
+                                             AiAgentTraceMapper traceMapper, IReturnOrderService returnOrders,
+                                             ExperienceTaskService experienceTasks) {
+        return new MainAgentService(mainAgent, saver, conversations, users, locks, messages, mapper, traceMapper, returnOrders, experienceTasks);
     }
 
     /**

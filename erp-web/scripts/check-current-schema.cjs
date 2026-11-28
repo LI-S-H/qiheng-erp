@@ -10,8 +10,8 @@ const documents = fs.readdirSync(schemaDir)
   .join('\n');
 const tablePattern = /CREATE\s+TABLE\s+`([^`]+)`\s*\(([\s\S]*?)\)\s*ENGINE\s*=[^;]*;/gi;
 const tables = [...sql.matchAll(tablePattern)];
-if (tables.length !== 37 || new Set(tables.map(match => match[1])).size !== 37) {
-  throw new Error('当前初始化 SQL 应包含 37 张名称唯一的表');
+if (tables.length !== 38 || new Set(tables.map(match => match[1])).size !== 38) {
+  throw new Error('当前初始化 SQL 应包含 38 张名称唯一的表');
 }
 if (/^\s*DROP\s+TABLE\b/im.test(sql)) throw new Error('空库初始化不得包含 DROP TABLE');
 let count = 0;
@@ -37,5 +37,5 @@ for (const [, name, ddl] of tables) {
     }
   }
 }
-if (count !== 579) throw new Error(`字段数与当前基线不符：${count}`);
+if (count !== 588) throw new Error(`字段数与当前基线不符：${count}`);
 console.log(`CURRENT_SCHEMA_OK: ${tables.length} 张表、${count} 个字段及其索引约束均有文档说明`);

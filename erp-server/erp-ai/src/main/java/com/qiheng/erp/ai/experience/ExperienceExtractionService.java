@@ -5,11 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiheng.erp.ai.agent.context.CompressionTranscript;
 import com.qiheng.erp.ai.config.AiModelEnabledCondition;
 import com.qiheng.erp.ai.config.properties.AiExperienceProperties;
-import com.qiheng.erp.ai.domain.entity.AiExperience;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper.ExperienceTask;
 import com.qiheng.erp.ai.mapper.AiAgentTraceMapper.TraceEvent;
-import com.qiheng.erp.ai.mapper.AiExperienceMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -22,11 +20,17 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 
 /**
@@ -60,7 +64,7 @@ public final class ExperienceExtractionService {
                     + "|(?:password|passwd|pwd|token|secret|api[-_]?key)\\s*[=:]\\s*[^\\s,;\"'}]+)");
 
     private final AiAgentTraceMapper traces;
-    private final AiExperienceMapper experiences;
+    private final ExperienceTaskService tasks;
     private final ExperienceModelClient client;
     private final AiExperienceProperties properties;
     private final ObjectMapper mapper;
@@ -70,17 +74,17 @@ public final class ExperienceExtractionService {
      * 加载提炼提示词。
      *
      * @param traces 流水查询
-     * @param experiences 经验写入
+     * @param tasks 任务领取与事务写入
      * @param client 模型客户端
      * @param properties 经验配置
      * @param mapper JSON 组件
      * @throws IOException 提示词读取失败
      */
-    public ExperienceExtractionService(AiAgentTraceMapper traces, AiExperienceMapper experiences,
+    public ExperienceExtractionService(AiAgentTraceMapper traces, ExperienceTaskService tasks,
                                        ExperienceModelClient client, AiExperienceProperties properties,
                                        ObjectMapper mapper) throws IOException {
         this.traces = traces;
-        this.experiences = experiences;
+        this.tasks = tasks;
         this.client = client;
         this.properties = properties;
         this.mapper = mapper;
@@ -93,53 +97,116 @@ public final class ExperienceExtractionService {
         if (!properties.enabled()) {
             return;
         }
-        LocalDateTime since = LocalDateTime.now().minusDays(properties.lookbackDays());
-        List<ExperienceTask> tasks = traces.selectExperienceTasks(
-                since, properties.minEvents(), properties.maxTasksPerDay());
-        log.info("经验提取开始 tasks={}", tasks.size());
-        int saved = 0;
-        for (ExperienceTask task : tasks) {
-            try {
-                if (extractTask(task)) {
-                    saved++;
-                }
-            } catch (RuntimeException error) {
-                log.error("经验提取失败 agentType={} taskId={} errorType={}",
-                        task.agentType(), task.taskId(), error.getClass().getName());
+        tasks.recoverProcessing();
+        List<ExperienceTask> pending = tasks.pending();
+        Deque<ExperienceTask> main = new ArrayDeque<>();
+        Deque<ExperienceTask> analysis = new ArrayDeque<>();
+        for (ExperienceTask task : pending) {
+            if ("MAIN".equals(task.agentType())) {
+                main.add(task);
+            } else if ("ANALYSIS".equals(task.agentType())) {
+                analysis.add(task);
             }
         }
-        log.info("经验提取完成 tasks={} saved={}", tasks.size(), saved);
+        log.info("经验提取开始 main={} analysis={}", main.size(), analysis.size());
+        try (var executor = Executors.newFixedThreadPool(Math.max(1, properties.extractionWorkerThreads()))) {
+            Future<?> mainWork = executor.submit(() -> processQueue(main));
+            Future<?> analysisWork = executor.submit(() -> processQueue(analysis));
+            mainWork.get();
+            analysisWork.get();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("经验提取被中断", error);
+        } catch (ExecutionException error) {
+            throw new IllegalStateException("经验提取工作线程失败", error.getCause());
+        }
+        log.info("经验提取本轮结束");
     }
 
-    /** 提取单个任务；返回是否写入了经验。 */
-    private boolean extractTask(ExperienceTask task) {
-        if (experiences.countBySource(task.agentType(), task.taskId()) > 0) {
-            return false;
+    /** 失败任务退到队尾；本轮暂时不可恢复时保留 PENDING，避免一直空转。 */
+    private void processQueue(Deque<ExperienceTask> queue) {
+        Map<String, Integer> failures = new HashMap<>();
+        while (!queue.isEmpty()) {
+            ExperienceTask task = queue.remove();
+            String key = task.userId() + ":" + task.conversationId() + ":" + task.agentType() + ":" + task.taskId();
+            try {
+                if (!tasks.claim(task)) {
+                    failures.remove(key);
+                    continue;
+                }
+                extractTask(task);
+                failures.remove(key);
+            } catch (ExperienceModelClient.ExtractionOutputException error) {
+                int count = task.attemptCount();
+                if (count < 2) {
+                    int next = count + 1;
+                    tasks.releaseAfterOverflow(task, next);
+                    queue.add(new ExperienceTask(task.agentType(), task.taskId(), task.userId(),
+                            task.conversationId(), task.eventCount(), next));
+                } else {
+                    tasks.markError(task, count);
+                    failures.remove(key);
+                    log.warn("经验提取结果异常 agentType={} taskId={} reason={}", task.agentType(), task.taskId(), error.getMessage());
+                }
+            } catch (RuntimeException error) {
+                log.warn("经验提取暂时失败 agentType={} taskId={} errorType={}",
+                        task.agentType(), task.taskId(), error.getClass().getName());
+                try {
+                    tasks.release(task);
+                } catch (RuntimeException releaseError) {
+                    log.warn("经验任务恢复待处理失败 agentType={} taskId={} errorType={}",
+                            task.agentType(), task.taskId(), releaseError.getClass().getName());
+                    failures.remove(key);
+                    continue;
+                }
+                int attempts = failures.merge(key, 1, Integer::sum);
+                int maxBackoffs = Math.max(1, properties.transientMaxAttemptsPerRun());
+                if (attempts <= maxBackoffs) {
+                    try {
+                        long delay = Math.max(0L, properties.transientRetryBackoffMillis())
+                                * (1L << Math.min(attempts - 1, 10));
+                        Thread.sleep(delay);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("经验提取退避被中断", interrupted);
+                    }
+                    if (attempts < maxBackoffs) {
+                        queue.addFirst(task);
+                    } else {
+                        queue.addLast(task);
+                    }
+                } else {
+                    failures.remove(key);
+                }
+            }
         }
+    }
+
+    /** 提取单个任务；状态与经验由任务服务原子提交。 */
+    private void extractTask(ExperienceTask task) {
         List<TraceEvent> events = traces.selectEvents(task.userId(), task.conversationId(),
                 task.taskId(), task.agentType());
-        if (events.size() < properties.minEvents()) {
-            return false;
+        if (events == null || events.isEmpty()) {
+            if (tasks.completeIfDeleted(task)) {
+                return;
+            }
+            throw new IllegalStateException("任务流水不存在");
         }
         CompressionTranscript.Result transcript = CompressionTranscript.render(
                 toMessages(events), properties.extractionInputMaxTokens(), 1000, 2000);
         if (transcript == null) {
             log.warn("经验提取流水无法放入预算 agentType={} taskId={}", task.agentType(), task.taskId());
-            return false;
+            throw new IllegalStateException("经验提取流水超过预算");
         }
         String input = errorIndex(events) + transcript.text();
         List<String> texts = client.extract(prompt, input);
-        if (texts == null || texts.isEmpty()) {
-            return false;
+        if (texts == null) {
+            throw new IllegalStateException("经验提取模型调用失败");
         }
         List<String> cleaned = clean(texts);
-        if (cleaned.isEmpty()) {
-            return false;
-        }
-        save(task, cleaned);
+        tasks.complete(task, cleaned);
         log.info("经验提取成功 agentType={} taskId={} count={}",
                 task.agentType(), task.taskId(), cleaned.size());
-        return true;
     }
 
     /** 把流水事件转成消息序列，保持工具调用与响应配对。 */
@@ -172,7 +239,7 @@ public final class ExperienceExtractionService {
                             .responses(List.of(new ToolResponseMessage.ToolResponse(
                                     callId, name, data))).build());
                 }
-                case "ERROR", "MODEL_FAILURE", "FORMAT_FEEDBACK" ->
+                case "ERROR", "MODEL_FAILURE", "FORMAT_FEEDBACK", "VALIDATION_ERROR" ->
                         messages.add(new AssistantMessage("[" + event.eventType() + "] " + text(content)));
                 default -> {
                     // 未知事件不进入提炼输入。
@@ -188,7 +255,8 @@ public final class ExperienceExtractionService {
         int count = 0;
         for (TraceEvent event : events) {
             if (!"ERROR".equals(event.eventType()) && !"MODEL_FAILURE".equals(event.eventType())
-                    && !"FORMAT_FEEDBACK".equals(event.eventType())) {
+                    && !"FORMAT_FEEDBACK".equals(event.eventType())
+                    && !"VALIDATION_ERROR".equals(event.eventType())) {
                 continue;
             }
             if (count >= MAX_ERROR_INDEX) {
@@ -219,27 +287,8 @@ public final class ExperienceExtractionService {
                 continue;
             }
             result.add(value);
-            if (result.size() >= properties.maxExperiencesPerTask()) {
-                break;
-            }
         }
         return result;
-    }
-
-    /** 写入经验；agent_type 和 source_task_id 都来自任务本身。 */
-    private void save(ExperienceTask task, List<String> texts) {
-        LocalDateTime now = LocalDateTime.now();
-        for (String text : texts) {
-            experiences.insert(new AiExperience()
-                    .setAgentType(task.agentType())
-                    .setExperienceText(text)
-                    .setSourceTaskId(task.taskId())
-                    .setStatus("PUBLISHED")
-                    .setEffectiveFrom(now)
-                    .setCreateTime(now)
-                    .setUpdateTime(now)
-                    .setDeleted(0));
-        }
     }
 
     /** 解析事件内容，失败时返回空对象。 */

@@ -14,6 +14,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -45,39 +46,47 @@ class ExperienceModelClientTest {
     }
 
     @Test
-    void invalidJsonIsRetriedWithConcreteReason() throws Exception {
+    void emptyResponseIsReturnedToQueueWithoutInternalRetry() {
         var model = mock(ChatModel.class);
-        when(model.call(any(Prompt.class))).thenReturn(response("not json", "stop"), response(EXTRACT_OK, "stop"));
-        var client = client(model);
+        when(model.call(any(Prompt.class))).thenReturn(null);
 
-        List<String> texts = client.extract("system", "input");
-
-        assertThat(texts).hasSize(1);
-        var captor = ArgumentCaptor.forClass(Prompt.class);
-        verify(model, times(2)).call(captor.capture());
-        String reminder = captor.getAllValues().get(1).getInstructions().getLast().getText();
-        assertThat(reminder).contains("JSON 解析失败");
+        assertThat(client(model).extract("system", "input")).isNull();
+        verify(model, times(1)).call(any(Prompt.class));
     }
 
     @Test
-    void truncatedOutputIsRetried() {
+    void invalidExtractionJsonIsReportedAsModelOutputError() {
         var model = mock(ChatModel.class);
-        when(model.call(any(Prompt.class))).thenReturn(response(EXTRACT_OK, "length"),
-                response(EXTRACT_OK, "stop"));
+        when(model.call(any(Prompt.class))).thenReturn(response("not json", "stop"));
         var client = client(model);
 
-        assertThat(client.extract("system", "input")).hasSize(1);
-        verify(model, times(2)).call(any(Prompt.class));
+        assertThatThrownBy(() -> client.extract("system", "input"))
+                .isInstanceOf(ExperienceModelClient.ExtractionOutputException.class)
+                .hasMessageContaining("JSON 解析失败");
+        verify(model, times(1)).call(any(Prompt.class));
     }
 
     @Test
-    void givesUpAfterTwoRetries() {
+    void truncatedExtractionIsReportedAsModelOutputError() {
+        var model = mock(ChatModel.class);
+        when(model.call(any(Prompt.class))).thenReturn(response(EXTRACT_OK, "length"));
+        var client = client(model);
+
+        assertThatThrownBy(() -> client.extract("system", "input"))
+                .isInstanceOf(ExperienceModelClient.ExtractionOutputException.class)
+                .hasMessageContaining("截断");
+        verify(model, times(1)).call(any(Prompt.class));
+    }
+
+    @Test
+    void emptyExtractionIsReportedAsModelOutputError() {
         var model = mock(ChatModel.class);
         when(model.call(any(Prompt.class))).thenReturn(response("", "stop"));
         var client = client(model);
 
-        assertThat(client.extract("system", "input")).isNull();
-        verify(model, times(3)).call(any(Prompt.class));
+        assertThatThrownBy(() -> client.extract("system", "input"))
+                .isInstanceOf(ExperienceModelClient.ExtractionOutputException.class);
+        verify(model, times(1)).call(any(Prompt.class));
     }
 
     @Test
@@ -92,6 +101,18 @@ class ExperienceModelClientTest {
         assertThat(result.entries()).hasSize(2);
         assertThat(result.entries().getFirst().id()).isEqualTo(1L);
         assertThat(result.entries().get(1).id()).isNull();
+    }
+
+    @Test
+    void tooManyExtractedExperiencesFailsAfterTwoRetries() {
+        var model = mock(ChatModel.class);
+        String item = "{\"text\":\"【坑】经验。\"}";
+        String output = "{\"experiences\":[" + String.join(",", java.util.Collections.nCopies(11, item)) + "]}";
+        when(model.call(any(Prompt.class))).thenReturn(response(output, "stop"));
+
+        assertThatThrownBy(() -> client(model).extract("system", "input"))
+                .isInstanceOf(ExperienceModelClient.ExtractionOverflowException.class);
+        verify(model, times(1)).call(any(Prompt.class));
     }
 
     private static ExperienceModelClient client(ChatModel model) {

@@ -1,6 +1,7 @@
 package com.qiheng.erp.ai.analysis;
 
 import com.qiheng.erp.ai.context.AgentToolContext;
+import com.qiheng.erp.ai.experience.ExperienceTaskService;
 import com.qiheng.erp.ai.python.tool.PythonAnalysisTool;
 import com.qiheng.erp.ai.python.sandbox.PythonSandboxRuntime;
 import org.springframework.ai.chat.model.ToolContext;
@@ -42,6 +43,8 @@ class AnalysisAgentServiceTest {
         var service = new AnalysisAgentService(model, mock(PythonAnalysisTool.class),
                 mock(PythonSandboxRuntime.class), "分析", traces, mapper, null, null,
                 new ToolJsonInterceptor(mapper), null, mock(AnalysisResultTool.class), null, null, null, null, null);
+        var experienceTasks = mock(ExperienceTaskService.class);
+        service.setExperienceTasks(experienceTasks);
 
         String summary = service.analyze("分析库存", new AgentToolContext(10, 20));
 
@@ -50,6 +53,8 @@ class AnalysisAgentServiceTest {
         verify(traces).insert(eq(10L), eq(20L), anyString(), eq("ANALYSIS"), eq("MODEL_FAILURE"),
                 argThat(content -> content.contains("Exception: 上游超时")));
         verify(traces, never()).insert(eq(10L), eq(20L), anyString(), eq("ANALYSIS"), eq("FINAL"), anyString());
+        verify(experienceTasks).registerTerminal(eq(10L), eq(20L), eq("ANALYSIS"), anyString(),
+                eq("TASK_FAILED"), anyString());
     }
 
     /** 多轮分析应每次收到一份图谱和当前任务的业务日期。 */

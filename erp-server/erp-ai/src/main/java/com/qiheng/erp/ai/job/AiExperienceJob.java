@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.redisson.api.RedissonClient;
+import org.redisson.api.RLock;
 
 /**
  * 每天凌晨提取经验并合并。
@@ -28,6 +30,7 @@ public class AiExperienceJob {
     private final ExperienceExtractionService extraction;
     private final ExperienceMergeService merge;
     private final AiExperienceProperties properties;
+    private final RedissonClient redis;
 
     /**
      * 注入提取、合并与配置。
@@ -37,10 +40,11 @@ public class AiExperienceJob {
      * @param properties 经验配置
      */
     public AiExperienceJob(ExperienceExtractionService extraction, ExperienceMergeService merge,
-                           AiExperienceProperties properties) {
+                           AiExperienceProperties properties, RedissonClient redis) {
         this.extraction = extraction;
         this.merge = merge;
         this.properties = properties;
+        this.redis = redis;
         log.info("经验定时任务已装配 cron={} enabled={}", properties.cron(), properties.enabled());
     }
 
@@ -50,15 +54,18 @@ public class AiExperienceJob {
         if (!properties.enabled()) {
             return;
         }
-        try {
-            extraction.extractPending();
-        } catch (RuntimeException error) {
-            log.error("经验提取任务失败 errorType={}", error.getClass().getName());
+        RLock lock = redis.getLock("erp:ai:experience:job");
+        if (!lock.tryLock()) {
+            log.info("经验任务仍在执行，跳过本次调度");
+            return;
         }
         try {
+            extraction.extractPending();
             merge.mergeAll();
         } catch (RuntimeException error) {
-            log.error("经验合并任务失败 errorType={}", error.getClass().getName());
+            log.error("经验定时任务失败 errorType={}", error.getClass().getName());
+        } finally {
+            lock.unlock();
         }
     }
 }

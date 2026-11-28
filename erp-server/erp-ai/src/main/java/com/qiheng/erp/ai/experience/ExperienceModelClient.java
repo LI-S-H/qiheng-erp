@@ -40,6 +40,19 @@ public final class ExperienceModelClient {
     /** JSON 不合格时最多重试两次。 */
     private static final int MAX_RETRIES = 2;
 
+    /** 超过十条说明输出质量异常，交给队列标记失败。 */
+    public static class ExtractionOutputException extends IllegalArgumentException {
+        public ExtractionOutputException(String message) {
+            super(message);
+        }
+    }
+
+    public static final class ExtractionOverflowException extends ExtractionOutputException {
+        public ExtractionOverflowException(int count, int maximum) {
+            super("经验提取超过 " + maximum + " 条，实际 " + count + " 条");
+        }
+    }
+
     /** 合并输出的一条经验。 */
     public record MergeEntry(Long id, String text) {
     }
@@ -50,7 +63,9 @@ public final class ExperienceModelClient {
 
     private final ChatModel model;
     private final ObjectMapper mapper;
-    private final OpenAiChatOptions options;
+    private final OpenAiChatOptions extractionOptions;
+    private final OpenAiChatOptions mergeOptions;
+    private final int extractionMaxAccepted;
 
     /**
      * 按配置选择提取模型，默认 flash。
@@ -65,8 +80,11 @@ public final class ExperienceModelClient {
                                  ObjectMapper mapper, AiExperienceProperties properties) {
         this.model = "pro".equalsIgnoreCase(properties.model()) ? pro : flash;
         this.mapper = mapper;
-        this.options = OpenAiChatOptions.builder()
+        this.extractionOptions = OpenAiChatOptions.builder()
                 .maxTokens(properties.extractionMaxOutputTokens()).build();
+        this.mergeOptions = OpenAiChatOptions.builder()
+                .maxTokens(properties.mergeMaxOutputTokens()).build();
+        this.extractionMaxAccepted = properties.extractionMaxAccepted();
     }
 
     /**
@@ -77,7 +95,7 @@ public final class ExperienceModelClient {
      * @return 经验文本列表；失败返回 null
      */
     public List<String> extract(String systemPrompt, String input) {
-        return call(systemPrompt, input, this::parseExtraction);
+        return call(systemPrompt, input, this::parseExtraction, extractionOptions, true);
     }
 
     /**
@@ -88,11 +106,12 @@ public final class ExperienceModelClient {
      * @return 合并结果；失败返回 null
      */
     public MergeResult merge(String systemPrompt, String input) {
-        return call(systemPrompt, input, this::parseMerge);
+        return call(systemPrompt, input, this::parseMerge, mergeOptions, false);
     }
 
     /** 调用模型并解析；解析失败时把具体原因追加给模型重试。 */
-    private <T> T call(String systemPrompt, String input, Function<String, T> parser) {
+    private <T> T call(String systemPrompt, String input, Function<String, T> parser,
+                       OpenAiChatOptions options, boolean extraction) {
         List<Message> messages = new ArrayList<>(3);
         messages.add(new SystemMessage(systemPrompt));
         messages.add(new UserMessage(input));
@@ -105,16 +124,27 @@ public final class ExperienceModelClient {
             try {
                 ChatResponse response = model.call(new Prompt(messages, options));
                 if (response == null || response.getResult() == null) {
+                    if (extraction) {
+                        return null;
+                    }
                     problem = "没有返回内容";
                     continue;
                 }
                 String finishReason = response.getResult().getMetadata().getFinishReason();
                 if ("length".equalsIgnoreCase(finishReason)) {
                     problem = "输出被长度上限截断，请更简洁地输出";
+                    if (extraction) {
+                        throw new ExtractionOutputException(problem);
+                    }
                     continue;
                 }
                 return parser.apply(response.getResult().getOutput().getText());
+            } catch (ExtractionOutputException error) {
+                throw error;
             } catch (IllegalArgumentException error) {
+                if (extraction) {
+                    throw new ExtractionOutputException(error.getMessage());
+                }
                 problem = error.getMessage();
                 log.warn("经验模型输出不合格，准备重试 problem={}", problem);
             } catch (RuntimeException error) {
@@ -133,6 +163,9 @@ public final class ExperienceModelClient {
         JsonNode array = root.get("experiences");
         if (array == null || !array.isArray()) {
             throw new IllegalArgumentException("缺少 experiences 数组");
+        }
+        if (array.size() > extractionMaxAccepted) {
+            throw new ExtractionOverflowException(array.size(), extractionMaxAccepted);
         }
         List<String> texts = new ArrayList<>(array.size());
         for (int index = 0; index < array.size(); index++) {

@@ -1688,11 +1688,11 @@ if (
 }
 
 const tableCount = [...currentSql.matchAll(/^CREATE TABLE `[^`]+`\s*\(/gm)].length;
-if (tableCount !== 37) throw new Error(`空库初始化应包含 37 张表，当前为 ${tableCount} 张`);
+if (tableCount !== 38) throw new Error(`空库初始化应包含 38 张表，当前为 ${tableCount} 张`);
 for (const table of ["ai_data_table", "ai_data_table_column", "ai_data_table_relation", "ai_dataset", "sys_permission", "supplier_score_change_log", "ai_agent_experience", "ai_agent_trace", "return_order", "return_order_item"]) {
   if (!currentSql.includes(`CREATE TABLE \`${table}\` (`)) throw new Error(`当前初始化缺少表：${table}`);
 }
-if (!currentSchemaDocs.includes("37 张表")) throw new Error("数据库结构入口未说明当前表数量");
+if (!currentSchemaDocs.includes("38 张表")) throw new Error("数据库结构入口未说明当前表数量");
 for (const [name, apiSource, typeSource, viewSource] of [
   ["仓库列表", warehouseApiSource, warehouseTypeSource, warehouseViewSource],
   [

@@ -7,7 +7,6 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 /** 追加智能体内部任务流水。 */
@@ -15,7 +14,10 @@ public interface AiAgentTraceMapper {
 
     /** 一次可提取经验的任务；eventCount 为流水条数。 */
     record ExperienceTask(String agentType, String taskId, Long userId, Long conversationId,
-                          Long eventCount) {
+                          Long eventCount, int attemptCount) {
+        public ExperienceTask(String agentType, String taskId, Long userId, Long conversationId, Long eventCount) {
+            this(agentType, taskId, userId, conversationId, eventCount, 0);
+        }
     }
 
     /** 一条流水事件；content 为原始 JSON 字符串。 */
@@ -40,45 +42,6 @@ public interface AiAgentTraceMapper {
      */
     @Delete("DELETE FROM ai_agent_trace WHERE user_id = #{userId} AND conversation_id = #{conversationId}")
     int deleteByConversation(@Param("userId") long userId, @Param("conversationId") long conversationId);
-
-    /**
-     * 查询可以提取经验的任务：有 FINAL、达到最小流水条数、且没有提取记录。
-     *
-     * <p>提取判断不过滤 deleted：合并阶段会软删除被合并的经验，
-     * 若按 deleted = 0 判断，对应任务会被反复重新提取。</p>
-     *
-     * @param since     只取该时间之后创建的任务
-     * @param minEvents 最小流水条数
-     * @param limit     最多返回任务数
-     * @return 候选任务，最近完成的在前
-     */
-    @Select("""
-        SELECT t.agent_type, t.task_id, t.user_id, t.conversation_id, COUNT(*) AS event_count
-        FROM ai_agent_trace t
-        WHERE t.agent_type IN ('MAIN', 'ANALYSIS')
-          AND t.create_time >= #{since}
-          AND EXISTS (SELECT 1 FROM ai_agent_trace f
-                      WHERE f.user_id = t.user_id AND f.conversation_id = t.conversation_id
-                        AND f.task_id = t.task_id AND f.agent_type = t.agent_type
-                        AND f.event_type = 'FINAL')
-          AND NOT EXISTS (SELECT 1 FROM ai_agent_experience e
-                          WHERE e.agent_type = t.agent_type
-                            AND e.source_task_id = t.task_id)
-        GROUP BY t.agent_type, t.task_id, t.user_id, t.conversation_id
-        HAVING COUNT(*) >= #{minEvents}
-        ORDER BY MAX(t.create_time) DESC
-        LIMIT #{limit}
-        """)
-    @ConstructorArgs({
-            @Arg(column = "agent_type", javaType = String.class),
-            @Arg(column = "task_id", javaType = String.class),
-            @Arg(column = "user_id", javaType = Long.class),
-            @Arg(column = "conversation_id", javaType = Long.class),
-            @Arg(column = "event_count", javaType = Long.class)
-    })
-    List<ExperienceTask> selectExperienceTasks(@Param("since") LocalDateTime since,
-                                               @Param("minEvents") int minEvents,
-                                               @Param("limit") int limit);
 
     /**
      * 按任务读取全部流水，按写入顺序返回。

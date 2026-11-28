@@ -13,6 +13,7 @@ import com.qiheng.erp.ai.agent.TrustedToolContextInterceptor;
 import com.qiheng.erp.ai.agent.context.ContextCompressionFactory;
 import com.qiheng.erp.ai.agent.interceptor.ToolJsonInterceptor;
 import com.qiheng.erp.ai.experience.ExperienceInjectionFactory;
+import com.qiheng.erp.ai.experience.ExperienceTaskService;
 import com.qiheng.erp.ai.experience.tool.SearchExperienceToolFactory;
 import com.qiheng.erp.ai.context.AgentToolContext;
 import com.qiheng.erp.ai.dataset.AnalysisDatasetSummaryService;
@@ -65,6 +66,12 @@ public final class AnalysisAgentService {
     private final AnalysisResultStore resultStore;
     private final AnalysisDatasetSummaryService datasetSummaries;
     private final AnalysisHandoffValidationHook handoffValidation;
+    private ExperienceTaskService experienceTasks;
+
+    /** 装配经验终态登记；未启用经验服务时保持原任务执行行为。 */
+    public void setExperienceTasks(ExperienceTaskService experienceTasks) {
+        this.experienceTasks = experienceTasks;
+    }
 
     /**
      * 不挂载技能注册表的兼容构造器，供不需要技能的场景和测试使用。
@@ -314,6 +321,37 @@ public final class AnalysisAgentService {
      * @throws IOException 结果读写失败
      */
     private AnalysisResult execute(AnalysisRun run) throws GraphRunnerException, IOException {
+        AnalysisResult result;
+        try {
+            result = executeCore(run);
+        } catch (AnalysisHandoffValidationHook.InvalidHandoffException error) {
+            registerExperienceTask(run, "TASK_FAILED");
+            throw error;
+        }
+        if (!"FAILED".equals(result.completion())) {
+            registerExperienceTask(run, "TASK_COMPLETED");
+        } else if (ANALYSIS_MODEL_FAILED.equals(result.errorCode())
+                || "INVALID_ANALYSIS_OUTPUT".equals(result.errorCode())) {
+            registerExperienceTask(run, "TASK_FAILED");
+        }
+        return result;
+    }
+
+    /** 经验登记不改变分析任务已确定的结果。 */
+    private void registerExperienceTask(AnalysisRun run, String event) {
+        if (experienceTasks == null) {
+            return;
+        }
+        try {
+            var identity = run.command().identity();
+            experienceTasks.registerTerminal(identity.userId(), identity.conversationId(), "ANALYSIS",
+                    run.taskId(), event, event);
+        } catch (RuntimeException error) {
+            log.error("经验任务登记失败 taskId={} errorType={}", run.taskId(), error.getClass().getName());
+        }
+    }
+
+    private AnalysisResult executeCore(AnalysisRun run) throws GraphRunnerException, IOException {
         var command = run.command();
         var identity = command.identity();
         var recorder = traceRecorder(identity, run.taskId());

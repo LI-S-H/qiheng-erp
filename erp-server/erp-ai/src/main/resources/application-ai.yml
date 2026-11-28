@@ -45,14 +45,16 @@ erp:
     experience:
       enabled: ${ERP_AI_EXPERIENCE_ENABLED:true}
       cron: "${ERP_AI_EXPERIENCE_CRON:0 10 3 * * ?}"
-      max-tasks-per-day: ${ERP_AI_EXPERIENCE_MAX_TASKS:100}
-      lookback-days: ${ERP_AI_EXPERIENCE_LOOKBACK_DAYS:7}
-      min-events: ${ERP_AI_EXPERIENCE_MIN_EVENTS:6}
       extraction-input-max-tokens: ${ERP_AI_EXPERIENCE_INPUT_TOKENS:600000}
       extraction-max-output-tokens: ${ERP_AI_EXPERIENCE_OUTPUT_TOKENS:4000}
-      max-experiences-per-task: ${ERP_AI_EXPERIENCE_MAX_PER_TASK:5}
+      merge-input-max-tokens: ${ERP_AI_EXPERIENCE_MERGE_INPUT_TOKENS:80000}
+      merge-max-output-tokens: ${ERP_AI_EXPERIENCE_MERGE_OUTPUT_TOKENS:35000}
+      merge-page-size: ${ERP_AI_EXPERIENCE_MERGE_PAGE_SIZE:100}
+      extraction-worker-threads: ${ERP_AI_EXPERIENCE_WORKERS:2}
+      transient-retry-backoff-millis: ${ERP_AI_EXPERIENCE_RETRY_BACKOFF_MS:1000}
+      transient-max-attempts-per-run: ${ERP_AI_EXPERIENCE_TRANSIENT_ATTEMPTS:3}
+      extraction-max-accepted: ${ERP_AI_EXPERIENCE_MAX_ACCEPTED:10}
       max-text-chars: ${ERP_AI_EXPERIENCE_MAX_TEXT_CHARS:400}
-      merge-max-experiences: ${ERP_AI_EXPERIENCE_MERGE_LIMIT:100}
       summary-max-chars: ${ERP_AI_EXPERIENCE_SUMMARY_CHARS:400}
       search-limit: ${ERP_AI_EXPERIENCE_SEARCH_LIMIT:10}
       cache-seconds: ${ERP_AI_EXPERIENCE_CACHE_SECONDS:60}

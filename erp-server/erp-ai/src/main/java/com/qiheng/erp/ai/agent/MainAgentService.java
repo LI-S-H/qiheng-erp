@@ -22,6 +22,7 @@ import com.qiheng.erp.ai.conversation.ConversationExecutionLock;
 import com.qiheng.erp.ai.conversation.ConversationMessageStore;
 import com.qiheng.erp.ai.domain.entity.AiMessage;
 import com.qiheng.erp.ai.trace.AiAgentTraceRecorder;
+import com.qiheng.erp.ai.experience.ExperienceTaskService;
 import com.qiheng.erp.ai.order.OrderToolNames;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
@@ -70,6 +71,7 @@ public final class MainAgentService {
     private final ObjectMapper mapper;
     private final AiAgentTraceMapper traceMapper;
     private final IReturnOrderService returnOrders;
+    private final ExperienceTaskService experienceTasks;
     private final Map<String, RuntimeSnapshot> runs = new ConcurrentHashMap<>();
     private static final AtomicLong LOCK_OWNER = new AtomicLong(UUID.randomUUID().getMostSignificantBits());
 
@@ -204,6 +206,13 @@ public final class MainAgentService {
     public MainAgentService(ReactAgent agent, RedisSaver saver, AiConversationMapper conversations, LoginUserService users,
                             ConversationExecutionLock locks, ConversationMessageStore messageStore,
                             ObjectMapper mapper, AiAgentTraceMapper traceMapper, IReturnOrderService returnOrders) {
+        this(agent, saver, conversations, users, locks, messageStore, mapper, traceMapper, returnOrders, null);
+    }
+
+    public MainAgentService(ReactAgent agent, RedisSaver saver, AiConversationMapper conversations, LoginUserService users,
+                            ConversationExecutionLock locks, ConversationMessageStore messageStore,
+                            ObjectMapper mapper, AiAgentTraceMapper traceMapper, IReturnOrderService returnOrders,
+                            ExperienceTaskService experienceTasks) {
         this.agent = agent;
         this.saver = saver;
         this.conversations = conversations;
@@ -213,6 +222,7 @@ public final class MainAgentService {
         this.mapper = mapper;
         this.traceMapper = traceMapper;
         this.returnOrders = returnOrders;
+        this.experienceTasks = experienceTasks;
     }
 
     /**
@@ -524,6 +534,7 @@ public final class MainAgentService {
                         // 模型调用失败时图仍然跑到结束节点，但本轮必须记为失败，不能算完成。
                         if (recorder.modelFailed()) {
                             recorder.status("FAILED", "MODEL_CALL_FAILED");
+                            registerExperienceTask(recorder, "TASK_FAILED");
                             runs.put(runKey, new RuntimeSnapshot(runId, "FAILED", null));
                             finish(lock, owner, sink, null);
                             return;
@@ -531,11 +542,13 @@ public final class MainAgentService {
                         // 追问参数连续非法时业务上算失败，但最终说明已经保存。
                         if (recorder.clarificationValidationFailed()) {
                             recorder.status("FAILED", "ASK_USER_VALIDATION_FAILED");
+                            registerExperienceTask(recorder, "TASK_FAILED");
                             runs.put(runKey, new RuntimeSnapshot(runId, "FAILED", null));
                             finish(lock, owner, sink, null);
                             return;
                         }
                         recorder.status("COMPLETED", null);
+                        registerExperienceTask(recorder, "TASK_COMPLETED");
                         runs.put(runKey, new RuntimeSnapshot(runId, "COMPLETED", null));
                         finish(lock, owner, sink, null);
                     } catch (Exception error) {
@@ -543,6 +556,19 @@ public final class MainAgentService {
                         finish(lock, owner, sink, error);
                     }
                 });
+    }
+
+    /** 登记失败不得改变已经完成的用户任务。 */
+    private void registerExperienceTask(AgentRunRecorder recorder, String eventType) {
+        if (experienceTasks == null) {
+            return;
+        }
+        try {
+            experienceTasks.registerTerminal(recorder.userId(), recorder.conversationId(), "MAIN", recorder.runId(),
+                    eventType, eventType);
+        } catch (RuntimeException error) {
+            log.error("经验任务登记失败 runId={} errorType={}", recorder.runId(), error.getClass().getName());
+        }
     }
 
     /** 在图的模型完成事件发出后，再交付对应的工具状态与追问。 */

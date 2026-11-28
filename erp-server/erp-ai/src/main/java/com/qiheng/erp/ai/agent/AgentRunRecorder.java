@@ -78,6 +78,14 @@ final class AgentRunRecorder implements ClarificationTraceSink {
         return runId;
     }
 
+    long userId() {
+        return userId;
+    }
+
+    long conversationId() {
+        return conversationId;
+    }
+
     /** 保存模型调用前最后一条消息；用户输入在任务开始时已保存。 */
     synchronized void beforeModel(List<? extends Message> messages) {
         if (messages.isEmpty()) {

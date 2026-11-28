@@ -37,6 +37,28 @@
 
 - ``PRIMARY KEY (`agent_type`)``
 
+## `ai_agent_experience_task`
+
+表用途：记录已结束任务的经验提取进度。
+
+| 字段 | 类型 | 允许 NULL | 默认值 / 自动生成 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `bigint` | 否 | AUTO_INCREMENT | 经验提取任务编号 |
+| `user_id` | `bigint` | 否 | — | 所属用户 |
+| `conversation_id` | `bigint` | 否 | — | 所属会话 |
+| `agent_type` | `varchar(32)` | 否 | — | 智能体类型 |
+| `task_id` | `varchar(192)` | 否 | — | 主任务运行 ID 或分析任务 ID |
+| `status` | `varchar(16)` | 否 | 'PENDING' | PENDING、PROCESSING、COMPLETED、ERROR |
+| `attempt_count` | `int` | 否 | 0 | 模型输出错误的重试次数 |
+| `create_time` | `datetime(6)` | 否 | CURRENT_TIMESTAMP(6) | 创建时间 |
+| `update_time` | `datetime(6)` | 否 | CURRENT_TIMESTAMP(6) / ON UPDATE CURRENT_TIMESTAMP(6) | 更新时间 |
+
+索引与约束：
+
+- ``PRIMARY KEY (`id`)``
+- ``UNIQUE KEY `uk_experience_task` (`user_id`,`conversation_id`,`agent_type`,`task_id`)``
+- ``KEY `idx_experience_pending` (`status`,`create_time`,`id`)``
+
 ## `ai_agent_trace`
 
 表用途：智能体任务执行流水

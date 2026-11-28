@@ -1,7 +1,9 @@
 package com.qiheng.erp.ai.experience;
 
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qiheng.erp.ai.agent.context.TokenEstimator;
 import com.qiheng.erp.ai.config.AiModelEnabledCondition;
 import com.qiheng.erp.ai.config.properties.AiExperienceProperties;
 import com.qiheng.erp.ai.domain.entity.AiExperience;
@@ -14,30 +16,24 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
-/**
- * 合并同一个智能体的经验：模型给回新的完整列表，程序按 id 落库。
- *
- * <p>合并只做整理，不做发布判断；任何失败都回滚，保留提取阶段写入的原始条目。</p>
- *
- * @author Li
- * @since 2026-11-20
- */
+/** 分智能体整理全部有效经验；模型处理期间不持有数据库事务。 */
 @Component
 @Conditional(AiModelEnabledCondition.class)
 public class ExperienceMergeService {
-
     private static final Logger log = LoggerFactory.getLogger(ExperienceMergeService.class);
 
     private final AiExperienceMapper experiences;
@@ -47,21 +43,24 @@ public class ExperienceMergeService {
     private final AiExperienceProperties properties;
     private final ObjectMapper mapper;
     private final String prompt;
+    private final TransactionTemplate transactions;
 
     /**
-     * 加载合并提示词。
+     * 创建经验整理服务。
      *
      * @param experiences 经验存储
-     * @param summaries 摘要存储
+     * @param summaries 目录摘要存储
      * @param client 模型客户端
      * @param provider 摘要缓存
      * @param properties 经验配置
      * @param mapper JSON 组件
+     * @param transactionManager 事务管理器
      * @throws IOException 提示词读取失败
      */
     public ExperienceMergeService(AiExperienceMapper experiences, AiExperienceSummaryMapper summaries,
                                   ExperienceModelClient client, ExperienceProvider provider,
-                                  AiExperienceProperties properties, ObjectMapper mapper) throws IOException {
+                                  AiExperienceProperties properties, ObjectMapper mapper,
+                                  PlatformTransactionManager transactionManager) throws IOException {
         this.experiences = experiences;
         this.summaries = summaries;
         this.client = client;
@@ -70,135 +69,181 @@ public class ExperienceMergeService {
         this.mapper = mapper;
         this.prompt = new ClassPathResource("prompts/experience-merge.md")
                 .getContentAsString(StandardCharsets.UTF_8);
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    /** 分别合并主智能体和分析智能体的经验。 */
-    @Transactional
+    /** 分别合并主智能体和分析智能体，单类失败不影响另一类。 */
     public void mergeAll() {
         if (!properties.enabled()) {
             return;
         }
-        mergeOne("MAIN");
-        mergeOne("ANALYSIS");
+        for (String agentType : List.of("MAIN", "ANALYSIS")) {
+            try {
+                mergeOne(agentType);
+            } catch (RuntimeException error) {
+                log.error("经验合并失败，保留原数据 agentType={} errorType={}",
+                        agentType, error.getClass().getName());
+            }
+        }
     }
 
-    /** 合并一个智能体的经验；没有经验或模型失败时保持原样。 */
+    /** 分页准备输入，所有阶段通过后才以短事务替换。 */
     private void mergeOne(String agentType) {
-        List<AiExperience> existing = experiences.selectPublished(
-                agentType, properties.mergeMaxExperiences());
-        if (existing.isEmpty()) {
+        int pageSize = properties.mergePageSize();
+        if (pageSize <= 0 || properties.mergeInputMaxTokens() <= 0) {
+            throw new IllegalStateException("经验合并分页和输入预算必须大于零");
+        }
+        Map<Long, String> snapshot = new LinkedHashMap<>();
+        List<String> pending = new ArrayList<>();
+        MergeResult stage = null;
+        Long afterId = null;
+        while (true) {
+            List<AiExperience> page = experiences.selectPublishedPage(agentType, afterId, pageSize);
+            if (page == null || page.isEmpty()) {
+                break;
+            }
+            for (AiExperience item : page) {
+                if (item.getId() == null || item.getExperienceText() == null
+                        || afterId != null && item.getId() <= afterId) {
+                    throw new IllegalStateException("经验分页排序或数据无效");
+                }
+                afterId = item.getId();
+                snapshot.put(item.getId(), digest(item.getExperienceText()));
+                List<String> candidate = combine(stage, pending, item.getExperienceText());
+                if (!fits(candidate)) {
+                    if (pending.isEmpty()) {
+                        throw new IllegalStateException("单条经验与阶段结果超出输入预算");
+                    }
+                    stage = mergeChunk(combine(stage, pending, null));
+                    pending.clear();
+                    if (!fits(combine(stage, pending, item.getExperienceText()))) {
+                        throw new IllegalStateException("阶段结果与下一条经验超出输入预算");
+                    }
+                }
+                pending.add(item.getExperienceText());
+            }
+        }
+        if (snapshot.isEmpty()) {
             return;
         }
-        String input = buildInput(existing);
-        MergeResult result = client.merge(prompt, input);
-        if (result == null) {
-            log.warn("经验合并失败，保留原数据 agentType={} existing={}", agentType, existing.size());
-            return;
+        if (!pending.isEmpty()) {
+            stage = mergeChunk(combine(stage, pending, null));
         }
-        Set<Long> existingIds = new HashSet<>();
-        for (AiExperience item : existing) {
-            existingIds.add(item.getId());
+        if (stage == null) {
+            throw new IllegalStateException("经验合并没有结果");
         }
-        List<MergeEntry> entries = validate(agentType, result.entries(), existingIds);
-        if (entries.isEmpty()) {
-            log.warn("经验合并输出为空，保留原数据 agentType={}", agentType);
-            return;
-        }
-        save(agentType, existingIds, entries, lastSourceTaskId(existing));
-        summaries.upsert(agentType, limit(result.summary(), properties.summaryMaxChars()));
+        MergeResult result = stage;
+        transactions.executeWithoutResult(status -> replace(agentType, snapshot, result));
         provider.invalidate(agentType);
         log.info("经验合并完成 agentType={} existing={} merged={}",
-                agentType, existing.size(), entries.size());
+                agentType, snapshot.size(), result.entries().size());
     }
 
-    /** 把现有经验序列化成合并输入。 */
-    private String buildInput(List<AiExperience> existing) {
-        List<Map<String, Object>> items = new ArrayList<>(existing.size());
-        for (AiExperience item : existing) {
-            Map<String, Object> value = new LinkedHashMap<>();
-            value.put("id", item.getId());
-            value.put("text", item.getExperienceText());
-            value.put("sourceTaskId", item.getSourceTaskId());
-            items.add(value);
+    /** 阶段结果和当前批次一起输入，避免漏掉跨批重复。 */
+    private List<String> combine(MergeResult stage, List<String> pending, String next) {
+        List<String> values = new ArrayList<>();
+        if (stage != null) {
+            for (MergeEntry entry : stage.entries()) {
+                values.add(entry.text());
+            }
         }
+        values.addAll(pending);
+        if (next != null) {
+            values.add(next);
+        }
+        return values;
+    }
+
+    /** 估算系统提示和 JSON 的整体输入，输出预算独立配置。 */
+    private boolean fits(List<String> values) {
+        return TokenEstimator.estimate(prompt) + TokenEstimator.estimate(buildInput(values)) + 16
+                <= properties.mergeInputMaxTokens();
+    }
+
+    /** 模型输出必须整批有效，不能过滤部分后删除旧经验。 */
+    private MergeResult mergeChunk(List<String> values) {
+        MergeResult result = client.merge(prompt, buildInput(values));
+        if (result == null || result.entries() == null || result.entries().isEmpty()
+                || result.summary() == null || result.summary().isBlank()) {
+            throw new IllegalStateException("经验合并输出为空或无效");
+        }
+        for (MergeEntry entry : result.entries()) {
+            if (entry == null || entry.text() == null || entry.text().isBlank()
+                    || entry.text().length() > properties.maxTextChars()) {
+                throw new IllegalStateException("经验合并输出存在无效或超长条目");
+            }
+        }
+        return result;
+    }
+
+    /** 原经验只作为数据输入，不要求模型维护数据库编号。 */
+    private String buildInput(List<String> values) {
         try {
-            return mapper.writeValueAsString(Map.of("existing", items));
+            List<Map<String, String>> entries = values.stream().map(value -> Map.of("text", value)).toList();
+            return mapper.writeValueAsString(Map.of("experiences", entries));
         } catch (JsonProcessingException error) {
             throw new IllegalStateException("经验合并输入序列化失败", error);
         }
     }
 
-    /** 校验合并输出：id 必须来自输入，长度和重复项直接过滤。 */
-    private List<MergeEntry> validate(String agentType, List<MergeEntry> entries, Set<Long> existingIds) {
-        List<MergeEntry> result = new ArrayList<>();
-        Set<Long> seenIds = new HashSet<>();
-        Set<String> seenTexts = new HashSet<>();
-        for (MergeEntry entry : entries) {
-            String text = entry.text() == null ? "" : entry.text().strip();
-            if (text.isBlank()) {
-                continue;
+    /** 事务内锁定并核对全量快照，再按输入编号替换。 */
+    private void replace(String agentType, Map<Long, String> snapshot, MergeResult result) {
+        Long cursor = null;
+        int lockedCount = 0;
+        while (true) {
+            List<AiExperience> locked = experiences.selectPublishedForUpdatePage(agentType, cursor, properties.mergePageSize());
+            if (locked == null) {
+                throw new IllegalStateException("经验快照锁定查询失败");
             }
-            if (text.length() > properties.maxTextChars()) {
-                log.warn("合并经验超过 {} 字，丢弃 agentType={} length={}",
-                        properties.maxTextChars(), agentType, text.length());
-                continue;
+            if (locked.isEmpty()) {
+                break;
             }
-            if (entry.id() != null && !existingIds.contains(entry.id())) {
-                log.warn("合并经验使用了不存在的 id，丢弃 agentType={} id={}", agentType, entry.id());
-                continue;
+            for (AiExperience item : locked) {
+                if (item.getId() == null || item.getExperienceText() == null
+                        || cursor != null && item.getId() <= cursor
+                        || !digest(item.getExperienceText()).equals(snapshot.get(item.getId()))) {
+                    throw new IllegalStateException("经验合并期间原数据已变化");
+                }
+                cursor = item.getId();
+                lockedCount++;
             }
-            if (entry.id() != null && !seenIds.add(entry.id())) {
-                continue;
-            }
-            if (!seenTexts.add(text)) {
-                continue;
-            }
-            result.add(new MergeEntry(entry.id(), text));
         }
-        return result;
-    }
-
-    /** 按输出落库：更新、插入、软删除。 */
-    private void save(String agentType, Set<Long> existingIds, List<MergeEntry> entries,
-                      String fallbackSourceTaskId) {
+        if (lockedCount != snapshot.size()) {
+            throw new IllegalStateException("经验合并期间原数据数量已变化");
+        }
+        List<Long> ids = new ArrayList<>(snapshot.keySet());
+        int batchSize = properties.mergePageSize();
+        for (int offset = 0; offset < ids.size(); offset += batchSize) {
+            List<Long> batch = ids.subList(offset, Math.min(offset + batchSize, ids.size()));
+            if (experiences.deletePublishedByIds(agentType, batch) != batch.size()) {
+                throw new IllegalStateException("经验删除数量与快照不一致");
+            }
+        }
         LocalDateTime now = LocalDateTime.now();
-        Set<Long> keptIds = new HashSet<>();
-        for (MergeEntry entry : entries) {
-            if (entry.id() != null) {
-                experiences.updateText(entry.id(), agentType, entry.text());
-                keptIds.add(entry.id());
-            } else {
-                experiences.insert(new AiExperience()
-                        .setAgentType(agentType)
-                        .setExperienceText(entry.text())
-                        .setSourceTaskId(fallbackSourceTaskId)
-                        .setStatus("PUBLISHED")
-                        .setEffectiveFrom(now)
-                        .setCreateTime(now)
-                        .setUpdateTime(now)
-                        .setDeleted(0));
+        List<AiExperience> records = result.entries().stream().map(entry -> new AiExperience()
+                .setId(IdWorker.getId()).setAgentType(agentType).setExperienceText(entry.text().strip())
+                .setStatus("PUBLISHED").setEffectiveFrom(now).setCreateTime(now).setUpdateTime(now)
+                .setDeleted(0)).toList();
+        for (int offset = 0; offset < records.size(); offset += batchSize) {
+            List<AiExperience> batch = records.subList(offset, Math.min(offset + batchSize, records.size()));
+            if (experiences.insertPublishedBatch(batch) != batch.size()) {
+                throw new IllegalStateException("经验批量插入数量不一致");
             }
         }
-        for (Long id : existingIds) {
-            if (!keptIds.contains(id)) {
-                experiences.markDeleted(id, agentType);
-            }
+        String summary = result.summary().strip();
+        if (summary.length() > properties.summaryMaxChars()) {
+            summary = summary.substring(0, properties.summaryMaxChars());
         }
+        summaries.upsert(agentType, summary);
     }
 
-    /** 新增条目的来源任务取输入中最近的条目。 */
-    private String lastSourceTaskId(List<AiExperience> existing) {
-        for (AiExperience item : existing) {
-            if (item.getSourceTaskId() != null && !item.getSourceTaskId().isBlank()) {
-                return item.getSourceTaskId();
-            }
+    /** 快照只保存正文摘要和编号，避免持有全量经验正文。 */
+    private String digest(String text) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("缺少 SHA-256 实现", error);
         }
-        return null;
-    }
-
-    /** 截断摘要到配置长度。 */
-    private String limit(String summary, int maxChars) {
-        String value = summary == null ? "" : summary.strip();
-        return value.length() <= maxChars ? value : value.substring(0, maxChars);
     }
 }

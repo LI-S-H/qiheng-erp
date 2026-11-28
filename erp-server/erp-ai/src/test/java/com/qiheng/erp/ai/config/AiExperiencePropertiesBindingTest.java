@@ -27,6 +27,10 @@ class AiExperiencePropertiesBindingTest {
                         "erp.ai.experience.min-events=4",
                         "erp.ai.experience.extraction-input-max-tokens=1000",
                         "erp.ai.experience.extraction-max-output-tokens=500",
+                        "erp.ai.experience.merge-input-max-tokens=40000",
+                        "erp.ai.experience.merge-max-output-tokens=12000",
+                        "erp.ai.experience.merge-page-size=50",
+                        "erp.ai.experience.extraction-max-accepted=12",
                         "erp.ai.experience.max-experiences-per-task=2",
                         "erp.ai.experience.max-text-chars=100",
                         "erp.ai.experience.merge-max-experiences=20",
@@ -44,6 +48,10 @@ class AiExperiencePropertiesBindingTest {
                     assertThat(properties.minEvents()).isEqualTo(4);
                     assertThat(properties.extractionInputMaxTokens()).isEqualTo(1000);
                     assertThat(properties.extractionMaxOutputTokens()).isEqualTo(500);
+                    assertThat(properties.mergeInputMaxTokens()).isEqualTo(40000);
+                    assertThat(properties.mergeMaxOutputTokens()).isEqualTo(12000);
+                    assertThat(properties.mergePageSize()).isEqualTo(50);
+                    assertThat(properties.extractionMaxAccepted()).isEqualTo(12);
                     assertThat(properties.maxExperiencesPerTask()).isEqualTo(2);
                     assertThat(properties.maxTextChars()).isEqualTo(100);
                     assertThat(properties.mergeMaxExperiences()).isEqualTo(20);
@@ -65,6 +73,10 @@ class AiExperiencePropertiesBindingTest {
             assertThat(properties.minEvents()).isEqualTo(6);
             assertThat(properties.extractionInputMaxTokens()).isEqualTo(600_000);
             assertThat(properties.extractionMaxOutputTokens()).isEqualTo(4000);
+            assertThat(properties.mergeInputMaxTokens()).isEqualTo(80000);
+            assertThat(properties.mergeMaxOutputTokens()).isEqualTo(35000);
+            assertThat(properties.mergePageSize()).isEqualTo(100);
+            assertThat(properties.extractionMaxAccepted()).isEqualTo(10);
             assertThat(properties.maxExperiencesPerTask()).isEqualTo(5);
             assertThat(properties.maxTextChars()).isEqualTo(400);
             assertThat(properties.mergeMaxExperiences()).isEqualTo(100);

@@ -32,6 +32,35 @@ import static org.mockito.Mockito.mock;
 /** 验证会话归属和可信身份在流启动前被固定。 */
 class MainAgentServiceTest {
     @Test
+    void registersCompletedRunWithoutChangingResultWhenRegistrationFails() throws Exception {
+        var agent = mock(ReactAgent.class);
+        var completedOutput = endOutput();
+        when(agent.stream(anyString(), any(RunnableConfig.class))).thenReturn(Flux.just(completedOutput));
+        var conversations = mock(AiConversationMapper.class);
+        when(conversations.selectOwned(101L, 1L)).thenReturn(new AiConversation());
+        var users = mock(LoginUserService.class);
+        var user = new LoginUser();
+        user.setPermissionCodes(List.of("ai:assistant:use"));
+        when(users.findByUserId(1L)).thenReturn(user);
+        var locks = mock(ConversationExecutionLock.class);
+        var lock = mock(RLock.class);
+        when(locks.of(101)).thenReturn(lock);
+        when(lock.tryLockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>(true));
+        when(lock.unlockAsync(anyLong())).thenReturn(new CompletableFutureWrapper<>((Void) null));
+        var tasks = mock(com.qiheng.erp.ai.experience.ExperienceTaskService.class);
+        doThrow(new IllegalStateException("登记失败")).when(tasks)
+                .registerTerminal(eq(1L), eq(101L), eq("MAIN"), anyString(), eq("TASK_COMPLETED"), anyString());
+        var service = new MainAgentService(agent, mock(RedisSaver.class), conversations, users, locks,
+                mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(), mock(AiAgentTraceMapper.class), null, tasks);
+
+        service.streamForUser(1, 101, "查询库存").blockLast();
+
+        verify(tasks).registerTerminal(eq(1L), eq(101L), eq("MAIN"), anyString(), eq("TASK_COMPLETED"), anyString());
+        assertThat(service.currentForUser(1, 101).status()).isEqualTo("COMPLETED");
+    }
+
+    @Test
     void savesPendingToolEvenWhenConfirmationTextWriteFails() throws Exception {
         var store = mock(com.qiheng.erp.ai.conversation.ConversationMessageStore.class);
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();

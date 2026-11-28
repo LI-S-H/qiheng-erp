@@ -33,6 +33,12 @@ services:
       - ai-datasets:/app/data/ai-datasets
       - ai-results:/app/data/ai-python-results
       - /var/run/docker.sock:/var/run/docker.sock
+      - type: bind
+        source: ${DEPLOY_ROOT:-/opt/qiheng-erp}/skills
+        target: /app/skills
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - erp
       - sandbox

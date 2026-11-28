@@ -4,6 +4,7 @@ umask 077
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 DEPLOY_ROOT=${DEPLOY_ROOT:-/opt/qiheng-erp}
+INITIAL_DEPLOY_ROOT=$DEPLOY_ROOT
 ACTION=${1:-deploy}
 LOCK_HELD=false
 if [[ "$ACTION" == --lock-held ]]; then
@@ -49,6 +50,7 @@ fi
 
 if [[ "$ACTION" == init ]]; then
     command -v openssl >/dev/null || fail '初始化需要 openssl 生成随机密码。'
+    [[ -f "$SCRIPT_DIR/skills-sync.py" && ! -L "$SCRIPT_DIR/skills-sync.py" ]] || fail '初始化需要可信的 skills-sync.py。'
     if [[ ! -f "$CONFIG_FILE" ]]; then
         sed -e "s/^MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=$(openssl rand -hex 24)/" \
             -e "s/^MYSQL_PASSWORD=.*/MYSQL_PASSWORD=$(openssl rand -hex 24)/" \
@@ -61,6 +63,9 @@ if [[ "$ACTION" == init ]]; then
     if [[ "$SCRIPT_DIR/deploy.sh" != "$DEPLOY_ROOT/bin/deploy.sh" ]]; then
         cp "$SCRIPT_DIR/deploy.sh" "$DEPLOY_ROOT/bin/deploy.sh"
     fi
+    if [[ ! -e "$DEPLOY_ROOT/bin/skills-sync.py" && ! -L "$DEPLOY_ROOT/bin/skills-sync.py" ]]; then
+        install -m 700 "$SCRIPT_DIR/skills-sync.py" "$DEPLOY_ROOT/bin/skills-sync.py"
+    fi
     chmod 600 "$CONFIG_FILE"
     chmod 700 "$DEPLOY_ROOT/bin/deploy.sh"
     log "初始化完成。配置位于 $CONFIG_FILE，已有密码及基础设施配置不会被覆盖。"
@@ -72,6 +77,7 @@ fi
 set -a
 source "$CONFIG_FILE"
 set +a
+[[ "$DEPLOY_ROOT" == "$INITIAL_DEPLOY_ROOT" ]] || fail '私有配置不能修改 DEPLOY_ROOT，请从调用环境指定。'
 unset APP_VERSION
 for secret_name in MYSQL_ROOT_PASSWORD MYSQL_PASSWORD REDIS_PASSWORD; do
     secret_value=${!secret_name:-}
@@ -89,7 +95,7 @@ application() {
     shift
     [[ "$version" =~ ^[0-9a-f]{40}$ ]] || fail '应用版本必须是完整 Git 提交编号。'
     [[ -f "$RELEASES_DIR/$version/deploy/docker/compose.app.yaml" ]] || fail "版本目录不存在：$version"
-    APP_VERSION="$version" timeout -k 10s 1800 docker compose --env-file "$CONFIG_FILE" -p qiheng-erp-app \
+    APP_VERSION="$version" DEPLOY_ROOT="$DEPLOY_ROOT" timeout -k 10s 1800 docker compose --env-file "$CONFIG_FILE" -p qiheng-erp-app \
         -f "$RELEASES_DIR/$version/deploy/docker/compose.app.yaml" "$@"
 }
 
@@ -309,6 +315,59 @@ save_version() {
     mv "$STATE_DIR/$1.tmp" "$STATE_DIR/$1"
 }
 
+# BEGIN SKILLS DEPLOY TRANSACTION
+skills_sync() {
+    local action=$1
+    local helper="$DEPLOY_ROOT/bin/skills-sync.py"
+    [[ -f "$helper" && ! -L "$helper" ]] || fail '缺少技能同步工具，请先安装经验证的固定入口。'
+    python3 "$helper" "$action" "$RELEASES_DIR/$candidate_version/erp-server/skills" \
+        "$DEPLOY_ROOT/skills" "$STATE_DIR/skills"
+}
+
+assert_no_interrupted_deploy() {
+    local marker="$STATE_DIR/skills-deploy.state"
+    if [[ -e "$marker" || -L "$marker" ]]; then
+        [[ -f "$marker" && ! -L "$marker" ]] || fail '发布状态文件无效，请人工检查。'
+        [[ $(grep -c '^phase=' "$marker" || true) == 1 ]] && grep -qx 'phase=complete' "$marker" \
+            || fail '上次技能发布未完成，请保持服务停止并人工检查发布状态和数据库配置。'
+    fi
+}
+
+write_deploy_phase() {
+    local phase=$1
+    printf 'phase=%s\nprevious=%s\ncandidate=%s\n' "$phase" "$current_version" "$candidate_version" \
+        > "$STATE_DIR/skills-deploy.state.tmp"
+    mv "$STATE_DIR/skills-deploy.state.tmp" "$STATE_DIR/skills-deploy.state"
+}
+
+publish_candidate() {
+    skills_sync check || fail '技能目录检查未通过，保留当前应用。'
+    application "$candidate_version" config --quiet
+    log "开始构建 $candidate_version，不运行项目测试。"
+    if ! application "$candidate_version" build server web; then
+        save_version failed "$candidate_version"
+        fail '构建失败，原应用未替换。'
+    fi
+    # 先持久记录事务，再停止旧后端；中断后必须人工核对，不能自动启动旧版连接新库。
+    write_deploy_phase running
+    if [[ -n "$current_version" ]]; then
+        application "$current_version" stop server || fail '旧后端停止失败，请检查发布状态。'
+    fi
+    skills_sync apply || fail '技能同步失败，请保持停写并检查发布状态。'
+    if ! activate "$candidate_version"; then
+        save_version failed "$candidate_version"
+        application "$candidate_version" stop server || log '新后端可能仍在运行和写入，请立即检查并停止容器 qiheng-erp-app-server-1。'
+        fail '新版本启动失败；不自动启动旧版本，请检查技能、数据库和发布状态。'
+    fi
+    if [[ -n "$current_version" ]]; then
+        save_version previous "$current_version"
+    fi
+    save_version current "$candidate_version"
+    write_deploy_phase complete
+    log "发布成功：$candidate_version。请在 Ubuntu 浏览器访问 http://${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8088}"
+}
+# END SKILLS DEPLOY TRANSACTION
+
 case "$ACTION" in
     check-source)
         configure_source
@@ -353,6 +412,7 @@ case "$ACTION" in
         ;;
     deploy|retry)
         [[ ! -f "$STATE_DIR/paused" ]] || { log '自动部署已暂停。'; exit 0; }
+        assert_no_interrupted_deploy
         [[ -f "$STATE_DIR/infra-ready" && -f "$STATE_DIR/database-ready" ]] || fail '基础服务或数据库尚未准备完成。'
         docker network inspect qiheng-erp-net >/dev/null
         fetch_release
@@ -364,35 +424,11 @@ case "$ACTION" in
             exit 0
         fi
         prepare_release
-        application "$candidate_version" config --quiet
-        log "开始构建 $candidate_version，不运行项目测试。"
-        if ! application "$candidate_version" build server web; then
-            save_version failed "$candidate_version"
-            fail '构建失败，原应用未替换。'
-        fi
-        if ! activate "$candidate_version"; then
-            save_version failed "$candidate_version"
-            if [[ -n "$current_version" ]]; then
-                log "新版本未正常启动，正在恢复 $current_version。"
-                activate "$current_version" || fail '恢复旧版本失败，请立即检查应用日志。'
-            fi
-            fail '发布失败，成功版本记录保持不变。'
-        fi
-        if [[ -n "$current_version" ]]; then
-            save_version previous "$current_version"
-        fi
-        save_version current "$candidate_version"
-        log "发布成功：$candidate_version。请在 Ubuntu 浏览器访问 http://${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8088}"
+        publish_candidate
         ;;
     rollback)
-        previous_version=$(read_version previous)
-        current_version=$(read_version current)
-        [[ -n "$previous_version" && -n "$current_version" ]] || fail '没有可恢复的上一版本。'
-        activate "$previous_version"
-        save_version failed "$current_version"
-        save_version current "$previous_version"
-        save_version previous "$current_version"
-        log "已恢复 $previous_version，原版本已标记失败，轮询不会立即重新发布它。数据库未变更。"
+        assert_no_interrupted_deploy
+        fail '自动回滚已停止：请先核对目标版本、技能文件和数据库结构与单位是否兼容，再人工制定恢复步骤。'
         ;;
     pause)
         touch "$STATE_DIR/paused"
